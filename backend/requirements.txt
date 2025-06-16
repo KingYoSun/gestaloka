@@ -1,0 +1,76 @@
+# FastAPI関連
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# データベース関連
+sqlmodel==0.0.22
+psycopg2-binary==2.9.10
+alembic==1.15.2
+neomodel==5.4.1
+
+# 認証関連
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-keycloak==5.5.1
+
+# LLM・AI関連
+langchain==0.3.18
+langchain-google-genai==2.0.8
+google-generativeai==0.8.4
+tenacity==9.0.0
+
+# 非同期処理・タスクキュー
+celery==5.4.0
+redis==5.2.1
+flower==2.0.1
+
+# WebSocket
+python-socketio==5.12.1
+
+# HTTPクライアント
+httpx==0.28.1
+aiohttp==3.11.11
+
+# 設定管理
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# ユーティリティ
+structlog==25.4.0
+rich==13.9.4
+typer==0.15.1
+
+# テスト関連
+pytest==8.3.4
+pytest-asyncio==0.25.2
+pytest-mock==3.14.0
+factory-boy==3.3.1
+
+# 開発ツール
+black==24.10.0
+isort==5.13.2
+flake8==7.1.1
+mypy==1.14.1
+ruff==0.8.6
+
+# モニタリング・ログ
+prometheus-client==0.21.1
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+
+# セキュリティ
+cryptography==44.0.0
+bcrypt==4.2.1
+
+# 日時処理
+python-dateutil==2.9.0.post0
+pytz==2024.2
+
+# JSON・データ処理
+orjson==3.10.13
+pydantic-extra-types==2.10.5
+
+# バリデーション
+email-validator==2.2.0

@@ -1,0 +1,242 @@
+/**
+ * WebSocketカスタムフック
+ */
+import { useEffect, useCallback, useState } from 'react';
+import { websocketManager } from '@/lib/websocket/socket';
+import { useAuthStore } from '@/store/authStore';
+import { toast } from 'sonner';
+import type {
+  GameMessage,
+  GameState,
+  GameJoinedData,
+  GameStartedData,
+  NarrativeUpdateData,
+  ActionResultData,
+  StateUpdateData,
+  GameErrorData,
+  ChatMessage,
+  NotificationData
+} from '@/types/websocket';
+
+export interface WebSocketStatus {
+  connected: boolean;
+  socketId?: string;
+  error?: string;
+}
+
+export function useWebSocket() {
+  const [status, setStatus] = useState<WebSocketStatus>({
+    connected: false,
+  });
+  const { isAuthenticated } = useAuthStore();
+  
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    // WebSocket接続を開始
+    websocketManager.connect();
+    
+    // 接続状態の監視
+    const handleConnected = (data: { socketId: string }) => {
+      setStatus({ connected: true, socketId: data.socketId });
+      toast.success('リアルタイム接続が確立されました');
+    };
+    
+    const handleDisconnected = () => {
+      setStatus({ connected: false });
+      toast.error('リアルタイム接続が切断されました');
+    };
+    
+    const handleError = (data: { error: string }) => {
+      setStatus(prev => ({ ...prev, error: data.error }));
+      toast.error(`接続エラー: ${data.error}`);
+    };
+    
+    websocketManager.on('ws:connected', handleConnected);
+    websocketManager.on('ws:disconnected', handleDisconnected);
+    websocketManager.on('ws:error', handleError);
+    
+    // クリーンアップ
+    return () => {
+      websocketManager.off('ws:connected', handleConnected);
+      websocketManager.off('ws:disconnected', handleDisconnected);
+      websocketManager.off('ws:error', handleError);
+    };
+  }, [isAuthenticated]);
+  
+  // 手動での接続/切断
+  const connect = useCallback(() => {
+    websocketManager.connect();
+  }, []);
+  
+  const disconnect = useCallback(() => {
+    websocketManager.disconnect();
+  }, []);
+  
+  return {
+    status,
+    connect,
+    disconnect,
+    isConnected: status.connected,
+  };
+}
+
+/**
+ * ゲームWebSocketフック
+ */
+export function useGameWebSocket(gameSessionId?: string) {
+  const { user } = useAuthStore();
+  const [messages, setMessages] = useState<GameMessage[]>([]);
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  
+  useEffect(() => {
+    if (!gameSessionId || !user?.id) return;
+    
+    // ゲームセッションに参加
+    websocketManager.joinGame(gameSessionId, user.id);
+    
+    // イベントハンドラー
+    const handleGameJoined = (data: GameJoinedData) => {
+      console.log('Game joined:', data);
+    };
+    
+    const handleGameStarted = (data: GameStartedData) => {
+      setGameState(data.initial_state);
+    };
+    
+    const handleNarrativeUpdate = (data: NarrativeUpdateData) => {
+      setMessages(prev => [...prev, {
+        type: 'narrative',
+        content: data.narrative,
+        timestamp: data.timestamp,
+      }]);
+    };
+    
+    const handleActionResult = (data: ActionResultData) => {
+      setMessages(prev => [...prev, {
+        type: 'action_result',
+        action: data.action,
+        result: data.result,
+        timestamp: data.timestamp,
+      }]);
+    };
+    
+    const handleStateUpdate = (data: StateUpdateData) => {
+      setGameState(prev => prev ? { ...prev, ...data.update } : data.update as GameState);
+    };
+    
+    const handleGameError = (data: GameErrorData) => {
+      toast.error(data.message);
+    };
+    
+    // イベントリスナー登録
+    websocketManager.on('game:joined', handleGameJoined);
+    websocketManager.on('game:started', handleGameStarted);
+    websocketManager.on('game:narrative_update', handleNarrativeUpdate);
+    websocketManager.on('game:action_result', handleActionResult);
+    websocketManager.on('game:state_update', handleStateUpdate);
+    websocketManager.on('game:error', handleGameError);
+    
+    // クリーンアップ
+    return () => {
+      if (gameSessionId && user?.id) {
+        websocketManager.leaveGame(gameSessionId, user.id);
+      }
+      
+      websocketManager.off('game:joined', handleGameJoined);
+      websocketManager.off('game:started', handleGameStarted);
+      websocketManager.off('game:narrative_update', handleNarrativeUpdate);
+      websocketManager.off('game:action_result', handleActionResult);
+      websocketManager.off('game:state_update', handleStateUpdate);
+      websocketManager.off('game:error', handleGameError);
+    };
+  }, [gameSessionId, user?.id]);
+  
+  // アクション送信
+  const sendAction = useCallback((action: string) => {
+    if (!gameSessionId || !user?.id) return;
+    
+    websocketManager.sendGameAction(gameSessionId, user.id, action);
+  }, [gameSessionId, user?.id]);
+  
+  return {
+    messages,
+    gameState,
+    sendAction,
+  };
+}
+
+/**
+ * チャットWebSocketフック
+ */
+export function useChatWebSocket(gameSessionId?: string) {
+  const { user } = useAuthStore();
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  
+  useEffect(() => {
+    if (!gameSessionId) return;
+    
+    const handleChatMessage = (data: ChatMessage) => {
+      setChatMessages(prev => [...prev, data]);
+    };
+    
+    websocketManager.on('chat:message', handleChatMessage);
+    
+    return () => {
+      websocketManager.off('chat:message', handleChatMessage);
+    };
+  }, [gameSessionId]);
+  
+  // チャットメッセージ送信
+  const sendChatMessage = useCallback((message: string) => {
+    if (!gameSessionId || !user?.id) return;
+    
+    websocketManager.sendChatMessage(gameSessionId, user.id, message);
+  }, [gameSessionId, user?.id]);
+  
+  return {
+    chatMessages,
+    sendChatMessage,
+  };
+}
+
+/**
+ * 通知WebSocketフック
+ */
+export function useNotificationWebSocket() {
+  useEffect(() => {
+    const handleNotification = (data: NotificationData) => {
+      // 通知タイプに応じて処理
+      switch (data.type) {
+        case 'system_notification':
+          toast[data.notification_type || 'info'](data.message, {
+            description: data.title,
+          });
+          break;
+        
+        case 'achievement':
+          if (data.achievement) {
+            toast.success(`実績「${data.achievement.name}」を獲得しました！`, {
+              description: data.achievement.description,
+            });
+          }
+          break;
+        
+        case 'friend_request':
+          if (data.from_user) {
+            toast.info(`${data.from_user.name}さんからフレンドリクエストが届きました`);
+          }
+          break;
+        
+        default:
+          console.log('Unknown notification type:', data);
+      }
+    };
+    
+    websocketManager.on('notification:received', handleNotification);
+    
+    return () => {
+      websocketManager.off('notification:received', handleNotification);
+    };
+  }, []);
+}

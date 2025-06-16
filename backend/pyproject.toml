@@ -1,0 +1,146 @@
+[tool.ruff]
+# Python 3.11をターゲットにする
+target-version = "py311"
+
+# 除外するファイル/ディレクトリ
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    "*.egg-info",
+]
+
+# 1行の最大文字数
+line-length = 120
+
+[tool.ruff.lint]
+# 有効にするルール
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "T10",  # flake8-debugger
+    "RUF",  # Ruff-specific rules
+]
+
+# 無視するルール
+ignore = [
+    "E402",  # Module level import not at top of file
+    "E501",  # Line too long (handled by formatter)
+    "B008",  # Do not perform function call in argument defaults (FastAPI Depends pattern)
+    "B904",  # Within an except clause, raise exceptions with raise ... from err
+    "DTZ003", # The use of datetime.datetime.utcnow() is not allowed
+    "RUF001", # String contains ambiguous character
+    "RUF002", # Docstring contains ambiguous character
+    "RUF003", # Comment contains ambiguous character
+    "UP007",  # Use X | Y for type annotations (keeping Union for compatibility)
+]
+
+# ファイルごとの無視設定
+[tool.ruff.lint.per-file-ignores]
+"alembic/env.py" = ["E402"]
+"scripts/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+# サードパーティライブラリの型チェックを無視
+[[tool.mypy.overrides]]
+module = [
+    "socketio",
+    "socketio.*",
+    "langchain.*",
+    "langchain_google_genai.*",
+    "google.*",
+    "redis.*",
+    "celery.*",
+    "neomodel.*",
+    "passlib.*",
+    "jose.*",
+    "pytest.*",
+    "factory.*",
+    "structlog.*",
+    "flower.*",
+    "uvicorn.*",
+    "httpx.*",
+    "tenacity.*",
+]
+ignore_missing_imports = true
+
+# 特定のファイルパターンに対する設定
+[[tool.mypy.overrides]]
+module = [
+    "alembic.*",
+    "scripts.*",
+    "tests.*",
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings",
+    "--no-header",
+    "--asyncio-mode=auto",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.venv
+  | venv
+  | build
+  | dist
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["app"]
+skip_glob = ["**/migrations/*", "venv/*", ".venv/*"]

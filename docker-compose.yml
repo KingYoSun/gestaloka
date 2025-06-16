@@ -1,0 +1,289 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: logverse-postgres
+    environment:
+      POSTGRES_DB: logverse
+      POSTGRES_USER: logverse_user
+      POSTGRES_PASSWORD: logverse_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - logverse-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logverse_user -d logverse"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.26
+    container_name: logverse-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/logverse_neo4j_password
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+      - neo4j_import:/var/lib/neo4j/import
+      # Mount schema directory as read-only to temporary location
+      - ./neo4j/schema:/tmp/neo4j-schema:ro
+      # Mount init script
+      - ./neo4j/init-neo4j.sh:/tmp/init-neo4j.sh:ro
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    networks:
+      - logverse-network
+    # Copy schema files on startup to avoid permission issues
+    entrypoint: >
+      bash -c "
+        echo 'Copying schema files...' &&
+        mkdir -p /var/lib/neo4j/import &&
+        cp -f /tmp/neo4j-schema/* /var/lib/neo4j/import/ 2>/dev/null || true &&
+        echo 'Schema files copied' &&
+        exec /startup/docker-entrypoint.sh neo4j
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p logverse_neo4j_password 'RETURN 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for Celery
+  redis:
+    image: redis:8-alpine
+    container_name: logverse-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - logverse-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # KeyCloak for Authentication
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: logverse-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_password
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak_user
+      KC_DB_PASSWORD: keycloak_password
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import
+    ports:
+      - "8080:8080"
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks:
+      - logverse-network
+    command: start-dev
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/realms/master || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # KeyCloak Database (separate from main app DB)
+  keycloak-db:
+    image: postgres:17-alpine
+    container_name: logverse-keycloak-db
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+      - ./sql/init/02_keycloak_init.sql:/docker-entrypoint-initdb.d/02_keycloak_init.sql
+    networks:
+      - logverse-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: logverse-backend
+    env_file:
+      - .env
+    environment:
+      # Override database URLs for Docker network
+      DATABASE_URL: postgresql://logverse_user:logverse_password@postgres:5432/logverse
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - logverse-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: logverse-celery-worker
+    env_file:
+      - .env
+    environment:
+      # Override database URLs for Docker network
+      DATABASE_URL: postgresql://logverse_user:logverse_password@postgres:5432/logverse
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - celery_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - logverse-network
+    command: celery -A app.celery worker --loglevel=info
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: logverse-celery-beat
+    env_file:
+      - .env
+    environment:
+      # Override database URLs for Docker network
+      DATABASE_URL: postgresql://logverse_user:logverse_password@postgres:5432/logverse
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - celery_beat_data:/app/celerybeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - logverse-network
+    command: celery -A app.celery beat --loglevel=info -s /app/celerybeat/celerybeat-schedule.db
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: logverse-frontend
+    env_file:
+      - .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Anonymous volume for node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - logverse-network
+    command: npm run dev -- --host 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Flower (Monitoring)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: logverse-flower
+    env_file:
+      - .env
+    environment:
+      # Override for Docker network
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - logverse-network
+    command: celery -A app.celery flower --port=5555
+
+volumes:
+  postgres_data:
+    driver: local
+  keycloak_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_import:
+    driver: local
+  neo4j_plugins:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+  celery_logs:
+    driver: local
+  celery_beat_data:
+    driver: local
+
+networks:
+  logverse-network:
+    driver: bridge

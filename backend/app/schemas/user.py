@@ -1,0 +1,77 @@
+"""
+ユーザー関連スキーマ
+"""
+
+from datetime import datetime
+from typing import ClassVar, Optional
+
+from pydantic import BaseModel, EmailStr, Field, validator
+
+
+class UserBase(BaseModel):
+    """ユーザーベーススキーマ"""
+
+    username: str = Field(..., min_length=3, max_length=50, description="ユーザー名")
+    email: EmailStr = Field(..., description="メールアドレス")
+
+
+class UserCreate(UserBase):
+    """ユーザー作成スキーマ"""
+
+    password: str = Field(..., min_length=8, max_length=100, description="パスワード")
+
+    @validator("password")
+    def validate_password(cls, v):  # noqa: N805
+        if len(v) < 8:
+            raise ValueError("パスワードは8文字以上である必要があります")
+        if not any(c.isupper() for c in v):
+            raise ValueError("パスワードには大文字を1つ以上含める必要があります")
+        if not any(c.islower() for c in v):
+            raise ValueError("パスワードには小文字を1つ以上含める必要があります")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("パスワードには数字を1つ以上含める必要があります")
+        return v
+
+
+class UserUpdate(BaseModel):
+    """ユーザー更新スキーマ"""
+
+    username: Optional[str] = Field(None, min_length=3, max_length=50)
+    email: Optional[EmailStr] = None
+
+
+class UserPasswordUpdate(BaseModel):
+    """パスワード更新スキーマ"""
+
+    current_password: str = Field(..., description="現在のパスワード")
+    new_password: str = Field(..., min_length=8, max_length=100, description="新しいパスワード")
+
+    @validator("new_password")
+    def validate_new_password(cls, v):  # noqa: N805
+        if len(v) < 8:
+            raise ValueError("パスワードは8文字以上である必要があります")
+        if not any(c.isupper() for c in v):
+            raise ValueError("パスワードには大文字を1つ以上含める必要があります")
+        if not any(c.islower() for c in v):
+            raise ValueError("パスワードには小文字を1つ以上含める必要があります")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("パスワードには数字を1つ以上含める必要があります")
+        return v
+
+
+class User(UserBase):
+    """ユーザースキーマ（レスポンス用）"""
+
+    id: str
+    is_active: bool = True
+    is_verified: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    model_config: ClassVar = {"from_attributes": True}
+
+
+class UserInDB(User):
+    """DB内ユーザースキーマ"""
+
+    hashed_password: str
