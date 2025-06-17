@@ -220,93 +220,70 @@ docker-compose exec backend alembic revision --autogenerate -m "migration messag
 
 ## ドキュメント使用法
 
-`documents/`ディレクトリには重要な設計ドキュメントが含まれています：
+### 段階的読み込み戦略
 
-### 必読ドキュメント
+`documents/`ディレクトリは段階的読み込みに最適化された構造になっています：
 
-#### 基本設計
-- **design_doc.md**: システム全体の設計仕様
-  - GM AI評議会の構成と役割
-  - 技術スタックの選定理由
-  - データフローとアーキテクチャ
-  - リスクと対策
+1. **初回読み込み**
+   - `documents/SUMMARY.md` - プロジェクト全体の概要（1-2ページ）
+   - 作業に関連するディレクトリの `summary.md`
 
-#### 世界観設定
-- **world_design.md**: 階層世界『レーシュ』の設定
-  - 世界の根源的な設定（真実）
-  - スキルとエネルギーシステム
-  - 主要勢力と地域
-  - 世界のテーマ『フェイディング』
+2. **詳細が必要な場合**
+   - 具体的な実装時：該当する詳細ドキュメント
+   - 例：AI実装時は `04_ai_agents/gm_ai_spec/` の該当ファイル
 
-#### ゲームメカニクス
-- **game_mechanics/basic.md**: 基本システム
-  - ハイブリッド行動システム
-  - キャラクターコンソール
-  - 成長システムと経済活動
-  - 戦闘システム
+3. **参照優先順位**
+   - レベル1: SUMMARY.md（全体把握）
+   - レベル2: 各ディレクトリのsummary.md（カテゴリー把握）
+   - レベル3: 詳細ドキュメント（実装時）
 
-- **game_mechanics/log.md**: ログ生成メカニクス
-  - ログの欠片システム
-  - ログ編纂プロセス
-  - ログ汚染と浄化
-  - ログ契約とマーケット
+### ドキュメント構成
 
-#### プロジェクトコンテキスト
+#### [01_project/](documents/01_project/summary.md) - プロジェクト管理
 - **projectbrief.md**: MVP要件と実装フェーズ
-- **systemPatterns.md**: アーキテクチャパターンとデータフロー図
-- **techContext.md**: 技術的決定と実装詳細
-- **activeContext.md**: 現在の開発状況とアクティブなタスク
-- **progress.md**: 開発進捗追跡
-- **productContext.md**: プロダクトビジョンとユーザーエクスペリエンス目標
+- **progressReports/**: 開発進捗追跡（週次レポート、マイルストーン、振り返り）
+- **activeContext/**: 現在の状況（タスク、環境、問題と注意事項）
 
-#### AI統合
-- **gemini_api_specification.md**: Gemini API仕様とLangChain統合ガイド
-  - API料金体系とレート制限
-  - LangChain統合の実装方法
-  - エラーハンドリングとリトライ戦略
-  - ログバース特有の考慮事項
+#### [02_architecture/](documents/02_architecture/summary.md) - アーキテクチャ
+- **design_doc.md**: システム全体の設計仕様
+- **systemPatterns.md**: アーキテクチャパターン
+- **techDecisions/**: 技術的決定（スタック、実装パターン、開発・本番ガイド）
+- **api/**: API仕様（Gemini、AI協調プロトコル）
 
-#### GM AI仕様
+#### [03_worldbuilding/](documents/03_worldbuilding/summary.md) - 世界観
+- **world_design.md**: 階層世界『レーシュ』の設定
+- **game_mechanics/**: ゲームメカニクス（基本、ログシステム）
+
+#### [04_ai_agents/](documents/04_ai_agents/summary.md) - AIエージェント
 - **gm_ai_spec/**: 各GM AIエージェントの詳細仕様
-  - **dramatist.md**: 脚本家AI - 物語生成とテキスト創作
-  - **historian.md**: 歴史家AI - 世界の記録と歴史編纂
-  - **npc_manager.md**: NPC管理AI - キャラクター生成と管理
-  - **state_manager.md**: 状態管理AI - ルールエンジンとDB管理
-  - **the_world.md**: 世界の意識AI - マクロイベント管理（未実装）
+  - dramatist.md（脚本家）、state_manager.md（状態管理）
+  - historian.md（歴史家）、npc_manager.md（NPC管理）
+  - the_world.md（世界の意識）、anomaly.md（混沌）
 
-#### 開発サポート
-- **characterManagementSummary.md**: キャラクター管理システムの実装概要
-- **troubleshooting.md**: トラブルシューティングガイド
+#### [05_implementation/](documents/05_implementation/summary.md) - 実装ガイド
+- **characterManagementSummary.md**: キャラクター管理の実装
+- **productContext.md**: プロダクトビジョン
+- **troubleshooting.md**: トラブルシューティング
+
+#### [06_reports/](documents/06_reports/summary.md) - レポート
 - **test_play_reports/**: テストプレイからの知見
 
 ### ドキュメント参照の原則
 
-1. **実装前の確認事項**
-   - 世界観との整合性（world_design.md）
-   - システム設計との整合性（design_doc.md）
-   - ゲームメカニクスとの整合性（game_mechanics/）
+1. **新機能実装時の確認フロー**
+   - `01_project/summary.md` → MVP要件の確認
+   - `03_worldbuilding/summary.md` → 世界観との整合性
+   - `02_architecture/summary.md` → 技術パターンの確認
+   - 必要に応じて詳細ドキュメントを参照
 
-2. **AI実装時**
-   - 各AIの役割定義を厳守（design_doc.md セクション2.2）
-   - 対応するGM AI仕様を確認（gm_ai_spec/）
-   - AI間の協調動作プロトコルを遵守
-   - Gemini API統合仕様を必ず確認（gemini_api_specification.md）
+2. **AI実装時の確認フロー**
+   - `04_ai_agents/summary.md` → GM AI評議会の概要
+   - `02_architecture/api/gemini_api_specification.md` → API仕様
+   - 該当するAIの詳細仕様（`gm_ai_spec/`内）
 
-3. **新機能追加時**
-   - 既存のゲームメカニクスとの相互作用を考慮
-   - プレイヤーの自由度を制限しない設計
-
-### プロジェクトコンテキストを参照するタイミング
-1. **新機能実装前**: MVP目標との整合性についてprojectbrief.mdを確認
-2. **アーキテクチャ決定**: 確立されたパターンについてsystemPatterns.mdを参照
-3. **データフロー実装**: systemPatterns.mdで文書化されたパターンに従う
-4. **技術的選択**: 技術選択の根拠についてtechContext.mdを参照
-
-### プロジェクトコンテキストガイドライン
-- systemPatterns.mdで確立されたパターンに常に従う
-- 新機能がprojectbrief.mdのMVPスコープと整合することを確認
-- 重要なマイルストーン完了時にprogress.mdを更新
-- 現在の開発優先事項についてactiveContext.mdを参照
+3. **トラブルシューティング**
+   - `05_implementation/troubleshooting.md` → 既知の問題
+   - `05_implementation/summary.md` → 実装概要
 
 ### 重要な設計思想
 
