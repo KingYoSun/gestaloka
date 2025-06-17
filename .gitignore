@@ -394,3 +394,6 @@ cypress/videos/
 # MCP configuration (keep example)
 .mcp.json
 !.mcp.json.example
+
+# Claude configuration
+.claude/
