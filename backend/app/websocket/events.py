@@ -139,6 +139,23 @@ class GameEventEmitter:
         except Exception as e:
             logger.error("Error emitting game error", error=str(e))
 
+    @staticmethod
+    async def emit_custom_event(game_session_id: str, event_type: str, data: dict[str, Any]):
+        """カスタムイベント"""
+        try:
+            await broadcast_to_game(
+                game_session_id,
+                event_type,
+                {
+                    "type": event_type,
+                    **data,
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            logger.info("Custom event emitted", game_session_id=game_session_id, event_type=event_type)
+        except Exception as e:
+            logger.error("Error emitting custom event", error=str(e))
+
 
 class NotificationEmitter:
     """通知エミッター"""

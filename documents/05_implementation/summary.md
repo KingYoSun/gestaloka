@@ -76,6 +76,9 @@
 ### [troubleshooting.md](troubleshooting.md)
 既知の問題と解決策。エラーメッセージ別の対処法。
 
+### [battleSystemImplementation.md](battleSystemImplementation.md)
+戦闘システムの実装ガイド。ターン制バトル、UI統合、AIとの連携詳細。
+
 ## クイックリファレンス
 
 - 新機能実装：既存の実装パターンを`characterManagementSummary.md`で確認

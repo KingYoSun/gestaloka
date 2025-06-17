@@ -129,6 +129,20 @@ export function useGameWebSocket(gameSessionId?: string) {
       toast.error(data.message);
     };
     
+    // 戦闘イベントハンドラー
+    const handleBattleStart = (data: any) => {
+      console.log('Battle started:', data);
+      // 戦闘開始の通知
+      toast.info('戦闘開始！', {
+        description: '敵が現れた！',
+      });
+    };
+    
+    const handleBattleUpdate = (data: any) => {
+      console.log('Battle update:', data);
+      // 戦闘状態の更新はaction_resultで処理される
+    };
+    
     // イベントリスナー登録
     websocketManager.on('game:joined', handleGameJoined);
     websocketManager.on('game:started', handleGameStarted);
@@ -136,6 +150,8 @@ export function useGameWebSocket(gameSessionId?: string) {
     websocketManager.on('game:action_result', handleActionResult);
     websocketManager.on('game:state_update', handleStateUpdate);
     websocketManager.on('game:error', handleGameError);
+    websocketManager.on('game:battle_start', handleBattleStart);
+    websocketManager.on('game:battle_update', handleBattleUpdate);
     
     // クリーンアップ
     return () => {
@@ -149,6 +165,8 @@ export function useGameWebSocket(gameSessionId?: string) {
       websocketManager.off('game:action_result', handleActionResult);
       websocketManager.off('game:state_update', handleStateUpdate);
       websocketManager.off('game:error', handleGameError);
+      websocketManager.off('game:battle_start', handleBattleStart);
+      websocketManager.off('game:battle_update', handleBattleUpdate);
     };
   }, [gameSessionId, user?.id]);
   

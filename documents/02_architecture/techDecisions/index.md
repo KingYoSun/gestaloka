@@ -37,6 +37,9 @@
 ### [技術的決定記録](./technicalDecisions.md)
 重要な技術的決定、実装時の問題と解決策、技術的負債、今後の検討事項。
 
+### [Alembic統合ガイド](./alembicIntegration.md)
+Alembic + SQLModelの統合設定、マイグレーション管理、トラブルシューティング。
+
 ## 開発の流れ
 
 ### 新機能開発時

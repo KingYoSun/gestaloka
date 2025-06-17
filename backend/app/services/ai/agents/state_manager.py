@@ -152,6 +152,24 @@ class StateManagerAgent(BaseAgent):
         Returns:
             拡張されたコンテキスト
         """
+        # 戦闘中かどうかを確認
+        battle_context = {}
+        if context.additional_context and "battle_data" in context.additional_context:
+            battle_data = context.additional_context["battle_data"]
+            if battle_data and battle_data.get("state") not in ["none", "finished"]:
+                battle_context = {
+                    "is_in_battle": True,
+                    "battle_state": battle_data.get("state"),
+                    "battle_turn": battle_data.get("turn_count", 0),
+                    "combatants": battle_data.get("combatants", []),
+                    "battle_rules": {
+                        "damage_calculation": "base_attack - (defense / 2) + random(-20%, +20%)",
+                        "critical_chance": 0.1,
+                        "escape_base_chance": 0.5,
+                        "defense_damage_reduction": 0.5,
+                    }
+                }
+        
         # 追加コンテキストに判定用情報を追加
         context.additional_context.update(
             {
@@ -164,6 +182,7 @@ class StateManagerAgent(BaseAgent):
                 "current_buffs": context.character_stats.get("buffs", []),
                 "current_debuffs": context.character_stats.get("debuffs", []),
                 "environment_modifiers": self._calculate_environment_modifiers(context),
+                **battle_context,
             }
         )
 
@@ -326,6 +345,14 @@ class StateManagerAgent(BaseAgent):
                     }
                 )
 
+        # 戦闘トリガーのチェック（戦闘中でない場合）
+        if not self._is_in_battle(action_type):
+            for event in state_changes.triggered_events:
+                if event.get("type") == "combat_encounter":
+                    validated_changes["battle_triggered"] = True
+                    validated_changes["enemy_data"] = event.get("enemy_data")
+                    break
+
         return StateChangeResult(
             success=state_changes.success,
             parameter_changes=validated_changes,
@@ -333,6 +360,12 @@ class StateManagerAgent(BaseAgent):
             new_relationships=state_changes.new_relationships,
             reason=state_changes.reason,
         )
+    
+    def _is_in_battle(self, action_type: str) -> bool:
+        """戦闘中かどうかを判定"""
+        # processメソッド内でコンテキストにis_in_battleフラグを設定しているため、
+        # ここではaction_typeから簡易的に判定
+        return action_type in ["battle_attack", "battle_defend", "battle_escape", "battle_skill"]
 
     def _check_critical(self, state_changes: StateChangeResult) -> bool:
         """

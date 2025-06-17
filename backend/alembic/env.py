@@ -16,6 +16,11 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
 
+# モデルをインポート（これがないと自動生成が正しく動作しない）
+# インポート順序が重要：依存関係のないものから順に
+from app.models.user import User  # noqa
+from app.models.character import Character, CharacterStats, Skill, GameSession  # noqa
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -37,7 +42,7 @@ target_metadata = SQLModel.metadata
 
 def get_url():
     """データベースURLを取得"""
-    return settings.DATABASE_URL
+    return str(settings.DATABASE_URL)
 
 
 def run_migrations_offline() -> None:
@@ -72,8 +77,6 @@ def run_migrations_online() -> None:
 
     """
     configuration = config.get_section(config.config_ini_section)
-    if configuration is None:
-        configuration = {}
     configuration["sqlalchemy.url"] = get_url()
     connectable = engine_from_config(
         configuration,
@@ -82,10 +85,22 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection, 
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
+            render_item=render_item,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
+
+
+def render_item(type_, obj, autogen_context):
+    """SQLModel用のレンダリング関数"""
+    # SQLModel特有の型変換が必要な場合はここで処理
+    return False
 
 
 if context.is_offline_mode():

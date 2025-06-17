@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
+import { BattleStatus } from '@/features/game/components/BattleStatus'
 
 export const Route = createFileRoute('/game/$sessionId')({
   component: GameSessionPage,
@@ -235,6 +236,11 @@ function GameSessionPage() {
 
         {/* サイドバー */}
         <div className="space-y-4">
+          {/* 戦闘状態 */}
+          {session.sessionData?.battle_data && (
+            <BattleStatus battleData={session.sessionData.battle_data} />
+          )}
+          
           {/* 選択肢 */}
           {currentChoices && currentChoices.length > 0 && (
             <Card>

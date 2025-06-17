@@ -43,6 +43,9 @@
 - **productionGuide.md**: 本番環境・セキュリティガイド
 - **technicalDecisions.md**: 技術的決定記録と負債管理
 
+### techDecisions/
+- **[alembicIntegration.md](techDecisions/alembicIntegration.md)**: Alembic + SQLModel統合ガイド
+
 ### api/
 - **[gemini_api_specification.md](api/gemini_api_specification.md)**: Gemini API仕様とLangChain統合ガイド
 - **[ai_coordination_protocol.md](api/ai_coordination_protocol.md)**: AI間の協調動作プロトコル

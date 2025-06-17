@@ -29,7 +29,7 @@
 
 ## 現在の動作環境
 
-### 稼働中サービス（2025/06/15時点）
+### 稼働中サービス（2025/06/18時点）
 🟢 **PostgreSQL 17**: localhost:5432 - ユーザーデータ、キャラクターデータ（最新安定版）  
 🟢 **Neo4j 5.26 LTS**: localhost:7474/7687 - グラフデータベース、関係性データ（長期サポート版）  
 🟢 **Redis 8**: localhost:6379 - セッション、キャッシュ、Celeryブローカー（最新安定版）  
@@ -43,12 +43,13 @@
 ### 実装済み機能
 - ✅ ユーザー登録・ログイン（JWT認証）
 - ✅ 認証保護エンドポイント
-- ✅ データベースマイグレーション
+- ✅ データベースマイグレーション（Alembic + SQLModel統合）
 - ✅ 型安全なAPIクライアント統合
 - ✅ キャラクター管理（作成・一覧・詳細・状態管理）
 - ✅ ゲームセッション管理（作成・更新・終了・アクション実行）
 - ✅ AI統合基盤（Gemini API、プロンプト管理、エージェントシステム）
 - ✅ Celeryタスク管理（Worker、Beat、Flower統合）
+- ✅ 基本的な戦闘システム（ターン制バトル、戦闘UI、リアルタイム更新）
 
 ### 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -212,10 +213,21 @@ docker-compose exec backend mypy .
 make db-migrate
 
 # Docker内で直接実行
-docker-compose exec backend alembic upgrade head
+docker-compose run --rm backend alembic upgrade head
 
 # マイグレーションファイル作成（Docker経由）
-docker-compose exec backend alembic revision --autogenerate -m "migration message"
+docker-compose run --rm backend alembic revision --autogenerate -m "migration message"
+
+# マイグレーション履歴確認
+docker-compose run --rm backend alembic current
+
+# マイグレーションをロールバック
+docker-compose run --rm backend alembic downgrade -1
+
+# 注意事項：
+# - モデル変更後は必ずマイグレーションを生成
+# - SQLModelの場合、env.pyでモデルのインポートが必要
+# - attack, defense, agilityなどの戦闘関連カラムがCharacterStatsに追加済み
 ```
 
 ## ドキュメント使用法
@@ -247,7 +259,7 @@ docker-compose exec backend alembic revision --autogenerate -m "migration messag
 #### [02_architecture/](documents/02_architecture/summary.md) - アーキテクチャ
 - **design_doc.md**: システム全体の設計仕様
 - **systemPatterns.md**: アーキテクチャパターン
-- **techDecisions/**: 技術的決定（スタック、実装パターン、開発・本番ガイド）
+- **techDecisions/**: 技術的決定（スタック、実装パターン、開発・本番ガイド、Alembic統合）
 - **api/**: API仕様（Gemini、AI協調プロトコル）
 
 #### [03_worldbuilding/](documents/03_worldbuilding/summary.md) - 世界観
@@ -262,6 +274,7 @@ docker-compose exec backend alembic revision --autogenerate -m "migration messag
 
 #### [05_implementation/](documents/05_implementation/summary.md) - 実装ガイド
 - **characterManagementSummary.md**: キャラクター管理の実装
+- **battleSystemImplementation.md**: 戦闘システムの実装ガイド
 - **productContext.md**: プロダクトビジョン
 - **troubleshooting.md**: トラブルシューティング
 

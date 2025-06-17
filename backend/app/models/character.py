@@ -52,6 +52,9 @@ class CharacterStats(SQLModel, table=True):
     max_health: int = Field(default=100, ge=1)
     energy: int = Field(default=100, ge=0)
     max_energy: int = Field(default=100, ge=1)
+    attack: int = Field(default=10, ge=1)
+    defense: int = Field(default=5, ge=0)
+    agility: int = Field(default=10, ge=1)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -86,6 +86,8 @@ make init-db
 | **FastAPI** | 0.115.6 | 高性能Webフレームワーク |
 | **Python** | 3.11 | プログラミング言語 |
 | **SQLModel** | 0.0.24 | タイプセーフORM |
+| **Alembic** | 1.16.3 | データベースマイグレーション |
+| **Socket.IO** | 5.11.3 | WebSocketサーバー |
 | **neomodel** | 5.4.0 | Neo4j OGM |
 | **LangChain** | 0.3.18 | LLM統合フレームワーク |
 | **Celery** | 5.4.0 | 非同期タスクキュー |
@@ -107,8 +109,8 @@ make init-db
 | **GM AI評議会** | 6つの専門AIエージェント |
 | - Dramatist | 物語生成・脚本（実装済み） |
 | - Historian | 世界記録・歴史管理（実装済み） |
-| - The World | マクロイベント管理 |
-| - The Anomaly | 予測不能要素生成 |
+| - The World | マクロイベント管理（実装済み） |
+| - The Anomaly | 予測不能要素生成（実装済み） |
 | - NPC Manager | キャラクター管理（実装済み） |
 | - State Manager | ルール・状態管理（実装済み） |
 
@@ -143,6 +145,11 @@ make db-reset     # 💣 データベース完全リセット
 make db-migrate   # 🔄 マイグレーション実行
 make db-shell-postgres  # 🐘 PostgreSQLシェル
 make db-shell-neo4j     # 🕸️  Neo4jシェル
+
+# Alembicマイグレーション管理
+docker-compose run --rm backend alembic revision --autogenerate -m "説明"
+docker-compose run --rm backend alembic upgrade head
+docker-compose run --rm backend alembic current
 ```
 
 ### 🧪 テスト・品質管理
@@ -185,16 +192,19 @@ logverse/
 │   │   ├── 📁 api/              # APIエンドポイント
 │   │   ├── 📁 core/             # コア機能（設定・セキュリティ）
 │   │   ├── 📁 models/           # データベースモデル
-│   │   ├── 📁 schemas/          # Pydanticスキーマ
-│   │   ├── 📁 services/         # ビジネスロジック
+│   │   ├── 📁 schemas/          # Pydanticスキーマ（戦闘スキーマ含む）
+│   │   ├── 📁 services/         # ビジネスロジック（戦闘サービス含む）
+│   │   ├── 📁 ai/               # AIエージェント統合
+│   │   ├── 📁 websocket/        # WebSocketハンドラー
 │   │   └── 📁 tasks/            # Celeryタスク
+│   ├── 📁 alembic/              # データベースマイグレーション
 │   ├── 📁 tests/                # テストコード
 │   ├── 🐳 Dockerfile            # バックエンドDocker設定
 │   └── 📄 requirements.txt      # Python依存関係
 ├── 📁 frontend/                  # ⚛️ Reactフロントエンド
 │   ├── 📁 src/                  # ソースコード
-│   │   ├── 📁 components/       # Reactコンポーネント
-│   │   ├── 📁 features/         # 機能別モジュール
+│   │   ├── 📁 components/       # Reactコンポーネント（UIライブラリ含む）
+│   │   ├── 📁 features/         # 機能別モジュール（戦闘UI含む）
 │   │   ├── 📁 hooks/            # カスタムフック
 │   │   ├── 📁 services/         # API通信・WebSocket
 │   │   └── 📁 stores/           # Zustand状態管理
@@ -208,14 +218,16 @@ logverse/
 │   │   ├── 📁 activeContext/    # 現在の開発状況
 │   │   └── 📁 progressReports/  # 進捗レポート
 │   ├── 📁 02_architecture/      # システム設計
-│   │   ├── 📁 techDecisions/    # 技術的決定
+│   │   ├── 📁 techDecisions/    # 技術的決定（Alembic統合含む）
 │   │   └── 📁 api/              # API仕様
 │   ├── 📁 03_worldbuilding/     # 世界観・ゲーム設定
 │   │   └── 📁 game_mechanics/   # ゲームメカニクス
 │   ├── 📁 04_ai_agents/         # AIエージェント仕様
 │   │   └── 📁 gm_ai_spec/       # GM AI詳細
-│   ├── 📁 05_implementation/    # 実装ガイド
+│   ├── 📁 05_implementation/    # 実装ガイド（戦闘システム含む）
 │   └── 📁 06_reports/           # テストレポート
+├── 📁 tests/                     # 📝 E2Eテスト仕様
+│   └── 📁 e2e/                  # E2Eテストケース定義
 ├── 📁 sql/                      # 🗄️ データベース初期化
 ├── 📁 neo4j/                    # 🕸️ Neo4j初期化スクリプト
 ├── 📁 keycloak/                 # 🔐 KeyCloak設定

@@ -5,7 +5,7 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from sqlmodel import Session, desc, select
@@ -20,7 +20,14 @@ from app.schemas.game_session import (
     GameSessionResponse,
     GameSessionUpdate,
 )
+from app.schemas.battle import (
+    BattleAction,
+    BattleActionType,
+    BattleData,
+    BattleState,
+)
 from app.ai.coordinator import CoordinatorAI
+from app.ai.coordination_models import Choice
 from app.ai.shared_context import PlayerAction
 from app.services.ai.agents import (
     AnomalyAgent,
@@ -31,6 +38,7 @@ from app.services.ai.agents import (
     TheWorldAI,
 )
 from app.services.ai.prompt_manager import PromptContext
+from app.services.battle import BattleService
 from app.websocket.events import GameEventEmitter
 
 logger = get_logger(__name__)
@@ -56,6 +64,9 @@ class GameSessionService:
             "anomaly": AnomalyAgent(),
         }
         self.coordinator = CoordinatorAI(agents=agents, websocket_manager=websocket_manager)
+        
+        # 戦闘サービスを初期化
+        self.battle_service = BattleService(db)
 
     async def create_session(self, user_id: str, session_data: GameSessionCreate) -> GameSessionResponse:
         """新しいゲームセッションを作成"""
@@ -420,6 +431,65 @@ class GameSessionService:
                 session_id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
             )
 
+            # 戦闘システムの処理
+            battle_data = session_data.get("battle_data")
+            current_battle_state = BattleState(battle_data["state"]) if battle_data else BattleState.NONE
+            
+            # 戦闘中の場合、特別な処理を行う
+            if current_battle_state != BattleState.NONE and current_battle_state != BattleState.FINISHED:
+                # 戦闘アクションの処理
+                battle_choices = self._process_battle_turn(
+                    session_data, character, character_stats, action_request, coordinator_response
+                )
+                if battle_choices:
+                    coordinator_response.choices = battle_choices
+            else:
+                # 通常のアクション処理後、戦闘開始をチェック
+                if self.battle_service.check_battle_trigger(
+                    {"narrative": coordinator_response.narrative, "state_changes": coordinator_response.state_changes}, 
+                    session_data
+                ):
+                    # 戦闘を開始
+                    enemy_data = coordinator_response.state_changes.get("enemy_data") if coordinator_response.state_changes else None
+                    environment_data = {
+                        "terrain": session_data.get("terrain", "平地"),
+                        "weather": session_data.get("weather", "晴れ"),
+                        "time_of_day": session_data.get("time_of_day", "昼"),
+                    }
+                    
+                    if not character_stats:
+                        # character_statsがない場合はスキップ
+                        logger.warning("Character stats not found, skipping battle initialization")
+                    else:
+                        battle_data = self.battle_service.initialize_battle(
+                            character, character_stats, enemy_data, environment_data
+                        )
+                        
+                        # 戦闘を開始（プレイヤーターンに設定）
+                        battle_data.state = BattleState.PLAYER_TURN
+                        session_data["battle_data"] = battle_data.dict()
+                        
+                        # 戦闘開始の選択肢を生成
+                        battle_choices = self.battle_service.get_battle_choices(battle_data, True)
+                        # ActionChoiceをChoiceに変換
+                        coordinator_response.choices = [
+                            Choice(
+                                id=choice.id,
+                                text=choice.text,
+                                description=choice.difficulty,
+                                requirements=choice.requirements,
+                            )
+                            for choice in battle_choices
+                        ]
+                        
+                        # 戦闘開始メッセージを追加
+                        coordinator_response.narrative += f"\n\n戦闘開始！{battle_data.combatants[1].name}が現れた！"
+                        
+                        # WebSocketで戦闘開始を通知
+                        await GameEventEmitter.emit_custom_event(
+                            session_id, "battle_start", {"battle_data": battle_data.dict()}
+                        )
+
             # アクション履歴の更新
             action_record: dict[str, Any] = {
                 "turn": session_data.get("turn_count", 0) + 1 if session_data else 1,
@@ -524,6 +594,7 @@ class GameSessionService:
                 metadata={
                     **coordinator_response.metadata,
                     "state_changes": coordinator_response.state_changes,
+                    "battle_data": session_data.get("battle_data"),
                 },
             )
 
@@ -535,6 +606,121 @@ class GameSessionService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"アクションの実行に失敗しました: {e!s}"
             )
+
+    def _process_battle_turn(
+        self,
+        session_data: dict[str, Any],
+        character: Character,
+        character_stats,
+        action_request: ActionExecuteRequest,
+        coordinator_response,
+    ) -> Optional[list[Choice]]:
+        """戦闘ターンを処理"""
+        battle_data_dict = session_data.get("battle_data", {})
+        battle_data = BattleData(**battle_data_dict)
+        
+        # プレイヤーのターンの場合
+        if battle_data.state == BattleState.PLAYER_TURN:
+            # アクションタイプを判定
+            action_type = BattleActionType.ATTACK  # デフォルト
+            if "防御" in action_request.action_text or action_request.choice_id == "battle_defend":
+                action_type = BattleActionType.DEFEND
+            elif "逃" in action_request.action_text or action_request.choice_id == "battle_escape":
+                action_type = BattleActionType.ESCAPE
+            elif action_request.choice_id and action_request.choice_id.startswith("battle_use_"):
+                action_type = BattleActionType.ENVIRONMENT
+                
+            # 戦闘アクションを作成
+            battle_action = BattleAction(
+                actor_id=character.id,
+                action_type=action_type,
+                target_id=battle_data.combatants[1].id if len(battle_data.combatants) > 1 else None,
+                action_text=action_request.action_text,
+            )
+            
+            # アクションを処理
+            result, updated_battle_data = self.battle_service.process_battle_action(battle_data, battle_action)
+            
+            # 結果を物語に追加
+            coordinator_response.narrative += f"\n\n{result.narrative}"
+            
+            # 戦闘終了チェック
+            battle_ended, victory, rewards = self.battle_service.check_battle_end(updated_battle_data)
+            
+            if battle_ended:
+                # 戦闘終了処理
+                updated_battle_data.state = BattleState.FINISHED
+                session_data["battle_data"] = updated_battle_data.dict()
+                
+                if victory is not None:
+                    if victory:
+                        coordinator_response.narrative += "\n\n戦闘に勝利した！"
+                        if rewards:
+                            coordinator_response.narrative += f"\n経験値 {rewards['experience']} を獲得！"
+                            # 報酬を状態変更に追加
+                            if not coordinator_response.state_changes:
+                                coordinator_response.state_changes = {}
+                            coordinator_response.state_changes["parameter_changes"] = {
+                                "experience": rewards["experience"]
+                            }
+                    else:
+                        coordinator_response.narrative += "\n\n戦闘に敗北した..."
+                else:
+                    coordinator_response.narrative += "\n\n戦闘から逃走した。"
+                    
+                # 通常の選択肢に戻す
+                return None
+            else:
+                # ターンを進める
+                next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)
+                session_data["battle_data"] = updated_battle_data.dict()
+                
+                if is_player_turn:
+                    # プレイヤーのターン - 選択肢を返す
+                    battle_choices = self.battle_service.get_battle_choices(updated_battle_data, True)
+                    return [
+                        Choice(
+                            id=choice.id,
+                            text=choice.text,
+                            description=choice.difficulty,
+                            requirements=choice.requirements,
+                        )
+                        for choice in battle_choices
+                    ]
+                else:
+                    # 敵のターン - 自動で行動
+                    enemy = next((c for c in updated_battle_data.combatants if c.id == next_actor_id), None)
+                    if enemy:
+                        # 敵の行動を決定（簡易版）
+                        enemy_action = BattleAction(
+                            actor_id=enemy.id,
+                            action_type=BattleActionType.ATTACK,
+                            target_id=character.id,
+                            action_text=f"{enemy.name}の攻撃",
+                        )
+                        
+                        enemy_result, updated_battle_data = self.battle_service.process_battle_action(
+                            updated_battle_data, enemy_action
+                        )
+                        coordinator_response.narrative += f"\n\n{enemy_result.narrative}"
+                        
+                        # 再度ターンを進める（プレイヤーに戻す）
+                        next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)
+                        session_data["battle_data"] = updated_battle_data.dict()
+                        
+                        # プレイヤーのターンの選択肢を返す
+                        battle_choices = self.battle_service.get_battle_choices(updated_battle_data, True)
+                        return [
+                            Choice(
+                                id=choice.id,
+                                text=choice.text,
+                                description=choice.difficulty,
+                                requirements=choice.requirements,
+                            )
+                            for choice in battle_choices
+                        ]
+                        
+        return None
 
     def _apply_state_changes(self, character_stats, state_changes: dict[str, Any]):
         """キャラクターの状態変更を適用"""
