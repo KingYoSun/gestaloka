@@ -14,7 +14,12 @@ from alembic import context
 # パスを追加
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+# 設定をインポート
 from app.core.config import settings
+
+# 全てのモデルをインポート（自動生成のため必須）
+# 重要: モデルの追加時は必ずここにインポートを追加すること
+from app.models.user import User  # noqa
 from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
 from app.models.log import (  # noqa
     CompletedLog,
@@ -22,10 +27,7 @@ from app.models.log import (  # noqa
     LogContract,
     LogFragment,
 )
-
-# モデルをインポート（これがないと自動生成が正しく動作しない）
-# インポート順序が重要：依存関係のないものから順に
-from app.models.user import User  # noqa
+# 新しいモデルを追加する場合は、ここにインポートを追加
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -98,6 +100,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
+            include_object=include_object,
             render_item=render_item,
         )
 
@@ -105,9 +108,28 @@ def run_migrations_online() -> None:
             context.run_migrations()
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """自動生成時に含めるオブジェクトをフィルタリング"""
+    # alembic_versionテーブルは除外
+    if type_ == "table" and name == "alembic_version":
+        return False
+    return True
+
+
 def render_item(type_, obj, autogen_context):
     """SQLModel用のレンダリング関数"""
-    # SQLModel特有の型変換が必要な場合はここで処理
+    from sqlalchemy.dialects import postgresql
+    
+    # PostgreSQL ENUMタイプのレンダリングをカスタマイズ
+    if type_ == "type" and isinstance(obj, postgresql.ENUM):
+        # ENUMタイプの作成時に既存チェックを追加
+        import sqlalchemy as sa
+        autogen_context.imports.add("import sqlalchemy as sa")
+        return "sa.Enum(%s, name=%r, create_type=False)" % (
+            ", ".join(repr(x) for x in obj.enums),
+            obj.name
+        )
+    
     return False
 
 

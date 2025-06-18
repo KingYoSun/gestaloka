@@ -207,28 +207,34 @@ docker-compose exec backend mypy .
 - PostgreSQL: トランザクション管理に注意
 - Neo4j: 関係性の作成時は必ず双方向性を考慮
 - 両DBの整合性を保つため、更新は同一トランザクション内で
+- **スキーマ管理**: 全ての環境でAlembicを使用して統一的に管理
 
-### マイグレーション
+### マイグレーション（必須手順）
 ```bash
+# マイグレーション作成手順（必ずこの順序で実行）
+# 1. モデルを変更/追加
+# 2. alembic/env.pyに新しいモデルをインポート（重要！）
+# 3. 自動生成（手動作成は禁止）
+docker-compose exec -T backend alembic revision --autogenerate -m "migration message"
+# 4. 生成されたファイルを確認
+# 5. マイグレーション適用
+docker-compose exec -T backend alembic upgrade head
+
 # データベースマイグレーション実行（Docker経由）
 make db-migrate
 
-# Docker内で直接実行
-docker-compose run --rm backend alembic upgrade head
-
-# マイグレーションファイル作成（Docker経由）
-docker-compose run --rm backend alembic revision --autogenerate -m "migration message"
-
 # マイグレーション履歴確認
-docker-compose run --rm backend alembic current
+docker-compose exec -T backend alembic current
 
 # マイグレーションをロールバック
-docker-compose run --rm backend alembic downgrade -1
+docker-compose exec -T backend alembic downgrade -1
 
-# 注意事項：
-# - モデル変更後は必ずマイグレーションを生成
-# - SQLModelの場合、env.pyでモデルのインポートが必要
-# - attack, defense, agilityなどの戦闘関連カラムがCharacterStatsに追加済み
+# 重要なルール：
+# - 手動マイグレーションファイル作成は禁止
+# - 必ず--autogenerateを使用して自動生成
+# - 新しいモデルはalembic/env.pyに必ずインポート
+# - docker-compose runではなくdocker-compose exec -Tを使用
+# - SQLModel.metadata.create_all()は使用しない（Alembic統一管理のため）
 ```
 
 ## ドキュメント使用法
@@ -373,6 +379,10 @@ docker-compose run --rm backend alembic downgrade -1
 3. **依存関係の競合**
    - 問題: langchain-google-genaiとgoogle-generativeaiの非互換
    - 解決: google-generativeaiを削除（重複のため）
+
+4. **Alembicマイグレーション問題**
+   - 問題: SQLModelのcreate_all()とAlembicの競合
+   - 解決: 全環境でAlembicのみを使用するよう統一
 
 #### コード品質の改善（2025/06/18実施）
 

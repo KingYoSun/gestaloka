@@ -523,11 +523,17 @@ model: str = Field(default="gemini-2.5-pro")
 
 ## Alembicマイグレーション関連
 
+### Alembicによる統一スキーマ管理（2025-06-18更新）
+
+#### 現在の設定
+- ゲスタロカプロジェクトでは、全ての環境でAlembicを使用したスキーマ管理を行います
+- SQLModelの`create_all()`は使用しません
+- `create_db_and_tables()`関数は後方互換性のために残されていますが、実際にはテーブル作成を行いません
+
 ### SQLModelモデルの自動検出失敗（2025-06-18）
 
 #### 問題
 - `alembic revision --autogenerate`を実行しても、新しく追加したSQLModelモデル（LogFragment、CompletedLog等）が検出されず、空のマイグレーションファイルが生成される
-- バックエンド起動時にSQLModelがテーブルを自動作成してしまい、マイグレーションとの競合が発生
 
 #### 原因
 1. **モデルの自動作成**: SQLModelがデータベース接続時に`SQLModel.metadata.create_all()`相当の処理を実行
@@ -535,27 +541,29 @@ model: str = Field(default="gemini-2.5-pro")
 3. **ENUMタイプの重複**: PostgreSQLのENUMタイプが既に作成されているため、マイグレーション実行時にエラーが発生
 
 #### 解決方法
-1. **手動マイグレーションファイルの作成**
+1. **alembic/env.pyにモデルをインポート**
    ```python
-   # alembic/versions/add_log_system_models.py
-   def upgrade() -> None:
-       # ENUMタイプの作成（既存チェック付き）
-       op.execute("DO $$ BEGIN CREATE TYPE logfragmentrarity AS ENUM (...); EXCEPTION WHEN duplicate_object THEN null; END $$")
-       
-       # テーブル作成
-       op.create_table('log_fragments', ...)
+   # alembic/env.py
+   from app.models.log import LogFragment, CompletedLog, LogContract  # noqa
    ```
 
-2. **マイグレーション状態の手動更新**
+2. **データベースをリセットして再構築**
    ```bash
-   # 既にテーブルが作成されている場合
-   docker-compose exec -T postgres psql -U gestaloka_user -d gestaloka \
-     -c "INSERT INTO alembic_version (version_num) VALUES ('add_log_system_models');"
+   # 開発環境のみ
+   make db-reset
+   make db-migrate
+   ```
+
+3. **既存データベースの場合**
+   ```bash
+   # 現在の状態をAlembicに認識させる
+   docker-compose exec -T backend alembic stamp head
    ```
 
 #### 推奨事項
-- **開発初期段階**: `SQLModel.metadata.create_all()`を無効化し、Alembicのみでスキーマ管理
+- **全環境統一**: Alembicを使用したスキーマ管理（設定済み）
 - **モデル追加時**: 必ず`alembic/env.py`にインポートを追加
+- **手動マイグレーション禁止**: 必ず`--autogenerate`を使用
 - **ENUMタイプ使用時**: PostgreSQL特有の考慮が必要（IF NOT EXISTSサポートなし）
 
 ### Docker環境でのマイグレーション実行

@@ -26,8 +26,19 @@ engine = create_engine(
 
 
 def create_db_and_tables():
-    """データベースとテーブルを作成"""
-    SQLModel.metadata.create_all(engine)
+    """データベースとテーブルを作成
+    
+    注意: このプロジェクトではAlembicでスキーマ管理を行うため、
+    SQLModel.metadata.create_all()は使用しません。
+    
+    スキーマの変更は必ずAlembicを使用して行ってください：
+    1. モデルを変更/追加
+    2. alembic/env.pyにモデルをインポート
+    3. docker-compose exec -T backend alembic revision --autogenerate -m "説明"
+    4. 生成されたマイグレーションを確認
+    5. docker-compose exec -T backend alembic upgrade head
+    """
+    logger.info("Database tables must be created using Alembic migrations")
 
 
 def get_session() -> Generator[Session, None, None]:
