@@ -16,6 +16,12 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
 from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
+from app.models.log import (  # noqa
+    CompletedLog,
+    CompletedLogSubFragment,
+    LogContract,
+    LogFragment,
+)
 
 # モデルをインポート（これがないと自動生成が正しく動作しない）
 # インポート順序が重要：依存関係のないものから順に

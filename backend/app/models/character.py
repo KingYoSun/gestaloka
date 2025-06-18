@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
+    from app.models.log import CompletedLog, LogContract, LogFragment
     from app.models.user import User
 
 
@@ -34,6 +35,18 @@ class Character(SQLModel, table=True):
     )
     skills: list["Skill"] = Relationship(back_populates="character")
     game_sessions: list["GameSession"] = Relationship(back_populates="character")
+
+    # ログシステム関連
+    log_fragments: list["LogFragment"] = Relationship(back_populates="character")
+    created_logs: list["CompletedLog"] = Relationship(back_populates="creator")
+    created_contracts: list["LogContract"] = Relationship(
+        back_populates="creator",
+        sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
+    )
+    hosted_contracts: list["LogContract"] = Relationship(
+        back_populates="host_character",
+        sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
+    )
 
     def __repr__(self) -> str:
         return f"<Character(id={self.id}, name={self.name})>"
@@ -102,6 +115,9 @@ class GameSession(SQLModel, table=True):
 
     # リレーション
     character: Character = Relationship(back_populates="game_sessions")
+
+    # ログシステム関連
+    log_fragments: list["LogFragment"] = Relationship(back_populates="session")
 
     def __repr__(self) -> str:
         return f"<GameSession(id={self.id}, character_id={self.character_id})>"
