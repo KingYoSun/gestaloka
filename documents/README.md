@@ -1,6 +1,6 @@
-# ログバース ドキュメント
+# ゲスタロカ ドキュメント
 
-このディレクトリには、ログバースプロジェクトのすべての設計・仕様・実装ドキュメントが含まれています。
+このディレクトリには、ゲスタロカプロジェクトのすべての設計・仕様・実装ドキュメントが含まれています。
 
 ## 📖 ドキュメントの読み方
 
@@ -93,8 +93,8 @@ documents/
 │       └── test_play_report_1.md
 │
 └── assets/                      # 画像素材
-    ├── logverse_keyvisual_v1.png
-    └── logverse_logo_v1.jpg
+    ├── gestaloka_keyvisual_v1.png
+    └── gestaloka_logo_v1.jpg
 ```
 
 ## 🔗 クイックリンク

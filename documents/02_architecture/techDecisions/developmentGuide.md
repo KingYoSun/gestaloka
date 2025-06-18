@@ -1,4 +1,4 @@
-# 開発ガイド - ログバース (Logverse)
+# 開発ガイド - ゲスタロカ (Gestaloka)
 
 このファイルには、開発環境のセットアップ手順、開発ツール、トラブルシューティングが記載されています。
 
@@ -10,11 +10,11 @@
 # .env.example
 # 認証
 KEYCLOAK_SERVER_URL=http://localhost:8080
-KEYCLOAK_CLIENT_ID=logverse
+KEYCLOAK_CLIENT_ID=gestaloka
 KEYCLOAK_CLIENT_SECRET=your-secret
 
 # データベース
-DATABASE_URL=postgresql://user:pass@localhost/logverse
+DATABASE_URL=postgresql://user:pass@localhost/gestaloka
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=password

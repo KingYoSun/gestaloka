@@ -1,4 +1,4 @@
-# 問題と注意事項 - ログバース (Logverse)
+# 問題と注意事項 - ゲスタロカ (Gestaloka)
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
@@ -50,7 +50,7 @@
 ### 開発Tips
 - **環境起動**: `make setup-dev` で全自動セットアップ
 - **KeyCloak管理**: http://localhost:8080/admin (admin/admin_password)
-- **Neo4jブラウザ**: http://localhost:7474 (neo4j/logverse_neo4j_password)
+- **Neo4jブラウザ**: http://localhost:7474 (neo4j/gestaloka_neo4j_password)
 - **API ドキュメント**: http://localhost:8000/docs (Swagger UI)
 - **Celery監視**: http://localhost:5555 (Flower)
 - **データベース初期化**: `make init-db`

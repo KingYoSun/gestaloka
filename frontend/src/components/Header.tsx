@@ -11,7 +11,7 @@ export function Header() {
             <Menu className="h-5 w-5" />
           </Button>
           <div>
-            <h2 className="text-lg font-semibold">ようこそ、ログバースへ</h2>
+            <h2 className="text-lg font-semibold">ようこそ、ゲスタロカへ</h2>
             <p className="text-sm text-muted-foreground">
               あなたの物語が世界を変える
             </p>

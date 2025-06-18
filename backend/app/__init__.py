@@ -1,7 +1,7 @@
 """
-Logverse Backend Application
+Gestaloka Backend Application
 """
 
 __version__ = "0.1.0"
-__author__ = "Logverse Team"
-__description__ = "マルチプレイ・テキストMMO - ログバース バックエンド API"
+__author__ = "Gestaloka Team"
+__description__ = "マルチプレイ・テキストMMO - ゲスタロカ バックエンド API"

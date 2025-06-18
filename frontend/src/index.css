@@ -94,28 +94,28 @@
   }
 }
 
-/* ログバース用カスタムスタイル */
+/* ゲスタロカ用カスタムスタイル */
 @layer components {
-  .logverse-scrollbar {
+  .gestaloka-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted-foreground)) hsl(var(--muted));
   }
 
-  .logverse-scrollbar::-webkit-scrollbar {
+  .gestaloka-scrollbar::-webkit-scrollbar {
     width: 8px;
   }
 
-  .logverse-scrollbar::-webkit-scrollbar-track {
+  .gestaloka-scrollbar::-webkit-scrollbar-track {
     background: hsl(var(--muted));
     border-radius: 4px;
   }
 
-  .logverse-scrollbar::-webkit-scrollbar-thumb {
+  .gestaloka-scrollbar::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground));
     border-radius: 4px;
   }
 
-  .logverse-scrollbar::-webkit-scrollbar-thumb:hover {
+  .gestaloka-scrollbar::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--foreground));
   }
 

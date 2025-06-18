@@ -1,5 +1,5 @@
 """
-ログバース API メインアプリケーション
+ゲスタロカ API メインアプリケーション
 """
 
 from contextlib import asynccontextmanager
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
 
     try:
         # 起動処理
-        logger.info("Starting Logverse API", version=settings.VERSION)
+        logger.info("Starting GESTALOKA API", version=settings.VERSION)
 
         # ログ設定
         setup_logging()
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
         # データベース初期化
         await init_db()
 
-        logger.info("Logverse API startup completed")
+        logger.info("GESTALOKA API startup completed")
         yield
 
     except Exception as e:
@@ -39,9 +39,9 @@ async def lifespan(app: FastAPI):
         raise
     finally:
         # 終了処理
-        logger.info("Shutting down Logverse API")
+        logger.info("Shutting down GESTALOKA API")
         await cleanup_db()
-        logger.info("Logverse API shutdown completed")
+        logger.info("GESTALOKA API shutdown completed")
 
 
 # FastAPIアプリケーション作成
@@ -66,7 +66,7 @@ app.add_middleware(
 
 # セキュリティミドルウェア
 if settings.ENVIRONMENT == "production":
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.logverse.com"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.gestaloka.com"])
 
 # APIルーター登録
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -79,7 +79,7 @@ app.mount("/socket.io", socket_app)
 async def root():
     """ルートエンドポイント"""
     return {
-        "message": "Welcome to Logverse API",
+        "message": "Welcome to GESTALOKA API",
         "version": settings.VERSION,
         "docs": "/docs",
         "redoc": "/redoc",

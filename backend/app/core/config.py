@@ -12,9 +12,9 @@ class Settings(BaseSettings):
     """アプリケーション設定"""
 
     # アプリケーション基本設定
-    PROJECT_NAME: str = "Logverse API"
+    PROJECT_NAME: str = "GESTALOKA API"
     VERSION: str = "0.1.0"
-    DESCRIPTION: str = "マルチプレイ・テキストMMO - ログバース API"
+    DESCRIPTION: str = "マルチプレイ・テキストMMO - ゲスタロカ API"
     ENVIRONMENT: str = Field(default="development", validation_alias="ENVIRONMENT")
     DEBUG: bool = Field(default=True, validation_alias="DEBUG")
 
@@ -25,13 +25,13 @@ class Settings(BaseSettings):
 
     # データベース設定
     DATABASE_URL: str = Field(
-        default="postgresql://logverse_user:logverse_password@localhost:5432/logverse", validation_alias="DATABASE_URL"
+        default="postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka", validation_alias="DATABASE_URL"
     )
 
     # Neo4j設定
     NEO4J_URI: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
     NEO4J_USER: str = Field(default="neo4j", validation_alias="NEO4J_USER")
-    NEO4J_PASSWORD: str = Field(default="logverse_neo4j_password", validation_alias="NEO4J_PASSWORD")
+    NEO4J_PASSWORD: str = Field(default="gestaloka_neo4j_password", validation_alias="NEO4J_PASSWORD")
 
     # Redis設定
     REDIS_URL: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
@@ -42,8 +42,8 @@ class Settings(BaseSettings):
 
     # KeyCloak設定
     KEYCLOAK_SERVER_URL: str = Field(default="http://localhost:8080", validation_alias="KEYCLOAK_SERVER_URL")
-    KEYCLOAK_REALM: str = Field(default="logverse", validation_alias="KEYCLOAK_REALM")
-    KEYCLOAK_CLIENT_ID: str = Field(default="logverse-client", validation_alias="KEYCLOAK_CLIENT_ID")
+    KEYCLOAK_REALM: str = Field(default="gestaloka", validation_alias="KEYCLOAK_REALM")
+    KEYCLOAK_CLIENT_ID: str = Field(default="gestaloka-client", validation_alias="KEYCLOAK_CLIENT_ID")
     KEYCLOAK_CLIENT_SECRET: str = Field(
         default="your-keycloak-client-secret", validation_alias="KEYCLOAK_CLIENT_SECRET"
     )

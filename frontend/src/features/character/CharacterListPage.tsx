@@ -105,7 +105,7 @@ export function CharacterListPage() {
                 <div>
                   <h3 className="text-xl font-semibold mb-2">まだキャラクターがいません</h3>
                   <p className="text-slate-600 mb-4">
-                    最初のキャラクターを作成して、ログバースの世界での冒険を始めましょう！
+                    最初のキャラクターを作成して、ゲスタロカの世界での冒険を始めましょう！
                   </p>
                   <Link to="/character/create">
                     <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">

@@ -44,8 +44,8 @@ export function Navigation() {
   return (
     <nav className="w-64 bg-muted/50 border-r border-border">
       <div className="p-6">
-        <h1 className="text-2xl font-bold text-primary">ログバース</h1>
-        <p className="text-sm text-muted-foreground mt-1">Logverse</p>
+        <h1 className="text-2xl font-bold text-primary">ゲスタロカ</h1>
+        <p className="text-sm text-muted-foreground mt-1">GESTALOKA</p>
       </div>
       
       <div className="px-3">

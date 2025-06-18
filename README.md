@@ -1,18 +1,18 @@
-# ログバース (Logverse)
+# ゲスタロカ (GESTALOKA)
 
-**階層世界『レーシュ』で紡がれる、あなただけの物語**
+**階層世界『ゲスタロカ』で紡がれる、あなただけの物語**
 
 マルチプレイ・テキストMMO - LLMとグラフDB、RDBを組み合わせた動的な物語生成システム
 
 ## 🌟 プロジェクト概要
 
-ログバースは、プレイヤーの行動履歴（ログ）が他プレイヤーの世界にNPCとして影響を与える、革新的なテキストベースMMOです。
+ゲスタロカは、プレイヤーの行動履歴（ログ）が他プレイヤーの世界にNPCとして影響を与える、革新的なテキストベースMMOです。
 
 ### 🎯 特徴
 
 - **🤖 GM AI評議会**: 6つの専門AIが協調してリアルタイムで物語を生成
 - **📚 ログシステム**: プレイヤーの行動が「ログ」として他の世界に影響
-- **🌐 階層世界**: 『レーシュ』の多層的な世界観
+- **🌐 階層世界**: 『ゲスタロカ』の多層的な世界観
 - **🔄 動的な物語**: 固定シナリオではなく創発的なストーリー展開
 - **⚡ リアルタイム**: WebSocketによる即座な世界変化
 
@@ -30,7 +30,7 @@
 ```bash
 # 1. リポジトリクローン
 git clone <repository-url>
-cd logverse
+cd gestaloka
 
 # 2. 完全自動セットアップ
 make setup-dev
@@ -63,7 +63,7 @@ make init-db
 | **📡 API** | http://localhost:8000 | バックエンドAPI |
 | **📖 API Docs** | http://localhost:8000/docs | Swagger UI |
 | **🔐 認証管理** | http://localhost:8080/admin | Keycloak (admin/admin_password) |
-| **🕸️ グラフDB** | http://localhost:7474 | Neo4j Browser (neo4j/logverse_neo4j_password) |
+| **🕸️ グラフDB** | http://localhost:7474 | Neo4j Browser (neo4j/gestaloka_neo4j_password) |
 | **📊 タスク監視** | http://localhost:5555 | Celery Flower |
 
 ## 🛠️ 技術スタック
@@ -186,7 +186,7 @@ docker-compose exec backend alembic upgrade head
 ## 📁 プロジェクト構造
 
 ```
-logverse/
+gestaloka/
 ├── 📁 backend/                   # 🐍 FastAPIバックエンド
 │   ├── 📁 app/                  # メインアプリケーション
 │   │   ├── 📁 api/              # APIエンドポイント
@@ -267,7 +267,7 @@ logverse/
 #### 🎮 ゲーム・世界観
 | ドキュメント | 内容 |
 |-------------|------|
-| `documents/03_worldbuilding/world_design.md` | 階層世界『レーシュ』設定 |
+| `documents/03_worldbuilding/world_design.md` | 階層世界『ゲスタロカ』設定 |
 | `documents/03_worldbuilding/game_mechanics/` | ゲームシステム詳細 |
 | `documents/04_ai_agents/gm_ai_spec/` | GM AIエージェント仕様 |
 
@@ -340,4 +340,4 @@ make clean-all
 
 ---
 
-> **🚀 "プレイヤーの想像力が世界を創る" - ログバースで、あなただけの物語を紡ぎましょう**
+> **🚀 "プレイヤーの想像力が世界を創る" - ゲスタロカで、あなただけの物語を紡ぎましょう**

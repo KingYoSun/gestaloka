@@ -30,16 +30,16 @@ fi
 echo "✅ 管理者認証に成功しました"
 
 # レルムの存在チェック
-echo "Logverseレルムの存在をチェック中..."
+echo "Gestalokaレルムの存在をチェック中..."
 REALM_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "http://localhost:8080/admin/realms/logverse")
+  "http://localhost:8080/admin/realms/gestaloka")
 
 if [ "$REALM_EXISTS" = "200" ]; then
-    echo "⚠️  Logverseレルムは既に存在します"
+    echo "⚠️  Gestalokaレルムは既に存在します"
     echo "既存のレルムを使用します"
 else
-    echo "Logverseレルムを作成中..."
+    echo "Gestalokaレルムを作成中..."
     
     # レルムインポート
     IMPORT_RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -50,7 +50,7 @@ else
       "http://localhost:8080/admin/realms")
     
     if [ "$IMPORT_RESULT" = "201" ]; then
-        echo "✅ Logverseレルムが正常に作成されました"
+        echo "✅ Gestalokaレルムが正常に作成されました"
     else
         echo "❌ レルム作成に失敗しました (HTTP: $IMPORT_RESULT)"
         exit 1
@@ -65,7 +65,7 @@ TEST_USER_RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
-    "email": "test@logverse.com",
+    "email": "test@gestaloka.com",
     "firstName": "Test",
     "lastName": "User",
     "enabled": true,
@@ -76,7 +76,7 @@ TEST_USER_RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
       "temporary": false
     }]
   }' \
-  "http://localhost:8080/admin/realms/logverse/users")
+  "http://localhost:8080/admin/realms/gestaloka/users")
 
 if [ "$TEST_USER_RESULT" = "201" ]; then
     echo "✅ テストユーザーが作成されました"
@@ -94,7 +94,7 @@ echo "🔗 KeyCloak管理コンソール: http://localhost:8080/admin"
 echo "   管理者ユーザー: admin"
 echo "   管理者パスワード: admin_password"
 echo ""
-echo "🎮 Logverseレルム:"
+echo "🎮 Gestalokaレルム:"
 echo "   テストユーザー: testuser"
 echo "   テストパスワード: testpassword"
 echo ""

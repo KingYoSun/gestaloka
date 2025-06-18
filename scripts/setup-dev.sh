@@ -1,10 +1,10 @@
 #!/bin/bash
-# ログバース開発環境セットアップスクリプト
+# ゲスタロカ開発環境セットアップスクリプト
 
 set -e
 
 echo "======================================"
-echo "🎮 ログバース開発環境セットアップ"
+echo "🎮 ゲスタロカ開発環境セットアップ"
 echo "======================================"
 
 # 色付きログのための関数
@@ -80,7 +80,7 @@ log_info "データベースの準備完了を待機中..."
 
 # PostgreSQLの待機
 echo -n "PostgreSQL準備待機: "
-while ! docker-compose exec -T postgres pg_isready -U logverse_user -d logverse > /dev/null 2>&1; do
+while ! docker-compose exec -T postgres pg_isready -U gestaloka_user -d gestaloka > /dev/null 2>&1; do
     echo -n "."
     sleep 2
 done
@@ -88,7 +88,7 @@ echo " ✅"
 
 # Neo4jの待機
 echo -n "Neo4j準備待機: "
-while ! docker-compose exec -T neo4j cypher-shell -u neo4j -p logverse_neo4j_password "RETURN 1" > /dev/null 2>&1; do
+while ! docker-compose exec -T neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password "RETURN 1" > /dev/null 2>&1; do
     echo -n "."
     sleep 2
 done
@@ -118,8 +118,8 @@ if [ -f neo4j/init-neo4j.sh ]; then
     docker-compose exec neo4j bash -c "
         cp /var/lib/neo4j/import/01_schema.cypher /tmp/01_schema.cypher &&
         cp /var/lib/neo4j/import/02_initial_data.cypher /tmp/02_initial_data.cypher &&
-        cypher-shell -u neo4j -p logverse_neo4j_password < /tmp/01_schema.cypher &&
-        cypher-shell -u neo4j -p logverse_neo4j_password < /tmp/02_initial_data.cypher
+        cypher-shell -u neo4j -p gestaloka_neo4j_password < /tmp/01_schema.cypher &&
+        cypher-shell -u neo4j -p gestaloka_neo4j_password < /tmp/02_initial_data.cypher
     "
     log_success "Neo4j初期化完了"
 else
@@ -216,7 +216,7 @@ echo "  パスワード: admin_password"
 echo ""
 echo "Neo4j:"
 echo "  ユーザー名: neo4j" 
-echo "  パスワード: logverse_neo4j_password"
+echo "  パスワード: gestaloka_neo4j_password"
 echo ""
 echo "テストユーザー（作成される場合）:"
 echo "  ユーザー名: testuser"

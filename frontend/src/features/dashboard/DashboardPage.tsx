@@ -9,7 +9,7 @@ export function DashboardPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">ダッシュボード</h1>
         <p className="text-muted-foreground">
-          ログバースへようこそ！ここから冒険を始めましょう。
+          ゲスタロカへようこそ！ここから冒険を始めましょう。
         </p>
       </div>
       

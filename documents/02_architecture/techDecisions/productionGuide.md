@@ -1,4 +1,4 @@
-# 本番環境ガイド - ログバース (Logverse)
+# 本番環境ガイド - ゲスタロカ (Gestaloka)
 
 このファイルには、本番環境へのデプロイメント、運用、セキュリティに関する情報が記載されています。
 
@@ -166,8 +166,8 @@ logger.info(
 # Nginx SSL設定（本番用）
 server {
     listen 443 ssl http2;
-    ssl_certificate /etc/ssl/certs/logverse.crt;
-    ssl_certificate_key /etc/ssl/private/logverse.key;
+    ssl_certificate /etc/ssl/certs/gestaloka.crt;
+    ssl_certificate_key /etc/ssl/private/gestaloka.key;
     
     # セキュリティヘッダー
     add_header X-Frame-Options DENY;

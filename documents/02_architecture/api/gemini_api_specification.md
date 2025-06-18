@@ -5,7 +5,7 @@
 
 ## 概要
 
-Google Gemini APIは、Google DeepMindが開発した最新の生成AIモデルへのアクセスを提供するAPIです。本ドキュメントでは、ログバースプロジェクトでの統合に必要な仕様をまとめます。
+Google Gemini APIは、Google DeepMindが開発した最新の生成AIモデルへのアクセスを提供するAPIです。本ドキュメントでは、ゲスタロカプロジェクトでの統合に必要な仕様をまとめます。
 
 ## 使用モデル
 
@@ -88,7 +88,7 @@ print(response.content)
 from langchain_core.messages import HumanMessage, SystemMessage
 
 messages = [
-    SystemMessage(content="あなたはログバースのGM AIです。"),
+    SystemMessage(content="あなたはゲスタロカのGM AIです。"),
     HumanMessage(content="プレイヤーが森を探索しています。")
 ]
 
@@ -182,7 +182,7 @@ def call_gemini_with_retry(prompt):
 - プロンプトインジェクション対策
 - 出力の検証とサニタイゼーション
 
-## ログバース特有の考慮事項
+## ゲスタロカ特有の考慮事項
 
 ### 1. GM AI評議会での使用
 - 各AIエージェントごとに異なるシステムプロンプト

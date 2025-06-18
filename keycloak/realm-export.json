@@ -1,8 +1,8 @@
 {
-  "id": "logverse",
-  "realm": "logverse",
-  "displayName": "Logverse",
-  "displayNameHtml": "<div class=\"kc-logo-text\"><span>Logverse</span></div>",
+  "id": "gestaloka",
+  "realm": "gestaloka",
+  "displayName": "GESTALOKA",
+  "displayNameHtml": "<div class=\"kc-logo-text\"><span>GESTALOKA</span></div>",
   "notBefore": 0,
   "defaultSignatureAlgorithm": "RS256",
   "revokeRefreshToken": false,
@@ -48,7 +48,7 @@
   "defaultRoles": [
     "offline_access",
     "uma_authorization",
-    "default-roles-logverse"
+    "default-roles-gestaloka"
   ],
   "requiredCredentials": ["password"],
   "otpPolicyType": "totp",
@@ -83,10 +83,10 @@
   "clientScopeMappings": {},
   "clients": [
     {
-      "id": "logverse-client",
-      "clientId": "logverse-client",
-      "name": "Logverse Frontend Client",
-      "description": "Logverse フロントエンドアプリケーション用クライアント",
+      "id": "gestaloka-client",
+      "clientId": "gestaloka-client",
+      "name": "GESTALOKA Frontend Client",
+      "description": "GESTALOKA フロントエンドアプリケーション用クライアント",
       "rootUrl": "http://localhost:3000",
       "adminUrl": "",
       "baseUrl": "/",
@@ -94,7 +94,7 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "logverse-client-secret",
+      "secret": "gestaloka-client-secret",
       "redirectUris": [
         "http://localhost:3000/*",
         "http://127.0.0.1:3000/*"
@@ -193,15 +193,15 @@
       ]
     },
     {
-      "id": "logverse-backend",
-      "clientId": "logverse-backend",
-      "name": "Logverse Backend Service",
-      "description": "Logverse バックエンドサービス用クライアント",
+      "id": "gestaloka-backend",
+      "clientId": "gestaloka-backend",
+      "name": "Gestaloka Backend Service",
+      "description": "Gestaloka バックエンドサービス用クライアント",
       "surrogateAuthRequired": false,
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "logverse-backend-secret",
+      "secret": "gestaloka-backend-secret",
       "redirectUris": [],
       "webOrigins": [],
       "notBefore": 0,
@@ -284,7 +284,7 @@
     "cibaAuthRequestedUserHint": "login_hint",
     "parRequestUriLifespan": "60",
     "frontendUrl": "",
-    "consoleDisplayName": "Logverse Console"
+    "consoleDisplayName": "Gestaloka Console"
   },
   "keycloakVersion": "23.0.0",
   "userManagedAccessAllowed": false,

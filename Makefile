@@ -1,4 +1,4 @@
-# Logverse開発用Makefile
+# GESTALOKA開発用Makefile
 
 # デフォルトターゲット
 .PHONY: help
@@ -21,8 +21,8 @@ setup-dev: ## 完全な開発環境セットアップ
 .PHONY: init-db
 init-db: ## データベースを初期化
 	@echo "データベースを初期化します..."
-	docker-compose exec neo4j cypher-shell -u neo4j -p logverse_neo4j_password < /var/lib/neo4j/import/01_schema.cypher
-	docker-compose exec neo4j cypher-shell -u neo4j -p logverse_neo4j_password < /var/lib/neo4j/import/02_initial_data.cypher
+	docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password < /var/lib/neo4j/import/01_schema.cypher
+	docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password < /var/lib/neo4j/import/02_initial_data.cypher
 	docker-compose exec backend alembic upgrade head
 
 .PHONY: init-keycloak
@@ -75,11 +75,11 @@ db-migrate: ## データベースマイグレーション実行
 
 .PHONY: db-shell-postgres
 db-shell-postgres: ## PostgreSQLシェルに接続
-	docker-compose exec postgres psql -U logverse_user -d logverse
+	docker-compose exec postgres psql -U gestaloka_user -d gestaloka
 
 .PHONY: db-shell-neo4j
 db-shell-neo4j: ## Neo4jシェルに接続
-	docker-compose exec neo4j cypher-shell -u neo4j -p logverse_neo4j_password
+	docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password
 
 # 開発用
 .PHONY: dev
@@ -161,7 +161,7 @@ keycloak: ## KeyCloakを起動
 neo4j-browser: ## Neo4jブラウザを開く
 	@echo "Neo4j Browser: http://localhost:7474"
 	@echo "Username: neo4j"
-	@echo "Password: logverse_neo4j_password"
+	@echo "Password: gestaloka_neo4j_password"
 
 # 便利コマンド
 .PHONY: shell-backend
@@ -180,9 +180,9 @@ status: ## サービスステータスを表示
 health: ## ヘルスチェックを実行
 	@echo "=== サービスヘルスチェック ==="
 	@echo "PostgreSQL:"
-	@docker-compose exec postgres pg_isready -U logverse_user -d logverse || echo "❌ PostgreSQL not ready"
+	@docker-compose exec postgres pg_isready -U gestaloka_user -d gestaloka || echo "❌ PostgreSQL not ready"
 	@echo "Neo4j:"
-	@docker-compose exec neo4j cypher-shell -u neo4j -p logverse_neo4j_password 'RETURN "OK"' || echo "❌ Neo4j not ready"
+	@docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password 'RETURN "OK"' || echo "❌ Neo4j not ready"
 	@echo "Redis:"
 	@docker-compose exec redis redis-cli ping || echo "❌ Redis not ready"
 	@echo "Backend:"

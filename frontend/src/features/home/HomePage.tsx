@@ -6,9 +6,9 @@ export function HomePage() {
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/50 flex items-center justify-center">
       <div className="container mx-auto px-4 text-center">
         <h1 className="text-6xl font-bold mb-6">
-          ログバース
+          ゲスタロカ
           <span className="block text-3xl text-muted-foreground font-normal mt-2">
-            Logverse
+            GESTALOKA
           </span>
         </h1>
         

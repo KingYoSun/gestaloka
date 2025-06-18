@@ -1,4 +1,4 @@
-# マイルストーン - ログバース (Logverse)
+# マイルストーン - ゲスタロカ (Gestaloka)
 
 このファイルには、プロジェクトのマイルストーンが記録されています。
 
@@ -96,7 +96,7 @@
 
 ### M8.5: コード品質改善 (2025/06/15) 🎉
 - バックエンド型エラー修正（39 → 3個の誤検知のみ）
-  - LogverseException → LogverseError改名
+  - GestalokaException → GestalokaError改名
   - 暗黙的Optional明示化
   - Gemini API型問題解決
   - Pydantic v2対応

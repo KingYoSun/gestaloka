@@ -1,4 +1,4 @@
-// Neo4j初期データ作成 - ログバース
+// Neo4j初期データ作成 - ゲスタロカ
 // 基本的な世界構造とロケーションを作成
 
 // ===========================================
@@ -10,7 +10,7 @@ CREATE (starting_village:Location {
   id: 'starting_village',
   name: '始まりの村',
   type: 'settlement',
-  description: 'レーシュの最上層にある小さな村。多くの冒険者がここから旅立つ。',
+  description: 'ゲスタロカの最上層にある小さな村。多くの冒険者がここから旅立つ。',
   atmosphere: 'peaceful',
   max_capacity: 100,
   current_population: 0,
@@ -29,7 +29,7 @@ CREATE (forest_entrance:Location {
   id: 'forest_entrance',
   name: '深緑の森・入り口',
   type: 'wilderness',
-  description: 'レーシュの深層へと続く森の入り口。神秘的な霧に包まれている。',
+  description: 'ゲスタロカの深層へと続く森の入り口。神秘的な霧に包まれている。',
   atmosphere: 'mysterious',
   max_capacity: 50,
   current_population: 0,
@@ -48,7 +48,7 @@ CREATE (ancient_ruins:Location {
   id: 'ancient_ruins',
   name: '失われた遺跡',
   type: 'dungeon',
-  description: 'レーシュの中層にある古代文明の遺跡。多くの謎に満ちている。',
+  description: 'ゲスタロカの中層にある古代文明の遺跡。多くの謎に満ちている。',
   atmosphere: 'ominous',
   max_capacity: 20,
   current_population: 0,
@@ -67,7 +67,7 @@ CREATE (abyss_cave:Location {
   id: 'abyss_cave',
   name: '深淵の洞窟',
   type: 'danger_zone',
-  description: 'レーシュの最深層に向かう洞窟。闇が深く、危険が潜んでいる。',
+  description: 'ゲスタロカの最深層に向かう洞窟。闇が深く、危険が潜んでいる。',
   atmosphere: 'threatening',
   max_capacity: 10,
   current_population: 0,
@@ -182,7 +182,7 @@ CREATE (forest_guardian)-[:PROTECTS]->(forest_entrance);
 
 CREATE (world_state:World {
   id: 'raish_world_001',
-  name: 'レーシュ',
+  name: 'ゲスタロカ',
   current_layer: 1,
   total_layers: 7,
   global_events_active: 0,

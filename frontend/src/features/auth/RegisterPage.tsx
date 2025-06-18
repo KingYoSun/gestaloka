@@ -82,7 +82,7 @@ export function RegisterPage() {
         <div className="text-center">
           <h2 className="text-3xl font-bold">新規登録</h2>
           <p className="text-muted-foreground mt-2">
-            ログバースのアカウントを作成
+            ゲスタロカのアカウントを作成
           </p>
         </div>
 

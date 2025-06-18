@@ -8,7 +8,7 @@ from app.core.config import settings
 
 # Celeryインスタンスを作成
 celery_app = Celery(
-    "logverse",
+    "gestaloka",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
     include=["app.tasks.ai_tasks", "app.tasks.log_tasks", "app.tasks.notification_tasks", "app.tasks.cleanup_tasks"],

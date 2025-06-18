@@ -1,4 +1,4 @@
-# 完了済みタスク - ログバース (Logverse)
+# 完了済みタスク - ゲスタロカ (Gestaloka)
 
 このファイルには、これまでに完了したすべてのタスクと達成事項が記録されています。
 
@@ -97,7 +97,7 @@
 ### コード品質
 13. **コード品質改善** ✅ **完了** 🎉 (2025/06/15)
    - ✅ バックエンド型エラー修正（39 → 3個の誤検知のみ）
-     - LogverseException → LogverseError改名
+     - GestalokaException → GestalokaError改名
      - 暗黙的なOptionalを明示的に変更
      - Gemini API SecretStr型問題解決
      - sqlalchemy desc関数インポート修正

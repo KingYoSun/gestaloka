@@ -11,11 +11,11 @@
 
 ## プロジェクト概要
 
-**ログバース (Logverse)** - マルチプレイ・テキストMMO
+**ゲスタロカ (GESTALOKA)** - マルチプレイ・テキストMMO
 
 - LLMとグラフDB、RDBを組み合わせた動的な物語生成システム
 - プレイヤーの行動履歴（ログ）が他プレイヤーの世界にNPCとして影響を与える
-- 階層世界『レーシュ』を舞台にした、自由度の高い物語体験
+- 階層世界『ゲスタロカ』を舞台にした、自由度の高い物語体験
 
 ### 技術スタック
 
@@ -263,7 +263,7 @@ docker-compose run --rm backend alembic downgrade -1
 - **api/**: API仕様（Gemini、AI協調プロトコル）
 
 #### [03_worldbuilding/](documents/03_worldbuilding/summary.md) - 世界観
-- **world_design.md**: 階層世界『レーシュ』の設定
+- **world_design.md**: 階層世界『ゲスタロカ』の設定
 - **game_mechanics/**: ゲームメカニクス（基本、ログシステム）
 
 #### [04_ai_agents/](documents/04_ai_agents/summary.md) - AIエージェント

@@ -2,7 +2,7 @@
 
 ## 概要
 
-ログバースでは、データベースマイグレーション管理にAlembicを使用し、SQLModelと統合しています。
+ゲスタロカでは、データベースマイグレーション管理にAlembicを使用し、SQLModelと統合しています。
 
 ## 設定方法
 
@@ -153,7 +153,7 @@ alembic revision --autogenerate -m "fix"
 
 ```bash
 # 1. バックアップを取る
-pg_dump -U postgres -d logverse > backup.sql
+pg_dump -U postgres -d gestaloka > backup.sql
 
 # 2. マイグレーションを適用
 docker-compose run --rm backend alembic upgrade head

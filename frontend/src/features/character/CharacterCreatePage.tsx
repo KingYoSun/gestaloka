@@ -61,7 +61,7 @@ export function CharacterCreatePage() {
             </h1>
           </div>
           <p className="text-slate-600 text-lg">
-            ログバースの世界へ足を踏み入れるあなたの分身を作成しましょう
+            ゲスタロカの世界へ足を踏み入れるあなたの分身を作成しましょう
           </p>
         </div>
 

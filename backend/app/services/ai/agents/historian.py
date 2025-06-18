@@ -181,7 +181,7 @@ class HistorianAgent(BaseAgent):
         action_details: Dict[str, Any]
     ) -> str:
         """行動分析用のプロンプトを構築"""
-        return f"""あなたはログバース世界の歴史家AIです。
+        return f"""あなたはゲスタロカ世界の歴史家AIです。
 以下の行動を分析し、歴史的重要性を評価してください。
 
 【評価基準】
