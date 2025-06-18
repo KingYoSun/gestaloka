@@ -3,8 +3,8 @@ NPC管理AI (NPC Manager) のテスト
 """
 
 import json
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,7 +13,6 @@ from app.services.ai.agents.npc_manager import (
     NPCGenerationRequest,
     NPCManagerAgent,
     NPCPersonality,
-    NPCRelationship,
     NPCType,
 )
 from app.services.ai.prompt_manager import PromptContext
@@ -244,7 +243,7 @@ class TestNPCManagerAgent:
         """場所によるNPC取得のテスト"""
         # NPCを複数登録
         npc_manager.npc_registry["npc1"] = sample_npc
-        
+
         # 別の場所のNPCを作成
         other_npc = sample_npc.model_copy()
         other_npc.id = "npc2"
@@ -279,7 +278,7 @@ class TestNPCManagerAgent:
             created_by="npc_manager",
             persistence_level=1,
         )
-        old_temp_npc.created_at = datetime(2020, 1, 1)  # 古い日付
+        old_temp_npc.created_at = datetime(2020, 1, 1, tzinfo=UTC)  # 古い日付
         npc_manager.npc_registry["old_temp"] = old_temp_npc
 
         # 永続的NPCも登録

@@ -69,7 +69,7 @@ class TestBattleService:
             "state_changes": {},
         }
         session_data = {}
-        
+
         result = battle_service.check_battle_trigger(action_result, session_data)
         assert result is False
 
@@ -82,7 +82,7 @@ class TestBattleService:
             },
         }
         session_data = {}
-        
+
         result = battle_service.check_battle_trigger(action_result, session_data)
         assert result is True
 
@@ -93,7 +93,7 @@ class TestBattleService:
             "state_changes": {},
         }
         session_data = {}
-        
+
         result = battle_service.check_battle_trigger(action_result, session_data)
         assert result is True
 
@@ -103,11 +103,11 @@ class TestBattleService:
             character=mock_character,
             character_stats=mock_character_stats,
         )
-        
+
         assert battle_data.state == BattleState.STARTING
         assert battle_data.turn_count == 0
         assert len(battle_data.combatants) == 2
-        
+
         # プレイヤーの確認
         player = next(c for c in battle_data.combatants if c.type == CombatantType.PLAYER)
         assert player.name == "テストヒーロー"
@@ -116,7 +116,7 @@ class TestBattleService:
         assert player.attack == 15
         assert player.defense == 8
         assert player.speed == 12
-        
+
         # 敵の確認（自動生成）
         enemy = next(c for c in battle_data.combatants if c.type != CombatantType.PLAYER)
         assert enemy.name in ["ゴブリン", "野生の狼", "盗賊"]
@@ -139,13 +139,13 @@ class TestBattleService:
             "status_effects": [],
             "metadata": {"level": 10},
         }
-        
+
         battle_data = battle_service.initialize_battle(
             character=mock_character,
             character_stats=mock_character_stats,
             enemy_data=enemy_data,
         )
-        
+
         # 指定した敵の確認
         enemy = next(c for c in battle_data.combatants if c.type == CombatantType.BOSS)
         assert enemy.name == "ドラゴン"
@@ -162,9 +162,9 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         choices = battle_service.get_battle_choices(battle_data, is_player_turn=True)
-        
+
         assert len(choices) >= 3
         assert any(c.text == "攻撃する" for c in choices)
         assert any(c.text == "防御する" for c in choices)
@@ -180,9 +180,9 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         choices = battle_service.get_battle_choices(battle_data, is_player_turn=False)
-        
+
         assert len(choices) == 0  # 敵ターンでは選択肢なし
 
     def test_process_battle_action_attack(self, battle_service):
@@ -223,20 +223,20 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         action = BattleAction(
             action_type=BattleActionType.ATTACK,
             actor_id="player_1",
             target_id="enemy_1",
             action_text="攻撃する",
         )
-        
+
         result, updated_battle_data = battle_service.process_battle_action(battle_data, action)
-        
+
         assert result.success is True
         assert "ダメージ" in result.narrative
         assert result.damage is not None and result.damage > 0
-        
+
         # 敵のHPが減っていることを確認
         enemy = next(c for c in updated_battle_data.combatants if c.id == "enemy_1")
         assert enemy.hp < 40
@@ -265,18 +265,18 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         action = BattleAction(
             action_type=BattleActionType.DEFEND,
             actor_id="player_1",
             action_text="防御する",
         )
-        
+
         result, updated_battle_data = battle_service.process_battle_action(battle_data, action)
-        
+
         assert result.success is True
         assert "防御" in result.narrative
-        
+
         # 防御バフが付与されていることを確認
         player = next(c for c in updated_battle_data.combatants if c.id == "player_1")
         assert "defending" in player.status_effects
@@ -319,17 +319,17 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         current_actor_id, is_player_turn = battle_service.advance_turn(battle_data)
-        
+
         assert battle_data.current_turn_index == 1
         assert current_actor_id == "enemy_1"
         assert is_player_turn is False
         assert battle_data.state == BattleState.ENEMY_TURN
-        
+
         # もう一度進めるとプレイヤーターンに戻る
         current_actor_id, is_player_turn = battle_service.advance_turn(battle_data)
-        
+
         assert battle_data.current_turn_index == 0
         assert current_actor_id == "player_1"
         assert is_player_turn is True
@@ -374,9 +374,9 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         ended, victory, rewards = battle_service.check_battle_end(battle_data)
-        
+
         assert ended is True
         assert victory is True
         assert rewards is not None
@@ -421,9 +421,9 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         ended, victory, rewards = battle_service.check_battle_end(battle_data)
-        
+
         assert ended is True
         assert victory is False
         assert rewards is None
@@ -466,9 +466,9 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         ended, victory, rewards = battle_service.check_battle_end(battle_data)
-        
+
         assert ended is True
         assert victory is None  # 逃走の場合は勝敗なし
         assert rewards is None
@@ -480,11 +480,11 @@ class TestBattleService:
         mock_choice.return_value = {
             "name": "ゴブリン",
             "type": CombatantType.MONSTER,
-            "base_stats": {"hp": 30, "attack": 8, "defense": 4, "speed": 6}
+            "base_stats": {"hp": 30, "attack": 8, "defense": 4, "speed": 6},
         }
-        
+
         enemy = battle_service._generate_default_enemy(player_level=5)
-        
+
         assert enemy.name == "ゴブリン"
         assert enemy.type == CombatantType.MONSTER
         # レベル5のモディファイア: 1 + (5-1) * 0.1 = 1.4
@@ -524,9 +524,9 @@ class TestBattleService:
                 metadata={"level": 2},
             ),
         ]
-        
+
         rewards = battle_service._generate_rewards(enemies, turns=3)
-        
+
         # 基本報酬: (3*10 + 2*10) = 50経験値
         # 速攻ボーナス（5ターン未満）: 50 * 1.2 = 60
         assert rewards["experience"] == 60
@@ -537,7 +537,7 @@ class TestBattleService:
     def test_process_battle_action_escape_success(self, mock_random, battle_service):
         """逃走成功のテスト"""
         mock_random.return_value = 0.3  # 成功確率より低い値
-        
+
         battle_data = BattleData(
             state=BattleState.PLAYER_TURN,
             turn_count=2,
@@ -574,15 +574,15 @@ class TestBattleService:
             current_turn_index=0,
             battle_log=[],
         )
-        
+
         action = BattleAction(
             action_type=BattleActionType.ESCAPE,
             actor_id="player_1",
             action_text="逃走を試みる",
         )
-        
+
         result, updated_battle_data = battle_service.process_battle_action(battle_data, action)
-        
+
         assert result.success is True
         assert "逃走した" in result.narrative
         assert updated_battle_data.state == BattleState.ENDING

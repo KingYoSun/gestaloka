@@ -10,6 +10,7 @@ interface Combatant {
   id: string
   name: string
   type: 'player' | 'npc' | 'monster' | 'boss'
+  level?: number
   hp: number
   max_hp: number
   mp: number
@@ -62,30 +63,34 @@ export function BattleStatus({ battleData }: BattleStatusProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* プレイヤーステータス */}
-        <div className={`space-y-2 p-3 rounded-lg ${isPlayerTurn ? 'bg-primary/10 border-2 border-primary' : 'bg-muted'}`}>
+        <div
+          className={`space-y-2 p-3 rounded-lg ${isPlayerTurn ? 'bg-primary/10 border-2 border-primary' : 'bg-muted'}`}
+        >
           <div className="flex items-center justify-between">
             <span className="font-medium">{player.name}</span>
-            {isPlayerTurn && <Badge className="bg-primary">あなたのターン</Badge>}
+            {isPlayerTurn && (
+              <Badge className="bg-primary">あなたのターン</Badge>
+            )}
           </div>
-          
+
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-sm">
               <Heart className="h-4 w-4 text-red-500" />
               <span>HP</span>
-              <Progress 
-                value={(player.hp / player.max_hp) * 100} 
+              <Progress
+                value={(player.hp / player.max_hp) * 100}
                 className="flex-1 h-2"
               />
               <span className="text-xs font-mono">
                 {player.hp}/{player.max_hp}
               </span>
             </div>
-            
+
             <div className="flex items-center gap-2 text-sm">
               <Zap className="h-4 w-4 text-blue-500" />
               <span>MP</span>
-              <Progress 
-                value={(player.mp / player.max_mp) * 100} 
+              <Progress
+                value={(player.mp / player.max_mp) * 100}
                 className="flex-1 h-2"
               />
               <span className="text-xs font-mono">
@@ -93,13 +98,13 @@ export function BattleStatus({ battleData }: BattleStatusProps) {
               </span>
             </div>
           </div>
-          
+
           <div className="flex gap-3 text-xs text-muted-foreground">
             <span>攻撃: {player.attack}</span>
             <span>防御: {player.defense}</span>
             <span>速度: {player.speed}</span>
           </div>
-          
+
           {player.status_effects.length > 0 && (
             <div className="flex gap-1 flex-wrap">
               {player.status_effects.map((effect, idx) => (
@@ -112,22 +117,27 @@ export function BattleStatus({ battleData }: BattleStatusProps) {
         </div>
 
         {/* 敵ステータス */}
-        {enemies.map((enemy) => (
-          <div key={enemy.id} className={`space-y-2 p-3 rounded-lg ${!isPlayerTurn && battleData.turn_order[battleData.current_turn_index] === enemy.id ? 'bg-destructive/10 border-2 border-destructive' : 'bg-muted'}`}>
+        {enemies.map(enemy => (
+          <div
+            key={enemy.id}
+            className={`space-y-2 p-3 rounded-lg ${!isPlayerTurn && battleData.turn_order[battleData.current_turn_index] === enemy.id ? 'bg-destructive/10 border-2 border-destructive' : 'bg-muted'}`}
+          >
             <div className="flex items-center justify-between">
               <span className="font-medium">
                 {enemy.name}
                 {enemy.level && ` (Lv.${enemy.level})`}
               </span>
-              {!isPlayerTurn && battleData.turn_order[battleData.current_turn_index] === enemy.id && <Badge variant="destructive">敵のターン</Badge>}
+              {!isPlayerTurn &&
+                battleData.turn_order[battleData.current_turn_index] ===
+                  enemy.id && <Badge variant="destructive">敵のターン</Badge>}
             </div>
-            
+
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm">
                 <Heart className="h-4 w-4 text-red-500" />
                 <span>HP</span>
-                <Progress 
-                  value={(enemy.hp / enemy.max_hp) * 100} 
+                <Progress
+                  value={(enemy.hp / enemy.max_hp) * 100}
                   className="flex-1 h-2"
                 />
                 <span className="text-xs font-mono">
@@ -135,7 +145,7 @@ export function BattleStatus({ battleData }: BattleStatusProps) {
                 </span>
               </div>
             </div>
-            
+
             {enemy.status_effects.length > 0 && (
               <div className="flex gap-1 flex-wrap">
                 {enemy.status_effects.map((effect, idx) => (
@@ -156,16 +166,22 @@ export function BattleStatus({ battleData }: BattleStatusProps) {
               <span>地形: {battleData.environment.terrain}</span>
             </div>
             {battleData.environment.weather && (
-              <div className="text-xs">天候: {battleData.environment.weather}</div>
-            )}
-            {battleData.environment.time_of_day && (
-              <div className="text-xs">時間: {battleData.environment.time_of_day}</div>
-            )}
-            {battleData.environment.interactive_objects && battleData.environment.interactive_objects.length > 0 && (
               <div className="text-xs">
-                利用可能: {battleData.environment.interactive_objects.join(', ')}
+                天候: {battleData.environment.weather}
               </div>
             )}
+            {battleData.environment.time_of_day && (
+              <div className="text-xs">
+                時間: {battleData.environment.time_of_day}
+              </div>
+            )}
+            {battleData.environment.interactive_objects &&
+              battleData.environment.interactive_objects.length > 0 && (
+                <div className="text-xs">
+                  利用可能:{' '}
+                  {battleData.environment.interactive_objects.join(', ')}
+                </div>
+              )}
           </div>
         )}
       </CardContent>

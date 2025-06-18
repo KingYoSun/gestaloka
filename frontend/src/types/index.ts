@@ -218,7 +218,7 @@ export interface AppSettings {
 }
 
 // ルート関連の型定義
-export type AppRoute = 
+export type AppRoute =
   | '/login'
   | '/register'
   | '/dashboard'

@@ -2,15 +2,15 @@
 戦闘システム関連スキーマ
 """
 
-from datetime import datetime
-from typing import Any, Optional
 from enum import Enum
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
 
 class BattleState(str, Enum):
     """戦闘状態"""
+
     NONE = "none"
     STARTING = "starting"
     IN_PROGRESS = "in_progress"
@@ -22,6 +22,7 @@ class BattleState(str, Enum):
 
 class BattleActionType(str, Enum):
     """戦闘アクションタイプ"""
+
     ATTACK = "attack"
     DEFEND = "defend"
     SKILL = "skill"
@@ -33,6 +34,7 @@ class BattleActionType(str, Enum):
 
 class CombatantType(str, Enum):
     """戦闘参加者タイプ"""
+
     PLAYER = "player"
     NPC = "npc"
     MONSTER = "monster"
@@ -41,6 +43,7 @@ class CombatantType(str, Enum):
 
 class Combatant(BaseModel):
     """戦闘参加者"""
+
     id: str = Field(description="参加者ID")
     name: str = Field(description="参加者名")
     type: CombatantType = Field(description="参加者タイプ")
@@ -57,6 +60,7 @@ class Combatant(BaseModel):
 
 class BattleEnvironment(BaseModel):
     """戦闘環境"""
+
     terrain: str = Field(description="地形")
     weather: Optional[str] = Field(default=None, description="天候")
     time_of_day: Optional[str] = Field(default=None, description="時間帯")
@@ -66,6 +70,7 @@ class BattleEnvironment(BaseModel):
 
 class BattleAction(BaseModel):
     """戦闘アクション"""
+
     actor_id: str = Field(description="行動者ID")
     action_type: BattleActionType = Field(description="アクションタイプ")
     target_id: Optional[str] = Field(default=None, description="対象ID")
@@ -75,6 +80,7 @@ class BattleAction(BaseModel):
 
 class BattleResult(BaseModel):
     """戦闘結果"""
+
     success: bool = Field(description="アクション成功フラグ")
     damage: Optional[int] = Field(default=None, description="与えたダメージ")
     healing: Optional[int] = Field(default=None, description="回復量")
@@ -85,6 +91,7 @@ class BattleResult(BaseModel):
 
 class BattleData(BaseModel):
     """戦闘データ（session_data内に格納）"""
+
     state: BattleState = Field(default=BattleState.NONE, description="戦闘状態")
     turn_count: int = Field(default=0, description="戦闘ターン数")
     combatants: list[Combatant] = Field(default_factory=list, description="戦闘参加者")
@@ -92,10 +99,11 @@ class BattleData(BaseModel):
     current_turn_index: int = Field(default=0, description="現在のターンインデックス")
     environment: Optional[BattleEnvironment] = Field(default=None, description="戦闘環境")
     battle_log: list[dict[str, Any]] = Field(default_factory=list, description="戦闘ログ")
-    
+
 
 class BattleStartRequest(BaseModel):
     """戦闘開始リクエスト"""
+
     enemy_id: Optional[str] = Field(default=None, description="敵ID（指定がない場合はランダム）")
     enemy_type: Optional[str] = Field(default=None, description="敵タイプ")
     context: Optional[str] = Field(default=None, description="戦闘開始の文脈")
@@ -103,6 +111,7 @@ class BattleStartRequest(BaseModel):
 
 class BattleActionRequest(BaseModel):
     """戦闘アクションリクエスト"""
+
     action_type: BattleActionType = Field(description="アクションタイプ")
     target_id: Optional[str] = Field(default=None, description="対象ID")
     action_detail: Optional[str] = Field(default=None, description="詳細な行動指定")
@@ -111,6 +120,7 @@ class BattleActionRequest(BaseModel):
 
 class BattleUpdateResponse(BaseModel):
     """戦闘更新レスポンス"""
+
     battle_state: BattleState = Field(description="現在の戦闘状態")
     turn_number: int = Field(description="ゲーム全体のターン数")
     battle_turn: int = Field(description="戦闘内のターン数")

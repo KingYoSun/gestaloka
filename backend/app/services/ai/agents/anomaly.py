@@ -209,7 +209,9 @@ class AnomalyAgent(BaseAgent):
         # AIによる創造的なイベント生成
         enhanced_context = self._enhance_context_for_event(context, event_type, intensity)
         raw_response = await self.generate_response(
-            enhanced_context, temperature=0.95, max_tokens=800  # 高い創造性
+            enhanced_context,
+            temperature=0.95,
+            max_tokens=800,  # 高い創造性
         )
 
         # レスポンス解析
@@ -322,7 +324,11 @@ class AnomalyAgent(BaseAgent):
             if not effects:
                 effects = default_effects
 
-            return {"description": description or "説明不能な異常現象が発生した。", "effects": effects, "duration": duration}
+            return {
+                "description": description or "説明不能な異常現象が発生した。",
+                "effects": effects,
+                "duration": duration,
+            }
 
         except Exception as e:
             self.logger.warning("Failed to parse event response", error=str(e))
@@ -342,13 +348,22 @@ class AnomalyAgent(BaseAgent):
         intensity_multiplier = {"low": 0.5, "medium": 1.0, "high": 1.5, "extreme": 2.0}[intensity]
 
         effects_map = {
-            "reality_glitch": {"physics_distortion": intensity_multiplier, "random_teleport": 0.3 * intensity_multiplier},
+            "reality_glitch": {
+                "physics_distortion": intensity_multiplier,
+                "random_teleport": 0.3 * intensity_multiplier,
+            },
             "time_anomaly": {"time_dilation": intensity_multiplier, "action_repeat": 0.2 * intensity_multiplier},
             "dimensional_rift": {"dimension_bleed": intensity_multiplier, "alien_entities": 0.4 * intensity_multiplier},
             "log_corruption": {"data_corruption": intensity_multiplier, "false_memories": 0.5 * intensity_multiplier},
             "causality_break": {"logic_failure": intensity_multiplier, "paradox_damage": 10 * intensity_multiplier},
-            "memory_distortion": {"memory_loss": 0.3 * intensity_multiplier, "skill_shuffle": 0.2 * intensity_multiplier},
-            "entity_duplication": {"duplicate_count": int(2 * intensity_multiplier), "identity_crisis": intensity_multiplier},
+            "memory_distortion": {
+                "memory_loss": 0.3 * intensity_multiplier,
+                "skill_shuffle": 0.2 * intensity_multiplier,
+            },
+            "entity_duplication": {
+                "duplicate_count": int(2 * intensity_multiplier),
+                "identity_crisis": intensity_multiplier,
+            },
             "law_reversal": {"gravity_reverse": 0.5 * intensity_multiplier, "damage_heal": 0.3 * intensity_multiplier},
         }
 

@@ -44,6 +44,7 @@ class EventIntegration:
 
     def _register_dramatist_handlers(self) -> None:
         """脚本家AIのイベントハンドラー"""
+
         async def handle_dramatic_event(event: GameEvent) -> Optional[list[GameEvent]]:
             """劇的なイベントに対する物語的な反応"""
             if event.priority.value >= EventPriority.HIGH.value:
@@ -55,17 +56,14 @@ class EventIntegration:
 
         self.event_chain.register_handler(
             agent_name="dramatist",
-            event_types={
-                EventType.PLAYER_DEATH,
-                EventType.QUEST_COMPLETE,
-                EventType.WORLD_EVENT
-            },
+            event_types={EventType.PLAYER_DEATH, EventType.QUEST_COMPLETE, EventType.WORLD_EVENT},
             handler_func=handle_dramatic_event,
-            priority=5
+            priority=5,
         )
 
     def _register_state_manager_handlers(self) -> None:
         """状態管理AIのイベントハンドラー"""
+
         async def handle_state_change(event: GameEvent) -> Optional[list[GameEvent]]:
             """状態変更イベントの処理"""
             logger.info(f"State Manager handling: {event.type.value}")
@@ -79,7 +77,7 @@ class EventIntegration:
                         type=EventType.STATE_CHANGE,
                         source="state_manager",
                         data={"skill_points": 3},
-                        priority=EventPriority.NORMAL
+                        priority=EventPriority.NORMAL,
                     )
                 ]
 
@@ -87,17 +85,14 @@ class EventIntegration:
 
         self.event_chain.register_handler(
             agent_name="state_manager",
-            event_types={
-                EventType.PLAYER_LEVEL_UP,
-                EventType.STATE_CHANGE,
-                EventType.PLAYER_ACTION
-            },
+            event_types={EventType.PLAYER_LEVEL_UP, EventType.STATE_CHANGE, EventType.PLAYER_ACTION},
             handler_func=handle_state_change,
-            priority=8
+            priority=8,
         )
 
     def _register_historian_handlers(self) -> None:
         """歴史家AIのイベントハンドラー"""
+
         async def record_important_event(event: GameEvent) -> Optional[list[GameEvent]]:
             """重要なイベントを記録"""
             if event.priority.value >= EventPriority.HIGH.value:
@@ -112,14 +107,15 @@ class EventIntegration:
                 EventType.QUEST_COMPLETE,
                 EventType.PLAYER_DEATH,
                 EventType.WORLD_EVENT,
-                EventType.ACHIEVEMENT_UNLOCK
+                EventType.ACHIEVEMENT_UNLOCK,
             },
             handler_func=record_important_event,
-            priority=3
+            priority=3,
         )
 
     def _register_npc_manager_handlers(self) -> None:
         """NPC管理AIのイベントハンドラー"""
+
         async def handle_npc_event(event: GameEvent) -> Optional[list[GameEvent]]:
             """NPC関連イベントの処理"""
             logger.info(f"NPC Manager handling: {event.type.value}")
@@ -133,12 +129,8 @@ class EventIntegration:
                         id=str(uuid.uuid4()),
                         type=EventType.NPC_INTERACTION,
                         source="npc_manager",
-                        data={
-                            "npc_id": "nearby_npc",
-                            "reaction": "mourn",
-                            "target_npc": npc_id
-                        },
-                        priority=EventPriority.NORMAL
+                        data={"npc_id": "nearby_npc", "reaction": "mourn", "target_npc": npc_id},
+                        priority=EventPriority.NORMAL,
                     )
                 ]
 
@@ -146,17 +138,14 @@ class EventIntegration:
 
         self.event_chain.register_handler(
             agent_name="npc_manager",
-            event_types={
-                EventType.NPC_SPAWN,
-                EventType.NPC_INTERACTION,
-                EventType.NPC_DEATH
-            },
+            event_types={EventType.NPC_SPAWN, EventType.NPC_INTERACTION, EventType.NPC_DEATH},
             handler_func=handle_npc_event,
-            priority=6
+            priority=6,
         )
 
     def _register_world_handlers(self) -> None:
         """世界の意識AIのイベントハンドラー"""
+
         async def handle_world_event(event: GameEvent) -> Optional[list[GameEvent]]:
             """世界規模のイベント処理"""
             logger.info(f"World AI handling: {event.type.value}")
@@ -171,11 +160,8 @@ class EventIntegration:
                             id=str(uuid.uuid4()),
                             type=EventType.WORLD_EVENT,
                             source="the_world",
-                            data={
-                                "event": "flooding",
-                                "affected_areas": ["lower_town", "riverside"]
-                            },
-                            priority=EventPriority.HIGH
+                            data={"event": "flooding", "affected_areas": ["lower_town", "riverside"]},
+                            priority=EventPriority.HIGH,
                         )
                     ]
 
@@ -183,17 +169,14 @@ class EventIntegration:
 
         self.event_chain.register_handler(
             agent_name="the_world",
-            event_types={
-                EventType.WORLD_EVENT,
-                EventType.WEATHER_CHANGE,
-                EventType.TIME_PASSAGE
-            },
+            event_types={EventType.WORLD_EVENT, EventType.WEATHER_CHANGE, EventType.TIME_PASSAGE},
             handler_func=handle_world_event,
-            priority=7
+            priority=7,
         )
 
     def _register_anomaly_handlers(self) -> None:
         """混沌AIのイベントハンドラー"""
+
         async def trigger_chaos(event: GameEvent) -> Optional[list[GameEvent]]:
             """混沌イベントの連鎖"""
             logger.info(f"Anomaly AI reacting to: {event.type.value}")
@@ -205,12 +188,8 @@ class EventIntegration:
                         id=str(uuid.uuid4()),
                         type=EventType.ANOMALY_TRIGGER,
                         source="anomaly",
-                        data={
-                            "chaos_type": "reality_glitch",
-                            "intensity": "medium",
-                            "trigger_event": event.id
-                        },
-                        priority=EventPriority.HIGH
+                        data={"chaos_type": "reality_glitch", "intensity": "medium", "trigger_event": event.id},
+                        priority=EventPriority.HIGH,
                     )
                 ]
 
@@ -223,21 +202,13 @@ class EventIntegration:
 
         self.event_chain.register_handler(
             agent_name="anomaly",
-            event_types={
-                EventType.PLAYER_DEATH,
-                EventType.REALITY_DISTORTION,
-                EventType.ANOMALY_TRIGGER
-            },
+            event_types={EventType.PLAYER_DEATH, EventType.REALITY_DISTORTION, EventType.ANOMALY_TRIGGER},
             handler_func=trigger_chaos,
             priority=4,
-            conditions=chaos_condition
+            conditions=chaos_condition,
         )
 
-    async def create_event_from_response(
-        self,
-        response: AIResponse,
-        event_type: EventType
-    ) -> Optional[GameEvent]:
+    async def create_event_from_response(self, response: AIResponse, event_type: EventType) -> Optional[GameEvent]:
         """AIレスポンスからイベントを生成"""
         if not response.success:
             return None
@@ -246,7 +217,7 @@ class EventIntegration:
         event_data: dict[str, Any] = {
             "agent": response.agent_name,
             "narrative": response.narrative[:100] if response.narrative else None,
-            "has_choices": len(response.choices) > 0 if response.choices else False
+            "has_choices": len(response.choices) > 0 if response.choices else False,
         }
 
         # 状態変更がある場合は高優先度
@@ -261,6 +232,5 @@ class EventIntegration:
             source=response.agent_name,
             data=event_data,
             priority=priority,
-            can_trigger_chain=True
+            can_trigger_chain=True,
         )
-

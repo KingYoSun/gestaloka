@@ -37,7 +37,7 @@ class ProgressNotifier:
         percentage: int,
         current_task: Optional[str] = None,
         estimated_time_remaining: Optional[float] = None,
-        details: Optional[dict[str, Any]] = None
+        details: Optional[dict[str, Any]] = None,
     ) -> None:
         """プレイヤーに進捗を通知"""
 
@@ -47,7 +47,7 @@ class ProgressNotifier:
             message=message,
             current_task=current_task,
             estimated_time_remaining=estimated_time_remaining,
-            details=details or {}
+            details=details or {},
         )
 
         # 履歴に追加
@@ -68,28 +68,20 @@ class ProgressNotifier:
                 "current_task": current_task,
                 "estimated_time_remaining": estimated_time_remaining,
                 "details": details or {},
-                "elapsed_time": (datetime.utcnow() - self.start_time).total_seconds()
+                "elapsed_time": (datetime.utcnow() - self.start_time).total_seconds(),
             }
 
             try:
-                await self.websocket_manager.emit_to_session(
-                    self.session_id,
-                    "game_progress",
-                    progress_data
-                )
+                await self.websocket_manager.emit_to_session(self.session_id, "game_progress", progress_data)
             except Exception as e:
-                logger.error(
-                    "Failed to send progress notification",
-                    error=str(e),
-                    session_id=self.session_id
-                )
+                logger.error("Failed to send progress notification", error=str(e), session_id=self.session_id)
 
         # ログ記録
         logger.info(
             f"Progress: {percentage}% - {message}",
             session_id=self.session_id,
             current_task=current_task,
-            estimated_time=estimated_time_remaining
+            estimated_time=estimated_time_remaining,
         )
 
     async def notify_task_start(self, task_name: str, task_count: int) -> None:
@@ -98,48 +90,31 @@ class ProgressNotifier:
             f"タスク開始: {task_name}",
             self.current_progress,
             current_task=task_name,
-            details={"task_count": task_count}
+            details={"task_count": task_count},
         )
 
     async def notify_task_complete(self, task_name: str) -> None:
         """タスク完了を通知"""
-        await self.notify_progress(
-            f"タスク完了: {task_name}",
-            self.current_progress,
-            current_task=task_name
-        )
+        await self.notify_progress(f"タスク完了: {task_name}", self.current_progress, current_task=task_name)
 
     async def notify_ai_call(self, agent_name: str) -> None:
         """AI呼び出しを通知"""
         await self.notify_progress(
-            f"{agent_name}を呼び出し中...",
-            self.current_progress,
-            current_task=f"AI: {agent_name}"
+            f"{agent_name}を呼び出し中...", self.current_progress, current_task=f"AI: {agent_name}"
         )
 
     async def notify_completion(self) -> None:
         """処理完了を通知"""
         total_time = (datetime.utcnow() - self.start_time).total_seconds()
-        await self.notify_progress(
-            "処理完了",
-            100,
-            details={"total_time": total_time}
-        )
+        await self.notify_progress("処理完了", 100, details={"total_time": total_time})
 
     async def notify_error(self, error_message: str) -> None:
         """エラーを通知"""
         await self.notify_progress(
-            f"エラー: {error_message}",
-            self.current_progress,
-            details={"error": True, "error_message": error_message}
+            f"エラー: {error_message}", self.current_progress, details={"error": True, "error_message": error_message}
         )
 
-    def calculate_progress(
-        self,
-        completed_tasks: int,
-        total_tasks: int,
-        base_progress: int = 10
-    ) -> int:
+    def calculate_progress(self, completed_tasks: int, total_tasks: int, base_progress: int = 10) -> int:
         """進捗率を計算"""
         if total_tasks == 0:
             return base_progress
@@ -148,12 +123,7 @@ class ProgressNotifier:
         task_progress = (completed_tasks / total_tasks) * 80
         return min(base_progress + int(task_progress), 95)
 
-    def estimate_remaining_time(
-        self,
-        completed_tasks: int,
-        total_tasks: int,
-        average_task_time: float
-    ) -> float:
+    def estimate_remaining_time(self, completed_tasks: int, total_tasks: int, average_task_time: float) -> float:
         """残り時間を推定"""
         remaining_tasks = total_tasks - completed_tasks
         if remaining_tasks <= 0:
@@ -170,6 +140,5 @@ class ProgressNotifier:
             "current_task": self.current_task,
             "elapsed_time": total_time,
             "update_count": len(self.progress_history),
-            "session_id": self.session_id
+            "session_id": self.session_id,
         }
-

@@ -11,9 +11,10 @@ export function HomePage() {
             GESTALOKA
           </span>
         </h1>
-        
+
         <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-          マルチプレイ・テキストMMO<br />
+          マルチプレイ・テキストMMO
+          <br />
           あなたの行動が物語となり、他のプレイヤーの世界に生きるNPCとなる
         </p>
 
@@ -33,14 +34,14 @@ export function HomePage() {
               AIが生成する無限の物語。あなたの選択が世界を変えていきます。
             </p>
           </div>
-          
+
           <div className="p-6 rounded-lg bg-card border">
             <h3 className="text-lg font-semibold mb-2">ログNPCシステム</h3>
             <p className="text-muted-foreground">
               あなたの行動記録が他のプレイヤーの世界でNPCとして生まれ変わります。
             </p>
           </div>
-          
+
           <div className="p-6 rounded-lg bg-card border">
             <h3 className="text-lg font-semibold mb-2">協調AI評議会</h3>
             <p className="text-muted-foreground">

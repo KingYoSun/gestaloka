@@ -4,12 +4,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { useGameSessionStore } from '@/stores/gameSessionStore'
-import { 
-  GameSession, 
-  GameSessionCreate, 
+import {
+  GameSession,
+  GameSessionCreate,
   GameSessionListResponse,
   GameActionRequest,
-  GameActionResponse
+  GameActionResponse,
 } from '@/types'
 
 // ゲームセッション一覧取得
@@ -37,13 +37,13 @@ export const useCreateGameSession = () => {
   const { setActiveSession } = useGameSessionStore()
 
   return useMutation<GameSession, Error, GameSessionCreate>({
-    mutationFn: (sessionData: GameSessionCreate) => 
+    mutationFn: (sessionData: GameSessionCreate) =>
       apiClient.createGameSession(sessionData),
-    onSuccess: (newSession) => {
+    onSuccess: newSession => {
       // キャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['gameSessions'] })
       queryClient.setQueryData(['gameSession', newSession.id], newSession)
-      
+
       // ストアにアクティブセッションを設定
       setActiveSession(newSession)
     },
@@ -56,17 +56,23 @@ export const useUpdateGameSession = () => {
   const { setActiveSession } = useGameSessionStore()
 
   return useMutation<
-    GameSession, 
-    Error, 
-    { sessionId: string; updates: { currentScene?: string; sessionData?: Record<string, any> } }
+    GameSession,
+    Error,
+    {
+      sessionId: string
+      updates: { currentScene?: string; sessionData?: Record<string, any> }
+    }
   >({
-    mutationFn: ({ sessionId, updates }) => 
+    mutationFn: ({ sessionId, updates }) =>
       apiClient.updateGameSession(sessionId, updates),
-    onSuccess: (updatedSession) => {
+    onSuccess: updatedSession => {
       // キャッシュを更新
-      queryClient.setQueryData(['gameSession', updatedSession.id], updatedSession)
+      queryClient.setQueryData(
+        ['gameSession', updatedSession.id],
+        updatedSession
+      )
       queryClient.invalidateQueries({ queryKey: ['gameSessions'] })
-      
+
       // アクティブセッションの場合はストアも更新
       const { activeSession } = useGameSessionStore.getState()
       if (activeSession?.id === updatedSession.id) {
@@ -83,11 +89,11 @@ export const useEndGameSession = () => {
 
   return useMutation<GameSession, Error, string>({
     mutationFn: (sessionId: string) => apiClient.endGameSession(sessionId),
-    onSuccess: (endedSession) => {
+    onSuccess: endedSession => {
       // キャッシュを更新
       queryClient.setQueryData(['gameSession', endedSession.id], endedSession)
       queryClient.invalidateQueries({ queryKey: ['gameSessions'] })
-      
+
       // アクティブセッションの場合はクリア
       if (activeSession?.id === endedSession.id) {
         clearActiveSession()
@@ -102,16 +108,16 @@ export const useExecuteGameAction = () => {
   const { addGameMessage } = useGameSessionStore()
 
   return useMutation<
-    GameActionResponse, 
-    Error, 
+    GameActionResponse,
+    Error,
     { sessionId: string; action: GameActionRequest }
   >({
-    mutationFn: ({ sessionId, action }) => 
+    mutationFn: ({ sessionId, action }) =>
       apiClient.executeGameAction(sessionId, action),
     onSuccess: (response, { sessionId }) => {
       // セッション情報を再取得（シーンが変更された可能性があるため）
       queryClient.invalidateQueries({ queryKey: ['gameSession', sessionId] })
-      
+
       // ストアにメッセージを追加
       addGameMessage({
         id: `action-${Date.now()}`,
@@ -120,7 +126,7 @@ export const useExecuteGameAction = () => {
         content: '',
         timestamp: new Date().toISOString(),
       })
-      
+
       addGameMessage({
         id: `response-${Date.now()}`,
         sessionId: response.sessionId,

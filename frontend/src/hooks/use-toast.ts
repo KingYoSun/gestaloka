@@ -13,13 +13,13 @@ interface ToastOptions {
 
 export function toast(options: ToastOptions) {
   const { title, description, variant = 'default', duration = 4000 } = options
-  
+
   const message = title || ''
   const config = {
     description,
     duration,
   }
-  
+
   switch (variant) {
     case 'destructive':
       showToast.error(message, config)

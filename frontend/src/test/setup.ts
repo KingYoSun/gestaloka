@@ -1,16 +1,12 @@
 import '@testing-library/jest-dom'
 
-// Extend global types
-declare global {
-  const ResizeObserver: typeof ResizeObserver
-  const IntersectionObserver: typeof IntersectionObserver
-}
-
-// Mock ResizeObserver
-global.ResizeObserver = class ResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+// Mock ResizeObserver if not available
+if (typeof global.ResizeObserver === 'undefined') {
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
 }
 
 // Mock matchMedia
@@ -28,15 +24,19 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 })
 
-// Mock IntersectionObserver
-global.IntersectionObserver = class IntersectionObserver {
-  root = null
-  rootMargin = ''
-  thresholds = []
-  
-  constructor() {}
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-  takeRecords() { return [] }
+// Mock IntersectionObserver if not available
+if (typeof global.IntersectionObserver === 'undefined') {
+  global.IntersectionObserver = class IntersectionObserver {
+    root = null
+    rootMargin = ''
+    thresholds = []
+
+    constructor() {}
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return []
+    }
+  }
 }

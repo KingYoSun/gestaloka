@@ -17,11 +17,7 @@ class CoordinationAgentAdapter:
         self.agent = agent
         self.name = agent.role.value
 
-    async def process(
-        self,
-        context: dict[str, Any],
-        shared_context: SharedContext
-    ) -> AIResponse:
+    async def process(self, context: dict[str, Any], shared_context: SharedContext) -> AIResponse:
         """
         協調動作用の処理メソッド
 
@@ -39,7 +35,7 @@ class CoordinationAgentAdapter:
                 "action_id": action_context.action_id,
                 "action_type": action_context.action_type,
                 "action_text": action_context.action_text,
-                "character_name": getattr(action_context, "character_name", "Unknown")
+                "character_name": getattr(action_context, "character_name", "Unknown"),
             }
         else:
             action = context.get("action", {})
@@ -61,7 +57,7 @@ class CoordinationAgentAdapter:
             recent_actions=self._format_recent_history(shared_context),
             world_state=self._extract_game_state(shared_context),
             session_history=[],
-            additional_context={"action": action.get("action_text", "")}
+            additional_context={"action": action.get("action_text", "")},
         )
 
         # 既存のprocessメソッドを呼び出し
@@ -90,18 +86,15 @@ class CoordinationAgentAdapter:
             "turn_number": shared_context.turn_number,
             "world_state": {
                 "stability": shared_context.world_state.stability,
-                "chaos_level": shared_context.world_state.chaos_level
+                "chaos_level": shared_context.world_state.chaos_level,
             },
             "weather": shared_context.weather.value,
             "time_of_day": shared_context.time_of_day.value,
             "active_npcs": len(shared_context.active_npcs),
             "active_effects": [
-                {
-                    "type": effect.effect_type,
-                    "remaining_turns": effect.remaining_turns
-                }
+                {"type": effect.effect_type, "remaining_turns": effect.remaining_turns}
                 for effect in shared_context.active_effects
-            ]
+            ],
         }
 
     def _convert_to_ai_response(self, agent_response: AgentResponse) -> AIResponse:
@@ -110,11 +103,7 @@ class CoordinationAgentAdapter:
 
         if agent_response.choices:
             choices = [
-                Choice(
-                    id=choice.id,
-                    text=choice.text,
-                    description=getattr(choice, "description", None)
-                )
+                Choice(id=choice.id, text=choice.text, description=getattr(choice, "description", None))
                 for choice in agent_response.choices
             ]
 
@@ -126,7 +115,5 @@ class CoordinationAgentAdapter:
             state_changes=agent_response.state_changes,
             events=[],  # イベントは別途処理
             metadata=agent_response.metadata,
-            success=True
+            success=True,
         )
-
-

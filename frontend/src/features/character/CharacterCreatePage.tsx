@@ -5,12 +5,21 @@ import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Sparkles, User, Eye, Heart } from 'lucide-react'
 import { useCreateCharacter } from '@/hooks/useCharacters'
-import { characterCreationSchema, type CharacterCreationFormData } from '@/schemas/character'
+import {
+  characterCreationSchema,
+  type CharacterCreationFormData,
+} from '@/schemas/character'
 
 export function CharacterCreatePage() {
   const navigate = useNavigate()
@@ -37,7 +46,7 @@ export function CharacterCreatePage() {
 
   const onSubmit = async (data: CharacterCreationFormData) => {
     if (isSubmitting) return
-    
+
     setIsSubmitting(true)
     try {
       await createCharacterMutation.mutateAsync(data)
@@ -80,7 +89,10 @@ export function CharacterCreatePage() {
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               {/* キャラクター名 */}
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium flex items-center gap-2">
+                <Label
+                  htmlFor="name"
+                  className="text-sm font-medium flex items-center gap-2"
+                >
                   <User className="h-4 w-4" />
                   キャラクター名 <span className="text-red-500">*</span>
                 </Label>
@@ -104,7 +116,10 @@ export function CharacterCreatePage() {
 
               {/* 説明 */}
               <div className="space-y-2">
-                <Label htmlFor="description" className="text-sm font-medium flex items-center gap-2">
+                <Label
+                  htmlFor="description"
+                  className="text-sm font-medium flex items-center gap-2"
+                >
                   <Heart className="h-4 w-4" />
                   キャラクター説明
                 </Label>
@@ -116,14 +131,19 @@ export function CharacterCreatePage() {
                 />
                 {errors.description && (
                   <Alert variant="destructive">
-                    <AlertDescription>{errors.description.message}</AlertDescription>
+                    <AlertDescription>
+                      {errors.description.message}
+                    </AlertDescription>
                   </Alert>
                 )}
               </div>
 
               {/* 外見 */}
               <div className="space-y-2">
-                <Label htmlFor="appearance" className="text-sm font-medium flex items-center gap-2">
+                <Label
+                  htmlFor="appearance"
+                  className="text-sm font-medium flex items-center gap-2"
+                >
                   <Eye className="h-4 w-4" />
                   外見
                 </Label>
@@ -135,14 +155,19 @@ export function CharacterCreatePage() {
                 />
                 {errors.appearance && (
                   <Alert variant="destructive">
-                    <AlertDescription>{errors.appearance.message}</AlertDescription>
+                    <AlertDescription>
+                      {errors.appearance.message}
+                    </AlertDescription>
                   </Alert>
                 )}
               </div>
 
               {/* 性格 */}
               <div className="space-y-2">
-                <Label htmlFor="personality" className="text-sm font-medium flex items-center gap-2">
+                <Label
+                  htmlFor="personality"
+                  className="text-sm font-medium flex items-center gap-2"
+                >
                   <Sparkles className="h-4 w-4" />
                   性格
                 </Label>
@@ -154,7 +179,9 @@ export function CharacterCreatePage() {
                 />
                 {errors.personality && (
                   <Alert variant="destructive">
-                    <AlertDescription>{errors.personality.message}</AlertDescription>
+                    <AlertDescription>
+                      {errors.personality.message}
+                    </AlertDescription>
                   </Alert>
                 )}
               </div>
@@ -163,7 +190,8 @@ export function CharacterCreatePage() {
               {createCharacterMutation.isError && (
                 <Alert variant="destructive">
                   <AlertDescription>
-                    {createCharacterMutation.error?.message || 'キャラクター作成に失敗しました'}
+                    {createCharacterMutation.error?.message ||
+                      'キャラクター作成に失敗しました'}
                   </AlertDescription>
                 </Alert>
               )}
@@ -205,7 +233,9 @@ export function CharacterCreatePage() {
         <Card className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
           <CardContent className="pt-6">
             <div className="text-center text-sm text-slate-600">
-              <p className="mb-2">💡 <strong>ヒント:</strong></p>
+              <p className="mb-2">
+                💡 <strong>ヒント:</strong>
+              </p>
               <p>
                 詳細な設定ほど、AI GMがより豊かで一貫した物語を紡いでくれます。
                 後から設定を変更することも可能です。

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { 
+import {
   ArrowLeft,
   Edit3,
   Trash2,
@@ -19,9 +19,13 @@ import {
   Eye,
   User,
   Sparkles,
-  Loader2
+  Loader2,
 } from 'lucide-react'
-import { useCharacter, useDeleteCharacter, useActivateCharacter } from '@/hooks/useCharacters'
+import {
+  useCharacter,
+  useDeleteCharacter,
+  useActivateCharacter,
+} from '@/hooks/useCharacters'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
 
 export function CharacterDetailPage() {
@@ -34,8 +38,12 @@ export function CharacterDetailPage() {
 
   const handleDeleteCharacter = async () => {
     if (!character) return
-    
-    if (window.confirm(`${character.name}を削除してもよろしいですか？この操作は取り消せません。`)) {
+
+    if (
+      window.confirm(
+        `${character.name}を削除してもよろしいですか？この操作は取り消せません。`
+      )
+    ) {
       setIsDeleting(true)
       try {
         await deleteCharacterMutation.mutateAsync(character.id)
@@ -57,7 +65,9 @@ export function CharacterDetailPage() {
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-            <span className="ml-2 text-lg text-slate-600">キャラクター情報を読み込み中...</span>
+            <span className="ml-2 text-lg text-slate-600">
+              キャラクター情報を読み込み中...
+            </span>
           </div>
         </div>
       </div>
@@ -70,7 +80,10 @@ export function CharacterDetailPage() {
         <div className="max-w-4xl mx-auto">
           <Alert variant="destructive" className="mt-8">
             <AlertDescription>
-              キャラクター情報の読み込みに失敗しました: {error instanceof Error ? error.message : 'キャラクターが見つかりません'}
+              キャラクター情報の読み込みに失敗しました:{' '}
+              {error instanceof Error
+                ? error.message
+                : 'キャラクターが見つかりません'}
             </AlertDescription>
           </Alert>
           <div className="mt-4">
@@ -99,7 +112,9 @@ export function CharacterDetailPage() {
             </Link>
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-bold text-slate-800">{character.name}</h1>
+                <h1 className="text-3xl font-bold text-slate-800">
+                  {character.name}
+                </h1>
                 <Badge variant="secondary" className="text-sm">
                   Lv.{character.stats?.level || 1}
                 </Badge>
@@ -110,9 +125,9 @@ export function CharacterDetailPage() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex gap-2">
-            <Button 
+            <Button
               onClick={handleActivateCharacter}
               disabled={activateCharacterMutation.isPending}
               className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
@@ -128,8 +143,8 @@ export function CharacterDetailPage() {
               <Edit3 className="mr-2 h-4 w-4" />
               編集
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={handleDeleteCharacter}
               disabled={isDeleting}
               className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -159,27 +174,33 @@ export function CharacterDetailPage() {
                 {character.description && (
                   <div>
                     <h4 className="font-medium text-slate-700 mb-2">説明</h4>
-                    <p className="text-slate-600 leading-relaxed">{character.description}</p>
+                    <p className="text-slate-600 leading-relaxed">
+                      {character.description}
+                    </p>
                   </div>
                 )}
-                
+
                 {character.appearance && (
                   <div>
                     <h4 className="font-medium text-slate-700 mb-2 flex items-center gap-1">
                       <Eye className="h-4 w-4" />
                       外見
                     </h4>
-                    <p className="text-slate-600 leading-relaxed">{character.appearance}</p>
+                    <p className="text-slate-600 leading-relaxed">
+                      {character.appearance}
+                    </p>
                   </div>
                 )}
-                
+
                 {character.personality && (
                   <div>
                     <h4 className="font-medium text-slate-700 mb-2 flex items-center gap-1">
                       <Sparkles className="h-4 w-4" />
                       性格
                     </h4>
-                    <p className="text-slate-600 leading-relaxed">{character.personality}</p>
+                    <p className="text-slate-600 leading-relaxed">
+                      {character.personality}
+                    </p>
                   </div>
                 )}
 
@@ -190,14 +211,18 @@ export function CharacterDetailPage() {
                     <Calendar className="h-4 w-4 text-slate-500" />
                     <div>
                       <div className="font-medium">作成日</div>
-                      <div className="text-slate-600">{formatDate(new Date(character.createdAt))}</div>
+                      <div className="text-slate-600">
+                        {formatDate(new Date(character.createdAt))}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-slate-500" />
                     <div>
                       <div className="font-medium">最終更新</div>
-                      <div className="text-slate-600">{formatRelativeTime(new Date(character.updatedAt))}</div>
+                      <div className="text-slate-600">
+                        {formatRelativeTime(new Date(character.updatedAt))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -215,8 +240,11 @@ export function CharacterDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-3">
-                    {character.skills.map((skill) => (
-                      <div key={skill.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                    {character.skills.map(skill => (
+                      <div
+                        key={skill.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
+                      >
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{skill.name}</span>
@@ -225,7 +253,9 @@ export function CharacterDetailPage() {
                             </Badge>
                           </div>
                           {skill.description && (
-                            <p className="text-sm text-slate-600 mt-1">{skill.description}</p>
+                            <p className="text-sm text-slate-600 mt-1">
+                              {skill.description}
+                            </p>
                           )}
                         </div>
                         <div className="text-sm text-slate-500">
@@ -273,10 +303,10 @@ export function CharacterDetailPage() {
                           {character.stats.health} / {character.stats.maxHealth}
                         </div>
                         <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className="h-full bg-red-500 transition-all duration-300"
-                            style={{ 
-                              width: `${(character.stats.health / character.stats.maxHealth) * 100}%` 
+                            style={{
+                              width: `${(character.stats.health / character.stats.maxHealth) * 100}%`,
                             }}
                           />
                         </div>
@@ -293,10 +323,10 @@ export function CharacterDetailPage() {
                           {character.stats.energy} / {character.stats.maxEnergy}
                         </div>
                         <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className="h-full bg-blue-500 transition-all duration-300"
-                            style={{ 
-                              width: `${(character.stats.energy / character.stats.maxEnergy) * 100}%` 
+                            style={{
+                              width: `${(character.stats.energy / character.stats.maxEnergy) * 100}%`,
                             }}
                           />
                         </div>
@@ -315,7 +345,7 @@ export function CharacterDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button 
+                <Button
                   className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                   disabled
                 >

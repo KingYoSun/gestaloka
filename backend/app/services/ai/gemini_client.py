@@ -58,7 +58,7 @@ class GeminiClient:
             "model": self.config.model,
             "model_kwargs": {
                 "temperature": self.config.temperature,
-            }
+            },
         }
         if self.config.max_tokens:
             kwargs["max_output_tokens"] = self.config.max_tokens

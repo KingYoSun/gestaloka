@@ -21,6 +21,7 @@ logger = structlog.get_logger()
 
 class EventPriority(Enum):
     """イベントの優先度"""
+
     LOW = 1
     NORMAL = 2
     HIGH = 3
@@ -29,6 +30,7 @@ class EventPriority(Enum):
 
 class EventType(Enum):
     """イベントタイプの定義"""
+
     # プレイヤー起因イベント
     PLAYER_ACTION = "player_action"
     PLAYER_LEVEL_UP = "player_level_up"
@@ -57,6 +59,7 @@ class EventType(Enum):
 @dataclass
 class WorldState:
     """世界の状態を表すデータクラス"""
+
     stability: float = 1.0  # 世界の安定度 (0.0-1.0)
     chaos_level: float = 0.0  # 混沌レベル (0.0-1.0)
     active_world_events: list[str] = field(default_factory=list)
@@ -66,6 +69,7 @@ class WorldState:
 @dataclass
 class CharacterState:
     """キャラクターの状態を表すデータクラス"""
+
     character_id: str
     level: int
     hp: int
@@ -84,6 +88,7 @@ class CharacterState:
 @dataclass
 class NPCState:
     """NPCの状態を表すデータクラス"""
+
     npc_id: str
     name: str
     location: str
@@ -96,6 +101,7 @@ class NPCState:
 @dataclass
 class GameEvent:
     """ゲームイベントを表すデータクラス"""
+
     id: str
     type: EventType
     source: str  # 発生源（AI名またはシステム）
@@ -112,6 +118,7 @@ class GameEvent:
 @dataclass
 class PlayerAction:
     """プレイヤーのアクションを表すデータクラス"""
+
     action_id: str
     action_type: str
     action_text: str
@@ -122,6 +129,7 @@ class PlayerAction:
 @dataclass
 class Decision:
     """重要な決定事項を表すデータクラス"""
+
     decision_id: str
     decision_type: str
     description: str
@@ -133,6 +141,7 @@ class Decision:
 @dataclass
 class AIDecision:
     """AI の決定を表すデータクラス"""
+
     agent_name: str
     decision_type: str
     reasoning: str
@@ -144,6 +153,7 @@ class AIDecision:
 @dataclass
 class TemporaryEffect:
     """一時的な効果を表すデータクラス"""
+
     effect_id: str
     effect_type: str
     description: str
@@ -155,6 +165,7 @@ class TemporaryEffect:
 @dataclass
 class SharedContext:
     """AI間で共有されるコンテキスト情報"""
+
     # セッション情報
     session_id: str
     turn_number: int = 0
@@ -170,12 +181,8 @@ class SharedContext:
     active_npcs: dict[str, NPCState] = field(default_factory=dict)
 
     # 履歴情報（最大保持数を設定）
-    recent_actions: deque[PlayerAction] = field(
-        default_factory=lambda: deque(maxlen=10)
-    )
-    recent_events: deque[GameEvent] = field(
-        default_factory=lambda: deque(maxlen=20)
-    )
+    recent_actions: deque[PlayerAction] = field(default_factory=lambda: deque(maxlen=10))
+    recent_events: deque[GameEvent] = field(default_factory=lambda: deque(maxlen=20))
     important_decisions: list[Decision] = field(default_factory=list)
 
     # AI決定履歴
@@ -211,10 +218,7 @@ class SharedContextManager:
                     if hasattr(self.context, key):
                         setattr(self.context, key, value)
                     else:
-                        logger.warning(
-                            f"Unknown context attribute: {key}",
-                            session_id=self.context.session_id
-                        )
+                        logger.warning(f"Unknown context attribute: {key}", session_id=self.context.session_id)
 
                 # メタデータ更新
                 self.context.last_updated = datetime.utcnow()
@@ -227,11 +231,7 @@ class SharedContextManager:
                 await self._notify_context_change(updates)
 
             except Exception as e:
-                logger.error(
-                    "Failed to update shared context",
-                    error=str(e),
-                    session_id=self.context.session_id
-                )
+                logger.error("Failed to update shared context", error=str(e), session_id=self.context.session_id)
                 raise
 
     def add_player_action(self, action: PlayerAction) -> None:
@@ -255,8 +255,7 @@ class SharedContextManager:
 
         # 古い決定を削除（最新10件のみ保持）
         if len(self.context.ai_decisions[agent_name]) > 10:
-            self.context.ai_decisions[agent_name] = \
-                self.context.ai_decisions[agent_name][-10:]
+            self.context.ai_decisions[agent_name] = self.context.ai_decisions[agent_name][-10:]
 
     def update_turn(self) -> None:
         """ターンを進める"""
@@ -267,10 +266,7 @@ class SharedContextManager:
             effect.remaining_turns -= 1
 
         # 期限切れの効果を削除
-        self.context.active_effects = [
-            effect for effect in self.context.active_effects
-            if effect.remaining_turns > 0
-        ]
+        self.context.active_effects = [effect for effect in self.context.active_effects if effect.remaining_turns > 0]
 
     def get_recent_context(self, num_actions: int = 5) -> dict[str, Any]:
         """最近のコンテキスト情報を取得"""
@@ -284,7 +280,7 @@ class SharedContextManager:
             "player_state": self.context.player_state,
             "active_npcs": list(self.context.active_npcs.values()),
             "active_effects": self.context.active_effects,
-            "environmental_modifiers": self.context.environmental_modifiers
+            "environmental_modifiers": self.context.environmental_modifiers,
         }
 
     def get_ai_context(self, agent_name: str) -> dict[str, Any]:
@@ -293,8 +289,7 @@ class SharedContextManager:
 
         # エージェント固有の情報を追加
         if agent_name in self.context.ai_decisions:
-            base_context["previous_decisions"] = \
-                self.context.ai_decisions[agent_name][-3:]
+            base_context["previous_decisions"] = self.context.ai_decisions[agent_name][-3:]
 
         return base_context
 
@@ -308,10 +303,9 @@ class SharedContextManager:
             "turn_number": self.context.turn_number,
             "world_stability": self.context.world_state.stability,
             "chaos_level": self.context.world_state.chaos_level,
-            "player_hp": self.context.player_state.hp
-                if self.context.player_state else None,
+            "player_hp": self.context.player_state.hp if self.context.player_state else None,
             "active_npcs_count": len(self.context.active_npcs),
-            "active_effects_count": len(self.context.active_effects)
+            "active_effects_count": len(self.context.active_effects),
         }
 
     def _log_update(self, updates: dict[str, Any], before_state: dict[str, Any]) -> None:
@@ -320,7 +314,7 @@ class SharedContextManager:
             "timestamp": datetime.utcnow(),
             "updates": updates,
             "before_state": before_state,
-            "after_state": self._get_current_state()
+            "after_state": self._get_current_state(),
         }
 
         self.update_history.append(update_record)
@@ -333,7 +327,7 @@ class SharedContextManager:
             "Shared context updated",
             session_id=self.context.session_id,
             update_count=self.context.update_count,
-            changes=list(updates.keys())
+            changes=list(updates.keys()),
         )
 
     async def _notify_context_change(self, updates: dict[str, Any]) -> None:
@@ -346,8 +340,5 @@ class SharedContextManager:
                     listener(updates, self.context)
             except Exception as e:
                 logger.error(
-                    "Failed to notify context change listener",
-                    error=str(e),
-                    session_id=self.context.session_id
+                    "Failed to notify context change listener", error=str(e), session_id=self.context.session_id
                 )
-

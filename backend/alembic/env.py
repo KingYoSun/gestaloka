@@ -15,11 +15,11 @@ from alembic import context
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
+from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
 
 # モデルをインポート（これがないと自動生成が正しく動作しない）
 # インポート順序が重要：依存関係のないものから順に
 from app.models.user import User  # noqa
-from app.models.character import Character, CharacterStats, Skill, GameSession  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -77,6 +77,8 @@ def run_migrations_online() -> None:
 
     """
     configuration = config.get_section(config.config_ini_section)
+    if configuration is None:
+        configuration = {}
     configuration["sqlalchemy.url"] = get_url()
     connectable = engine_from_config(
         configuration,
@@ -86,7 +88,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, 
+            connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,

@@ -1,12 +1,12 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
-import { 
-  Home, 
-  User, 
-  GamepadIcon, 
-  ScrollText, 
+import {
+  Home,
+  User,
+  GamepadIcon,
+  ScrollText,
   Settings,
-  LogOut
+  LogOut,
 } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -47,13 +47,13 @@ export function Navigation() {
         <h1 className="text-2xl font-bold text-primary">ゲスタロカ</h1>
         <p className="text-sm text-muted-foreground mt-1">GESTALOKA</p>
       </div>
-      
+
       <div className="px-3">
         <ul className="space-y-1">
-          {navigationItems.map((item) => {
+          {navigationItems.map(item => {
             const isActive = location.pathname.startsWith(item.href)
             const Icon = item.icon
-            
+
             return (
               <li key={item.name}>
                 <Link
@@ -74,8 +74,8 @@ export function Navigation() {
 
       {/* ログアウトボタン */}
       <div className="absolute bottom-6 left-3 right-3">
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           className="w-full justify-start gap-3"
           onClick={() => {
             // TODO: ログアウト処理

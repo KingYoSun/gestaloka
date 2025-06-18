@@ -1,16 +1,13 @@
 """Initial GESTALOKA schema
 
 Revision ID: 52ba950d32b4
-Revises: 
+Revises:
 Create Date: 2025-06-18 07:19:26.173682
 
 """
-from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
-revision = '52ba950d32b4'
+revision = "52ba950d32b4"
 down_revision = None
 branch_labels = None
 depends_on = None

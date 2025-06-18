@@ -10,8 +10,17 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session, desc, select
 
+from app.ai.coordination_models import Choice
+from app.ai.coordinator import CoordinatorAI
+from app.ai.shared_context import PlayerAction
 from app.core.logging import get_logger
 from app.models.character import Character, GameSession
+from app.schemas.battle import (
+    BattleAction,
+    BattleActionType,
+    BattleData,
+    BattleState,
+)
 from app.schemas.game_session import (
     ActionExecuteRequest,
     ActionExecuteResponse,
@@ -20,15 +29,6 @@ from app.schemas.game_session import (
     GameSessionResponse,
     GameSessionUpdate,
 )
-from app.schemas.battle import (
-    BattleAction,
-    BattleActionType,
-    BattleData,
-    BattleState,
-)
-from app.ai.coordinator import CoordinatorAI
-from app.ai.coordination_models import Choice
-from app.ai.shared_context import PlayerAction
 from app.services.ai.agents import (
     AnomalyAgent,
     DramatistAgent,
@@ -37,7 +37,8 @@ from app.services.ai.agents import (
     StateManagerAgent,
     TheWorldAI,
 )
-from app.services.ai.prompt_manager import PromptContext
+
+# from app.services.ai.prompt_manager import PromptContext  # 現在未使用
 from app.services.battle import BattleService
 from app.websocket.events import GameEventEmitter
 
@@ -49,11 +50,11 @@ class GameSessionService:
 
     def __init__(self, db: Session, websocket_manager=None):
         self.db = db
-        
+
         # 個別のAIエージェントを初期化（互換性のため保持）
         self.dramatist_agent = DramatistAgent()
         self.state_manager_agent = StateManagerAgent()
-        
+
         # CoordinatorAIを初期化
         agents = {
             "dramatist": DramatistAgent(),
@@ -64,7 +65,7 @@ class GameSessionService:
             "anomaly": AnomalyAgent(),
         }
         self.coordinator = CoordinatorAI(agents=agents, websocket_manager=websocket_manager)
-        
+
         # 戦闘サービスを初期化
         self.battle_service = BattleService(db)
 
@@ -113,7 +114,7 @@ class GameSessionService:
             )
 
             session_data_parsed = json.loads(new_session.session_data) if new_session.session_data else {}
-            
+
             return GameSessionResponse(
                 id=new_session.id,
                 character_id=new_session.character_id,
@@ -298,7 +299,7 @@ class GameSessionService:
             logger.info("Game session ended", session_id=session_id, user_id=user_id)
 
             session_data_final = json.loads(session.session_data) if session.session_data else {}
-            
+
             return GameSessionResponse(
                 id=session.id,
                 character_id=session.character_id,
@@ -367,29 +368,29 @@ class GameSessionService:
             session_data = json.loads(session.session_data) if session.session_data else {}
             actions_history = session_data.get("actions_history", []) if session_data else []
 
-            # プロンプトコンテキストの構築
-            context = PromptContext(
-                character_name=character.name,
-                character_stats={
-                    "hp": character_stats.health if character_stats else 100,
-                    "max_hp": character_stats.max_health if character_stats else 100,
-                    "mp": character_stats.energy if character_stats else 100,
-                    "max_mp": character_stats.max_energy if character_stats else 100,
-                    "level": character_stats.level if character_stats else 1,
-                    "experience": character_stats.experience if character_stats else 0,
-                },
-                location=character.location,
-                recent_actions=[item["action"] for item in actions_history[-5:]],
-                world_state={
-                    "time_of_day": session_data.get("time_of_day", "昼") if session_data else "昼",
-                    "weather": session_data.get("weather", "晴れ") if session_data else "晴れ",
-                },
-                session_history=[],
-                additional_context={"action": action_request.action_text, "action_type": action_request.action_type},
-            )
+            # プロンプトコンテキストの構築（現在未使用）
+            # context = PromptContext(
+            #     character_name=character.name,
+            #     character_stats={
+            #         "hp": character_stats.health if character_stats else 100,
+            #         "max_hp": character_stats.max_health if character_stats else 100,
+            #         "mp": character_stats.energy if character_stats else 100,
+            #         "max_mp": character_stats.max_energy if character_stats else 100,
+            #         "level": character_stats.level if character_stats else 1,
+            #         "experience": character_stats.experience if character_stats else 0,
+            #     },
+            #     location=character.location,
+            #     recent_actions=[item["action"] for item in actions_history[-5:]],
+            #     world_state={
+            #         "time_of_day": session_data.get("time_of_day", "昼") if session_data else "昼",
+            #         "weather": session_data.get("weather", "晴れ") if session_data else "晴れ",
+            #     },
+            #     session_history=[],
+            #     additional_context={"action": action_request.action_text, "action_type": action_request.action_type},
+            # )
 
             # CoordinatorAIでセッションを初期化（必要な場合）
-            if not hasattr(self.coordinator, 'shared_context') or self.coordinator.shared_context is None:
+            if not hasattr(self.coordinator, "shared_context") or self.coordinator.shared_context is None:
                 # GameSessionResponseを作成
                 session_response = GameSessionResponse(
                     id=session.id,
@@ -403,14 +404,14 @@ class GameSessionService:
                     turn_number=session_data.get("turn_count", 0) if session_data else 0,
                 )
                 await self.coordinator.initialize_session(session_response)
-            
+
             # CoordinatorAIを使ってアクションを処理
             player_action = PlayerAction(
                 action_id=str(uuid.uuid4()),
                 action_type=action_request.action_type,
-                action_text=action_request.action_text
+                action_text=action_request.action_text,
             )
-            
+
             # 協調動作システムでアクションを処理
             # セッションレスポンスを更新（ターン数が増える可能性があるため）
             session_response_for_process = GameSessionResponse(
@@ -425,7 +426,7 @@ class GameSessionService:
                 turn_number=session_data.get("turn_count", 0) if session_data else 0,
             )
             coordinator_response = await self.coordinator.process_action(player_action, session_response_for_process)
-            
+
             # WebSocketで物語更新を送信
             await GameEventEmitter.emit_narrative_update(
                 session_id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
@@ -434,7 +435,7 @@ class GameSessionService:
             # 戦闘システムの処理
             battle_data = session_data.get("battle_data")
             current_battle_state = BattleState(battle_data["state"]) if battle_data else BattleState.NONE
-            
+
             # 戦闘中の場合、特別な処理を行う
             if current_battle_state != BattleState.NONE and current_battle_state != BattleState.FINISHED:
                 # 戦闘アクションの処理
@@ -446,17 +447,21 @@ class GameSessionService:
             else:
                 # 通常のアクション処理後、戦闘開始をチェック
                 if self.battle_service.check_battle_trigger(
-                    {"narrative": coordinator_response.narrative, "state_changes": coordinator_response.state_changes}, 
-                    session_data
+                    {"narrative": coordinator_response.narrative, "state_changes": coordinator_response.state_changes},
+                    session_data,
                 ):
                     # 戦闘を開始
-                    enemy_data = coordinator_response.state_changes.get("enemy_data") if coordinator_response.state_changes else None
+                    enemy_data = (
+                        coordinator_response.state_changes.get("enemy_data")
+                        if coordinator_response.state_changes
+                        else None
+                    )
                     environment_data = {
                         "terrain": session_data.get("terrain", "平地"),
                         "weather": session_data.get("weather", "晴れ"),
                         "time_of_day": session_data.get("time_of_day", "昼"),
                     }
-                    
+
                     if not character_stats:
                         # character_statsがない場合はスキップ
                         logger.warning("Character stats not found, skipping battle initialization")
@@ -464,27 +469,29 @@ class GameSessionService:
                         battle_data = self.battle_service.initialize_battle(
                             character, character_stats, enemy_data, environment_data
                         )
-                        
+
                         # 戦闘を開始（プレイヤーターンに設定）
                         battle_data.state = BattleState.PLAYER_TURN
                         session_data["battle_data"] = battle_data.dict()
-                        
+
                         # 戦闘開始の選択肢を生成
-                        battle_choices = self.battle_service.get_battle_choices(battle_data, True)
+                        initial_battle_choices = self.battle_service.get_battle_choices(battle_data, True)
                         # ActionChoiceをChoiceに変換
-                        coordinator_response.choices = [
-                            Choice(
-                                id=choice.id,
-                                text=choice.text,
-                                description=choice.difficulty,
-                                requirements=choice.requirements,
+                        converted_choices: list[Choice] = []
+                        for action_choice in initial_battle_choices:
+                            converted_choices.append(
+                                Choice(
+                                    id=action_choice.id,
+                                    text=action_choice.text,
+                                    description=action_choice.difficulty if action_choice.difficulty else None,
+                                    requirements=action_choice.requirements if action_choice.requirements else None,
+                                )
                             )
-                            for choice in battle_choices
-                        ]
-                        
+                        coordinator_response.choices = converted_choices
+
                         # 戦闘開始メッセージを追加
                         coordinator_response.narrative += f"\n\n戦闘開始！{battle_data.combatants[1].name}が現れた！"
-                        
+
                         # WebSocketで戦闘開始を通知
                         await GameEventEmitter.emit_custom_event(
                             session_id, "battle_start", {"battle_data": battle_data.dict()}
@@ -497,11 +504,15 @@ class GameSessionService:
                 "action_type": action_request.action_type,
                 "timestamp": datetime.utcnow().isoformat(),
                 "narrative": coordinator_response.narrative,
-                "choices": [{"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)} 
-                           for choice in coordinator_response.choices]
+                "choices": [
+                    {"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)}
+                    for choice in coordinator_response.choices
+                ]
                 if coordinator_response.choices
                 else [],
-                "success": coordinator_response.state_changes.get("success", True) if coordinator_response.state_changes else True,
+                "success": coordinator_response.state_changes.get("success", True)
+                if coordinator_response.state_changes
+                else True,
                 "state_changes": coordinator_response.state_changes,
             }
 
@@ -537,10 +548,14 @@ class GameSessionService:
                 user_id,
                 action_request.action_text,
                 {
-                    "success": coordinator_response.state_changes.get("success", True) if coordinator_response.state_changes else True,
+                    "success": coordinator_response.state_changes.get("success", True)
+                    if coordinator_response.state_changes
+                    else True,
                     "narrative": coordinator_response.narrative,
-                    "choices": [{"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)} 
-                               for choice in coordinator_response.choices]
+                    "choices": [
+                        {"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)}
+                        for choice in coordinator_response.choices
+                    ]
                     if coordinator_response.choices
                     else [],
                     "turn": action_record["turn"],
@@ -569,6 +584,7 @@ class GameSessionService:
 
             # ChoiceをActionChoiceに変換
             from app.schemas.game_session import ActionChoice
+
             action_choices = None
             if coordinator_response.choices:
                 action_choices = [
@@ -576,13 +592,15 @@ class GameSessionService:
                         id=choice.id,
                         text=choice.text,
                         difficulty=getattr(choice, "difficulty", None),
-                        requirements=getattr(choice, "requirements", {})
+                        requirements=getattr(choice, "requirements", {}),
                     )
                     for choice in coordinator_response.choices
                 ]
-            
+
             return ActionExecuteResponse(
-                success=coordinator_response.state_changes.get("success", True) if coordinator_response.state_changes else True,
+                success=coordinator_response.state_changes.get("success", True)
+                if coordinator_response.state_changes
+                else True,
                 turn_number=int(action_record["turn"]),
                 narrative=coordinator_response.narrative or "物語は続きます...",
                 choices=action_choices,
@@ -618,7 +636,7 @@ class GameSessionService:
         """戦闘ターンを処理"""
         battle_data_dict = session_data.get("battle_data", {})
         battle_data = BattleData(**battle_data_dict)
-        
+
         # プレイヤーのターンの場合
         if battle_data.state == BattleState.PLAYER_TURN:
             # アクションタイプを判定
@@ -629,7 +647,7 @@ class GameSessionService:
                 action_type = BattleActionType.ESCAPE
             elif action_request.choice_id and action_request.choice_id.startswith("battle_use_"):
                 action_type = BattleActionType.ENVIRONMENT
-                
+
             # 戦闘アクションを作成
             battle_action = BattleAction(
                 actor_id=character.id,
@@ -637,21 +655,21 @@ class GameSessionService:
                 target_id=battle_data.combatants[1].id if len(battle_data.combatants) > 1 else None,
                 action_text=action_request.action_text,
             )
-            
+
             # アクションを処理
             result, updated_battle_data = self.battle_service.process_battle_action(battle_data, battle_action)
-            
+
             # 結果を物語に追加
             coordinator_response.narrative += f"\n\n{result.narrative}"
-            
+
             # 戦闘終了チェック
             battle_ended, victory, rewards = self.battle_service.check_battle_end(updated_battle_data)
-            
+
             if battle_ended:
                 # 戦闘終了処理
                 updated_battle_data.state = BattleState.FINISHED
                 session_data["battle_data"] = updated_battle_data.dict()
-                
+
                 if victory is not None:
                     if victory:
                         coordinator_response.narrative += "\n\n戦闘に勝利した！"
@@ -667,14 +685,14 @@ class GameSessionService:
                         coordinator_response.narrative += "\n\n戦闘に敗北した..."
                 else:
                     coordinator_response.narrative += "\n\n戦闘から逃走した。"
-                    
+
                 # 通常の選択肢に戻す
                 return None
             else:
                 # ターンを進める
                 next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)
                 session_data["battle_data"] = updated_battle_data.dict()
-                
+
                 if is_player_turn:
                     # プレイヤーのターン - 選択肢を返す
                     battle_choices = self.battle_service.get_battle_choices(updated_battle_data, True)
@@ -698,16 +716,16 @@ class GameSessionService:
                             target_id=character.id,
                             action_text=f"{enemy.name}の攻撃",
                         )
-                        
+
                         enemy_result, updated_battle_data = self.battle_service.process_battle_action(
                             updated_battle_data, enemy_action
                         )
                         coordinator_response.narrative += f"\n\n{enemy_result.narrative}"
-                        
+
                         # 再度ターンを進める（プレイヤーに戻す）
                         next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)
                         session_data["battle_data"] = updated_battle_data.dict()
-                        
+
                         # プレイヤーのターンの選択肢を返す
                         battle_choices = self.battle_service.get_battle_choices(updated_battle_data, True)
                         return [
@@ -719,7 +737,7 @@ class GameSessionService:
                             )
                             for choice in battle_choices
                         ]
-                        
+
         return None
 
     def _apply_state_changes(self, character_stats, state_changes: dict[str, Any]):

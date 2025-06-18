@@ -2,7 +2,6 @@
 混沌AI (The Anomaly) のテスト
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

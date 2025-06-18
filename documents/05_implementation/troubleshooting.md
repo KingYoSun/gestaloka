@@ -390,6 +390,93 @@ lint-backend: ## バックエンドのリントを実行
 	docker-compose exec -T backend sh -c "cd /app && ruff check . && ruff format --check ."
 ```
 
+## テスト・型・リントエラーの解決（2025/06/18）
+
+### 問題: 依存関係更新後の大量のエラー
+
+**症状:**
+- バックエンドテスト: 16件失敗
+- 型チェックエラー: バックエンド5件、フロントエンド30件
+- リントエラー: バックエンド705件、フロントエンド5件+28警告
+
+**解決方法:**
+
+#### 1. テストエラーの修正
+
+**戦闘統合テスト（6件）**
+```python
+# tests/test_battle_integration.py
+# データベースクエリのモックがタプルを返すように修正
+def setup_db_mocks(mock_db, mock_game_session, mock_character):
+    def exec_side_effect(query):
+        result = Mock()
+        result.first.return_value = (mock_game_session, mock_character)  # タプルで返す
+        return result
+```
+
+**Geminiクライアントテスト（5件）**
+```python
+# tests/test_gemini_client.py
+# langchain-google-genai 2.1.5での新しいモック方式
+with patch("app.services.ai.gemini_client.ChatGoogleGenerativeAI") as mock_llm:
+    mock_llm_instance = mock_llm.return_value
+    mock_llm_instance.astream = mock_astream
+```
+
+**タイムゾーンエラー（1件）**
+```python
+# datetime.now(timezone.utc) → datetime.now(UTC) に変更
+from datetime import UTC, datetime
+current_time = datetime.now(UTC)
+```
+
+#### 2. 型チェックエラーの修正
+
+**バックエンド**
+```python
+# alembic/env.py - Null処理
+configuration = config.get_section(config.config_ini_section)
+if configuration is None:
+    configuration = {}
+
+# app/services/game_session.py - 型注釈の削除
+initial_battle_choices = self.battle_service.get_battle_choices(battle_data, True)
+```
+
+**フロントエンド**
+```typescript
+// BattleStatus.tsx - level属性をオプショナルに
+interface Combatant {
+  level?: number;
+}
+
+// useWebSocket.test.ts - Function型を具体的な型に
+(onConnectedCall[1] as (data: { socketId: string }) => void)({ socketId: 'test-socket-id' })
+```
+
+#### 3. リントエラーの修正
+
+**自動修正**
+```bash
+# バックエンド
+docker-compose exec -T backend ruff check . --fix
+docker-compose exec -T backend ruff format .
+
+# フロントエンド  
+make format
+```
+
+**手動修正が必要な項目**
+- 未使用変数: `_`プレフィックスを追加または実際に使用
+- 変数名の大文字: `MockCoordinator` → `mock_coordinator`
+- 未定義のインポート: 必要に応じて追加または削除
+
+### 結果
+
+✅ **全テスト成功**: バックエンド174件、フロントエンド21件
+✅ **型チェックエラー0件**: mypy、TypeScript共にクリーン
+✅ **リントエラー0件**: ruff、ESLint共にエラーなし（警告のみ）
+
 ## Gemini APIの問題
 
 ### 問題: temperatureパラメータエラー
@@ -455,6 +542,19 @@ model: str = Field(default="gemini-2.5-pro")
 ```bash
 make db-reset
 make init-db
+```
+
+### 問題: Pytestの非推奨警告
+
+**症状:**
+- `PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset`
+
+**解決方法:**
+
+pytest.iniまたはpyproject.tomlに設定を追加:
+```toml
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
 ```
 
 ---

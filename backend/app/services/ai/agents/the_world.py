@@ -157,9 +157,7 @@ class TheWorldAI(BaseAgent):
 
             # イベントの選択と生成
             if potential_events:
-                selected_event = await self._select_and_generate_event(
-                    context, potential_events
-                )
+                selected_event = await self._select_and_generate_event(context, potential_events)
                 return await self._create_event_response(selected_event, context)
 
             # 定期的な世界状態レポート
@@ -182,22 +180,14 @@ class TheWorldAI(BaseAgent):
         # プレイヤーの行動履歴から世界の状態を推測
         if context.recent_actions:
             # 最近の行動を分析
-            combat_actions = sum(
-                1 for action in context.recent_actions if "戦" in action or "攻撃" in action
-            )
-            peaceful_actions = sum(
-                1 for action in context.recent_actions if "会話" in action or "取引" in action
-            )
+            combat_actions = sum(1 for action in context.recent_actions if "戦" in action or "攻撃" in action)
+            peaceful_actions = sum(1 for action in context.recent_actions if "会話" in action or "取引" in action)
 
             # 平和度の更新
             if combat_actions > peaceful_actions:
-                self.world_state.peace_level = max(
-                    0.0, self.world_state.peace_level - 0.01
-                )
+                self.world_state.peace_level = max(0.0, self.world_state.peace_level - 0.01)
             else:
-                self.world_state.peace_level = min(
-                    1.0, self.world_state.peace_level + 0.01
-                )
+                self.world_state.peace_level = min(1.0, self.world_state.peace_level + 0.01)
 
         # AI生成による詳細な状態分析
         await self._analyze_world_trends(context)
@@ -308,7 +298,9 @@ class TheWorldAI(BaseAgent):
             elif key == "faction_tensions":
                 if isinstance(value, dict) and "threshold" in value:
                     # 勢力間緊張度のチェック（簡略化）
-                    max_tension = max(self.world_state.faction_tensions.values()) if self.world_state.faction_tensions else 0.0
+                    max_tension = (
+                        max(self.world_state.faction_tensions.values()) if self.world_state.faction_tensions else 0.0
+                    )
                     if max_tension < value["threshold"]:
                         return False
 
@@ -366,9 +358,7 @@ class TheWorldAI(BaseAgent):
 
         return customized_event
 
-    async def _create_event_response(
-        self, event: WorldEvent, context: PromptContext
-    ) -> AgentResponse:
+    async def _create_event_response(self, event: WorldEvent, context: PromptContext) -> AgentResponse:
         """イベント発生時のレスポンスを作成"""
         # イベントの影響を反映した選択肢を生成
         choices_prompt = f"""
@@ -449,7 +439,7 @@ class TheWorldAI(BaseAgent):
             # 番号付きリストのパターンをチェック
             for marker in ["1.", "2.", "3.", "1)", "2)", "3)", "①", "②", "③"]:
                 if line.startswith(marker):
-                    choice_text = line[len(marker):].strip()
+                    choice_text = line[len(marker) :].strip()
                     choices.append(
                         ActionChoice(
                             id=f"world_event_{len(choices) + 1}",

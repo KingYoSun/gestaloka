@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
-import { BattleStatus } from './BattleStatus';
+import { BattleStatus } from './BattleStatus'
 
 describe('BattleStatus', () => {
   const mockBattleData = {
@@ -11,7 +11,7 @@ describe('BattleStatus', () => {
       {
         id: 'player_1',
         name: 'ヒーロー',
-        type: 'player',
+        type: 'player' as const,
         hp: 75,
         max_hp: 100,
         mp: 30,
@@ -24,7 +24,7 @@ describe('BattleStatus', () => {
       {
         id: 'enemy_1',
         name: 'ゴブリン',
-        type: 'monster',
+        type: 'monster' as const,
         level: 3,
         hp: 25,
         max_hp: 40,
@@ -50,96 +50,102 @@ describe('BattleStatus', () => {
         result: 'ヒーローに8ダメージ',
       },
     ],
-  };
+  }
 
   it('戦闘状態が表示される', () => {
-    render(<BattleStatus battleData={mockBattleData} />);
+    render(<BattleStatus battleData={mockBattleData} />)
 
     // タイトルが表示される
-    expect(screen.getByText('戦闘中')).toBeInTheDocument();
+    expect(screen.getByText('戦闘中')).toBeInTheDocument()
 
     // ターン数が表示される
-    expect(screen.getByText('ターン 3')).toBeInTheDocument();
-  });
+    expect(screen.getByText('ターン 3')).toBeInTheDocument()
+  })
 
   it('プレイヤーのステータスが表示される', () => {
-    render(<BattleStatus battleData={mockBattleData} />);
+    render(<BattleStatus battleData={mockBattleData} />)
 
-    const player = mockBattleData.combatants[0];
+    const player = mockBattleData.combatants[0]
 
     // プレイヤー名が表示される
-    expect(screen.getByText(player.name)).toBeInTheDocument();
+    expect(screen.getByText(player.name)).toBeInTheDocument()
 
     // HPが表示される
-    const hpElements = screen.getAllByText('HP');
-    expect(hpElements).toHaveLength(2); // プレイヤーと敵の分
-    expect(screen.getByText(`${player.hp}/${player.max_hp}`)).toBeInTheDocument();
+    const hpElements = screen.getAllByText('HP')
+    expect(hpElements).toHaveLength(2) // プレイヤーと敵の分
+    expect(
+      screen.getByText(`${player.hp}/${player.max_hp}`)
+    ).toBeInTheDocument()
 
     // MPが表示される
-    expect(screen.getByText('MP')).toBeInTheDocument();
-    expect(screen.getByText(`${player.mp}/${player.max_mp}`)).toBeInTheDocument();
+    expect(screen.getByText('MP')).toBeInTheDocument()
+    expect(
+      screen.getByText(`${player.mp}/${player.max_mp}`)
+    ).toBeInTheDocument()
 
     // ステータスが表示される
-    expect(screen.getByText(`攻撃: ${player.attack}`)).toBeInTheDocument();
-    expect(screen.getByText(`防御: ${player.defense}`)).toBeInTheDocument();
-    expect(screen.getByText(`速度: ${player.speed}`)).toBeInTheDocument();
-  });
+    expect(screen.getByText(`攻撃: ${player.attack}`)).toBeInTheDocument()
+    expect(screen.getByText(`防御: ${player.defense}`)).toBeInTheDocument()
+    expect(screen.getByText(`速度: ${player.speed}`)).toBeInTheDocument()
+  })
 
   it('敵のステータスが表示される', () => {
-    render(<BattleStatus battleData={mockBattleData} />);
+    render(<BattleStatus battleData={mockBattleData} />)
 
-    const enemy = mockBattleData.combatants[1];
+    const enemy = mockBattleData.combatants[1]
 
-    // 敵名が表示される
-    expect(screen.getByText(`${enemy.name} (Lv.${enemy.level})`)).toBeInTheDocument();
+    // 敵名が表示される（レベルも含む）
+    expect(screen.getByText('ゴブリン (Lv.3)')).toBeInTheDocument()
 
     // HPが表示される
-    expect(screen.getByText(`${enemy.hp}/${enemy.max_hp}`)).toBeInTheDocument();
-  });
+    expect(screen.getByText(`${enemy.hp}/${enemy.max_hp}`)).toBeInTheDocument()
+  })
 
   it('現在のターンが表示される', () => {
-    render(<BattleStatus battleData={mockBattleData} />);
+    render(<BattleStatus battleData={mockBattleData} />)
 
     // プレイヤーターンの表示
-    expect(screen.getByText('あなたのターン')).toBeInTheDocument();
-  });
+    expect(screen.getByText('あなたのターン')).toBeInTheDocument()
+  })
 
   it('敵のターンの場合、適切に表示される', () => {
     const enemyTurnData = {
       ...mockBattleData,
       state: 'enemy_turn',
       current_turn_index: 1,
-    };
+    }
 
-    render(<BattleStatus battleData={enemyTurnData} />);
+    render(<BattleStatus battleData={enemyTurnData} />)
 
     // 敵ターンの表示
-    expect(screen.getByText('敵のターン')).toBeInTheDocument();
-  });
+    expect(screen.getByText('敵のターン')).toBeInTheDocument()
+  })
 
   it('戦闘終了状態が表示される', () => {
     const finishedData = {
       ...mockBattleData,
       state: 'finished',
-    };
+    }
 
-    render(<BattleStatus battleData={finishedData} />);
+    render(<BattleStatus battleData={finishedData} />)
 
     // 戦闘終了の表示
-    expect(screen.getByText('戦闘終了')).toBeInTheDocument();
-  });
+    expect(screen.getByText('戦闘終了')).toBeInTheDocument()
+  })
 
   it('HPバーが正しく表示される', () => {
-    render(<BattleStatus battleData={mockBattleData} />);
+    render(<BattleStatus battleData={mockBattleData} />)
 
-    const player = mockBattleData.combatants[0];
-    const playerHpPercentage = (player.hp / player.max_hp) * 100;
+    const player = mockBattleData.combatants[0]
 
     // プレイヤーのHPバーをチェック
-    const playerHpBar = screen.getAllByRole('progressbar')[0];
-    expect(playerHpBar).toHaveAttribute('aria-valuenow', player.hp.toString());
-    expect(playerHpBar).toHaveAttribute('aria-valuemax', player.max_hp.toString());
-  });
+    const playerHpBar = screen.getAllByRole('progressbar')[0]
+    expect(playerHpBar).toHaveAttribute('aria-valuenow', player.hp.toString())
+    expect(playerHpBar).toHaveAttribute(
+      'aria-valuemax',
+      player.max_hp.toString()
+    )
+  })
 
   it('状態異常が表示される', () => {
     const dataWithStatusEffects = {
@@ -151,14 +157,14 @@ describe('BattleStatus', () => {
         },
         mockBattleData.combatants[1],
       ],
-    };
+    }
 
-    render(<BattleStatus battleData={dataWithStatusEffects} />);
+    render(<BattleStatus battleData={dataWithStatusEffects} />)
 
     // 状態異常が表示される
-    expect(screen.getByText('defending')).toBeInTheDocument();
-    expect(screen.getByText('poisoned')).toBeInTheDocument();
-  });
+    expect(screen.getByText('defending')).toBeInTheDocument()
+    expect(screen.getByText('poisoned')).toBeInTheDocument()
+  })
 
   it('複数の敵が表示される', () => {
     const multipleEnemiesData = {
@@ -169,7 +175,7 @@ describe('BattleStatus', () => {
         {
           id: 'enemy_2',
           name: 'スライム',
-          type: 'monster',
+          type: 'monster' as const,
           level: 2,
           hp: 20,
           max_hp: 20,
@@ -181,14 +187,14 @@ describe('BattleStatus', () => {
           status_effects: [],
         },
       ],
-    };
+    }
 
-    render(<BattleStatus battleData={multipleEnemiesData} />);
+    render(<BattleStatus battleData={multipleEnemiesData} />)
 
     // 両方の敵が表示される
-    expect(screen.getByText('ゴブリン (Lv.3)')).toBeInTheDocument();
-    expect(screen.getByText('スライム (Lv.2)')).toBeInTheDocument();
-  });
+    expect(screen.getByText('ゴブリン (Lv.3)')).toBeInTheDocument()
+    expect(screen.getByText('スライム (Lv.2)')).toBeInTheDocument()
+  })
 
   it('環境情報が表示される', () => {
     const dataWithEnvironment = {
@@ -200,14 +206,14 @@ describe('BattleStatus', () => {
         interactive_objects: ['岩', '木'],
         special_conditions: ['視界不良', '移動困難'],
       },
-    };
+    }
 
-    render(<BattleStatus battleData={dataWithEnvironment} />);
+    render(<BattleStatus battleData={dataWithEnvironment} />)
 
     // 環境情報が表示される
-    expect(screen.getByText('地形: 森')).toBeInTheDocument();
-    expect(screen.getByText('天候: 雨')).toBeInTheDocument();
-    expect(screen.getByText('時間: 夜')).toBeInTheDocument();
-    expect(screen.getByText('利用可能: 岩, 木')).toBeInTheDocument();
-  });
-});
+    expect(screen.getByText('地形: 森')).toBeInTheDocument()
+    expect(screen.getByText('天候: 雨')).toBeInTheDocument()
+    expect(screen.getByText('時間: 夜')).toBeInTheDocument()
+    expect(screen.getByText('利用可能: 岩, 木')).toBeInTheDocument()
+  })
+})

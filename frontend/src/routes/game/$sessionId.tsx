@@ -3,7 +3,11 @@
  */
 import { useEffect, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useGameSession, useExecuteGameAction, useEndGameSession } from '@/hooks/useGameSessions'
+import {
+  useGameSession,
+  useExecuteGameAction,
+  useEndGameSession,
+} from '@/hooks/useGameSessions'
 import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { useGameWebSocket } from '@/hooks/useWebSocket'
 import { Button } from '@/components/ui/button'
@@ -12,14 +16,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
-import { 
-  Send, 
-  Home, 
-  StopCircle, 
-  User, 
-  Bot, 
+import {
+  Send,
+  Home,
+  StopCircle,
+  User,
+  Bot,
   AlertCircle,
-  MessageSquare
+  MessageSquare,
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
@@ -33,23 +37,23 @@ function GameSessionPage() {
   const { sessionId } = Route.useParams()
   const [actionText, setActionText] = useState('')
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
-  
+
   const { data: session, isLoading } = useGameSession(sessionId)
   const executeActionMutation = useExecuteGameAction()
   const endSessionMutation = useEndGameSession()
-  
+
   const {
     setActiveSession,
     getSessionMessages,
     currentChoices,
     isExecutingAction,
-    setExecutingAction
+    setExecutingAction,
   } = useGameSessionStore()
 
   // WebSocket接続
   const { sendAction } = useGameWebSocket(sessionId)
   // const { chatMessages, sendChatMessage } = useChatWebSocket(sessionId)
-  
+
   const messages = getSessionMessages(sessionId)
 
   // セッションがロードされたらストアに設定
@@ -73,21 +77,21 @@ function GameSessionPage() {
     }
 
     setExecutingAction(true)
-    
+
     try {
       // WebSocket経由でアクションを送信
       sendAction(actionText.trim())
-      
+
       // 従来のAPI呼び出しも並行して実行（フォールバック）
       await executeActionMutation.mutateAsync({
         sessionId,
         action: {
           actionText: actionText.trim(),
           actionType: selectedChoice !== null ? 'choice' : 'custom',
-          choiceIndex: selectedChoice !== null ? selectedChoice : undefined
-        }
+          choiceIndex: selectedChoice !== null ? selectedChoice : undefined,
+        },
       })
-      
+
       setActionText('')
       setSelectedChoice(null)
     } catch (error) {
@@ -127,9 +131,7 @@ function GameSessionPage() {
       <div className="container mx-auto px-4 py-8">
         <Alert>
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            セッションが見つかりません。
-          </AlertDescription>
+          <AlertDescription>セッションが見つかりません。</AlertDescription>
         </Alert>
       </div>
     )
@@ -146,13 +148,17 @@ function GameSessionPage() {
           </Badge>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.location.href = '/dashboard'}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => (window.location.href = '/dashboard')}
+          >
             <Home className="h-4 w-4 mr-2" />
             ホーム
           </Button>
-          <Button 
-            variant="destructive" 
-            size="sm" 
+          <Button
+            variant="destructive"
+            size="sm"
             onClick={handleEndSession}
             disabled={!session.isActive || endSessionMutation.isPending}
           >
@@ -193,32 +199,38 @@ function GameSessionPage() {
                       まだメッセージがありません。行動を入力して冒険を始めましょう！
                     </p>
                   ) : (
-                    messages.map((message) => (
-                      <div 
+                    messages.map(message => (
+                      <div
                         key={message.id}
                         className={`flex gap-3 ${
                           message.type === 'user' ? 'flex-row-reverse' : ''
                         }`}
                       >
-                        <div className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-md border ${
-                          message.type === 'user' 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'bg-muted'
-                        }`}>
+                        <div
+                          className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-md border ${
+                            message.type === 'user'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted'
+                          }`}
+                        >
                           {message.type === 'user' ? (
                             <User className="h-4 w-4" />
                           ) : (
                             <Bot className="h-4 w-4" />
                           )}
                         </div>
-                        <div className={`flex flex-col space-y-2 text-sm max-w-[80%] ${
-                          message.type === 'user' ? 'items-end' : ''
-                        }`}>
-                          <div className={`rounded-lg px-3 py-2 ${
-                            message.type === 'user'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
-                          }`}>
+                        <div
+                          className={`flex flex-col space-y-2 text-sm max-w-[80%] ${
+                            message.type === 'user' ? 'items-end' : ''
+                          }`}
+                        >
+                          <div
+                            className={`rounded-lg px-3 py-2 ${
+                              message.type === 'user'
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted'
+                            }`}
+                          >
                             {message.content}
                           </div>
                           <span className="text-xs text-muted-foreground">
@@ -240,7 +252,7 @@ function GameSessionPage() {
           {session.sessionData?.battle_data && (
             <BattleStatus battleData={session.sessionData.battle_data} />
           )}
-          
+
           {/* 選択肢 */}
           {currentChoices && currentChoices.length > 0 && (
             <Card>
@@ -271,13 +283,15 @@ function GameSessionPage() {
               <Textarea
                 placeholder="あなたの行動を入力してください..."
                 value={actionText}
-                onChange={(e) => setActionText(e.target.value)}
+                onChange={e => setActionText(e.target.value)}
                 className="min-h-[100px]"
                 disabled={!session.isActive || isExecutingAction}
               />
-              <Button 
+              <Button
                 onClick={handleSubmitAction}
-                disabled={!session.isActive || isExecutingAction || !actionText.trim()}
+                disabled={
+                  !session.isActive || isExecutingAction || !actionText.trim()
+                }
                 className="w-full"
               >
                 {isExecutingAction ? (
@@ -303,7 +317,8 @@ function GameSessionPage() {
             <CardContent>
               <div className="space-y-2 text-sm">
                 <div>
-                  <span className="font-medium">名前:</span> {session.characterName}
+                  <span className="font-medium">名前:</span>{' '}
+                  {session.characterName}
                 </div>
                 <div>
                   <span className="font-medium">セッション開始:</span>

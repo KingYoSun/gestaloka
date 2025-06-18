@@ -1,4 +1,4 @@
-import * as React from "react"
+import * as React from 'react'
 
 interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number
@@ -8,7 +8,7 @@ interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
 const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
   ({ className, value, max = 100, ...props }, ref) => {
     const percentage = value ? (value / max) * 100 : 0
-    
+
     return (
       <div
         ref={ref}
@@ -27,6 +27,6 @@ const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
     )
   }
 )
-Progress.displayName = "Progress"
+Progress.displayName = 'Progress'
 
 export { Progress }

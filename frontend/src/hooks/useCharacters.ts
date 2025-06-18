@@ -12,10 +12,10 @@ import { useCharacterStore } from '@/stores/characterStore'
  * キャラクター一覧を取得（Zustandストア統合）
  */
 export function useCharacters() {
-  const setCharacters = useCharacterStore((state) => state.setCharacters)
-  const setLoading = useCharacterStore((state) => state.setLoading)
-  const setError = useCharacterStore((state) => state.setError)
-  const clearError = useCharacterStore((state) => state.clearError)
+  const setCharacters = useCharacterStore(state => state.setCharacters)
+  const setLoading = useCharacterStore(state => state.setLoading)
+  const setError = useCharacterStore(state => state.setError)
+  const clearError = useCharacterStore(state => state.clearError)
 
   const query = useQuery({
     queryKey: ['characters'],
@@ -26,16 +26,28 @@ export function useCharacters() {
   // ストアとの同期
   useEffect(() => {
     setLoading(query.isLoading)
-    
+
     if (query.data) {
       setCharacters(query.data)
       clearError()
     }
-    
+
     if (query.error) {
-      setError(query.error instanceof Error ? query.error.message : 'エラーが発生しました')
+      setError(
+        query.error instanceof Error
+          ? query.error.message
+          : 'エラーが発生しました'
+      )
     }
-  }, [query.data, query.isLoading, query.error, setCharacters, setLoading, setError, clearError])
+  }, [
+    query.data,
+    query.isLoading,
+    query.error,
+    setCharacters,
+    setLoading,
+    setError,
+    clearError,
+  ])
 
   return query
 }
@@ -56,17 +68,18 @@ export function useCharacter(characterId: string | undefined) {
  */
 export function useCreateCharacter() {
   const queryClient = useQueryClient()
-  const addCharacter = useCharacterStore((state) => state.addCharacter)
+  const addCharacter = useCharacterStore(state => state.addCharacter)
 
   return useMutation({
-    mutationFn: (data: CharacterCreationForm) => apiClient.createCharacter(data),
-    onSuccess: (newCharacter) => {
+    mutationFn: (data: CharacterCreationForm) =>
+      apiClient.createCharacter(data),
+    onSuccess: newCharacter => {
       // ストアに新しいキャラクターを追加
       addCharacter(newCharacter)
-      
+
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
-      
+
       toast({
         title: 'キャラクター作成成功',
         description: `${newCharacter.name}を作成しました`,
@@ -88,24 +101,26 @@ export function useCreateCharacter() {
  */
 export function useUpdateCharacter() {
   const queryClient = useQueryClient()
-  const updateCharacter = useCharacterStore((state) => state.updateCharacter)
+  const updateCharacter = useCharacterStore(state => state.updateCharacter)
 
   return useMutation({
-    mutationFn: ({ 
-      characterId, 
-      updates 
-    }: { 
+    mutationFn: ({
+      characterId,
+      updates,
+    }: {
       characterId: string
-      updates: Partial<CharacterCreationForm> 
+      updates: Partial<CharacterCreationForm>
     }) => apiClient.updateCharacter(characterId, updates),
-    onSuccess: (updatedCharacter) => {
+    onSuccess: updatedCharacter => {
       // ストアでキャラクター情報を更新
       updateCharacter(updatedCharacter.id, updatedCharacter)
-      
+
       // 個別のキャラクターとリストのキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
-      queryClient.invalidateQueries({ queryKey: ['characters', updatedCharacter.id] })
-      
+      queryClient.invalidateQueries({
+        queryKey: ['characters', updatedCharacter.id],
+      })
+
       toast({
         title: '更新成功',
         description: 'キャラクター情報を更新しました',
@@ -127,17 +142,17 @@ export function useUpdateCharacter() {
  */
 export function useDeleteCharacter() {
   const queryClient = useQueryClient()
-  const removeCharacter = useCharacterStore((state) => state.removeCharacter)
+  const removeCharacter = useCharacterStore(state => state.removeCharacter)
 
   return useMutation({
     mutationFn: (characterId: string) => apiClient.deleteCharacter(characterId),
     onSuccess: (_, characterId) => {
       // ストアからキャラクターを削除
       removeCharacter(characterId)
-      
+
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
-      
+
       toast({
         title: '削除成功',
         description: 'キャラクターを削除しました',
@@ -159,17 +174,20 @@ export function useDeleteCharacter() {
  */
 export function useActivateCharacter() {
   const queryClient = useQueryClient()
-  const setActiveCharacter = useCharacterStore((state) => state.setActiveCharacter)
+  const setActiveCharacter = useCharacterStore(
+    state => state.setActiveCharacter
+  )
 
   return useMutation({
-    mutationFn: (characterId: string) => apiClient.activateCharacter(characterId),
-    onSuccess: (activatedCharacter) => {
+    mutationFn: (characterId: string) =>
+      apiClient.activateCharacter(characterId),
+    onSuccess: activatedCharacter => {
       // ストアでアクティブキャラクターを設定
       setActiveCharacter(activatedCharacter.id)
-      
+
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
-      
+
       toast({
         title: 'キャラクター選択',
         description: `${activatedCharacter.name}を選択しました`,

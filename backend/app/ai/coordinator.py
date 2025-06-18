@@ -47,7 +47,7 @@ class CoordinatorAI:
     def __init__(
         self,
         agents: dict[str, Any],  # BaseAgentまたはCoordinationAgentAdapter
-        websocket_manager: Optional[Any] = None
+        websocket_manager: Optional[Any] = None,
     ):
         # BaseAgentをアダプターでラップ
         self.agents: dict[str, CoordinationAgentAdapter] = {}
@@ -80,16 +80,9 @@ class CoordinatorAI:
         self.progress_notifier.set_session(session.id)
 
         # 初期コンテキストを設定
-        await self.shared_context.update({
-            "session_id": session.id,
-            "turn_number": session.turn_number
-        })
+        await self.shared_context.update({"session_id": session.id, "turn_number": session.turn_number})
 
-    async def process_action(
-        self,
-        action: PlayerAction,
-        session: GameSession
-    ) -> FinalResponse:
+    async def process_action(self, action: PlayerAction, session: GameSession) -> FinalResponse:
         """プレイヤーアクションを処理"""
 
         start_time = time.time()
@@ -104,21 +97,18 @@ class CoordinatorAI:
                 action_type=action.action_type,
                 action_text=action.action_text,
                 session_id=session.id,
-                character_id=session.character_id
+                character_id=session.character_id,
             )
 
             # 3. Shared Context更新
             if self.shared_context:
                 self.shared_context.add_player_action(action)
-                await self.shared_context.update({
-                    "turn_number": session.turn_number
-                })
+                await self.shared_context.update({"turn_number": session.turn_number})
 
             # 4. タスクリスト生成（最適化の核心）
             await self.progress_notifier.notify_progress("タスク分析中", 5)
             tasks = self.task_generator.generate_tasks(
-                action,
-                self.shared_context.context if self.shared_context else SharedContext(session_id=session.id)
+                action, self.shared_context.context if self.shared_context else SharedContext(session_id=session.id)
             )
 
             total_time = self.task_generator.estimate_total_time(tasks)
@@ -128,8 +118,8 @@ class CoordinatorAI:
                 details={
                     "task_count": len(tasks),
                     "estimated_time": total_time,
-                    "unique_agents": len(self._get_unique_agents(tasks))
-                }
+                    "unique_agents": len(self._get_unique_agents(tasks)),
+                },
             )
 
             # 5. タスク実行（最適化された呼び出し）
@@ -162,26 +152,19 @@ class CoordinatorAI:
                 action_type=action.action_type,
                 execution_time=execution_time,
                 task_count=len(tasks),
-                cache_hit_rate=self.response_cache.get_hit_rate()
+                cache_hit_rate=self.response_cache.get_hit_rate(),
             )
 
             return final_response
 
         except Exception as e:
             logger.error(
-                "Failed to process action",
-                error=str(e),
-                session_id=session.id,
-                action_type=action.action_type
+                "Failed to process action", error=str(e), session_id=session.id, action_type=action.action_type
             )
             await self.progress_notifier.notify_error(str(e))
             raise
 
-    async def execute_tasks(
-        self,
-        tasks: list[CoordinationTask],
-        action_context: ActionContext
-    ) -> list[AIResponse]:
+    async def execute_tasks(self, tasks: list[CoordinationTask], action_context: ActionContext) -> list[AIResponse]:
         """タスクリストに基づいて最適化されたAI呼び出しを実行"""
 
         responses: dict[str, TaskExecutionResult] = {}
@@ -196,61 +179,34 @@ class CoordinatorAI:
                 await self._wait_for_dependencies(task, responses)
 
                 # タスク開始通知
-                await self.progress_notifier.notify_task_start(
-                    task.name,
-                    len(tasks) - i
-                )
+                await self.progress_notifier.notify_task_start(task.name, len(tasks) - i)
 
                 # タスクタイプに応じた実行
-                task_result = await self._execute_task(
-                    task,
-                    action_context,
-                    responses
-                )
+                task_result = await self._execute_task(task, action_context, responses)
 
                 responses[task.id] = task_result
                 completed_tasks += 1
 
                 # 進捗更新
                 current_progress += task.progress_weight / total_weight * 80
-                progress_percentage = self.progress_notifier.calculate_progress(
-                    completed_tasks,
-                    len(tasks),
-                    10
-                )
+                progress_percentage = self.progress_notifier.calculate_progress(completed_tasks, len(tasks), 10)
 
                 # 残り時間の推定
                 avg_time = self._get_average_task_time(task.required_agents[0])
-                remaining_time = self.progress_notifier.estimate_remaining_time(
-                    completed_tasks,
-                    len(tasks),
-                    avg_time
-                )
+                remaining_time = self.progress_notifier.estimate_remaining_time(completed_tasks, len(tasks), avg_time)
 
                 await self.progress_notifier.notify_progress(
-                    f"{task.name}完了",
-                    progress_percentage,
-                    estimated_time_remaining=remaining_time
+                    f"{task.name}完了", progress_percentage, estimated_time_remaining=remaining_time
                 )
 
             except Exception as e:
-                logger.error(
-                    "Task execution failed",
-                    task_id=task.id,
-                    error=str(e)
-                )
+                logger.error("Task execution failed", task_id=task.id, error=str(e))
                 # エラーレスポンスを作成
                 error_response = AIResponse(
-                    agent_name="coordinator",
-                    task_id=task.id,
-                    success=False,
-                    error_message=str(e)
+                    agent_name="coordinator", task_id=task.id, success=False, error_message=str(e)
                 )
                 responses[task.id] = TaskExecutionResult(
-                    task=task,
-                    responses=[error_response],
-                    success=False,
-                    error_message=str(e)
+                    task=task, responses=[error_response], success=False, error_message=str(e)
                 )
 
         # 全レスポンスを統合して返す
@@ -262,10 +218,7 @@ class CoordinatorAI:
         return all_responses
 
     async def _execute_task(
-        self,
-        task: CoordinationTask,
-        action_context: ActionContext,
-        previous_responses: dict[str, TaskExecutionResult]
+        self, task: CoordinationTask, action_context: ActionContext, previous_responses: dict[str, TaskExecutionResult]
     ) -> TaskExecutionResult:
         """個別タスクを実行"""
 
@@ -273,18 +226,10 @@ class CoordinatorAI:
 
         if task.coordination_type == CoordinationType.PARALLEL:
             # 並列実行可能なタスクをグループ化
-            responses = await self._execute_parallel_task(
-                task,
-                action_context,
-                previous_responses
-            )
+            responses = await self._execute_parallel_task(task, action_context, previous_responses)
         else:
             # 順次実行
-            responses = await self._execute_sequential_task(
-                task,
-                action_context,
-                previous_responses
-            )
+            responses = await self._execute_sequential_task(task, action_context, previous_responses)
 
         execution_time = time.time() - start_time
 
@@ -293,17 +238,11 @@ class CoordinatorAI:
             self.task_execution_times[agent_name].append(execution_time)
 
         return TaskExecutionResult(
-            task=task,
-            responses=responses,
-            success=all(r.success for r in responses),
-            execution_time=execution_time
+            task=task, responses=responses, success=all(r.success for r in responses), execution_time=execution_time
         )
 
     async def _execute_parallel_task(
-        self,
-        task: CoordinationTask,
-        action_context: ActionContext,
-        previous_responses: dict[str, TaskExecutionResult]
+        self, task: CoordinationTask, action_context: ActionContext, previous_responses: dict[str, TaskExecutionResult]
     ) -> list[AIResponse]:
         """並列タスクを実行"""
 
@@ -315,22 +254,14 @@ class CoordinatorAI:
                 continue
 
             agent = self.agents[agent_name]
-            context = self._prepare_agent_context(
-                agent_name,
-                action_context,
-                previous_responses
-            )
+            context = self._prepare_agent_context(agent_name, action_context, previous_responses)
 
             # キャッシュチェック
             cached_response = self.response_cache.get(agent_name, context)
             if cached_response:
-                async_tasks.append(asyncio.create_task(
-                    self._return_cached_response(cached_response)
-                ))
+                async_tasks.append(asyncio.create_task(self._return_cached_response(cached_response)))
             else:
-                async_tasks.append(asyncio.create_task(
-                    self._call_agent(agent, context, task.id)
-                ))
+                async_tasks.append(asyncio.create_task(self._call_agent(agent, context, task.id)))
 
         # 全タスクの完了を待機
         responses = await asyncio.gather(*async_tasks, return_exceptions=True)
@@ -340,22 +271,16 @@ class CoordinatorAI:
         for response in responses:
             if isinstance(response, Exception):
                 logger.error(f"Parallel task error: {response}")
-                valid_responses.append(AIResponse(
-                    agent_name="unknown",
-                    task_id=task.id,
-                    success=False,
-                    error_message=str(response)
-                ))
+                valid_responses.append(
+                    AIResponse(agent_name="unknown", task_id=task.id, success=False, error_message=str(response))
+                )
             elif isinstance(response, AIResponse):
                 valid_responses.append(response)
 
         return valid_responses
 
     async def _execute_sequential_task(
-        self,
-        task: CoordinationTask,
-        action_context: ActionContext,
-        previous_responses: dict[str, TaskExecutionResult]
+        self, task: CoordinationTask, action_context: ActionContext, previous_responses: dict[str, TaskExecutionResult]
     ) -> list[AIResponse]:
         """順次実行タスクを実行"""
 
@@ -367,11 +292,7 @@ class CoordinatorAI:
                 continue
 
             agent = self.agents[agent_name]
-            context = self._prepare_agent_context(
-                agent_name,
-                action_context,
-                previous_responses
-            )
+            context = self._prepare_agent_context(agent_name, action_context, previous_responses)
 
             # キャッシュチェック
             cached_response = self.response_cache.get(agent_name, context)
@@ -383,12 +304,7 @@ class CoordinatorAI:
 
         return responses
 
-    async def _call_agent(
-        self,
-        agent: CoordinationAgentAdapter,
-        context: dict[str, Any],
-        task_id: str
-    ) -> AIResponse:
+    async def _call_agent(self, agent: CoordinationAgentAdapter, context: dict[str, Any], task_id: str) -> AIResponse:
         """個別のAIエージェントを呼び出し"""
 
         await self.progress_notifier.notify_ai_call(agent.name)
@@ -400,10 +316,7 @@ class CoordinatorAI:
             shared_context = self.shared_context.context if self.shared_context else None
             if shared_context is None:
                 raise ValueError("Shared context not initialized")
-            response = await agent.process(
-                context,
-                shared_context
-            )
+            response = await agent.process(context, shared_context)
 
             # タスクIDを追加
             response.task_id = task_id
@@ -415,27 +328,15 @@ class CoordinatorAI:
             return response
 
         except Exception as e:
-            logger.error(
-                f"Agent call failed: {agent.name}",
-                error=str(e)
-            )
-            return AIResponse(
-                agent_name=agent.name,
-                task_id=task_id,
-                success=False,
-                error_message=str(e)
-            )
+            logger.error(f"Agent call failed: {agent.name}", error=str(e))
+            return AIResponse(agent_name=agent.name, task_id=task_id, success=False, error_message=str(e))
 
     async def _return_cached_response(self, response: AIResponse) -> AIResponse:
         """キャッシュされたレスポンスを返す"""
         await asyncio.sleep(0.1)  # 最小限の遅延
         return response
 
-    async def _wait_for_dependencies(
-        self,
-        task: CoordinationTask,
-        responses: dict[str, TaskExecutionResult]
-    ) -> None:
+    async def _wait_for_dependencies(self, task: CoordinationTask, responses: dict[str, TaskExecutionResult]) -> None:
         """依存タスクの完了を待つ"""
 
         for dep_id in task.dependencies:
@@ -452,10 +353,7 @@ class CoordinatorAI:
                     raise Exception(f"Dependency {dep_id} not satisfied")
 
     def _prepare_agent_context(
-        self,
-        agent_name: str,
-        action_context: ActionContext,
-        previous_responses: dict[str, TaskExecutionResult]
+        self, agent_name: str, action_context: ActionContext, previous_responses: dict[str, TaskExecutionResult]
     ) -> dict[str, Any]:
         """エージェント用のコンテキストを準備"""
 
@@ -466,7 +364,7 @@ class CoordinatorAI:
         context = {
             "action": action_context,
             "shared_context": self.shared_context.get_ai_context(agent_name),
-            "previous_responses": {}
+            "previous_responses": {},
         }
 
         # 前のレスポンスから関連情報を抽出
@@ -478,7 +376,7 @@ class CoordinatorAI:
                         prev_responses[response.agent_name] = {
                             "narrative": response.narrative,
                             "state_changes": response.state_changes,
-                            "metadata": response.metadata
+                            "metadata": response.metadata,
                         }
 
         return context
@@ -486,10 +384,7 @@ class CoordinatorAI:
     def _integrate_responses(self, responses: list[AIResponse]) -> FinalResponse:
         """各AIのレスポンスを統合"""
 
-        final_response = FinalResponse(
-            narrative="",
-            choices=[]
-        )
+        final_response = FinalResponse(narrative="", choices=[])
 
         # 物語要素の統合
         narratives = []
@@ -536,7 +431,7 @@ class CoordinatorAI:
             integrated.choices = [
                 Choice(id="continue", text="続ける"),
                 Choice(id="look_around", text="周囲を見回す"),
-                Choice(id="status", text="ステータスを確認する")
+                Choice(id="status", text="ステータスを確認する"),
             ]
 
         # 物語が空の場合はデフォルトメッセージ
@@ -561,19 +456,13 @@ class CoordinatorAI:
             # 重要なイベントはログに記録
             if event.priority.value >= 3:
                 logger.info(
-                    "Important event",
-                    event_id=event.id,
-                    event_type=event.type.value,
-                    priority=event.priority.value
+                    "Important event", event_id=event.id, event_type=event.type.value, priority=event.priority.value
                 )
 
         # イベント連鎖の処理
         await self.event_chain.process_events()
 
-    async def _generate_events_from_responses(
-        self,
-        responses: list[AIResponse]
-    ) -> list[GameEvent]:
+    async def _generate_events_from_responses(self, responses: list[AIResponse]) -> list[GameEvent]:
         """AIレスポンスからイベントを生成"""
         events = []
 
@@ -583,36 +472,24 @@ class CoordinatorAI:
 
             # 状態変更がある場合はイベントを生成
             if response.state_changes:
-                event = await self.event_integration.create_event_from_response(
-                    response,
-                    EventType.STATE_CHANGE
-                )
+                event = await self.event_integration.create_event_from_response(response, EventType.STATE_CHANGE)
                 if event:
                     events.append(event)
 
             # 特定のエージェントからの重要な決定
             if response.agent_name == "the_world" and response.metadata.get("world_event"):
-                event = await self.event_integration.create_event_from_response(
-                    response,
-                    EventType.WORLD_EVENT
-                )
+                event = await self.event_integration.create_event_from_response(response, EventType.WORLD_EVENT)
                 if event:
                     events.append(event)
 
             # NPCの生成や死亡
             if response.agent_name == "npc_manager":
                 if response.metadata.get("npc_spawned"):
-                    event = await self.event_integration.create_event_from_response(
-                        response,
-                        EventType.NPC_SPAWN
-                    )
+                    event = await self.event_integration.create_event_from_response(response, EventType.NPC_SPAWN)
                     if event:
                         events.append(event)
                 elif response.metadata.get("npc_died"):
-                    event = await self.event_integration.create_event_from_response(
-                        response,
-                        EventType.NPC_DEATH
-                    )
+                    event = await self.event_integration.create_event_from_response(response, EventType.NPC_DEATH)
                     if event:
                         events.append(event)
 
@@ -637,4 +514,3 @@ class CoordinatorAI:
         # 最新10件の平均を計算
         recent_times = times[-10:]
         return sum(recent_times) / len(recent_times)
-

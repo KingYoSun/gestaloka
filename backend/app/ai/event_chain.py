@@ -24,6 +24,7 @@ logger = structlog.get_logger()
 @dataclass
 class EventHandler:
     """イベントハンドラーの定義"""
+
     agent_name: str
     event_types: set[EventType]
     handler_func: Callable
@@ -34,6 +35,7 @@ class EventHandler:
 @dataclass
 class EventChainNode:
     """イベント連鎖のノード"""
+
     event: GameEvent
     depth: int = 0
     parent_id: Optional[str] = None
@@ -57,7 +59,7 @@ class EventChain:
             "total_events": 0,
             "chain_events": 0,
             "max_chain_length": 0,
-            "events_by_type": defaultdict(int)
+            "events_by_type": defaultdict(int),
         }
 
     def register_handler(
@@ -66,7 +68,7 @@ class EventChain:
         event_types: set[EventType],
         handler_func: Callable,
         priority: int = 0,
-        conditions: Optional[Callable] = None
+        conditions: Optional[Callable] = None,
     ) -> None:
         """イベントハンドラーを登録"""
         handler = EventHandler(
@@ -74,7 +76,7 @@ class EventChain:
             event_types=event_types,
             handler_func=handler_func,
             priority=priority,
-            conditions=conditions
+            conditions=conditions,
         )
 
         for event_type in event_types:
@@ -86,7 +88,7 @@ class EventChain:
             "Event handler registered",
             agent=agent_name,
             event_types=[et.value for et in event_types],
-            priority=priority
+            priority=priority,
         )
 
     async def emit_event(self, event: GameEvent) -> None:
@@ -96,11 +98,7 @@ class EventChain:
             event.id = str(uuid.uuid4())
 
         # イベントノードを作成
-        node = EventChainNode(
-            event=event,
-            depth=0,
-            parent_id=event.parent_event_id
-        )
+        node = EventChainNode(event=event, depth=0, parent_id=event.parent_event_id)
 
         # 親イベントがある場合は深度を計算
         if event.parent_event_id and event.parent_event_id in self.event_nodes:
@@ -115,10 +113,7 @@ class EventChain:
             await self._queue_event(event)
         else:
             logger.warning(
-                "Event chain depth exceeded",
-                event_id=event.id,
-                depth=node.depth,
-                max_depth=self.max_chain_depth
+                "Event chain depth exceeded", event_id=event.id, depth=node.depth, max_depth=self.max_chain_depth
             )
 
         # 統計を更新
@@ -126,10 +121,7 @@ class EventChain:
         self.event_stats["events_by_type"][event.type] += 1
         if node.depth > 0:
             self.event_stats["chain_events"] += 1
-            self.event_stats["max_chain_length"] = max(
-                self.event_stats["max_chain_length"],
-                node.depth
-            )
+            self.event_stats["max_chain_length"] = max(self.event_stats["max_chain_length"], node.depth)
 
     async def _queue_event(self, event: GameEvent) -> None:
         """イベントをキューに追加"""
@@ -137,7 +129,7 @@ class EventChain:
         priority_tuple = (
             -event.priority.value,  # 負の値にして高優先度を先に
             event.timestamp,
-            self.counter
+            self.counter,
         )
 
         heapq.heappush(self.event_queue, (priority_tuple, event))
@@ -148,7 +140,7 @@ class EventChain:
             event_id=event.id,
             event_type=event.type.value,
             priority=event.priority.value,
-            queue_size=len(self.event_queue)
+            queue_size=len(self.event_queue),
         )
 
     async def process_events(self) -> None:
@@ -164,17 +156,11 @@ class EventChain:
                     processed_count += 1
                 except Exception as e:
                     logger.error(
-                        "Event processing failed",
-                        event_id=event.id,
-                        event_type=event.type.value,
-                        error=str(e)
+                        "Event processing failed", event_id=event.id, event_type=event.type.value, error=str(e)
                     )
 
             if processed_count > 0:
-                logger.info(
-                    "Events processed",
-                    count=processed_count
-                )
+                logger.info("Events processed", count=processed_count)
 
     async def _process_single_event(self, event: GameEvent) -> None:
         """単一のイベントを処理"""
@@ -201,7 +187,7 @@ class EventChain:
             event_id=event.id,
             event_type=event.type.value,
             handler_count=len(valid_handlers),
-            depth=node.depth
+            depth=node.depth,
         )
 
         # 各ハンドラーを実行
@@ -218,12 +204,7 @@ class EventChain:
                             secondary_events.append(new_event)
 
             except Exception as e:
-                logger.error(
-                    "Handler execution failed",
-                    agent=handler.agent_name,
-                    event_id=event.id,
-                    error=str(e)
-                )
+                logger.error("Handler execution failed", agent=handler.agent_name, event_id=event.id, error=str(e))
 
         # ノードを処理済みにマーク
         node.processed = True
@@ -248,6 +229,7 @@ class EventChain:
 
     def get_event_tree(self, root_event_id: str) -> dict[str, Any]:
         """イベント連鎖をツリー構造で取得"""
+
         def build_tree(node_id: str) -> dict[str, Any]:
             if node_id not in self.event_nodes:
                 return {}
@@ -258,7 +240,7 @@ class EventChain:
                 "event_type": node.event.type.value,
                 "depth": node.depth,
                 "processed": node.processed,
-                "children": [build_tree(child_id) for child_id in node.children]
+                "children": [build_tree(child_id) for child_id in node.children],
             }
 
         return build_tree(root_event_id)
@@ -266,11 +248,7 @@ class EventChain:
     def clear_processed_events(self, keep_recent: int = 100) -> None:
         """処理済みのイベントをクリア"""
         # 最近のイベントは保持
-        all_events = sorted(
-            self.event_nodes.values(),
-            key=lambda n: n.event.timestamp,
-            reverse=True
-        )
+        all_events = sorted(self.event_nodes.values(), key=lambda n: n.event.timestamp, reverse=True)
 
         keep_ids = {node.event.id for node in all_events[:keep_recent]}
 
@@ -284,11 +262,7 @@ class EventChain:
                     removed += 1
 
         if removed > 0:
-            logger.info(
-                "Cleared processed events",
-                removed=removed,
-                remaining=len(self.event_nodes)
-            )
+            logger.info("Cleared processed events", removed=removed, remaining=len(self.event_nodes))
 
     def get_statistics(self) -> dict[str, Any]:
         """イベント処理の統計を取得"""
@@ -296,9 +270,7 @@ class EventChain:
             **self.event_stats,
             "pending_events": len(self.event_queue),
             "total_nodes": len(self.event_nodes),
-            "processed_nodes": sum(
-                1 for node in self.event_nodes.values() if node.processed
-            )
+            "processed_nodes": sum(1 for node in self.event_nodes.values() if node.processed),
         }
 
 
@@ -329,12 +301,9 @@ class EventChainVisualizer:
         prefix = "  " * indent
         status = "✓" if tree.get("processed") else "○"
 
-        lines.append(
-            f"{prefix}{status} {tree['event_type']} [{tree['event_id'][:8]}]"
-        )
+        lines.append(f"{prefix}{status} {tree['event_type']} [{tree['event_id'][:8]}]")
 
         for child in tree.get("children", []):
             lines.append(EventChainVisualizer.format_tree(child, indent + 1))
 
         return "\n".join(lines)
-

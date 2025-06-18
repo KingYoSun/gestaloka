@@ -6,7 +6,13 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useCharacters } from '@/hooks/useCharacters'
 import { useCreateGameSession } from '@/hooks/useGameSessions'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { AlertCircle, Play, Users } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -19,13 +25,15 @@ export const Route = createFileRoute('/game/start')({
 
 function GameStartPage() {
   const router = useRouter()
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
-  
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(
+    null
+  )
+
   const { data: charactersData, isLoading: charactersLoading } = useCharacters()
   const createSessionMutation = useCreateGameSession()
 
   const characters = charactersData || []
-  const selectedCharacter = characters.find((c) => c.id === selectedCharacterId)
+  const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
 
   const handleStartSession = async () => {
     if (!selectedCharacterId) {
@@ -35,9 +43,9 @@ function GameStartPage() {
 
     try {
       const session = await createSessionMutation.mutateAsync({
-        characterId: selectedCharacterId
+        characterId: selectedCharacterId,
       })
-      
+
       toast.success('ゲームセッションを開始しました')
       router.navigate({ to: `/game/${session.id}` })
     } catch (error) {
@@ -73,8 +81,8 @@ function GameStartPage() {
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
               ゲームを開始するには、まずキャラクターを作成する必要があります。
-              <Button 
-                variant="link" 
+              <Button
+                variant="link"
                 className="ml-2 p-0 h-auto"
                 onClick={() => router.navigate({ to: '/character/create' })}
               >
@@ -85,45 +93,66 @@ function GameStartPage() {
         ) : (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {characters.map((character) => (
-                <Card 
+              {characters.map(character => (
+                <Card
                   key={character.id}
                   className={`cursor-pointer transition-all duration-200 hover:shadow-md ${
-                    selectedCharacterId === character.id 
-                      ? 'ring-2 ring-primary border-primary' 
+                    selectedCharacterId === character.id
+                      ? 'ring-2 ring-primary border-primary'
                       : 'hover:border-primary/50'
                   }`}
                   onClick={() => setSelectedCharacterId(character.id)}
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">{character.name}</CardTitle>
+                      <CardTitle className="text-lg">
+                        {character.name}
+                      </CardTitle>
                       <Badge variant="secondary">
                         Lv.{character.stats?.level || 1}
                       </Badge>
                     </div>
                     <CardDescription>
-                      {character.description || 'キャラクターの説明がありません'}
+                      {character.description ||
+                        'キャラクターの説明がありません'}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="pt-0">
                     <div className="space-y-2">
                       <div className="text-sm">
-                        <span className="font-medium text-muted-foreground">外見:</span>
-                        <p className="text-foreground">{character.appearance || '未設定'}</p>
+                        <span className="font-medium text-muted-foreground">
+                          外見:
+                        </span>
+                        <p className="text-foreground">
+                          {character.appearance || '未設定'}
+                        </p>
                       </div>
                       <div className="text-sm">
-                        <span className="font-medium text-muted-foreground">性格:</span>
-                        <p className="text-foreground">{character.personality || '未設定'}</p>
+                        <span className="font-medium text-muted-foreground">
+                          性格:
+                        </span>
+                        <p className="text-foreground">
+                          {character.personality || '未設定'}
+                        </p>
                       </div>
                       <div className="text-sm">
-                        <span className="font-medium text-muted-foreground">現在地:</span>
-                        <p className="text-foreground">{character.location || '不明'}</p>
+                        <span className="font-medium text-muted-foreground">
+                          現在地:
+                        </span>
+                        <p className="text-foreground">
+                          {character.location || '不明'}
+                        </p>
                       </div>
                       {character.stats && (
                         <div className="flex gap-4 text-xs text-muted-foreground pt-2 border-t">
-                          <span>HP: {character.stats.health}/{character.stats.maxHealth}</span>
-                          <span>MP: {character.stats.energy}/{character.stats.maxEnergy}</span>
+                          <span>
+                            HP: {character.stats.health}/
+                            {character.stats.maxHealth}
+                          </span>
+                          <span>
+                            MP: {character.stats.energy}/
+                            {character.stats.maxEnergy}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -143,12 +172,14 @@ function GameStartPage() {
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="font-semibold text-lg">{selectedCharacter.name}</h3>
+                      <h3 className="font-semibold text-lg">
+                        {selectedCharacter.name}
+                      </h3>
                       <p className="text-muted-foreground">
                         {selectedCharacter.description}
                       </p>
                     </div>
-                    <Button 
+                    <Button
                       onClick={handleStartSession}
                       disabled={createSessionMutation.isPending}
                       size="lg"

@@ -1,19 +1,20 @@
 /**
  * APIクライアント
  */
-import { 
-  User, 
-  Character, 
+import {
+  User,
+  Character,
   CharacterCreationForm,
   GameSession,
   GameSessionCreate,
   GameSessionListResponse,
   GameActionRequest,
-  GameActionResponse
+  GameActionResponse,
 } from '@/types'
 import { snakeToCamelObject, camelToSnakeObject } from '@/utils/caseConverter'
 
-const API_BASE_URL = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:8000'
+const API_BASE_URL =
+  (import.meta.env?.VITE_API_URL as string) || 'http://localhost:8000'
 
 interface LoginRequest {
   username: string
@@ -56,10 +57,10 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}/api/v1${endpoint}`
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string> || {}),
+      ...((options.headers as Record<string, string>) || {}),
     }
 
     if (this.token) {
@@ -144,7 +145,9 @@ class ApiClient {
     return snakeToCamelObject<Character>(data)
   }
 
-  async createCharacter(characterData: CharacterCreationForm): Promise<Character> {
+  async createCharacter(
+    characterData: CharacterCreationForm
+  ): Promise<Character> {
     const snakeData = camelToSnakeObject(characterData)
     const data = await this.request<Character>('/characters', {
       method: 'POST',
@@ -172,9 +175,12 @@ class ApiClient {
   }
 
   async activateCharacter(characterId: string): Promise<Character> {
-    const data = await this.request<Character>(`/characters/${characterId}/activate`, {
-      method: 'POST',
-    })
+    const data = await this.request<Character>(
+      `/characters/${characterId}/activate`,
+      {
+        method: 'POST',
+      }
+    )
     return snakeToCamelObject<Character>(data)
   }
 
@@ -189,7 +195,9 @@ class ApiClient {
     return snakeToCamelObject<GameSession>(data)
   }
 
-  async createGameSession(sessionData: GameSessionCreate): Promise<GameSession> {
+  async createGameSession(
+    sessionData: GameSessionCreate
+  ): Promise<GameSession> {
     const snakeData = camelToSnakeObject(sessionData)
     const data = await this.request<GameSession>('/game/sessions', {
       method: 'POST',
@@ -203,17 +211,23 @@ class ApiClient {
     updates: { currentScene?: string; sessionData?: Record<string, unknown> }
   ): Promise<GameSession> {
     const snakeData = camelToSnakeObject(updates)
-    const data = await this.request<GameSession>(`/game/sessions/${sessionId}`, {
-      method: 'PUT',
-      body: JSON.stringify(snakeData),
-    })
+    const data = await this.request<GameSession>(
+      `/game/sessions/${sessionId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(snakeData),
+      }
+    )
     return snakeToCamelObject<GameSession>(data)
   }
 
   async endGameSession(sessionId: string): Promise<GameSession> {
-    const data = await this.request<GameSession>(`/game/sessions/${sessionId}/end`, {
-      method: 'POST',
-    })
+    const data = await this.request<GameSession>(
+      `/game/sessions/${sessionId}/end`,
+      {
+        method: 'POST',
+      }
+    )
     return snakeToCamelObject<GameSession>(data)
   }
 
@@ -222,10 +236,13 @@ class ApiClient {
     action: GameActionRequest
   ): Promise<GameActionResponse> {
     const snakeData = camelToSnakeObject(action)
-    const data = await this.request<GameActionResponse>(`/game/sessions/${sessionId}/action`, {
-      method: 'POST',
-      body: JSON.stringify(snakeData),
-    })
+    const data = await this.request<GameActionResponse>(
+      `/game/sessions/${sessionId}/action`,
+      {
+        method: 'POST',
+        body: JSON.stringify(snakeData),
+      }
+    )
     return snakeToCamelObject<GameActionResponse>(data)
   }
 }

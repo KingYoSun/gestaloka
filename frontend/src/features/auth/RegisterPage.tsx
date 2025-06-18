@@ -9,19 +9,19 @@ export function RegisterPage() {
     username: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
   })
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
-  
+
   const navigate = useNavigate()
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }))
   }
 
@@ -42,9 +42,9 @@ export function RegisterPage() {
         username: formData.username,
         email: formData.email,
         password: formData.password,
-        confirm_password: formData.confirmPassword
+        confirm_password: formData.confirmPassword,
       })
-      
+
       setSuccess(true)
       // 3秒後にログインページへリダイレクト
       setTimeout(() => {
@@ -89,7 +89,10 @@ export function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
             <div>
-              <label htmlFor="username" className="block text-sm font-medium mb-2">
+              <label
+                htmlFor="username"
+                className="block text-sm font-medium mb-2"
+              >
                 ユーザー名
               </label>
               <Input
@@ -121,7 +124,10 @@ export function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium mb-2"
+              >
                 パスワード
               </label>
               <Input
@@ -140,7 +146,10 @@ export function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2">
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium mb-2"
+              >
                 パスワード確認
               </label>
               <Input
@@ -161,11 +170,7 @@ export function RegisterPage() {
             </div>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isLoading}
-          >
+          <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? '登録中...' : 'アカウント作成'}
           </Button>
         </form>
@@ -180,7 +185,10 @@ export function RegisterPage() {
         </div>
 
         <div className="text-center">
-          <Link to="/" className="text-sm text-muted-foreground hover:underline">
+          <Link
+            to="/"
+            className="text-sm text-muted-foreground hover:underline"
+          >
             ← ホームに戻る
           </Link>
         </div>

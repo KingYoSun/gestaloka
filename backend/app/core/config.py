@@ -25,7 +25,8 @@ class Settings(BaseSettings):
 
     # データベース設定
     DATABASE_URL: str = Field(
-        default="postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka", validation_alias="DATABASE_URL"
+        default="postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka",
+        validation_alias="DATABASE_URL",
     )
 
     # Neo4j設定

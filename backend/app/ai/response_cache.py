@@ -31,11 +31,7 @@ class ResponseCache:
         self.hit_count = 0
         self.miss_count = 0
 
-    def _generate_cache_key(
-        self,
-        agent_name: str,
-        context: dict[str, Any]
-    ) -> str:
+    def _generate_cache_key(self, agent_name: str, context: dict[str, Any]) -> str:
         """キャッシュキーを生成"""
         try:
             # コンテキストを決定的な文字列に変換
@@ -48,11 +44,7 @@ class ResponseCache:
         key_data = f"{agent_name}:{context_str}"
         return hashlib.sha256(key_data.encode()).hexdigest()
 
-    def get(
-        self,
-        agent_name: str,
-        context: dict[str, Any]
-    ) -> Optional[AIResponse]:
+    def get(self, agent_name: str, context: dict[str, Any]) -> Optional[AIResponse]:
         """キャッシュからレスポンスを取得"""
         key = self._generate_cache_key(agent_name, context)
 
@@ -62,11 +54,7 @@ class ResponseCache:
             # 有効期限をチェック
             if time.time() - timestamp < self.ttl:
                 self.hit_count += 1
-                logger.debug(
-                    "Cache hit",
-                    agent=agent_name,
-                    hit_rate=self.get_hit_rate()
-                )
+                logger.debug("Cache hit", agent=agent_name, hit_rate=self.get_hit_rate())
                 return response
             else:
                 # 期限切れのエントリを削除
@@ -75,12 +63,7 @@ class ResponseCache:
         self.miss_count += 1
         return None
 
-    def set(
-        self,
-        agent_name: str,
-        context: dict[str, Any],
-        response: AIResponse
-    ) -> None:
+    def set(self, agent_name: str, context: dict[str, Any], response: AIResponse) -> None:
         """レスポンスをキャッシュに保存"""
         # キャッシュサイズの制限
         if len(self.cache) >= self.max_size:
@@ -89,11 +72,7 @@ class ResponseCache:
         key = self._generate_cache_key(agent_name, context)
         self.cache[key] = (response, time.time())
 
-        logger.debug(
-            "Cached response",
-            agent=agent_name,
-            cache_size=len(self.cache)
-        )
+        logger.debug("Cached response", agent=agent_name, cache_size=len(self.cache))
 
     def _evict_oldest(self) -> None:
         """最も古いエントリを削除"""
@@ -101,10 +80,7 @@ class ResponseCache:
             return
 
         # 最も古いエントリを見つける
-        oldest_key = min(
-            self.cache.keys(),
-            key=lambda k: self.cache[k][1]
-        )
+        oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k][1])
 
         del self.cache[oldest_key]
 
@@ -129,7 +105,7 @@ class ResponseCache:
             "miss_count": self.miss_count,
             "hit_rate": self.get_hit_rate(),
             "ttl": self.ttl,
-            "max_size": self.max_size
+            "max_size": self.max_size,
         }
 
     def invalidate_agent(self, agent_name: str) -> int:
@@ -149,11 +125,6 @@ class ResponseCache:
             del self.cache[key]
             invalidated += 1
 
-        logger.info(
-            "Invalidated agent cache",
-            agent=agent_name,
-            count=invalidated
-        )
+        logger.info("Invalidated agent cache", agent=agent_name, count=invalidated)
 
         return invalidated
-

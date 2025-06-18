@@ -9,7 +9,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  
+
   const { login } = useAuth()
   const navigate = useNavigate()
 
@@ -22,7 +22,9 @@ export function LoginPage() {
       await login(username, password)
       navigate({ to: '/dashboard' })
     } catch {
-      setError('ログインに失敗しました。ユーザー名とパスワードを確認してください。')
+      setError(
+        'ログインに失敗しました。ユーザー名とパスワードを確認してください。'
+      )
     } finally {
       setIsLoading(false)
     }
@@ -33,36 +35,40 @@ export function LoginPage() {
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <h2 className="text-3xl font-bold">ログイン</h2>
-          <p className="text-muted-foreground mt-2">
-            ゲスタロカへようこそ
-          </p>
+          <p className="text-muted-foreground mt-2">ゲスタロカへようこそ</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
             <div>
-              <label htmlFor="username" className="block text-sm font-medium mb-2">
+              <label
+                htmlFor="username"
+                className="block text-sm font-medium mb-2"
+              >
                 ユーザー名
               </label>
               <Input
                 id="username"
                 type="text"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={e => setUsername(e.target.value)}
                 required
                 placeholder="ユーザー名を入力"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium mb-2"
+              >
                 パスワード
               </label>
               <Input
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="パスワードを入力"
               />
@@ -75,11 +81,7 @@ export function LoginPage() {
             </div>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isLoading}
-          >
+          <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? 'ログイン中...' : 'ログイン'}
           </Button>
         </form>
@@ -94,7 +96,10 @@ export function LoginPage() {
         </div>
 
         <div className="text-center">
-          <Link to="/" className="text-sm text-muted-foreground hover:underline">
+          <Link
+            to="/"
+            className="text-sm text-muted-foreground hover:underline"
+          >
             ← ホームに戻る
           </Link>
         </div>

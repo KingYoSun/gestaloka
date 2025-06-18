@@ -13,6 +13,7 @@ from app.ai.task_generator import CoordinationTask
 @dataclass
 class ActionContext:
     """プレイヤーアクションのコンテキスト"""
+
     action_id: str
     action_type: str
     action_text: str
@@ -25,6 +26,7 @@ class ActionContext:
 @dataclass
 class Choice:
     """プレイヤーに提示する選択肢"""
+
     id: str
     text: str
     description: Optional[str] = None
@@ -35,6 +37,7 @@ class Choice:
 @dataclass
 class AIResponse:
     """AIエージェントからの応答"""
+
     agent_name: str
     task_id: str
     narrative: Optional[str] = None
@@ -50,6 +53,7 @@ class AIResponse:
 @dataclass
 class FinalResponse:
     """統合された最終レスポンス"""
+
     narrative: str
     choices: list[Choice]
     state_changes: dict[str, Any] = field(default_factory=dict)
@@ -60,6 +64,7 @@ class FinalResponse:
 @dataclass
 class ProgressUpdate:
     """進捗更新情報"""
+
     percentage: int
     message: str
     current_task: Optional[str] = None
@@ -70,9 +75,9 @@ class ProgressUpdate:
 @dataclass
 class TaskExecutionResult:
     """タスク実行結果"""
+
     task: CoordinationTask
     responses: list[AIResponse]
     success: bool
     error_message: Optional[str] = None
     execution_time: float = 0.0
-

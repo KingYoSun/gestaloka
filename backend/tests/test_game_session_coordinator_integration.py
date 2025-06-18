@@ -3,7 +3,6 @@
 """
 
 import json
-import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,13 +17,13 @@ from app.services.game_session import GameSessionService
 
 class TestGameSessionCoordinatorIntegration:
     """ゲームセッションとCoordinatorAIの統合テスト"""
-    
+
     @pytest.fixture
     def mock_db(self):
         """モックデータベースセッション"""
         db = MagicMock(spec=Session)
         return db
-    
+
     @pytest.fixture
     def mock_character(self):
         """テスト用キャラクター"""
@@ -37,10 +36,10 @@ class TestGameSessionCoordinatorIntegration:
             experience=0,
             appearance="普通の冒険者",
             personality="勇敢で好奇心旺盛",
-            backstory="平凡な村の出身"
+            backstory="平凡な村の出身",
         )
         return character
-    
+
     @pytest.fixture
     def mock_character_stats(self):
         """テスト用キャラクターステータス"""
@@ -52,21 +51,21 @@ class TestGameSessionCoordinatorIntegration:
             energy=100,
             max_energy=100,
             level=1,
-            experience=0
+            experience=0,
         )
         return stats
-    
+
     @pytest.fixture
     def mock_websocket_manager(self):
         """モックWebSocketマネージャー"""
         manager = AsyncMock()
         return manager
-    
+
     @pytest.fixture
     def game_session_service(self, mock_db, mock_websocket_manager):
         """ゲームセッションサービス"""
         return GameSessionService(mock_db, mock_websocket_manager)
-    
+
     @pytest.mark.asyncio
     async def test_create_session_with_coordinator(
         self, game_session_service, mock_db, mock_character, mock_websocket_manager
@@ -76,29 +75,29 @@ class TestGameSessionCoordinatorIntegration:
         mock_db.get.return_value = mock_character
         mock_db.exec.return_value.all.return_value = []
         mock_db.exec.return_value.first.return_value = None
-        
+
         # セッション作成用のモック
         def add_side_effect(obj):
             if isinstance(obj, GameSession):
                 obj.created_at = datetime.utcnow()
                 obj.updated_at = datetime.utcnow()
-        
+
         mock_db.add.side_effect = add_side_effect
-        
+
         # セッション作成
         session_data = GameSessionCreate(character_id="char_001")
         response = await game_session_service.create_session("user_001", session_data)
-        
+
         # 検証
         assert response.character_id == "char_001"
         assert response.character_name == "テストキャラクター"
         assert response.is_active is True
         assert response.turn_number == 0
-        
+
         # CoordinatorAIが初期化されていることを確認
         assert game_session_service.coordinator is not None
         assert len(game_session_service.coordinator.agents) == 6
-    
+
     @pytest.mark.asyncio
     async def test_execute_action_with_coordinator(
         self, game_session_service, mock_db, mock_character, mock_character_stats
@@ -110,62 +109,49 @@ class TestGameSessionCoordinatorIntegration:
             character_id="char_001",
             is_active=True,
             current_scene="村の中心にいます",
-            session_data=json.dumps({
-                "turn_count": 5,
-                "actions_history": []
-            }),
+            session_data=json.dumps({"turn_count": 5, "actions_history": []}),
             created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            updated_at=datetime.utcnow(),
         )
-        
+
         # モックの設定
         mock_db.exec.return_value.first.return_value = (mock_session, mock_character)
         mock_db.exec.return_value.first.side_effect = [
             (mock_session, mock_character),  # セッション取得
             mock_character_stats,  # ステータス取得
         ]
-        
+
         # CoordinatorAIのモック
         from app.ai.coordination_models import Choice, FinalResponse
-        
+
         mock_response = FinalResponse(
             narrative="北へ向かって歩き始めました。",
-            choices=[
-                Choice(id="c1", text="さらに北へ進む"),
-                Choice(id="c2", text="村に戻る")
-            ],
+            choices=[Choice(id="c1", text="さらに北へ進む"), Choice(id="c2", text="村に戻る")],
             state_changes={"stamina": -5},
             events=[],
-            metadata={}
+            metadata={},
         )
-        
+
         with patch.object(
-            game_session_service.coordinator,
-            'process_action',
-            return_value=mock_response
+            game_session_service.coordinator, "process_action", return_value=mock_response
         ) as mock_process:
             # アクション実行
-            action_request = ActionExecuteRequest(
-                action_text="北へ移動する",
-                action_type="movement"
-            )
-            
-            response = await game_session_service.execute_action(
-                "session_001", "user_001", action_request
-            )
-            
+            action_request = ActionExecuteRequest(action_text="北へ移動する", action_type="movement")
+
+            response = await game_session_service.execute_action("session_001", "user_001", action_request)
+
             # 検証
             assert response.narrative == "北へ向かって歩き始めました。"
             assert len(response.choices) == 2
             assert response.success is True
             assert response.turn_number == 6  # turn_countが増加
-            
+
             # CoordinatorAIが呼ばれたことを確認
             assert mock_process.called
             call_args = mock_process.call_args[0]
             assert call_args[0].action_text == "北へ移動する"
             assert call_args[0].action_type == "movement"
-    
+
     @pytest.mark.asyncio
     async def test_coordinator_error_handling(
         self, game_session_service, mock_db, mock_character, mock_character_stats
@@ -177,40 +163,28 @@ class TestGameSessionCoordinatorIntegration:
             character_id="char_001",
             is_active=True,
             current_scene="森の中にいます",
-            session_data=json.dumps({
-                "turn_count": 10,
-                "actions_history": []
-            })
+            session_data=json.dumps({"turn_count": 10, "actions_history": []}),
         )
-        
+
         # モックの設定
         mock_db.exec.return_value.first.return_value = (mock_session, mock_character)
         mock_db.exec.return_value.first.side_effect = [
             (mock_session, mock_character),
             mock_character_stats,
         ]
-        
+
         # CoordinatorAIでエラーを発生させる
-        with patch.object(
-            game_session_service.coordinator,
-            'process_action',
-            side_effect=Exception("AI処理エラー")
-        ):
+        with patch.object(game_session_service.coordinator, "process_action", side_effect=Exception("AI処理エラー")):
             # アクション実行
-            action_request = ActionExecuteRequest(
-                action_text="危険な行動をする",
-                action_type="dangerous"
-            )
-            
+            action_request = ActionExecuteRequest(action_text="危険な行動をする", action_type="dangerous")
+
             # エラーが適切に処理されることを確認
             with pytest.raises(HTTPException) as exc_info:
-                await game_session_service.execute_action(
-                    "session_002", "user_001", action_request
-                )
-            
+                await game_session_service.execute_action("session_002", "user_001", action_request)
+
             assert exc_info.value.status_code == 500
             assert "アクションの実行に失敗しました" in str(exc_info.value.detail)
-    
+
     @pytest.mark.asyncio
     async def test_session_persistence_with_coordinator(
         self, game_session_service, mock_db, mock_character, mock_character_stats
@@ -222,86 +196,51 @@ class TestGameSessionCoordinatorIntegration:
             character_id="char_001",
             is_active=True,
             current_scene="酒場にいます",
-            session_data=json.dumps({
-                "turn_count": 0,
-                "actions_history": []
-            })
+            session_data=json.dumps({"turn_count": 0, "actions_history": []}),
         )
-        
+
         # モックの設定
         mock_db.exec.return_value.first.return_value = (mock_session, mock_character)
         mock_db.exec.return_value.first.side_effect = [
             (mock_session, mock_character),
             mock_character_stats,
         ]
-        
+
         # 初回のアクション実行
-        with patch.object(
-            game_session_service.coordinator,
-            'initialize_session'
-        ) as mock_init:
-            action_request1 = ActionExecuteRequest(
-                action_text="酒を注文する",
-                action_type="interaction"
-            )
-            
+        with patch.object(game_session_service.coordinator, "initialize_session") as mock_init:
+            action_request1 = ActionExecuteRequest(action_text="酒を注文する", action_type="interaction")
+
             # process_actionのモック
             from app.ai.coordination_models import FinalResponse
-            
+
             mock_response1 = FinalResponse(
-                narrative="バーテンダーが酒を差し出した。",
-                choices=[],
-                state_changes={},
-                events=[],
-                metadata={}
+                narrative="バーテンダーが酒を差し出した。", choices=[], state_changes={}, events=[], metadata={}
             )
-            
-            with patch.object(
-                game_session_service.coordinator,
-                'process_action',
-                return_value=mock_response1
-            ):
-                await game_session_service.execute_action(
-                    "session_003", "user_001", action_request1
-                )
-            
+
+            with patch.object(game_session_service.coordinator, "process_action", return_value=mock_response1):
+                await game_session_service.execute_action("session_003", "user_001", action_request1)
+
             # 初回は初期化が呼ばれる
             assert mock_init.called
-        
+
         # 2回目のアクション実行（同じセッション）
         mock_db.exec.return_value.first.side_effect = [
             (mock_session, mock_character),
             mock_character_stats,
         ]
-        
-        with patch.object(
-            game_session_service.coordinator,
-            'initialize_session'
-        ) as mock_init2:
+
+        with patch.object(game_session_service.coordinator, "initialize_session") as mock_init2:
             # shared_contextが存在することをシミュレート
             game_session_service.coordinator.shared_context = MagicMock()
-            
-            action_request2 = ActionExecuteRequest(
-                action_text="バーテンダーと話す",
-                action_type="dialogue"
-            )
-            
+
+            action_request2 = ActionExecuteRequest(action_text="バーテンダーと話す", action_type="dialogue")
+
             mock_response2 = FinalResponse(
-                narrative="バーテンダーが笑顔で応じた。",
-                choices=[],
-                state_changes={},
-                events=[],
-                metadata={}
+                narrative="バーテンダーが笑顔で応じた。", choices=[], state_changes={}, events=[], metadata={}
             )
-            
-            with patch.object(
-                game_session_service.coordinator,
-                'process_action',
-                return_value=mock_response2
-            ):
-                await game_session_service.execute_action(
-                    "session_003", "user_001", action_request2
-                )
-            
+
+            with patch.object(game_session_service.coordinator, "process_action", return_value=mock_response2):
+                await game_session_service.execute_action("session_003", "user_001", action_request2)
+
             # 2回目は初期化が呼ばれない
             assert not mock_init2.called

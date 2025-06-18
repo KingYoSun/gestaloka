@@ -4,19 +4,23 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { 
-  Plus, 
-  Users, 
-  Sparkles, 
-  Eye, 
-  Edit3, 
-  Trash2, 
+import {
+  Plus,
+  Users,
+  Sparkles,
+  Eye,
+  Edit3,
+  Trash2,
   Star,
   Clock,
   MapPin,
-  Loader2
+  Loader2,
 } from 'lucide-react'
-import { useCharacters, useDeleteCharacter, useActivateCharacter } from '@/hooks/useCharacters'
+import {
+  useCharacters,
+  useDeleteCharacter,
+  useActivateCharacter,
+} from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { Character } from '@/types'
 import { formatRelativeTime } from '@/lib/utils'
@@ -49,7 +53,9 @@ export function CharacterListPage() {
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-            <span className="ml-2 text-lg text-slate-600">キャラクターを読み込み中...</span>
+            <span className="ml-2 text-lg text-slate-600">
+              キャラクターを読み込み中...
+            </span>
           </div>
         </div>
       </div>
@@ -62,7 +68,8 @@ export function CharacterListPage() {
         <div className="max-w-6xl mx-auto">
           <Alert variant="destructive" className="mt-8">
             <AlertDescription>
-              キャラクターの読み込みに失敗しました: {error instanceof Error ? error.message : 'エラーが発生しました'}
+              キャラクターの読み込みに失敗しました:{' '}
+              {error instanceof Error ? error.message : 'エラーが発生しました'}
             </AlertDescription>
           </Alert>
         </div>
@@ -103,7 +110,9 @@ export function CharacterListPage() {
                   <Sparkles className="h-8 w-8 text-purple-600" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-2">まだキャラクターがいません</h3>
+                  <h3 className="text-xl font-semibold mb-2">
+                    まだキャラクターがいません
+                  </h3>
                   <p className="text-slate-600 mb-4">
                     最初のキャラクターを作成して、ゲスタロカの世界での冒険を始めましょう！
                   </p>
@@ -119,7 +128,7 @@ export function CharacterListPage() {
           </Card>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {characters.map((character) => (
+            {characters.map(character => (
               <CharacterCard
                 key={character.id}
                 character={character}
@@ -155,7 +164,14 @@ interface CharacterCardProps {
   isActive: boolean
 }
 
-function CharacterCard({ character, onDelete, onActivate, isDeleting, isActivating, isActive }: CharacterCardProps) {
+function CharacterCard({
+  character,
+  onDelete,
+  onActivate,
+  isDeleting,
+  isActivating,
+  isActive,
+}: CharacterCardProps) {
   return (
     <Card className="group hover:shadow-lg transition-all duration-200 bg-white/80 backdrop-blur-sm border-0 shadow-md">
       <CardHeader className="pb-3">
@@ -216,7 +232,7 @@ function CharacterCard({ character, onDelete, onActivate, isDeleting, isActivati
         {/* アクションボタン */}
         <div className="flex gap-2">
           <Button
-            variant={isActive ? "default" : "outline"}
+            variant={isActive ? 'default' : 'outline'}
             size="sm"
             className="flex-1"
             onClick={onActivate}
@@ -229,7 +245,7 @@ function CharacterCard({ character, onDelete, onActivate, isDeleting, isActivati
             )}
             <span className="ml-1">{isActive ? 'アクティブ' : '選択'}</span>
           </Button>
-          
+
           <Link to="/character/$id" params={{ id: character.id }}>
             <Button variant="outline" size="sm">
               <Eye className="h-3 w-3" />

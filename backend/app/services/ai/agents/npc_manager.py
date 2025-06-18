@@ -4,7 +4,7 @@ NPC管理AI (NPC Manager) - 永続的NPC生成・管理を担当
 
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
@@ -309,9 +309,7 @@ class NPCManagerAgent(BaseAgent):
 
         return npc
 
-    def _enhance_context_for_generation(
-        self, context: PromptContext, request: NPCGenerationRequest
-    ) -> PromptContext:
+    def _enhance_context_for_generation(self, context: PromptContext, request: NPCGenerationRequest) -> PromptContext:
         """
         NPC生成用にコンテキストを拡張
 
@@ -463,9 +461,7 @@ class NPCManagerAgent(BaseAgent):
 
     def _calculate_persistence_level(self, npc_type: NPCType) -> int:
         """永続性レベルを計算"""
-        min_level, max_level = self.generation_templates.get(npc_type.value, {}).get(
-            "persistence_level_range", (5, 7)
-        )
+        min_level, max_level = self.generation_templates.get(npc_type.value, {}).get("persistence_level_range", (5, 7))
 
         import random
 
@@ -499,9 +495,7 @@ class NPCManagerAgent(BaseAgent):
         # 関係性の更新
         if context.character_name:
             # プレイヤーとの関係を更新
-            existing_rel = next(
-                (rel for rel in npc.relationships if rel.target_id == context.character_name), None
-            )
+            existing_rel = next((rel for rel in npc.relationships if rel.target_id == context.character_name), None)
 
             if existing_rel:
                 # 既存の関係を更新
@@ -591,7 +585,7 @@ class NPCManagerAgent(BaseAgent):
         Returns:
             削除されたNPC数
         """
-        current_time = datetime.utcnow()
+        current_time = datetime.now(UTC)
         removed_count = 0
 
         npcs_to_remove = []
