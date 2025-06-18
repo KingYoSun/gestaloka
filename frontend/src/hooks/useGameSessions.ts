@@ -10,6 +10,7 @@ import {
   GameSessionListResponse,
   GameActionRequest,
   GameActionResponse,
+  SessionData,
 } from '@/types'
 
 // ゲームセッション一覧取得
@@ -60,7 +61,7 @@ export const useUpdateGameSession = () => {
     Error,
     {
       sessionId: string
-      updates: { currentScene?: string; sessionData?: Record<string, any> }
+      updates: { currentScene?: string; sessionData?: SessionData }
     }
   >({
     mutationFn: ({ sessionId, updates }) =>

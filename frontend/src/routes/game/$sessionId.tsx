@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
-import { BattleStatus } from '@/features/game/components/BattleStatus'
+import { BattleStatus, type BattleData } from '@/features/game/components/BattleStatus'
 
 export const Route = createFileRoute('/game/$sessionId')({
   component: GameSessionPage,
@@ -250,7 +250,7 @@ function GameSessionPage() {
         <div className="space-y-4">
           {/* 戦闘状態 */}
           {session.sessionData?.battle_data && (
-            <BattleStatus battleData={session.sessionData.battle_data} />
+            <BattleStatus battleData={session.sessionData.battle_data as unknown as BattleData} />
           )}
 
           {/* 選択肢 */}

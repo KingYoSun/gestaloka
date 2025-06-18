@@ -69,7 +69,9 @@ describe('useWebSocket', () => {
     // 接続イベントをシミュレート
     act(() => {
       if (onConnectedCall && onConnectedCall[1]) {
-        ;(onConnectedCall[1] as (data: { socketId: string }) => void)({ socketId: 'test-socket-id' })
+        ;(onConnectedCall[1] as (data: { socketId: string }) => void)({
+          socketId: 'test-socket-id',
+        })
       }
     })
 
@@ -110,7 +112,9 @@ describe('useWebSocket', () => {
 
     act(() => {
       if (onErrorCall && onErrorCall[1]) {
-        ;(onErrorCall[1] as (data: { error: string }) => void)({ error: 'Connection failed' })
+        ;(onErrorCall[1] as (data: { error: string }) => void)({
+          error: 'Connection failed',
+        })
       }
     })
 
@@ -206,7 +210,14 @@ describe('useWebSocket', () => {
   it('認証されていない場合は接続しない', async () => {
     // 認証されていない状態をモック
     const { useAuthStore } = await import('@/store/authStore')
-    vi.mocked(useAuthStore).mockReturnValue({ isAuthenticated: false } as any)
+    vi.mocked(useAuthStore).mockReturnValue({
+      isAuthenticated: false,
+      user: null,
+      token: null,
+      login: vi.fn(),
+      logout: vi.fn(),
+      updateUser: vi.fn(),
+    })
 
     vi.clearAllMocks()
 

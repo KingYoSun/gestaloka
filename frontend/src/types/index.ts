@@ -43,13 +43,17 @@ export interface Skill {
 }
 
 // ゲームプレイ関連の型定義
+export interface SessionData {
+  [key: string]: string | number | boolean | null | SessionData | SessionData[]
+}
+
 export interface GameSession {
   id: string
   characterId: string
   characterName: string
   isActive: boolean
   currentScene: string | null
-  sessionData?: Record<string, any>
+  sessionData?: SessionData
   createdAt: string
   updatedAt: string
 }
@@ -69,12 +73,30 @@ export interface GameActionRequest {
   choiceIndex?: number
 }
 
+export interface CharacterStatusUpdate {
+  health?: number
+  maxHealth?: number
+  energy?: number
+  maxEnergy?: number
+  experience?: number
+  level?: number
+  location?: string
+  [key: string]: string | number | boolean | undefined
+}
+
 export interface GameActionResponse {
   sessionId: string
   actionResult: string
   newScene?: string
   choices?: string[]
-  characterStatus?: Record<string, any>
+  characterStatus?: CharacterStatusUpdate
+}
+
+export interface GameMessageMetadata {
+  newScene?: string
+  choices?: string[]
+  characterStatus?: CharacterStatusUpdate
+  [key: string]: string | number | boolean | undefined | string[] | CharacterStatusUpdate
 }
 
 export interface GameMessage {
@@ -82,7 +104,7 @@ export interface GameMessage {
   sessionId: string
   type: 'user' | 'gm' | 'system'
   content: string
-  metadata?: Record<string, any>
+  metadata?: GameMessageMetadata
   timestamp: string
 }
 
@@ -149,16 +171,26 @@ export interface PaginatedResponse<T> {
 }
 
 // WebSocket関連の型定義
+export type WebSocketData = string | number | boolean | null | Record<string, unknown> | unknown[]
+
 export interface WebSocketMessage {
   type: string
-  data: any
+  data: WebSocketData
   timestamp: string
+}
+
+export type GameUpdateData = {
+  scene?: string
+  character?: Character
+  message?: GameMessage
+  actionRequired?: boolean
+  [key: string]: unknown
 }
 
 export interface GameUpdate {
   sessionId: string
   type: 'scene_change' | 'character_update' | 'new_message' | 'action_required'
-  data: any
+  data: GameUpdateData
 }
 
 // UI関連の型定義
@@ -197,10 +229,14 @@ export interface RegisterForm {
 }
 
 // エラー関連の型定義
+export interface ErrorDetails {
+  [key: string]: string | number | boolean | null | ErrorDetails | ErrorDetails[]
+}
+
 export interface AppError {
   code: string
   message: string
-  details?: Record<string, any>
+  details?: ErrorDetails
 }
 
 export interface ValidationError {

@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Heart, Shield, Zap, Swords } from 'lucide-react'
 
-interface Combatant {
+export interface Combatant {
   id: string
   name: string
   type: 'player' | 'npc' | 'monster' | 'boss'
@@ -21,7 +21,7 @@ interface Combatant {
   status_effects: string[]
 }
 
-interface BattleData {
+export interface BattleData {
   state: string
   turn_count: number
   combatants: Combatant[]

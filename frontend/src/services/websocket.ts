@@ -18,7 +18,7 @@ export class WebSocketManager {
   getSocket(): Socket | null {
     // Return the socket instance from websocketManager
     // This is a workaround to access private property for testing
-    return (websocketManager as any).socket
+    return (websocketManager as unknown as { socket: Socket | null }).socket
   }
 
   connect(): void {
@@ -29,18 +29,18 @@ export class WebSocketManager {
     websocketManager.disconnect()
   }
 
-  on<T = any>(event: string, callback: (data: T) => void): void {
+  on<T = unknown>(event: string, callback: (data: T) => void): void {
     websocketManager.on(event, callback)
   }
 
-  off<T = any>(event: string, callback: (data: T) => void): void {
+  off<T = unknown>(event: string, callback: (data: T) => void): void {
     websocketManager.off(event, callback)
   }
 
-  emit(event: string, data?: any): void {
+  emit(event: string, data?: unknown): void {
     // For testing purposes, we need to emit custom events
     // Since the websocketManager doesn't expose emit directly,
     // we'll use the internal emit method
-    ;(websocketManager as any).emit(event, data)
+    ;(websocketManager as unknown as { emit: (event: string, data: unknown) => void }).emit(event, data)
   }
 }

@@ -2,6 +2,10 @@
  * snake_caseとcamelCase間の変換ユーティリティ
  */
 
+// 変換可能な値の型
+type ConvertibleValue = unknown
+type ConvertibleObject = { [key: string]: unknown }
+
 /**
  * snake_caseをcamelCaseに変換
  */
@@ -19,51 +23,51 @@ export function camelToSnake(str: string): string {
 /**
  * オブジェクトのキーをsnake_caseからcamelCaseに変換
  */
-export function snakeToCamelObject<T = any>(obj: any): T {
+export function snakeToCamelObject<T = ConvertibleObject>(obj: ConvertibleValue): T {
   if (obj === null || obj === undefined) {
-    return obj
+    return obj as T
   }
 
   if (Array.isArray(obj)) {
-    return obj.map(item => snakeToCamelObject(item)) as any
+    return obj.map(item => snakeToCamelObject(item)) as T
   }
 
   if (typeof obj !== 'object' || obj instanceof Date) {
-    return obj
+    return obj as T
   }
 
-  const converted: any = {}
+  const converted: Record<string, ConvertibleValue> = {}
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       const camelKey = snakeToCamel(key)
-      converted[camelKey] = snakeToCamelObject(obj[key])
+      converted[camelKey] = snakeToCamelObject((obj as ConvertibleObject)[key])
     }
   }
-  return converted
+  return converted as T
 }
 
 /**
  * オブジェクトのキーをcamelCaseからsnake_caseに変換
  */
-export function camelToSnakeObject<T = any>(obj: any): T {
+export function camelToSnakeObject<T = ConvertibleObject>(obj: ConvertibleValue): T {
   if (obj === null || obj === undefined) {
-    return obj
+    return obj as T
   }
 
   if (Array.isArray(obj)) {
-    return obj.map(item => camelToSnakeObject(item)) as any
+    return obj.map(item => camelToSnakeObject(item)) as T
   }
 
   if (typeof obj !== 'object' || obj instanceof Date) {
-    return obj
+    return obj as T
   }
 
-  const converted: any = {}
+  const converted: Record<string, ConvertibleValue> = {}
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
       const snakeKey = camelToSnake(key)
-      converted[snakeKey] = camelToSnakeObject(obj[key])
+      converted[snakeKey] = camelToSnakeObject((obj as ConvertibleObject)[key])
     }
   }
-  return converted
+  return converted as T
 }

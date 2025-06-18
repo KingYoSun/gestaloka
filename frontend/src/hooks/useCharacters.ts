@@ -83,7 +83,7 @@ export function useCreateCharacter() {
       toast({
         title: 'キャラクター作成成功',
         description: `${newCharacter.name}を作成しました`,
-        variant: 'success' as any,
+        variant: 'success',
       })
     },
     onError: (error: Error) => {
@@ -124,7 +124,7 @@ export function useUpdateCharacter() {
       toast({
         title: '更新成功',
         description: 'キャラクター情報を更新しました',
-        variant: 'success' as any,
+        variant: 'success',
       })
     },
     onError: (error: Error) => {
@@ -156,7 +156,7 @@ export function useDeleteCharacter() {
       toast({
         title: '削除成功',
         description: 'キャラクターを削除しました',
-        variant: 'success' as any,
+        variant: 'success',
       })
     },
     onError: (error: Error) => {
@@ -191,7 +191,7 @@ export function useActivateCharacter() {
       toast({
         title: 'キャラクター選択',
         description: `${activatedCharacter.name}を選択しました`,
-        variant: 'success' as any,
+        variant: 'success',
       })
     },
     onError: (error: Error) => {

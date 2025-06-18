@@ -1,16 +1,7 @@
-import { createContext, useState, useEffect, ReactNode } from 'react'
+import { useState, useEffect, ReactNode } from 'react'
 import { User } from '@/types'
 import { apiClient } from '@/api/client'
-
-interface AuthContextType {
-  user: User | null
-  isLoading: boolean
-  login: (username: string, password: string) => Promise<void>
-  logout: () => Promise<void>
-  isAuthenticated: boolean
-}
-
-export const AuthContext = createContext<AuthContextType | undefined>(undefined)
+import { AuthContext, AuthContextType } from './authContext'
 
 // useAuth hook is exported from ./useAuth.ts to avoid fast refresh issues
 

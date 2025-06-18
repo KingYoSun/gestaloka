@@ -74,7 +74,7 @@ export function useWebSocket() {
   }, [])
 
   // emit method for test compatibility
-  const emit = useCallback((event: string, _data?: any) => {
+  const emit = useCallback((event: string, _data?: unknown) => {
     // For now, this is a no-op as websocketManager doesn't expose emit directly
     // This is mainly for test compatibility
     console.warn(`emit(${event}) called but not implemented in production`)
@@ -82,14 +82,14 @@ export function useWebSocket() {
 
   // on/off methods for test compatibility
   const on = useCallback(
-    <T = any>(event: string, handler: (data: T) => void) => {
+    <T = unknown>(event: string, handler: (data: T) => void) => {
       websocketManager.on(event, handler)
     },
     []
   )
 
   const off = useCallback(
-    <T = any>(event: string, handler: (data: T) => void) => {
+    <T = unknown>(event: string, handler: (data: T) => void) => {
       websocketManager.off(event, handler)
     },
     []
@@ -165,7 +165,7 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     // 戦闘イベントハンドラー
-    const handleBattleStart = (data: any) => {
+    const handleBattleStart = (data: unknown) => {
       console.log('Battle started:', data)
       // 戦闘開始の通知
       toast.info('戦闘開始！', {
@@ -173,7 +173,7 @@ export function useGameWebSocket(gameSessionId?: string) {
       })
     }
 
-    const handleBattleUpdate = (data: any) => {
+    const handleBattleUpdate = (data: unknown) => {
       console.log('Battle update:', data)
       // 戦闘状態の更新はaction_resultで処理される
     }

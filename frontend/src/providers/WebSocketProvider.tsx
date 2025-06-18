@@ -2,21 +2,9 @@
  * WebSocketプロバイダー
  * アプリケーション全体でWebSocket接続を管理
  */
-import { createContext, useEffect, ReactNode } from 'react'
+import { useEffect, ReactNode } from 'react'
 import { useWebSocket, useNotificationWebSocket } from '@/hooks/useWebSocket'
-
-interface WebSocketContextType {
-  isConnected: boolean
-  status: {
-    connected: boolean
-    socketId?: string
-    error?: string
-  }
-  connect: () => void
-  disconnect: () => void
-}
-
-export const WebSocketContext = createContext<WebSocketContextType | null>(null)
+import { WebSocketContext } from './webSocketContext'
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const websocket = useWebSocket()
