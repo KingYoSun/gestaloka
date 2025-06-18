@@ -24,8 +24,8 @@ logger = structlog.get_logger(__name__)
 class GeminiConfig(BaseModel):
     """Gemini API設定"""
 
-    model: str = Field(default="gemini-2.5-pro-preview-06-05")
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    model: str = Field(default="gemini-2.5-pro")
+    temperature: float = Field(default=0.7, ge=0.0, le=1.0)  # langchain-google-genaiは0.0-1.0の範囲のみサポート
     max_tokens: Optional[int] = Field(default=None)
     timeout: Optional[int] = Field(default=30)
     max_retries: int = Field(default=3)
@@ -53,9 +53,12 @@ class GeminiClient:
         self.logger = logger.bind(service="gemini_client")
 
         # LangChain ChatGoogleGenerativeAI初期化
+        # langchain-google-genai 2.1.5ではtemperatureはmodel_kwargsで設定
         kwargs: dict[str, Any] = {
             "model": self.config.model,
-            "temperature": self.config.temperature,
+            "model_kwargs": {
+                "temperature": self.config.temperature,
+            }
         }
         if self.config.max_tokens:
             kwargs["max_output_tokens"] = self.config.max_tokens
@@ -91,6 +94,7 @@ class GeminiClient:
             self.logger.info("Generating response", message_count=len(messages), kwargs=kwargs)
 
             # 非同期実行のためのラッパー
+            # 注意: temperatureは初期化時に設定されるため、invoke時には渡さない
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(None, lambda: self._llm.invoke(messages, **kwargs))
 
@@ -153,6 +157,7 @@ class GeminiClient:
             self.logger.info("Starting streaming response", message_count=len(messages))
 
             # ストリーミング実行
+            # 注意: temperatureは初期化時に設定されるため、astream時には渡さない
             async for chunk in self._llm.astream(messages, **kwargs):
                 if chunk.content:
                     content = chunk.content
@@ -211,16 +216,18 @@ class GeminiClient:
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
 
-        # LLMインスタンスを再初期化
-        llm_kwargs: dict[str, Any] = {
-            "model": self.config.model,
-            "temperature": self.config.temperature,
-        }
-        if self.config.max_tokens:
-            llm_kwargs["max_output_tokens"] = self.config.max_tokens
-        if settings.GEMINI_API_KEY:
-            llm_kwargs["google_api_key"] = settings.GEMINI_API_KEY
+        # 生成設定を更新して温度パラメータを適用
+        if "temperature" in kwargs:
+            # temperatureが変更された場合は、LLMインスタンスを再初期化
+            llm_kwargs: dict[str, Any] = {
+                "model": self.config.model,
+                "temperature": self.config.temperature,
+            }
+            if self.config.max_tokens:
+                llm_kwargs["max_output_tokens"] = self.config.max_tokens
+            if settings.GEMINI_API_KEY:
+                llm_kwargs["google_api_key"] = settings.GEMINI_API_KEY
 
-        self._llm = ChatGoogleGenerativeAI(**llm_kwargs)
+            self._llm = ChatGoogleGenerativeAI(**llm_kwargs)
 
         self.logger.info("Configuration updated", updated_params=list(kwargs.keys()))

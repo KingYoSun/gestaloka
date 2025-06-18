@@ -85,11 +85,12 @@ make init-db
 |------|-----------|------|
 | **FastAPI** | 0.115.6 | 高性能Webフレームワーク |
 | **Python** | 3.11 | プログラミング言語 |
-| **SQLModel** | 0.0.24 | タイプセーフORM |
-| **Alembic** | 1.16.3 | データベースマイグレーション |
-| **Socket.IO** | 5.11.3 | WebSocketサーバー |
-| **neomodel** | 5.4.0 | Neo4j OGM |
-| **LangChain** | 0.3.18 | LLM統合フレームワーク |
+| **SQLModel** | 0.0.22 | タイプセーフORM |
+| **Alembic** | 1.15.2 | データベースマイグレーション |
+| **Socket.IO** | 5.12.1 | WebSocketサーバー |
+| **neomodel** | 5.4.1 | Neo4j OGM |
+| **LangChain** | 0.3.25 | LLM統合フレームワーク |
+| **langchain-google-genai** | 2.1.5 | Gemini API統合 |
 | **Celery** | 5.4.0 | 非同期タスクキュー |
 | **structlog** | 25.4.0 | 構造化ログ |
 
@@ -105,7 +106,7 @@ make init-db
 ### 🤖 AI・LLM
 | 技術 | 用途 |
 |------|------|
-| **Gemini 2.5 Pro** | メイン言語モデル（gemini-2.5-pro-preview-06-05） |
+| **Gemini 2.5 Pro** | メイン言語モデル（gemini-2.5-pro） |
 | **GM AI評議会** | 6つの専門AIエージェント |
 | - Dramatist | 物語生成・脚本（実装済み） |
 | - Historian | 世界記録・歴史管理（実装済み） |
@@ -337,6 +338,15 @@ make clean-all
 - **🤖 AI使用**: Claude Codeとの協調開発
 
 詳細は **`CLAUDE.md`** の開発ガイドラインを参照してください。
+
+## 📝 更新履歴
+
+### 2025/06/18
+- **✅ プロジェクト名統一**: TextMMO → GESTALOKA
+- **✅ Gemini 2.5 安定版移行**: プレビュー版から安定版（`gemini-2.5-pro`）へ
+- **✅ 依存ライブラリ更新**: LangChain 0.3.25、langchain-google-genai 2.1.5
+- **✅ Makefile改善**: TTY問題解決、テストコマンド修正
+- **🔧 既知の問題**: テスト16件失敗、型エラー、リントエラー（詳細は`CLAUDE.md`参照）
 
 ---
 

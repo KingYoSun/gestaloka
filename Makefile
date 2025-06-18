@@ -21,9 +21,9 @@ setup-dev: ## 完全な開発環境セットアップ
 .PHONY: init-db
 init-db: ## データベースを初期化
 	@echo "データベースを初期化します..."
-	docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password < /var/lib/neo4j/import/01_schema.cypher
-	docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password < /var/lib/neo4j/import/02_initial_data.cypher
-	docker-compose exec backend alembic upgrade head
+	docker-compose exec -T neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password < /var/lib/neo4j/import/01_schema.cypher
+	docker-compose exec -T neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password < /var/lib/neo4j/import/02_initial_data.cypher
+	docker-compose exec -T backend alembic upgrade head
 
 .PHONY: init-keycloak
 init-keycloak: ## KeyCloakレルムを初期化
@@ -71,7 +71,7 @@ db-reset: ## データベースをリセット
 
 .PHONY: db-migrate
 db-migrate: ## データベースマイグレーション実行
-	docker-compose exec backend alembic upgrade head
+	docker-compose exec -T backend alembic upgrade head
 
 .PHONY: db-shell-postgres
 db-shell-postgres: ## PostgreSQLシェルに接続
@@ -101,32 +101,32 @@ dev-full: ## 完全な開発環境を起動
 # テスト
 .PHONY: test
 test: ## 全テストを実行
-	docker-compose exec backend pytest
-	docker-compose exec frontend npm test
+	docker-compose exec -T backend sh -c "cd /app && python -m pytest -v"
+	docker-compose exec -T frontend npm test -- --run
 
 .PHONY: test-backend
 test-backend: ## バックエンドテストを実行
-	docker-compose exec backend pytest
+	docker-compose exec -T backend sh -c "cd /app && python -m pytest -v"
 
 .PHONY: test-frontend
 test-frontend: ## フロントエンドテストを実行
-	docker-compose exec frontend npm test
+	docker-compose exec -T frontend npm test -- --run
 
 # リント・フォーマット
 .PHONY: lint
 lint: ## リントを実行
-	docker-compose exec backend ruff check .
-	docker-compose exec frontend npm run lint
+	docker-compose exec -T backend ruff check .
+	docker-compose exec -T frontend npm run lint
 
 .PHONY: format
 format: ## コードフォーマットを実行
-	docker-compose exec backend ruff format .
-	docker-compose exec frontend npm run format
+	docker-compose exec -T backend ruff format .
+	docker-compose exec -T frontend npm run format
 
 .PHONY: typecheck
 typecheck: ## 型チェックを実行
-	docker-compose exec backend mypy .
-	docker-compose exec frontend npm run typecheck
+	docker-compose exec -T backend mypy .
+	docker-compose exec -T frontend npm run typecheck
 
 # クリーンアップ
 .PHONY: clean
@@ -180,11 +180,11 @@ status: ## サービスステータスを表示
 health: ## ヘルスチェックを実行
 	@echo "=== サービスヘルスチェック ==="
 	@echo "PostgreSQL:"
-	@docker-compose exec postgres pg_isready -U gestaloka_user -d gestaloka || echo "❌ PostgreSQL not ready"
+	@docker-compose exec -T postgres pg_isready -U gestaloka_user -d gestaloka || echo "❌ PostgreSQL not ready"
 	@echo "Neo4j:"
-	@docker-compose exec neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password 'RETURN "OK"' || echo "❌ Neo4j not ready"
+	@docker-compose exec -T neo4j cypher-shell -u neo4j -p gestaloka_neo4j_password 'RETURN "OK"' || echo "❌ Neo4j not ready"
 	@echo "Redis:"
-	@docker-compose exec redis redis-cli ping || echo "❌ Redis not ready"
+	@docker-compose exec -T redis redis-cli ping || echo "❌ Redis not ready"
 	@echo "Backend:"
 	@curl -s http://localhost:8000/health > /dev/null && echo "✅ Backend healthy" || echo "❌ Backend not ready"
 	@echo "Frontend:"

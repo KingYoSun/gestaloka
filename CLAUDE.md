@@ -24,7 +24,7 @@
 - **データベース**: PostgreSQL 17 (構造化データ), Neo4j 5.26 LTS (グラフデータ)
 - **キャッシュ/ブローカー**: Redis 8
 - **認証**: Keycloak 26.2
-- **LLM**: Gemini 2.5 Pro (最新版: gemini-2.5-pro-preview-06-05)
+- **LLM**: Gemini 2.5 Pro (安定版: gemini-2.5-pro)
 - **インフラ**: Docker Compose, WebSocket (Socket.IO), Celery（Worker/Beat/Flower）
 
 ## 現在の動作環境
@@ -304,3 +304,64 @@ docker-compose run --rm backend alembic downgrade -1
 - **物語の動的生成**: 固定シナリオではなく創発的な物語
 - **ログによる永続性**: プレイヤーの行動が世界に残る
 - **AI協調**: 単一AIではなく専門AIの協調による豊かな体験
+
+## 最近の作業履歴
+
+### 2025/06/18 - プロジェクト名変更とGemini API更新
+
+#### 実施内容
+1. **プロジェクト名の統一**
+   - TextMMO → GESTALOKA への完全移行
+   - 全ファイルでの名称統一を確認
+
+2. **Gemini 2.5 安定版への移行**
+   - プレビュー版から安定版への移行
+   - `gemini-2.5-pro-preview-06-05` → `gemini-2.5-pro`
+   - `gemini-2.5-flash-preview-05-20` → `gemini-2.5-flash`
+
+3. **依存ライブラリの更新**
+   - `langchain`: 0.3.18 → 0.3.25
+   - `langchain-google-genai`: 2.0.8 → 2.1.5
+   - `google-generativeai`: 削除（langchain-google-genaiに統合）
+
+4. **Makefileの改善**
+   - TTY問題の解決（`-T`フラグの追加）
+   - テストコマンドの修正（`python -m pytest`の使用）
+
+#### 発見された問題と解決策
+
+1. **PostgreSQL初期化エラー**
+   - 問題: データベース名が旧名称（logverse）のまま
+   - 解決: `sql/init/01_create_databases.sql`を修正
+
+2. **Gemini APIのtemperatureパラメータエラー**
+   - 問題: langchain-google-genai 2.1.5での設定方法の変更
+   - 解決: `model_kwargs`でtemperatureを設定する方式に変更
+   - 注意: 温度範囲は0.0-1.0に制限（langchainの制約）
+
+3. **依存関係の競合**
+   - 問題: langchain-google-genaiとgoogle-generativeaiの非互換
+   - 解決: google-generativeaiを削除（重複のため）
+
+#### 未解決の問題
+
+1. **テスト失敗（16件/174件）**
+   - 戦闘統合テストのモックエラー（6件）
+   - Geminiクライアントのテストエラー（5件）
+   - タイムゾーン関連のエラー（1件）
+   - その他のアサーションエラー（4件）
+
+2. **型チェックエラー**
+   - バックエンド: 5エラー（主にAlembicとgame_session関連）
+   - フロントエンド: 30エラー（BattleStatus、WebSocket関連）
+
+3. **リントエラー**
+   - バックエンド: 705エラー（大部分は自動修正可能）
+   - フロントエンド: 5エラー、28警告
+
+#### 推奨される次のアクション
+
+1. テストエラーの修正（特に戦闘システムとGeminiクライアント）
+2. 型エラーの解消
+3. リントエラーの自動修正（`make format`）
+4. WebSocketサービスのインポートエラー修正

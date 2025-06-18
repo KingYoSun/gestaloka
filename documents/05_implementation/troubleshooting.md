@@ -1,6 +1,6 @@
 # トラブルシューティングガイド - ゲスタロカ (Gestaloka)
 
-**最終更新日:** 2025/06/15
+**最終更新日:** 2025/06/18
 
 ## 目次
 1. [Neo4j権限問題](#neo4j権限問題)
@@ -8,6 +8,9 @@
 3. [依存関係の問題](#依存関係の問題)
 4. [API接続の問題](#api接続の問題)
 5. [開発環境の問題](#開発環境の問題)
+6. [MakefileのTTY問題](#makefileのtty問題)
+7. [Gemini APIの問題](#gemini-apiの問題)
+8. [データベース初期化の問題](#データベース初期化の問題)
 
 ## Neo4j権限問題
 
@@ -136,6 +139,27 @@ kill -9 <PID>
 ```
 
 ## 依存関係の問題
+
+### 問題: langchain-google-genaiバージョン互換性
+
+**症状:**
+- langchain-google-genai 2.1.5とgoogle-generativeaiのバージョン競合
+- `AttributeError: 'NoneType' object has no attribute 'split'`
+
+**解決方法:**
+
+1. **google-generativeaiをrequirements.txtから削除**
+```python
+# requirements.txt
+langchain==0.3.25
+langchain-google-genai==2.1.5
+# google-generativeai==0.8.5  # langchain-google-genaiに含まれるため削除
+```
+
+2. **Dockerイメージを再ビルド**
+```bash
+docker-compose build --no-cache backend
+```
 
 ### 問題: Pythonパッケージのバージョン競合
 
@@ -342,6 +366,96 @@ docker-compose restart backend frontend
    make clean-all
    make setup-dev
    ```
+
+---
+
+## MakefileのTTY問題
+
+### 問題: docker-compose execでTTYエラー
+
+**症状:**
+- `make test`などのコマンド実行時に`the input device is not a TTY`エラー
+
+**原因:**
+Makefileからdocker-compose execを実行する際、TTYが利用できないため
+
+**解決方法:**
+
+1. **Makefileのdocker-compose execコマンドに-Tフラグを追加**
+```makefile
+test-backend: ## バックエンドテストを実行
+	docker-compose exec -T backend sh -c "cd /app && python -m pytest -v"
+
+lint-backend: ## バックエンドのリントを実行  
+	docker-compose exec -T backend sh -c "cd /app && ruff check . && ruff format --check ."
+```
+
+## Gemini APIの問題
+
+### 問題: temperatureパラメータエラー
+
+**症状:**
+- `GenerativeServiceClient.generate_content() got an unexpected keyword argument 'temperature'`
+- langchain-google-genai 2.1.5でtemperature設定方法が変更
+
+**解決方法:**
+
+1. **model_kwargsを使用してtemperatureを設定**
+```python
+# app/services/ai/gemini_client.py
+kwargs: dict[str, Any] = {
+    "model": self.config.model,
+    "model_kwargs": {
+        "temperature": self.config.temperature,
+    }
+}
+self._llm = ChatGoogleGenerativeAI(**kwargs)
+```
+
+2. **temperatureの範囲を制限**
+```python
+class GeminiConfig(BaseModel):
+    temperature: float = Field(default=0.7, ge=0.0, le=1.0)  # 0.0-1.0のみサポート
+```
+
+### 問題: Gemini 2.5モデルの更新
+
+**症状:**
+- プレビュー版モデルの使用
+
+**解決方法:**
+
+1. **安定版モデルへ更新**
+```python
+# app/core/config.py
+LLM_MODEL: str = Field(default="gemini-2.5-pro", validation_alias="LLM_MODEL")
+
+# app/services/ai/gemini_client.py  
+model: str = Field(default="gemini-2.5-pro")
+```
+
+## データベース初期化の問題
+
+### 問題: 古いデータベース名の参照
+
+**症状:**
+- `FATAL: database 'logverse' does not exist`
+- プロジェクト名変更後も古いDB名を参照
+
+**解決方法:**
+
+1. **SQL初期化スクリプトを修正**
+```sql
+-- sql/init/01_create_databases.sql
+-- Gestalokaデータベースに接続して追加設定
+\c gestaloka;
+```
+
+2. **データベースを再初期化**
+```bash
+make db-reset
+make init-db
+```
 
 ---
 

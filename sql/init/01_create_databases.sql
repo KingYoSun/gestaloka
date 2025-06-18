@@ -1,10 +1,10 @@
 -- PostgreSQL初期化スクリプト
--- ログバース用データベースとKeycloak用データベースを作成
+-- ゲスタロカ用データベースとKeycloak用データベースを作成
 
--- Logverse用データベース（既にdocker-compose.ymlで作成されるが、念のため）
--- CREATE DATABASE logverse;
--- CREATE USER logverse_user WITH PASSWORD 'logverse_password';
--- GRANT ALL PRIVILEGES ON DATABASE logverse TO logverse_user;
+-- Gestaloka用データベース（既にdocker-compose.ymlで作成されるが、念のため）
+-- CREATE DATABASE gestaloka;
+-- CREATE USER gestaloka_user WITH PASSWORD 'gestaloka_password';
+-- GRANT ALL PRIVILEGES ON DATABASE gestaloka TO gestaloka_user;
 
 -- Keycloak用データベース（既にdocker-compose.ymlで作成されるが、念のため）
 -- CREATE DATABASE keycloak;
@@ -15,8 +15,8 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Logverseデータベースに接続して追加設定
-\c logverse;
+-- Gestalokaデータベースに接続して追加設定
+\c gestaloka;
 
 -- UUIDとタイムスタンプ関数
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -32,7 +32,7 @@ $$ language 'plpgsql';
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 -- インデックス作成関数（後でテーブル作成後に使用）
-CREATE OR REPLACE FUNCTION create_logverse_indexes()
+CREATE OR REPLACE FUNCTION create_gestaloka_indexes()
 RETURNS void AS $$
 BEGIN
     -- ユーザーテーブルのインデックス

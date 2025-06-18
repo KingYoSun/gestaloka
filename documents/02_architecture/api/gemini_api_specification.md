@@ -1,7 +1,7 @@
 # Gemini API仕様書
 
-**最終更新日:** 2025/06/14  
-**ドキュメントバージョン:** 1.1
+**最終更新日:** 2025/06/18  
+**ドキュメントバージョン:** 1.2
 
 ## 概要
 
@@ -9,9 +9,9 @@ Google Gemini APIは、Google DeepMindが開発した最新の生成AIモデル�
 
 ## 使用モデル
 
-### Gemini 2.5 Pro（最新版）
-- **モデルID**: `gemini-2.5-pro-preview-06-05`
-- **旧モデルID**: `gemini-2.5-pro-preview-03-25`（2025/06/14に更新）
+### Gemini 2.5 Pro（安定版）
+- **モデルID**: `gemini-2.5-pro`
+- **旧モデルID**: `gemini-2.5-pro-preview-06-05`（2025/06/18に安定版に更新）
 - **コンテキストウィンドウ**: 1,048,576トークン（入力）、65,536トークン（出力）
 - **特徴**: 
   - 高度な推論能力と思考機能（Thinking）
@@ -20,9 +20,9 @@ Google Gemini APIは、Google DeepMindが開発した最新の生成AIモデル�
   - コード、数学、STEM分野での優れた性能
 - **ナレッジカットオフ**: 2025年1月
 
-### Gemini 2.5 Flash（最新版）
-- **モデルID**: `gemini-2.5-flash-preview-05-20`
-- **旧モデルID**: `gemini-2.5-flash-preview-04-17`（2025/06/14に更新）
+### Gemini 2.5 Flash（安定版）
+- **モデルID**: `gemini-2.5-flash`
+- **旧モデルID**: `gemini-2.5-flash-preview-05-20`（2025/06/18に安定版に更新）
 - **コンテキストウィンドウ**: 1,048,576トークン（入力）、65,536トークン（出力）
 - **用途**: より軽量で高速な処理が必要な場合、価格とパフォーマンスの最適化
 - **特徴**: 思考予算の構成が可能、低レイテンシでの大容量タスクに最適
@@ -71,7 +71,7 @@ os.environ["GOOGLE_API_KEY"] = "your-api-key"
 # モデルの初期化
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-pro-preview-06-05",  # 最新版を使用
-    temperature=0.7,
+    temperature=0.7,  # 0.0-2.0の範囲で設定可能（Gemini 2.5）
     max_tokens=None,
     timeout=None,
     max_retries=2,
@@ -80,6 +80,9 @@ llm = ChatGoogleGenerativeAI(
 # 基本的な呼び出し
 response = llm.invoke("ゲームの物語を生成してください")
 print(response.content)
+
+# 注意: langchain-google-genai 2.0.8以降では、temperatureは
+# 初期化時にのみ設定可能で、invoke時には変更できません
 ```
 
 ### メッセージ形式
@@ -182,6 +185,15 @@ def call_gemini_with_retry(prompt):
 - プロンプトインジェクション対策
 - 出力の検証とサニタイゼーション
 
+### 4. Temperature設定
+- **重要**: langchain-google-genai 2.0.8以降では、temperatureはChatGoogleGenerativeAI初期化時にのみ設定可能
+- Gemini 2.5シリーズは0.0～2.0の範囲をサポート（旧バージョンは0.0～1.0）
+- 用途別推奨値:
+  - 分析・判定タスク: 0.0～0.3（一貫性重視）
+  - 一般的な対話: 0.5～0.7（バランス型）
+  - 創造的なタスク: 0.8～1.2（多様性重視）
+  - 実験的・混沌的な生成: 1.3～2.0（予測不能性）
+
 ## ゲスタロカ特有の考慮事項
 
 ### 1. GM AI評議会での使用
@@ -200,6 +212,16 @@ def call_gemini_with_retry(prompt):
 - 非同期処理アーキテクチャ
 
 ## モデルバージョン更新履歴
+
+### 2025/06/18
+- langchain-google-genai 2.0.8でのtemperature設定方法を明確化
+- temperatureパラメータは初期化時にのみ設定可能（invoke時には変更不可）
+- Gemini 2.5シリーズの温度範囲を0.0-2.0に更新（従来は0.0-1.0）
+
+### 2025/06/18
+- Gemini 2.5 Pro: `gemini-2.5-pro-preview-06-05` → `gemini-2.5-pro`（安定版リリース）
+- Gemini 2.5 Flash: `gemini-2.5-flash-preview-05-20` → `gemini-2.5-flash`（安定版リリース）
+- プレビュー版から安定版への移行により、本番環境での安定性向上
 
 ### 2025/06/14
 - Gemini 2.5 Pro: `gemini-2.5-pro-preview-03-25` → `gemini-2.5-pro-preview-06-05`

@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # LLM設定
     GEMINI_API_KEY: str = Field(default="your-gemini-api-key", validation_alias="GEMINI_API_KEY")
-    LLM_MODEL: str = Field(default="gemini-2.5-pro-preview-06-05", validation_alias="LLM_MODEL")
+    LLM_MODEL: str = Field(default="gemini-2.5-pro", validation_alias="LLM_MODEL")
     LLM_TEMPERATURE: float = Field(default=0.7, validation_alias="LLM_TEMPERATURE")
     LLM_MAX_TOKENS: int = Field(default=2048, validation_alias="LLM_MAX_TOKENS")
 

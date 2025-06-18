@@ -286,3 +286,52 @@
 - ログシステムの基盤実装開始
 - E2Eテスト実装（現在は仕様書のみ）
 - パフォーマンス最適化
+
+**6/18 (火) - プロジェクト名統一・依存関係更新デー**
+- ✅ **プロジェクト名統一 (TextMMO → GESTALOKA)** 🎉
+  - コミット履歴による確認
+  - 関連ファイルの修正
+    - main.py: ウェルカムメッセージ
+    - 01_create_databases.sql: データベース名
+  - 品質チェック実施（make test, typecheck, lint）
+- ✅ **Makefile TTY問題修正** 🎉
+  - docker-compose execコマンドに-Tフラグ追加
+  - test-backendコマンドのpytest実行方法修正
+  - 全テストコマンドのTTY互換性確保
+- ✅ **Gemini 2.5 安定版移行** 🎉
+  - プレビュー版から安定版(gemini-2.5-pro)へ更新
+  - core/config.py: LLM_MODELデフォルト値
+  - gemini_client.py: GeminiConfigデフォルト値
+- ✅ **langchain-google-genai 2.1.5対応** 🎉
+  - temperature設定方法の変更
+    - model_kwargsでtemperature設定
+    - 範囲0.0-1.0の制限追加
+  - 依存関係問題解決
+    - google-generativeaiをrequirements.txtから削除
+    - Dockerイメージ再ビルド
+- ✅ **包括的ドキュメント更新** 🎉
+  - CLAUDE.md: 作業履歴詳細追加
+  - README.md: 技術スタックバージョン更新
+  - issuesAndNotes.md: 現在の問題点記載
+  - developmentEnvironment.md: 環境情報更新
+  - troubleshooting.md: 新規問題と解決策追加
+
+**今日の成果:**
+- ✅ **プロジェクト名の完全統一** 🚀
+- ✅ **最新版依存ライブラリへの移行** 🚀
+- ✅ **ドキュメントの完全な現状反映** 🎉
+
+**残存する課題:**
+- ⚠️ バックエンドテスト: 16件失敗
+  - 戦闘統合テストのモックエラー
+  - Geminiクライアントのtemperatureテスト
+  - タイムゾーン比較エラー
+- ⚠️ 型チェックエラー: バックエンド5件、フロントエンド30件
+- ⚠️ リントエラー: バックエンド705件、フロントエンド5エラー+28警告
+- ⚠️ フロントエンドテスト: WebSocketサービスのimportエラー
+
+**次の計画:**
+- 失敗しているテストの修正
+- 型チェックエラーの解決
+- リントエラーの自動修正
+- ログシステムの基盤実装継続

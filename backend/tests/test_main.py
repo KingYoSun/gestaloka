@@ -12,7 +12,7 @@ def test_root_endpoint(client: TestClient):
     data = response.json()
     assert "message" in data
     assert "version" in data
-    assert data["message"] == "Welcome to Gestaloka API"
+    assert data["message"] == "Welcome to GESTALOKA API"
 
 
 def test_health_check(client: TestClient):

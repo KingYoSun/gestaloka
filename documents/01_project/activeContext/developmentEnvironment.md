@@ -2,7 +2,7 @@
 
 このファイルには、現在の開発環境、稼働中サービス、実装済み機能の情報が記載されています。
 
-## 現在の動作環境
+## 現在の動作環境（2025/06/18更新）
 
 ### 稼働中サービス（localhost）
 🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ  
@@ -54,8 +54,9 @@
 ### バックエンド
 - Python 3.11
 - FastAPI 0.115
-- LangChain 0.3
-- SQLModel 0.0.24
+- LangChain 0.3.25
+- langchain-google-genai 2.1.5
+- SQLModel 0.0.22
 - neomodel 5.4
 - Celery 5.4
 
@@ -70,7 +71,7 @@
 - Keycloak 26.2
 
 ### LLM
-- Gemini 2.5 Pro (最新版: gemini-2.5-pro-preview-06-05)
+- Gemini 2.5 Pro (安定版: gemini-2.5-pro)
 
 ### インフラ
 - Docker Compose
