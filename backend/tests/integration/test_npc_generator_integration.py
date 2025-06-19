@@ -11,10 +11,41 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlmodel import Session, create_engine
 
-from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus
+from app.models.character import Character, GameSession
+from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus, LogFragment
 from app.models.user import User
 from app.services.npc_generator import NPCGenerator
 from tests.integration.base_neo4j_test import BaseNeo4jIntegrationTest, neo4j_test_db
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def setup_test_neo4j():
+    """テスト用Neo4j設定をセットアップするコンテキストマネージャー"""
+    from neomodel import config as neo_config
+    from neomodel import db as neo_db
+    
+    # 現在の設定を保存
+    original_url = neo_config.DATABASE_URL
+    
+    # テスト用URLに変更
+    test_url = "bolt://neo4j:test_password@neo4j-test:7687"
+    neo_config.DATABASE_URL = test_url
+    
+    # 既存の接続をクリア
+    if hasattr(neo_db, '_driver') and neo_db._driver:
+        neo_db._driver.close()
+        neo_db._driver = None
+    
+    try:
+        yield
+    finally:
+        # 元の設定に戻す
+        neo_config.DATABASE_URL = original_url
+        if hasattr(neo_db, '_driver') and neo_db._driver:
+            neo_db._driver.close()
+            neo_db._driver = None
 
 
 class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
@@ -42,15 +73,58 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             conn.execute(text("CREATE SCHEMA public"))
             conn.commit()
         
-        # Alembicを使用してマイグレーションを適用
-        from alembic import command
-        from alembic.config import Config
+        # 全てのモデルをインポート（重要: SQLModel.metadata.create_allが全てのテーブルを作成するため）
+        from app.models.user import User
+        from app.models.character import Character, CharacterStats, GameSession, Skill
+        from app.models.log import (
+            CompletedLog,
+            CompletedLogSubFragment,
+            LogContract,
+            LogFragment,
+        )
         
-        alembic_cfg = Config("/app/alembic.ini")
-        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+        # ENUMタイプを事前に作成
+        with engine.connect() as conn:
+            # EmotionalValence ENUM
+            conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE emotionalvalence AS ENUM ('POSITIVE', 'NEGATIVE', 'NEUTRAL');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            
+            # LogFragmentRarity ENUM
+            conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE logfragmentrarity AS ENUM ('COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            
+            # CompletedLogStatus ENUM
+            conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE completedlogstatus AS ENUM ('DRAFT', 'COMPLETED', 'CONTRACTED', 'ACTIVE', 'EXPIRED', 'RECALLED');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            
+            # LogContractStatus ENUM
+            conn.execute(text("""
+                DO $$ BEGIN
+                    CREATE TYPE logcontractstatus AS ENUM ('PENDING', 'ACCEPTED', 'ACTIVE', 'DEPLOYED', 'COMPLETED', 'EXPIRED', 'CANCELLED');
+                EXCEPTION
+                    WHEN duplicate_object THEN null;
+                END $$;
+            """))
+            
+            conn.commit()
         
-        # マイグレーションを最新に
-        command.upgrade(alembic_cfg, "head")
+        # テーブルを作成
+        SQLModel.metadata.create_all(engine)
 
         with Session(engine) as session:
             yield session
@@ -59,7 +133,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     def test_user(self, test_session: Session) -> User:
         """テスト用ユーザー"""
         user = User(
-            id=uuid.uuid4(),
+            id=str(uuid.uuid4()),
             username="test_user",
             email="test@example.com",
             hashed_password="hashed",
@@ -73,11 +147,70 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         return user
 
     @pytest.fixture
-    def completed_log(self, test_session: Session, test_user: User) -> CompletedLog:
+    def test_character(self, test_session: Session, test_user: User) -> Character:
+        """テスト用キャラクター"""
+        from app.models.character import Character
+        
+        character = Character(
+            id=str(uuid.uuid4()),
+            user_id=str(test_user.id),
+            name="テストキャラクター",
+            description="テスト用のキャラクター",
+            location="初期位置",
+            is_active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        test_session.add(character)
+        test_session.commit()
+        test_session.refresh(character)
+        return character
+
+    @pytest.fixture
+    def test_session_obj(self, test_session: Session, test_character: Character) -> GameSession:
+        """テスト用ゲームセッション"""
+        from app.models.character import GameSession
+        
+        game_session = GameSession(
+            id=str(uuid.uuid4()),
+            character_id=test_character.id,
+            is_active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        test_session.add(game_session)
+        test_session.commit()
+        test_session.refresh(game_session)
+        return game_session
+
+    @pytest.fixture
+    def test_log_fragment(self, test_session: Session, test_character: Character, test_session_obj: GameSession) -> LogFragment:
+        """テスト用ログフラグメント"""
+        from app.models.log import LogFragment, EmotionalValence, LogFragmentRarity
+        
+        fragment = LogFragment(
+            id=str(uuid.uuid4()),
+            character_id=test_character.id,
+            session_id=test_session_obj.id,
+            action_description="英雄的な行動",
+            keywords=["勇敢", "戦士"],
+            emotional_valence=EmotionalValence.POSITIVE,
+            rarity=LogFragmentRarity.RARE,
+            importance_score=0.8,
+            created_at=datetime.utcnow(),
+        )
+        test_session.add(fragment)
+        test_session.commit()
+        test_session.refresh(fragment)
+        return fragment
+
+    @pytest.fixture
+    def completed_log(self, test_session: Session, test_character: Character, test_log_fragment: LogFragment) -> CompletedLog:
         """テスト用完成ログ"""
         log = CompletedLog(
-            id=uuid.uuid4(),
-            creator_id=test_user.id,
+            id=str(uuid.uuid4()),
+            creator_id=test_character.id,
+            core_fragment_id=test_log_fragment.id,
             name="テスト冒険者",
             title="伝説の戦士",
             description="数多くの冒険を経験した戦士",
@@ -95,8 +228,9 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         return log
 
     @pytest.fixture
-    def npc_generator(self, test_session: Session) -> NPCGenerator:
+    def npc_generator(self, test_session: Session, neo4j_test_db) -> NPCGenerator:
         """テスト用NPCGenerator"""
+        # Neo4j接続が正しく設定されていることを確認
         return NPCGenerator(test_session)
 
     @pytest.mark.asyncio
@@ -109,11 +243,34 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         """実際のNeo4jを使用したNPC生成テスト"""
         # NPCManagerAgentのモックのみ使用（AIコンポーネントのみモック）
         with patch.object(npc_generator, "_npc_manager", new=AsyncMock()):
-            # NPCを生成
-            npc_profile = await npc_generator.generate_npc_from_log(
-                completed_log_id=completed_log.id,
-                target_location_name="テスト広場",
-            )
+            # neomodelの設定を一時的に変更
+            from neomodel import config as neo_config
+            from neomodel import db as neo_db
+            
+            # 現在の設定を保存
+            original_url = neo_config.DATABASE_URL
+            
+            try:
+                # テスト用URLに変更
+                test_url = "bolt://neo4j:test_password@neo4j-test:7687"
+                neo_config.DATABASE_URL = test_url
+                
+                # 既存の接続をクリア
+                if hasattr(neo_db, '_driver') and neo_db._driver:
+                    neo_db._driver.close()
+                    neo_db._driver = None
+                
+                # NPCを生成
+                npc_profile = await npc_generator.generate_npc_from_log(
+                    completed_log_id=completed_log.id,
+                    target_location_name="テスト広場",
+                )
+            finally:
+                # 元の設定に戻す
+                neo_config.DATABASE_URL = original_url
+                if hasattr(neo_db, '_driver') and neo_db._driver:
+                    neo_db._driver.close()
+                    neo_db._driver = None
 
             # 結果を検証
             assert npc_profile is not None
@@ -142,51 +299,54 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         self,
         neo4j_test_db,
         npc_generator: NPCGenerator,
-        completed_log: CompletedLog,
+        test_character: Character,
+        test_log_fragment: LogFragment,
     ):
         """実際のNeo4jを使用した場所別NPC取得テスト"""
         with patch.object(npc_generator, "_npc_manager", new=AsyncMock()):
-            # 複数のNPCを異なる場所に生成
-            locations = ["テスト広場", "テスト酒場", "テスト広場"]
-            npc_profiles = []
+            with setup_test_neo4j():
+                # 複数のNPCを異なる場所に生成
+                locations = ["テスト広場", "テスト酒場", "テスト広場"]
+                npc_profiles = []
 
-            for i, location in enumerate(locations):
-                # 新しいログを作成
-                log = CompletedLog(
-                    id=uuid.uuid4(),
-                    creator_id=completed_log.creator_id,
-                    name=f"テストNPC{i+1}",
-                    title=f"テストタイトル{i+1}",
-                    description=f"テスト説明{i+1}",
-                    personality_traits=["trait1"],
-                    behavior_patterns=["pattern1"],
-                    skills=["skill1"],
-                    contamination_level=0,
-                    status=CompletedLogStatus.ACTIVE,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
-                )
-                npc_generator.session.add(log)
-                npc_generator.session.commit()
+                for i, location in enumerate(locations):
+                    # 新しいログを作成
+                    log = CompletedLog(
+                        id=str(uuid.uuid4()),
+                        creator_id=test_character.id,
+                        core_fragment_id=test_log_fragment.id,
+                        name=f"テストNPC{i+1}",
+                        title=f"テストタイトル{i+1}",
+                        description=f"テスト説明{i+1}",
+                        personality_traits=["trait1"],
+                        behavior_patterns=["pattern1"],
+                        skills=["skill1"],
+                        contamination_level=0,
+                        status=CompletedLogStatus.ACTIVE,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    npc_generator.session.add(log)
+                    npc_generator.session.commit()
 
-                # NPCを生成
-                profile = await npc_generator.generate_npc_from_log(
-                    completed_log_id=log.id,
-                    target_location_name=location,
-                )
-                npc_profiles.append(profile)
+                    # NPCを生成
+                    profile = await npc_generator.generate_npc_from_log(
+                        completed_log_id=log.id,
+                        target_location_name=location,
+                    )
+                    npc_profiles.append(profile)
 
-            # テスト広場のNPCを取得
-            npcs_in_square = npc_generator.get_npcs_in_location("テスト広場")
-            assert len(npcs_in_square) == 2
-            npc_names = {npc.name for npc in npcs_in_square}
-            assert "テストNPC1" in npc_names
-            assert "テストNPC3" in npc_names
+                # テスト広場のNPCを取得
+                npcs_in_square = npc_generator.get_npcs_in_location("テスト広場")
+                assert len(npcs_in_square) == 2
+                npc_names = {npc.name for npc in npcs_in_square}
+                assert "テストNPC1" in npc_names
+                assert "テストNPC3" in npc_names
 
-            # テスト酒場のNPCを取得
-            npcs_in_tavern = npc_generator.get_npcs_in_location("テスト酒場")
-            assert len(npcs_in_tavern) == 1
-            assert npcs_in_tavern[0].name == "テストNPC2"
+                # テスト酒場のNPCを取得
+                npcs_in_tavern = npc_generator.get_npcs_in_location("テスト酒場")
+                assert len(npcs_in_tavern) == 1
+                assert npcs_in_tavern[0].name == "テストNPC2"
 
     @pytest.mark.asyncio
     async def test_move_npc_with_real_neo4j(

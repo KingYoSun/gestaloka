@@ -156,6 +156,7 @@ services:
         condition: service_healthy
     networks:
       - gestaloka-network
+      - gestaloka-test-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
@@ -262,6 +263,72 @@ services:
       - gestaloka-network
     command: celery -A app.celery flower --port=5555
 
+  # Test Databases (for integration tests)
+  # Test Neo4j
+  neo4j-test:
+    image: neo4j:5.26-community
+    container_name: gestaloka-neo4j-test
+    environment:
+      - NEO4J_AUTH=neo4j/test_password
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,algo.*
+      - NEO4J_dbms_memory_heap_initial__size=512m
+      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_dbms_memory_pagecache_size=512m
+    ports:
+      - "7475:7474"  # Browser (test port)
+      - "7688:7687"  # Bolt (test port)
+    volumes:
+      - neo4j-test-data:/data
+      - neo4j-test-logs:/logs
+      - neo4j-test-plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gestaloka-test-network
+
+  # Test PostgreSQL
+  postgres-test:
+    image: postgres:17-alpine
+    container_name: gestaloka-postgres-test
+    environment:
+      - POSTGRES_USER=test_user
+      - POSTGRES_PASSWORD=test_password
+      - POSTGRES_DB=gestaloka_test
+    ports:
+      - "5433:5432"  # Test port
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d gestaloka_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gestaloka-test-network
+
+  # Test Redis
+  redis-test:
+    image: redis:8-alpine
+    container_name: gestaloka-redis-test
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"  # Test port
+    volumes:
+      - redis-test-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gestaloka-test-network
+
 volumes:
   postgres_data:
     driver: local
@@ -283,6 +350,17 @@ volumes:
     driver: local
   celery_beat_data:
     driver: local
+  # Test volumes
+  postgres-test-data:
+    driver: local
+  neo4j-test-data:
+    driver: local
+  neo4j-test-logs:
+    driver: local
+  neo4j-test-plugins:
+    driver: local
+  redis-test-data:
+    driver: local
 
 networks:
   gestaloka-network:
@@ -291,3 +369,9 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/16
+  gestaloka-test-network:
+    driver: bridge
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

@@ -5,13 +5,48 @@ Neo4j統合テストの基底クラス
 """
 
 import os
-from typing import Generator
 
 import pytest
 from neomodel import config, db
 
-from app.core.config import settings
 from app.db.neo4j_models import Location, NPC, Player
+
+
+@pytest.fixture
+def neo4j_test_db():
+    """テスト用Neo4j接続のフィクスチャー"""
+    # テスト用Neo4jの接続設定
+    test_neo4j_url = os.getenv(
+        "NEO4J_TEST_URL",
+        "bolt://neo4j:test_password@neo4j-test:7687"
+    )
+    config.DATABASE_URL = test_neo4j_url
+    
+    # テストごとにデータをクリーンアップ
+    with db.transaction:
+        db.cypher_query(
+            """
+            MATCH (n)
+            WHERE n.npc_id STARTS WITH 'test_' 
+               OR n.player_id STARTS WITH 'test_'
+               OR n.location_id STARTS WITH 'test_'
+            DETACH DELETE n
+            """
+        )
+    
+    yield db
+    
+    # テスト後のクリーンアップ
+    with db.transaction:
+        db.cypher_query(
+            """
+            MATCH (n)
+            WHERE n.npc_id STARTS WITH 'test_' 
+               OR n.player_id STARTS WITH 'test_'
+               OR n.location_id STARTS WITH 'test_'
+            DETACH DELETE n
+            """
+        )
 
 
 class BaseNeo4jIntegrationTest:
