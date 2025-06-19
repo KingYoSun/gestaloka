@@ -9,6 +9,47 @@
 - **ドキュメンテーション**: 作業終了時に、作業内容に合わせてドキュメントとプロジェクトコンテキストの更新を行う
 - **コミット不可**: ユーザーから明示的に要求されない限り、絶対にコミットしない
 
+## ドキュメンテーションルール
+
+### ファイル構成の原則
+- **重複禁止**: 同じ目的・内容のファイルは作成しない。既存ファイルを更新する
+- **サイズ制限**: 1ファイル500行を超える場合は、論理的な単位で分割を検討
+- **命名規則**: キャメルケース（例: `issuesAndNotes.md`）を使用、アンダースコアは避ける
+
+### 作業履歴の管理
+- **CLAUDE.md**: 作業ルールとプロジェクト概要のみ記載。詳細な作業履歴は記載しない
+- **作業履歴の保存先**:
+  - 進捗レポート: `documents/01_project/progressReports/YYYY-MM-DD_作業概要.md`
+  - 最近の作業: `documents/01_project/activeContext/recentWork.md`
+  - 完了タスク: `documents/01_project/activeContext/completedTasks.md`
+
+### ドキュメント更新時の注意
+1. **現在の環境情報**: `documents/01_project/activeContext/current_environment.md` に集約
+2. **既知の問題**: `documents/01_project/activeContext/issuesAndNotes.md` に集約
+3. **プロジェクトルートのREADME.md**: 常に最新のドキュメント内容と同期させる
+4. **重複コンテンツの排除**: 同じ情報を複数箇所に記載しない。参照リンクを使用
+
+### ドキュメント階層
+```
+documents/
+├── SUMMARY.md              # 全体概要（1-2ページ）
+├── 01_project/            # プロジェクト管理
+│   ├── activeContext/     # 現在の状況
+│   └── progressReports/   # 作業履歴
+├── 02_architecture/       # 設計・技術
+├── 03_worldbuilding/      # ゲーム世界観
+├── 04_ai_agents/          # AI仕様
+├── 05_implementation/     # 実装ガイド
+└── 06_reports/           # テストレポート
+```
+
+### 作業完了時のチェックリスト
+- [ ] 関連ドキュメントの更新
+- [ ] 重複ファイルの確認・統合
+- [ ] 500行超えファイルの分割検討
+- [ ] プロジェクトルートREADME.mdの同期
+- [ ] 進捗レポートの作成（重要な変更時）
+
 ## プロジェクト概要
 
 **ゲスタロカ (GESTALOKA)** - マルチプレイ・テキストMMO
@@ -312,115 +353,11 @@ docker-compose exec -T backend alembic downgrade -1
 - **ログによる永続性**: プレイヤーの行動が世界に残る
 - **AI協調**: 単一AIではなく専門AIの協調による豊かな体験
 
-## 最近の作業履歴
+## プロジェクトコンテキスト
 
-### 2025/06/18 - ログシステム基盤実装
+最新の作業履歴と詳細な進捗は以下のドキュメントを参照してください：
 
-#### 実施内容
-1. **ログシステムのデータモデル設計**
-   - LogFragment（ログの欠片）: プレイヤーの重要な行動記録
-   - CompletedLog（完成ログ）: 編纂されたNPC化可能な記録
-   - LogContract（ログ契約）: 他プレイヤー世界への送出契約
-   - CompletedLogSubFragment: 完成ログとフラグメントの関連
-
-2. **APIエンドポイント実装**
-   - `/api/v1/logs/fragments`: ログフラグメントのCRUD
-   - `/api/v1/logs/completed`: 完成ログの作成・更新・取得
-   - `/api/v1/logs/contracts`: 契約の作成・マーケット機能
-   - `/api/v1/logs/contracts/{id}/accept`: 契約受入機能
-
-3. **データベース統合**
-   - 既存のCharacter、GameSessionモデルとの関連付け
-   - マイグレーションファイルの作成と適用
-   - ENUMタイプの定義（レアリティ、感情価、ステータス）
-
-4. **テスト作成**
-   - ログエンドポイントの単体テスト
-   - 認証チェック、データ整合性の検証
-   - 全178テストがパス（警告のみ）
-
-#### 技術的な改善
-- SQLModelの型安全な実装
-- 適切なリレーションシップ設計
-- コード品質の維持（リント、型チェック全クリア）
-
-### 2025/06/18 - プロジェクト名変更とGemini API更新
-
-#### 実施内容
-1. **プロジェクト名の統一**
-   - TextMMO → GESTALOKA への完全移行
-   - 全ファイルでの名称統一を確認
-
-2. **Gemini 2.5 安定版への移行**
-   - プレビュー版から安定版への移行
-   - `gemini-2.5-pro-preview-06-05` → `gemini-2.5-pro`
-   - `gemini-2.5-flash-preview-05-20` → `gemini-2.5-flash`
-
-3. **依存ライブラリの更新**
-   - `langchain`: 0.3.18 → 0.3.25
-   - `langchain-google-genai`: 2.0.8 → 2.1.5
-   - `google-generativeai`: 削除（langchain-google-genaiに統合）
-
-4. **Makefileの改善**
-   - TTY問題の解決（`-T`フラグの追加）
-   - テストコマンドの修正（`python -m pytest`の使用）
-
-#### 発見された問題と解決策
-
-1. **PostgreSQL初期化エラー**
-   - 問題: データベース名が旧名称（logverse）のまま
-   - 解決: `sql/init/01_create_databases.sql`を修正
-
-2. **Gemini APIのtemperatureパラメータエラー**
-   - 問題: langchain-google-genai 2.1.5での設定方法の変更
-   - 解決: `model_kwargs`でtemperatureを設定する方式に変更
-   - 注意: 温度範囲は0.0-1.0に制限（langchainの制約）
-
-3. **依存関係の競合**
-   - 問題: langchain-google-genaiとgoogle-generativeaiの非互換
-   - 解決: google-generativeaiを削除（重複のため）
-
-4. **Alembicマイグレーション問題**
-   - 問題: SQLModelのcreate_all()とAlembicの競合
-   - 解決: 全環境でAlembicのみを使用するよう統一
-
-#### コード品質の改善（2025/06/18実施）
-
-1. **リントエラーの完全解消**
-   - バックエンド: 0エラー（ruffチェック全パス）
-   - フロントエンド: 0エラー、0警告（ESLint全パス）
-   - `any`型を適切な型定義に置き換え
-   - React contextを別ファイルに分離
-
-2. **テストの完全成功**
-   - バックエンド: 174件全てパス
-   - フロントエンド: 21件全てパス
-   - 警告は残存するが機能に影響なし
-
-3. **型チェックの完全クリア**
-   - バックエンド: 0エラー（mypy全パス、注記のみ）
-   - フロントエンド: 0エラー（TypeScript全パス）
-   - `ConvertibleValue`型を`unknown`に変更
-   - 循環参照を解消
-
-#### 推奨される次のアクション
-
-1. **ログシステムのUI統合**
-   - フロントエンドでのログ閲覧・編纂画面
-   - ログフラグメントの視覚的表現
-   - 編纂プロセスのインタラクティブUI
-
-2. **ログNPC化機能の実装**
-   - CompletedLogからNPCエンティティへの変換
-   - NPC Manager AIとの統合
-   - ログNPCの行動AI実装
-
-3. **探索システムの実装**
-   - 場所移動メカニクス
-   - 環境相互作用
-   - ログフラグメント収集の統合
-
-4. **ログ契約システムの拡張**
-   - 活動記録と報酬計算
-   - マーケットプレイスUI
-   - 契約評価システム
+- **開発進捗**: `documents/01_project/progressReports/`
+- **現在の環境**: `documents/01_project/activeContext/current_environment.md`
+- **既知の問題**: `documents/01_project/activeContext/issuesAndNotes.md`
+- **完了タスク**: `documents/01_project/activeContext/completedTasks.md`

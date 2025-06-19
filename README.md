@@ -85,7 +85,7 @@ make init-db
 |------|-----------|------|
 | **FastAPI** | 0.115.6 | 高性能Webフレームワーク |
 | **Python** | 3.11 | プログラミング言語 |
-| **SQLModel** | 0.0.22 | タイプセーフORM |
+| **SQLModel** | 0.0.24 | タイプセーフORM |
 | **Alembic** | 1.15.2 | データベースマイグレーション |
 | **Socket.IO** | 5.12.1 | WebSocketサーバー |
 | **neomodel** | 5.4.1 | Neo4j OGM |
@@ -342,11 +342,12 @@ make clean-all
 ## 📝 更新履歴
 
 ### 2025/06/18
+- **✅ ログシステム基盤実装**: LogFragment、CompletedLog、LogContract の完全実装
 - **✅ プロジェクト名統一**: TextMMO → GESTALOKA
 - **✅ Gemini 2.5 安定版移行**: プレビュー版から安定版（`gemini-2.5-pro`）へ
 - **✅ 依存ライブラリ更新**: LangChain 0.3.25、langchain-google-genai 2.1.5
-- **✅ Makefile改善**: TTY問題解決、テストコマンド修正
-- **🔧 既知の問題**: テスト16件失敗、型エラー、リントエラー（詳細は`CLAUDE.md`参照）
+- **✅ コード品質完全クリーン化**: 全リント、型チェック、テストがエラー0件達成
+- **✅ テストカバレッジ向上**: バックエンド178件、フロントエンド21件全てパス
 
 ---
 
