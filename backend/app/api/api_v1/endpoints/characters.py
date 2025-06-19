@@ -11,6 +11,7 @@ from app.api.api_v1.endpoints.auth import get_current_user
 from app.api.deps import get_user_character, check_character_limit, get_current_active_user
 from app.core.database import get_session
 from app.core.logging import get_logger
+from app.core.exceptions import DatabaseError
 from app.schemas.character import Character, CharacterCreate, CharacterUpdate
 from app.schemas.user import User
 from app.services.character_service import CharacterService
@@ -32,7 +33,7 @@ async def get_user_characters(
 
     except Exception as e:
         logger.error("Failed to get characters", user_id=current_user.id, error=str(e))
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャラクター取得に失敗しました")
+        raise DatabaseError("キャラクター取得に失敗しました", operation="get_characters")
 
 
 @router.post("/", response_model=Character, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_character_limit)])
@@ -55,7 +56,7 @@ async def create_character(
         raise
     except Exception as e:
         logger.error("Character creation failed", user_id=current_user.id, error=str(e))
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャラクター作成に失敗しました")
+        raise DatabaseError("キャラクター作成に失敗しました", operation="create_character")
 
 
 @router.get("/{character_id}", response_model=Character)
@@ -84,7 +85,7 @@ async def update_character(
         raise
     except Exception as e:
         logger.error("Character update failed", user_id=character.user_id, character_id=character.id, error=str(e))
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャラクター更新に失敗しました")
+        raise DatabaseError("キャラクター更新に失敗しました", operation="update_character")
 
 
 @router.delete("/{character_id}")

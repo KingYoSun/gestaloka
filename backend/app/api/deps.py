@@ -6,7 +6,7 @@ from app.core.database import get_session as get_db
 from app.api.api_v1.endpoints.auth import get_current_user
 from app.schemas.user import User
 from app.schemas.character import Character
-from app.schemas.game_session import GameSession
+from app.models.character import GameSession
 
 
 async def get_current_active_user(

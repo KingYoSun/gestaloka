@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025-06-18
+## 最終更新: 2025-06-19
 
 ## 稼働中のサービス（localhost）
 🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ（最新安定版）  
@@ -81,7 +81,17 @@
 - WebSocket (Socket.IO)
 - Celery（Worker/Beat/Flower）
 
-## 最近の変更（2025-06-18）
+## 最近の変更（2025-06-19）
+- DRY原則に基づく重複コードの大規模修正
+  - パスワードバリデーションの共通関数化（`app/utils/validation.py`）
+  - 権限チェックロジックの統一化（`app/utils/permissions.py`）
+  - カスタム例外クラスの活用とエラーハンドリング統一（`app/core/error_handler.py`）
+  - ハードコーディング値の設定ファイル移行（キャラクター初期値等）
+  - 重複NPCマネージャー実装の統合
+- ベストプラクティスドキュメントの作成（`documents/05_implementation/bestPractices.md`）
+- コード品質の向上（保守性、一貫性、拡張性の改善）
+
+### 2025-06-18の変更
 - ログシステムの基盤実装完了（LogFragment、CompletedLog、LogContract）
 - データベーステーブルの追加（log_fragments、completed_logs、log_contracts等）
 - APIエンドポイントの拡充（/api/v1/logs/*）

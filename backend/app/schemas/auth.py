@@ -7,6 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, validator
 
 from app.schemas.user import User
+from app.utils.validation import validate_password
 
 
 class Token(BaseModel):
@@ -38,6 +39,11 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=8, max_length=100, description="パスワード")
     confirm_password: str = Field(..., description="パスワード確認")
 
+    @validator("password")
+    def validate_password_strength(cls, v):  # noqa: N805
+        """パスワード強度チェック"""
+        return validate_password(v)
+
     @validator("confirm_password")
     def validate_passwords_match(cls, v, values):  # noqa: N805
         """パスワード一致チェック"""
@@ -57,3 +63,8 @@ class PasswordResetConfirm(BaseModel):
 
     token: str = Field(..., description="リセットトークン")
     new_password: str = Field(..., min_length=8, max_length=100, description="新しいパスワード")
+
+    @validator("new_password")
+    def validate_new_password_strength(cls, v):  # noqa: N805
+        """新しいパスワードの強度チェック"""
+        return validate_password(v, "new_password")

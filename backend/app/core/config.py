@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     MAX_CHARACTERS_PER_USER: int = Field(default=5, validation_alias="MAX_CHARACTERS_PER_USER")
     MAX_ACTIVE_SESSIONS_PER_USER: int = Field(default=1, validation_alias="MAX_ACTIVE_SESSIONS_PER_USER")
     DEFAULT_STARTING_LOCATION: str = Field(default="starting_village", validation_alias="DEFAULT_STARTING_LOCATION")
+    DEFAULT_CHARACTER_HP: int = Field(default=100, validation_alias="DEFAULT_CHARACTER_HP")
+    DEFAULT_CHARACTER_ENERGY: int = Field(default=100, validation_alias="DEFAULT_CHARACTER_ENERGY")
+    DEFAULT_CHARACTER_ATTACK: int = Field(default=10, validation_alias="DEFAULT_CHARACTER_ATTACK")
+    DEFAULT_CHARACTER_DEFENSE: int = Field(default=5, validation_alias="DEFAULT_CHARACTER_DEFENSE")
 
     # AI設定
     AI_RESPONSE_TIMEOUT: int = Field(default=30, validation_alias="AI_RESPONSE_TIMEOUT")  # 秒

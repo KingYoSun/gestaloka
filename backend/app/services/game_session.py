@@ -41,6 +41,7 @@ from app.services.ai.agents import (
 # from app.services.ai.prompt_manager import PromptContext  # 現在未使用
 from app.services.battle import BattleService
 from app.websocket.events import GameEventEmitter
+from app.utils.permissions import check_character_ownership, check_session_ownership
 
 logger = get_logger(__name__)
 
@@ -73,14 +74,9 @@ class GameSessionService:
         """新しいゲームセッションを作成"""
         try:
             # キャラクターの存在確認とユーザー所有権チェック
-            character = self.db.get(Character, session_data.character_id)
+            character = check_character_ownership(self.db, session_data.character_id, user_id)
             if not character:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
-
-            if character.user_id != user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="このキャラクターにアクセスする権限がありません"
-                )
 
             # 既存のアクティブなセッションを非アクティブ化
             stmt = select(GameSession).where(
@@ -214,16 +210,9 @@ class GameSessionService:
         """ゲームセッションを更新"""
         try:
             # セッションの存在確認とユーザー所有権チェック
-            stmt = (
-                select(GameSession, Character)
-                .join(Character)
-                .where(GameSession.id == session_id, Character.user_id == user_id)
-            )
-
-            result = self.db.exec(stmt).first()
+            result = check_session_ownership(self.db, session_id, user_id)
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="セッションが見つかりません")
-
             session, character = result
 
             # セッションデータの更新
@@ -266,16 +255,9 @@ class GameSessionService:
         """ゲームセッションを終了"""
         try:
             # セッションの存在確認とユーザー所有権チェック
-            stmt = (
-                select(GameSession, Character)
-                .join(Character)
-                .where(GameSession.id == session_id, Character.user_id == user_id)
-            )
-
-            result = self.db.exec(stmt).first()
+            result = check_session_ownership(self.db, session_id, user_id)
             if not result:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="セッションが見つかりません")
-
             session, character = result
 
             # セッションを非アクティブ化

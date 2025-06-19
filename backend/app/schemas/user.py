@@ -7,6 +7,8 @@ from typing import ClassVar, Optional
 
 from pydantic import BaseModel, EmailStr, Field, validator
 
+from app.utils.validation import validate_password
+
 
 class UserBase(BaseModel):
     """ユーザーベーススキーマ"""
@@ -21,16 +23,8 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=100, description="パスワード")
 
     @validator("password")
-    def validate_password(cls, v):  # noqa: N805
-        if len(v) < 8:
-            raise ValueError("パスワードは8文字以上である必要があります")
-        if not any(c.isupper() for c in v):
-            raise ValueError("パスワードには大文字を1つ以上含める必要があります")
-        if not any(c.islower() for c in v):
-            raise ValueError("パスワードには小文字を1つ以上含める必要があります")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("パスワードには数字を1つ以上含める必要があります")
-        return v
+    def validate_password_strength(cls, v):  # noqa: N805
+        return validate_password(v)
 
 
 class UserUpdate(BaseModel):
@@ -47,16 +41,8 @@ class UserPasswordUpdate(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=100, description="新しいパスワード")
 
     @validator("new_password")
-    def validate_new_password(cls, v):  # noqa: N805
-        if len(v) < 8:
-            raise ValueError("パスワードは8文字以上である必要があります")
-        if not any(c.isupper() for c in v):
-            raise ValueError("パスワードには大文字を1つ以上含める必要があります")
-        if not any(c.islower() for c in v):
-            raise ValueError("パスワードには小文字を1つ以上含める必要があります")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("パスワードには数字を1つ以上含める必要があります")
-        return v
+    def validate_new_password_strength(cls, v):  # noqa: N805
+        return validate_password(v, "new_password")
 
 
 class User(UserBase):

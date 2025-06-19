@@ -11,6 +11,7 @@ from app.models.character import Character as CharacterModel
 from app.models.character import CharacterStats as CharacterStatsModel
 from app.schemas.character import Character, CharacterCreate, CharacterUpdate
 from app.utils.security import generate_uuid
+from app.core.config import settings
 
 
 class CharacterService(LoggerMixin):
@@ -68,10 +69,10 @@ class CharacterService(LoggerMixin):
                 character_id=character_id,
                 level=1,
                 experience=0,
-                health=100,
-                max_health=100,
-                energy=100,
-                max_energy=100,
+                health=settings.DEFAULT_CHARACTER_HP,
+                max_health=settings.DEFAULT_CHARACTER_HP,
+                energy=settings.DEFAULT_CHARACTER_ENERGY,
+                max_energy=settings.DEFAULT_CHARACTER_ENERGY,
             )
 
             self.db.add(stats_model)

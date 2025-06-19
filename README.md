@@ -191,12 +191,13 @@ gestaloka/
 ├── 📁 backend/                   # 🐍 FastAPIバックエンド
 │   ├── 📁 app/                  # メインアプリケーション
 │   │   ├── 📁 api/              # APIエンドポイント
-│   │   ├── 📁 core/             # コア機能（設定・セキュリティ）
+│   │   ├── 📁 core/             # コア機能（設定・セキュリティ・エラーハンドリング）
 │   │   ├── 📁 models/           # データベースモデル
 │   │   ├── 📁 schemas/          # Pydanticスキーマ（戦闘・ログ・スキーマ含む）
 │   │   ├── 📁 services/         # ビジネスロジック（戦闘・ゲームセッション・ログサービス含む）
 │   │   ├── 📁 ai/               # AIエージェント統合
 │   │   ├── 📁 db/               # データベース接続（Neo4jモデル含む）
+│   │   ├── 📁 utils/            # 共通ユーティリティ（バリデーション・権限チェック）
 │   │   ├── 📁 websocket/        # WebSocketハンドラー
 │   │   └── 📁 tasks/            # Celeryタスク（ログタスク含む）
 │   ├── 📁 alembic/              # データベースマイグレーション
@@ -278,6 +279,7 @@ gestaloka/
 |-------------|------|
 | `documents/02_architecture/techDecisions/developmentGuide.md` | 開発環境セットアップ |
 | `documents/02_architecture/techDecisions/implementationPatterns.md` | 実装パターン集 |
+| `documents/05_implementation/bestPractices.md` | ベストプラクティス（DRY原則等） |
 | `documents/05_implementation/troubleshooting.md` | トラブルシューティング |
 
 ## 🚨 トラブルシューティング
@@ -341,6 +343,15 @@ make clean-all
 詳細は **`CLAUDE.md`** の開発ガイドラインを参照してください。
 
 ## 📝 更新履歴
+
+### 2025/06/19
+- **✅ DRY原則によるコード品質改善**: 重複コードの大規模リファクタリング
+  - パスワードバリデーションの共通関数化（`app/utils/validation.py`）
+  - 権限チェックロジックの統一化（`app/utils/permissions.py`）
+  - カスタム例外とエラーハンドリングの統一（`app/core/error_handler.py`）
+  - ハードコーディング値の設定ファイル移行
+  - 重複NPCマネージャー実装の統合
+- **✅ ベストプラクティスドキュメント作成**: `documents/05_implementation/bestPractices.md`
 
 ### 2025/06/18
 - **✅ ログシステム基盤実装**: LogFragment、CompletedLog、LogContract の完全実装
