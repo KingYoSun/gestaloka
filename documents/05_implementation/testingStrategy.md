@@ -96,6 +96,136 @@ make test-neo4j-down
 make test-integration-local
 ```
 
+## データベースクリーンアップメカニズム
+
+### Neo4jクリーンアップ実装
+
+#### 1. ユーティリティモジュール (`neo4j_test_utils.py`)
+```python
+def cleanup_all_neo4j_data():
+    """Neo4jの全データを削除"""
+    # テスト環境確認
+    if "neo4j-test" not in neo_config.DATABASE_URL:
+        return
+    
+    # 全リレーションシップ削除
+    neo_db.cypher_query("MATCH ()-[r]->() DELETE r")
+    # 全ノード削除
+    neo_db.cypher_query("MATCH (n) DELETE n")
+
+def cleanup_test_data():
+    """テストプレフィックスを持つデータのみ削除"""
+    neo_db.cypher_query("""
+        MATCH (n)
+        WHERE n.npc_id STARTS WITH 'test_'
+           OR n.player_id STARTS WITH 'test_'
+           OR n.location_id STARTS WITH 'test_'
+        DETACH DELETE n
+    """)
+```
+
+#### 2. 接続管理 (`neo4j_connection.py`)
+```python
+def ensure_test_connection():
+    """テスト用Neo4j接続を確実に設定"""
+    test_url = get_test_neo4j_url()
+    if neo_config.DATABASE_URL != test_url:
+        neo_config.DATABASE_URL = test_url
+        # 既存接続をクリア
+        if hasattr(neo_db, '_driver'):
+            neo_db._driver.close()
+            neo_db._driver = None
+```
+
+### PostgreSQLクリーンアップ実装
+
+#### 1. ユーティリティモジュール (`postgres_test_utils.py`)
+```python
+def cleanup_all_postgres_data(engine):
+    """全テーブルデータを削除（システムテーブル除く）"""
+    with engine.connect() as conn:
+        # 外部キー制約を一時無効化
+        conn.execute(text("SET session_replication_role = 'replica';"))
+        
+        # 全テーブルのTRUNCATE
+        result = conn.execute(text("""
+            SELECT tablename FROM pg_tables 
+            WHERE schemaname = 'public' 
+            AND tablename NOT LIKE 'alembic%'
+        """))
+        
+        for table in result.fetchall():
+            conn.execute(text(f"TRUNCATE TABLE {table[0]} CASCADE"))
+        
+        # 外部キー制約を再有効化
+        conn.execute(text("SET session_replication_role = 'origin';"))
+
+def recreate_schema(engine):
+    """スキーマを完全に再作成"""
+    # 既存接続を切断
+    conn.execute(text("""
+        SELECT pg_terminate_backend(pid) 
+        FROM pg_stat_activity 
+        WHERE datname = current_database() 
+        AND pid <> pg_backend_pid()
+    """))
+    
+    # スキーマ削除と再作成
+    conn.execute(text("DROP SCHEMA public CASCADE"))
+    conn.execute(text("CREATE SCHEMA public"))
+    
+    # ENUMタイプの再作成
+    create_enum_types(conn)
+```
+
+#### 2. 分離された環境提供
+```python
+@contextmanager
+def isolated_postgres_test(recreate: bool = False):
+    """完全に分離されたテスト環境を提供"""
+    engine = create_engine(url, pool_pre_ping=True)
+    
+    if recreate:
+        recreate_schema(engine)
+        SQLModel.metadata.create_all(engine)
+    else:
+        cleanup_all_postgres_data(engine)
+    
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        cleanup_all_postgres_data(engine)
+        engine.dispose()  # コネクションプールをクリア
+```
+
+### 統合テストでの利用
+
+#### 1. 基底クラスでの自動クリーンアップ
+```python
+class BaseNeo4jIntegrationTest:
+    def setup_method(self, method):
+        """各テスト前に両方のDBをクリーンアップ"""
+        ensure_test_connection()
+        cleanup_all_neo4j_data()
+    
+    def teardown_method(self, method):
+        """各テスト後も確実にクリーンアップ"""
+        cleanup_all_neo4j_data()
+```
+
+#### 2. Pytestマーカーによる自動化
+```python
+@pytest.fixture(autouse=True)
+def auto_cleanup_for_integration_tests(request):
+    """統合テストマーカー付きテストで自動クリーンアップ"""
+    if request.node.get_closest_marker("integration"):
+        ensure_test_connection()
+        cleanup_all_neo4j_data()
+        yield
+        cleanup_all_neo4j_data()
+```
+
 ## 既知の課題と対策
 
 ### 1. Alembicマイグレーションの依存関係
@@ -113,6 +243,14 @@ SQLModel.metadata.create_all(engine, tables=[User.__table__, CompletedLog.__tabl
 **問題**: neomodelのバージョンによってトランザクション処理のAPIが異なる
 
 **対策**: トランザクションを使用せず、各テストでデータを明示的にクリーンアップ
+
+### 3. セッション管理の複雑性
+**問題**: SQLAlchemyセッションの状態管理により、オブジェクトの重複挿入エラーが発生
+
+**対策**:
+- 各テストで独立したセッションを使用
+- `isolated_postgres_test`コンテキストマネージャーの活用
+- エンジンのコネクションプール管理
 
 ## ベストプラクティス
 

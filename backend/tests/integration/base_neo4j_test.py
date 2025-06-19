@@ -10,43 +10,23 @@ import pytest
 from neomodel import config, db
 
 from app.db.neo4j_models import NPC, Location, Player
+from tests.integration.neo4j_connection import ensure_test_connection, get_test_neo4j_url
+from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data, cleanup_test_data
 
 
 @pytest.fixture
 def neo4j_test_db():
     """テスト用Neo4j接続のフィクスチャー"""
-    # テスト用Neo4jの接続設定
-    test_neo4j_url = os.getenv(
-        "NEO4J_TEST_URL",
-        "bolt://neo4j:test_password@neo4j-test:7687"
-    )
-    config.DATABASE_URL = test_neo4j_url
+    # テスト用接続を確実に設定
+    ensure_test_connection()
 
-    # テストごとにデータをクリーンアップ
-    with db.transaction:
-        db.cypher_query(
-            """
-            MATCH (n)
-            WHERE n.npc_id STARTS WITH 'test_'
-               OR n.player_id STARTS WITH 'test_'
-               OR n.location_id STARTS WITH 'test_'
-            DETACH DELETE n
-            """
-        )
+    # テストごとに全データをクリーンアップ（より確実）
+    cleanup_all_neo4j_data()
 
     yield db
 
     # テスト後のクリーンアップ
-    with db.transaction:
-        db.cypher_query(
-            """
-            MATCH (n)
-            WHERE n.npc_id STARTS WITH 'test_'
-               OR n.player_id STARTS WITH 'test_'
-               OR n.location_id STARTS WITH 'test_'
-            DETACH DELETE n
-            """
-        )
+    cleanup_all_neo4j_data()
 
 
 class BaseNeo4jIntegrationTest:
@@ -55,43 +35,22 @@ class BaseNeo4jIntegrationTest:
     @classmethod
     def setup_class(cls):
         """テストクラスのセットアップ"""
-        # テスト用Neo4j接続設定
-        test_neo4j_uri = os.getenv("TEST_NEO4J_URI", "bolt://localhost:7688")
-        test_neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
-        test_neo4j_password = os.getenv("NEO4J_PASSWORD", "test_password")
-
-        # neomodel設定
-        config.DATABASE_URL = f"{test_neo4j_uri}"
-        config.USERNAME = test_neo4j_username
-        config.PASSWORD = test_neo4j_password
+        # テスト用接続を確実に設定
+        ensure_test_connection()
 
     def setup_method(self, method):
         """各テストメソッドのセットアップ"""
-        # テストデータをクリーンアップ
-        self._cleanup_test_data()
+        # より徹底的なクリーンアップを実行
+        cleanup_all_neo4j_data()
 
     def teardown_method(self, method):
         """各テストメソッドのクリーンアップ"""
-        # 明示的にノードを削除
-        self._cleanup_test_data()
+        # 明示的に全ノードを削除
+        cleanup_all_neo4j_data()
 
     def _cleanup_test_data(self):
-        """テストデータのクリーンアップ"""
-        # Cypherクエリで全テストノードを削除
-        try:
-            # 関係性も含めて削除
-            db.cypher_query(
-                """
-                MATCH (n)
-                WHERE n.npc_id STARTS WITH 'test_'
-                   OR n.player_id STARTS WITH 'test_'
-                   OR n.location_id STARTS WITH 'test_'
-                DETACH DELETE n
-                """
-            )
-        except Exception:
-            # クリーンアップ失敗は無視
-            pass
+        """テストデータのクリーンアップ（互換性のため残す）"""
+        cleanup_test_data()
 
     @staticmethod
     def create_test_location(name: str = "test_location", layer: int = 0) -> Location:

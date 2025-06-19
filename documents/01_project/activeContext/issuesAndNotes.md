@@ -71,6 +71,22 @@ docker-compose exec backend python -c "from app.tasks.log_tasks import generate_
 MATCH (n:NPC) RETURN n LIMIT 10;
 ```
 
+### 統合テストのデバッグ
+```bash
+# Neo4jテストデータベースの状態確認
+docker-compose exec neo4j-test cypher-shell -u neo4j -p test_password
+MATCH (n) RETURN count(n);  # ノード数確認
+MATCH ()-[r]->() RETURN count(r);  # リレーションシップ数確認
+
+# PostgreSQLテストデータベースの状態確認
+docker-compose exec postgres-test psql -U test_user -d gestaloka_test
+\dt  # テーブル一覧
+SELECT COUNT(*) FROM completed_logs;  # データ数確認
+
+# テスト実行時のクリーンアップ確認
+pytest tests/integration/test_npc_generator_integration.py -xvs --capture=no
+```
+
 ### 環境管理
 ```bash
 # 完全セットアップ
@@ -128,12 +144,12 @@ make health        # ヘルスチェック
 
 ## 残存する技術的問題（2025/06/19更新）
 
-### 統合テストのエラー（一部残存）
-- **2025/06/19**: Neo4j統合テストで2件のエラー
-  - `test_move_npc_with_real_neo4j`: テストデータのクリーンアップ問題
-  - `test_process_accepted_contracts_with_real_neo4j`: 同上
-  - 原因: 実際のNeo4jインスタンスを使用するため、他のテストのデータが残存
-  - 影響: 基本機能には影響なし、184/186テストは成功
+### 統合テストのエラー（改善済み）
+- **2025/01/19**: Neo4jとPostgreSQLのクリーンアップメカニズムを実装
+  - 包括的なデータクリーンアップユーティリティを追加
+  - 各テストが完全に独立した環境で実行されるように改善
+  - `test_process_accepted_contracts_with_real_neo4j`でタイムアウト問題が残存（ロジックの問題）
+  - 影響: 基本的なクリーンアップメカニズムは正常動作、テストの信頼性が大幅向上
 
 ### バックエンドの型エラー（解決済み）
 - **2025/06/19**: 完全に解消 ✅
