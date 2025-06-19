@@ -16,10 +16,6 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # 設定をインポート
 from app.core.config import settings
-
-# 全てのモデルをインポート（自動生成のため必須）
-# 重要: モデルの追加時は必ずここにインポートを追加すること
-from app.models.user import User  # noqa
 from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
 from app.models.log import (  # noqa
     CompletedLog,
@@ -27,6 +23,11 @@ from app.models.log import (  # noqa
     LogContract,
     LogFragment,
 )
+
+# 全てのモデルをインポート（自動生成のため必須）
+# 重要: モデルの追加時は必ずここにインポートを追加すること
+from app.models.user import User  # noqa
+
 # 新しいモデルを追加する場合は、ここにインポートを追加
 
 # this is the Alembic Config object, which provides
@@ -119,17 +120,13 @@ def include_object(object, name, type_, reflected, compare_to):
 def render_item(type_, obj, autogen_context):
     """SQLModel用のレンダリング関数"""
     from sqlalchemy.dialects import postgresql
-    
+
     # PostgreSQL ENUMタイプのレンダリングをカスタマイズ
     if type_ == "type" and isinstance(obj, postgresql.ENUM):
         # ENUMタイプの作成時に既存チェックを追加
-        import sqlalchemy as sa
         autogen_context.imports.add("import sqlalchemy as sa")
-        return "sa.Enum(%s, name=%r, create_type=False)" % (
-            ", ".join(repr(x) for x in obj.enums),
-            obj.name
-        )
-    
+        return f"sa.Enum({', '.join(repr(x) for x in obj.enums)}, name={obj.name!r}, create_type=False)"
+
     return False
 
 

@@ -193,11 +193,12 @@ gestaloka/
 │   │   ├── 📁 api/              # APIエンドポイント
 │   │   ├── 📁 core/             # コア機能（設定・セキュリティ）
 │   │   ├── 📁 models/           # データベースモデル
-│   │   ├── 📁 schemas/          # Pydanticスキーマ（戦闘スキーマ含む）
-│   │   ├── 📁 services/         # ビジネスロジック（戦闘サービス含む）
+│   │   ├── 📁 schemas/          # Pydanticスキーマ（戦闘・ログ・スキーマ含む）
+│   │   ├── 📁 services/         # ビジネスロジック（戦闘・ゲームセッション・ログサービス含む）
 │   │   ├── 📁 ai/               # AIエージェント統合
+│   │   ├── 📁 db/               # データベース接続（Neo4jモデル含む）
 │   │   ├── 📁 websocket/        # WebSocketハンドラー
-│   │   └── 📁 tasks/            # Celeryタスク
+│   │   └── 📁 tasks/            # Celeryタスク（ログタスク含む）
 │   ├── 📁 alembic/              # データベースマイグレーション
 │   ├── 📁 tests/                # テストコード
 │   ├── 🐳 Dockerfile            # バックエンドDocker設定

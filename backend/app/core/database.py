@@ -8,7 +8,7 @@ import redis.asyncio as redis
 import structlog
 from neomodel import config as neo4j_config
 from neomodel import db as neo4j_db
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from app.core.config import settings
 
@@ -27,10 +27,10 @@ engine = create_engine(
 
 def create_db_and_tables():
     """データベースとテーブルを作成
-    
+
     注意: このプロジェクトではAlembicでスキーマ管理を行うため、
     SQLModel.metadata.create_all()は使用しません。
-    
+
     スキーマの変更は必ずAlembicを使用して行ってください：
     1. モデルを変更/追加
     2. alembic/env.pyにモデルをインポート

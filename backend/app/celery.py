@@ -43,6 +43,10 @@ celery_app.conf.update(
             "task": "app.tasks.ai_tasks.generate_world_events",
             "schedule": 3600.0,  # 1時間ごと
         },
+        "process-accepted-contracts": {
+            "task": "app.tasks.log_tasks.process_accepted_contracts",
+            "schedule": 60.0,  # 1分ごと
+        },
     },
 )
 

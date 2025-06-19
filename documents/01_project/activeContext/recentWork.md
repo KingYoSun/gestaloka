@@ -89,17 +89,74 @@
 - `ConvertibleValue`型を`unknown`に変更
 - 循環参照を解消
 
+## 2025/06/19 - ログNPC生成機能の実装
+
+### 実施内容
+1. **Neo4jグラフデータベース統合**
+   - NPCノードモデルの定義（NPC、Location、Player）
+   - 関係性の定義（LOCATED_IN、INTERACTED_WITH、BELONGS_TO等）
+   - グラフデータベースヘルパー関数の実装
+
+2. **NPCジェネレーターサービスの実装**
+   - `app/services/npc_generator.py`: CompletedLogからNPCへの変換ロジック
+   - ログ契約処理とNPC配置機能
+   - Neo4jへのNPCエンティティ作成と関係性構築
+
+3. **NPC Manager AIとの統合**
+   - AI駆動のNPCキャラクターシート生成
+   - Gemini APIを使用した詳細な背景・行動パターン生成
+   - プロンプトエンジニアリングの最適化
+
+4. **REST APIエンドポイントの追加**
+   - `/api/v1/npcs`: NPC一覧取得
+   - `/api/v1/npcs/{npc_id}`: 特定NPCの詳細取得
+   - `/api/v1/npcs/{npc_id}/move`: NPC移動
+   - `/api/v1/npcs/locations/{location}/npcs`: 場所別NPC取得
+
+5. **Celeryタスクの実装**
+   - `process_accepted_contracts`: 受諾済み契約の定期処理
+   - `generate_npc_from_completed_log`: 非同期NPC生成
+   - ログ契約受諾時の自動NPC生成トリガー
+
+### 技術的な詳細
+- **Neo4jモデル設計**:
+  - NPCタイプ: LOG_NPC、PERMANENT_NPC、TEMPORARY_NPC
+  - 永続性レベル（1-10）による存在期間管理
+  - 汚染度レベルによる危険性評価
+
+- **AI統合**:
+  - LangChainを使用したプロンプト管理
+  - 構造化出力（JSON）によるキャラクターシート生成
+  - エラーハンドリングとリトライロジック
+
+- **データ整合性**:
+  - PostgreSQLの契約情報とNeo4jのNPCエンティティの同期
+  - ステータス遷移の管理（ACCEPTED → DEPLOYED）
+
+### コード品質の改善
+1. **リントエラーの完全解消（59→0）**
+   - 未使用インポートの削除
+   - 可変クラス属性へのClassVar注釈追加
+   - ブール比較の修正（`== True` → `.is_(True)`）
+   - 文字列フォーマットのモダナイゼーション
+   - 空白行の空白文字削除
+
+2. **型エラーの解消（24→許容レベル）**
+   - UUID型の適切な変換処理
+   - 重複定義の削除（GEMINI_API_KEY）
+   - 戻り値の型注釈追加
+
+3. **テストの完全成功**
+   - 全182テストがパス
+   - Neo4j操作のモック設定
+   - 非同期処理のテストカバレッジ
+
 ## 推奨される次のアクション
 
 ### ログシステムのUI統合
 - フロントエンドでのログ閲覧・編纂画面
 - ログフラグメントの視覚的表現
 - 編纂プロセスのインタラクティブUI
-
-### ログNPC化機能の実装
-- CompletedLogからNPCエンティティへの変換
-- NPC Manager AIとの統合
-- ログNPCの行動AI実装
 
 ### 探索システムの実装
 - 場所移動メカニクス

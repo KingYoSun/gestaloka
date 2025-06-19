@@ -50,7 +50,6 @@ class Settings(BaseSettings):
     )
 
     # LLM設定
-    GEMINI_API_KEY: str = Field(default="your-gemini-api-key", validation_alias="GEMINI_API_KEY")
     LLM_MODEL: str = Field(default="gemini-2.5-pro", validation_alias="LLM_MODEL")
     LLM_TEMPERATURE: float = Field(default=0.7, validation_alias="LLM_TEMPERATURE")
     LLM_MAX_TOKENS: int = Field(default=2048, validation_alias="LLM_MAX_TOKENS")
@@ -91,6 +90,8 @@ class Settings(BaseSettings):
     # AI設定
     AI_RESPONSE_TIMEOUT: int = Field(default=30, validation_alias="AI_RESPONSE_TIMEOUT")  # 秒
     MAX_AI_RETRIES: int = Field(default=3, validation_alias="MAX_AI_RETRIES")
+    GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
+    GEMINI_MODEL: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL")
 
     # WebSocket設定
     WS_HEARTBEAT_INTERVAL: int = Field(default=30, validation_alias="WS_HEARTBEAT_INTERVAL")  # 秒

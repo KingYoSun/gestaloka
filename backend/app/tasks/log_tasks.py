@@ -2,10 +2,16 @@
 ログ関連タスク
 """
 
+import asyncio
+import uuid
 from datetime import datetime
 
+from sqlmodel import Session
+
 from app.celery import celery_app
+from app.core.database import engine
 from app.core.logging import get_logger
+from app.services.npc_generator import NPCGenerator
 
 logger = get_logger(__name__)
 
@@ -106,6 +112,81 @@ def distribute_log_to_worlds(self, log_id: str, target_world_ids: list[str]):
 
     except Exception as e:
         logger.error("Failed to distribute log", task_id=self.request.id, log_id=log_id, error=str(e))
+        raise
+
+
+@celery_app.task(bind=True)
+def process_accepted_contracts(self):
+    """受け入れられたログ契約を処理してNPCを生成"""
+    try:
+        logger.info("Processing accepted log contracts", task_id=self.request.id)
+
+        # 同期コンテキストで非同期関数を実行
+        with Session(engine) as session:
+            npc_generator = NPCGenerator(session)
+
+            # asyncioを使って非同期メソッドを実行
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(npc_generator.process_accepted_contracts())
+            finally:
+                loop.close()
+
+        logger.info("Accepted contracts processed successfully", task_id=self.request.id)
+
+    except Exception as e:
+        logger.error("Failed to process accepted contracts", task_id=self.request.id, error=str(e))
+        raise
+
+
+@celery_app.task(bind=True)
+def generate_npc_from_completed_log(self, completed_log_id: str, location: str = "共通広場"):
+    """CompletedLogから直接NPCを生成"""
+    try:
+        logger.info(
+            "Generating NPC from completed log",
+            task_id=self.request.id,
+            log_id=completed_log_id,
+            location=location
+        )
+
+        with Session(engine) as session:
+            npc_generator = NPCGenerator(session)
+
+            # asyncioを使って非同期メソッドを実行
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                npc_profile = loop.run_until_complete(
+                    npc_generator.generate_npc_from_log(
+                        completed_log_id=uuid.UUID(completed_log_id),
+                        target_location_name=location
+                    )
+                )
+            finally:
+                loop.close()
+
+        logger.info(
+            "NPC generated successfully",
+            task_id=self.request.id,
+            npc_id=npc_profile.npc_id,
+            npc_name=npc_profile.name
+        )
+
+        return {
+            "npc_id": npc_profile.npc_id,
+            "name": npc_profile.name,
+            "location": npc_profile.current_location,
+        }
+
+    except Exception as e:
+        logger.error(
+            "Failed to generate NPC from log",
+            task_id=self.request.id,
+            log_id=completed_log_id,
+            error=str(e)
+        )
         raise
 
 

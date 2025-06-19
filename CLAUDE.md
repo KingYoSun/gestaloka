@@ -70,7 +70,7 @@ documents/
 
 ## 現在の動作環境
 
-### 稼働中サービス（2025/06/18時点）
+### 稼働中サービス（2025/06/19時点）
 🟢 **PostgreSQL 17**: localhost:5432 - ユーザーデータ、キャラクターデータ（最新安定版）  
 🟢 **Neo4j 5.26 LTS**: localhost:7474/7687 - グラフデータベース、関係性データ（長期サポート版）  
 🟢 **Redis 8**: localhost:6379 - セッション、キャッシュ、Celeryブローカー（最新安定版）  
@@ -92,6 +92,7 @@ documents/
 - ✅ Celeryタスク管理（Worker、Beat、Flower統合）
 - ✅ 基本的な戦闘システム（ターン制バトル、戦闘UI、リアルタイム更新）
 - ✅ ログシステム基盤（LogFragment、CompletedLog、LogContract）
+- ✅ ログNPC生成機能（Neo4j統合、NPCジェネレーター、Celeryタスク）
 
 ### 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -193,8 +194,8 @@ docker-compose exec backend mypy .
 ### データベースの役割分担
 
 - **Keycloak**: 認証・認可情報
-- **PostgreSQL**: キャラクターステータス、スキル、所持品、行動ログ、ゲームセッション
-- **Neo4j**: エンティティ間の関係性（INTERACTED_WITH, LOCATED_IN等）
+- **PostgreSQL**: キャラクターステータス、スキル、所持品、行動ログ、ゲームセッション、ログシステム
+- **Neo4j**: エンティティ間の関係性（INTERACTED_WITH, LOCATED_IN等）、NPCエンティティ
 - **Redis**: セッション管理、キャッシュ、Celeryメッセージブローカー
 
 ### 主要なアーキテクチャ決定
@@ -249,6 +250,7 @@ docker-compose exec backend mypy .
 - Neo4j: 関係性の作成時は必ず双方向性を考慮
 - 両DBの整合性を保つため、更新は同一トランザクション内で
 - **スキーマ管理**: 全ての環境でAlembicを使用して統一的に管理
+- **Neo4jモデル**: neomodelを使用したオブジェクトマッピング
 
 ### マイグレーション（必須手順）
 ```bash

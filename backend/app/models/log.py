@@ -38,7 +38,7 @@ class EmotionalValence(str, Enum):
 class LogFragment(SQLModel, table=True):
     """
     ログの欠片（LogFragment）
-    
+
     プレイヤーの重要な行動や決断から生成される記録の断片。
     これらを組み合わせて完成ログ（CompletedLog）を作成する。
     """
@@ -107,7 +107,7 @@ class CompletedLogStatus(str, Enum):
 class CompletedLog(SQLModel, table=True):
     """
     完成ログ（CompletedLog）
-    
+
     複数のLogFragmentを編纂して作成された、
     他プレイヤーの世界でNPCとして活動可能な完全な記録。
     """
@@ -197,7 +197,9 @@ class LogContractStatus(str, Enum):
     """ログ契約のステータス"""
 
     PENDING = "pending"  # 契約待ち
+    ACCEPTED = "accepted"  # 契約受諾
     ACTIVE = "active"  # 活動中
+    DEPLOYED = "deployed"  # NPC配置済み
     COMPLETED = "completed"  # 契約完了
     EXPIRED = "expired"  # 期限切れ
     CANCELLED = "cancelled"  # キャンセル
@@ -206,7 +208,7 @@ class LogContractStatus(str, Enum):
 class LogContract(SQLModel, table=True):
     """
     ログ契約（LogContract）
-    
+
     完成ログを他プレイヤーの世界に送り出す際の契約。
     活動期間、報酬、行動指針などを定義する。
     """

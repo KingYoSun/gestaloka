@@ -2,13 +2,19 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025-06-18
+## 最終更新: 2025-06-19
 
 ## 現在の課題
 
 ### パフォーマンス最適化
 - **AI応答時間の短縮**: 現在約20秒 → 協調動作により改善見込み
 - **グラフDBクエリ最適化**: 複雑なクエリの実行時間測定が必要
+
+### Neo4j統合時の注意事項
+- **ノードモデル定義**: neomodelを使用したオブジェクトマッピング
+- **関係性の双方向性**: 関係作成時は必ず双方向を考慮
+- **エラーハンドリング**: Neo4j接続エラー時の適切なフォールバック
+- **トランザクション管理**: PostgreSQLとNeo4jのデータ整合性保持
 
 ### エラーハンドリング
 - より詳細なエラーメッセージとリカバリー戦略の実装
@@ -44,6 +50,19 @@
 - **ボリューム管理**: DBデータは永続化、ログは定期的にクリーンアップ
 
 ## 開発Tips
+
+### ログNPC生成システム
+```bash
+# NPC生成タスクの監視
+# Flowerダッシュボードでタスク実行状況を確認
+http://localhost:5555
+
+# 手動でNPC生成タスクを実行
+docker-compose exec backend python -c "from app.tasks.log_tasks import generate_npc_from_completed_log; generate_npc_from_completed_log.delay('completed_log_id', '共通広場')"
+
+# Neo4jでNPCエンティティを確認
+MATCH (n:NPC) RETURN n LIMIT 10;
+```
 
 ### 環境管理
 ```bash

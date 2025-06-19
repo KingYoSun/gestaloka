@@ -5,10 +5,10 @@ Revises: 52ba950d32b4
 Create Date: 2025-06-18 16:34:23.655021
 
 """
-from alembic import op
 import sqlalchemy as sa
 import sqlmodel
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'b7fe8593b32e'
@@ -104,10 +104,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_log_fragments_session_id'), table_name='log_fragments')
     op.drop_index(op.f('ix_log_fragments_character_id'), table_name='log_fragments')
     op.drop_table('log_fragments')
-    
+
     # Drop ENUMs that were created automatically
     op.execute("DROP TYPE IF EXISTS logcontractstatus")
-    op.execute("DROP TYPE IF EXISTS completedlogstatus") 
+    op.execute("DROP TYPE IF EXISTS completedlogstatus")
     op.execute("DROP TYPE IF EXISTS logfragmentrarity")
     op.execute("DROP TYPE IF EXISTS emotionalvalence")
     # ### end Alembic commands ###

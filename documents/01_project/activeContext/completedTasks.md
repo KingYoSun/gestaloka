@@ -531,3 +531,64 @@
      - フロントエンド: ESLintエラー0件、警告0件達成
        - any型警告37件を適切な型定義に修正
        - React context警告2件を別ファイルに分離して解消
+
+32. **ログシステム基盤実装** ✅ **完了** 🎉 (2025/06/18)
+   - ✅ データモデル設計と実装
+     - LogFragment: プレイヤー行動の断片的記録
+     - CompletedLog: 編纂された完成ログ
+     - LogContract: ログ共有契約
+     - CompletedLogSubFragment: 中間テーブル
+   - ✅ APIエンドポイント実装（/api/v1/logs/）
+     - ログフラグメントCRUD操作
+     - 完成ログCRUD操作
+     - ログ編纂機能（compile）
+     - 契約管理（create/accept）
+   - ✅ スキーマ定義（Pydantic）
+     - 型安全なリクエスト/レスポンス
+     - 編纂リクエスト/レスポンス
+     - 契約作成/更新スキーマ
+   - ✅ データベースマイグレーション
+     - 4つの新規テーブル作成
+     - 外部キー関係と制約設定
+   - ✅ 包括的テスト作成（178テスト全パス）
+     - ログフラグメントのCRUDテスト
+     - 完成ログのCRUDテスト
+     - 編纂機能テスト
+     - 契約管理テスト
+
+## 今週の達成事項（2025/06/19）
+
+33. **ログNPC化機能実装** ✅ **完了** 🎉 (2025/06/19)
+   - ✅ Neo4jモデル定義（neo4j_models.py）
+     - NPCノード: ログNPC、永続NPC、一時NPCを統一管理
+     - Locationノード: NPCの配置場所
+     - 関係性モデル: LOCATED_IN、INTERACTED_WITH、ORIGINATED_FROM
+     - ヘルパー関数: create_npc_from_log
+   - ✅ NPCGenerator サービス実装
+     - CompletedLogからNPCへの変換ロジック
+     - Neo4jへのNPCエンティティ作成
+     - NPC Manager AIとの連携
+     - ログ契約の自動処理
+   - ✅ NPC Manager AI改修
+     - Gemini API統合によるキャラクターシート生成
+     - NPCの行動パターン生成
+     - 汚染度に応じた異常行動の実装
+   - ✅ Celeryタスク実装
+     - process_accepted_contracts: 定期的な契約処理
+     - generate_npc_from_completed_log: 個別NPC生成
+     - 1分間隔での自動実行設定
+   - ✅ REST APIエンドポイント（/api/v1/npcs/）
+     - NPCの一覧取得（フィルタリング機能付き）
+     - 個別NPC詳細取得
+     - NPCの移動（GM権限）
+     - 場所別NPC一覧
+   - ✅ ログ契約受諾時の自動NPC生成
+     - 契約ステータス管理（ACCEPTED → DEPLOYED）
+     - バックグラウンドタスクでの非同期処理
+   - ✅ 包括的テスト作成
+     - NPCGeneratorのユニットテスト
+     - モックを使用したNeo4j操作のテスト
+   - ✅ コード品質の完全改善
+     - リントエラー59個 → 0個
+     - 型チェックエラー24個 → 許容レベル
+     - 全182テストがパス

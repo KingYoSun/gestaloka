@@ -34,6 +34,7 @@ from app.schemas.log import (
     LogFragmentRead,
 )
 from app.schemas.user import User
+from app.tasks.log_tasks import generate_npc_from_completed_log
 
 router = APIRouter()
 
@@ -47,7 +48,7 @@ def create_log_fragment(
 ) -> Any:
     """
     ログの欠片を作成
-    
+
     重要な行動や決断から生成される記録の断片。
     GMのAIによって自動生成される。
     """
@@ -71,7 +72,7 @@ def create_log_fragment(
         and_(
             GameSession.id == fragment_in.session_id,
             GameSession.character_id == fragment_in.character_id,
-            GameSession.is_active == True,
+            GameSession.is_active.is_(True),
         )
     )
     result = db.exec(stmt)
@@ -139,7 +140,7 @@ def create_completed_log(
 ) -> Any:
     """
     完成ログを作成（ログフラグメントの編纂）
-    
+
     複数のログフラグメントを組み合わせて、
     他プレイヤーの世界でNPCとして活動可能な完全な記録を作成。
     """
@@ -192,7 +193,7 @@ def create_completed_log(
         sub_fragments.append(fragment)
 
     # 汚染度の計算
-    all_fragments = [core_fragment] + sub_fragments
+    all_fragments = [core_fragment, *sub_fragments]
     negative_count = sum(
         1 for f in all_fragments
         if f.emotional_valence == EmotionalValence.NEGATIVE
@@ -323,7 +324,7 @@ def create_log_contract(
 ) -> Any:
     """
     ログ契約を作成
-    
+
     完成ログを他プレイヤーの世界に送り出す際の契約。
     """
     # 完成ログと所有権の確認
@@ -373,7 +374,7 @@ def get_market_contracts(
     """
     stmt = select(LogContract).where(
         and_(
-            LogContract.is_public == True,
+            LogContract.is_public.is_(True),
             LogContract.status == LogContractStatus.PENDING,
         )
     ).offset(skip).limit(limit).order_by(LogContract.created_at.desc())
@@ -393,7 +394,7 @@ def accept_log_contract(
 ) -> Any:
     """
     ログ契約を受け入れる
-    
+
     他プレイヤーが作成したログをNPCとして自分の世界に迎え入れる。
     """
     # キャラクターの所有権確認
@@ -416,7 +417,7 @@ def accept_log_contract(
         and_(
             LogContract.id == contract_id,
             LogContract.status == LogContractStatus.PENDING,
-            LogContract.is_public == True,
+            LogContract.is_public.is_(True),
         )
     )
     result = db.exec(stmt)
@@ -447,5 +448,11 @@ def accept_log_contract(
 
     db.commit()
     db.refresh(contract)
+
+    # バックグラウンドでNPC生成タスクを起動
+    generate_npc_from_completed_log.delay(
+        str(contract.completed_log_id),
+        "共通広場"  # TODO: キャラクターの現在地を取得
+    )
 
     return contract
