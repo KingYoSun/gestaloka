@@ -1,37 +1,34 @@
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from './useAuth'
+import { LoadingButton } from '@/components/ui/LoadingButton'
+import { FormError } from '@/components/ui/FormError'
+import { containerStyles } from '@/lib/styles'
+import { useFormError } from '@/hooks/useFormError'
 
 export function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
+  const { error, isLoading, handleAsync } = useFormError()
 
   const { login } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-    setError('')
-
-    try {
-      await login(username, password)
-      navigate({ to: '/dashboard' })
-    } catch {
-      setError(
-        'ログインに失敗しました。ユーザー名とパスワードを確認してください。'
-      )
-    } finally {
-      setIsLoading(false)
-    }
+    
+    await handleAsync(
+      async () => {
+        await login(username, password)
+        navigate({ to: '/dashboard' })
+      },
+      'ログインに失敗しました。ユーザー名とパスワードを確認してください。'
+    )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/50">
+    <div className={containerStyles.centered}>
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <h2 className="text-3xl font-bold">ログイン</h2>
@@ -75,15 +72,16 @@ export function LoginPage() {
             </div>
           </div>
 
-          {error && (
-            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-              {error}
-            </div>
-          )}
+          <FormError error={error} />
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'ログイン中...' : 'ログイン'}
-          </Button>
+          <LoadingButton 
+            type="submit" 
+            className="w-full" 
+            isLoading={isLoading}
+            loadingText="ログイン中..."
+          >
+            ログイン
+          </LoadingButton>
         </form>
 
         <div className="text-center">

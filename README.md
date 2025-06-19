@@ -280,6 +280,7 @@ gestaloka/
 | `documents/02_architecture/techDecisions/developmentGuide.md` | 開発環境セットアップ |
 | `documents/02_architecture/techDecisions/implementationPatterns.md` | 実装パターン集 |
 | `documents/05_implementation/bestPractices.md` | ベストプラクティス（DRY原則等） |
+| `documents/02_architecture/frontend/componentArchitecture.md` | フロントエンドコンポーネントアーキテクチャ |
 | `documents/05_implementation/troubleshooting.md` | トラブルシューティング |
 
 ## 🚨 トラブルシューティング
@@ -343,6 +344,14 @@ make clean-all
 詳細は **`CLAUDE.md`** の開発ガイドラインを参照してください。
 
 ## 📝 更新履歴
+
+### 2025/01/19
+- **✅ フロントエンドDRY原則リファクタリング**: 重複コードの大規模削減
+  - 共通コンポーネント作成（LoadingState、FormError、LoadingButton）
+  - カスタムフック作成（useFormError）によるエラーハンドリング統一
+  - Toast通知ヘルパー、スタイル定数による一貫性確保
+  - APIクライアントの変換処理統一（requestWithTransform）
+  - 重複コード約40%削減、TypeScript/ESLintエラー全解消
 
 ### 2025/06/19
 - **✅ DRY原則によるコード品質改善**: 重複コードの大規模リファクタリング

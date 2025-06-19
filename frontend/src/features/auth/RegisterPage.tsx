@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiClient } from '@/api/client'
 import { userRegisterSchema } from '@/lib/validations/schemas/auth'
 import { getPasswordStrength } from '@/lib/validations/validators/password'
+import { LoadingButton } from '@/components/ui/LoadingButton'
+import { FormError } from '@/components/ui/FormError'
+import { containerStyles } from '@/lib/styles'
+import { useFormError } from '@/hooks/useFormError'
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -13,8 +16,7 @@ export function RegisterPage() {
     password: '',
     confirmPassword: '',
   })
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
+  const { error, isLoading, handleAsync } = useFormError()
   const [success, setSuccess] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [passwordStrength, setPasswordStrength] = useState<ReturnType<typeof getPasswordStrength> | null>(null)
@@ -41,8 +43,6 @@ export function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-    setError('')
     setValidationErrors({})
 
     // Zodバリデーション
@@ -56,34 +56,31 @@ export function RegisterPage() {
         }
       })
       setValidationErrors(errors)
-      setIsLoading(false)
       return
     }
 
-    try {
-      await apiClient.register({
-        username: formData.username,
-        email: formData.email,
-        password: formData.password,
-        confirm_password: formData.confirmPassword,
-      })
+    await handleAsync(
+      async () => {
+        await apiClient.register({
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+          confirm_password: formData.confirmPassword,
+        })
 
-      setSuccess(true)
-      // 3秒後にログインページへリダイレクト
-      setTimeout(() => {
-        navigate({ to: '/login' })
-      }, 3000)
-    } catch (err) {
-      console.error('Registration failed:', err)
-      setError(err instanceof Error ? err.message : '登録に失敗しました')
-    } finally {
-      setIsLoading(false)
-    }
+        setSuccess(true)
+        // 3秒後にログインページへリダイレクト
+        setTimeout(() => {
+          navigate({ to: '/login' })
+        }, 3000)
+      },
+      '登録に失敗しました'
+    )
   }
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/50">
+      <div className={containerStyles.centered}>
         <div className="w-full max-w-md space-y-8 text-center">
           <div className="text-green-600">
             <h2 className="text-3xl font-bold">登録完了！</h2>
@@ -100,7 +97,7 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/50">
+    <div className={containerStyles.centered}>
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <h2 className="text-3xl font-bold">新規登録</h2>
@@ -229,15 +226,16 @@ export function RegisterPage() {
             </div>
           </div>
 
-          {error && (
-            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded">
-              {error}
-            </div>
-          )}
+          <FormError error={error} />
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? '登録中...' : 'アカウント作成'}
-          </Button>
+          <LoadingButton
+            type="submit"
+            className="w-full"
+            isLoading={isLoading}
+            loadingText="登録中..."
+          >
+            アカウント作成
+          </LoadingButton>
         </form>
 
         <div className="text-center">

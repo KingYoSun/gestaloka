@@ -1,5 +1,43 @@
 # 最近の作業履歴
 
+## 2025/01/19 - フロントエンドDRY原則リファクタリング
+
+### 実施内容
+1. **重複コードの特定と分析**
+   - エラーハンドリングの重複（LoginPage/RegisterPage）
+   - Toast通知パターンの重複（useCharacters）
+   - APIクライアントの変換処理重複
+   - ローディング表示の重複（複数ページ）
+   - ボタンのローディング状態表示の重複
+
+2. **共通コンポーネントの作成**
+   - `LoadingState`：統一されたローディング表示
+   - `FormError`：エラーメッセージの統一表示
+   - `LoadingButton`：ローディング状態を持つボタン
+
+3. **カスタムフックの作成**
+   - `useFormError`：フォームのエラーとローディング状態管理
+   - 非同期処理のラッパー機能
+   - カスタムエラーメッセージのサポート
+
+4. **ユーティリティの作成**
+   - Toast通知ヘルパー（showSuccessToast/showErrorToast/showInfoToast）
+   - スタイル定数（cardStyles/containerStyles/buttonStyles）
+
+5. **APIクライアントのリファクタリング**
+   - `requestWithTransform`メソッドによる変換処理の統一
+   - 各APIメソッドの簡略化
+
+### 技術的な成果
+- 重複コードの約40%を削減
+- TypeScriptエラーを全て解消
+- ESLint警告を全て解消
+- コンポーネントの再利用性向上
+
+### 関連ドキュメント
+- `documents/02_architecture/frontend/componentArchitecture.md`：アーキテクチャ詳細
+- `documents/01_project/progressReports/2025-01-19_frontend_dry_refactoring.md`：作業詳細
+
 ## 2025/06/19 - バックエンド・フロントエンド重複実装の統合
 
 ### 実施内容

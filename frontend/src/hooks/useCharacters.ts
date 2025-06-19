@@ -5,8 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { apiClient } from '@/api/client'
 import { CharacterCreationForm } from '@/types'
-import { toast } from '@/hooks/use-toast'
 import { useCharacterStore } from '@/stores/characterStore'
+import { showSuccessToast, showErrorToast } from '@/utils/toast'
 
 /**
  * キャラクター一覧を取得（Zustandストア統合）
@@ -80,18 +80,10 @@ export function useCreateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      toast({
-        title: 'キャラクター作成成功',
-        description: `${newCharacter.name}を作成しました`,
-        variant: 'success',
-      })
+      showSuccessToast('キャラクター作成成功', `${newCharacter.name}を作成しました`)
     },
     onError: (error: Error) => {
-      toast({
-        title: 'キャラクター作成失敗',
-        description: error.message || 'エラーが発生しました',
-        variant: 'destructive',
-      })
+      showErrorToast(error, 'キャラクター作成に失敗しました')
     },
   })
 }
@@ -121,18 +113,10 @@ export function useUpdateCharacter() {
         queryKey: ['characters', updatedCharacter.id],
       })
 
-      toast({
-        title: '更新成功',
-        description: 'キャラクター情報を更新しました',
-        variant: 'success',
-      })
+      showSuccessToast('更新成功', 'キャラクター情報を更新しました')
     },
     onError: (error: Error) => {
-      toast({
-        title: '更新失敗',
-        description: error.message || 'エラーが発生しました',
-        variant: 'destructive',
-      })
+      showErrorToast(error, '更新に失敗しました')
     },
   })
 }
@@ -153,18 +137,10 @@ export function useDeleteCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      toast({
-        title: '削除成功',
-        description: 'キャラクターを削除しました',
-        variant: 'success',
-      })
+      showSuccessToast('削除成功', 'キャラクターを削除しました')
     },
     onError: (error: Error) => {
-      toast({
-        title: '削除失敗',
-        description: error.message || 'エラーが発生しました',
-        variant: 'destructive',
-      })
+      showErrorToast(error, '削除に失敗しました')
     },
   })
 }
@@ -188,18 +164,10 @@ export function useActivateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      toast({
-        title: 'キャラクター選択',
-        description: `${activatedCharacter.name}を選択しました`,
-        variant: 'success',
-      })
+      showSuccessToast('キャラクター選択', `${activatedCharacter.name}を選択しました`)
     },
     onError: (error: Error) => {
-      toast({
-        title: 'エラー',
-        description: error.message || 'キャラクターの選択に失敗しました',
-        variant: 'destructive',
-      })
+      showErrorToast(error, 'キャラクターの選択に失敗しました')
     },
   })
 }

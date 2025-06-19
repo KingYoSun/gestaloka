@@ -19,7 +19,6 @@ import {
   Eye,
   User,
   Sparkles,
-  Loader2,
 } from 'lucide-react'
 import {
   useCharacter,
@@ -27,6 +26,9 @@ import {
   useActivateCharacter,
 } from '@/hooks/useCharacters'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { LoadingButton } from '@/components/ui/LoadingButton'
+import { containerStyles } from '@/lib/styles'
 
 export function CharacterDetailPage() {
   const { id } = useParams({ from: '/character/$id' })
@@ -61,14 +63,9 @@ export function CharacterDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-            <span className="ml-2 text-lg text-slate-600">
-              キャラクター情報を読み込み中...
-            </span>
-          </div>
+      <div className={`${containerStyles.pageAlt} p-6`}>
+        <div className={containerStyles.maxWidth}>
+          <LoadingState message="キャラクター情報を読み込み中..." />
         </div>
       </div>
     )
@@ -76,8 +73,8 @@ export function CharacterDetailPage() {
 
   if (error || !character) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="max-w-4xl mx-auto">
+      <div className={`${containerStyles.pageAlt} p-6`}>
+        <div className={containerStyles.maxWidth}>
           <Alert variant="destructive" className="mt-8">
             <AlertDescription>
               キャラクター情報の読み込みに失敗しました:{' '}
@@ -100,8 +97,8 @@ export function CharacterDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-      <div className="max-w-4xl mx-auto">
+    <div className={`${containerStyles.page} p-6`}>
+      <div className={containerStyles.maxWidth}>
         {/* ヘッダー */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center">
@@ -127,35 +124,27 @@ export function CharacterDetailPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button
+            <LoadingButton
               onClick={handleActivateCharacter}
-              disabled={activateCharacterMutation.isPending}
+              isLoading={activateCharacterMutation.isPending}
+              icon={Star}
               className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
             >
-              {activateCharacterMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Star className="mr-2 h-4 w-4" />
-              )}
               選択
-            </Button>
+            </LoadingButton>
             <Button variant="outline" disabled>
               <Edit3 className="mr-2 h-4 w-4" />
               編集
             </Button>
-            <Button
+            <LoadingButton
               variant="outline"
               onClick={handleDeleteCharacter}
-              disabled={isDeleting}
+              isLoading={isDeleting}
+              icon={Trash2}
               className="text-red-600 hover:text-red-700 hover:bg-red-50"
             >
-              {isDeleting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="mr-2 h-4 w-4" />
-              )}
               削除
-            </Button>
+            </LoadingButton>
           </div>
         </div>
 

@@ -50,6 +50,9 @@
 - **[gemini_api_specification.md](api/gemini_api_specification.md)**: Gemini API仕様とLangChain統合ガイド
 - **[ai_coordination_protocol.md](api/ai_coordination_protocol.md)**: AI間の協調動作プロトコル
 
+### frontend/
+- **[componentArchitecture.md](frontend/componentArchitecture.md)**: フロントエンドコンポーネントアーキテクチャとDRY原則
+
 ## クイックリファレンス
 
 - 新機能設計時：`design_doc.md`でシステム全体像を確認

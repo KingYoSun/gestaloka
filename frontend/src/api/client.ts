@@ -85,6 +85,22 @@ class ApiClient {
     }
   }
 
+  private async requestWithTransform<T>(
+    endpoint: string,
+    options: RequestInit = {},
+    data?: unknown
+  ): Promise<T> {
+    const transformedOptions = data
+      ? {
+          ...options,
+          body: JSON.stringify(camelToSnakeObject(data)),
+        }
+      : options
+
+    const response = await this.request<T>(endpoint, transformedOptions)
+    return snakeToCamelObject<T>(response)
+  }
+
   // 認証関連
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     // FastAPIのOAuth2PasswordRequestFormに合わせてFormDataを使用
@@ -136,36 +152,32 @@ class ApiClient {
 
   // キャラクター関連
   async getCharacters(): Promise<Character[]> {
-    const data = await this.request<Character[]>('/characters')
-    return snakeToCamelObject<Character[]>(data)
+    return this.requestWithTransform<Character[]>('/characters')
   }
 
   async getCharacter(characterId: string): Promise<Character> {
-    const data = await this.request<Character>(`/characters/${characterId}`)
-    return snakeToCamelObject<Character>(data)
+    return this.requestWithTransform<Character>(`/characters/${characterId}`)
   }
 
   async createCharacter(
     characterData: CharacterCreationForm
   ): Promise<Character> {
-    const snakeData = camelToSnakeObject(characterData)
-    const data = await this.request<Character>('/characters', {
-      method: 'POST',
-      body: JSON.stringify(snakeData),
-    })
-    return snakeToCamelObject<Character>(data)
+    return this.requestWithTransform<Character>(
+      '/characters',
+      { method: 'POST' },
+      characterData
+    )
   }
 
   async updateCharacter(
     characterId: string,
     updates: Partial<CharacterCreationForm>
   ): Promise<Character> {
-    const snakeData = camelToSnakeObject(updates)
-    const data = await this.request<Character>(`/characters/${characterId}`, {
-      method: 'PUT',
-      body: JSON.stringify(snakeData),
-    })
-    return snakeToCamelObject<Character>(data)
+    return this.requestWithTransform<Character>(
+      `/characters/${characterId}`,
+      { method: 'PUT' },
+      updates
+    )
   }
 
   async deleteCharacter(characterId: string): Promise<void> {
@@ -175,75 +187,58 @@ class ApiClient {
   }
 
   async activateCharacter(characterId: string): Promise<Character> {
-    const data = await this.request<Character>(
+    return this.requestWithTransform<Character>(
       `/characters/${characterId}/activate`,
-      {
-        method: 'POST',
-      }
+      { method: 'POST' }
     )
-    return snakeToCamelObject<Character>(data)
   }
 
   // ゲームセッション関連
   async getGameSessions(): Promise<GameSessionListResponse> {
-    const data = await this.request<GameSessionListResponse>('/game/sessions')
-    return snakeToCamelObject<GameSessionListResponse>(data)
+    return this.requestWithTransform<GameSessionListResponse>('/game/sessions')
   }
 
   async getGameSession(sessionId: string): Promise<GameSession> {
-    const data = await this.request<GameSession>(`/game/sessions/${sessionId}`)
-    return snakeToCamelObject<GameSession>(data)
+    return this.requestWithTransform<GameSession>(`/game/sessions/${sessionId}`)
   }
 
   async createGameSession(
     sessionData: GameSessionCreate
   ): Promise<GameSession> {
-    const snakeData = camelToSnakeObject(sessionData)
-    const data = await this.request<GameSession>('/game/sessions', {
-      method: 'POST',
-      body: JSON.stringify(snakeData),
-    })
-    return snakeToCamelObject<GameSession>(data)
+    return this.requestWithTransform<GameSession>(
+      '/game/sessions',
+      { method: 'POST' },
+      sessionData
+    )
   }
 
   async updateGameSession(
     sessionId: string,
     updates: { currentScene?: string; sessionData?: Record<string, unknown> }
   ): Promise<GameSession> {
-    const snakeData = camelToSnakeObject(updates)
-    const data = await this.request<GameSession>(
+    return this.requestWithTransform<GameSession>(
       `/game/sessions/${sessionId}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(snakeData),
-      }
+      { method: 'PUT' },
+      updates
     )
-    return snakeToCamelObject<GameSession>(data)
   }
 
   async endGameSession(sessionId: string): Promise<GameSession> {
-    const data = await this.request<GameSession>(
+    return this.requestWithTransform<GameSession>(
       `/game/sessions/${sessionId}/end`,
-      {
-        method: 'POST',
-      }
+      { method: 'POST' }
     )
-    return snakeToCamelObject<GameSession>(data)
   }
 
   async executeGameAction(
     sessionId: string,
     action: GameActionRequest
   ): Promise<GameActionResponse> {
-    const snakeData = camelToSnakeObject(action)
-    const data = await this.request<GameActionResponse>(
+    return this.requestWithTransform<GameActionResponse>(
       `/game/sessions/${sessionId}/action`,
-      {
-        method: 'POST',
-        body: JSON.stringify(snakeData),
-      }
+      { method: 'POST' },
+      action
     )
-    return snakeToCamelObject<GameActionResponse>(data)
   }
 }
 

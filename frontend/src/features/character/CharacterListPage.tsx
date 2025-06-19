@@ -14,7 +14,6 @@ import {
   Star,
   Clock,
   MapPin,
-  Loader2,
 } from 'lucide-react'
 import {
   useCharacters,
@@ -24,6 +23,9 @@ import {
 import { useActiveCharacter } from '@/stores/characterStore'
 import { Character } from '@/types'
 import { formatRelativeTime } from '@/lib/utils'
+import { LoadingState } from '@/components/ui/LoadingState'
+import { LoadingButton } from '@/components/ui/LoadingButton'
+import { containerStyles, cardStyles } from '@/lib/styles'
 
 export function CharacterListPage() {
   const { data: characters, isLoading, error } = useCharacters()
@@ -49,14 +51,9 @@ export function CharacterListPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+      <div className={`${containerStyles.pageAlt} p-6`}>
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-            <span className="ml-2 text-lg text-slate-600">
-              キャラクターを読み込み中...
-            </span>
-          </div>
+          <LoadingState message="キャラクターを読み込み中..." />
         </div>
       </div>
     )
@@ -64,7 +61,7 @@ export function CharacterListPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+      <div className={`${containerStyles.pageAlt} p-6`}>
         <div className="max-w-6xl mx-auto">
           <Alert variant="destructive" className="mt-8">
             <AlertDescription>
@@ -78,7 +75,7 @@ export function CharacterListPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+    <div className={`${containerStyles.page} p-6`}>
       <div className="max-w-6xl mx-auto">
         {/* ヘッダー */}
         <div className="flex items-center justify-between mb-8">
@@ -173,7 +170,7 @@ function CharacterCard({
   isActive,
 }: CharacterCardProps) {
   return (
-    <Card className="group hover:shadow-lg transition-all duration-200 bg-white/80 backdrop-blur-sm border-0 shadow-md">
+    <Card className={`group hover:shadow-lg transition-all duration-200 ${cardStyles.transparent} border-0 shadow-md`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -231,20 +228,17 @@ function CharacterCard({
 
         {/* アクションボタン */}
         <div className="flex gap-2">
-          <Button
+          <LoadingButton
             variant={isActive ? 'default' : 'outline'}
             size="sm"
             className="flex-1"
             onClick={onActivate}
-            disabled={isActivating || isActive}
+            isLoading={isActivating && !isActive}
+            disabled={isActive}
+            icon={Star}
           >
-            {isActivating ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Star className={`h-3 w-3 ${isActive ? 'fill-current' : ''}`} />
-            )}
-            <span className="ml-1">{isActive ? 'アクティブ' : '選択'}</span>
-          </Button>
+            {isActive ? 'アクティブ' : '選択'}
+          </LoadingButton>
 
           <Link to="/character/$id" params={{ id: character.id }}>
             <Button variant="outline" size="sm">
@@ -256,19 +250,14 @@ function CharacterCard({
             <Edit3 className="h-3 w-3" />
           </Button>
 
-          <Button
+          <LoadingButton
             variant="outline"
             size="sm"
             onClick={onDelete}
-            disabled={isDeleting}
+            isLoading={isDeleting}
+            icon={Trash2}
             className="text-red-600 hover:text-red-700 hover:bg-red-50"
-          >
-            {isDeleting ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Trash2 className="h-3 w-3" />
-            )}
-          </Button>
+          />
         </div>
       </CardContent>
     </Card>
