@@ -352,6 +352,7 @@ docker-compose exec -T backend alembic downgrade -1
 #### [05_implementation/](documents/05_implementation/summary.md) - 実装ガイド
 - **characterManagementSummary.md**: キャラクター管理の実装
 - **battleSystemImplementation.md**: 戦闘システムの実装ガイド
+- **testingStrategy.md**: テスト戦略とNeo4j統合テスト環境
 - **productContext.md**: プロダクトビジョン
 - **troubleshooting.md**: トラブルシューティング
 

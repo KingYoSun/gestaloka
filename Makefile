@@ -112,6 +112,29 @@ test-backend: ## バックエンドテストを実行
 test-frontend: ## フロントエンドテストを実行
 	docker-compose exec -T frontend npm test -- --run
 
+# Neo4j統合テスト
+.PHONY: test-neo4j-up
+test-neo4j-up: ## テスト用Neo4j環境を起動
+	docker-compose -f docker-compose.test.yml up -d neo4j-test postgres-test redis-test
+	@echo "テスト用データベースが起動しました"
+	@echo "Neo4j Test: bolt://localhost:7688"
+	@echo "PostgreSQL Test: localhost:5433"
+
+.PHONY: test-neo4j-down
+test-neo4j-down: ## テスト用Neo4j環境を停止
+	docker-compose -f docker-compose.test.yml down -v
+
+.PHONY: test-integration
+test-integration: test-neo4j-up ## 統合テストを実行（Neo4j含む）
+	@echo "統合テストを実行します..."
+	@sleep 10  # データベースの起動を待つ
+	docker-compose -f docker-compose.test.yml run --rm test-runner sh -c "cd /app && python -m pytest tests/integration -v"
+	@make test-neo4j-down
+
+.PHONY: test-integration-local
+test-integration-local: ## ローカルで統合テストを実行（テスト環境が起動済みの場合）
+	cd backend && python -m pytest tests/integration -v
+
 # リント・フォーマット
 .PHONY: lint
 lint: ## リントを実行

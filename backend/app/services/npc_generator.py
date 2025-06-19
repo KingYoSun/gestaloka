@@ -24,8 +24,22 @@ class NPCGenerator:
 
     def __init__(self, session: Session):
         self.session = session
-        self.neo4j = get_neo4j_session()
-        self.npc_manager = NPCManagerAgent()
+        self._neo4j = None
+        self._npc_manager = None
+
+    @property
+    def neo4j(self):
+        """Neo4jセッションの遅延初期化"""
+        if self._neo4j is None:
+            self._neo4j = get_neo4j_session()
+        return self._neo4j
+
+    @property
+    def npc_manager(self):
+        """NPCManagerAgentの遅延初期化"""
+        if self._npc_manager is None:
+            self._npc_manager = NPCManagerAgent()
+        return self._npc_manager
 
     async def generate_npc_from_log(
         self,

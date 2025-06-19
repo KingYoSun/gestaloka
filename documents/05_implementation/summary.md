@@ -40,8 +40,9 @@
 
 ### テスト戦略
 - **単体テスト**: Vitest（フロント）、pytest（バック）
-- **統合テスト**: API エンドポイント、DB操作
+- **統合テスト**: API エンドポイント、DB操作、Neo4j実インスタンステスト
 - **E2Eテスト**: 主要ユーザーフロー（計画中）
+- **テスト環境**: docker-compose.test.ymlによる分離環境
 
 ### パフォーマンス考慮
 - DB クエリの最適化（N+1問題の回避）
@@ -81,6 +82,9 @@
 
 ### [duplicatedBusinessLogic.md](duplicatedBusinessLogic.md)
 バックエンドとフロントエンドで重複しているビジネスロジックの調査結果と統合提案。
+
+### [testingStrategy.md](testingStrategy.md)
+テスト戦略とNeo4j統合テスト環境の構築ガイド。実データベースを使用したテストの実装方法。
 
 ## クイックリファレンス
 

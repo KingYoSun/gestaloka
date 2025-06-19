@@ -31,6 +31,9 @@
   4. 自動生成されない場合は手動作成が必要
 - PostgreSQLのENUMタイプは`DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN null; END $$`でラップする
 - 履歴の手動更新: `INSERT INTO alembic_version (version_num) VALUES ('revision_id');`
+- **テスト環境での問題**: 
+  - log_fragmentsテーブルがcharactersテーブルに依存しているが、マイグレーション順序に問題
+  - 回避策: 必要なテーブルのみを選択的に作成するか、マイグレーションファイルの修正が必要
 
 ### Gemini API設定
 - **使用バージョン**: `gemini-2.5-pro`安定版（プレビュー版から移行済み）
@@ -48,6 +51,7 @@
 - **TTY問題**: Makefileでのコマンド実行時は`-T`フラグが必要
 - **ネットワーク設定**: 変更時は全コンテナの再作成が必要
 - **ボリューム管理**: DBデータは永続化、ログは定期的にクリーンアップ
+- **テスト環境分離**: 本番とテスト環境でポートを分離（Neo4j Test: 7688、PostgreSQL Test: 5433）
 
 ## 開発Tips
 
@@ -116,6 +120,8 @@ make health        # ヘルスチェック
 - Dockerコンテナが全て起動していることを確認
 - 特にPostgreSQL、Neo4j、Redisが必要
 - テスト用の環境変数が正しく設定されているか確認
+- **統合テスト**: `make test-integration`でNeo4j実インスタンスを使用したテスト実行
+- **遅延初期化パターン**: テスト時のモック注入を容易にするため、DB接続は遅延初期化を推奨
 
 ## 残存する技術的問題（2025/06/19）
 
