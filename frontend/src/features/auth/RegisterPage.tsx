@@ -3,6 +3,8 @@ import { useNavigate, Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiClient } from '@/api/client'
+import { userRegisterSchema } from '@/lib/validations/schemas/auth'
+import { getPasswordStrength } from '@/lib/validations/validators/password'
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -14,6 +16,8 @@ export function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [passwordStrength, setPasswordStrength] = useState<ReturnType<typeof getPasswordStrength> | null>(null)
 
   const navigate = useNavigate()
 
@@ -23,16 +27,35 @@ export function RegisterPage() {
       ...prev,
       [name]: value,
     }))
+    
+    // パスワード強度の更新
+    if (name === 'password') {
+      setPasswordStrength(value ? getPasswordStrength(value) : null)
+    }
+    
+    // エラーのクリア
+    if (validationErrors[name]) {
+      setValidationErrors({ ...validationErrors, [name]: '' })
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError('')
+    setValidationErrors({})
 
-    // パスワード確認
-    if (formData.password !== formData.confirmPassword) {
-      setError('パスワードが一致しません')
+    // Zodバリデーション
+    const result = userRegisterSchema.safeParse(formData)
+    
+    if (!result.success) {
+      const errors: Record<string, string> = {}
+      result.error.errors.forEach((err) => {
+        if (err.path[0]) {
+          errors[err.path[0].toString()] = err.message
+        }
+      })
+      setValidationErrors(errors)
       setIsLoading(false)
       return
     }
@@ -105,7 +128,11 @@ export function RegisterPage() {
                 minLength={3}
                 maxLength={50}
                 placeholder="ユーザー名を入力（3-50文字）"
+                className={validationErrors.username ? 'border-red-500' : ''}
               />
+              {validationErrors.username && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.username}</p>
+              )}
             </div>
 
             <div>
@@ -120,7 +147,11 @@ export function RegisterPage() {
                 onChange={handleChange}
                 required
                 placeholder="メールアドレスを入力"
+                className={validationErrors.email ? 'border-red-500' : ''}
               />
+              {validationErrors.email && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
+              )}
             </div>
 
             <div>
@@ -139,7 +170,37 @@ export function RegisterPage() {
                 required
                 minLength={8}
                 placeholder="パスワードを入力（8文字以上）"
+                className={validationErrors.password ? 'border-red-500' : ''}
               />
+              {validationErrors.password && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
+              )}
+              {passwordStrength && formData.password && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">パスワード強度:</span>
+                    <span className={`font-medium ${
+                      passwordStrength.label === '弱い' ? 'text-red-600' :
+                      passwordStrength.label === '普通' ? 'text-yellow-600' :
+                      passwordStrength.label === '強い' ? 'text-green-600' :
+                      'text-green-700'
+                    }`}>
+                      {passwordStrength.label}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full rounded-full bg-gray-200">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        passwordStrength.label === '弱い' ? 'bg-red-500' :
+                        passwordStrength.label === '普通' ? 'bg-yellow-500' :
+                        passwordStrength.label === '強い' ? 'bg-green-500' :
+                        'bg-green-600'
+                      }`}
+                      style={{ width: `${(passwordStrength.score / 8) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground mt-1">
                 大文字・小文字・数字を含む8文字以上
               </p>
@@ -160,7 +221,11 @@ export function RegisterPage() {
                 onChange={handleChange}
                 required
                 placeholder="パスワードを再入力"
+                className={validationErrors.confirmPassword ? 'border-red-500' : ''}
               />
+              {validationErrors.confirmPassword && (
+                <p className="mt-1 text-sm text-red-600">{validationErrors.confirmPassword}</p>
+              )}
             </div>
           </div>
 

@@ -558,7 +558,37 @@
 
 ## 今週の達成事項（2025/06/19）
 
-33. **ログNPC化機能実装** ✅ **完了** 🎉 (2025/06/19)
+33. **バックエンド・フロントエンド重複実装の統合** ✅ **完了** 🎉 (2025/06/19)
+   - ✅ API型定義の重複分析
+     - PydanticモデルとTypeScript型の二重管理を特定
+     - OpenAPIスキーマからの自動生成を提案
+   - ✅ パスワードバリデーションの統一実装
+     - frontend/src/lib/validations/validators/password.ts作成
+     - 複雑性チェック（大文字・小文字・数字必須）
+     - パスワード強度表示機能追加
+     - RegisterPageでのリアルタイムバリデーション
+   - ✅ ゲーム設定値APIの実装
+     - /api/v1/config/game：ゲーム設定値
+     - /api/v1/config/game/character-limits：キャラクター制限
+     - /api/v1/config/game/validation-rules：バリデーションルール
+   - ✅ 権限チェックの共通化
+     - app/api/deps.pyに統一的な権限チェック機能
+     - get_user_character()：キャラクター所有権チェック
+     - check_character_limit()：キャラクター作成制限
+     - PermissionCheckerクラス：汎用的な権限チェック
+   - ✅ charactersエンドポイントの最適化
+     - 15箇所以上の重複を 1箇所に統合
+     - DBクエリの最適化（重複クエリ削減）
+     - エラーハンドリングの簡素化
+   - ✅ 重複防止ルールのCLAUDE.md追加
+     - 型定義の重複防止ルール
+     - バリデーションの重複防止ルール
+     - ビジネスロジックの重複防止ルール
+   - ✅ ドキュメント作成
+     - documents/05_implementation/duplicatedBusinessLogic.md
+     - documents/01_project/progressReports/2025-06-19_重複実装統合.md
+
+34. **ログNPC化機能実装** ✅ **完了** 🎉 (2025/06/19)
    - ✅ Neo4jモデル定義（neo4j_models.py）
      - NPCノード: ログNPC、永続NPC、一時NPCを統一管理
      - Locationノード: NPCの配置場所

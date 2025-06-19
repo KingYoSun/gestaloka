@@ -79,6 +79,9 @@
 ### [battleSystemImplementation.md](battleSystemImplementation.md)
 戦闘システムの実装ガイド。ターン制バトル、UI統合、AIとの連携詳細。
 
+### [duplicatedBusinessLogic.md](duplicatedBusinessLogic.md)
+バックエンドとフロントエンドで重複しているビジネスロジックの調査結果と統合提案。
+
 ## クイックリファレンス
 
 - 新機能実装：既存の実装パターンを`characterManagementSummary.md`で確認
