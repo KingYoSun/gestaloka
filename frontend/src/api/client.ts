@@ -11,6 +11,15 @@ import {
   GameActionRequest,
   GameActionResponse,
 } from '@/types'
+import {
+  LogFragment,
+  LogFragmentCreate,
+  CompletedLog,
+  CompletedLogCreate,
+  LogContract,
+  LogContractCreate,
+  LogContractAccept,
+} from '@/types/log'
 import { snakeToCamelObject, camelToSnakeObject } from '@/utils/caseConverter'
 
 const API_BASE_URL =
@@ -238,6 +247,71 @@ class ApiClient {
       `/game/sessions/${sessionId}/action`,
       { method: 'POST' },
       action
+    )
+  }
+
+  // ログフラグメント関連
+  async createLogFragment(fragment: LogFragmentCreate): Promise<LogFragment> {
+    return this.requestWithTransform<LogFragment>(
+      '/logs/fragments',
+      { method: 'POST' },
+      fragment
+    )
+  }
+
+  async getLogFragments(characterId: string): Promise<LogFragment[]> {
+    return this.requestWithTransform<LogFragment[]>(
+      `/logs/fragments/${characterId}`
+    )
+  }
+
+  // 完成ログ関連
+  async createCompletedLog(log: CompletedLogCreate): Promise<CompletedLog> {
+    return this.requestWithTransform<CompletedLog>(
+      '/logs/completed',
+      { method: 'POST' },
+      log
+    )
+  }
+
+  async updateCompletedLog(
+    logId: string,
+    updates: Partial<CompletedLogCreate>
+  ): Promise<CompletedLog> {
+    return this.requestWithTransform<CompletedLog>(
+      `/logs/completed/${logId}`,
+      { method: 'PATCH' },
+      updates
+    )
+  }
+
+  async getCompletedLogs(characterId: string): Promise<CompletedLog[]> {
+    return this.requestWithTransform<CompletedLog[]>(
+      `/logs/completed/${characterId}`
+    )
+  }
+
+  // ログ契約関連
+  async createLogContract(contract: LogContractCreate): Promise<LogContract> {
+    return this.requestWithTransform<LogContract>(
+      '/logs/contracts',
+      { method: 'POST' },
+      contract
+    )
+  }
+
+  async getMarketContracts(): Promise<LogContract[]> {
+    return this.requestWithTransform<LogContract[]>('/logs/contracts/market')
+  }
+
+  async acceptLogContract(
+    contractId: string,
+    data: LogContractAccept
+  ): Promise<LogContract> {
+    return this.requestWithTransform<LogContract>(
+      `/logs/contracts/${contractId}/accept`,
+      { method: 'POST' },
+      data
     )
   }
 }

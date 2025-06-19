@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Plus, Gamepad2, Scroll } from 'lucide-react'
+import { Users, Plus, Gamepad2, Scroll, BookOpen } from 'lucide-react'
 
 export function DashboardPage() {
   return (
@@ -62,17 +62,20 @@ export function DashboardPage() {
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Scroll className="h-5 w-5 text-green-600" />
-              最近のログ
+              <BookOpen className="h-5 w-5 text-green-600" />
+              ログシステム
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">
-              最近の冒険記録はありません
+              キャラクターの記録を管理し、ログを編纂してNPCを作成します
             </p>
-            <Button variant="outline" className="w-full" disabled>
-              ログを確認
-            </Button>
+            <Link to="/logs" className="block">
+              <Button className="w-full justify-start">
+                <BookOpen className="mr-2 h-4 w-4" />
+                ログ管理画面へ
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>

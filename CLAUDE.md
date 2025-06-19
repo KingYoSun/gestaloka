@@ -120,6 +120,7 @@ documents/
 - ✅ ログシステム基盤（LogFragment、CompletedLog、LogContract）
 - ✅ ログNPC生成機能（Neo4j統合、NPCジェネレーター、Celeryタスク）
 - ✅ フロントエンドDRY原則実装（共通コンポーネント、カスタムフック、ユーティリティ）
+- ✅ ログ編纂UI基本実装（フラグメント管理、編纂エディター、汚染度計算）
 
 ### 利用可能なURL
 - **フロントエンド**: http://localhost:3000
