@@ -6,11 +6,11 @@
 """
 
 from datetime import datetime
-from sqlalchemy import desc
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import desc
 from sqlmodel import Session, and_, select
 
 from app.api.deps import get_current_active_user, get_user_character
@@ -100,7 +100,7 @@ async def get_character_fragments(
 
     # フラグメント取得
     fragment_stmt = (
-        select(LogFragment).where(LogFragment.character_id == character_id).order_by(desc(LogFragment.created_at))
+        select(LogFragment).where(LogFragment.character_id == character_id).order_by(desc(cast(Any, LogFragment.created_at)))
     )
     result = db.exec(fragment_stmt)
     fragments = result.all()
@@ -265,7 +265,7 @@ async def get_character_completed_logs(
 
     # 完成ログ取得
     log_stmt = (
-        select(CompletedLog).where(CompletedLog.creator_id == character_id).order_by(desc(CompletedLog.created_at))
+        select(CompletedLog).where(CompletedLog.creator_id == character_id).order_by(desc(cast(Any, CompletedLog.created_at)))
     )
     result = db.exec(log_stmt)
     logs = result.all()
@@ -344,7 +344,7 @@ def get_market_contracts(
         )
         .offset(skip)
         .limit(limit)
-        .order_by(desc(LogContract.created_at))
+        .order_by(desc(cast(Any, LogContract.created_at)))
     )
     result = db.exec(stmt)
     contracts = result.all()

@@ -154,7 +154,7 @@ class TestGameSessionCoordinatorIntegration:
             # アクション実行
             action_request = ActionExecuteRequest(action_text="北へ移動する", action_type="movement")
 
-            response = await game_session_service.execute_action("session_001", "user_001", action_request)
+            response = await game_session_service.execute_action(mock_session, action_request)
 
             # 検証
             assert response.narrative == "北へ向かって歩き始めました。"
@@ -196,7 +196,7 @@ class TestGameSessionCoordinatorIntegration:
 
             # エラーが適切に処理されることを確認
             with pytest.raises(HTTPException) as exc_info:
-                await game_session_service.execute_action("session_002", "user_001", action_request)
+                await game_session_service.execute_action(mock_session, action_request)
 
             assert exc_info.value.status_code == 500
             assert "アクションの実行に失敗しました" in str(exc_info.value.detail)
@@ -234,7 +234,7 @@ class TestGameSessionCoordinatorIntegration:
             )
 
             with patch.object(game_session_service.coordinator, "process_action", return_value=mock_response1):
-                await game_session_service.execute_action("session_003", "user_001", action_request1)
+                await game_session_service.execute_action(mock_session, action_request1)
 
             # 初回は初期化が呼ばれる
             assert mock_init.called
@@ -256,7 +256,7 @@ class TestGameSessionCoordinatorIntegration:
             )
 
             with patch.object(game_session_service.coordinator, "process_action", return_value=mock_response2):
-                await game_session_service.execute_action("session_003", "user_001", action_request2)
+                await game_session_service.execute_action(mock_session, action_request2)
 
             # 2回目は初期化が呼ばれない
             assert not mock_init2.called

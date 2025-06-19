@@ -234,9 +234,8 @@ class TestBattleIntegration:
         )
 
         result = await game_session_service.execute_action(
-            session_id="session_1",
-            user_id="user_1",
-            action_request=request,
+            mock_game_session,
+            request,
         )
 
         # 戦闘が開始されたことを確認
@@ -318,9 +317,8 @@ class TestBattleIntegration:
         )
 
         result = await game_session_service.execute_action(
-            session_id="session_1",
-            user_id="user_1",
-            action_request=request,
+            mock_game_session,
+            request,
         )
 
         # 戦闘が継続していることを確認
@@ -420,9 +418,8 @@ class TestBattleIntegration:
         )
 
         result = await game_session_service.execute_action(
-            session_id="session_1",
-            user_id="user_1",
-            action_request=request,
+            mock_game_session,
+            request,
         )
 
         # 戦闘が終了したことを確認
@@ -587,9 +584,8 @@ class TestBattleIntegration:
                                         )
 
                                         result = await service.execute_action(
-                                            session_id="session_1",
-                                            user_id="user_1",
-                                            action_request=request,
+                                            mock_game_session,
+                                            request,
                                         )
 
                                         # 戦闘が終了したことを確認（逃走成功の場合）
@@ -621,9 +617,8 @@ class TestBattleIntegration:
         )
 
         await game_session_service.execute_action(
-            session_id="session_1",
-            user_id="user_1",
-            action_request=request,
+            mock_game_session,
+            request,
         )
 
         # セッションデータが更新されたことを確認
@@ -735,9 +730,8 @@ class TestBattleIntegration:
                                             )
 
                                             await service.execute_action(
-                                                session_id="session_1",
-                                                user_id="user_1",
-                                                action_request=request,
+                                                mock_game_session,
+                                                request,
                                             )
 
                                             # カスタムイベントが送信されたことを確認

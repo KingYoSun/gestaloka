@@ -4,7 +4,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models.character import Character, GameSession
 from app.models.log import (
@@ -12,22 +12,29 @@ from app.models.log import (
     LogFragment,
     LogFragmentRarity,
 )
-from app.models.user import User
-from app.services.auth_service import AuthService
+from app.models.user import User as UserModel
+from app.schemas.user import UserCreate
+from app.services.user_service import UserService
 
 
 class TestLogEndpoints:
     """ログエンドポイントのテストクラス"""
 
     @pytest.fixture
-    def test_user(self, session: Session) -> User:
+    async def test_user(self, session: Session) -> UserModel:
         """テスト用ユーザー作成"""
-        auth_service = AuthService(session)
-        user = auth_service.create_user(username="testuser", email="test@example.com", password="testpassword123")
-        return user
+        user_service = UserService(session)
+        user_create = UserCreate(username="testuser", email="test@example.com", password="testpassword123")
+        user_schema = await user_service.create(user_create)
+        # モデルを返す
+        statement = select(UserModel).where(UserModel.id == user_schema.id)
+        result = session.exec(statement)
+        user_model = result.first()
+        assert user_model is not None
+        return user_model
 
     @pytest.fixture
-    def auth_headers(self, test_user: User) -> dict[str, str]:
+    def auth_headers(self, test_user: UserModel) -> dict[str, str]:
         """認証ヘッダー作成"""
         # 実際の実装では、JWTトークンを生成する
         # ここでは簡略化
@@ -52,7 +59,7 @@ class TestLogEndpoints:
     ):
         """ログフラグメント作成成功のテスト"""
         # テスト用ユーザー作成
-        user = User(
+        user = UserModel(
             id="test-user-1",
             username="testuser",
             email="test@example.com",
@@ -118,7 +125,8 @@ class TestLogEndpoints:
         assert data["emotional_valence"] == fragment_data["emotional_valence"]
 
         # クリーンアップ
-        client.app.dependency_overrides.clear()
+        from app.main import app
+        app.dependency_overrides.clear()
 
     def test_get_character_fragments(
         self,
@@ -127,7 +135,7 @@ class TestLogEndpoints:
     ):
         """キャラクターのログフラグメント一覧取得のテスト"""
         # テスト用データ作成
-        user = User(
+        user = UserModel(
             id="test-user-2",
             username="testuser2",
             email="test2@example.com",
@@ -183,7 +191,8 @@ class TestLogEndpoints:
         assert all(f["character_id"] == character.id for f in data)
 
         # クリーンアップ
-        client.app.dependency_overrides.clear()
+        from app.main import app
+        app.dependency_overrides.clear()
 
     def test_create_completed_log(
         self,
@@ -192,7 +201,7 @@ class TestLogEndpoints:
     ):
         """完成ログ作成のテスト"""
         # テスト用データ作成
-        user = User(
+        user = UserModel(
             id="test-user-3",
             username="testuser3",
             email="test3@example.com",
@@ -281,4 +290,5 @@ class TestLogEndpoints:
         assert data["status"] == "draft"
 
         # クリーンアップ
-        client.app.dependency_overrides.clear()
+        from app.main import app
+        app.dependency_overrides.clear()
