@@ -102,7 +102,7 @@ class TestGameSessionCoordinatorIntegration:
 
         # セッション作成
         session_data = GameSessionCreate(character_id="char_001")
-        response = await game_session_service.create_session("user_001", session_data)
+        response = await game_session_service.create_session(mock_character, session_data)
 
         # 検証
         assert response.character_id == "char_001"
@@ -131,11 +131,20 @@ class TestGameSessionCoordinatorIntegration:
         )
 
         # モックの設定
-        mock_db.exec.return_value.first.return_value = (mock_session, mock_character)
-        mock_db.exec.return_value.first.side_effect = [
-            (mock_session, mock_character),  # セッション取得
-            mock_character_stats,  # ステータス取得
+        exec_results = [
+            mock_character,  # 最初のCharacter取得
+            mock_character_stats,  # CharacterStats取得
         ]
+        
+        def exec_side_effect(stmt):
+            result = MagicMock()
+            if exec_results:
+                result.first.return_value = exec_results.pop(0)
+            else:
+                result.first.return_value = None
+            return result
+            
+        mock_db.exec.side_effect = exec_side_effect
 
         # CoordinatorAIのモック
         from app.ai.coordination_models import Choice, FinalResponse
@@ -183,11 +192,20 @@ class TestGameSessionCoordinatorIntegration:
         )
 
         # モックの設定
-        mock_db.exec.return_value.first.return_value = (mock_session, mock_character)
-        mock_db.exec.return_value.first.side_effect = [
-            (mock_session, mock_character),
-            mock_character_stats,
+        exec_results = [
+            mock_character,  # 最初のCharacter取得
+            mock_character_stats,  # CharacterStats取得
         ]
+        
+        def exec_side_effect(stmt):
+            result = MagicMock()
+            if exec_results:
+                result.first.return_value = exec_results.pop(0)
+            else:
+                result.first.return_value = None
+            return result
+            
+        mock_db.exec.side_effect = exec_side_effect
 
         # CoordinatorAIでエラーを発生させる
         with patch.object(game_session_service.coordinator, "process_action", side_effect=Exception("AI処理エラー")):
@@ -216,11 +234,20 @@ class TestGameSessionCoordinatorIntegration:
         )
 
         # モックの設定
-        mock_db.exec.return_value.first.return_value = (mock_session, mock_character)
-        mock_db.exec.return_value.first.side_effect = [
-            (mock_session, mock_character),
-            mock_character_stats,
+        exec_results = [
+            mock_character,  # 最初のCharacter取得
+            mock_character_stats,  # CharacterStats取得
         ]
+        
+        def exec_side_effect(stmt):
+            result = MagicMock()
+            if exec_results:
+                result.first.return_value = exec_results.pop(0)
+            else:
+                result.first.return_value = None
+            return result
+            
+        mock_db.exec.side_effect = exec_side_effect
 
         # 初回のアクション実行
         with patch.object(game_session_service.coordinator, "initialize_session") as mock_init:
@@ -240,10 +267,20 @@ class TestGameSessionCoordinatorIntegration:
             assert mock_init.called
 
         # 2回目のアクション実行（同じセッション）
-        mock_db.exec.return_value.first.side_effect = [
-            (mock_session, mock_character),
-            mock_character_stats,
+        exec_results2 = [
+            mock_character,  # 最初のCharacter取得
+            mock_character_stats,  # CharacterStats取得
         ]
+        
+        def exec_side_effect2(stmt):
+            result = MagicMock()
+            if exec_results2:
+                result.first.return_value = exec_results2.pop(0)
+            else:
+                result.first.return_value = None
+            return result
+            
+        mock_db.exec.side_effect = exec_side_effect2
 
         with patch.object(game_session_service.coordinator, "initialize_session") as mock_init2:
             # shared_contextが存在することをシミュレート

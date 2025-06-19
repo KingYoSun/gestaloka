@@ -189,20 +189,32 @@ def game_session_service(mock_db, mock_coordinator_ai):
 def setup_db_mocks(mock_db, mock_game_session, mock_character):
     """データベースモックを設定"""
 
+    # 呼び出し回数を追跡
+    call_count = 0
+
     # セッションとキャラクター取得のモック
     def exec_side_effect(stmt):
+        nonlocal call_count
+        call_count += 1
+        
         # select文に応じて異なる結果を返す
         stmt_str = str(stmt)
-        if "game_session" in stmt_str.lower() or "join" in stmt_str:
+        result = Mock()
+        
+        if "game_session" in stmt_str.lower() and "join" in stmt_str.lower():
             # GameSessionとCharacterのjoinクエリ
-            result = Mock()
             result.first.return_value = (mock_game_session, mock_character)
-            return result
-        else:
+        elif "character" in stmt_str.lower() and "character_stats" not in stmt_str.lower():
+            # Characterクエリ
+            result.first.return_value = mock_character
+        elif "character_stats" in stmt_str.lower():
             # CharacterStatsクエリ
-            result = Mock()
             result.first.return_value = mock_character.stats
-            return result
+        else:
+            # デフォルト
+            result.first.return_value = None
+            
+        return result
 
     mock_db.exec.side_effect = exec_side_effect
 
