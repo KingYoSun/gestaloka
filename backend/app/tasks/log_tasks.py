@@ -145,10 +145,7 @@ def generate_npc_from_completed_log(self, completed_log_id: str, location: str =
     """CompletedLogから直接NPCを生成"""
     try:
         logger.info(
-            "Generating NPC from completed log",
-            task_id=self.request.id,
-            log_id=completed_log_id,
-            location=location
+            "Generating NPC from completed log", task_id=self.request.id, log_id=completed_log_id, location=location
         )
 
         with Session(engine) as session:
@@ -160,18 +157,14 @@ def generate_npc_from_completed_log(self, completed_log_id: str, location: str =
             try:
                 npc_profile = loop.run_until_complete(
                     npc_generator.generate_npc_from_log(
-                        completed_log_id=uuid.UUID(completed_log_id),
-                        target_location_name=location
+                        completed_log_id=uuid.UUID(completed_log_id), target_location_name=location
                     )
                 )
             finally:
                 loop.close()
 
         logger.info(
-            "NPC generated successfully",
-            task_id=self.request.id,
-            npc_id=npc_profile.npc_id,
-            npc_name=npc_profile.name
+            "NPC generated successfully", task_id=self.request.id, npc_id=npc_profile.npc_id, npc_name=npc_profile.name
         )
 
         return {
@@ -181,12 +174,7 @@ def generate_npc_from_completed_log(self, completed_log_id: str, location: str =
         }
 
     except Exception as e:
-        logger.error(
-            "Failed to generate NPC from log",
-            task_id=self.request.id,
-            log_id=completed_log_id,
-            error=str(e)
-        )
+        logger.error("Failed to generate NPC from log", task_id=self.request.id, log_id=completed_log_id, error=str(e))
         raise
 
 

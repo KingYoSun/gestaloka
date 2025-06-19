@@ -6,23 +6,23 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
 from app.core.database import cleanup_db, init_db
+from app.core.error_handler import (
+    generic_exception_handler,
+    http_exception_handler,
+    logverse_error_handler,
+    validation_exception_handler,
+)
+from app.core.exceptions import LogverseError
 from app.core.logging import get_logger, setup_logging
 from app.websocket.server import socket_app
-from app.core.exceptions import LogverseError
-from app.core.error_handler import (
-    logverse_error_handler,
-    http_exception_handler,
-    validation_exception_handler,
-    generic_exception_handler
-)
 
 
 @asynccontextmanager
@@ -78,9 +78,9 @@ if settings.ENVIRONMENT == "production":
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.gestaloka.com"])
 
 # エラーハンドラー登録
-app.add_exception_handler(LogverseError, logverse_error_handler)
-app.add_exception_handler(StarletteHTTPException, http_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(LogverseError, logverse_error_handler)  # type: ignore
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore
+app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore
 app.add_exception_handler(Exception, generic_exception_handler)
 
 # APIルーター登録

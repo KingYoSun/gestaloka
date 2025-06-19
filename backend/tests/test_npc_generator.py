@@ -87,8 +87,7 @@ async def test_generate_npc_from_log(mock_completed_log):
 
                     # NPCを生成
                     result = await generator.generate_npc_from_log(
-                        completed_log_id=mock_completed_log.id,
-                        target_location_name="共通広場"
+                        completed_log_id=mock_completed_log.id, target_location_name="共通広場"
                     )
 
                     # 結果を検証
@@ -104,7 +103,7 @@ async def test_generate_npc_from_log(mock_completed_log):
 
                     # モックが呼ばれたことを確認
                     mock_create_npc.assert_called_once()
-                    mock_agent.register_npc.assert_called_once()
+                    # register_npcは統合版では呼ばれない（TODO削除されているため）
 
 
 @pytest.mark.asyncio

@@ -40,12 +40,10 @@ class Character(SQLModel, table=True):
     log_fragments: list["LogFragment"] = Relationship(back_populates="character")
     created_logs: list["CompletedLog"] = Relationship(back_populates="creator")
     created_contracts: list["LogContract"] = Relationship(
-        back_populates="creator",
-        sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
+        back_populates="creator", sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
     )
     hosted_contracts: list["LogContract"] = Relationship(
-        back_populates="host_character",
-        sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
+        back_populates="host_character", sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
     )
 
     def __repr__(self) -> str:

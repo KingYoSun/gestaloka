@@ -23,11 +23,7 @@ class TestLogEndpoints:
     def test_user(self, session: Session) -> User:
         """テスト用ユーザー作成"""
         auth_service = AuthService(session)
-        user = auth_service.create_user(
-            username="testuser",
-            email="test@example.com",
-            password="testpassword123"
-        )
+        user = auth_service.create_user(username="testuser", email="test@example.com", password="testpassword123")
         return user
 
     @pytest.fixture
@@ -88,7 +84,11 @@ class TestLogEndpoints:
         def mock_get_current_user():
             return user
 
-        client.app.dependency_overrides[get_current_user] = mock_get_current_user
+        from fastapi import FastAPI
+
+        app = client.app
+        if isinstance(app, FastAPI):
+            app.dependency_overrides[get_current_user] = mock_get_current_user
 
         # ログフラグメント作成リクエスト
         fragment_data = {
@@ -168,7 +168,11 @@ class TestLogEndpoints:
         def mock_get_current_user():
             return user
 
-        client.app.dependency_overrides[get_current_user] = mock_get_current_user
+        from fastapi import FastAPI
+
+        app = client.app
+        if isinstance(app, FastAPI):
+            app.dependency_overrides[get_current_user] = mock_get_current_user
 
         # フラグメント一覧取得
         response = client.get(f"/api/v1/logs/fragments/{character.id}")
@@ -242,7 +246,11 @@ class TestLogEndpoints:
         def mock_get_current_user():
             return user
 
-        client.app.dependency_overrides[get_current_user] = mock_get_current_user
+        from fastapi import FastAPI
+
+        app = client.app
+        if isinstance(app, FastAPI):
+            app.dependency_overrides[get_current_user] = mock_get_current_user
 
         # 完成ログ作成リクエスト
         log_data = {
@@ -269,7 +277,7 @@ class TestLogEndpoints:
         data = response.json()
         assert data["name"] == log_data["name"]
         assert data["title"] == log_data["title"]
-        assert data["contamination_level"] == pytest.approx(1/3)  # 1 negative out of 3 total
+        assert data["contamination_level"] == pytest.approx(1 / 3)  # 1 negative out of 3 total
         assert data["status"] == "draft"
 
         # クリーンアップ

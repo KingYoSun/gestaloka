@@ -27,17 +27,16 @@ class TestGameSessionCoordinatorIntegration:
     @pytest.fixture
     def mock_character(self):
         """テスト用キャラクター"""
-        character = Character(
-            id="char_001",
-            user_id="user_001",
-            name="テストキャラクター",
-            location="starting_village",
-            level=1,
-            experience=0,
-            appearance="普通の冒険者",
-            personality="勇敢で好奇心旺盛",
-            backstory="平凡な村の出身",
-        )
+        character = MagicMock(spec=Character)
+        character.id = "char_001"
+        character.user_id = "user_001"
+        character.name = "テストキャラクター"
+        character.location = "starting_village"
+        character.level = 1
+        character.experience = 0
+        character.appearance = "普通の冒険者"
+        character.personality = "勇敢で好奇心旺盛"
+        character.backstory = "平凡な村の出身"
         return character
 
     @pytest.fixture
@@ -73,8 +72,25 @@ class TestGameSessionCoordinatorIntegration:
         """CoordinatorAIを使ったセッション作成テスト"""
         # モックの設定
         mock_db.get.return_value = mock_character
-        mock_db.exec.return_value.all.return_value = []
-        mock_db.exec.return_value.first.return_value = None
+
+        # check_character_ownershipとSessionクエリのためのモック設定
+        exec_call_count = 0
+
+        def exec_side_effect(query):
+            nonlocal exec_call_count
+            exec_call_count += 1
+            result_mock = MagicMock()
+
+            # 最初の呼び出しはcheck_character_ownership
+            if exec_call_count == 1:
+                result_mock.first.return_value = mock_character
+            # 2番目の呼び出しは既存セッションの検索
+            else:
+                result_mock.all.return_value = []
+                result_mock.first.return_value = None
+            return result_mock
+
+        mock_db.exec.side_effect = exec_side_effect
 
         # セッション作成用のモック
         def add_side_effect(obj):

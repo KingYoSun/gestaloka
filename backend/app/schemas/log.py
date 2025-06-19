@@ -23,24 +23,10 @@ class LogFragmentBase(BaseModel):
 
     action_description: str = Field(description="行動の詳細な記述")
     keywords: list[str] = Field(default_factory=list, description="キーワード")
-    emotional_valence: EmotionalValence = Field(
-        default=EmotionalValence.NEUTRAL,
-        description="感情価"
-    )
-    rarity: LogFragmentRarity = Field(
-        default=LogFragmentRarity.COMMON,
-        description="レアリティ"
-    )
-    importance_score: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="重要度スコア"
-    )
-    context_data: dict[str, Any] = Field(
-        default_factory=dict,
-        description="行動時の文脈情報"
-    )
+    emotional_valence: EmotionalValence = Field(default=EmotionalValence.NEUTRAL, description="感情価")
+    rarity: LogFragmentRarity = Field(default=LogFragmentRarity.COMMON, description="レアリティ")
+    importance_score: float = Field(default=0.0, ge=0.0, le=1.0, description="重要度スコア")
+    context_data: dict[str, Any] = Field(default_factory=dict, description="行動時の文脈情報")
 
 
 class LogFragmentCreate(LogFragmentBase):
@@ -69,14 +55,8 @@ class CompletedLogBase(BaseModel):
     title: Optional[str] = Field(default=None, description="称号")
     description: str = Field(description="ログの説明文")
     skills: list[str] = Field(default_factory=list, description="獲得したスキル")
-    personality_traits: list[str] = Field(
-        default_factory=list,
-        description="性格特性"
-    )
-    behavior_patterns: dict[str, Any] = Field(
-        default_factory=dict,
-        description="行動パターン"
-    )
+    personality_traits: list[str] = Field(default_factory=list, description="性格特性")
+    behavior_patterns: dict[str, Any] = Field(default_factory=dict, description="行動パターン")
 
 
 class CompletedLogCreate(CompletedLogBase):
@@ -84,10 +64,7 @@ class CompletedLogCreate(CompletedLogBase):
 
     creator_id: str
     core_fragment_id: str
-    sub_fragment_ids: list[str] = Field(
-        default_factory=list,
-        description="サブフラグメントのIDリスト"
-    )
+    sub_fragment_ids: list[str] = Field(default_factory=list, description="サブフラグメントのIDリスト")
 
 
 class CompletedLogUpdate(BaseModel):
@@ -120,29 +97,12 @@ class CompletedLogRead(CompletedLogBase):
 class LogContractBase(BaseModel):
     """ログ契約の基本スキーマ"""
 
-    activity_duration_hours: int = Field(
-        default=24,
-        gt=0,
-        description="活動期間（時間）"
-    )
+    activity_duration_hours: int = Field(default=24, gt=0, description="活動期間（時間）")
     behavior_guidelines: str = Field(description="行動指針")
-    reward_conditions: dict[str, Any] = Field(
-        default_factory=dict,
-        description="報酬条件"
-    )
-    rewards: dict[str, Any] = Field(
-        default_factory=dict,
-        description="報酬内容"
-    )
-    is_public: bool = Field(
-        default=False,
-        description="マーケットに公開するか"
-    )
-    price: Optional[int] = Field(
-        default=None,
-        ge=0,
-        description="マーケット価格"
-    )
+    reward_conditions: dict[str, Any] = Field(default_factory=dict, description="報酬条件")
+    rewards: dict[str, Any] = Field(default_factory=dict, description="報酬内容")
+    is_public: bool = Field(default=False, description="マーケットに公開するか")
+    price: Optional[int] = Field(default=None, ge=0, description="マーケット価格")
 
 
 class LogContractCreate(LogContractBase):
@@ -184,9 +144,4 @@ class LogActivityEntry(BaseModel):
     timestamp: datetime
     action: str
     details: dict[str, Any]
-    impact_score: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="行動の影響度"
-    )
+    impact_score: float = Field(default=0.0, ge=0.0, le=1.0, description="行動の影響度")

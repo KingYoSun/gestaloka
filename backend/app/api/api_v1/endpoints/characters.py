@@ -7,11 +7,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app.api.api_v1.endpoints.auth import get_current_user
-from app.api.deps import get_user_character, check_character_limit, get_current_active_user
+from app.api.deps import check_character_limit, get_current_active_user, get_user_character
 from app.core.database import get_session
-from app.core.logging import get_logger
 from app.core.exceptions import DatabaseError
+from app.core.logging import get_logger
 from app.schemas.character import Character, CharacterCreate, CharacterUpdate
 from app.schemas.user import User
 from app.services.character_service import CharacterService
@@ -22,8 +21,7 @@ logger = get_logger(__name__)
 
 @router.get("/", response_model=list[Character])
 async def get_user_characters(
-    current_user: User = Depends(get_current_active_user), 
-    db: Session = Depends(get_session)
+    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_session)
 ) -> Any:
     """ユーザーのキャラクター一覧取得"""
     try:
@@ -36,11 +34,13 @@ async def get_user_characters(
         raise DatabaseError("キャラクター取得に失敗しました", operation="get_characters")
 
 
-@router.post("/", response_model=Character, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_character_limit)])
+@router.post(
+    "/", response_model=Character, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_character_limit)]
+)
 async def create_character(
-    character_data: CharacterCreate, 
-    current_user: User = Depends(get_current_active_user), 
-    db: Session = Depends(get_session)
+    character_data: CharacterCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
 ) -> Any:
     """新しいキャラクター作成"""
     try:
@@ -60,9 +60,7 @@ async def create_character(
 
 
 @router.get("/{character_id}", response_model=Character)
-async def get_character(
-    character: Character = Depends(get_user_character)
-) -> Any:
+async def get_character(character: Character = Depends(get_user_character)) -> Any:
     """特定のキャラクター取得"""
     return character
 
@@ -90,8 +88,7 @@ async def update_character(
 
 @router.delete("/{character_id}")
 async def delete_character(
-    character: Character = Depends(get_user_character),
-    db: Session = Depends(get_session)
+    character: Character = Depends(get_user_character), db: Session = Depends(get_session)
 ) -> Any:
     """キャラクター削除"""
     try:

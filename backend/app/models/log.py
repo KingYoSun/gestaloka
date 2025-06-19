@@ -52,28 +52,15 @@ class LogFragment(SQLModel, table=True):
     # 基本情報
     action_description: str = Field(description="行動の詳細な記述")
     keywords: list[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON),
-        description="キーワード（例: [勇敢], [裏切り], [探索]）"
+        default_factory=list, sa_column=Column(JSON), description="キーワード（例: [勇敢], [裏切り], [探索]）"
     )
-    emotional_valence: EmotionalValence = Field(
-        default=EmotionalValence.NEUTRAL,
-        description="感情価"
-    )
-    rarity: LogFragmentRarity = Field(
-        default=LogFragmentRarity.COMMON,
-        description="レアリティ"
-    )
+    emotional_valence: EmotionalValence = Field(default=EmotionalValence.NEUTRAL, description="感情価")
+    rarity: LogFragmentRarity = Field(default=LogFragmentRarity.COMMON, description="レアリティ")
 
     # メタデータ
-    importance_score: float = Field(
-        default=0.0,
-        description="重要度スコア（0.0-1.0）"
-    )
+    importance_score: float = Field(default=0.0, description="重要度スコア（0.0-1.0）")
     context_data: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSON),
-        description="行動時の文脈情報（場所、関係者、状況など）"
+        default_factory=dict, sa_column=Column(JSON), description="行動時の文脈情報（場所、関係者、状況など）"
     )
 
     # タイムスタンプ
@@ -85,12 +72,9 @@ class LogFragment(SQLModel, table=True):
 
     # 逆参照用
     completed_log_cores: list["CompletedLog"] = Relationship(
-        back_populates="core_fragment",
-        sa_relationship_kwargs={"foreign_keys": "[CompletedLog.core_fragment_id]"}
+        back_populates="core_fragment", sa_relationship_kwargs={"foreign_keys": "[CompletedLog.core_fragment_id]"}
     )
-    completed_log_subs: list["CompletedLogSubFragment"] = Relationship(
-        back_populates="fragment"
-    )
+    completed_log_subs: list["CompletedLogSubFragment"] = Relationship(back_populates="fragment")
 
 
 class CompletedLogStatus(str, Enum):
@@ -124,29 +108,12 @@ class CompletedLog(SQLModel, table=True):
     description: str = Field(description="ログの説明文")
 
     # 能力・特性
-    skills: list[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON),
-        description="獲得したスキル"
-    )
-    personality_traits: list[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON),
-        description="性格特性"
-    )
-    behavior_patterns: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSON),
-        description="行動パターン"
-    )
+    skills: list[str] = Field(default_factory=list, sa_column=Column(JSON), description="獲得したスキル")
+    personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON), description="性格特性")
+    behavior_patterns: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), description="行動パターン")
 
     # 汚染度
-    contamination_level: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=1.0,
-        description="汚染度（0.0-1.0）"
-    )
+    contamination_level: float = Field(default=0.0, ge=0.0, le=1.0, description="汚染度（0.0-1.0）")
 
     # ステータス
     status: CompletedLogStatus = Field(default=CompletedLogStatus.DRAFT)
@@ -158,12 +125,9 @@ class CompletedLog(SQLModel, table=True):
     # リレーションシップ
     creator: Optional["Character"] = Relationship(back_populates="created_logs")
     core_fragment: Optional[LogFragment] = Relationship(
-        back_populates="completed_log_cores",
-        sa_relationship_kwargs={"foreign_keys": "[CompletedLog.core_fragment_id]"}
+        back_populates="completed_log_cores", sa_relationship_kwargs={"foreign_keys": "[CompletedLog.core_fragment_id]"}
     )
-    sub_fragments: list["CompletedLogSubFragment"] = Relationship(
-        back_populates="completed_log"
-    )
+    sub_fragments: list["CompletedLogSubFragment"] = Relationship(back_populates="completed_log")
     contracts: list["LogContract"] = Relationship(back_populates="completed_log")
 
 
@@ -174,23 +138,13 @@ class CompletedLogSubFragment(SQLModel, table=True):
 
     __tablename__ = "completed_log_sub_fragments"
 
-    completed_log_id: str = Field(
-        foreign_key="completed_logs.id",
-        primary_key=True
-    )
-    fragment_id: str = Field(
-        foreign_key="log_fragments.id",
-        primary_key=True
-    )
+    completed_log_id: str = Field(foreign_key="completed_logs.id", primary_key=True)
+    fragment_id: str = Field(foreign_key="log_fragments.id", primary_key=True)
     order: int = Field(default=0, description="フラグメントの順序")
 
     # リレーションシップ
-    completed_log: Optional[CompletedLog] = Relationship(
-        back_populates="sub_fragments"
-    )
-    fragment: Optional[LogFragment] = Relationship(
-        back_populates="completed_log_subs"
-    )
+    completed_log: Optional[CompletedLog] = Relationship(back_populates="sub_fragments")
+    fragment: Optional[LogFragment] = Relationship(back_populates="completed_log_subs")
 
 
 class LogContractStatus(str, Enum):
@@ -218,54 +172,24 @@ class LogContract(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     completed_log_id: str = Field(foreign_key="completed_logs.id", index=True)
     creator_id: str = Field(foreign_key="characters.id", index=True)
-    host_character_id: Optional[str] = Field(
-        default=None,
-        foreign_key="characters.id",
-        index=True
-    )
+    host_character_id: Optional[str] = Field(default=None, foreign_key="characters.id", index=True)
 
     # 契約内容
-    activity_duration_hours: int = Field(
-        default=24,
-        description="活動期間（時間）"
-    )
-    behavior_guidelines: str = Field(
-        description="行動指針"
-    )
-    reward_conditions: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSON),
-        description="報酬条件"
-    )
-    rewards: dict[str, Any] = Field(
-        default_factory=dict,
-        sa_column=Column(JSON),
-        description="報酬内容"
-    )
+    activity_duration_hours: int = Field(default=24, description="活動期間（時間）")
+    behavior_guidelines: str = Field(description="行動指針")
+    reward_conditions: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), description="報酬条件")
+    rewards: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), description="報酬内容")
 
     # マーケット情報
-    is_public: bool = Field(
-        default=False,
-        description="マーケットに公開するか"
-    )
-    price: Optional[int] = Field(
-        default=None,
-        description="マーケット価格"
-    )
+    is_public: bool = Field(default=False, description="マーケットに公開するか")
+    price: Optional[int] = Field(default=None, description="マーケット価格")
 
     # ステータス
     status: LogContractStatus = Field(default=LogContractStatus.PENDING)
 
     # 活動記録
-    activity_logs: list[dict[str, Any]] = Field(
-        default_factory=list,
-        sa_column=Column(JSON),
-        description="活動記録"
-    )
-    performance_score: float = Field(
-        default=0.0,
-        description="パフォーマンススコア"
-    )
+    activity_logs: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON), description="活動記録")
+    performance_score: float = Field(default=0.0, description="パフォーマンススコア")
 
     # タイムスタンプ
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -276,12 +200,10 @@ class LogContract(SQLModel, table=True):
     # リレーションシップ
     completed_log: Optional[CompletedLog] = Relationship(back_populates="contracts")
     creator: Optional["Character"] = Relationship(
-        back_populates="created_contracts",
-        sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
+        back_populates="created_contracts", sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
     )
     host_character: Optional["Character"] = Relationship(
-        back_populates="hosted_contracts",
-        sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
+        back_populates="hosted_contracts", sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
     )
 
 

@@ -1,9 +1,10 @@
 """
 統一エラーハンドラー
 """
+
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.exceptions import LogverseError, to_http_exception
@@ -17,20 +18,17 @@ async def logverse_error_handler(request: Request, exc: LogverseError) -> JSONRe
     カスタム例外のハンドラー
     """
     http_exc = to_http_exception(exc)
-    
+
     logger.error(
         "Application error",
         error_code=exc.code,
         error_message=exc.message,
         error_details=exc.details,
         path=request.url.path,
-        method=request.method
+        method=request.method,
     )
-    
-    return JSONResponse(
-        status_code=http_exc.status_code,
-        content=http_exc.detail
-    )
+
+    return JSONResponse(status_code=http_exc.status_code, content=http_exc.detail)
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -38,19 +36,11 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     HTTPExceptionのハンドラー
     """
     logger.warning(
-        "HTTP exception",
-        status_code=exc.status_code,
-        detail=exc.detail,
-        path=request.url.path,
-        method=request.method
+        "HTTP exception", status_code=exc.status_code, detail=exc.detail, path=request.url.path, method=request.method
     )
-    
+
     return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "message": str(exc.detail),
-            "code": f"HTTP_{exc.status_code}"
-        }
+        status_code=exc.status_code, content={"message": str(exc.detail), "code": f"HTTP_{exc.status_code}"}
     )
 
 
@@ -58,20 +48,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     """
     バリデーションエラーのハンドラー
     """
-    logger.warning(
-        "Validation error",
-        errors=exc.errors(),
-        path=request.url.path,
-        method=request.method
-    )
-    
+    logger.warning("Validation error", errors=exc.errors(), path=request.url.path, method=request.method)
+
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "message": "Validation error",
-            "code": "VALIDATION_ERROR",
-            "details": exc.errors()
-        }
+        content={"message": "Validation error", "code": "VALIDATION_ERROR", "details": exc.errors()},
     )
 
 
@@ -79,16 +60,9 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
     """
     その他の例外のハンドラー
     """
-    logger.exception(
-        "Unhandled exception",
-        path=request.url.path,
-        method=request.method
-    )
-    
+    logger.exception("Unhandled exception", path=request.url.path, method=request.method)
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "message": "Internal server error",
-            "code": "INTERNAL_ERROR"
-        }
+        content={"message": "Internal server error", "code": "INTERNAL_ERROR"},
     )

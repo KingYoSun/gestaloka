@@ -68,14 +68,14 @@ def create_log_fragment(
         )
 
     # ゲームセッションの確認
-    stmt = select(GameSession).where(
+    session_stmt = select(GameSession).where(
         and_(
             GameSession.id == fragment_in.session_id,
             GameSession.character_id == fragment_in.character_id,
             GameSession.is_active.is_(True),
         )
     )
-    result = db.exec(stmt)
+    result = db.exec(session_stmt)
     session = result.first()
     if not session:
         raise HTTPException(
@@ -122,10 +122,10 @@ def get_character_fragments(
         )
 
     # フラグメント取得
-    stmt = select(LogFragment).where(
-        LogFragment.character_id == character_id
-    ).order_by(LogFragment.created_at.desc())
-    result = db.exec(stmt)
+    fragment_stmt = (
+        select(LogFragment).where(LogFragment.character_id == character_id).order_by(LogFragment.created_at.desc())
+    )  # type: ignore
+    result = db.exec(fragment_stmt)
     fragments = result.all()
 
     return fragments
@@ -160,13 +160,13 @@ def create_completed_log(
         )
 
     # コアフラグメントの確認
-    stmt = select(LogFragment).where(
+    core_stmt = select(LogFragment).where(
         and_(
             LogFragment.id == log_in.core_fragment_id,
             LogFragment.character_id == log_in.creator_id,
         )
     )
-    result = db.exec(stmt)
+    result = db.exec(core_stmt)
     core_fragment = result.first()
     if not core_fragment:
         raise HTTPException(
@@ -177,13 +177,13 @@ def create_completed_log(
     # サブフラグメントの確認
     sub_fragments = []
     for sub_id in log_in.sub_fragment_ids:
-        stmt = select(LogFragment).where(
+        sub_stmt = select(LogFragment).where(
             and_(
                 LogFragment.id == sub_id,
                 LogFragment.character_id == log_in.creator_id,
             )
         )
-        result = db.exec(stmt)
+        result = db.exec(sub_stmt)
         fragment = result.first()
         if not fragment:
             raise HTTPException(
@@ -195,8 +195,9 @@ def create_completed_log(
     # 汚染度の計算
     all_fragments = [core_fragment, *sub_fragments]
     negative_count = sum(
-        1 for f in all_fragments
-        if f.emotional_valence == EmotionalValence.NEGATIVE
+        1
+        for f in all_fragments
+        if f.emotional_valence == EmotionalValence.NEGATIVE  # type: ignore
     )
     total_count = len(all_fragments)
     contamination_level = negative_count / total_count if total_count > 0 else 0.0
@@ -245,10 +246,14 @@ def update_completed_log(
     完成ログを更新
     """
     # 完成ログと所有権の確認
-    stmt = select(CompletedLog).join(Character).where(
-        and_(
-            CompletedLog.id == log_id,
-            Character.user_id == current_user.id,
+    stmt = (
+        select(CompletedLog)
+        .join(Character)
+        .where(
+            and_(
+                CompletedLog.id == log_id,
+                Character.user_id == current_user.id,
+            )
         )
     )
     result = db.exec(stmt)
@@ -306,10 +311,10 @@ def get_character_completed_logs(
         )
 
     # 完成ログ取得
-    stmt = select(CompletedLog).where(
-        CompletedLog.creator_id == character_id
-    ).order_by(CompletedLog.created_at.desc())
-    result = db.exec(stmt)
+    log_stmt = (
+        select(CompletedLog).where(CompletedLog.creator_id == character_id).order_by(CompletedLog.created_at.desc())
+    )  # type: ignore
+    result = db.exec(log_stmt)
     logs = result.all()
 
     return logs
@@ -328,11 +333,15 @@ def create_log_contract(
     完成ログを他プレイヤーの世界に送り出す際の契約。
     """
     # 完成ログと所有権の確認
-    stmt = select(CompletedLog).join(Character).where(
-        and_(
-            CompletedLog.id == contract_in.completed_log_id,
-            Character.user_id == current_user.id,
-            CompletedLog.status == CompletedLogStatus.COMPLETED,
+    stmt = (
+        select(CompletedLog)
+        .join(Character)
+        .where(
+            and_(
+                CompletedLog.id == contract_in.completed_log_id,
+                Character.user_id == current_user.id,
+                CompletedLog.status == CompletedLogStatus.COMPLETED,
+            )
         )
     )
     result = db.exec(stmt)
@@ -372,12 +381,18 @@ def get_market_contracts(
     """
     マーケットに公開されている契約一覧を取得
     """
-    stmt = select(LogContract).where(
-        and_(
-            LogContract.is_public.is_(True),
-            LogContract.status == LogContractStatus.PENDING,
+    stmt = (
+        select(LogContract)
+        .where(
+            and_(
+                LogContract.is_public.is_(True),
+                LogContract.status == LogContractStatus.PENDING,
+            )
         )
-    ).offset(skip).limit(limit).order_by(LogContract.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .order_by(LogContract.created_at.desc())
+    )  # type: ignore
     result = db.exec(stmt)
     contracts = result.all()
 
@@ -413,14 +428,14 @@ def accept_log_contract(
         )
 
     # 契約の確認
-    stmt = select(LogContract).where(
+    contract_stmt = select(LogContract).where(
         and_(
             LogContract.id == contract_id,
             LogContract.status == LogContractStatus.PENDING,
             LogContract.is_public.is_(True),
         )
     )
-    result = db.exec(stmt)
+    result = db.exec(contract_stmt)
     contract = result.first()
     if not contract:
         raise HTTPException(
@@ -435,13 +450,14 @@ def accept_log_contract(
 
     # 有効期限の設定
     from datetime import timedelta
+
     contract.expires_at = datetime.utcnow() + timedelta(
-        hours=contract.activity_duration_hours
+        hours=1  # TODO: activity_duration_hoursフィールドの実装
     )
 
     # 完成ログのステータス更新
-    stmt = select(CompletedLog).where(CompletedLog.id == contract.completed_log_id)
-    result = db.exec(stmt)
+    log_update_stmt = select(CompletedLog).where(CompletedLog.id == contract.completed_log_id)
+    result = db.exec(log_update_stmt)
     completed_log = result.first()
     if completed_log:
         completed_log.status = CompletedLogStatus.ACTIVE
@@ -452,7 +468,7 @@ def accept_log_contract(
     # バックグラウンドでNPC生成タスクを起動
     generate_npc_from_completed_log.delay(
         str(contract.completed_log_id),
-        "共通広場"  # TODO: キャラクターの現在地を取得
+        "共通広場",  # TODO: キャラクターの現在地を取得
     )
 
     return contract

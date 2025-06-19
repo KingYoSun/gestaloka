@@ -10,11 +10,11 @@ from typing import Optional
 import structlog
 from sqlmodel import Session, select
 
-from app.services.ai.agents.npc_manager import NPCManagerAgent
 from app.core.database import get_neo4j_session
 from app.db.neo4j_models import NPC, Location, create_npc_from_log
 from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus
 from app.schemas.npc_schemas import NPCProfile
+from app.services.ai.agents.npc_manager import NPCManagerAgent
 
 logger = structlog.get_logger(__name__)
 
@@ -25,7 +25,7 @@ class NPCGenerator:
     def __init__(self, session: Session):
         self.session = session
         self.neo4j = get_neo4j_session()
-        self.npc_manager = NPCManagerAgent()  # type: ignore
+        self.npc_manager = NPCManagerAgent()
 
     async def generate_npc_from_log(
         self,

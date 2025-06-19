@@ -6,12 +6,12 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
+from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.models.character import Character as CharacterModel
 from app.models.character import CharacterStats as CharacterStatsModel
 from app.schemas.character import Character, CharacterCreate, CharacterUpdate
 from app.utils.security import generate_uuid
-from app.core.config import settings
 
 
 class CharacterService(LoggerMixin):
