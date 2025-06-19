@@ -9,7 +9,7 @@ import os
 import pytest
 from neomodel import config, db
 
-from app.db.neo4j_models import Location, NPC, Player
+from app.db.neo4j_models import NPC, Location, Player
 
 
 @pytest.fixture
@@ -21,27 +21,27 @@ def neo4j_test_db():
         "bolt://neo4j:test_password@neo4j-test:7687"
     )
     config.DATABASE_URL = test_neo4j_url
-    
+
     # テストごとにデータをクリーンアップ
     with db.transaction:
         db.cypher_query(
             """
             MATCH (n)
-            WHERE n.npc_id STARTS WITH 'test_' 
+            WHERE n.npc_id STARTS WITH 'test_'
                OR n.player_id STARTS WITH 'test_'
                OR n.location_id STARTS WITH 'test_'
             DETACH DELETE n
             """
         )
-    
+
     yield db
-    
+
     # テスト後のクリーンアップ
     with db.transaction:
         db.cypher_query(
             """
             MATCH (n)
-            WHERE n.npc_id STARTS WITH 'test_' 
+            WHERE n.npc_id STARTS WITH 'test_'
                OR n.player_id STARTS WITH 'test_'
                OR n.location_id STARTS WITH 'test_'
             DETACH DELETE n
@@ -83,7 +83,7 @@ class BaseNeo4jIntegrationTest:
             db.cypher_query(
                 """
                 MATCH (n)
-                WHERE n.npc_id STARTS WITH 'test_' 
+                WHERE n.npc_id STARTS WITH 'test_'
                    OR n.player_id STARTS WITH 'test_'
                    OR n.location_id STARTS WITH 'test_'
                 DETACH DELETE n
@@ -145,19 +145,3 @@ class BaseNeo4jIntegrationTest:
             current_session_id="test_session",
         ).save()
         return player
-
-
-
-# pytest用のフィクスチャ
-@pytest.fixture
-def neo4j_test_db():
-    """Neo4jテストデータベースのフィクスチャ"""
-    # セットアップ
-    test = BaseNeo4jIntegrationTest()
-    test.setup_class()
-    test.setup_method(None)
-
-    yield test
-
-    # クリーンアップ
-    test.teardown_method(None)

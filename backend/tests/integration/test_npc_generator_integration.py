@@ -5,6 +5,7 @@ NPCGeneratorの統合テスト
 """
 
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
@@ -18,26 +19,24 @@ from app.services.npc_generator import NPCGenerator
 from tests.integration.base_neo4j_test import BaseNeo4jIntegrationTest, neo4j_test_db
 
 
-from contextlib import contextmanager
-
 @contextmanager
 def setup_test_neo4j():
     """テスト用Neo4j設定をセットアップするコンテキストマネージャー"""
     from neomodel import config as neo_config
     from neomodel import db as neo_db
-    
+
     # 現在の設定を保存
     original_url = neo_config.DATABASE_URL
-    
+
     # テスト用URLに変更
     test_url = "bolt://neo4j:test_password@neo4j-test:7687"
     neo_config.DATABASE_URL = test_url
-    
+
     # 既存の接続をクリア
     if hasattr(neo_db, '_driver') and neo_db._driver:
         neo_db._driver.close()
         neo_db._driver = None
-    
+
     try:
         yield
     finally:
@@ -55,34 +54,27 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     def test_session(self):
         """テスト用SQLセッション"""
         import os
+
         from sqlmodel import SQLModel
-        
+
         # テスト用PostgreSQLを使用
         database_url = os.getenv(
-            "DATABASE_URL", 
+            "DATABASE_URL",
             "postgresql://test_user:test_password@postgres-test:5432/gestaloka_test"
         )
         engine = create_engine(database_url)
-        
+
         # テスト用にクリーンなデータベースを準備
         from sqlalchemy import text
-        
+
         # 既存のスキーマをドロップ（ENUMタイプも含む）
         with engine.connect() as conn:
             conn.execute(text("DROP SCHEMA public CASCADE"))
             conn.execute(text("CREATE SCHEMA public"))
             conn.commit()
-        
+
         # 全てのモデルをインポート（重要: SQLModel.metadata.create_allが全てのテーブルを作成するため）
-        from app.models.user import User
-        from app.models.character import Character, CharacterStats, GameSession, Skill
-        from app.models.log import (
-            CompletedLog,
-            CompletedLogSubFragment,
-            LogContract,
-            LogFragment,
-        )
-        
+
         # ENUMタイプを事前に作成
         with engine.connect() as conn:
             # EmotionalValence ENUM
@@ -93,7 +85,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                     WHEN duplicate_object THEN null;
                 END $$;
             """))
-            
+
             # LogFragmentRarity ENUM
             conn.execute(text("""
                 DO $$ BEGIN
@@ -102,7 +94,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                     WHEN duplicate_object THEN null;
                 END $$;
             """))
-            
+
             # CompletedLogStatus ENUM
             conn.execute(text("""
                 DO $$ BEGIN
@@ -111,7 +103,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                     WHEN duplicate_object THEN null;
                 END $$;
             """))
-            
+
             # LogContractStatus ENUM
             conn.execute(text("""
                 DO $$ BEGIN
@@ -120,9 +112,9 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                     WHEN duplicate_object THEN null;
                 END $$;
             """))
-            
+
             conn.commit()
-        
+
         # テーブルを作成
         SQLModel.metadata.create_all(engine)
 
@@ -150,7 +142,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     def test_character(self, test_session: Session, test_user: User) -> Character:
         """テスト用キャラクター"""
         from app.models.character import Character
-        
+
         character = Character(
             id=str(uuid.uuid4()),
             user_id=str(test_user.id),
@@ -170,7 +162,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     def test_session_obj(self, test_session: Session, test_character: Character) -> GameSession:
         """テスト用ゲームセッション"""
         from app.models.character import GameSession
-        
+
         game_session = GameSession(
             id=str(uuid.uuid4()),
             character_id=test_character.id,
@@ -186,8 +178,8 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     @pytest.fixture
     def test_log_fragment(self, test_session: Session, test_character: Character, test_session_obj: GameSession) -> LogFragment:
         """テスト用ログフラグメント"""
-        from app.models.log import LogFragment, EmotionalValence, LogFragmentRarity
-        
+        from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
+
         fragment = LogFragment(
             id=str(uuid.uuid4()),
             character_id=test_character.id,
@@ -246,20 +238,20 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             # neomodelの設定を一時的に変更
             from neomodel import config as neo_config
             from neomodel import db as neo_db
-            
+
             # 現在の設定を保存
             original_url = neo_config.DATABASE_URL
-            
+
             try:
                 # テスト用URLに変更
                 test_url = "bolt://neo4j:test_password@neo4j-test:7687"
                 neo_config.DATABASE_URL = test_url
-                
+
                 # 既存の接続をクリア
                 if hasattr(neo_db, '_driver') and neo_db._driver:
                     neo_db._driver.close()
                     neo_db._driver = None
-                
+
                 # NPCを生成
                 npc_profile = await npc_generator.generate_npc_from_log(
                     completed_log_id=completed_log.id,
@@ -305,6 +297,17 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         """実際のNeo4jを使用した場所別NPC取得テスト"""
         with patch.object(npc_generator, "_npc_manager", new=AsyncMock()):
             with setup_test_neo4j():
+                # テスト対象の場所に既存のNPCがいる場合は削除
+                from neomodel import db
+                
+                db.cypher_query(
+                    """
+                    MATCH (l:Location)-[r:LOCATED_IN]-(n:NPC)
+                    WHERE l.name IN ['テスト広場', 'テスト酒場']
+                    DETACH DELETE n
+                    """
+                )
+                
                 # 複数のNPCを異なる場所に生成
                 locations = ["テスト広場", "テスト酒場", "テスト広場"]
                 npc_profiles = []

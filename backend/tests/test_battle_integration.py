@@ -196,11 +196,11 @@ def setup_db_mocks(mock_db, mock_game_session, mock_character):
     def exec_side_effect(stmt):
         nonlocal call_count
         call_count += 1
-        
+
         # select文に応じて異なる結果を返す
         stmt_str = str(stmt)
         result = Mock()
-        
+
         if "game_session" in stmt_str.lower() and "join" in stmt_str.lower():
             # GameSessionとCharacterのjoinクエリ
             result.first.return_value = (mock_game_session, mock_character)
@@ -213,7 +213,7 @@ def setup_db_mocks(mock_db, mock_game_session, mock_character):
         else:
             # デフォルト
             result.first.return_value = None
-            
+
         return result
 
     mock_db.exec.side_effect = exec_side_effect

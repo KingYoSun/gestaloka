@@ -1,14 +1,14 @@
 """Initial migration with all models
 
 Revision ID: c8ab2c1be277
-Revises: 
+Revises:
 Create Date: 2025-06-19 14:58:05.818561
 
 """
-from alembic import op
 import sqlalchemy as sa
 import sqlmodel
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'c8ab2c1be277'

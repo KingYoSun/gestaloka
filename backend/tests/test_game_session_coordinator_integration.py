@@ -135,7 +135,7 @@ class TestGameSessionCoordinatorIntegration:
             mock_character,  # 最初のCharacter取得
             mock_character_stats,  # CharacterStats取得
         ]
-        
+
         def exec_side_effect(stmt):
             result = MagicMock()
             if exec_results:
@@ -143,7 +143,7 @@ class TestGameSessionCoordinatorIntegration:
             else:
                 result.first.return_value = None
             return result
-            
+
         mock_db.exec.side_effect = exec_side_effect
 
         # CoordinatorAIのモック
@@ -196,7 +196,7 @@ class TestGameSessionCoordinatorIntegration:
             mock_character,  # 最初のCharacter取得
             mock_character_stats,  # CharacterStats取得
         ]
-        
+
         def exec_side_effect(stmt):
             result = MagicMock()
             if exec_results:
@@ -204,7 +204,7 @@ class TestGameSessionCoordinatorIntegration:
             else:
                 result.first.return_value = None
             return result
-            
+
         mock_db.exec.side_effect = exec_side_effect
 
         # CoordinatorAIでエラーを発生させる
@@ -238,7 +238,7 @@ class TestGameSessionCoordinatorIntegration:
             mock_character,  # 最初のCharacter取得
             mock_character_stats,  # CharacterStats取得
         ]
-        
+
         def exec_side_effect(stmt):
             result = MagicMock()
             if exec_results:
@@ -246,7 +246,7 @@ class TestGameSessionCoordinatorIntegration:
             else:
                 result.first.return_value = None
             return result
-            
+
         mock_db.exec.side_effect = exec_side_effect
 
         # 初回のアクション実行
@@ -271,7 +271,7 @@ class TestGameSessionCoordinatorIntegration:
             mock_character,  # 最初のCharacter取得
             mock_character_stats,  # CharacterStats取得
         ]
-        
+
         def exec_side_effect2(stmt):
             result = MagicMock()
             if exec_results2:
@@ -279,7 +279,7 @@ class TestGameSessionCoordinatorIntegration:
             else:
                 result.first.return_value = None
             return result
-            
+
         mock_db.exec.side_effect = exec_side_effect2
 
         with patch.object(game_session_service.coordinator, "initialize_session") as mock_init2:

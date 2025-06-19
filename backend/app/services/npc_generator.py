@@ -182,12 +182,13 @@ class NPCGenerator:
             return []
 
         # 現在その場所にいるNPCを取得
-        npcs = []
-        for rel in location.npcs.all():
-            if rel.is_current:
-                npcs.append(rel.source)
-
-        return npcs
+        # neomodelでは関係性を通じて直接ノードが返される
+        npcs = list(location.npcs.all())
+        
+        # アクティブなNPCのみフィルタリング
+        active_npcs = [npc for npc in npcs if npc.is_active]
+        
+        return active_npcs
 
     def move_npc(self, npc_id: str, new_location_name: str) -> bool:
         """NPCを別の場所に移動"""
@@ -200,10 +201,8 @@ class NPCGenerator:
         if not new_location:
             new_location = Location(name=new_location_name, layer=0, description="NPCが移動した場所").save()
 
-        # 現在の場所との関係を更新
-        for rel in npc.current_location.all():
-            rel.is_current = False
-            rel.save()
+        # 現在の場所との関係を削除
+        npc.current_location.disconnect_all()
 
         # 新しい場所との関係を作成
         npc.current_location.connect(new_location, {"is_current": True})
