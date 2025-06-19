@@ -40,7 +40,6 @@ from app.services.ai.agents import (
 
 # from app.services.ai.prompt_manager import PromptContext  # 現在未使用
 from app.services.battle import BattleService
-from app.utils.permissions import check_character_ownership, check_session_ownership
 from app.websocket.events import GameEventEmitter
 
 logger = get_logger(__name__)
@@ -70,17 +69,13 @@ class GameSessionService:
         # 戦闘サービスを初期化
         self.battle_service = BattleService(db)
 
-    async def create_session(self, user_id: str, session_data: GameSessionCreate) -> GameSessionResponse:
+    async def create_session(self, character: Character, session_data: GameSessionCreate) -> GameSessionResponse:
         """新しいゲームセッションを作成"""
         try:
-            # キャラクターの存在確認とユーザー所有権チェック
-            character = check_character_ownership(self.db, session_data.character_id, user_id)
-            if not character:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
             # 既存のアクティブなセッションを非アクティブ化
             stmt = select(GameSession).where(
-                GameSession.character_id == session_data.character_id, GameSession.is_active is True
+                GameSession.character_id == character.id, GameSession.is_active is True
             )
             existing_sessions = self.db.exec(stmt).all()
 
@@ -92,7 +87,7 @@ class GameSessionService:
             # 新しいセッションを作成
             new_session = GameSession(
                 id=str(uuid.uuid4()),
-                character_id=session_data.character_id,
+                character_id=character.id,
                 is_active=True,
                 current_scene=self._get_initial_scene(character),
                 session_data=json.dumps({"turn_count": 0, "actions_history": [], "game_state": "started"}),
@@ -105,8 +100,8 @@ class GameSessionService:
             logger.info(
                 "Game session created",
                 session_id=new_session.id,
-                character_id=session_data.character_id,
-                user_id=user_id,
+                character_id=character.id,
+                user_id=character.user_id,
             )
 
             session_data_parsed = json.loads(new_session.session_data) if new_session.session_data else {}
@@ -127,7 +122,7 @@ class GameSessionService:
             raise
         except Exception as e:
             logger.error(
-                "Failed to create game session", character_id=session_data.character_id, user_id=user_id, error=str(e)
+                "Failed to create game session", character_id=character.id, user_id=character.user_id, error=str(e)
             )
             self.db.rollback()
             raise HTTPException(
@@ -170,20 +165,15 @@ class GameSessionService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="セッション一覧の取得に失敗しました"
             )
 
-    def get_session(self, session_id: str, user_id: str) -> GameSessionResponse:
-        """特定のゲームセッションを取得"""
+    def get_session_response(self, session: GameSession) -> GameSessionResponse:
+        """ゲームセッションレスポンスを生成"""
         try:
-            stmt = (
-                select(GameSession, Character)
-                .join(Character)
-                .where(GameSession.id == session_id, Character.user_id == user_id)
-            )
-
-            result = self.db.exec(stmt).first()
-            if not result:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="セッションが見つかりません")
-
-            session, character = result
+            # キャラクター情報を取得
+            character = self.db.exec(
+                select(Character).where(Character.id == session.character_id)
+            ).first()
+            if not character:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
             session_data = json.loads(session.session_data) if session.session_data else None
 
             return GameSessionResponse(
@@ -201,19 +191,20 @@ class GameSessionService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error("Failed to get session", session_id=session_id, user_id=user_id, error=str(e))
+            logger.error("Failed to get session response", session_id=session.id, error=str(e))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="セッションの取得に失敗しました"
             )
 
-    def update_session(self, session_id: str, user_id: str, update_data: GameSessionUpdate) -> GameSessionResponse:
+    def update_session(self, session: GameSession, update_data: GameSessionUpdate) -> GameSessionResponse:
         """ゲームセッションを更新"""
         try:
-            # セッションの存在確認とユーザー所有権チェック
-            result = check_session_ownership(self.db, session_id, user_id)
-            if not result:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="セッションが見つかりません")
-            session, character = result
+            # キャラクター情報を取得
+            character = self.db.exec(
+                select(Character).where(Character.id == session.character_id)
+            ).first()
+            if not character:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
             # セッションデータの更新
             if update_data.current_scene is not None:
@@ -245,20 +236,21 @@ class GameSessionService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error("Failed to update session", session_id=session_id, user_id=user_id, error=str(e))
+            logger.error("Failed to update session", session_id=session.id, error=str(e))
             self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="セッションの更新に失敗しました"
             )
 
-    def end_session(self, session_id: str, user_id: str) -> GameSessionResponse:
+    def end_session(self, session: GameSession) -> GameSessionResponse:
         """ゲームセッションを終了"""
         try:
-            # セッションの存在確認とユーザー所有権チェック
-            result = check_session_ownership(self.db, session_id, user_id)
-            if not result:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="セッションが見つかりません")
-            session, character = result
+            # キャラクター情報を取得
+            character = self.db.exec(
+                select(Character).where(Character.id == session.character_id)
+            ).first()
+            if not character:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
             # セッションを非アクティブ化
             session.is_active = False
@@ -278,7 +270,7 @@ class GameSessionService:
             self.db.commit()
             self.db.refresh(session)
 
-            logger.info("Game session ended", session_id=session_id, user_id=user_id)
+            logger.info("Game session ended", session_id=session.id, user_id=character.user_id)
 
             session_data_final = json.loads(session.session_data) if session.session_data else {}
 
@@ -297,7 +289,7 @@ class GameSessionService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error("Failed to end session", session_id=session_id, user_id=user_id, error=str(e))
+            logger.error("Failed to end session", session_id=session.id, error=str(e))
             self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="セッションの終了に失敗しました"
@@ -317,22 +309,16 @@ class GameSessionService:
         )
 
     async def execute_action(
-        self, session_id: str, user_id: str, action_request: ActionExecuteRequest
+        self, session: GameSession, action_request: ActionExecuteRequest
     ) -> ActionExecuteResponse:
         """プレイヤーのアクションを実行しAIレスポンスを生成"""
         try:
-            # セッションとキャラクターの取得
-            stmt = (
-                select(GameSession, Character)
-                .join(Character)
-                .where(GameSession.id == session_id, Character.user_id == user_id)
-            )
-
-            result = self.db.exec(stmt).first()
-            if not result:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="セッションが見つかりません")
-
-            session, character = result
+            # キャラクター情報を取得
+            character = self.db.exec(
+                select(Character).where(Character.id == session.character_id)
+            ).first()
+            if not character:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
             # キャラクターの統計情報を取得
             from app.models.character import CharacterStats
@@ -411,7 +397,7 @@ class GameSessionService:
 
             # WebSocketで物語更新を送信
             await GameEventEmitter.emit_narrative_update(
-                session_id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
+                session.id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
             )
 
             # 戦闘システムの処理
@@ -476,7 +462,7 @@ class GameSessionService:
 
                         # WebSocketで戦闘開始を通知
                         await GameEventEmitter.emit_custom_event(
-                            session_id, "battle_start", {"battle_data": battle_data.dict()}
+                            session.id, "battle_start", {"battle_data": battle_data.dict()}
                         )
 
             # アクション履歴の更新
@@ -526,8 +512,8 @@ class GameSessionService:
 
             # アクション結果をWebSocketで送信
             await GameEventEmitter.emit_action_result(
-                session_id,
-                user_id,
+                session.id,
+                character.user_id,
                 action_request.action_text,
                 {
                     "success": coordinator_response.state_changes.get("success", True)
@@ -547,8 +533,8 @@ class GameSessionService:
 
             # キャラクター状態更新を送信
             await GameEventEmitter.emit_player_status_update(
-                session_id,
-                user_id,
+                session.id,
+                character.user_id,
                 {
                     "hp": character_stats.health if character_stats else 100,
                     "mp": character_stats.energy if character_stats else 100,
@@ -559,7 +545,7 @@ class GameSessionService:
 
             logger.info(
                 "Action executed successfully",
-                session_id=session_id,
+                session_id=session.id,
                 turn=action_record["turn"],
                 action_type=action_request.action_type,
             )
@@ -601,7 +587,7 @@ class GameSessionService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error("Failed to execute action", session_id=session_id, user_id=user_id, error=str(e))
+            logger.error("Failed to execute action", session_id=session.id, error=str(e))
             self.db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"アクションの実行に失敗しました: {e!s}"

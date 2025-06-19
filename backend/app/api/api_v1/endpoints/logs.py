@@ -6,13 +6,14 @@
 """
 
 from datetime import datetime
+from sqlalchemy import desc
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, and_, select
 
-from app.api.api_v1.endpoints.auth import get_current_user
+from app.api.deps import get_current_active_user, get_user_character
 from app.core.database import get_session
 from app.models.character import Character, GameSession
 from app.models.log import (
@@ -40,11 +41,11 @@ router = APIRouter()
 
 
 @router.post("/fragments", response_model=LogFragmentRead)
-def create_log_fragment(
+async def create_log_fragment(
     *,
     db: Session = Depends(get_session),
     fragment_in: LogFragmentCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     ログの欠片を作成
@@ -53,26 +54,14 @@ def create_log_fragment(
     GMのAIによって自動生成される。
     """
     # キャラクターの所有権確認
-    stmt = select(Character).where(
-        and_(
-            Character.id == fragment_in.character_id,
-            Character.user_id == current_user.id,
-        )
-    )
-    result = db.exec(stmt)
-    character = result.first()
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
+    await get_user_character(fragment_in.character_id, db, current_user)
 
     # ゲームセッションの確認
     session_stmt = select(GameSession).where(
         and_(
             GameSession.id == fragment_in.session_id,
             GameSession.character_id == fragment_in.character_id,
-            GameSession.is_active.is_(True),
+            GameSession.is_active == True,  # noqa: E712
         )
     )
     result = db.exec(session_stmt)
@@ -97,34 +86,22 @@ def create_log_fragment(
 
 
 @router.get("/fragments/{character_id}", response_model=list[LogFragmentRead])
-def get_character_fragments(
+async def get_character_fragments(
     *,
     db: Session = Depends(get_session),
     character_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     キャラクターのログフラグメント一覧を取得
     """
     # キャラクターの所有権確認
-    stmt = select(Character).where(
-        and_(
-            Character.id == character_id,
-            Character.user_id == current_user.id,
-        )
-    )
-    result = db.exec(stmt)
-    character = result.first()
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
+    await get_user_character(character_id, db, current_user)
 
     # フラグメント取得
     fragment_stmt = (
-        select(LogFragment).where(LogFragment.character_id == character_id).order_by(LogFragment.created_at.desc())
-    )  # type: ignore
+        select(LogFragment).where(LogFragment.character_id == character_id).order_by(desc(LogFragment.created_at))
+    )
     result = db.exec(fragment_stmt)
     fragments = result.all()
 
@@ -132,11 +109,11 @@ def get_character_fragments(
 
 
 @router.post("/completed", response_model=CompletedLogRead)
-def create_completed_log(
+async def create_completed_log(
     *,
     db: Session = Depends(get_session),
     log_in: CompletedLogCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     完成ログを作成（ログフラグメントの編纂）
@@ -145,19 +122,7 @@ def create_completed_log(
     他プレイヤーの世界でNPCとして活動可能な完全な記録を作成。
     """
     # キャラクターの所有権確認
-    stmt = select(Character).where(
-        and_(
-            Character.id == log_in.creator_id,
-            Character.user_id == current_user.id,
-        )
-    )
-    result = db.exec(stmt)
-    character = result.first()
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
+    await get_user_character(log_in.creator_id, db, current_user)
 
     # コアフラグメントの確認
     core_stmt = select(LogFragment).where(
@@ -197,7 +162,7 @@ def create_completed_log(
     negative_count = sum(
         1
         for f in all_fragments
-        if f.emotional_valence == EmotionalValence.NEGATIVE  # type: ignore
+        if f.emotional_valence == EmotionalValence.NEGATIVE
     )
     total_count = len(all_fragments)
     contamination_level = negative_count / total_count if total_count > 0 else 0.0
@@ -235,12 +200,12 @@ def create_completed_log(
 
 
 @router.patch("/completed/{log_id}", response_model=CompletedLogRead)
-def update_completed_log(
+async def update_completed_log(
     *,
     db: Session = Depends(get_session),
     log_id: str,
     log_in: CompletedLogUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     完成ログを更新
@@ -286,34 +251,22 @@ def update_completed_log(
 
 
 @router.get("/completed/{character_id}", response_model=list[CompletedLogRead])
-def get_character_completed_logs(
+async def get_character_completed_logs(
     *,
     db: Session = Depends(get_session),
     character_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     キャラクターの完成ログ一覧を取得
     """
     # キャラクターの所有権確認
-    stmt = select(Character).where(
-        and_(
-            Character.id == character_id,
-            Character.user_id == current_user.id,
-        )
-    )
-    result = db.exec(stmt)
-    character = result.first()
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
+    await get_user_character(character_id, db, current_user)
 
     # 完成ログ取得
     log_stmt = (
-        select(CompletedLog).where(CompletedLog.creator_id == character_id).order_by(CompletedLog.created_at.desc())
-    )  # type: ignore
+        select(CompletedLog).where(CompletedLog.creator_id == character_id).order_by(desc(CompletedLog.created_at))
+    )
     result = db.exec(log_stmt)
     logs = result.all()
 
@@ -321,11 +274,11 @@ def get_character_completed_logs(
 
 
 @router.post("/contracts", response_model=LogContractRead)
-def create_log_contract(
+async def create_log_contract(
     *,
     db: Session = Depends(get_session),
     contract_in: LogContractCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     ログ契約を作成
@@ -385,14 +338,14 @@ def get_market_contracts(
         select(LogContract)
         .where(
             and_(
-                LogContract.is_public.is_(True),
+                LogContract.is_public == True,  # noqa: E712
                 LogContract.status == LogContractStatus.PENDING,
             )
         )
         .offset(skip)
         .limit(limit)
-        .order_by(LogContract.created_at.desc())
-    )  # type: ignore
+        .order_by(desc(LogContract.created_at))
+    )
     result = db.exec(stmt)
     contracts = result.all()
 
@@ -400,12 +353,12 @@ def get_market_contracts(
 
 
 @router.post("/contracts/{contract_id}/accept", response_model=LogContractRead)
-def accept_log_contract(
+async def accept_log_contract(
     *,
     db: Session = Depends(get_session),
     contract_id: str,
     character_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
     ログ契約を受け入れる
@@ -413,26 +366,14 @@ def accept_log_contract(
     他プレイヤーが作成したログをNPCとして自分の世界に迎え入れる。
     """
     # キャラクターの所有権確認
-    stmt = select(Character).where(
-        and_(
-            Character.id == character_id,
-            Character.user_id == current_user.id,
-        )
-    )
-    result = db.exec(stmt)
-    character = result.first()
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
+    await get_user_character(character_id, db, current_user)
 
     # 契約の確認
     contract_stmt = select(LogContract).where(
         and_(
             LogContract.id == contract_id,
             LogContract.status == LogContractStatus.PENDING,
-            LogContract.is_public.is_(True),
+            LogContract.is_public == True,  # noqa: E712
         )
     )
     result = db.exec(contract_stmt)
