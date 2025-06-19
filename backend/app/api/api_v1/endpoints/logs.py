@@ -398,10 +398,10 @@ async def accept_log_contract(
 
     # 完成ログのステータス更新
     log_update_stmt = select(CompletedLog).where(CompletedLog.id == contract.completed_log_id)
-    result = db.exec(log_update_stmt)
+    result = db.exec(log_update_stmt)  # type: ignore[arg-type]
     completed_log = result.first()
     if completed_log:
-        completed_log.status = CompletedLogStatus.ACTIVE
+        completed_log.status = CompletedLogStatus.ACTIVE  # type: ignore[assignment]
 
     db.commit()
     db.refresh(contract)

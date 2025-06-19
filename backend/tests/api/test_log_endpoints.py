@@ -126,7 +126,7 @@ class TestLogEndpoints:
 
         # クリーンアップ
         from app.main import app
-        app.dependency_overrides.clear()
+        app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
     def test_get_character_fragments(
         self,
@@ -192,7 +192,7 @@ class TestLogEndpoints:
 
         # クリーンアップ
         from app.main import app
-        app.dependency_overrides.clear()
+        app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
     def test_create_completed_log(
         self,
@@ -291,4 +291,4 @@ class TestLogEndpoints:
 
         # クリーンアップ
         from app.main import app
-        app.dependency_overrides.clear()
+        app.dependency_overrides.clear()  # type: ignore[attr-defined]
