@@ -77,12 +77,15 @@ export interface LogFragmentCreate {
 
 // 完成ログ作成リクエスト
 export interface CompletedLogCreate {
+  creatorId: string
   coreFragmentId: string
-  fragmentIds: string[]
+  subFragmentIds: string[]
   name: string
-  title: string
+  title?: string
   description: string
-  behaviorGuidelines?: string
+  skills?: string[]
+  personalityTraits?: string[]
+  behaviorPatterns?: Record<string, unknown>
 }
 
 // ログ契約作成リクエスト

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LogFragment, CompletedLogCreate } from '@/types/log'
+import { LogFragment } from '@/types/log'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 
 interface LogCompilationEditorProps {
   fragments: LogFragment[]
-  onCompile: (compiledLog: CompletedLogCreate) => void
+  onCompile: (compiledLog: any) => void
   onCancel: () => void
 }
 
@@ -111,7 +111,8 @@ export function LogCompilationEditor({
   const handleCompile = () => {
     if (!coreFragmentId || selectedFragmentIds.length === 0) return
 
-    const compiledLog: CompletedLogCreate = {
+    // onCompileに渡すデータは既存の形式を保持（LogsPageで変換）
+    const compiledLogData = {
       coreFragmentId,
       fragmentIds: selectedFragmentIds,
       name: logName,
@@ -120,7 +121,7 @@ export function LogCompilationEditor({
       behaviorGuidelines,
     }
 
-    onCompile(compiledLog)
+    onCompile(compiledLogData)
   }
 
   const isValid =

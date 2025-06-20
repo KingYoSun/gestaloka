@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Plus, Gamepad2, Scroll, BookOpen } from 'lucide-react'
+import { Users, Plus, Gamepad2, BookOpen } from 'lucide-react'
 
 export function DashboardPage() {
   return (
