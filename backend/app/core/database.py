@@ -24,6 +24,9 @@ engine = create_engine(
     max_overflow=20,
 )
 
+# Celeryタスク用のセッションファクトリ
+SessionLocal = lambda: Session(engine)
+
 
 def create_db_and_tables():
     """データベースとテーブルを作成

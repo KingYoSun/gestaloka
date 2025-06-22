@@ -15,6 +15,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.character import Character, GameSession
+    from app.models.log_dispatch import LogDispatch
 
 
 class LogFragmentRarity(str, Enum):
@@ -129,6 +130,7 @@ class CompletedLog(SQLModel, table=True):
     )
     sub_fragments: list["CompletedLogSubFragment"] = Relationship(back_populates="completed_log")
     contracts: list["LogContract"] = Relationship(back_populates="completed_log")
+    dispatches: list["LogDispatch"] = Relationship(back_populates="completed_log")
 
 
 class CompletedLogSubFragment(SQLModel, table=True):

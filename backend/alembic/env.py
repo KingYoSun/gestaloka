@@ -23,6 +23,11 @@ from app.models.log import (  # noqa
     LogContract,
     LogFragment,
 )
+from app.models.log_dispatch import (  # noqa
+    DispatchEncounter,
+    DispatchReport,
+    LogDispatch,
+)
 from app.models.sp import PlayerSP, SPTransaction  # noqa
 
 # 全てのモデルをインポート（自動生成のため必須）

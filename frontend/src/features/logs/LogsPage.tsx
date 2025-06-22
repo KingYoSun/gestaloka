@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { useCharacters } from '@/hooks/useCharacters'
 import { LogFragmentList } from './components/LogFragmentList'
 import { LogCompilationEditor } from './components/LogCompilationEditor'
+import { CompletedLogList } from './components/CompletedLogList'
 import { useLogFragments } from './hooks/useLogFragments'
-import { useCreateCompletedLog } from './hooks/useCompletedLogs'
+import { useCreateCompletedLog, useCompletedLogs } from './hooks/useCompletedLogs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { BookOpen, Sparkles, User } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { BookOpen, Sparkles, User, Send, ScrollText, Compass } from 'lucide-react'
 import { CompletedLogCreate } from '@/types/log'
 import { useToast } from '@/hooks/use-toast'
+import { DispatchList } from '@/features/dispatch/components/DispatchList'
 
 export function LogsPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
@@ -16,6 +19,7 @@ export function LogsPage() {
   const [showCompilationEditor, setShowCompilationEditor] = useState(false)
   const { data: characters = [], isLoading: isLoadingCharacters } = useCharacters()
   const { data: fragments = [], isLoading: isLoadingFragments } = useLogFragments(selectedCharacterId)
+  const { data: completedLogs = [], isLoading: isLoadingCompletedLogs } = useCompletedLogs(selectedCharacterId)
   const createCompletedLog = useCreateCompletedLog()
   const { toast } = useToast()
 
@@ -115,8 +119,25 @@ export function LogsPage() {
         </p>
       </div>
 
-      {/* キャラクター選択 */}
-      <Card>
+      <Tabs defaultValue="fragments" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="fragments" className="gap-2">
+            <ScrollText className="h-4 w-4" />
+            フラグメント
+          </TabsTrigger>
+          <TabsTrigger value="completed" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            完成ログ
+          </TabsTrigger>
+          <TabsTrigger value="dispatches" className="gap-2">
+            <Compass className="h-4 w-4" />
+            派遣状況
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="fragments" className="space-y-6">
+          {/* キャラクター選択 */}
+          <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
@@ -182,6 +203,30 @@ export function LogsPage() {
           </Card>
         </>
       )}
+        </TabsContent>
+
+        <TabsContent value="completed" className="space-y-6">
+          {selectedCharacterId ? (
+            <CompletedLogList
+              characterId={selectedCharacterId}
+              completedLogs={completedLogs}
+              isLoading={isLoadingCompletedLogs}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground">
+                  キャラクターを選択してください
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="dispatches" className="space-y-6">
+          <DispatchList />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

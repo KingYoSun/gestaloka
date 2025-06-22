@@ -13,6 +13,13 @@ from app.models.log import (
     LogFragment,
     LogFragmentRarity,
 )
+from app.models.log_dispatch import (
+    DispatchEncounter,
+    DispatchObjectiveType,
+    DispatchReport,
+    DispatchStatus,
+    LogDispatch,
+)
 from app.models.sp import (
     PlayerSP,
     SPPurchasePackage,
@@ -28,10 +35,15 @@ __all__ = [
     "CompletedLog",
     "CompletedLogStatus",
     "CompletedLogSubFragment",
+    "DispatchEncounter",
+    "DispatchObjectiveType",
+    "DispatchReport",
+    "DispatchStatus",
     "EmotionalValence",
     "GameSession",
     "LogContract",
     "LogContractStatus",
+    "LogDispatch",
     "LogFragment",
     "LogFragmentRarity",
     "PlayerSP",

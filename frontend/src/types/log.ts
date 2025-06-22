@@ -44,6 +44,12 @@ export interface CompletedLog {
   completedAt?: string
 }
 
+// 完成ログの読み取り用型
+export interface CompletedLogRead extends CompletedLog {
+  contamination_level: number
+  personality_traits: string[]
+}
+
 // ログ契約
 export interface LogContract {
   id: string
