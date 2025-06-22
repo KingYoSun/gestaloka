@@ -7,11 +7,7 @@ import { apiClient } from '@/api/client'
 import { useToast } from '@/hooks/use-toast'
 import type {
   PlayerSP,
-  PlayerSPSummary,
-  SPTransaction,
   SPConsumeRequest,
-  SPConsumeResponse,
-  SPDailyRecoveryResponse,
 } from '@/types/sp'
 
 /**
@@ -40,8 +36,8 @@ export function useSPBalanceSummary() {
  * SPを消費するフック
  */
 export function useConsumeSP() {
-  const queryClient = useQueryClient()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (request: SPConsumeRequest) => apiClient.consumeSP(request),
@@ -55,10 +51,10 @@ export function useConsumeSP() {
         description: response.message,
       })
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       toast({
         title: 'SP消費エラー',
-        description: error.response?.data?.detail || 'SPの消費に失敗しました',
+        description: (error as any)?.response?.data?.detail || 'SPの消費に失敗しました',
         variant: 'destructive',
       })
     },
@@ -69,8 +65,8 @@ export function useConsumeSP() {
  * 日次SP回復を処理するフック
  */
 export function useDailyRecovery() {
-  const queryClient = useQueryClient()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: () => apiClient.processDailyRecovery(),
@@ -85,8 +81,8 @@ export function useDailyRecovery() {
         variant: 'default',
       })
     },
-    onError: (error: any) => {
-      const errorMessage = error.response?.data?.detail || '日次回復の処理に失敗しました'
+    onError: (error: unknown) => {
+      const errorMessage = (error as any)?.response?.data?.detail || '日次回復の処理に失敗しました'
       
       // 既に回復済みの場合は警告として表示
       if (errorMessage.includes('既に完了')) {
@@ -140,7 +136,6 @@ export function useSPTransaction(transactionId: string | null) {
  * SP残高の変更を監視するフック
  */
 export function useSPBalanceSubscription(callback?: (balance: PlayerSP) => void) {
-  const queryClient = useQueryClient()
 
   // 定期的に残高を更新（本来はWebSocketで実装）
   // 現在は30秒ごとにポーリング

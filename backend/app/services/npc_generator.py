@@ -184,10 +184,10 @@ class NPCGenerator:
         # 現在その場所にいるNPCを取得
         # neomodelでは関係性を通じて直接ノードが返される
         npcs = list(location.npcs.all())
-        
+
         # アクティブなNPCのみフィルタリング
         active_npcs = [npc for npc in npcs if npc.is_active]
-        
+
         return active_npcs
 
     def move_npc(self, npc_id: str, new_location_name: str) -> bool:

@@ -5,7 +5,6 @@ Neo4j統合テスト用ユーティリティ
 """
 
 from contextlib import contextmanager
-from typing import Optional
 
 from neomodel import config as neo_config
 from neomodel import db as neo_db
@@ -14,7 +13,7 @@ from neomodel import db as neo_db
 def cleanup_all_neo4j_data():
     """
     Neo4jの全データを削除する
-    
+
     警告: このメソッドは全てのノードとリレーションシップを削除します。
     テスト環境でのみ使用してください。
     """
@@ -23,10 +22,10 @@ def cleanup_all_neo4j_data():
         if "neo4j-test" not in neo_config.DATABASE_URL and "7688" not in neo_config.DATABASE_URL:
             print(f"Warning: Not connected to test Neo4j instance. Skipping cleanup. Current URL: {neo_config.DATABASE_URL}")
             return
-            
+
         # まず全ての関係性を削除
         neo_db.cypher_query("MATCH ()-[r]->() DELETE r")
-        
+
         # 次に全てのノードを削除
         neo_db.cypher_query("MATCH (n) DELETE n")
     except Exception as e:
@@ -37,7 +36,7 @@ def cleanup_all_neo4j_data():
 def cleanup_test_data():
     """
     テストデータのみを削除する
-    
+
     test_プレフィックスを持つノードと、
     テスト中に作成された可能性のある関連ノードを削除
     """
@@ -56,7 +55,7 @@ def cleanup_test_data():
             DETACH DELETE n
             """
         )
-        
+
         # 孤立したノード（関係を持たないノード）を削除
         neo_db.cypher_query(
             """
@@ -91,7 +90,7 @@ def count_all_relationships() -> int:
 def neo4j_test_transaction():
     """
     Neo4jのテストトランザクション
-    
+
     トランザクション内での操作を提供し、
     エラー時は自動的にロールバック
     """
@@ -107,14 +106,14 @@ def neo4j_test_transaction():
 def isolated_neo4j_test(cleanup_before: bool = True, cleanup_after: bool = True):
     """
     分離されたNeo4jテスト環境を提供
-    
+
     Args:
         cleanup_before: テスト前にクリーンアップを実行
         cleanup_after: テスト後にクリーンアップを実行
     """
     if cleanup_before:
         cleanup_all_neo4j_data()
-    
+
     try:
         yield
     finally:
@@ -124,23 +123,23 @@ def isolated_neo4j_test(cleanup_before: bool = True, cleanup_after: bool = True)
 
 class Neo4jTestStats:
     """Neo4jテスト統計情報"""
-    
+
     def __init__(self):
         self.initial_nodes = 0
         self.initial_relationships = 0
         self.final_nodes = 0
         self.final_relationships = 0
-    
+
     def capture_initial(self):
         """初期状態を記録"""
         self.initial_nodes = count_all_nodes()
         self.initial_relationships = count_all_relationships()
-    
+
     def capture_final(self):
         """最終状態を記録"""
         self.final_nodes = count_all_nodes()
         self.final_relationships = count_all_relationships()
-    
+
     def get_diff(self) -> dict:
         """差分を取得"""
         return {
@@ -149,7 +148,7 @@ class Neo4jTestStats:
             "final_nodes": self.final_nodes,
             "final_relationships": self.final_relationships
         }
-    
+
     def has_leaks(self) -> bool:
         """データリークがあるかチェック"""
         return self.final_nodes > self.initial_nodes or self.final_relationships > self.initial_relationships
@@ -159,13 +158,13 @@ class Neo4jTestStats:
 def track_neo4j_state():
     """
     Neo4jの状態変化を追跡
-    
+
     テスト前後のノード数とリレーションシップ数を記録し、
     データリークを検出
     """
     stats = Neo4jTestStats()
     stats.capture_initial()
-    
+
     try:
         yield stats
     finally:

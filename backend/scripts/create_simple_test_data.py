@@ -2,9 +2,8 @@
 """シンプルなテストデータ作成スクリプト（APIを使用）"""
 
 import asyncio
+
 import aiohttp
-import json
-from datetime import datetime
 
 # APIのベースURL
 BASE_URL = "http://localhost:8000"
@@ -77,16 +76,16 @@ async def main():
     """メイン処理"""
     async with aiohttp.ClientSession() as session:
         print("=== テストデータ作成開始 ===\n")
-        
+
         # 1. ユーザー登録またはログイン
         print("1. ユーザー認証...")
-        
+
         # まずログインを試みる
         login_response = await session.post(
             f"{BASE_URL}/api/v1/auth/login",
             data={"username": TEST_USER["email"], "password": TEST_USER["password"]}
         )
-        
+
         if login_response.status == 200:
             auth_data = await login_response.json()
             print("✅ ログイン成功")
@@ -102,7 +101,7 @@ async def main():
                     "confirm_password": TEST_USER["password"]
                 }
             )
-            
+
             if register_response.status == 201 or register_response.status == 200:
                 print("✅ ユーザー登録成功")
                 # 再度ログイン
@@ -116,10 +115,10 @@ async def main():
                 error_text = await register_response.text()
                 print(f"エラー: {error_text}")
                 return
-        
+
         # 認証ヘッダーを設定
         headers = {"Authorization": f"Bearer {auth_data['access_token']}"}
-        
+
         # 2. キャラクター作成
         print("\n2. キャラクター作成...")
         char_response = await session.post(
@@ -127,7 +126,7 @@ async def main():
             json=TEST_CHARACTER,
             headers=headers
         )
-        
+
         if char_response.status == 201 or char_response.status == 200:
             character_data = await char_response.json()
             character_id = character_data["id"]
@@ -137,7 +136,7 @@ async def main():
             error_text = await char_response.text()
             print(f"エラー: {error_text}")
             return
-        
+
         # 3. ゲームセッション作成
         print("\n3. ゲームセッション作成...")
         session_response = await session.post(
@@ -145,7 +144,7 @@ async def main():
             json={"character_id": character_id},
             headers=headers
         )
-        
+
         if session_response.status == 201 or session_response.status == 200:
             session_data = await session_response.json()
             session_id = session_data["id"]
@@ -153,7 +152,7 @@ async def main():
         else:
             print("❌ ゲームセッション作成失敗")
             return
-        
+
         # 4. ログフラグメント作成
         print("\n4. ログフラグメント作成...")
         for i, fragment in enumerate(TEST_FRAGMENTS):
@@ -162,20 +161,20 @@ async def main():
                 "session_id": session_id,
                 **fragment
             }
-            
+
             fragment_response = await session.post(
                 f"{BASE_URL}/api/v1/logs/fragments",
                 json=fragment_data,
                 headers=headers
             )
-            
+
             if fragment_response.status == 201 or fragment_response.status == 200:
                 print(f"✅ フラグメント {i+1}/{len(TEST_FRAGMENTS)} 作成成功")
             else:
                 print(f"❌ フラグメント {i+1} 作成失敗")
-        
+
         print("\n=== テストデータ作成完了 ===")
-        print(f"作成されたデータ:")
+        print("作成されたデータ:")
         print(f"- ユーザー: {TEST_USER['email']}")
         print(f"- キャラクター: {TEST_CHARACTER['name']} (ID: {character_id})")
         print(f"- ゲームセッション: ID {session_id}")

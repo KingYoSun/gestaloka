@@ -35,10 +35,10 @@ __all__ = [
     "LogFragment",
     "LogFragmentRarity",
     "PlayerSP",
-    "Skill",
     "SPPurchasePackage",
     "SPSubscriptionType",
     "SPTransaction",
     "SPTransactionType",
+    "Skill",
     "User",
 ]

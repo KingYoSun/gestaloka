@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """テスト用のキャラクターとゲームセッションを作成するスクリプト"""
 
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
@@ -13,8 +14,8 @@ from sqlalchemy import select
 from sqlmodel import Session
 
 from app.core.database import engine
-from app.models.user import User
 from app.models.character import Character, GameSession
+from app.models.user import User
 from app.schemas.character import CharacterStats, Skill
 
 
@@ -24,7 +25,7 @@ async def create_test_character_and_session():
         # 既存のユーザーを取得（テスト用ユーザー）
         user_query = session.exec(select(User).where(User.email == "test@example.com"))
         user = user_query.first() if user_query else None
-        
+
         if not user:
             # テストユーザーが存在しない場合は作成
             print("テストユーザーを作成中...")
@@ -41,21 +42,21 @@ async def create_test_character_and_session():
             session.commit()
             session.refresh(user)
             print(f"✅ テストユーザーを作成しました: {user.username}")
-        
+
         # 既存のキャラクターをチェック
         existing_chars = session.exec(
             select(Character).where(Character.user_id == user.id)
         ).all()
-        
+
         if existing_chars:
             print(f"既に{len(existing_chars)}個のキャラクターが存在します")
-            
+
             # 既存のセッションをチェック
             existing_sessions = session.exec(select(GameSession)).all()
             if existing_sessions:
                 print(f"既に{len(existing_sessions)}個のゲームセッションが存在します")
                 return
-        
+
         # テストキャラクターのデータ
         test_characters = [
             {
@@ -92,9 +93,9 @@ async def create_test_character_and_session():
                 ]
             }
         ]
-        
+
         created_characters = []
-        
+
         # キャラクターを作成
         for char_data in test_characters:
             # 初期ステータス
@@ -108,10 +109,10 @@ async def create_test_character_and_session():
                 experience=0,
                 level=1
             )
-            
+
             # スキル
             skills = [Skill(**skill_data) for skill_data in char_data["skills"]]
-            
+
             character = Character(
                 id=str(uuid4()),
                 user_id=user.id,
@@ -126,11 +127,11 @@ async def create_test_character_and_session():
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
-            
+
             session.add(character)
             created_characters.append(character)
             print(f"✅ キャラクターを作成しました: {character.name}")
-        
+
         # 各キャラクターにゲームセッションを作成
         for character in created_characters:
             game_session = GameSession(
@@ -144,9 +145,9 @@ async def create_test_character_and_session():
             )
             session.add(game_session)
             print(f"✅ ゲームセッションを作成しました: {character.name}のセッション")
-        
+
         session.commit()
-        
+
         print("\n=== 作成完了 ===")
         print(f"キャラクター数: {len(created_characters)}")
         print(f"ゲームセッション数: {len(created_characters)}")

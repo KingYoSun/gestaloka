@@ -5,7 +5,6 @@ PostgreSQLとNeo4jの両方のデータベースクリーンアップを提供
 """
 
 import pytest
-from sqlmodel import Session
 
 from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data
@@ -16,17 +15,17 @@ from tests.integration.postgres_test_utils import isolated_postgres_test
 def clean_databases():
     """
     PostgreSQLとNeo4j両方をクリーンにするフィクスチャー
-    
+
     各テストの前後で両方のデータベースを完全にクリーンアップ
     """
     # Neo4jのクリーンアップ
     ensure_test_connection()
     cleanup_all_neo4j_data()
-    
+
     # PostgreSQLのクリーンアップはisolated_postgres_testで行う
-    
+
     yield
-    
+
     # テスト後のクリーンアップ
     cleanup_all_neo4j_data()
 
@@ -35,7 +34,7 @@ def clean_databases():
 def test_db_session():
     """
     クリーンなPostgreSQLセッションを提供するフィクスチャー
-    
+
     各テストに対して独立したデータベース環境を提供
     """
     with isolated_postgres_test(recreate=True) as session:
@@ -51,14 +50,12 @@ def auto_cleanup_for_integration_tests(request):
         # テスト前のクリーンアップ
         ensure_test_connection()
         cleanup_all_neo4j_data()
-        
+
         yield
-        
+
         # テスト後のクリーンアップ
         cleanup_all_neo4j_data()
     else:
         yield
 
 
-# pytest-asyncioの設定
-pytest_plugins = ["pytest_asyncio"]

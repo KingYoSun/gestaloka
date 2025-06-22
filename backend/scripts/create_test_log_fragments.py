@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """ログフラグメントのテストデータを作成するスクリプト"""
 
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
@@ -14,8 +15,8 @@ from sqlalchemy import select
 from sqlmodel import Session
 
 from app.core.database import engine
-from app.models.log import LogFragment, LogFragmentRarity, EmotionalValence
 from app.models.character import Character, GameSession
+from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
 
 # テストデータのテンプレート
 FRAGMENT_TEMPLATES = [
@@ -41,7 +42,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "epic",
         "importance_score": 0.95,
     },
-    
+
     # 戦闘関連（ネガティブ）
     {
         "action_description": "油断から敵の罠にかかり、重傷を負った",
@@ -57,7 +58,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "uncommon",
         "importance_score": 0.75,
     },
-    
+
     # 探索関連（ポジティブ）
     {
         "action_description": "古代の遺跡で貴重な遺物を発見した",
@@ -80,7 +81,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "rare",
         "importance_score": 0.85,
     },
-    
+
     # 探索関連（ネガティブ）
     {
         "action_description": "迷宮で道に迷い、貴重な時間を失った",
@@ -96,7 +97,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "uncommon",
         "importance_score": 0.65,
     },
-    
+
     # 社交関連（ポジティブ）
     {
         "action_description": "困っている旅人を助け、感謝の言葉を受けた",
@@ -119,7 +120,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "epic",
         "importance_score": 0.95,
     },
-    
+
     # 社交関連（ネガティブ）
     {
         "action_description": "信頼していた仲間に裏切られた",
@@ -135,7 +136,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "uncommon",
         "importance_score": 0.65,
     },
-    
+
     # 中立的な記録
     {
         "action_description": "市場で珍しい品物を見つけ、興味深く観察した",
@@ -158,7 +159,7 @@ FRAGMENT_TEMPLATES = [
         "rarity": "common",
         "importance_score": 0.3,
     },
-    
+
     # 伝説的な出来事
     {
         "action_description": "古代の龍と対峙し、その知恵を授かった",
@@ -185,32 +186,32 @@ async def create_test_fragments():
         if not characters:
             print("エラー: キャラクターが存在しません。先にキャラクターを作成してください。")
             return
-        
+
         sessions = session.exec(select(GameSession)).all()
         if not sessions:
             print("エラー: ゲームセッションが存在しません。先にセッションを作成してください。")
             return
-        
+
         print(f"テストデータ作成開始: {len(characters)}個のキャラクター、{len(sessions)}個のセッション")
-        
+
         created_count = 0
         base_time = datetime.utcnow() - timedelta(days=30)
-        
+
         # 各キャラクターに対してフラグメントを作成
         for character in characters:
             # 各キャラクターに10-20個のフラグメントを作成
             num_fragments = random.randint(10, 20)
-            
+
             for i in range(num_fragments):
                 # テンプレートからランダムに選択
                 template = random.choice(FRAGMENT_TEMPLATES)
-                
+
                 # セッションをランダムに選択
                 session_for_fragment = random.choice(sessions)
-                
+
                 # 時系列でフラグメントを作成
                 created_at = base_time + timedelta(days=i, hours=random.randint(0, 23))
-                
+
                 # コンテキストデータを生成
                 context_data = {
                     "location": random.choice(["荒野", "森林", "洞窟", "街", "遺跡", "山岳"]),
@@ -219,7 +220,7 @@ async def create_test_fragments():
                     "health_status": random.randint(50, 100),
                     "party_size": random.randint(1, 4),
                 }
-                
+
                 fragment = LogFragment(
                     id=str(uuid4()),
                     character_id=character.id,
@@ -232,26 +233,26 @@ async def create_test_fragments():
                     context_data=context_data,
                     created_at=created_at,
                 )
-                
+
                 session.add(fragment)
                 created_count += 1
-        
+
         session.commit()
         print(f"✅ {created_count}個のログフラグメントを作成しました")
-        
+
         # 作成結果のサマリー
         for character in characters:
             fragments = session.exec(
                 select(LogFragment).where(LogFragment.character_id == character.id)
             ).all()
-            
+
             rarity_counts = {}
             valence_counts = {}
-            
+
             for fragment in fragments:
                 rarity_counts[fragment.rarity] = rarity_counts.get(fragment.rarity, 0) + 1
                 valence_counts[fragment.emotional_valence] = valence_counts.get(fragment.emotional_valence, 0) + 1
-            
+
             print(f"\n{character.name}のフラグメント統計:")
             print(f"  総数: {len(fragments)}")
             print(f"  レアリティ: {rarity_counts}")

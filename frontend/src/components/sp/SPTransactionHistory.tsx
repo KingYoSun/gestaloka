@@ -8,7 +8,6 @@ import { ja } from 'date-fns/locale'
 import {
   ArrowUpCircle,
   ArrowDownCircle,
-  Filter,
   ChevronDown,
   Loader2,
 } from 'lucide-react'
@@ -30,7 +29,6 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -89,7 +87,7 @@ export function SPTransactionHistory({
         SPTransactionType.LOG_RESULT,
         SPTransactionType.LOGIN_BONUS,
         SPTransactionType.REFUND,
-      ].includes(type)
+      ].includes(type as SPTransactionType)
     ) {
       return 'default'
     }
@@ -116,7 +114,7 @@ export function SPTransactionHistory({
     <div className={className}>
       {/* フィルター */}
       <div className="flex items-center gap-2 mb-4">
-        <Select value={transactionType || 'all'} onValueChange={(value) => {
+        <Select value={transactionType || 'all'} onValueChange={(value: string) => {
           setTransactionType(value === 'all' ? undefined : value)
           setOffset(0)
         }}>

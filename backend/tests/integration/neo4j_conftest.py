@@ -35,17 +35,17 @@ def neo4j_test_config():
 def clean_neo4j_db(neo4j_test_config):
     """
     クリーンなNeo4jデータベースを提供するフィクスチャー
-    
+
     各テストの前後で完全なクリーンアップを実行
     """
     # テスト用設定を適用
     neo_config.DATABASE_URL = neo4j_test_config["url"]
-    
+
     # テスト前のクリーンアップ
     cleanup_all_neo4j_data()
-    
+
     yield neo_db
-    
+
     # テスト後のクリーンアップ
     cleanup_all_neo4j_data()
 
@@ -61,7 +61,7 @@ def neo4j_stats():
 def neo4j_test_session(cleanup_before: bool = True, cleanup_after: bool = True):
     """
     Neo4jテストセッションのコンテキストマネージャー
-    
+
     Args:
         cleanup_before: テスト前にクリーンアップを実行
         cleanup_after: テスト後にクリーンアップを実行
@@ -86,9 +86,9 @@ def auto_cleanup_neo4j(request):
     if request.node.get_closest_marker("neo4j"):
         # テスト前のクリーンアップ
         cleanup_all_neo4j_data()
-        
+
         yield
-        
+
         # テスト後のクリーンアップ
         cleanup_all_neo4j_data()
     else:

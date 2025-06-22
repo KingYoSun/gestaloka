@@ -10,13 +10,13 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlmodel import Session, create_engine
+from sqlmodel import Session
 
 from app.models.character import Character, GameSession
 from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus, LogFragment
 from app.models.user import User
 from app.services.npc_generator import NPCGenerator
-from tests.integration.base_neo4j_test import BaseNeo4jIntegrationTest, neo4j_test_db
+from tests.integration.base_neo4j_test import BaseNeo4jIntegrationTest
 from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data
 from tests.integration.postgres_test_utils import isolated_postgres_test
@@ -42,7 +42,7 @@ def setup_test_neo4j():
     finally:
         # クリーンアップ
         cleanup_all_neo4j_data()
-        
+
         # 元の設定に戻す
         neo_config.DATABASE_URL = original_url
         if hasattr(neo_db, '_driver') and neo_db._driver:
@@ -61,9 +61,9 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         # Neo4jのクリーンアップ
         ensure_test_connection()
         cleanup_all_neo4j_data()
-        
+
         yield
-        
+
         # テスト後のクリーンアップ
         cleanup_all_neo4j_data()
 
@@ -254,7 +254,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         with patch.object(npc_generator, "_npc_manager", new=AsyncMock()):
             with setup_test_neo4j():
                 # データベースは既にクリーンなので、特定の削除は不要
-                
+
                 # 複数のNPCを異なる場所に生成
                 locations = ["テスト広場", "テスト酒場", "テスト広場"]
                 npc_profiles = []
@@ -341,12 +341,12 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         # 新しいNPCGeneratorインスタンスを作成（セッションを確実に分離）
         with isolated_postgres_test(recreate=False) as new_session:
             new_generator = NPCGenerator(new_session)
-            
+
             with patch.object(new_generator, "_npc_manager", new=AsyncMock()):
                 # 複数の完成ログと契約を作成
                 logs = []
                 contracts = []
-                
+
                 for i in range(3):
                     # 完成ログを作成
                     log = CompletedLog(

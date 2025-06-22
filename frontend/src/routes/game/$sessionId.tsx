@@ -10,7 +10,6 @@ import {
 } from '@/hooks/useGameSessions'
 import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { useGameWebSocket } from '@/hooks/useWebSocket'
-import { useConsumeSP } from '@/hooks/useSP'
 import { SPConsumeDialog } from '@/components/sp/SPConsumeDialog'
 import { SPTransactionType } from '@/types/sp'
 import { Button } from '@/components/ui/button'
@@ -51,7 +50,6 @@ function GameSessionPage() {
   const { data: session, isLoading } = useGameSession(sessionId)
   const executeActionMutation = useExecuteGameAction()
   const endSessionMutation = useEndGameSession()
-  const consumeSP = useConsumeSP()
 
   const {
     setActiveSession,
@@ -81,11 +79,6 @@ function GameSessionPage() {
     }
   }
 
-  // SP消費が必要かどうかを判定
-  const requiresSP = (isChoice: boolean) => {
-    // 選択肢も自由入力も両方SPを消費する
-    return true
-  }
 
   // SP消費量を計算
   const calculateSPCost = (text: string, isChoice: boolean) => {
@@ -106,7 +99,6 @@ function GameSessionPage() {
     }
 
     const isChoice = selectedChoice !== null
-    const spCost = calculateSPCost(actionText.trim(), isChoice)
 
     // SP消費確認ダイアログを表示
     setPendingAction({

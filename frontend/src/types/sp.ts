@@ -24,6 +24,7 @@ export const SPTransactionType = {
   MIGRATION: 'migration',
 } as const;
 
+// eslint-disable-next-line no-redeclare
 export type SPTransactionType = typeof SPTransactionType[keyof typeof SPTransactionType];
 
 /**
@@ -37,6 +38,7 @@ export const SPPurchasePackage = {
   MEGA: 'mega',
 } as const;
 
+// eslint-disable-next-line no-redeclare
 export type SPPurchasePackage = typeof SPPurchasePackage[keyof typeof SPPurchasePackage];
 
 /**
@@ -47,6 +49,7 @@ export const SPSubscriptionType = {
   PREMIUM: 'premium',
 } as const;
 
+// eslint-disable-next-line no-redeclare
 export type SPSubscriptionType = typeof SPSubscriptionType[keyof typeof SPSubscriptionType];
 
 /**
@@ -89,7 +92,7 @@ export interface SPTransaction {
   balanceBefore: number;
   balanceAfter: number;
   description: string;
-  transactionMetadata: Record<string, any>;
+  transactionMetadata: Record<string, unknown>;
   relatedEntityType: string | null;
   relatedEntityId: string | null;
   purchasePackage: SPPurchasePackage | null;
@@ -107,7 +110,7 @@ export interface SPConsumeRequest {
   description: string;
   relatedEntityType?: string;
   relatedEntityId?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

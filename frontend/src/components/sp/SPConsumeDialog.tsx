@@ -30,7 +30,7 @@ interface SPConsumeDialogProps {
   description: string
   relatedEntityType?: string
   relatedEntityId?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   onSuccess?: () => void
   onCancel?: () => void
 }
@@ -81,7 +81,7 @@ export function SPConsumeDialog({
       await consumeSP.mutateAsync(request)
       onSuccess?.()
       onOpenChange(false)
-    } catch (error) {
+    } catch {
       // エラーはuseMutationのonErrorで処理
     } finally {
       setIsConsuming(false)

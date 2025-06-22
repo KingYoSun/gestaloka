@@ -28,7 +28,14 @@ export function LogsPage() {
     })
   }
 
-  const handleCompile = async (compiledLogData: any) => {
+  const handleCompile = async (compiledLogData: {
+    coreFragmentId: string
+    fragmentIds: string[]
+    name: string
+    title?: string
+    description: string
+    isOmnibus: boolean
+  }) => {
     try {
       // バックエンドAPIの形式に合わせてデータを整形
       const logData: CompletedLogCreate = {

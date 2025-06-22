@@ -4,13 +4,12 @@ Neo4j統合テストの基底クラス
 実際のNeo4jインスタンスを使用したテストの共通設定を提供
 """
 
-import os
 
 import pytest
-from neomodel import config, db
+from neomodel import db
 
 from app.db.neo4j_models import NPC, Location, Player
-from tests.integration.neo4j_connection import ensure_test_connection, get_test_neo4j_url
+from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data, cleanup_test_data
 
 

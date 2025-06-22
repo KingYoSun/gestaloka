@@ -14,7 +14,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Skeleton } from '@/components/ui/skeleton'
-import { toast } from 'sonner'
 
 export const Route = createFileRoute('/sp/')({
   component: SPPage,
@@ -32,7 +31,7 @@ function SPPage() {
   const handleDailyRecovery = async () => {
     try {
       await dailyRecovery.mutateAsync()
-    } catch (error) {
+    } catch {
       // エラーはuseMutationで処理
     }
   }

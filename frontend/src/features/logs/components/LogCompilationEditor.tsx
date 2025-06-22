@@ -16,7 +16,14 @@ import { cn } from '@/lib/utils'
 
 interface LogCompilationEditorProps {
   fragments: LogFragment[]
-  onCompile: (compiledLog: any) => void
+  onCompile: (compiledLog: {
+    coreFragmentId: string
+    fragmentIds: string[]
+    name: string
+    title?: string
+    description: string
+    isOmnibus: boolean
+  }) => void
   onCancel: () => void
 }
 

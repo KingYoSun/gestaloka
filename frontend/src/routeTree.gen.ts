@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SpIndexRouteImport } from './routes/sp/index'
 import { Route as GameStartRouteImport } from './routes/game/start'
 import { Route as GameSessionIdRouteImport } from './routes/game/$sessionId'
 import { Route as CharacterCreateRouteImport } from './routes/character.create'
@@ -56,6 +57,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SpIndexRoute = SpIndexRouteImport.update({
+  id: '/sp/',
+  path: '/sp/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GameStartRoute = GameStartRouteImport.update({
   id: '/game/start',
   path: '/game/start',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/sp': typeof SpIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/sp': typeof SpIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/sp/': typeof SpIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/sp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/sp'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/sp/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   CharacterCreateRoute: typeof CharacterCreateRoute
   GameSessionIdRoute: typeof GameSessionIdRoute
   GameStartRoute: typeof GameStartRoute
+  SpIndexRoute: typeof SpIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -224,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sp/': {
+      id: '/sp/'
+      path: '/sp'
+      fullPath: '/sp'
+      preLoaderRoute: typeof SpIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/game/start': {
       id: '/game/start'
       path: '/game/start'
@@ -267,6 +287,7 @@ const rootRouteChildren: RootRouteChildren = {
   CharacterCreateRoute: CharacterCreateRoute,
   GameSessionIdRoute: GameSessionIdRoute,
   GameStartRoute: GameStartRoute,
+  SpIndexRoute: SpIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
