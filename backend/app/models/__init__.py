@@ -28,6 +28,15 @@ from app.models.sp import (
     SPTransactionType,
 )
 from app.models.user import User
+from app.models.location import (
+    Location,
+    LocationConnection,
+    ExplorationArea,
+    CharacterLocationHistory,
+    ExplorationLog,
+    LocationType,
+    DangerLevel,
+)
 
 __all__ = [
     "Character",
@@ -53,4 +62,11 @@ __all__ = [
     "SPTransactionType",
     "Skill",
     "User",
+    "Location",
+    "LocationConnection",
+    "ExplorationArea",
+    "CharacterLocationHistory",
+    "ExplorationLog",
+    "LocationType",
+    "DangerLevel",
 ]

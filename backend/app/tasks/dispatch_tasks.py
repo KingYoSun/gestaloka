@@ -218,6 +218,24 @@ def calculate_achievement_score(dispatch: LogDispatch) -> float:
     elif dispatch.objective_type == DispatchObjectiveType.GUARD:
         # 守護任務は期間完了で高スコア
         score = 0.9
+        
+    elif dispatch.objective_type == DispatchObjectiveType.TRADE:
+        # 商業活動は利益率で評価
+        if "economic_details" in dispatch.objective_details:
+            profit_rate = dispatch.objective_details["economic_details"].get("profit_rate", 0)
+            score += min(0.5, profit_rate * 0.01)  # 利益率50%で満点
+        
+    elif dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
+        # 記憶保存は成功率で評価
+        if "memory_details" in dispatch.objective_details:
+            success_rate = dispatch.objective_details["memory_details"].get("success_rate", 0)
+            score += min(0.5, success_rate)
+            
+    elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
+        # 研究は解明度で評価
+        if "research_details" in dispatch.objective_details:
+            completion_rate = dispatch.objective_details["research_details"].get("completion_rate", 0)
+            score += min(0.5, completion_rate)
 
     else:  # FREE
         # 自由行動は基本スコアに少し追加
@@ -263,6 +281,18 @@ def generate_dispatch_report(dispatch_id: str) -> dict[str, Any]:
         result = db.exec(encounter_stmt)
         encounters = result.all()
 
+        # 派遣タイプ別の詳細データを生成
+        economic_details = None
+        special_achievements = None
+        
+        if dispatch.objective_type == DispatchObjectiveType.TRADE:
+            economic_details = generate_economic_details(dispatch)
+        elif dispatch.objective_type in [
+            DispatchObjectiveType.MEMORY_PRESERVE,
+            DispatchObjectiveType.RESEARCH
+        ]:
+            special_achievements = generate_special_achievements(dispatch)
+
         # 報告書を生成
         report = DispatchReport(
             dispatch_id=dispatch_id,
@@ -276,6 +306,8 @@ def generate_dispatch_report(dispatch_id: str) -> dict[str, Any]:
             new_skills_learned=generate_new_skills(dispatch),
             narrative_summary=generate_narrative_summary(dispatch, completed_log, encounters),
             epilogue=generate_epilogue(dispatch, completed_log) if dispatch.achievement_score > 0.7 else None,
+            economic_details=economic_details,
+            special_achievements=special_achievements,
             created_at=datetime.utcnow(),
         )
 
@@ -410,6 +442,79 @@ def generate_narrative_summary(
         summary += "Though challenges arose, valuable lessons were learned."
 
     return summary
+
+
+def generate_economic_details(dispatch: LogDispatch) -> dict:
+    """
+    商業活動の詳細を生成
+    """
+    # 基本的な売買データ
+    total_sales = random.randint(100, 1000)
+    total_costs = int(total_sales * random.uniform(0.3, 0.7))
+    profit = total_sales - total_costs
+    
+    details = {
+        "total_sales": total_sales,
+        "total_costs": total_costs,
+        "net_profit": profit,
+        "profit_rate": profit / total_sales if total_sales > 0 else 0,
+        "best_selling_items": [
+            {"name": "Healing Potion", "quantity": random.randint(5, 20), "revenue": random.randint(50, 200)},
+            {"name": "Mana Crystal", "quantity": random.randint(2, 10), "revenue": random.randint(100, 500)},
+        ],
+        "trade_partners": [
+            {"name": "Merchant Guild", "transactions": random.randint(3, 10)},
+            {"name": "Local Adventurers", "transactions": random.randint(5, 15)},
+        ],
+        "market_insights": [
+            "High demand for healing items in the lower levels",
+            "Rare materials fetch premium prices in corporate districts",
+        ]
+    }
+    
+    return details
+
+
+def generate_special_achievements(dispatch: LogDispatch) -> dict:
+    """
+    特殊な成果を生成（記憶保存、研究など）
+    """
+    achievements = {}
+    
+    if dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
+        memories_collected = random.randint(5, 30)
+        memories_preserved = int(memories_collected * random.uniform(0.6, 0.95))
+        
+        achievements = {
+            "type": "memory_preservation",
+            "memories_collected": memories_collected,
+            "memories_preserved": memories_preserved,
+            "preservation_rate": memories_preserved / memories_collected if memories_collected > 0 else 0,
+            "notable_memories": [
+                {"title": "Last Mayor's Speech", "rarity": "Legendary", "emotional_impact": "High"},
+                {"title": "Children's Lullaby", "rarity": "Rare", "emotional_impact": "Medium"},
+            ],
+            "fading_delayed": f"{random.randint(3, 15)}%",
+            "contribution_to_library": random.randint(1, 5),
+        }
+        
+    elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
+        research_progress = random.uniform(0.2, 0.8)
+        
+        achievements = {
+            "type": "research",
+            "research_target": "Ancient Crystal Formation",
+            "completion_rate": research_progress,
+            "discoveries": [
+                {"finding": "Energy resonance pattern identified", "significance": "High"},
+                {"finding": "Partial translation of Designer script", "significance": "Medium"},
+            ],
+            "samples_collected": random.randint(3, 15),
+            "academic_evaluation": random.choice(["A", "A+", "S"]),
+            "published_papers": random.randint(0, 2),
+        }
+    
+    return achievements
 
 
 def generate_epilogue(dispatch: LogDispatch, completed_log: CompletedLog) -> str:

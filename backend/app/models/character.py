@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.log import CompletedLog, LogContract, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.user import User
+    from app.models.location import Location
 
 
 class Character(SQLModel, table=True):
@@ -24,7 +25,8 @@ class Character(SQLModel, table=True):
     description: Optional[str] = Field(default=None, max_length=1000)
     appearance: Optional[str] = Field(default=None, max_length=1000)
     personality: Optional[str] = Field(default=None, max_length=1000)
-    location: str = Field(default="starting_village", max_length=100)
+    location: str = Field(default="starting_village", max_length=100)  # 後方互換性のため残す
+    location_id: Optional[int] = Field(default=None, foreign_key="locations.id")
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -50,6 +52,9 @@ class Character(SQLModel, table=True):
     # 派遣システム関連
     dispatched_logs: list["LogDispatch"] = Relationship(back_populates="dispatcher")
     log_encounters: list["DispatchEncounter"] = Relationship(back_populates="encountered_character")
+    
+    # 場所関連
+    current_location: Optional["Location"] = Relationship(back_populates="characters")
 
     def __repr__(self) -> str:
         return f"<Character(id={self.id}, name={self.name})>"

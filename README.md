@@ -128,7 +128,7 @@ make init-db
 
 ### ✅ コード品質チェック（2025/06/22 全エラー解消済み）
 ```bash
-make test         # 🧪 全テスト実行（Frontend: 21件、Backend: 189件）
+make test         # 🧪 全テスト実行（Frontend: 21件、Backend: 193件）
 make typecheck    # 📝 型チェック（エラー0件）
 make lint         # 🔍 リントチェック（エラー0件）
 make format       # 📐 コード自動整形
@@ -393,8 +393,10 @@ make clean-all
 - **型安全なAPI統合**: OpenAPI自動生成によるフロントエンド型定義
 
 ### 🚧 開発中（～2025/07）
-- **探索システム**: 場所移動、ログフラグメント発見
-  - Week 15-16（6/22-7/5）: 基本実装、SP消費統合
+- **SP残高常時表示**: ヘッダーコンポーネント
+  - Week 15-16（6/22-7/5）: UI実装、リアルタイム更新
+- **派遣ログ同士の相互作用**: ログ間の出会いと協力・競合
+  - Week 16（7/1-5）: 基本メカニクス
 
 ### 📋 計画中（2025/07～）
 - **マネタイズ機能**: SP購入、決済統合（Stripe）
@@ -423,7 +425,7 @@ make clean-all
   - **品質保証**: 包括的な統合テスト、型安全性確保、エラーハンドリング
 - **✅ コード品質の完全改善**: 全てのテスト・型・リントエラーを解消
   - **フロントエンド**: 型チェック✅、リント✅、テスト✅（21件全パス）
-  - **バックエンド**: 型チェック✅、リント✅、テスト✅（189件全パス）
+  - **バックエンド**: 型チェック✅、リント✅、テスト✅（193件全パス）
   - **shadcn/uiコンポーネント追加**: dialog、table、select、dropdown-menu、tabs、skeleton
   - **date-fnsパッケージ追加**: 日付フォーマット機能の実装
   - **SPテストファイル修正**: 認証モック実装、インデントエラー修正
@@ -431,6 +433,11 @@ make clean-all
   - [ログ派遣システム仕様書](documents/03_worldbuilding/game_mechanics/logDispatchSystem.md)作成
   - [SPシステム仕様書](documents/03_worldbuilding/game_mechanics/spSystem.md)（詳細価格設定含む）
   - [プロジェクトブリーフv2](documents/01_project/projectbrief.md)・[実装ロードマップ](documents/01_project/implementationRoadmap.md)作成
+- **✅ 探索システム完全実装**: バックエンドAPI＋フロントエンドUI
+  - **バックエンド**: Locationモデル、8つのAPIエンドポイント、SP消費統合
+  - **フロントエンド**: 4つの主要コンポーネント、ビジュアルマップ、リアルタイムSP管理
+  - **ログ派遣拡張**: 新目的タイプ（TRADE、MEMORY_PRESERVE、RESEARCH）追加
+  - [探索システム仕様書](documents/03_worldbuilding/game_mechanics/explorationSystem.md)作成
 
 ### 2025/01/19
 - **✅ フロントエンドDRY原則リファクタリング**: 重複コードの大規模削減

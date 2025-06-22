@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ExplorationRouteImport } from './routes/exploration'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as IndexRouteImport } from './routes/index'
@@ -25,6 +26,11 @@ import { Route as CharacterIdRouteImport } from './routes/character.$id'
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExplorationRoute = ExplorationRouteImport.update({
+  id: '/exploration',
+  path: '/exploration',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/characters': typeof CharactersRoute
   '/dashboard': typeof DashboardRoute
+  '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/register': typeof RegisterRoute
@@ -101,6 +108,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/characters': typeof CharactersRoute
   '/dashboard': typeof DashboardRoute
+  '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/register': typeof RegisterRoute
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/characters': typeof CharactersRoute
   '/dashboard': typeof DashboardRoute
+  '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/register': typeof RegisterRoute
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/'
     | '/characters'
     | '/dashboard'
+    | '/exploration'
     | '/login'
     | '/logs'
     | '/register'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/'
     | '/characters'
     | '/dashboard'
+    | '/exploration'
     | '/login'
     | '/logs'
     | '/register'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/'
     | '/characters'
     | '/dashboard'
+    | '/exploration'
     | '/login'
     | '/logs'
     | '/register'
@@ -175,6 +187,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CharactersRoute: typeof CharactersRoute
   DashboardRoute: typeof DashboardRoute
+  ExplorationRoute: typeof ExplorationRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
   RegisterRoute: typeof RegisterRoute
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exploration': {
+      id: '/exploration'
+      path: '/exploration'
+      fullPath: '/exploration'
+      preLoaderRoute: typeof ExplorationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -279,6 +299,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CharactersRoute: CharactersRoute,
   DashboardRoute: DashboardRoute,
+  ExplorationRoute: ExplorationRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
   RegisterRoute: RegisterRoute,

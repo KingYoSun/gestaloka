@@ -34,6 +34,8 @@ class SPTransactionType(str, Enum):
     LOG_DISPATCH = "log_dispatch"  # ログ派遣
     LOG_ENHANCEMENT = "log_enhancement"  # ログ強化
     SYSTEM_FUNCTION = "system_function"  # システム機能（即時回復など）
+    MOVEMENT = "movement"  # 場所移動
+    EXPLORATION = "exploration"  # 探索行動
 
     # システム系
     ADJUSTMENT = "adjustment"  # システム調整

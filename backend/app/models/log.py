@@ -34,6 +34,7 @@ class EmotionalValence(str, Enum):
     POSITIVE = "positive"
     NEGATIVE = "negative"
     NEUTRAL = "neutral"
+    MIXED = "mixed"
 
 
 class LogFragment(SQLModel, table=True):
@@ -48,15 +49,19 @@ class LogFragment(SQLModel, table=True):
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     character_id: str = Field(foreign_key="characters.id", index=True)
-    session_id: str = Field(foreign_key="game_sessions.id", index=True)
+    session_id: Optional[str] = Field(default=None, foreign_key="game_sessions.id", index=True)
 
     # 基本情報
     action_description: str = Field(description="行動の詳細な記述")
     keywords: list[str] = Field(
         default_factory=list, sa_column=Column(JSON), description="キーワード（例: [勇敢], [裏切り], [探索]）"
     )
+    keyword: Optional[str] = Field(default=None, description="メインキーワード（探索で発見されたフラグメント用）")
     emotional_valence: EmotionalValence = Field(default=EmotionalValence.NEUTRAL, description="感情価")
     rarity: LogFragmentRarity = Field(default=LogFragmentRarity.COMMON, description="レアリティ")
+    backstory: Optional[str] = Field(default=None, description="フラグメントの背景ストーリー")
+    discovered_at: Optional[str] = Field(default=None, description="発見場所")
+    source_action: Optional[str] = Field(default=None, description="フラグメントの発生源となった行動")
 
     # メタデータ
     importance_score: float = Field(default=0.0, description="重要度スコア（0.0-1.0）")

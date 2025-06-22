@@ -7,6 +7,8 @@ import {
   ScrollText,
   Settings,
   LogOut,
+  MapPin,
+  Swords,
 } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -18,18 +20,28 @@ const navigationItems = [
   },
   {
     name: 'キャラクター',
-    href: '/character/create',
+    href: '/player/characters',
     icon: User,
   },
   {
-    name: 'ゲーム開始',
-    href: '/game/start',
+    name: 'セッション',
+    href: '/sessions',
     icon: GamepadIcon,
+  },
+  {
+    name: '戦闘',
+    href: '/battles',
+    icon: Swords,
   },
   {
     name: 'ログ',
     href: '/logs',
     icon: ScrollText,
+  },
+  {
+    name: '探索',
+    href: '/exploration',
+    icon: MapPin,
   },
   {
     name: '設定',

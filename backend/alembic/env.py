@@ -35,6 +35,13 @@ from app.models.sp import PlayerSP, SPTransaction  # noqa
 from app.models.user import User  # noqa
 
 # 新しいモデルを追加する場合は、ここにインポートを追加
+from app.models.location import (  # noqa
+    Location,
+    LocationConnection,
+    ExplorationArea,
+    CharacterLocationHistory,
+    ExplorationLog,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
