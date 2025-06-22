@@ -3,12 +3,13 @@
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.character import Character
+    from app.models.sp import PlayerSP, SPTransaction
 
 
 class User(SQLModel, table=True):
@@ -28,6 +29,11 @@ class User(SQLModel, table=True):
 
     # リレーション
     characters: list["Character"] = Relationship(back_populates="user")
+    player_sp: Optional["PlayerSP"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"uselist": False}
+    )
+    sp_transactions: list["SPTransaction"] = Relationship(back_populates="user")
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username={self.username})>"

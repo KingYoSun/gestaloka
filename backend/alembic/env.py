@@ -27,6 +27,7 @@ from app.models.log import (  # noqa
 # 全てのモデルをインポート（自動生成のため必須）
 # 重要: モデルの追加時は必ずここにインポートを追加すること
 from app.models.user import User  # noqa
+from app.models.sp import PlayerSP, SPTransaction  # noqa
 
 # 新しいモデルを追加する場合は、ここにインポートを追加
 

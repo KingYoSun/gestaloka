@@ -376,20 +376,49 @@
 - `documents/01_project/projectbrief_v2.md`：更新されたプロジェクトブリーフ
 - `documents/01_project/implementationRoadmap.md`：詳細な実装計画
 
+## 2025/06/22 - SPシステムのデータモデル実装
+
+### 実施内容
+1. **データモデルの定義**
+   - `PlayerSP`モデル：プレイヤーのSP残高と上限値管理
+   - `SPTransaction`モデル：SP変動履歴の記録
+   - `SPTransactionType`列挙型：取引種別の定義
+   - `SPEventSubtype`列挙型：詳細イベントタイプの定義
+
+2. **モデル設計の特徴**
+   - **PlayerSP**：
+     - current_sp: 現在のSP残高（0以上）
+     - max_sp: SP上限値（デフォルト100）
+     - last_refill_at: 最終回復時刻
+     - total_earned/spent: 累積統計
+   - **SPTransaction**：
+     - 詳細な取引履歴（タイプ、サブタイプ、金額、説明）
+     - 残高追跡（変動前後のSP）
+     - 関連エンティティ参照（character_id、session_id等）
+
+3. **データベースマイグレーション**
+   - `sp_system_models`マイグレーション作成
+   - 適切なインデックスの設定
+   - 外部キー制約の定義
+
+4. **技術的な決定**
+   - SQLModelを使用した型安全な実装
+   - UTC時刻での一貫した時刻管理
+   - 取引の完全な追跡可能性
+
+### 関連ドキュメント
+- `documents/05_implementation/spSystemImplementation.md`：実装詳細
+- `documents/03_worldbuilding/game_mechanics/spSystem.md`：SPシステム仕様
+
 ## 推奨される次のアクション（Week 15: 2025/06/22-28）
 
-### SPシステム基盤実装
-1. **データモデル（月-火）**
-   - PlayerSP、SPTransactionモデルの実装
-   - マイグレーション作成
-   - モデルテスト
-
-2. **SP管理API（水-木）**
+### SPシステム基盤実装（続き）
+1. **SP管理API（次のステップ）**
    - 残高取得、消費、履歴API
    - エラーハンドリング
    - APIテスト
 
-3. **フロントエンド統合（金）**
+2. **フロントエンド統合**
    - SP表示コンポーネント
    - 自由行動のSP消費実装
    - 統合テスト

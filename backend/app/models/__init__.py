@@ -13,6 +13,13 @@ from app.models.log import (
     LogFragment,
     LogFragmentRarity,
 )
+from app.models.sp import (
+    PlayerSP,
+    SPPurchasePackage,
+    SPSubscriptionType,
+    SPTransaction,
+    SPTransactionType,
+)
 from app.models.user import User
 
 __all__ = [
@@ -27,6 +34,11 @@ __all__ = [
     "LogContractStatus",
     "LogFragment",
     "LogFragmentRarity",
+    "PlayerSP",
     "Skill",
+    "SPPurchasePackage",
+    "SPSubscriptionType",
+    "SPTransaction",
+    "SPTransactionType",
     "User",
 ]
