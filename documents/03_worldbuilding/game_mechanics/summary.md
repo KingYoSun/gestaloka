@@ -43,3 +43,5 @@
 詳細は各ドキュメントを参照：
 - [basic.md](basic.md) - 基本メカニクスの詳細
 - [log.md](log.md) - ログシステムの詳細
+- [logDispatchSystem.md](logDispatchSystem.md) - ログ派遣システムの詳細
+- [spSystem.md](spSystem.md) - SPシステムの詳細

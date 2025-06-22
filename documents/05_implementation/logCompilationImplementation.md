@@ -164,6 +164,7 @@ const camelToSnakeObject = (obj: any): any => {
 
 ### 4. マーケットプレイス
 ログ契約を公開・取引できるマーケットプレイスの実装。
+詳細は[ログマーケットプレイス仕様](../03_worldbuilding/game_mechanics/logMarketplace.md)を参照。
 
 ## トラブルシューティング
 

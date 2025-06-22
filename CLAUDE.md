@@ -117,7 +117,7 @@ documents/
 - ✅ AI統合基盤（Gemini API、プロンプト管理、エージェントシステム）
 - ✅ Celeryタスク管理（Worker、Beat、Flower統合）
 - ✅ 基本的な戦闘システム（ターン制バトル、戦闘UI、リアルタイム更新）
-- ✅ ログシステム基盤（LogFragment、CompletedLog、LogContract）
+- ✅ ログシステム基盤（LogFragment、CompletedLog）
 - ✅ ログNPC生成機能（Neo4j統合、NPCジェネレーター、Celeryタスク）
 - ✅ フロントエンドDRY原則実装（共通コンポーネント、カスタムフック、ユーティリティ）
 - ✅ ログ編纂UI基本実装（フラグメント管理、編纂エディター、汚染度計算）
