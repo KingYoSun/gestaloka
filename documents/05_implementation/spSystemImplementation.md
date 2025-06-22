@@ -224,19 +224,87 @@ CREATE INDEX idx_sp_transactions_player_created ON sp_transactions(player_id, cr
 - **連続ログインボーナス**: 7日（+5SP）、14日（+10SP）、30日（+20SP）
 - **不正防止**: 残高チェック、重複回復防止、取引整合性チェック
 
+### ✅ Phase 3: フロントエンド統合（2025/06/22完了）
+
+#### React Queryフック実装
+```typescript
+// useSPBalance - SP残高取得
+export const useSPBalance = (playerId?: string) => {
+  return useQuery({
+    queryKey: ['sp', 'balance', playerId],
+    queryFn: () => apiClient.getSPBalance(),
+    enabled: !!playerId,
+    staleTime: 30000, // 30秒
+  });
+};
+
+// useConsumeSP - SP消費
+export const useConsumeSP = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SPConsumeRequest) => apiClient.consumeSP(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] });
+      queryClient.invalidateQueries({ queryKey: ['sp', 'transactions'] });
+    },
+  });
+};
+```
+
+#### UIコンポーネント実装
+- **SPDisplay**: ヘッダーに統合されたSP残高表示
+  - リアルタイム更新（React Query使用）
+  - アニメーション付き残高変更
+  - エラー状態の表示
+- **SPTransactionHistory**: 取引履歴表示
+  - ページネーション対応
+  - フィルタリング（日付、タイプ）
+  - 詳細表示モーダル
+- **SPConsumptionDialog**: 消費確認ダイアログ
+  - 消費量の明確な表示
+  - 残高不足時の警告
+  - サブスクリプション割引の表示
+
+#### ゲームセッションとの統合
+```typescript
+// GameSession内でのSP消費実装
+const handleActionExecution = async (action: GameAction) => {
+  // SP消費量計算
+  const spCost = action.type === 'choice' ? 2 : calculateFreeActionCost(action.text);
+  
+  // SP消費確認
+  if (currentSP < spCost) {
+    showError('SP不足です');
+    return;
+  }
+  
+  // SP消費実行
+  await consumeSP({
+    amount: spCost,
+    type: 'CONSUMED',
+    subtype: 'ACTION',
+    description: `行動実行: ${action.text.slice(0, 50)}...`,
+    characterId: character.id,
+    sessionId: session.id,
+  });
+  
+  // アクション実行
+  await executeAction(action);
+};
+```
+
 ## 今後の実装予定
 
-### Phase 3: フロントエンド統合（次のステップ）
-- SP表示コンポーネント
-- 消費確認ダイアログ
-- リアルタイム更新
-- エラー表示
-
 ### Phase 4: 購入システム統合
-- 決済プロバイダー統合
+- 決済プロバイダー統合（Stripe/PayPal）
 - 購入フロー実装
 - レシート管理
 - 返金処理
+
+### Phase 5: 定期タスク実装
+- Celeryタスクによる日次回復の自動化
+- サブスクリプション期限管理
+- SP上限値の定期更新
 
 ## 関連ドキュメント
 

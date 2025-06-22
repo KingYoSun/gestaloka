@@ -4,43 +4,60 @@
 
 ### 実装内容
 
-#### データモデル実装
+#### データモデル実装（Phase 1）
 - **PlayerSPモデル**: プレイヤーのSP保有状況を管理
-  - 現在残高、総獲得量、総消費量の追跡
-  - 購入情報とサブスクリプション管理
-  - 日次回復と連続ログイン追跡
+  - 現在残高（current_sp）、SP上限値（max_sp）管理
+  - 最終回復時刻、累積獲得量・消費量の追跡
+  - UTC時刻での一貫した時刻管理
 - **SPTransactionモデル**: SP取引履歴の完全な記録
   - 全ての増減を監査証跡として記録
-  - 取引種別（取得系/消費系/システム系）の分類
-  - 購入情報と関連エンティティの追跡
-- **Enum定義**:
-  - SPTransactionType: 14種類の取引タイプ
-  - SPPurchasePackage: 5種類の購入パッケージ
-  - SPSubscriptionType: 2種類の月額パス
+  - 取引種別（EARNED/CONSUMED/REFILL/ADMIN）の分類
+  - 14種類の詳細イベントタイプ（SPEventSubtype）
+  - 関連エンティティ（character_id、session_id、completed_log_id）の追跡
+- **データベースマイグレーション**:
+  - `sp_system_models`マイグレーション作成・適用
+  - 適切なインデックスと外部キー制約の定義
 
-#### API実装
-- **エンドポイント**:
+#### API実装（Phase 2）
+- **エンドポイント（6つ）**:
   - `GET /api/v1/sp/balance` - SP残高詳細取得
-  - `GET /api/v1/sp/balance/summary` - SP残高概要取得
-  - `POST /api/v1/sp/consume` - SP消費
-  - `POST /api/v1/sp/daily-recovery` - 日次回復処理
-  - `GET /api/v1/sp/transactions` - 取引履歴取得
+  - `GET /api/v1/sp/balance/summary` - SP残高概要取得（軽量版）
+  - `POST /api/v1/sp/consume` - SP消費（トランザクション処理）
+  - `POST /api/v1/sp/daily-recovery` - 日次回復処理（UTC 4時基準）
+  - `GET /api/v1/sp/transactions` - 取引履歴取得（フィルタリング対応）
   - `GET /api/v1/sp/transactions/{id}` - 取引詳細取得
-- **SPServiceクラス**: ビジネスロジックの実装
-  - 初回登録50SPボーナス
-  - サブスクリプション割引（Basic 10%、Premium 20%）
-  - 連続ログインボーナス（7日、14日、30日）
-  - 完全な監査証跡と不正防止
+- **SPServiceクラス**: ビジネスロジックの完全実装
+  - 初回登録50SPボーナス付与
+  - サブスクリプション割引（Basic 10%、Premium 20%）の自動適用
+  - 連続ログインボーナス（7日:+5SP、14日:+10SP、30日:+20SP）
+  - 日次回復：基本10SP + サブスクボーナス + 連続ログインボーナス
+  - 完全な監査証跡と不正防止（重複回復防止、残高チェック）
+
+#### フロントエンド統合準備
+- **React Query フック実装**:
+  - `useSPBalance` - SP残高取得
+  - `useSPTransactions` - 取引履歴取得
+  - `useConsumeSP` - SP消費ミューテーション
+  - `useDailyRecovery` - 日次回復ミューテーション
+- **UIコンポーネント実装**:
+  - `SPDisplay` - ヘッダーでのSP残高表示
+  - `SPTransactionHistory` - 取引履歴表示
+  - `SPConsumptionDialog` - 消費確認ダイアログ
+- **ゲームセッションとの統合**:
+  - 選択肢実行時：一律2SP消費
+  - 自由行動時：文字数に応じて1-5SP消費（50文字ごとに1SP）
 
 ### 技術的な成果
-- 型チェック：✅ エラーなし
-- リント：✅ エラーなし
+- 型チェック：✅ エラーなし（バックエンド・フロントエンド両方）
+- リント：✅ エラーなし（ruff、ESLint）
 - カスタム例外（InsufficientSPError、SPSystemError）の実装
-- 包括的な統合テスト作成
+- 包括的な統合テスト作成（全エンドポイント、エラーケース、権限チェック）
+- TypeScript型定義の自動生成対応
 
 ### 関連ドキュメント
 - [SPシステム実装詳細](../../05_implementation/spSystemImplementation.md)
 - [SPシステム仕様](../../03_worldbuilding/game_mechanics/spSystem.md)
+- [プロジェクトブリーフv2](../../01_project/projectbrief_v2.md)
 
 ## 2025/06/20 - ログ編纂機能の有効化と実装完了
 

@@ -10,6 +10,9 @@ import {
 } from '@/hooks/useGameSessions'
 import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { useGameWebSocket } from '@/hooks/useWebSocket'
+import { useConsumeSP } from '@/hooks/useSP'
+import { SPConsumeDialog } from '@/components/sp/SPConsumeDialog'
+import { SPTransactionType } from '@/types/sp'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -24,6 +27,7 @@ import {
   Bot,
   AlertCircle,
   MessageSquare,
+  Coins,
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
@@ -37,10 +41,17 @@ function GameSessionPage() {
   const { sessionId } = Route.useParams()
   const [actionText, setActionText] = useState('')
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
+  const [showSPDialog, setShowSPDialog] = useState(false)
+  const [pendingAction, setPendingAction] = useState<{
+    text: string
+    isChoice: boolean
+    choiceIndex?: number
+  } | null>(null)
 
   const { data: session, isLoading } = useGameSession(sessionId)
   const executeActionMutation = useExecuteGameAction()
   const endSessionMutation = useEndGameSession()
+  const consumeSP = useConsumeSP()
 
   const {
     setActiveSession,
@@ -70,25 +81,56 @@ function GameSessionPage() {
     }
   }
 
+  // SP消費が必要かどうかを判定
+  const requiresSP = (isChoice: boolean) => {
+    // 選択肢も自由入力も両方SPを消費する
+    return true
+  }
+
+  // SP消費量を計算
+  const calculateSPCost = (text: string, isChoice: boolean) => {
+    if (isChoice) return 2 // 選択肢は一律2SP
+    
+    // 自由行動のSP消費量を文字数や複雑さで決定（簡易版）
+    const length = text.length
+    if (length <= 20) return 1
+    if (length <= 50) return 2
+    if (length <= 100) return 3
+    return 5
+  }
+
   const handleSubmitAction = async () => {
     if (!actionText.trim()) {
       toast.error('行動を入力してください')
       return
     }
 
+    const isChoice = selectedChoice !== null
+    const spCost = calculateSPCost(actionText.trim(), isChoice)
+
+    // SP消費確認ダイアログを表示
+    setPendingAction({
+      text: actionText.trim(),
+      isChoice,
+      choiceIndex: selectedChoice ?? undefined,
+    })
+    setShowSPDialog(true)
+  }
+
+  const executeAction = async (text: string, isChoice: boolean, choiceIndex?: number) => {
     setExecutingAction(true)
 
     try {
       // WebSocket経由でアクションを送信
-      sendAction(actionText.trim())
+      sendAction(text)
 
       // 従来のAPI呼び出しも並行して実行（フォールバック）
       await executeActionMutation.mutateAsync({
         sessionId,
         action: {
-          actionText: actionText.trim(),
-          actionType: selectedChoice !== null ? 'choice' : 'custom',
-          choiceIndex: selectedChoice !== null ? selectedChoice : undefined,
+          actionText: text,
+          actionType: isChoice ? 'choice' : 'custom',
+          choiceIndex: choiceIndex,
         },
       })
 
@@ -100,6 +142,21 @@ function GameSessionPage() {
     } finally {
       setExecutingAction(false)
     }
+  }
+
+  const handleSPConsumeSuccess = async () => {
+    if (!pendingAction) return
+
+    await executeAction(
+      pendingAction.text,
+      pendingAction.isChoice,
+      pendingAction.choiceIndex
+    )
+    setPendingAction(null)
+  }
+
+  const handleSPConsumeCancel = () => {
+    setPendingAction(null)
   }
 
   const handleEndSession = async () => {
@@ -268,6 +325,10 @@ function GameSessionPage() {
                     onClick={() => handleChoiceSelect(index)}
                   >
                     <span className="whitespace-normal">{choice}</span>
+                    <Badge variant="secondary" className="ml-auto shrink-0">
+                      <Coins className="h-3 w-3 mr-1" />
+                      2 SP
+                    </Badge>
                   </Button>
                 ))}
               </CardContent>
@@ -287,6 +348,18 @@ function GameSessionPage() {
                 className="min-h-[100px]"
                 disabled={!session.isActive || isExecutingAction}
               />
+              {actionText.trim() && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {selectedChoice !== null ? (
+                      <>選択肢の実行には <strong>2 SP</strong> が必要です</>
+                    ) : (
+                      <>自由行動には <strong>{calculateSPCost(actionText.trim(), false)} SP</strong> が必要です</>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
               <Button
                 onClick={handleSubmitAction}
                 disabled={
@@ -302,7 +375,13 @@ function GameSessionPage() {
                 ) : (
                   <>
                     <Send className="mr-2 h-4 w-4" />
-                    行動実行
+                    {selectedChoice !== null ? (
+                      '選択肢を実行 (2 SP)'
+                    ) : actionText.trim() ? (
+                      `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
+                    ) : (
+                      '行動実行'
+                    )}
                   </>
                 )}
               </Button>
@@ -330,6 +409,26 @@ function GameSessionPage() {
           </Card>
         </div>
       </div>
+
+      {/* SP消費確認ダイアログ */}
+      {pendingAction && (
+        <SPConsumeDialog
+          open={showSPDialog}
+          onOpenChange={setShowSPDialog}
+          amount={calculateSPCost(pendingAction.text, pendingAction.isChoice)}
+          transactionType={SPTransactionType.FREE_ACTION}
+          description={`自由行動: ${pendingAction.text.substring(0, 50)}${pendingAction.text.length > 50 ? '...' : ''}`}
+          relatedEntityType="game_session"
+          relatedEntityId={sessionId}
+          metadata={{
+            actionText: pendingAction.text,
+            sessionId,
+            characterId: session.characterId,
+          }}
+          onSuccess={handleSPConsumeSuccess}
+          onCancel={handleSPConsumeCancel}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { Bell, Menu } from 'lucide-react'
 import { Button } from './ui/button'
 import { WebSocketStatus } from './WebSocketStatus'
+import { SPDisplay } from './sp/SPDisplay'
 
 export function Header() {
   return (
@@ -19,6 +20,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-4">
+          <SPDisplay variant="compact" />
           <WebSocketStatus />
           <Button variant="ghost" size="icon">
             <Bell className="h-5 w-5" />

@@ -20,6 +20,14 @@ import {
   LogContractCreate,
   LogContractAccept,
 } from '@/types/log'
+import {
+  PlayerSP,
+  PlayerSPSummary,
+  SPTransaction,
+  SPConsumeRequest,
+  SPConsumeResponse,
+  SPDailyRecoveryResponse,
+} from '@/types/sp'
 import { snakeToCamelObject, camelToSnakeObject } from '@/utils/caseConverter'
 
 const API_BASE_URL =
@@ -312,6 +320,77 @@ class ApiClient {
       `/logs/contracts/${contractId}/accept`,
       { method: 'POST' },
       data
+    )
+  }
+
+  // SPシステム関連のAPI
+
+  /**
+   * SP残高を取得
+   */
+  getSPBalance(): Promise<PlayerSP> {
+    return this.requestWithTransform<PlayerSP>('/sp/balance')
+  }
+
+  /**
+   * SP残高の概要を取得（軽量版）
+   */
+  getSPBalanceSummary(): Promise<PlayerSPSummary> {
+    return this.requestWithTransform<PlayerSPSummary>('/sp/balance/summary')
+  }
+
+  /**
+   * SPを消費
+   */
+  consumeSP(request: SPConsumeRequest): Promise<SPConsumeResponse> {
+    return this.requestWithTransform<SPConsumeResponse>(
+      '/sp/consume',
+      { method: 'POST' },
+      request
+    )
+  }
+
+  /**
+   * 日次SP回復処理
+   */
+  processDailyRecovery(): Promise<SPDailyRecoveryResponse> {
+    return this.requestWithTransform<SPDailyRecoveryResponse>(
+      '/sp/daily-recovery',
+      { method: 'POST' }
+    )
+  }
+
+  /**
+   * SP取引履歴を取得
+   */
+  getSPTransactions(params?: {
+    transactionType?: string
+    startDate?: string
+    endDate?: string
+    relatedEntityType?: string
+    relatedEntityId?: string
+    limit?: number
+    offset?: number
+  }): Promise<SPTransaction[]> {
+    const query = new URLSearchParams()
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.append(key, String(value))
+        }
+      })
+    }
+    const queryString = query.toString()
+    const url = `/sp/transactions${queryString ? `?${queryString}` : ''}`
+    return this.requestWithTransform<SPTransaction[]>(url)
+  }
+
+  /**
+   * SP取引詳細を取得
+   */
+  getSPTransaction(transactionId: string): Promise<SPTransaction> {
+    return this.requestWithTransform<SPTransaction>(
+      `/sp/transactions/${transactionId}`
     )
   }
 }
