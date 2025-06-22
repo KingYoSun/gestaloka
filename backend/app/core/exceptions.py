@@ -111,6 +111,21 @@ class WebSocketError(LogverseError):
         super().__init__(message, code="WEBSOCKET_ERROR", details=details)
 
 
+class SPSystemError(LogverseError):
+    """SPシステムエラー"""
+
+    def __init__(self, message: str, operation: Optional[str] = None):
+        details = {"operation": operation} if operation else {}
+        super().__init__(message, code="SP_SYSTEM_ERROR", details=details)
+
+
+class InsufficientSPError(SPSystemError):
+    """SP残高不足エラー"""
+
+    def __init__(self, message: str = "Insufficient SP balance"):
+        super().__init__(message, operation="consume")
+
+
 # HTTPException マッピング
 def to_http_exception(exc: LogverseError) -> HTTPException:
     """
@@ -133,6 +148,7 @@ def to_http_exception(exc: LogverseError) -> HTTPException:
         "GAME_LOGIC_ERROR": status.HTTP_400_BAD_REQUEST,
         "SESSION_ERROR": status.HTTP_400_BAD_REQUEST,
         "WEBSOCKET_ERROR": status.HTTP_400_BAD_REQUEST,
+        "SP_SYSTEM_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
     }
 
     status_code = status_code_map.get(exc.code or "", status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -12,6 +12,7 @@ from app.api.api_v1.endpoints import (
     game,
     logs,
     npcs,
+    sp,
     users,
     websocket,
 )
@@ -25,6 +26,7 @@ api_router.include_router(characters.router, prefix="/characters", tags=["charac
 api_router.include_router(game.router, prefix="/game", tags=["game"])
 api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
 api_router.include_router(npcs.router, prefix="/npcs", tags=["npcs"])
+api_router.include_router(sp.router, prefix="/sp", tags=["sp"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(config.router, prefix="/config", tags=["config"])

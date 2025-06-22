@@ -1,5 +1,47 @@
 # 最近の作業履歴
 
+## 2025/06/22 - SPシステムの実装完了
+
+### 実装内容
+
+#### データモデル実装
+- **PlayerSPモデル**: プレイヤーのSP保有状況を管理
+  - 現在残高、総獲得量、総消費量の追跡
+  - 購入情報とサブスクリプション管理
+  - 日次回復と連続ログイン追跡
+- **SPTransactionモデル**: SP取引履歴の完全な記録
+  - 全ての増減を監査証跡として記録
+  - 取引種別（取得系/消費系/システム系）の分類
+  - 購入情報と関連エンティティの追跡
+- **Enum定義**:
+  - SPTransactionType: 14種類の取引タイプ
+  - SPPurchasePackage: 5種類の購入パッケージ
+  - SPSubscriptionType: 2種類の月額パス
+
+#### API実装
+- **エンドポイント**:
+  - `GET /api/v1/sp/balance` - SP残高詳細取得
+  - `GET /api/v1/sp/balance/summary` - SP残高概要取得
+  - `POST /api/v1/sp/consume` - SP消費
+  - `POST /api/v1/sp/daily-recovery` - 日次回復処理
+  - `GET /api/v1/sp/transactions` - 取引履歴取得
+  - `GET /api/v1/sp/transactions/{id}` - 取引詳細取得
+- **SPServiceクラス**: ビジネスロジックの実装
+  - 初回登録50SPボーナス
+  - サブスクリプション割引（Basic 10%、Premium 20%）
+  - 連続ログインボーナス（7日、14日、30日）
+  - 完全な監査証跡と不正防止
+
+### 技術的な成果
+- 型チェック：✅ エラーなし
+- リント：✅ エラーなし
+- カスタム例外（InsufficientSPError、SPSystemError）の実装
+- 包括的な統合テスト作成
+
+### 関連ドキュメント
+- [SPシステム実装詳細](../../05_implementation/spSystemImplementation.md)
+- [SPシステム仕様](../../03_worldbuilding/game_mechanics/spSystem.md)
+
 ## 2025/06/20 - ログ編纂機能の有効化と実装完了
 
 ### 実施内容
