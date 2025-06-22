@@ -30,100 +30,31 @@
 
 ### 1. 認証フロー
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant K as KeyCloak
-    participant A as API Server
-    participant D as Database
-
-    C->>K: 1. Login Request
-    K->>K: 2. Validate Credentials
-    K->>C: 3. Return JWT
-    C->>A: 4. API Request with JWT
-    A->>A: 5. Validate JWT
-    A->>D: 6. Get/Create User Profile
-    D->>A: 7. User Data
-    A->>C: 8. Response
-```
+認証フローは以下の手順で実行されます：
+1. クライアントからKeyCloakへログインリクエスト
+2. KeyCloakでの認証情報検証
+3. JWTトークンの返却
+4. JWTを使用したAPIリクエスト
+5. APIサーバーでのJWT検証
+6. データベースからユーザー情報取得/作成
+7. レスポンスの返却
 
 ### 2. ゲームプレイフロー
 
-```mermaid
-graph TD
-    subgraph "Client Layer"
-        UI[React UI]
-        WS[WebSocket Client]
-    end
-
-    subgraph "API Layer"
-        API[FastAPI Server]
-        WSIO[Socket.IO Server]
-        LC[LangChain Manager]
-    end
-
-    subgraph "AI Layer"
-        DRAMA[脚本家AI]
-        STATE[状態管理AI]
-        NPC[NPC管理AI]
-        HIST[歴史家AI]
-        WORLD[世界の意識AI]
-        CHAOS[混沌AI]
-    end
-
-    subgraph "Data Layer"
-        PG[(PostgreSQL)]
-        NEO[(Neo4j)]
-        REDIS[(Redis)]
-    end
-
-    subgraph "External"
-        LLM[Gemini 2.5 Pro]
-    end
-
-    UI --> API
-    WS <--> WSIO
-    API --> LC
-    WSIO --> LC
-    
-    LC --> DRAMA
-    LC --> STATE
-    
-    DRAMA --> LLM
-    STATE --> PG
-    STATE --> NEO
-    
-    NPC --> PG
-    NPC --> NEO
-    
-    API --> REDIS
-    WSIO --> REDIS
-```
+ゲームプレイは複数のレイヤーを通じて処理されます：
+- **クライアント層**: React UIとWebSocketクライアント
+- **API層**: FastAPIサーバー、Socket.IOサーバー、LangChainマネージャー
+- **AI層**: 6つの専門AI（脚本家、状態管理、NPC管理、歴史家、世界の意識、混沌）
+- **データ層**: PostgreSQL、Neo4j、Redis
+- **外部サービス**: Gemini 2.5 Pro
 
 ### 3. ログ生成フロー
 
-```mermaid
-stateDiagram-v2
-    [*] --> PlayerAction: プレイヤー行動
-    PlayerAction --> EventLogging: イベント記録
-    EventLogging --> FragmentGeneration: 重要度判定
-    
-    FragmentGeneration --> LogFragment: ログの欠片生成
-    FragmentGeneration --> NormalEvent: 通常イベント
-    
-    LogFragment --> Inventory: インベントリ保存
-    Inventory --> LogWeaving: ログ編纂開始
-    
-    LogWeaving --> CombineFragments: 欠片の組み合わせ
-    CombineFragments --> ValidateLog: ログ検証
-    
-    ValidateLog --> CompletedLog: 完成ログ
-    ValidateLog --> LogWeaving: 再編纂
-    
-    CompletedLog --> Contract: ログ契約
-    Contract --> OtherWorld: 他世界へ配置
-    OtherWorld --> [*]
-```
+ログ生成の状態遷移：
+- プレイヤー行動 → イベント記録 → 重要度判定
+- ログの欠片生成 → インベントリ保存 → ログ編纂
+- 欠片の組み合わせ → ログ検証 → 完成ログ
+- ログ契約 → 他世界へ配置
 
 ## データモデルパターン
 
@@ -148,31 +79,23 @@ Neo4j (関係性データ)
 
 ### 2. イベントソーシング
 
-```python
-# イベント構造
-class GameEvent:
-    event_id: str
-    timestamp: datetime
-    player_id: str
-    event_type: str
-    payload: dict
-    resulting_state_changes: dict
-```
+**イベント構造の設計原則:**
+- 一意のイベントIDとタイムスタンプによる追跡可能性
+- プレイヤーIDによる行動主体の明確化
+- イベントタイプによる分類と処理の最適化
+- ペイロードによる柔軟なデータ格納
+- 状態変更の明示的な記録による監査証跡
 
 ### 3. ログフラグメント構造
 
-```python
-# ログの欠片
-class LogFragment:
-    fragment_id: str
-    player_id: str
-    timestamp: datetime
-    keywords: List[str]  # ["勇敢", "探索", etc.]
-    emotion_value: float  # -1.0 to 1.0
-    rarity: str  # "common", "uncommon", "rare", etc.
-    backstory: str  # 物語的な記述
-    source_event_ids: List[str]
-```
+**ログフラグメントの主要要素:**
+- **識別情報**: 一意のIDとプレイヤー紐付け
+- **時系列データ**: タイムスタンプによる時系列管理
+- **意味的タグ**: キーワードによる内容の分類
+- **感情的指標**: -1.0から1.0の範囲での感情値
+- **希少度**: 一般的なものから希少なものまでの分類
+- **物語的要素**: プレイヤー行動の物語的な記述
+- **ソース追跡**: 元となったイベントIDのリスト
 
 ## API設計パターン
 
@@ -194,151 +117,57 @@ WebSocket (Socket.IO)
 
 ### 2. フロントエンドルーティングパターン
 
-**TanStack Router実装:**
-```typescript
-// ファイルベースルーティング構造
-src/routes/
-├── __root.tsx         // ルートレイアウト + プロバイダー
-├── index.tsx          // ホームページ (/)
-├── login.tsx          // ログインページ (/login)
-├── dashboard.tsx      // ダッシュボード (/dashboard)
-├── character.create.tsx  // キャラクター作成 (/character/create)
-├── game.$sessionId.tsx   // ゲームページ (/game/$sessionId)
-├── logs.tsx           // ログ管理 (/logs)
-└── settings.tsx       // 設定 (/settings)
+**TanStack Router実装方針:**
+- **ファイルベースルーティング**: 直感的なディレクトリ構造によるルート定義
+- **型安全性**: コンパイル時の型チェックによるナビゲーションエラー防止
+- **認証統合**: ProtectedRouteコンポーネントによる統一的なアクセス制御
+- **レイアウト継承**: 共通レイアウトの効率的な再利用
 
-// 型安全なナビゲーション
-const navigate = useNavigate()
-navigate({ to: '/dashboard' })  // コンパイル時に型チェック
-
-// 認証ガード統合
-export const Route = createFileRoute('/dashboard')({
-  component: () => (
-    <ProtectedRoute>
-      <Layout>
-        <DashboardPage />
-      </Layout>
-    </ProtectedRoute>
-  ),
-})
-```
+**主要ルート構成:**
+- ルートレイアウト（__root.tsx）: アプリケーション全体のプロバイダー設定
+- 認証画面（login.tsx）: ログイン・登録フロー
+- ダッシュボード（dashboard.tsx）: ユーザーホーム画面
+- キャラクター管理（character.*.tsx）: 作成・編集・詳細表示
+- ゲームセッション（game.$sessionId.tsx）: 動的ルートによるセッション管理
+- ログ管理（logs.tsx）: ログフラグメントと完成ログの管理
+- 設定画面（settings.tsx）: ユーザー設定とプリファレンス
 
 ### 3. API レスポンス構造
 
-```python
-# 統一レスポンス形式
-class APIResponse:
-    success: bool
-    data: Optional[dict]
-    error: Optional[str]
-    metadata: dict  # ページネーション、処理時間等
-```
+**統一レスポンス形式の設計原則:**
+- **成功/失敗の明示**: `success`フラグによる結果の明確化
+- **データペイロード**: 成功時のデータを`data`フィールドに格納
+- **エラー情報**: 失敗時の詳細を`error`フィールドで提供
+- **メタデータ**: ページネーション、処理時間、バージョン情報などの付加情報
 
 ## AI協調パターン
 
 ### 1. AI協調動作プロトコル
 
-```mermaid
-graph TD
-    subgraph "Player Layer"
-        PA[Player Action]
-    end
-    
-    subgraph "Coordinator Layer"
-        COORD[CoordinatorAI]
-        TG[TaskListGenerator]
-        SC[SharedContext]
-        EC[EventChain]
-    end
-    
-    subgraph "AI Agents"
-        DRAMA[脚本家AI]
-        STATE[状態管理AI]
-        HIST[歴史家AI]
-        NPC[NPC管理AI]
-        WORLD[世界の意識AI]
-        CHAOS[混沌AI]
-    end
-    
-    subgraph "Data Layer"
-        CACHE[(Response Cache)]
-        DB[(Database)]
-    end
-    
-    PA --> COORD
-    COORD --> TG
-    TG --> SC
-    
-    COORD -.->|並列実行| DRAMA
-    COORD -.->|並列実行| STATE
-    COORD -->|順次実行| HIST
-    
-    SC --> DRAMA
-    SC --> STATE
-    SC --> HIST
-    SC --> NPC
-    SC --> WORLD
-    SC --> CHAOS
-    
-    DRAMA --> CACHE
-    STATE --> CACHE
-    HIST --> DB
-    
-    EC --> WORLD
-    EC --> CHAOS
-```
+AI協調システムは以下のレイヤーで構成されます：
+- **プレイヤー層**: プレイヤーアクションの受付
+- **コーディネーター層**: CoordinatorAI、タスクリスト生成、共有コンテキスト、イベント連鎖
+- **AIエージェント層**: 6つの専門AI
+- **データ層**: レスポンスキャッシュとデータベース
+
+並列実行と順次実行の最適化により、効率的なAI処理を実現します。
 
 ### 2. タスク最適化フロー
 
-```mermaid
-sequenceDiagram
-    participant P as Player
-    participant C as CoordinatorAI
-    participant TG as TaskListGenerator
-    participant SC as SharedContext
-    participant AI as AI Agents
-    participant WS as WebSocket
-    
-    P->>C: アクション実行
-    C->>TG: タスク生成要求
-    TG->>TG: アクション分類
-    TG->>C: 最適化されたタスクリスト
-    
-    C->>WS: 進捗通知 (0%)
-    
-    loop 各タスクごと
-        C->>SC: コンテキスト更新
-        C->>AI: AI呼び出し（並列/順次）
-        AI->>C: レスポンス
-        C->>WS: 進捗通知 (n%)
-    end
-    
-    C->>C: レスポンス統合
-    C->>WS: 進捗通知 (100%)
-    C->>P: 最終レスポンス
-```
+タスク最適化の処理順序：
+1. プレイヤーからのアクション実行要求
+2. タスクリスト生成とアクション分類
+3. 最適化されたタスクリストの作成
+4. 進捗通知付きのタスク実行（0%〜100%）
+5. レスポンス統合と最終応答
 
 ### 3. イベント連鎖システム
 
-```mermaid
-stateDiagram-v2
-    [*] --> EventEmitted: イベント発行
-    
-    EventEmitted --> PriorityQueue: 優先度キューに追加
-    PriorityQueue --> EventProcessing: イベント処理
-    
-    EventProcessing --> HandlerExecution: ハンドラー実行
-    HandlerExecution --> SecondaryEvents: 二次イベント生成
-    HandlerExecution --> StateUpdate: 状態更新
-    
-    SecondaryEvents --> DepthCheck: 連鎖深度チェック
-    DepthCheck --> EventEmitted: 深度OK (< 3)
-    DepthCheck --> ChainTerminated: 深度超過
-    
-    StateUpdate --> EventCompleted: 処理完了
-    ChainTerminated --> EventCompleted
-    EventCompleted --> [*]
-```
+イベント連鎖の状態遷移：
+- イベント発行 → 優先度キューへ追加 → イベント処理
+- ハンドラー実行 → 二次イベント生成/状態更新
+- 連鎖深度チェック（最大3段階）
+- 処理完了または連鎖終了
 
 ### 4. AI責任分離（協調動作版）
 
@@ -353,54 +182,42 @@ stateDiagram-v2
 
 ### 5. 共有コンテキスト構造
 
-```python
-@dataclass
-class SharedContext:
-    # セッション情報
-    session_id: str
-    turn_number: int
-    
-    # 世界状態
-    world_state: WorldState
-    weather: Weather
-    time_of_day: TimeOfDay
-    active_events: List[GameEvent]
-    
-    # キャラクター状態
-    player_state: CharacterState
-    active_npcs: Dict[str, NPCState]
-    
-    # 履歴情報
-    recent_actions: deque[PlayerAction]  # 最新10件
-    recent_events: deque[GameEvent]     # 最新20件
-    important_decisions: List[Decision]
-    
-    # AI決定履歴
-    ai_decisions: Dict[str, List[AIDecision]]
-    
-    # 一時効果
-    active_effects: List[TemporaryEffect]
-    environmental_modifiers: Dict[str, float]
-```
+**SharedContextの主要コンポーネント:**
+
+1. **セッション情報**
+   - セッションIDによる一意の識別
+   - ターン番号による進行状況の追跡
+
+2. **世界状態**
+   - 現在の世界の状態を表現
+   - 天候、時刻、アクティブなイベントの管理
+
+3. **キャラクター状態**
+   - プレイヤーの現在の状態
+   - アクティブなNPCとその状態の管理
+
+4. **履歴情報**
+   - 最近の行動（最新10件）の保持
+   - 最近のイベント（最新20件）の記録
+   - 重要な決定の永続的な記録
+
+5. **AI決定履歴**
+   - 各AIエージェントの決定履歴
+   - デバッグとAI改善のための情報
+
+6. **一時効果**
+   - アクティブな一時的効果のリスト
+   - 環境による修正値の管理
 
 ## エラーハンドリングパターン
 
 ### 1. 階層的エラー処理
 
-```python
-# エラー階層
-class GameError(Exception):
-    """基底エラークラス"""
-    
-class ValidationError(GameError):
-    """入力検証エラー"""
-    
-class StateError(GameError):
-    """ゲーム状態エラー"""
-    
-class AIError(GameError):
-    """AI処理エラー"""
-```
+**エラーカテゴリーの階層構造:**
+- **GameError**: 基底エラークラス - すべてのゲーム関連エラーの親クラス
+- **ValidationError**: 入力検証エラー - ユーザー入力の妥当性チェック失敗
+- **StateError**: ゲーム状態エラー - 不正な状態遷移や状態の不整合
+- **AIError**: AI処理エラー - LLM応答エラーやAI協調の失敗
 
 ### 2. グレースフルデグラデーション
 
@@ -422,48 +239,29 @@ Redis キャッシュ層
 
 ### 2. 非同期処理
 
-```python
-# Celeryタスク例
-@celery_task
-async def process_log_generation(event_id: str):
-    """ログ生成の非同期処理"""
-    # 重い処理をバックグラウンドで実行
-    pass
-
-@celery_task
-async def update_world_statistics():
-    """世界統計の定期更新"""
-    pass
-```
+**Celeryタスクの実装パターン:**
+- **ログ生成処理**: イベントIDを受け取り、バックグラウンドでログフラグメントを生成
+- **世界統計更新**: 定期的に世界全体の統計情報を集計・更新
+- **NPC生成**: 完成したログからNPCエンティティを非同期で生成
+- **イベント連鎖処理**: 複雑なイベント連鎖をキューで管理
 
 ## セキュリティパターン
 
 ### 1. 入力検証
 
-```python
-# Pydanticによる厳密な型検証
-class PlayerAction(BaseModel):
-    action_type: str
-    target: Optional[str]
-    parameters: dict
-    
-    @validator('action_type')
-    def validate_action_type(cls, v):
-        if v not in ALLOWED_ACTIONS:
-            raise ValueError(f"Invalid action type: {v}")
-        return v
-```
+**Pydanticによる厳密な型検証:**
+- **型安全性**: すべての入力データの型を厳密にチェック
+- **バリデーション**: 許可されたアクションタイプのみを受け入れ
+- **エラーメッセージ**: 明確で具体的なエラー情報の提供
+- **自動ドキュメント**: OpenAPIスキーマの自動生成
 
 ### 2. プロンプトインジェクション対策
 
-```python
-# LLMプロンプトのサニタイゼーション
-def sanitize_user_input(input_text: str) -> str:
-    # 特殊文字のエスケープ
-    # プロンプト区切り文字の除去
-    # 長さ制限の適用
-    return sanitized_text
-```
+**LLMプロンプトのセキュリティ対策:**
+- **特殊文字のエスケープ**: SQLインジェクション類似の攻撃を防止
+- **プロンプト区切り文字の除去**: システムプロンプトへの干渉を防止
+- **長さ制限の適用**: 過度に長い入力による攻撃を防止
+- **コンテキスト分離**: ユーザー入力とシステムプロンプトの明確な分離
 
 ## テスト戦略パターン
 
@@ -487,42 +285,26 @@ E2Eテスト (10%)
 
 ### 2. モックパターン
 
-```python
-# AI応答のモック
-class MockLLMClient:
-    def generate_response(self, prompt: str) -> str:
-        return PREDEFINED_RESPONSES.get(
-            prompt_type(prompt),
-            "デフォルト応答"
-        )
-```
+**テスト用モックの実装方針:**
+- **AI応答のモック**: 事前定義された応答による確定的なテスト
+- **データベースモック**: インメモリDBによる高速テスト
+- **外部サービスモック**: WebSocketやRedisの動作シミュレーション
+- **時間依存モック**: 時刻に依存する処理の制御可能なテスト
 
 ## デプロイメントパターン
 
 ### 1. コンテナ構成
 
-```yaml
-services:
-  frontend:
-    build: ./frontend
-    environment:
-      - NODE_ENV=production
-  
-  backend:
-    build: ./backend
-    environment:
-      - ENVIRONMENT=production
-    depends_on:
-      - postgres
-      - neo4j
-      - redis
-  
-  worker:
-    build: ./backend
-    command: celery worker
-    depends_on:
-      - redis
-```
+**Docker Composeサービス構成:**
+- **frontend**: React/Viteアプリケーション（本番ビルド）
+- **backend**: FastAPIサーバー（依存: postgres, neo4j, redis）
+- **worker**: Celeryワーカー（非同期タスク処理）
+- **beat**: Celeryビート（定期タスク管理）
+- **flower**: Celery監視ツール
+- **postgres**: リレーショナルデータベース
+- **neo4j**: グラフデータベース
+- **redis**: キャッシュ・メッセージブローカー
+- **keycloak**: 認証サーバー
 
 ### 2. 環境別設定
 
@@ -547,126 +329,75 @@ services:
 
 ### 1. セッション状態管理フロー
 
-```mermaid
-sequenceDiagram
-    participant P as Player
-    participant F as Frontend
-    participant A as API
-    participant S as GameSessionService
-    participant DB as Database
-    participant Store as Zustand Store
-    
-    P->>F: ゲーム開始要求
-    F->>A: POST /game/sessions
-    A->>S: create_session()
-    S->>DB: 既存セッション非アクティブ化
-    S->>DB: 新セッション作成
-    S->>A: GameSessionResponse
-    A->>F: セッションデータ
-    F->>Store: setActiveSession()
-    F->>P: ゲーム画面表示
-```
+セッション管理の処理順序：
+1. プレイヤーからのゲーム開始要求
+2. フロントエンドからAPIへのPOSTリクエスト
+3. GameSessionServiceでのセッション作成
+4. 既存セッションの非アクティブ化
+5. 新規セッションの作成
+6. Zustandストアへの状態保存
+7. ゲーム画面の表示
 
 ### 2. アクション実行パターン
 
-```mermaid
-stateDiagram-v2
-    [*] --> WaitingInput: セッション開始
-    WaitingInput --> ValidatingAction: アクション入力
-    
-    ValidatingAction --> ProcessingAction: 検証成功
-    ValidatingAction --> WaitingInput: 検証失敗
-    
-    ProcessingAction --> AIProcessing: AI統合済み
-    ProcessingAction --> MockResponse: AI未統合
-    
-    AIProcessing --> UpdateSession: AI応答受信
-    MockResponse --> UpdateSession: モック応答生成
-    
-    UpdateSession --> WaitingInput: セッション更新完了
-    
-    WaitingInput --> SessionEnd: セッション終了要求
-    SessionEnd --> [*]
-```
+アクション実行の状態遷移：
+- セッション開始 → 入力待機
+- アクション入力 → 検証処理
+- 検証成功 → AI処理またはモック応答
+- セッション更新 → 再度入力待機
+- セッション終了要求 → 終了
 
 ### 3. 状態管理統合パターン
 
-```typescript
-// React Query + Zustand 統合パターン
-export const useGameSessionFlow = (sessionId: string) => {
-  // サーバー状態管理（React Query）
-  const { data: session } = useGameSession(sessionId)
-  
-  // クライアント状態管理（Zustand）
-  const { activeSession, setActiveSession, getSessionMessages } = useGameSessionStore()
-  
-  // 統合効果
-  useEffect(() => {
-    if (session && session.id === sessionId) {
-      setActiveSession(session)
-    }
-  }, [session, sessionId, setActiveSession])
-  
-  return {
-    session,
-    messages: getSessionMessages(sessionId),
-    isActive: activeSession?.id === sessionId
-  }
-}
-```
+**React Query + Zustand 統合戦略:**
+- **サーバー状態**: React Queryによるキャッシュ管理と自動再取得
+- **クライアント状態**: Zustandによるローカル状態の効率的な管理
+- **同期メカニズム**: useEffectによるサーバー・クライアント状態の同期
+- **選択的購読**: 必要なデータのみを購読してレンダリング最適化
 
 ### 4. エラーハンドリングパターン
 
-```python
-# サービス層エラーハンドリング
-class GameSessionService:
-    async def create_session(self, user_id: str, data: GameSessionCreate):
-        try:
-            # キャラクター所有権チェック
-            character = await self._validate_character_ownership(user_id, data.character_id)
-            
-            # 既存セッション処理
-            await self._deactivate_existing_sessions(data.character_id)
-            
-            # 新セッション作成
-            session = await self._create_new_session(character, data)
-            
-            return self._to_response(session, character)
-            
-        except CharacterNotFoundError:
-            raise HTTPException(status_code=404, detail="キャラクターが見つかりません")
-        except PermissionError:
-            raise HTTPException(status_code=403, detail="このキャラクターにアクセスする権限がありません")
-        except Exception as e:
-            logger.error("Session creation failed", error=str(e))
-            raise HTTPException(status_code=500, detail="セッションの作成に失敗しました")
-```
+**サービス層エラーハンドリングの実装方針:**
+
+1. **事前検証**
+   - キャラクター所有権の確認
+   - リソースの存在確認
+   - 権限チェック
+
+2. **段階的処理**
+   - 既存セッションの適切な終了処理
+   - 新規リソースの作成
+   - レスポンスの構築
+
+3. **具体的なエラーハンドリング**
+   - **404 Not Found**: リソースが見つからない場合
+   - **403 Forbidden**: 権限がない場合
+   - **500 Internal Server Error**: 予期しないエラー
+
+4. **ロギング戦略**
+   - エラーレベルに応じた適切なログ出力
+   - デバッグ情報の記録
+   - ユーザーへの適切なメッセージ提供
 
 ### 5. UI状態管理パターン
 
-```typescript
-// メッセージ履歴管理
-interface GameSessionState {
-  activeSession: GameSession | null
-  messageHistory: Record<string, GameMessage[]>  // sessionId -> messages
-  currentChoices: string[] | null
-  isExecutingAction: boolean
-}
+**Zustandによる状態管理の設計:**
 
-// 永続化戦略
-const gameSessionStore = persist(
-  (set, get) => ({
-    // ストア実装
-  }),
-  {
-    name: 'game-session-store',
-    partialize: (state) => ({
-      activeSession: state.activeSession,
-      messageHistory: state.messageHistory, // メッセージ履歴のみ永続化
-    }),
-  }
-)
-```
+1. **状態構造**
+   - **activeSession**: 現在アクティブなゲームセッション
+   - **messageHistory**: セッションIDごとのメッセージ履歴
+   - **currentChoices**: 現在提示されている選択肢
+   - **isExecutingAction**: アクション実行中フラグ
+
+2. **永続化戦略**
+   - **選択的永続化**: 重要なデータのみlocalStorageに保存
+   - **セッション復元**: ページリロード時の状態復元
+   - **メモリ効率**: 不要なデータの自動クリーンアップ
+
+3. **パフォーマンス最適化**
+   - **選択的レンダリング**: 必要なコンポーネントのみ再レンダリング
+   - **メモ化**: 計算コストの高い処理のキャッシュ
+   - **バッチ更新**: 複数の状態更新をまとめて処理
 
 ## まとめ
 

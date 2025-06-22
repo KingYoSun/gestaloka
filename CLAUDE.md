@@ -40,6 +40,7 @@
 - **重複禁止**: 同じ目的・内容のファイルは作成しない。既存ファイルを更新する
 - **サイズ制限**: 1ファイル500行を超える場合は、論理的な単位で分割を検討
 - **命名規則**: キャメルケース（例: `issuesAndNotes.md`）を使用、アンダースコアは避ける
+- **実装コード省略**: 詳細な実装コードは省略し、内容をテキストで記述するに留める
 
 ### 作業履歴の管理
 - **CLAUDE.md**: 作業ルールとプロジェクト概要のみ記載。詳細な作業履歴は記載しない
@@ -94,41 +95,9 @@ documents/
 - **LLM**: Gemini 2.5 Pro (安定版: gemini-2.5-pro)
 - **インフラ**: Docker Compose, WebSocket (Socket.IO), Celery（Worker/Beat/Flower）
 
-## 現在の動作環境
+## 現在の環境
 
-### 稼働中サービス（2025/06/19時点）
-🟢 **PostgreSQL 17**: localhost:5432 - ユーザーデータ、キャラクターデータ（最新安定版）  
-🟢 **Neo4j 5.26 LTS**: localhost:7474/7687 - グラフデータベース、関係性データ（長期サポート版）  
-🟢 **Redis 8**: localhost:6379 - セッション、キャッシュ、Celeryブローカー（最新安定版）  
-🟢 **Backend API**: localhost:8000 - FastAPI、認証API稼働中  
-🟢 **Frontend**: localhost:3000 - React/Vite開発サーバー稼働中  
-🟢 **Celery Worker**: Celeryタスクワーカー稼働中  
-🟢 **Celery Beat**: 定期タスクスケジューラ稼働中  
-🟢 **Flower**: localhost:5555 - Celery監視ツール稼働中  
-🟢 **Keycloak 26.2**: localhost:8080 - 認証サーバー稼働中（最新版）  
-
-### 実装済み機能
-- ✅ ユーザー登録・ログイン（JWT認証）
-- ✅ 認証保護エンドポイント
-- ✅ データベースマイグレーション（Alembic + SQLModel統合）
-- ✅ 型安全なAPIクライアント統合
-- ✅ キャラクター管理（作成・一覧・詳細・状態管理）
-- ✅ ゲームセッション管理（作成・更新・終了・アクション実行）
-- ✅ AI統合基盤（Gemini API、プロンプト管理、エージェントシステム）
-- ✅ Celeryタスク管理（Worker、Beat、Flower統合）
-- ✅ 基本的な戦闘システム（ターン制バトル、戦闘UI、リアルタイム更新）
-- ✅ ログシステム基盤（LogFragment、CompletedLog）
-- ✅ ログNPC生成機能（Neo4j統合、NPCジェネレーター、Celeryタスク）
-- ✅ フロントエンドDRY原則実装（共通コンポーネント、カスタムフック、ユーティリティ）
-- ✅ ログ編纂UI基本実装（フラグメント管理、編纂エディター、汚染度計算）
-
-### 利用可能なURL
-- **フロントエンド**: http://localhost:3000
-- **API ドキュメント**: http://localhost:8000/docs
-- **Neo4j ブラウザ**: http://localhost:7474
-- **ヘルスチェック**: http://localhost:8000/health
-- **Celery監視（Flower）**: http://localhost:5555
-- **Keycloak管理画面**: http://localhost:8080/admin（admin/admin_password）
+詳細は `documents/01_project/activeContext/current_environment.md` を参照してください。
 
 ## 必須コマンド
 
@@ -384,11 +353,8 @@ docker-compose exec -T backend alembic downgrade -1
 - **ログによる永続性**: プレイヤーの行動が世界に残る
 - **AI協調**: 単一AIではなく専門AIの協調による豊かな体験
 
-## プロジェクトコンテキスト
+## 詳細情報の参照先
 
-最新の作業履歴と詳細な進捗は以下のドキュメントを参照してください：
-
-- **開発進捗**: `documents/01_project/progressReports/`
 - **現在の環境**: `documents/01_project/activeContext/current_environment.md`
 - **既知の問題**: `documents/01_project/activeContext/issuesAndNotes.md`
-- **完了タスク**: `documents/01_project/activeContext/completedTasks.md`
+- **開発進捗**: `documents/01_project/progressReports/`

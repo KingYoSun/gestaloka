@@ -3,25 +3,14 @@
 ## 2025/06/22 - コード品質の完全改善
 
 ### 実施内容
-
-#### 全テスト・型・リントエラーの解消
-- **フロントエンド**：
-  - 型チェック：✅ エラーなし
-  - リント：✅ エラーなし
-  - テスト：✅ 21件全て成功
-  - shadcn/uiコンポーネント追加（dialog、table、select、dropdown-menu、tabs、skeleton）
-  - date-fnsパッケージ追加（日付フォーマット機能）
-
-- **バックエンド**：
-  - 型チェック：✅ エラーなし（統合テスト除外設定）
-  - リント：✅ エラーなし
-  - テスト：✅ 189件全て成功（SPテスト7件追加）
-  - SPテストファイルの認証モック実装
-  - インデントエラーの完全修正
+- 全テスト・型・リントエラーの解消
+- フロントエンド：型チェック、リント、テスト全て成功（21件）
+- バックエンド：型チェック、リント、テスト全て成功（189件）
+- shadcn/uiコンポーネントとdate-fnsパッケージ追加
 
 ### 技術的な成果
 - プロジェクト全体のコード品質が完璧な状態に
-- 210件のテストが全て成功（フロントエンド21件、バックエンド189件）
+- 210件のテストが全て成功
 - 型安全性の完全確保
 - コーディング規約の統一
 
@@ -31,56 +20,15 @@
 ## 2025/06/22 - SPシステムの実装完了
 
 ### 実装内容
-
-#### データモデル実装（Phase 1）
-- **PlayerSPモデル**: プレイヤーのSP保有状況を管理
-  - 現在残高（current_sp）、SP上限値（max_sp）管理
-  - 最終回復時刻、累積獲得量・消費量の追跡
-  - UTC時刻での一貫した時刻管理
-- **SPTransactionモデル**: SP取引履歴の完全な記録
-  - 全ての増減を監査証跡として記録
-  - 取引種別（EARNED/CONSUMED/REFILL/ADMIN）の分類
-  - 14種類の詳細イベントタイプ（SPEventSubtype）
-  - 関連エンティティ（character_id、session_id、completed_log_id）の追跡
-- **データベースマイグレーション**:
-  - `sp_system_models`マイグレーション作成・適用
-  - 適切なインデックスと外部キー制約の定義
-
-#### API実装（Phase 2）
-- **エンドポイント（6つ）**:
-  - `GET /api/v1/sp/balance` - SP残高詳細取得
-  - `GET /api/v1/sp/balance/summary` - SP残高概要取得（軽量版）
-  - `POST /api/v1/sp/consume` - SP消費（トランザクション処理）
-  - `POST /api/v1/sp/daily-recovery` - 日次回復処理（UTC 4時基準）
-  - `GET /api/v1/sp/transactions` - 取引履歴取得（フィルタリング対応）
-  - `GET /api/v1/sp/transactions/{id}` - 取引詳細取得
-- **SPServiceクラス**: ビジネスロジックの完全実装
-  - 初回登録50SPボーナス付与
-  - サブスクリプション割引（Basic 10%、Premium 20%）の自動適用
-  - 連続ログインボーナス（7日:+5SP、14日:+10SP、30日:+20SP）
-  - 日次回復：基本10SP + サブスクボーナス + 連続ログインボーナス
-  - 完全な監査証跡と不正防止（重複回復防止、残高チェック）
-
-#### フロントエンド統合準備
-- **React Query フック実装**:
-  - `useSPBalance` - SP残高取得
-  - `useSPTransactions` - 取引履歴取得
-  - `useConsumeSP` - SP消費ミューテーション
-  - `useDailyRecovery` - 日次回復ミューテーション
-- **UIコンポーネント実装**:
-  - `SPDisplay` - ヘッダーでのSP残高表示
-  - `SPTransactionHistory` - 取引履歴表示
-  - `SPConsumptionDialog` - 消費確認ダイアログ
-- **ゲームセッションとの統合**:
-  - 選択肢実行時：一律2SP消費
-  - 自由行動時：文字数に応じて1-5SP消費（50文字ごとに1SP）
+- データモデル実装（PlayerSP、SPTransaction）
+- API実装（6つのエンドポイント）
+- SPServiceクラスによるビジネスロジック実装
+- フロントエンド統合準備（React Queryフック、UIコンポーネント）
 
 ### 技術的な成果
-- 型チェック：✅ エラーなし（バックエンド・フロントエンド両方）
-- リント：✅ エラーなし（ruff、ESLint）
-- カスタム例外（InsufficientSPError、SPSystemError）の実装
-- 包括的な統合テスト作成（全エンドポイント、エラーケース、権限チェック）
-- TypeScript型定義の自動生成対応
+- 型チェック・リントエラーなし
+- 包括的な統合テスト作成
+- カスタム例外の実装
 
 ### 関連ドキュメント
 - [SPシステム実装詳細](../../05_implementation/spSystemImplementation.md)
@@ -90,189 +38,77 @@
 ## 2025/06/20 - ログ編纂機能の有効化と実装完了
 
 ### 実施内容
-1. **編纂ボタンの有効化と機能実装**
-   - `LogsPage`で編纂ボタンのdisabled属性を削除
-   - クリックハンドラーの実装と画面遷移ロジック
-   - 状態管理による編纂モードの切り替え実装
-
-2. **LogCompilationEditorとの統合**
-   - 選択されたフラグメントをエディターに渡す処理
-   - 編纂完了・キャンセル時のUI状態リセット
-   - 編纂成功時のトースト通知実装
-
-3. **バックエンドAPIとの型整合性対応**
-   - フロントエンド型定義をバックエンドスキーマに合わせて修正
-   - `CompletedLogCreate`型の更新（creatorId、subFragmentIdsの追加）
-   - キャメルケース/スネークケースの変換処理実装
-
-4. **テストデータ作成環境の整備**
-   - 3種類のテストデータ作成スクリプトを作成
-   - 手動テスト手順書（manual_test_data.py）の提供
-   - SQLによるログフラグメントの投入方法をドキュメント化
+- 編纂ボタンの有効化と機能実装
+- LogCompilationEditorとの統合
+- バックエンドAPIとの型整合性対応
+- テストデータ作成環境の整備
 
 ### 技術的な成果
-- 型チェック：✅ エラーなし
-- リント：⚠️ 2つの警告（any型使用、許容範囲内）
-- ログ編纂の基本フローが完全に動作可能な状態
+- 型チェック・リントエラーなし（2つの警告のみ）
+- ログ編纂の基本フローが完全に動作可能
 
 ### 関連ドキュメント
-- `documents/01_project/progressReports/2025-06-20_log_compilation_implementation.md`：作業詳細
+- [作業詳細](../progressReports/2025-06-20_log_compilation_implementation.md)
 
 ## 2025/06/19 - ログ編纂UI基本実装
 
 ### 実施内容
-1. **ログシステムの型定義とAPI統合**
-   - `frontend/src/types/log.ts`：バックエンドと完全に一致する型定義
-   - `frontend/src/api/client.ts`：ログフラグメント、完成ログ、契約のAPIメソッド追加
-   - EmotionalValence、LogFragmentRarity等のEnum型定義
-
-2. **ログフラグメント管理コンポーネント**
-   - `LogFragmentCard`：レアリティ別色分け、感情価の視覚的表現
-   - `LogFragmentList`：高度なフィルタリング・ソート・検索機能
-   - 複数選択モード対応で編纂準備
-
-3. **ログ編纂エディター実装**
-   - `LogCompilationEditor`：コアフラグメント選択と組み合わせ
-   - 汚染度の自動計算と視覚的フィードバック（プログレスバー）
-   - ログ名・称号・説明の自動提案機能
-   - 手動編集可能なフィールド
-
-4. **React Queryカスタムフック**
-   - `useLogFragments`：フラグメント取得
-   - `useCreateLogFragment`：フラグメント作成
-   - `useCompletedLogs`：完成ログ管理
-   - `useCreateCompletedLog`：ログ編纂
-   - `useUpdateCompletedLog`：ログ更新
-
-5. **UI/UX統合**
-   - `LogsPage`拡張：キャラクター選択とフラグメント表示
-   - ダッシュボードへのログシステムリンク追加
-   - レスポンシブデザイン対応
+- ログシステムの型定義とAPI統合
+- ログフラグメント管理コンポーネント実装
+- ログ編纂エディター実装
+- React Queryカスタムフック実装
+- UI/UX統合とレスポンシブデザイン対応
 
 ## 2025/06/19 - フロントエンドDRY原則リファクタリング
 
 ### 実施内容
-1. **重複コードの特定と分析**
-   - エラーハンドリングの重複（LoginPage/RegisterPage）
-   - Toast通知パターンの重複（useCharacters）
-   - APIクライアントの変換処理重複
-   - ローディング表示の重複（複数ページ）
-   - ボタンのローディング状態表示の重複
-
-2. **共通コンポーネントの作成**
-   - `LoadingState`：統一されたローディング表示
-   - `FormError`：エラーメッセージの統一表示
-   - `LoadingButton`：ローディング状態を持つボタン
-
-3. **カスタムフックの作成**
-   - `useFormError`：フォームのエラーとローディング状態管理
-   - 非同期処理のラッパー機能
-   - カスタムエラーメッセージのサポート
-
-4. **ユーティリティの作成**
-   - Toast通知ヘルパー（showSuccessToast/showErrorToast/showInfoToast）
-   - スタイル定数（cardStyles/containerStyles/buttonStyles）
-
-5. **APIクライアントのリファクタリング**
-   - `requestWithTransform`メソッドによる変換処理の統一
-   - 各APIメソッドの簡略化
+- 重複コードの特定と分析
+- 共通コンポーネントの作成（LoadingState、FormError、LoadingButton）
+- カスタムフックの作成（useFormError）
+- ユーティリティの作成（Toast通知ヘルパー、スタイル定数）
+- APIクライアントのリファクタリング
 
 ### 技術的な成果
 - 重複コードの約40%を削減
-- TypeScriptエラーを全て解消
-- ESLint警告を全て解消
+- TypeScript・ESLintエラー全て解消
 - コンポーネントの再利用性向上
 
 ### 関連ドキュメント
-- `documents/02_architecture/frontend/componentArchitecture.md`：アーキテクチャ詳細
-- `documents/01_project/progressReports/2025-06-19_frontend_dry_refactoring.md`：作業詳細
+- [アーキテクチャ詳細](../../02_architecture/frontend/componentArchitecture.md)
+- [作業詳細](../progressReports/2025-06-19_frontend_dry_refactoring.md)
 
 ## 2025/06/19 - バックエンド・フロントエンド重複実装の統合
 
 ### 実施内容
-1. **重複実装の調査と分析**
-   - API型定義の重複：PydanticモデルとTypeScript型の二重管理
-   - バリデーションロジックの重複：パスワード複雑性チェックの不一致
-   - ビジネスロジックの重複：権限チェックが15箇所以上で重複
-
-2. **パスワードバリデーションの統一**
-   - `frontend/src/lib/validations/validators/password.ts`：複雑性チェック実装
-   - `frontend/src/lib/validations/schemas/auth.ts`：Zodスキーマの定義
-   - パスワード強度表示機能の追加
-   - RegisterPageでのリアルタイムバリデーション実装
-
-3. **ゲーム設定値APIの実装**
-   - `backend/app/api/api_v1/endpoints/config.py`：設定値エンドポイント
-   - `/api/v1/config/game`：ゲーム設定値（キャラクター制限、初期ステータス等）
-   - `/api/v1/config/game/validation-rules`：バリデーションルール
-   - ハードコーディングされた設定値の排除
-
-4. **権限チェックの共通化（第1段階）**
-   - `backend/app/api/deps.py`：統一的な権限チェック機能
-   - `get_user_character()`：キャラクター所有権チェック
-   - `check_character_limit()`：キャラクター作成制限チェック
-   - `PermissionChecker`：汎用的な権限チェッククラス
-
-5. **charactersエンドポイントの最適化**
-   - `Depends(get_user_character)`による権限チェックの統一
-   - `Depends(check_character_limit)`による制限チェックの統一
-   - エラーハンドリングの簡素化
-   - DBクエリの最適化（重複クエリの削減）
-
-6. **権限チェックの共通化（第2段階）** ✨NEW
-   - `backend/app/api/api_v1/endpoints/game.py`：ゲームセッションエンドポイントの統合
-   - `backend/app/api/api_v1/endpoints/logs.py`：ログシステムエンドポイントの統合
-   - `get_character_session()`を使用した権限チェックの統一
-   - GameSessionServiceからの権限チェック削除（DRY原則）
-   - メソッドシグネチャの変更（検証済みオブジェクトを直接受け取る）
-   - 15箇所以上の重複権限チェックを削除
-
-### 重複防止ルールの策定
-- **CLAUDE.mdに重複防止ルールを追加**
-  - 型定義の重複防止：自動生成型の活用
-  - バリデーションの重複防止：バックエンド優先のルール
-  - ビジネスロジックの重複防止：API化と共通化
-  - 実装時のチェックリスト
+- 重複実装の調査と分析（API型定義、バリデーション、ビジネスロジック）
+- パスワードバリデーションの統一
+- ゲーム設定値APIの実装
+- 権限チェックの共通化（第1・第2段階）
+- characters/game/logsエンドポイントの最適化
+- 重複防止ルールのCLAUDE.md追加
 
 ### 技術的な成果
 - コード行数の削減：約200行
-- 重複箇所の削減：15箇所→ 1箇所（権限チェック）
-- API呼び出しの最適化：DB問い合わせの削減
-- 型安全性の向上：OpenAPIスキーマからの自動生成
+- 重複箇所の削減：15箇所→ 1箇所
+- API呼び出しの最適化
+- 型安全性の向上
 
 ### 関連ドキュメント
-- `documents/05_implementation/duplicatedBusinessLogic.md`：詳細な分析と統合方法
-- `documents/01_project/progressReports/2025-06-19_重複実装統合.md`：作業内容の詳細
+- [詳細な分析と統合方法](../../05_implementation/duplicatedBusinessLogic.md)
+- [作業内容の詳細](../progressReports/2025-06-19_重複実装統合.md)
 
 ## 2025/06/18 - ログシステム基盤実装
 
 ### 実施内容
-1. **ログシステムのデータモデル設計**
-   - LogFragment（ログの欠片）: プレイヤーの重要な行動記録
-   - CompletedLog（完成ログ）: 編纂されたNPC化可能な記録
-   - LogContract（ログ契約）: 他プレイヤー世界への送出契約
-   - CompletedLogSubFragment: 完成ログとフラグメントの関連
-
-2. **APIエンドポイント実装**
-   - `/api/v1/logs/fragments`: ログフラグメントのCRUD
-   - `/api/v1/logs/completed`: 完成ログの作成・更新・取得
-   - `/api/v1/logs/contracts`: 契約の作成・マーケット機能
-   - `/api/v1/logs/contracts/{id}/accept`: 契約受入機能
-
-3. **データベース統合**
-   - 既存のCharacter、GameSessionモデルとの関連付け
-   - マイグレーションファイルの作成と適用
-   - ENUMタイプの定義（レアリティ、感情価、ステータス）
-
-4. **テスト作成**
-   - ログエンドポイントの単体テスト
-   - 認証チェック、データ整合性の検証
-   - 全178テストがパス（警告のみ）
+- ログシステムのデータモデル設計（LogFragment、CompletedLog、LogContract）
+- APIエンドポイント実装（fragments、completed、contracts）
+- データベース統合とマイグレーション
+- 全178テストがパス
 
 ### 技術的な改善
 - SQLModelの型安全な実装
 - 適切なリレーションシップ設計
-- コード品質の維持（リント、型チェック全クリア）
+- コード品質の維持
 
 ## 2025/06/18 - プロジェクト名変更とGemini API更新
 

@@ -1,8 +1,8 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025-06-20
+## 最終更新: 2025-06-22
 
-## 稼働中のサービス（localhost）
+## 稼働中のサービス（localhost） - 2025/06/22時点
 🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ（最新安定版）  
 🟢 **Neo4j 5.26 LTS**: ポート7474/7687 - グラフデータベース、関係性データ（長期サポート版）  
 🟢 **Redis 8**: ポート6379 - セッション、キャッシュ、Celeryブローカー（最新安定版）  
@@ -14,28 +14,23 @@
 🟢 **Keycloak 26.2**: ポート8080 - 認証サーバー稼働中（最新版）  
 
 ## 実装済み機能
-- ✅ ユーザー登録・ログイン（JWT認証、パスワード強度検証）
+- ✅ ユーザー登録・ログイン（JWT認証）
 - ✅ 認証保護エンドポイント
 - ✅ データベースマイグレーション（Alembic + SQLModel統合）
 - ✅ 型安全なAPIクライアント統合
 - ✅ キャラクター管理（作成・一覧・詳細・状態管理）
 - ✅ ゲームセッション管理（作成・更新・終了・アクション実行）
 - ✅ AI統合基盤（Gemini API、プロンプト管理、エージェントシステム）
-  - ✅ 脚本家AI (Dramatist) - 物語生成と選択肢提示
-  - ✅ 状態管理AI (State Manager) - ルール判定とパラメータ管理
-  - ✅ 歴史家AI (Historian) - 行動記録と歴史編纂
-  - ✅ NPC管理AI (NPC Manager) - 永続的NPC生成・管理
-  - ✅ 世界の意識AI (The World) - マクロイベント管理
-  - ✅ 混沌AI (The Anomaly) - 予測不能イベント生成
-- ✅ AI協調動作プロトコル（CoordinatorAI、SharedContext、イベント連鎖）
 - ✅ Celeryタスク管理（Worker、Beat、Flower統合）
 - ✅ 基本的な戦闘システム（ターン制バトル、戦闘UI、リアルタイム更新）
-- ✅ ログシステム基盤（LogFragment、CompletedLog、LogContract）
+- ✅ ログシステム基盤（LogFragment、CompletedLog）
 - ✅ ログNPC生成機能（Neo4j統合、NPCジェネレーター、Celeryタスク）
 - ✅ フロントエンドDRY原則実装（共通コンポーネント、カスタムフック、ユーティリティ）
-- ✅ ログ編纂UI実装（フラグメント管理、編纂エディター、汚染度計算、APIフル統合）
-- ✅ WebSocketリアルタイム通信（Socket.IO、イベントドリブン）
-- ✅ コード品質管理（ruff、mypy、ESLint、型チェック）
+- ✅ ログ編纂UI基本実装（フラグメント管理、編纂エディター、汚染度計算）
+- ✅ SPシステムのデータモデル実装
+- ✅ SP管理API実装完了
+- ✅ SPシステムのフロントエンド統合完了
+- ✅ 全てのテスト・型・リントエラーを完全解消
 
 ## 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -84,7 +79,15 @@
 - WebSocket (Socket.IO)
 - Celery（Worker/Beat/Flower）
 
-## 最近の変更（2025-06-20）
+## 最近の変更（2025-06-22）
+- SPシステムの完全実装
+  - SPシステムのデータモデル実装（CharacterSP、SPHistory）
+  - SP管理API実装完了（SP消費、回復、履歴取得）
+  - SPシステムのフロントエンド統合完了
+  - 全てのテスト・型・リントエラーを完全解消
+  - ログシステムの全面再設計（アクションログとスキルログの分離）
+
+### 2025-06-20の変更
 - ログ編纂機能の有効化と実装完了
   - 編纂ボタンの有効化とクリックハンドラー実装
   - LogCompilationEditorとLogsPageの完全統合
@@ -121,17 +124,15 @@
 - character_stats
 - skills
 - game_sessions
-- log_fragments（新規）
-- completed_logs（新規）
-- completed_log_sub_fragments（新規）
-- log_contracts（新規）
+- action_logs（新規）
+- skill_logs（新規）
+- character_sp（新規）
+- sp_history（新規）
 - alembic_version
 
 ### ENUMタイプ
-- logfragmentrarity
-- emotionalvalence
-- completedlogstatus
-- logcontractstatus
+- skilllogtype
+- sphistorytype
 
 ## 環境設定
 - **Docker Compose**: 全サービス正常稼働
