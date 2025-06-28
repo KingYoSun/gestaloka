@@ -2,9 +2,11 @@
  * SPシステム関連のカスタムフック
  */
 
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { useToast } from '@/hooks/use-toast'
+import { websocketManager } from '@/lib/websocket/socket'
 import type {
   PlayerSP,
   SPConsumeRequest,
@@ -25,10 +27,27 @@ export function useSPBalance() {
  * SP残高の概要を取得するフック（軽量版）
  */
 export function useSPBalanceSummary() {
+  const queryClient = useQueryClient()
+
+  // WebSocketでSP更新イベントを受信したら自動的に再取得
+  useEffect(() => {
+    const handleSPUpdate = () => {
+      queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
+    }
+
+    websocketManager.on('sp:update', handleSPUpdate)
+
+    return () => {
+      websocketManager.off('sp:update', handleSPUpdate)
+    }
+  }, [queryClient])
+
   return useQuery({
     queryKey: ['sp', 'balance', 'summary'],
     queryFn: () => apiClient.getSPBalanceSummary(),
-    staleTime: 10 * 1000, // 10秒
+    staleTime: 5 * 1000, // 5秒
+    refetchInterval: 30 * 1000, // 30秒ごとに自動更新
+    refetchIntervalInBackground: true, // バックグラウンドでも更新
   })
 }
 

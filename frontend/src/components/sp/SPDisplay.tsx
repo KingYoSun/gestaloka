@@ -2,8 +2,8 @@
  * SP残高表示コンポーネント
  */
 
-import { memo } from 'react'
-import { Coins, TrendingUp, Calendar, AlertCircle } from 'lucide-react'
+import { memo, useState, useEffect } from 'react'
+import { Coins, TrendingUp, Calendar, AlertCircle, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSPBalanceSummary } from '@/hooks/useSP'
 import { SPSubscriptionInfo } from '@/types/sp'
@@ -14,19 +14,36 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { motion, AnimatePresence } from 'framer-motion'
 
 interface SPDisplayProps {
   className?: string
   showSubscription?: boolean
   variant?: 'default' | 'compact'
+  lowBalanceThreshold?: number
 }
 
 export const SPDisplay = memo(function SPDisplay({
   className,
   showSubscription = true,
   variant = 'default',
+  lowBalanceThreshold = 100,
 }: SPDisplayProps) {
   const { data: balance, isLoading, error } = useSPBalanceSummary()
+  const [previousBalance, setPreviousBalance] = useState<number | null>(null)
+  const [isAnimating, setIsAnimating] = useState(false)
+
+  // SP変更を検知してアニメーション
+  useEffect(() => {
+    if (balance?.currentSp !== undefined && previousBalance !== null && balance.currentSp !== previousBalance) {
+      setIsAnimating(true)
+      const timer = setTimeout(() => setIsAnimating(false), 1000)
+      return () => clearTimeout(timer)
+    }
+    if (balance?.currentSp !== undefined) {
+      setPreviousBalance(balance.currentSp)
+    }
+  }, [balance?.currentSp, previousBalance])
 
   if (isLoading) {
     return (
@@ -53,25 +70,65 @@ export const SPDisplay = memo(function SPDisplay({
     return new Intl.NumberFormat('ja-JP').format(num)
   }
 
+  const isLowBalance = balance.currentSp < lowBalanceThreshold
+  const balanceChange = previousBalance !== null ? balance.currentSp - previousBalance : 0
+
   if (variant === 'compact') {
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <div
+            <motion.div
               className={cn(
-                'flex items-center gap-1.5 cursor-default',
+                'flex items-center gap-1.5 cursor-default relative',
+                isLowBalance && 'text-orange-500',
                 className
               )}
+              animate={isAnimating ? {
+                scale: [1, 1.1, 1],
+              } : {}}
+              transition={{ duration: 0.3 }}
             >
-              <Coins className="h-4 w-4 text-yellow-500" />
-              <span className="font-semibold">{formatNumber(balance.currentSp)}</span>
+              {isLowBalance ? (
+                <AlertTriangle className="h-4 w-4 text-orange-500" />
+              ) : (
+                <Coins className="h-4 w-4 text-yellow-500" />
+              )}
+              <span className={cn(
+                "font-semibold",
+                isAnimating && balanceChange > 0 && "text-green-500",
+                isAnimating && balanceChange < 0 && "text-red-500"
+              )}>
+                {formatNumber(balance.currentSp)}
+              </span>
               <span className="text-xs text-muted-foreground">SP</span>
-            </div>
+              
+              {/* 変更インジケーター */}
+              <AnimatePresence>
+                {isAnimating && balanceChange !== 0 && (
+                  <motion.span
+                    initial={{ opacity: 0, y: 0 }}
+                    animate={{ opacity: 1, y: -20 }}
+                    exit={{ opacity: 0 }}
+                    className={cn(
+                      "absolute -top-4 right-0 text-xs font-bold",
+                      balanceChange > 0 ? "text-green-500" : "text-red-500"
+                    )}
+                  >
+                    {balanceChange > 0 ? '+' : ''}{formatNumber(balanceChange)}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.div>
           </TooltipTrigger>
           <TooltipContent>
             <div className="space-y-1">
               <p className="text-sm font-medium">現在のSP: {formatNumber(balance.currentSp)}</p>
+              {isLowBalance && (
+                <p className="text-xs text-orange-500">
+                  ⚠️ SP残高が少なくなっています
+                </p>
+              )}
               {subscriptionInfo && (
                 <p className="text-xs text-muted-foreground">
                   {subscriptionInfo.label} 加入中

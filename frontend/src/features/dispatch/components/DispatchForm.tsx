@@ -122,7 +122,7 @@ export function DispatchForm({
         description: `${completedLog.name}を派遣しました`,
       })
       queryClient.invalidateQueries({ queryKey: ['dispatches'] })
-      queryClient.invalidateQueries({ queryKey: ['player-sp'] })
+      queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
       onOpenChange(false)
       form.reset()
     },
