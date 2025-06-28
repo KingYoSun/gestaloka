@@ -78,6 +78,5 @@
 - `frontend/src/features/exploration/components/FragmentDiscoveryAnimation.tsx`
 
 ## 今後の拡張可能性
-- 音声フィードバックの追加
 - 発見場所による演出バリエーション
 - 連続発見時の特別演出

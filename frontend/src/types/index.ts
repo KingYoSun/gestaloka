@@ -250,7 +250,6 @@ export interface AppSettings {
   fontSize: 'small' | 'medium' | 'large'
   autoSave: boolean
   notifications: boolean
-  soundEffects: boolean
 }
 
 // ルート関連の型定義
