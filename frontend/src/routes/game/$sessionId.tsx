@@ -31,6 +31,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
 import { BattleStatus, type BattleData } from '@/features/game/components/BattleStatus'
+import { NPCEncounterDialog } from '@/features/game/components/NPCEncounterDialog'
 
 export const Route = createFileRoute('/game/$sessionId')({
   component: GameSessionPage,
@@ -60,7 +61,7 @@ function GameSessionPage() {
   } = useGameSessionStore()
 
   // WebSocket接続
-  const { sendAction } = useGameWebSocket(sessionId)
+  const { sendAction, currentNPCEncounter, sendNPCAction } = useGameWebSocket(sessionId)
   // const { chatMessages, sendChatMessage } = useChatWebSocket(sessionId)
 
   const messages = getSessionMessages(sessionId)
@@ -432,6 +433,13 @@ function GameSessionPage() {
           onCancel={handleSPConsumeCancel}
         />
       )}
+
+      {/* NPC遭遇ダイアログ */}
+      <NPCEncounterDialog
+        encounter={currentNPCEncounter}
+        onAction={sendNPCAction}
+        isLoading={isExecutingAction}
+      />
     </div>
   )
 }

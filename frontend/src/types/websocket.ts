@@ -80,3 +80,48 @@ export interface NotificationData {
   }
   timestamp: string
 }
+
+export interface NPCProfile {
+  npc_id: string
+  name: string
+  title?: string | null
+  npc_type: 'LOG_NPC' | 'PERMANENT_NPC' | 'TEMPORARY_NPC'
+  personality_traits: string[]
+  behavior_patterns: string[]
+  skills: string[]
+  appearance?: string | null
+  backstory?: string | null
+  original_player?: string | null
+  log_source?: string | null
+  contamination_level: number
+  persistence_level: number
+  current_location?: string | null
+  is_active: boolean
+}
+
+export interface NPCEncounterData {
+  type: 'npc_encounter'
+  encounter_type: string
+  npc: NPCProfile
+  choices?: Array<{
+    id: string
+    text: string
+    difficulty?: 'easy' | 'medium' | 'hard' | null
+    requirements?: Record<string, unknown> | null
+  }>
+  timestamp: string
+}
+
+export interface NPCActionResultData {
+  type: 'npc_action_result'
+  npc_id: string
+  action: string
+  result: string
+  state_changes?: Record<string, unknown>
+  rewards?: Array<{
+    type: string
+    amount: number
+    item?: unknown
+  }>
+  timestamp: string
+}

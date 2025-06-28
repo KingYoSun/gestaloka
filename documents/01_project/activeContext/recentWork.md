@@ -1,5 +1,42 @@
 # 最近の作業履歴
 
+## 2025/01/28 - ログNPC遭遇システムのフロントエンド実装
+
+### 実施内容
+- NPCEncounterDialogコンポーネントの作成
+- WebSocketイベントハンドラーの実装（npc_encounter, npc_action_result）
+- useGameWebSocketフックの拡張
+- ゲーム画面への統合
+
+### 技術的詳細
+1. **型定義の追加**
+   - NPCProfile: NPCの詳細情報
+   - NPCEncounterData: 遭遇イベントデータ
+   - NPCActionResultData: アクション結果データ
+
+2. **UIコンポーネント**
+   - ダイアログ形式での遭遇表示
+   - 遭遇タイプ別のバッジ色分け
+   - 汚染レベルの視覚的表示
+   - 選択肢の難易度表示
+
+3. **WebSocket統合**
+   - リアルタイムでのNPC遭遇通知
+   - アクション送信と結果受信
+   - メッセージログへの自動記録
+
+### 実装結果
+- 型チェック: エラーなし
+- リント: 既存のany型警告のみ
+- バックエンドとの完全な統合
+
+### 関連ファイル
+- `frontend/src/features/game/components/NPCEncounterDialog.tsx`
+- `frontend/src/types/websocket.ts`
+- `frontend/src/lib/websocket/socket.ts`
+- `frontend/src/hooks/useWebSocket.ts`
+- `frontend/src/routes/game/$sessionId.tsx`
+
 ## 2025/06/29 - 派遣ログAI駆動シミュレーション強化
 
 ### 実施内容

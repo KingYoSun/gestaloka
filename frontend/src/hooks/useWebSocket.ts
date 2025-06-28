@@ -16,6 +16,8 @@ import type {
   GameErrorData,
   ChatMessage,
   NotificationData,
+  NPCEncounterData,
+  NPCActionResultData,
 } from '@/types/websocket'
 
 export interface WebSocketStatus {
@@ -115,6 +117,7 @@ export function useGameWebSocket(gameSessionId?: string) {
   const { user } = useAuthStore()
   const [messages, setMessages] = useState<GameMessage[]>([])
   const [gameState, setGameState] = useState<GameState | null>(null)
+  const [currentNPCEncounter, setCurrentNPCEncounter] = useState<NPCEncounterData | null>(null)
 
   useEffect(() => {
     if (!gameSessionId || !user?.id) return
@@ -178,6 +181,35 @@ export function useGameWebSocket(gameSessionId?: string) {
       // 戦闘状態の更新はaction_resultで処理される
     }
 
+    // NPC遭遇イベントハンドラー
+    const handleNPCEncounter = (data: NPCEncounterData) => {
+      setCurrentNPCEncounter(data)
+      // メッセージログにも追加
+      setMessages(prev => [...prev, {
+        type: 'system',
+        content: `${data.npc.name}に遭遇しました！`,
+        timestamp: data.timestamp,
+      }])
+      // 通知も表示
+      toast.info('NPCに遭遇しました！', {
+        description: `${data.npc.name}${data.npc.title ? ` 「${data.npc.title}」` : ''}が現れました。`,
+      })
+    }
+
+    const handleNPCActionResult = (data: NPCActionResultData) => {
+      // 遭遇終了の処理
+      if (data.result.includes('立ち去') || data.result.includes('終了') || data.result.includes('去って')) {
+        setCurrentNPCEncounter(null)
+      }
+      // 結果をメッセージログに追加
+      setMessages(prev => [...prev, {
+        type: 'action_result',
+        action: data.action,
+        result: data.result,
+        timestamp: data.timestamp,
+      }])
+    }
+
     // イベントリスナー登録
     websocketManager.on('game:joined', handleGameJoined)
     websocketManager.on('game:started', handleGameStarted)
@@ -187,6 +219,8 @@ export function useGameWebSocket(gameSessionId?: string) {
     websocketManager.on('game:error', handleGameError)
     websocketManager.on('game:battle_start', handleBattleStart)
     websocketManager.on('game:battle_update', handleBattleUpdate)
+    websocketManager.on('game:npc_encounter', handleNPCEncounter)
+    websocketManager.on('game:npc_action_result', handleNPCActionResult)
 
     // クリーンアップ
     return () => {
@@ -202,6 +236,8 @@ export function useGameWebSocket(gameSessionId?: string) {
       websocketManager.off('game:error', handleGameError)
       websocketManager.off('game:battle_start', handleBattleStart)
       websocketManager.off('game:battle_update', handleBattleUpdate)
+      websocketManager.off('game:npc_encounter', handleNPCEncounter)
+      websocketManager.off('game:npc_action_result', handleNPCActionResult)
     }
   }, [gameSessionId, user?.id])
 
@@ -215,10 +251,22 @@ export function useGameWebSocket(gameSessionId?: string) {
     [gameSessionId, user?.id]
   )
 
+  // NPCアクション送信
+  const sendNPCAction = useCallback(
+    (npcId: string, action: string) => {
+      if (!gameSessionId || !user?.id) return
+
+      websocketManager.sendNPCAction(gameSessionId, user.id, npcId, action)
+    },
+    [gameSessionId, user?.id]
+  )
+
   return {
     messages,
     gameState,
     sendAction,
+    currentNPCEncounter,
+    sendNPCAction,
   }
 }
 
