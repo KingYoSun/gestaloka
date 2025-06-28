@@ -18,10 +18,9 @@ from app.models.log_dispatch import (
     DispatchObjectiveType,
     LogDispatch,
 )
-from app.services.ai.agents.base import BaseAgent
 from app.services.ai.agents.dramatist import DramatistAgent
 from app.services.ai.agents.npc_manager import NPCManagerAgent
-from app.services.ai.prompt_manager import AIAgentRole, PromptContext
+from app.services.ai.prompt_manager import PromptContext
 
 logger = structlog.get_logger(__name__)
 
@@ -571,17 +570,17 @@ class DispatchSimulator:
     ) -> Optional[DispatchEncounter]:
         """AI駆動の遭遇を作成"""
         # NPC管理AIに遭遇NPCの生成を依頼
-        npc_context = PromptContext(
-            character_name=context.completed_log.name,
-            location=context.current_location,
-            recent_actions=[],
-            world_state=context.world_state,
-            additional_context={
-                "encounter_type": "dispatch_log_encounter",
-                "dispatch_objective": context.dispatch.objective_type.value,
-                "log_personality": context.completed_log.personality,
-            },
-        )
+        # npc_context = PromptContext(
+        #     character_name=context.completed_log.name,
+        #     location=context.current_location,
+        #     recent_actions=[],
+        #     world_state=context.world_state,
+        #     additional_context={
+        #         "encounter_type": "dispatch_log_encounter",
+        #         "dispatch_objective": context.dispatch.objective_type.value,
+        #         "log_personality": context.completed_log.personality,
+        #     },
+        # )
 
         # 遭遇タイプの決定
         encounter_types = self._determine_encounter_type(context)

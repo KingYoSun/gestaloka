@@ -594,24 +594,65 @@
 - `frontend/src/hooks/useSP.ts`：WebSocketイベント処理実装
 - `backend/test_websocket_sp.py`：動作確認用テストスクリプト
 
-## 推奨される次のアクション（Week 15-16: 2025/06/22-07/05）
+## 2025/06/29 - ログNPC出現システムの実装
+
+### 実施内容
+- 派遣されたログが他のプレイヤーのゲームセッション内にNPCとして出現するシステムを実装
+- プレイヤーの行動が他の世界に影響を与えるコアメカニクスの実現
+
+### 技術的詳細
+1. **データモデル拡張**
+   - LogDispatchモデルに`current_location`と`last_location_update`フィールド追加
+   - データベースマイグレーション作成・適用
+
+2. **NPC遭遇メカニズム**
+   - GameSessionServiceに`check_npc_encounters()`メソッド追加
+   - 同じ場所にいる派遣ログを検出
+   - `record_npc_encounter()`で相互作用を記録
+
+3. **WebSocketイベント**
+   - `emit_npc_encounter()`イベントの実装
+   - リアルタイムでクライアントに遭遇を通知
+
+4. **AI統合**
+   - NPCManagerAgentに`_handle_log_npc_encounters()`追加
+   - DramatistAgentでNPC遭遇を物語生成に活用
+   - CoordinatorでNPC遭遇イベントを自動処理
+
+5. **位置情報管理**
+   - 派遣タスクで現在位置を更新
+   - 派遣作成時に初期位置を設定
+
+### 実装結果
+- 他プレイヤーの派遣ログがNPCとして出現
+- 遭遇時の選択肢と物語生成
+- 相互作用の記録と影響システムの基盤
+
+### 関連ファイル
+- `backend/app/models/log_dispatch.py`：モデル拡張
+- `backend/app/services/game_session.py`：遭遇チェック機能
+- `backend/app/websocket/events.py`：WebSocketイベント
+- `backend/app/services/ai/agents/npc_manager.py`：NPC処理
+- `backend/app/ai/coordinator.py`：イベント統合
+
+## 推奨される次のアクション（Week 15-16: 2025/06/29-07/05）
 
 ### 優先度：高
-1. **SP残高の常時表示コンポーネント** ✅ 基本実装完了
-   - WebSocket統合 ✅ 実装完了
-   - UI/UXの更なる改善
+1. **ログNPC出現システムのフロントエンド実装**
+   - NPC遭遇ダイアログUI
+   - 選択肢の表示と選択機能
+   - 相互作用結果の表示
 
-2. **探索システムの改善**
-   - ログフラグメント発見演出のアニメーション ✅ 実装済み
-   - ミニマップ機能
-
-### 優先度：中
-3. **SP購入システムの設計と実装**
+2. **SP購入システムの設計と実装**
    - 購入画面UI
    - Stripe決済統合
    - 購入履歴管理
 
-4. **派遣ログ同士の相互作用システム** ✅ 実装済み
-   - 派遣中のログ同士の遭遇
-   - 協力・競合メカニズム
-   - 相互作用による成果の変化
+### 優先度：中
+3. **探索システムの改善**
+   - ミニマップ機能
+   - 探索報酬のバランス調整
+
+4. **戦闘システムの拡張**
+   - スキル・アビリティシステム
+   - 戦闘報酬とドロップアイテム

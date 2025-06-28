@@ -156,6 +156,35 @@ class GameEventEmitter:
         except Exception as e:
             logger.error("Error emitting custom event", error=str(e))
 
+    @staticmethod
+    async def emit_npc_encounter(
+        game_session_id: str,
+        npc_data: dict[str, Any],
+        encounter_type: str = "log_npc",
+        choices: Optional[list[dict[str, Any]]] = None,
+    ):
+        """NPC遭遇イベント"""
+        try:
+            await broadcast_to_game(
+                game_session_id,
+                "npc_encounter",
+                {
+                    "type": "npc_encounter",
+                    "encounter_type": encounter_type,
+                    "npc": npc_data,
+                    "choices": choices or [],
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+            logger.info(
+                "NPC encounter event emitted",
+                game_session_id=game_session_id,
+                encounter_type=encounter_type,
+                npc_name=npc_data.get("name", "Unknown"),
+            )
+        except Exception as e:
+            logger.error("Error emitting NPC encounter event", error=str(e))
+
 
 class SPEventEmitter:
     """SPイベントエミッター"""

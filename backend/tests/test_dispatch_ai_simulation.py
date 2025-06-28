@@ -2,9 +2,8 @@
 派遣ログAIシミュレーションのテスト
 """
 
-import asyncio
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlmodel import Session
@@ -19,7 +18,6 @@ from app.services.ai.dispatch_simulator import (
     DispatchSimulator,
     SimulatedActivity,
 )
-from app.services.ai.prompt_manager import PromptContext
 
 
 @pytest.fixture
@@ -92,7 +90,7 @@ async def test_simulate_exploration_activity(
 ):
     """探索活動のシミュレーションテスト"""
     simulator = DispatchSimulator()
-    
+
     # モックの設定
     with patch.object(
         simulator.dramatist,
@@ -101,14 +99,14 @@ async def test_simulate_exploration_activity(
     ):
         # DBセッションのモック
         mock_db = MagicMock(spec=Session)
-        
+
         # シミュレーション実行
         activity = await simulator.simulate_activity(
             dispatch=mock_dispatch_explore,
             completed_log=mock_completed_log,
             db=mock_db,
         )
-        
+
         # 結果の検証
         assert isinstance(activity, SimulatedActivity)
         assert activity.action == "周辺地域の詳細な調査"
@@ -124,7 +122,7 @@ async def test_simulate_interaction_with_encounter(
 ):
     """遭遇を含む交流活動のシミュレーションテスト"""
     simulator = DispatchSimulator()
-    
+
     # 遭遇が発生するようにモック設定
     with patch.object(simulator, "_create_ai_driven_encounter") as mock_encounter:
         mock_encounter.return_value = MagicMock(
@@ -134,16 +132,16 @@ async def test_simulate_interaction_with_encounter(
             outcome="friendly",
             relationship_change=0.3,
         )
-        
+
         mock_db = MagicMock(spec=Session)
-        
+
         # シミュレーション実行
         activity = await simulator.simulate_activity(
             dispatch=mock_dispatch_interact,
             completed_log=mock_completed_log,
             db=mock_db,
         )
-        
+
         # 結果の検証
         assert activity.encounter is not None
         assert "商人ギルド員" in activity.action
@@ -155,13 +153,13 @@ async def test_simulate_interaction_with_encounter(
 async def test_personality_modifiers():
     """性格による活動調整のテスト"""
     simulator = DispatchSimulator()
-    
+
     # 慎重な性格のログ
     cautious_log = MagicMock(
         personality="慎重、計画的",
         contamination_level=0.1,
     )
-    
+
     # 基本的な活動
     base_activity = SimulatedActivity(
         timestamp=datetime.utcnow(),
@@ -171,13 +169,13 @@ async def test_personality_modifiers():
         narrative="テスト物語",
         success_level=0.9,
     )
-    
+
     # 性格による調整を適用
     modified_activity = simulator._apply_personality_modifiers(
         base_activity,
         cautious_log,
     )
-    
+
     # 慎重な性格は成功率を抑制する
     assert modified_activity.success_level <= 0.8
     assert modified_activity.success_level >= 0.4
@@ -187,13 +185,13 @@ async def test_personality_modifiers():
 async def test_high_contamination_effects():
     """高汚染度の影響テスト"""
     simulator = DispatchSimulator()
-    
+
     # 高汚染度のログ
     contaminated_log = MagicMock(
         personality="混沌",
         contamination_level=0.8,
     )
-    
+
     base_activity = SimulatedActivity(
         timestamp=datetime.utcnow(),
         location="テスト場所",
@@ -202,7 +200,7 @@ async def test_high_contamination_effects():
         narrative="テスト物語",
         success_level=0.5,
     )
-    
+
     # 10回実行して、予測不能な効果が発生することを確認
     strange_effects_count = 0
     for _ in range(10):
@@ -212,7 +210,7 @@ async def test_high_contamination_effects():
         )
         if "奇妙な感覚" in modified.narrative:
             strange_effects_count += 1
-    
+
     # 高汚染度では約20%の確率で奇妙な効果
     assert strange_effects_count > 0
 
@@ -221,7 +219,7 @@ async def test_high_contamination_effects():
 async def test_fallback_simulation():
     """エラー時のフォールバックシミュレーションテスト"""
     simulator = DispatchSimulator()
-    
+
     # AIがエラーを起こすようにモック
     with patch.object(
         simulator,
@@ -229,7 +227,7 @@ async def test_fallback_simulation():
         side_effect=Exception("AI Error"),
     ):
         from app.tasks.dispatch_tasks import simulate_dispatch_activity_fallback
-        
+
         mock_dispatch = MagicMock(
             objective_type=DispatchObjectiveType.EXPLORE,
             travel_log=[],
@@ -237,14 +235,14 @@ async def test_fallback_simulation():
         )
         mock_log = MagicMock()
         mock_db = MagicMock()
-        
+
         # フォールバック実行
         activity = simulate_dispatch_activity_fallback(
             mock_dispatch,
             mock_log,
             mock_db,
         )
-        
+
         # 基本的な活動が生成されることを確認
         assert isinstance(activity, dict)
         assert "timestamp" in activity
@@ -256,7 +254,7 @@ async def test_fallback_simulation():
 def test_activity_context_building():
     """活動コンテキスト構築のテスト"""
     simulator = DispatchSimulator()
-    
+
     mock_dispatch = MagicMock(
         objective_type=DispatchObjectiveType.GUARD,
         dispatched_at=datetime.utcnow(),
@@ -265,12 +263,12 @@ def test_activity_context_building():
             {"action": "巡回開始", "result": "異常なし"},
         ],
     )
-    
+
     mock_log = MagicMock()
-    
+
     # コンテキスト構築
     context = simulator._build_activity_context(mock_dispatch, mock_log)
-    
+
     # 検証
     assert isinstance(context, ActivityContext)
     assert context.dispatch == mock_dispatch
@@ -283,23 +281,23 @@ def test_activity_context_building():
 async def test_trade_activity_simulation():
     """商業活動シミュレーションのテスト"""
     simulator = DispatchSimulator()
-    
+
     mock_dispatch = MagicMock(
         id="trade-dispatch",
         objective_type=DispatchObjectiveType.TRADE,
         objective_details={},
         travel_log=[],
     )
-    
+
     mock_log = MagicMock(
         name="商人テスト",
         skills=["商才"],
         personality="商売上手",
         contamination_level=0.2,
     )
-    
+
     mock_db = MagicMock()
-    
+
     # AIレスポンスのモック
     with patch.object(
         simulator.dramatist,
@@ -313,13 +311,13 @@ async def test_trade_activity_simulation():
             mock_log,
             mock_db,
         )
-        
+
         # 商業活動特有の検証
         assert activity.action == "商取引の実施"
         assert "ゴールドの利益" in activity.result
         assert activity.success_level > 0.5  # 商才スキルによるボーナス
         assert "trade" in activity.experience_gained
-        
+
         # 経済詳細が更新されているか確認
         assert "economic_details" in mock_dispatch.objective_details
         assert "transactions" in mock_dispatch.objective_details["economic_details"]
@@ -329,22 +327,22 @@ async def test_trade_activity_simulation():
 async def test_memory_preservation_activity():
     """記憶保存活動シミュレーションのテスト"""
     simulator = DispatchSimulator()
-    
+
     mock_dispatch = MagicMock(
         objective_type=DispatchObjectiveType.MEMORY_PRESERVE,
         objective_details={},
         travel_log=[],
     )
-    
+
     # 高汚染度は記憶との親和性が高い
     mock_log = MagicMock(
         contamination_level=0.8,
         personality="共感的",
         skills=[],
     )
-    
+
     mock_db = MagicMock()
-    
+
     with patch.object(
         simulator.dramatist,
         "process",
@@ -357,11 +355,11 @@ async def test_memory_preservation_activity():
             mock_log,
             mock_db,
         )
-        
+
         # 記憶保存活動の検証
         assert "記憶の収集と保存" in activity.action
         assert "個の記憶を発見" in activity.result
         assert "memory_work" in activity.experience_gained
-        
+
         # 記憶保存詳細の更新確認
         assert "memory_details" in mock_dispatch.objective_details

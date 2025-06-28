@@ -98,6 +98,20 @@ class DramatistAgent(BaseAgent):
             }
         )
 
+        # NPC遭遇情報があれば追加
+        npc_encounters = context.additional_context.get("npc_encounters", [])
+        if npc_encounters:
+            encounter_info = []
+            for encounter in npc_encounters:
+                encounter_info.append({
+                    "name": encounter.get("log_name"),
+                    "title": encounter.get("log_title"),
+                    "objective": encounter.get("objective_type"),
+                    "personality": encounter.get("personality_traits", []),
+                    "contamination": encounter.get("contamination_level", 0),
+                })
+            context.additional_context["active_npc_encounters"] = encounter_info
+
         return context
 
     def _infer_character_mood(self, context: PromptContext) -> str:

@@ -22,8 +22,8 @@ from app.models.log_dispatch import (
     DispatchStatus,
     LogDispatch,
 )
-from app.services.ai.dispatch_simulator import DispatchSimulator
 from app.services.ai.dispatch_interaction import DispatchInteractionManager
+from app.services.ai.dispatch_simulator import DispatchSimulator
 
 logger = structlog.get_logger(__name__)
 
@@ -59,6 +59,11 @@ def process_dispatch_activities(dispatch_id: str) -> dict[str, Any]:
 
         # 活動記録を追加
         dispatch.travel_log.append(activity)
+
+        # 現在位置を更新
+        if activity.get("location"):
+            dispatch.current_location = activity["location"]
+            dispatch.last_location_update = datetime.utcnow()
 
         # 目的に応じた成果を記録
         if dispatch.objective_type == DispatchObjectiveType.EXPLORE and activity.get("discovered_location"):
@@ -704,7 +709,6 @@ def generate_random_item() -> dict[str, Any]:
 def check_dispatch_interactions() -> dict[str, Any]:
     """
     派遣ログ同士の相互作用をチェックし処理する定期タスク
-    
     Returns:
         処理結果の辞書
     """
@@ -712,12 +716,12 @@ def check_dispatch_interactions() -> dict[str, Any]:
     try:
         # 相互作用マネージャーを初期化
         interaction_manager = DispatchInteractionManager()
-        
+
         # 相互作用をチェックして処理（非同期関数を同期的に実行）
         interactions = asyncio.run(
             interaction_manager.check_and_process_interactions(db)
         )
-        
+
         # 結果をまとめる
         result = {
             "status": "success",
@@ -733,14 +737,14 @@ def check_dispatch_interactions() -> dict[str, Any]:
                 for interaction in interactions
             ],
         }
-        
+
         logger.info(
             "Dispatch interactions checked",
             interactions_count=len(interactions),
         )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error("Failed to check dispatch interactions", error=str(e))
         return {

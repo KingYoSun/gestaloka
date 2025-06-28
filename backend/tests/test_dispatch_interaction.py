@@ -2,9 +2,8 @@
 派遣ログ相互作用システムのテスト
 """
 
-import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlmodel import Session
@@ -108,19 +107,19 @@ def mock_dispatch_2(mock_log_2):
 async def test_should_interact_same_location():
     """同じ場所での相互作用判定テスト"""
     manager = DispatchInteractionManager()
-    
+
     dispatch_1 = MagicMock(
         player_id="player-1",
         objective_type=DispatchObjectiveType.INTERACT,
         travel_log=[{"location": "市場"}],
     )
-    
+
     dispatch_2 = MagicMock(
         player_id="player-2",
         objective_type=DispatchObjectiveType.INTERACT,
         travel_log=[{"location": "市場"}],
     )
-    
+
     # モックで最後の相互作用時間を設定
     with patch.object(
         manager,
@@ -128,70 +127,70 @@ async def test_should_interact_same_location():
         return_value=24,
     ):
         # 同じ場所にいる場合、相互作用の可能性がある
-        should_interact = manager._should_interact(dispatch_1, dispatch_2)
-        
+        # should_interact = manager._should_interact(dispatch_1, dispatch_2)
+
         # 交流型同士は80%の確率なので、複数回実行して確認
         interactions = [
             manager._should_interact(dispatch_1, dispatch_2)
             for _ in range(100)
         ]
         interaction_rate = sum(interactions) / len(interactions)
-        
+
         assert 0.7 < interaction_rate < 0.9  # 約80%
 
 
 def test_should_not_interact_same_player():
     """同じプレイヤーの派遣は相互作用しない"""
     manager = DispatchInteractionManager()
-    
+
     dispatch_1 = MagicMock(player_id="player-1")
     dispatch_2 = MagicMock(player_id="player-1")
-    
+
     assert not manager._should_interact(dispatch_1, dispatch_2)
 
 
 def test_should_not_interact_different_location():
     """異なる場所では相互作用しない"""
     manager = DispatchInteractionManager()
-    
+
     dispatch_1 = MagicMock(
         player_id="player-1",
         travel_log=[{"location": "森"}],
     )
-    
+
     dispatch_2 = MagicMock(
         player_id="player-2",
         travel_log=[{"location": "山"}],
     )
-    
+
     assert not manager._should_interact(dispatch_1, dispatch_2)
 
 
 def test_interaction_probability_by_objective_type():
     """目的タイプによる相互作用確率のテスト"""
     manager = DispatchInteractionManager()
-    
+
     # 交流型同士
     prob = manager._calculate_interaction_probability(
         DispatchObjectiveType.INTERACT,
         DispatchObjectiveType.INTERACT,
     )
     assert prob == 0.8
-    
+
     # 商業型同士
     prob = manager._calculate_interaction_probability(
         DispatchObjectiveType.TRADE,
         DispatchObjectiveType.TRADE,
     )
     assert prob == 0.6
-    
+
     # 守護型との組み合わせ
     prob = manager._calculate_interaction_probability(
         DispatchObjectiveType.GUARD,
         DispatchObjectiveType.INTERACT,
     )
     assert prob == 0.1
-    
+
     # 研究型同士
     prob = manager._calculate_interaction_probability(
         DispatchObjectiveType.RESEARCH,
@@ -209,14 +208,14 @@ async def test_process_interaction_success(
 ):
     """相互作用処理の成功テスト"""
     manager = DispatchInteractionManager()
-    
+
     # DBモックの設定
     mock_db = MagicMock(spec=Session)
     mock_db.get.side_effect = lambda model, id: {
         mock_log_1.id: mock_log_1,
         mock_log_2.id: mock_log_2,
     }.get(id)
-    
+
     # 脚本家AIのモック
     with patch.object(
         manager.dramatist,
@@ -230,7 +229,7 @@ async def test_process_interaction_success(
             mock_dispatch_2,
             mock_db,
         )
-        
+
         # 相互作用が作成されることを確認
         assert isinstance(interaction, DispatchInteraction)
         assert interaction.dispatch_id_1 == mock_dispatch_1.id
@@ -242,13 +241,13 @@ async def test_process_interaction_success(
 def test_determine_interaction_type():
     """相互作用タイプの決定テスト"""
     manager = DispatchInteractionManager()
-    
+
     # 商人同士
     dispatch_1 = MagicMock(objective_type=DispatchObjectiveType.TRADE)
     dispatch_2 = MagicMock(objective_type=DispatchObjectiveType.TRADE)
     log_1 = MagicMock(contamination_level=0.2)
     log_2 = MagicMock(contamination_level=0.3)
-    
+
     # 複数回実行して、取引か競争のいずれかになることを確認
     types = set()
     for _ in range(20):
@@ -259,13 +258,13 @@ def test_determine_interaction_type():
             log_2,
         )
         types.add(interaction_type)
-    
+
     assert "trade_negotiation" in types or "trade_competition" in types
-    
+
     # 研究者同士
     dispatch_1.objective_type = DispatchObjectiveType.RESEARCH
     dispatch_2.objective_type = DispatchObjectiveType.RESEARCH
-    
+
     interaction_type = manager._determine_interaction_type(
         dispatch_1,
         dispatch_2,
@@ -278,17 +277,17 @@ def test_determine_interaction_type():
 def test_interaction_outcome_trade():
     """商業相互作用の結果テスト"""
     manager = DispatchInteractionManager()
-    
+
     log_1 = MagicMock(skills=["商才"])
     log_2 = MagicMock(skills=[])
-    
+
     # 商談の結果
     outcome = manager._determine_interaction_outcome(
         "trade_negotiation",
         log_1,
         log_2,
     )
-    
+
     # 商才スキルがあるので成功率が高い
     success_count = 0
     for _ in range(100):
@@ -299,38 +298,38 @@ def test_interaction_outcome_trade():
         )
         if outcome.success:
             success_count += 1
-    
+
     assert success_count > 70  # 80%程度の成功率
 
 
 def test_compatibility_calculation():
     """相性計算のテスト"""
     manager = DispatchInteractionManager()
-    
+
     # 似た性格と共通スキル
     log_1 = MagicMock(
         personality="友好的、知的",
         skills=["探索", "研究"],
         contamination_level=0.3,
     )
-    
+
     log_2 = MagicMock(
         personality="知的、慎重",
         skills=["研究", "分析"],
         contamination_level=0.4,
     )
-    
+
     compatibility = manager._calculate_compatibility(log_1, log_2)
-    
+
     # ある程度の相性があるはず
     assert 0.5 < compatibility < 0.8
-    
+
     # 汚染度の差が大きい場合
     log_1.contamination_level = 0.1
     log_2.contamination_level = 0.9
-    
+
     compatibility = manager._calculate_compatibility(log_1, log_2)
-    
+
     # 相性が下がるはず
     assert compatibility < 0.5
 
@@ -339,7 +338,7 @@ def test_compatibility_calculation():
 async def test_check_and_process_interactions():
     """相互作用チェックと処理の統合テスト"""
     manager = DispatchInteractionManager()
-    
+
     # アクティブな派遣のモック
     active_dispatches = [
         MagicMock(
@@ -364,10 +363,10 @@ async def test_check_and_process_interactions():
             travel_log=[{"location": "森"}],
         ),
     ]
-    
+
     mock_db = MagicMock()
     mock_db.exec.return_value.all.return_value = active_dispatches
-    
+
     with patch.object(
         manager,
         "_should_interact",
@@ -381,7 +380,7 @@ async def test_check_and_process_interactions():
             return_value=MagicMock(spec=DispatchInteraction),
         ):
             interactions = await manager.check_and_process_interactions(mock_db)
-            
+
             # 1つの相互作用が処理される
             assert len(interactions) == 1
 
@@ -389,10 +388,10 @@ async def test_check_and_process_interactions():
 def test_hours_since_last_interaction():
     """最後の相互作用からの経過時間計算テスト"""
     manager = DispatchInteractionManager()
-    
+
     # 6時間前の相互作用記録
     past_interaction_time = datetime.utcnow() - timedelta(hours=6)
-    
+
     dispatch_1 = MagicMock(
         id="d1",
         travel_log=[
@@ -403,31 +402,31 @@ def test_hours_since_last_interaction():
             },
         ],
     )
-    
+
     dispatch_2 = MagicMock(id="d2")
-    
+
     hours = manager._hours_since_last_interaction(dispatch_1, dispatch_2)
-    
+
     # 約6時間
     assert 5.9 < hours < 6.1
-    
+
     # 相互作用記録なしの場合
     dispatch_1.travel_log = []
     hours = manager._hours_since_last_interaction(dispatch_1, dispatch_2)
-    
+
     assert hours == 999
 
 
 def test_interaction_impact_application():
     """相互作用の影響適用テスト"""
     manager = DispatchInteractionManager()
-    
+
     dispatch = MagicMock(
         collected_items=[],
         objective_details={},
     )
     log = MagicMock(name="冒険者A")
-    
+
     # アイテム交換を含む結果
     outcome = InteractionOutcome(
         success=True,
@@ -439,14 +438,14 @@ def test_interaction_impact_application():
         knowledge_shared=["隠された道"],
         alliance_formed=True,
     )
-    
+
     impact = manager._apply_interaction_impact(
         dispatch,
         log,
         outcome,
         is_initiator=True,
     )
-    
+
     # 影響の検証
     assert impact["relationship_change"] == 0.5
     assert impact["success"] is True
@@ -455,3 +454,4 @@ def test_interaction_impact_application():
     assert dispatch.collected_items[0]["item"] == "地図"
     assert "knowledge_gained" in impact
     assert "alliance_formed" in impact
+

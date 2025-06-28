@@ -154,6 +154,8 @@ async def create_dispatch(
         objective_type=dispatch_in.objective_type,
         objective_detail=dispatch_in.objective_detail,
         initial_location=dispatch_in.initial_location,
+        current_location=dispatch_in.initial_location,  # 初期位置を現在位置に設定
+        last_location_update=datetime.utcnow(),
         dispatch_duration_days=dispatch_in.dispatch_duration_days,
         sp_cost=sp_cost,
         status=DispatchStatus.PREPARING,

@@ -17,12 +17,12 @@ def neo4j_test_db():
     """テスト用Neo4j接続のフィクスチャー"""
     # テスト用接続を確実に設定
     ensure_test_connection()
-    
+
     # テストごとに全データをクリーンアップ（より確実）
     cleanup_all_neo4j_data()
-    
+
     yield db
-    
+
     # テスト後のクリーンアップ
     cleanup_all_neo4j_data()
 

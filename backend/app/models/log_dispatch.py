@@ -89,6 +89,10 @@ class LogDispatch(SQLModel, table=True):
     # 活動記録
     travel_log: list[dict] = Field(default_factory=list, sa_column=Column(JSON), description="時系列の活動記録")
 
+    # 現在位置（NPC出現用）
+    current_location: Optional[str] = Field(default=None, description="現在の位置（ロケーションID）")
+    last_location_update: Optional[datetime] = Field(default=None, description="最後に位置を更新した時刻")
+
     # 成果
     encounters: list["DispatchEncounter"] = Relationship(back_populates="dispatch")
     collected_items: list[dict] = Field(default_factory=list, sa_column=Column(JSON), description="収集したアイテム")

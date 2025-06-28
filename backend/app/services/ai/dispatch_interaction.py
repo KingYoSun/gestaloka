@@ -17,8 +17,8 @@ from app.models.log import CompletedLog
 from app.models.log_dispatch import (
     DispatchEncounter,
     DispatchObjectiveType,
-    LogDispatch,
     DispatchStatus,
+    LogDispatch,
 )
 from app.services.ai.agents.dramatist import DramatistAgent
 from app.services.ai.prompt_manager import PromptContext

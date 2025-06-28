@@ -331,15 +331,15 @@ class GameSessionService:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="このセッションは既に終了しています"
                 )
-            
+
             # SP消費処理
             from app.core.config import get_settings
-            from app.services.sp_service import SPService
             from app.models.sp import SPTransactionType
-            
+            from app.services.sp_service import SPService
+
             settings = get_settings()
             sp_service = SPService(self.db)
-            
+
             # アクションタイプに応じたSP消費量を決定
             if action_request.action_type == "free_action":
                 sp_cost = settings.SP_COST_FREE_ACTION
@@ -349,7 +349,7 @@ class GameSessionService:
                 sp_cost = settings.SP_COST_CHOICE_ACTION
                 transaction_type = SPTransactionType.SYSTEM_FUNCTION
                 sp_description = f"選択肢選択: {action_request.action_text}"
-            
+
             # SP消費を実行
             try:
                 await sp_service.consume_sp(
@@ -434,6 +434,14 @@ class GameSessionService:
                 updated_at=session.updated_at,
                 turn_number=session_data.get("turn_count", 0) if session_data else 0,
             )
+            # NPC遭遇チェック
+            npc_encounters = await self.check_npc_encounters(character)
+
+            # NPC遭遇情報を追加コンテキストとして設定
+            if npc_encounters:
+                player_action.metadata = player_action.metadata or {}
+                player_action.metadata["npc_encounters"] = npc_encounters
+
             coordinator_response = await self.coordinator.process_action(player_action, session_response_for_process)
 
             # WebSocketで物語更新を送信
@@ -780,3 +788,106 @@ class GameSessionService:
         triggered_events = state_changes.get("triggered_events", [])
         for event in triggered_events:
             logger.info("Event triggered", event_type=event.get("type"), description=event.get("description"))
+
+    async def check_npc_encounters(self, character: Character) -> list[dict]:
+        """
+        現在地のNPC遭遇をチェック
+        派遣中のログNPCが同じ場所にいるか確認し、
+        遭遇イベントを発生させる
+        """
+        from app.models.log import CompletedLog
+        from app.models.log_dispatch import DispatchStatus, LogDispatch
+
+        # 現在地に派遣中のログを検索
+        stmt = select(LogDispatch, CompletedLog).join(
+            CompletedLog,
+            LogDispatch.completed_log_id == CompletedLog.id
+        ).where(
+            LogDispatch.status == DispatchStatus.DISPATCHED,
+            LogDispatch.current_location == character.location
+        )
+
+        results = self.db.exec(stmt).all()
+
+        encounters = []
+        for dispatch, completed_log in results:
+            # 自分が派遣したログとは遭遇しない
+            if dispatch.dispatcher_id == character.id:
+                continue
+
+            # 遭遇データを構築
+            encounter_data = {
+                "dispatch_id": dispatch.id,
+                "log_id": completed_log.id,
+                "log_name": completed_log.name,
+                "log_title": completed_log.title,
+                "personality_traits": completed_log.personality_traits,
+                "behavior_patterns": completed_log.behavior_patterns,
+                "objective_type": dispatch.objective_type,
+                "contamination_level": completed_log.contamination_level,
+            }
+
+            encounters.append(encounter_data)
+
+            # 遭遇確率の計算（将来的な拡張用）
+            # encounter_chance = self._calculate_encounter_chance(character, dispatch, completed_log)
+
+        return encounters
+
+    async def record_npc_encounter(
+        self,
+        character: Character,
+        dispatch_id: str,
+        interaction_type: str,
+        interaction_summary: str,
+        outcome: str,
+        relationship_change: float = 0.0,
+        items_exchanged: list[str] | None = None,
+    ) -> dict:
+        """
+        NPCとの遭遇を記録
+        Args:
+            character: プレイヤーキャラクター
+            dispatch_id: 派遣ID
+            interaction_type: 交流の種類
+            interaction_summary: 交流の概要
+            outcome: 結果
+            relationship_change: 関係性の変化
+            items_exchanged: 交換したアイテム
+        Returns:
+            記録された遭遇データ
+        """
+        from app.models.log_dispatch import DispatchEncounter
+
+        # 遭遇記録を作成
+        encounter = DispatchEncounter(
+            dispatch_id=dispatch_id,
+            encountered_character_id=character.id,
+            location=character.location,
+            interaction_type=interaction_type,
+            interaction_summary=interaction_summary,
+            outcome=outcome,
+            relationship_change=relationship_change,
+            items_exchanged=items_exchanged or [],
+        )
+
+        self.db.add(encounter)
+        self.db.commit()
+        self.db.refresh(encounter)
+
+        logger.info(
+            "NPC encounter recorded",
+            encounter_id=encounter.id,
+            character_id=character.id,
+            dispatch_id=dispatch_id,
+            interaction_type=interaction_type,
+        )
+
+        return {
+            "encounter_id": encounter.id,
+            "dispatch_id": dispatch_id,
+            "character_id": character.id,
+            "location": encounter.location,
+            "interaction_type": interaction_type,
+            "outcome": outcome,
+        }

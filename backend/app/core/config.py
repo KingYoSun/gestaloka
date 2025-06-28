@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     DEFAULT_CHARACTER_ENERGY: int = Field(default=100, validation_alias="DEFAULT_CHARACTER_ENERGY")
     DEFAULT_CHARACTER_ATTACK: int = Field(default=10, validation_alias="DEFAULT_CHARACTER_ATTACK")
     DEFAULT_CHARACTER_DEFENSE: int = Field(default=5, validation_alias="DEFAULT_CHARACTER_DEFENSE")
-    
+
     # SP消費設定
     SP_COST_FREE_ACTION: int = Field(default=3, validation_alias="SP_COST_FREE_ACTION")  # 自由行動のSP消費
     SP_COST_CHOICE_ACTION: int = Field(default=1, validation_alias="SP_COST_CHOICE_ACTION")  # 選択肢選択のSP消費

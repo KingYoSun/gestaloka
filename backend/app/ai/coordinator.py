@@ -82,7 +82,7 @@ class CoordinatorAI:
         # 初期コンテキストを設定
         await self.shared_context.update({"session_id": session.id, "turn_number": session.turn_number})
 
-    async def process_action(self, action: PlayerAction, session: GameSession) -> FinalResponse:
+    async def process_action(self, action: PlayerAction, session: GameSession, **kwargs) -> FinalResponse:
         """プレイヤーアクションを処理"""
 
         start_time = time.time()
@@ -99,6 +99,13 @@ class CoordinatorAI:
                 session_id=session.id,
                 character_id=session.character_id,
             )
+
+            # NPC遭遇情報があれば、アクションのmetadataに追加
+            npc_encounters = kwargs.get("npc_encounters", [])
+            if npc_encounters and hasattr(action, "metadata"):
+                if action.metadata is None:
+                    action.metadata = {}
+                action.metadata["npc_encounters"] = npc_encounters
 
             # 3. Shared Context更新
             if self.shared_context:
@@ -490,6 +497,24 @@ class CoordinatorAI:
                         events.append(event)
                 elif response.metadata.get("npc_died"):
                     event = await self.event_integration.create_event_from_response(response, EventType.NPC_DEATH)
+                elif response.metadata.get("action") == "log_npc_encounter":
+                    # ログNPC遭遇イベントを処理
+                    from app.websocket.events import GameEventEmitter
+
+                    npc_data = response.metadata.get("encountered_npc", {})
+                    choices = response.choices if hasattr(response, "choices") else []
+
+                    # WebSocketでNPC遭遇イベントを送信
+                    if self.shared_context:
+                        await GameEventEmitter.emit_npc_encounter(
+                            self.shared_context.context.session_id,
+                            npc_data,
+                            encounter_type=response.metadata.get("encounter_type", "log_npc"),
+                            choices=[{"id": c.id, "text": c.text, "description": getattr(c, "description", None)} for c in choices],
+                        )
+
+                    # イベントとしても記録
+                    event = await self.event_integration.create_event_from_response(response, EventType.NPC_SPAWN)
                     if event:
                         events.append(event)
 

@@ -174,7 +174,7 @@ class SPService:
                 amount=final_amount,
                 type=transaction_type.value,
             )
-            
+
             # WebSocketイベントを送信
             await SPEventEmitter.emit_sp_update(
                 user_id=user_id,
@@ -239,7 +239,7 @@ class SPService:
                 amount=amount,
                 type=transaction_type.value,
             )
-            
+
             # WebSocketイベントを送信
             await SPEventEmitter.emit_sp_update(
                 user_id=user_id,
@@ -351,7 +351,7 @@ class SPService:
                 "balance_after": player_sp.current_sp,
                 "message": f"SP +{total_recovery} を獲得しました！",
             }
-            
+
             # 日次回復イベントを送信
             await SPEventEmitter.emit_daily_recovery_completed(
                 user_id=user_id,
@@ -413,7 +413,7 @@ class SPService:
                 error=str(e),
             )
             raise SPSystemError("取引履歴の取得に失敗しました")
-    
+
     def process_daily_recovery_sync(self, user_id: str) -> dict:
         """日次回復処理（同期版）- Celeryタスク用"""
         try:
@@ -511,7 +511,7 @@ class SPService:
             )
             self.db.rollback()
             raise SPSystemError("日次回復処理に失敗しました")
-    
+
     def get_or_create_player_sp_sync(self, user_id: str) -> PlayerSP:
         """プレイヤーのSP残高を取得または作成（同期版）"""
         try:
@@ -592,7 +592,7 @@ class SPService:
         )
         self.db.add(transaction)
         return transaction
-    
+
     def _create_transaction_sync(
         self,
         player_sp: PlayerSP,
