@@ -13,7 +13,9 @@ import { useExploration } from '@/hooks/useExploration';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { LoadingButton } from '@/components/ui/LoadingButton';
 import { useSPBalance } from '@/hooks/useSP';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { ExplorationAreaResponse } from '@/api/generated';
+import { FragmentDiscoveryAnimation } from './FragmentDiscoveryAnimation';
 
 export function ExplorationAreas() {
   const { useExplorationAreas, useExploreArea } = useExploration();
@@ -25,6 +27,7 @@ export function ExplorationAreas() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [resultDialogOpen, setResultDialogOpen] = useState(false);
   const [explorationResult, setExplorationResult] = useState<any>(null);
+  const [showDiscoveryAnimation, setShowDiscoveryAnimation] = useState(false);
 
   if (isLoading) return <LoadingState message="探索エリアを読み込み中..." />;
   if (error) return <div className="text-destructive">探索エリアの取得に失敗しました</div>;
@@ -41,11 +44,30 @@ export function ExplorationAreas() {
     try {
       const result = await exploreArea.mutateAsync({ areaId: selectedArea.id });
       setExplorationResult(result);
-      setResultDialogOpen(true);
+      
+      // フラグメント発見時はアニメーションを表示
+      if (result.fragments_found && result.fragments_found.length > 0) {
+        setShowDiscoveryAnimation(true);
+        // アニメーション後に結果ダイアログを表示
+        setTimeout(() => {
+          setShowDiscoveryAnimation(false);
+          setResultDialogOpen(true);
+        }, 2500);
+      } else {
+        setResultDialogOpen(true);
+      }
     } finally {
       setConfirmDialogOpen(false);
       setSelectedArea(null);
     }
+  };
+
+  // 最高レアリティを取得
+  const getHighestRarity = () => {
+    if (!explorationResult?.fragments_found) return 'COMMON';
+    const rarities = ['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY'];
+    const foundRarities = explorationResult.fragments_found.map((f: any) => f.rarity);
+    return rarities.reverse().find(r => foundRarities.includes(r)) || 'COMMON';
   };
 
   const currentSP = spBalance?.currentSp ?? 0;
@@ -126,14 +148,37 @@ export function ExplorationAreas() {
                     <span className="text-xs text-destructive ml-1">(SP不足)</span>
                   )}
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => handleExploreClick(area)}
-                  disabled={!canAfford}
+                <motion.div
+                  whileHover={{ scale: canAfford ? 1.05 : 1 }}
+                  whileTap={{ scale: canAfford ? 0.95 : 1 }}
                 >
-                  探索する
-                  <Search className="h-4 w-4 ml-1" />
-                </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleExploreClick(area)}
+                    disabled={!canAfford}
+                    className="relative overflow-hidden"
+                  >
+                    <motion.span
+                      className="relative z-10 flex items-center"
+                    >
+                      探索する
+                      <Search className="h-4 w-4 ml-1" />
+                    </motion.span>
+                    {canAfford && (
+                      <motion.div
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+                        animate={{
+                          x: ["-100%", "100%"]
+                        }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 3,
+                          ease: "linear"
+                        }}
+                      />
+                    )}
+                  </Button>
+                </motion.div>
               </CardFooter>
             </Card>
           );
@@ -176,40 +221,147 @@ export function ExplorationAreas() {
       <Dialog open={resultDialogOpen} onOpenChange={setResultDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>探索結果</DialogTitle>
+            <DialogTitle>
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center gap-2"
+              >
+                探索結果
+                {explorationResult?.fragments_found?.length > 0 && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.3, type: "spring" }}
+                    className="text-sm font-normal text-purple-600"
+                  >
+                    – {explorationResult.fragments_found.length}個のフラグメント発見！
+                  </motion.span>
+                )}
+              </motion.div>
+            </DialogTitle>
           </DialogHeader>
           {explorationResult && (
-            <div className="space-y-4">
-              <div className="prose prose-sm max-w-none">
+            <motion.div 
+              className="space-y-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <motion.div 
+                className="prose prose-sm max-w-none"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
                 <p>{explorationResult.narrative}</p>
-              </div>
+              </motion.div>
               
               {explorationResult.fragments_found.length > 0 && (
                 <div>
                   <h4 className="font-medium mb-2">発見したログフラグメント</h4>
                   <div className="space-y-2">
-                    {explorationResult.fragments_found.map((fragment: any, index: number) => (
-                      <Card key={index}>
-                        <CardContent className="py-3">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="font-medium">{fragment.keyword}</p>
-                              <p className="text-sm text-muted-foreground">{fragment.description}</p>
-                            </div>
-                            <Badge>{fragment.rarity}</Badge>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                    <AnimatePresence>
+                      {explorationResult.fragments_found.map((fragment: any, index: number) => (
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{
+                            duration: 0.5,
+                            delay: index * 0.2,
+                            type: "spring",
+                            stiffness: 200,
+                            damping: 20
+                          }}
+                        >
+                          <motion.div
+                            whileHover={{ scale: 1.02 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <Card className="overflow-hidden">
+                              <motion.div
+                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"
+                                initial={{ x: "-100%" }}
+                                animate={{ x: "100%" }}
+                                transition={{
+                                  duration: 1.5,
+                                  delay: index * 0.2 + 0.5,
+                                  ease: "easeInOut"
+                                }}
+                              />
+                              <CardContent className="py-3 relative">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <motion.div
+                                      initial={{ opacity: 0 }}
+                                      animate={{ opacity: 1 }}
+                                      transition={{ delay: index * 0.2 + 0.3 }}
+                                    >
+                                      <p className="font-medium flex items-center gap-2">
+                                        <motion.div
+                                          animate={{
+                                            rotate: [0, 360],
+                                            scale: [1, 1.2, 1]
+                                          }}
+                                          transition={{
+                                            duration: 2,
+                                            delay: index * 0.2,
+                                            repeat: 1
+                                          }}
+                                        >
+                                          <Sparkles className="h-4 w-4 text-purple-600" />
+                                        </motion.div>
+                                        {fragment.keyword}
+                                      </p>
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {fragment.description}
+                                      </p>
+                                    </motion.div>
+                                  </div>
+                                  <motion.div
+                                    initial={{ scale: 0, rotate: -180 }}
+                                    animate={{ scale: 1, rotate: 0 }}
+                                    transition={{
+                                      type: "spring",
+                                      stiffness: 200,
+                                      damping: 15,
+                                      delay: index * 0.2 + 0.4
+                                    }}
+                                  >
+                                    <Badge 
+                                      className={`
+                                        ${fragment.rarity === 'LEGENDARY' ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white' : ''}
+                                        ${fragment.rarity === 'EPIC' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white' : ''}
+                                        ${fragment.rarity === 'RARE' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white' : ''}
+                                        ${fragment.rarity === 'UNCOMMON' ? 'bg-gradient-to-r from-green-500 to-green-600 text-white' : ''}
+                                        ${fragment.rarity === 'COMMON' ? 'bg-gradient-to-r from-gray-500 to-gray-600 text-white' : ''}
+                                      `}
+                                    >
+                                      {fragment.rarity}
+                                    </Badge>
+                                  </motion.div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </motion.div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   </div>
                 </div>
               )}
               
-              <div className="flex items-center justify-between text-sm">
+              <motion.div 
+                className="flex items-center justify-between text-sm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+              >
                 <span>消費SP: {explorationResult.sp_consumed}</span>
                 <span>残りSP: {explorationResult.remaining_sp}</span>
-              </div>
-            </div>
+              </motion.div>
+            </motion.div>
           )}
           <DialogFooter>
             <Button onClick={() => setResultDialogOpen(false)}>
@@ -218,6 +370,13 @@ export function ExplorationAreas() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* フラグメント発見アニメーション */}
+      <FragmentDiscoveryAnimation
+        isDiscovering={showDiscoveryAnimation}
+        fragmentCount={explorationResult?.fragments_found?.length || 0}
+        rarity={getHighestRarity() as any}
+      />
     </>
   );
 }
