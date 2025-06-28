@@ -45,6 +45,7 @@
 
 ### techDecisions/
 - **[alembicIntegration.md](techDecisions/alembicIntegration.md)**: Alembic + SQLModel統合ガイド
+- **[websocketArchitecture.md](techDecisions/websocketArchitecture.md)**: WebSocketアーキテクチャとリアルタイム通信設計
 
 ### api/
 - **[gemini_api_specification.md](api/gemini_api_specification.md)**: Gemini API仕様とLangChain統合ガイド

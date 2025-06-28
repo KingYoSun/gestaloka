@@ -28,19 +28,79 @@ export function useSPBalance() {
  */
 export function useSPBalanceSummary() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   // WebSocketでSP更新イベントを受信したら自動的に再取得
   useEffect(() => {
-    const handleSPUpdate = () => {
+    const handleSPUpdate = (data: {
+      current_sp: number
+      amount_changed: number
+      transaction_type: string
+      description: string
+    }) => {
+      // クエリを無効化して最新データを取得
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
+      
+      // キャッシュを直接更新（楽観的更新）
+      queryClient.setQueryData(['sp', 'balance', 'summary'], (oldData: any) => {
+        if (!oldData) return oldData
+        return {
+          ...oldData,
+          current_sp: data.current_sp,
+        }
+      })
+      
+      // ユーザーへの通知（重要な変更のみ）
+      const isIncrease = data.amount_changed > 0
+      const isSignificant = Math.abs(data.amount_changed) >= 10
+      
+      if (isSignificant) {
+        toast({
+          title: isIncrease ? 'SPを獲得しました' : 'SPを消費しました',
+          description: `${data.description} (${isIncrease ? '+' : ''}${data.amount_changed} SP)`,
+          variant: isIncrease ? 'default' : undefined,
+        })
+      }
+    }
+    
+    const handleSPInsufficient = (data: {
+      required_amount: number
+      current_sp: number
+      action: string
+      message: string
+    }) => {
+      toast({
+        title: 'SP不足',
+        description: data.message,
+        variant: 'destructive',
+      })
+    }
+    
+    const handleDailyRecovery = (data: {
+      success: boolean
+      total_amount: number
+      message: string
+    }) => {
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
+        toast({
+          title: '日次回復完了',
+          description: data.message,
+          variant: 'default',
+        })
+      }
     }
 
     websocketManager.on('sp:update', handleSPUpdate)
+    websocketManager.on('sp:insufficient', handleSPInsufficient)
+    websocketManager.on('sp:daily_recovery', handleDailyRecovery)
 
     return () => {
       websocketManager.off('sp:update', handleSPUpdate)
+      websocketManager.off('sp:insufficient', handleSPInsufficient)
+      websocketManager.off('sp:daily_recovery', handleDailyRecovery)
     }
-  }, [queryClient])
+  }, [queryClient, toast])
 
   return useQuery({
     queryKey: ['sp', 'balance', 'summary'],

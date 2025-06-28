@@ -557,20 +557,61 @@
 - [探索システムと派遣拡張レポート](../progressReports/2025-06-22_exploration_and_dispatch_expansion.md)
 - [探索システムフロントエンド実装](../progressReports/2025-06-22_exploration_frontend_implementation.md)
 
+## 2025/06/28 - SP残高WebSocket統合の実装
+
+### 実施内容
+- SP更新イベントのリアルタイム通知実装
+- バックエンドからのWebSocketイベント送信機能
+- フロントエンドでのリアルタイム更新と通知表示
+
+### 技術的詳細
+1. **バックエンドWebSocketイベント実装**
+   - `SPEventEmitter`クラスの新規作成
+   - 3つのイベントタイプ：`sp_update`、`sp_insufficient`、`sp_daily_recovery`
+   - `SPService`の各メソッドからの自動イベント送信
+
+2. **フロントエンドWebSocket統合**
+   - Socket.IOイベント定義の更新
+   - `useSPBalanceSummary`フックでのイベント処理
+   - 楽観的更新による即座のUI反映
+   - 重要な変更（±10SP以上）時のトースト通知
+
+3. **視覚的フィードバック**
+   - SP変更時のアニメーション（既存実装を活用）
+   - 増減額の一時表示
+   - 低残高（100SP未満）での警告表示
+
+### 実装結果
+- SP消費・獲得時のリアルタイム通知
+- SP不足エラーの即座のフィードバック
+- 日次回復の自動通知
+- テストスクリプトによる動作確認環境
+
+### 関連ファイル
+- `backend/app/websocket/events.py`：SPイベントエミッター追加
+- `backend/app/services/sp_service.py`：WebSocketイベント送信統合
+- `frontend/src/lib/websocket/socket.ts`：イベント定義更新
+- `frontend/src/hooks/useSP.ts`：WebSocketイベント処理実装
+- `backend/test_websocket_sp.py`：動作確認用テストスクリプト
+
 ## 推奨される次のアクション（Week 15-16: 2025/06/22-07/05）
 
 ### 優先度：高
-1. **SP残高の常時表示コンポーネント** ✅ 次の実装対象
-   - ヘッダーに残高表示
-   - リアルタイム更新
-   - SP不足時の視覚的フィードバック
+1. **SP残高の常時表示コンポーネント** ✅ 基本実装完了
+   - WebSocket統合 ✅ 実装完了
+   - UI/UXの更なる改善
 
 2. **探索システムの改善**
    - ログフラグメント発見演出のアニメーション ✅ 実装済み
    - ミニマップ機能
 
 ### 優先度：中
-3. **派遣ログ同士の相互作用システム**
+3. **SP購入システムの設計と実装**
+   - 購入画面UI
+   - Stripe決済統合
+   - 購入履歴管理
+
+4. **派遣ログ同士の相互作用システム** ✅ 実装済み
    - 派遣中のログ同士の遭遇
    - 協力・競合メカニズム
    - 相互作用による成果の変化

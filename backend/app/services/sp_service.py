@@ -16,6 +16,7 @@ from app.models.sp import (
     SPTransaction,
     SPTransactionType,
 )
+from app.websocket.events import SPEventEmitter
 
 logger = get_logger(__name__)
 
@@ -132,6 +133,13 @@ class SPService:
 
             # 残高チェック
             if player_sp.current_sp < final_amount:
+                # SP不足イベントを送信
+                await SPEventEmitter.emit_sp_insufficient(
+                    user_id=user_id,
+                    required_amount=final_amount,
+                    current_sp=player_sp.current_sp,
+                    action=description,
+                )
                 raise InsufficientSPError(
                     f"SP残高が不足しています。必要: {final_amount}, 現在: {player_sp.current_sp}"
                 )
@@ -165,6 +173,17 @@ class SPService:
                 user_id=user_id,
                 amount=final_amount,
                 type=transaction_type.value,
+            )
+            
+            # WebSocketイベントを送信
+            await SPEventEmitter.emit_sp_update(
+                user_id=user_id,
+                current_sp=player_sp.current_sp,
+                amount_changed=-final_amount,
+                transaction_type=transaction_type.value,
+                description=description,
+                balance_before=balance_before,
+                metadata=transaction_metadata,
             )
 
             return transaction
@@ -219,6 +238,17 @@ class SPService:
                 user_id=user_id,
                 amount=amount,
                 type=transaction_type.value,
+            )
+            
+            # WebSocketイベントを送信
+            await SPEventEmitter.emit_sp_update(
+                user_id=user_id,
+                current_sp=player_sp.current_sp,
+                amount_changed=amount,
+                transaction_type=transaction_type.value,
+                description=description,
+                balance_before=balance_before,
+                metadata=metadata,
             )
 
             return transaction
@@ -311,7 +341,7 @@ class SPService:
 
             self.db.commit()
 
-            return {
+            recovery_result = {
                 "success": True,
                 "recovered_amount": recovery_amount,
                 "subscription_bonus": subscription_bonus,
@@ -321,6 +351,14 @@ class SPService:
                 "balance_after": player_sp.current_sp,
                 "message": f"SP +{total_recovery} を獲得しました！",
             }
+            
+            # 日次回復イベントを送信
+            await SPEventEmitter.emit_daily_recovery_completed(
+                user_id=user_id,
+                recovery_details=recovery_result,
+            )
+
+            return recovery_result
 
         except Exception as e:
             logger.error(
