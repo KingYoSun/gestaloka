@@ -4,14 +4,15 @@
 派遣中のログの活動をシミュレートし、報告書を生成するタスク群
 """
 
+import asyncio
 import random
 from datetime import datetime
 from typing import Any, Optional
 
+import structlog
 from celery import current_app
 from sqlmodel import Session, select
 
-# from app.core.ai.gm_council import GMCouncil  # TODO: GM AI統合時に有効化
 from app.core.database import SessionLocal
 from app.models.log import CompletedLog
 from app.models.log_dispatch import (
@@ -21,6 +22,10 @@ from app.models.log_dispatch import (
     DispatchStatus,
     LogDispatch,
 )
+from app.services.ai.dispatch_simulator import DispatchSimulator
+from app.services.ai.dispatch_interaction import DispatchInteractionManager
+
+logger = structlog.get_logger(__name__)
 
 
 @current_app.task(name="app.tasks.dispatch_tasks.process_dispatch_activities")
@@ -49,8 +54,8 @@ def process_dispatch_activities(dispatch_id: str) -> dict[str, Any]:
         if not completed_log:
             return {"status": "error", "reason": "Completed log not found"}
 
-        # 活動をシミュレート
-        activity = simulate_dispatch_activity(dispatch, completed_log, db)
+        # 活動をシミュレート（非同期関数を同期的に実行）
+        activity = asyncio.run(simulate_dispatch_activity(dispatch, completed_log, db))
 
         # 活動記録を追加
         dispatch.travel_log.append(activity)
@@ -92,13 +97,68 @@ def process_dispatch_activities(dispatch_id: str) -> dict[str, Any]:
         db.close()
 
 
-def simulate_dispatch_activity(
+async def simulate_dispatch_activity(
     dispatch: LogDispatch,
     completed_log: CompletedLog,
     db: Session,
 ) -> dict[str, Any]:
     """
-    派遣中の活動をシミュレート
+    派遣中の活動をシミュレート（AI駆動版）
+    """
+    try:
+        # AI駆動のシミュレーターを使用
+        simulator = DispatchSimulator()
+        simulated_activity = await simulator.simulate_activity(
+            dispatch=dispatch,
+            completed_log=completed_log,
+            db=db,
+        )
+
+        # 既存のフォーマットに変換
+        activity = {
+            "timestamp": simulated_activity.timestamp.isoformat(),
+            "location": simulated_activity.location,
+            "action": simulated_activity.action,
+            "result": simulated_activity.result,
+            "narrative": simulated_activity.narrative,
+            "success_level": simulated_activity.success_level,
+        }
+
+        # 発見した場所を追加
+        if simulated_activity.discovered_location:
+            activity["discovered_location"] = simulated_activity.discovered_location
+
+        # 収集したアイテムを追加
+        if simulated_activity.collected_item:
+            activity["collected_item"] = simulated_activity.collected_item
+
+        # 遭遇情報を追加
+        if simulated_activity.encounter:
+            activity["encounter_id"] = simulated_activity.encounter.id
+
+        # 経験値情報を追加
+        if simulated_activity.experience_gained:
+            activity["experience_gained"] = simulated_activity.experience_gained
+
+        # 関係性の変化を追加
+        if simulated_activity.relationship_changes:
+            activity["relationship_changes"] = simulated_activity.relationship_changes
+
+        return activity
+
+    except Exception as e:
+        # エラー時はフォールバック（従来の単純な実装）
+        logger.error("AI simulation failed, using fallback", error=str(e))
+        return simulate_dispatch_activity_fallback(dispatch, completed_log, db)
+
+
+def simulate_dispatch_activity_fallback(
+    dispatch: LogDispatch,
+    completed_log: CompletedLog,
+    db: Session,
+) -> dict[str, Any]:
+    """
+    派遣中の活動をシミュレート（フォールバック版）
     """
     activity = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -304,7 +364,7 @@ def generate_dispatch_report(dispatch_id: str) -> dict[str, Any]:
             memorable_moments=extract_memorable_moments(dispatch, encounters),
             personality_changes=generate_personality_changes(completed_log, dispatch),
             new_skills_learned=generate_new_skills(dispatch),
-            narrative_summary=generate_narrative_summary(dispatch, completed_log, encounters),
+            narrative_summary=asyncio.run(generate_narrative_summary(dispatch, completed_log, encounters)),
             epilogue=generate_epilogue(dispatch, completed_log) if dispatch.achievement_score > 0.7 else None,
             economic_details=economic_details,
             special_achievements=special_achievements,
@@ -404,42 +464,111 @@ def generate_new_skills(dispatch: LogDispatch) -> list[str]:
     return skills
 
 
-def generate_narrative_summary(
+async def generate_narrative_summary(
     dispatch: LogDispatch,
     completed_log: CompletedLog,
     encounters: list[DispatchEncounter],
 ) -> str:
     """
-    物語の要約を生成
+    物語の要約を生成（AI駆動版）
     """
-    # 簡易的な物語生成（本来はGM AIを使用）
-    summary = f"{completed_log.name} embarked on a journey with the purpose of "
+    try:
+        from app.services.ai.agents.dramatist import DramatistAgent
+        from app.services.ai.prompt_manager import PromptContext
+
+        # 脚本家AIを使用して物語を生成
+        dramatist = DramatistAgent()
+
+        # 派遣活動の詳細をまとめる
+        activity_summary = {
+            "objective_type": dispatch.objective_type.value,
+            "duration": (dispatch.actual_return_at or datetime.utcnow()) - dispatch.dispatched_at,
+            "discovered_locations": dispatch.discovered_locations,
+            "collected_items": dispatch.collected_items,
+            "encounters": len(encounters),
+            "achievement_score": dispatch.achievement_score,
+            "travel_log_entries": len(dispatch.travel_log),
+        }
+
+        # プロンプトコンテキストの構築
+        context = PromptContext(
+            character_name=completed_log.name,
+            action="派遣任務を完了",
+            location="帰還地点",
+            recent_actions=[log.get("action", "") for log in dispatch.travel_log[-5:]],
+            world_state={},
+            additional_context={
+                "task": "generate_dispatch_summary",
+                "dispatch_details": activity_summary,
+                "personality": completed_log.personality,
+                "contamination_level": completed_log.contamination_level,
+                "memorable_moments": extract_memorable_moments(dispatch, encounters),
+            },
+        )
+
+        # AIレスポンスを取得
+        response = await dramatist.process(
+            context,
+            narrative_style="dispatch_summary",
+        )
+
+        return response.narrative or generate_narrative_summary_fallback(dispatch, completed_log, encounters)
+
+    except Exception as e:
+        logger.error("AI narrative generation failed", error=str(e))
+        return generate_narrative_summary_fallback(dispatch, completed_log, encounters)
+
+
+def generate_narrative_summary_fallback(
+    dispatch: LogDispatch,
+    completed_log: CompletedLog,
+    encounters: list[DispatchEncounter],
+) -> str:
+    """
+    物語の要約を生成（フォールバック版）
+    """
+    summary = f"{completed_log.name}は"
 
     if dispatch.objective_type == DispatchObjectiveType.EXPLORE:
-        summary += "exploring unknown territories. "
+        summary += "未知の領域を探索する旅に出た。"
         if dispatch.discovered_locations:
-            summary += f"The journey led to the discovery of {len(dispatch.discovered_locations)} new locations. "
+            summary += f"その旅は{len(dispatch.discovered_locations)}の新たな場所の発見をもたらした。"
     elif dispatch.objective_type == DispatchObjectiveType.INTERACT:
-        summary += "meeting new people and forming connections. "
+        summary += "新たな出会いと繋がりを求める旅に出た。"
         if encounters:
-            summary += f"Along the way, {len(encounters)} meaningful encounters shaped the journey. "
+            summary += f"道中、{len(encounters)}回の意味深い出会いが旅を彩った。"
     elif dispatch.objective_type == DispatchObjectiveType.COLLECT:
-        summary += "gathering valuable resources. "
+        summary += "貴重な資源を収集する旅に出た。"
         if dispatch.collected_items:
-            summary += f"The search yielded {len(dispatch.collected_items)} items of interest. "
+            summary += f"探索の結果、{len(dispatch.collected_items)}個の興味深いアイテムを発見した。"
     elif dispatch.objective_type == DispatchObjectiveType.GUARD:
-        summary += "protecting a designated area. "
-        summary += "The duty was fulfilled with dedication. "
+        summary += "指定された地域を守護する任務に就いた。"
+        summary += "その責務は献身的に果たされた。"
+    elif dispatch.objective_type == DispatchObjectiveType.TRADE:
+        summary += "商業活動のために各地を巡った。"
+        if "economic_details" in dispatch.objective_details:
+            profit = dispatch.objective_details["economic_details"].get("total_profit", 0)
+            summary += f"取引により{profit}ゴールドの利益を生み出した。"
+    elif dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
+        summary += "失われゆく記憶を保存する旅に出た。"
+        if "memory_details" in dispatch.objective_details:
+            preserved = dispatch.objective_details["memory_details"].get("total_preserved", 0)
+            summary += f"{preserved}個の貴重な記憶を永遠に保存した。"
+    elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
+        summary += "古代の謎を解明する研究の旅に出た。"
+        if "research_details" in dispatch.objective_details:
+            progress = dispatch.objective_details["research_details"].get("total_progress", 0)
+            summary += f"研究は{progress * 100:.1f}%の進展を見せた。"
     else:
-        summary += "following their own path. "
-        summary += "The journey was filled with unexpected experiences. "
+        summary += "自由な道を歩む旅に出た。"
+        summary += "その旅は予期せぬ経験に満ちていた。"
 
     if dispatch.achievement_score > 0.8:
-        summary += "The mission was a remarkable success."
+        summary += "任務は驚くべき成功を収めた。"
     elif dispatch.achievement_score > 0.5:
-        summary += "The objectives were largely achieved."
+        summary += "目的はおおむね達成された。"
     else:
-        summary += "Though challenges arose, valuable lessons were learned."
+        summary += "困難はあったが、貴重な教訓を得た。"
 
     return summary
 
@@ -569,3 +698,54 @@ def generate_random_item() -> dict[str, Any]:
         {"name": "Old Map Fragment", "rarity": "uncommon", "value": 30},
     ]
     return random.choice(items)
+
+
+@current_app.task(name="app.tasks.dispatch_tasks.check_dispatch_interactions")
+def check_dispatch_interactions() -> dict[str, Any]:
+    """
+    派遣ログ同士の相互作用をチェックし処理する定期タスク
+    
+    Returns:
+        処理結果の辞書
+    """
+    db = SessionLocal()
+    try:
+        # 相互作用マネージャーを初期化
+        interaction_manager = DispatchInteractionManager()
+        
+        # 相互作用をチェックして処理（非同期関数を同期的に実行）
+        interactions = asyncio.run(
+            interaction_manager.check_and_process_interactions(db)
+        )
+        
+        # 結果をまとめる
+        result = {
+            "status": "success",
+            "interactions_processed": len(interactions),
+            "interactions": [
+                {
+                    "dispatch_1": interaction.dispatch_id_1,
+                    "dispatch_2": interaction.dispatch_id_2,
+                    "type": interaction.interaction_type,
+                    "outcome": interaction.outcome,
+                    "location": interaction.location,
+                }
+                for interaction in interactions
+            ],
+        }
+        
+        logger.info(
+            "Dispatch interactions checked",
+            interactions_count=len(interactions),
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error("Failed to check dispatch interactions", error=str(e))
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+    finally:
+        db.close()

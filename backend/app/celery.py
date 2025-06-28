@@ -12,7 +12,7 @@ celery_app = Celery(
     "gestaloka",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ai_tasks", "app.tasks.log_tasks", "app.tasks.notification_tasks", "app.tasks.cleanup_tasks", "app.tasks.sp_tasks"],
+    include=["app.tasks.ai_tasks", "app.tasks.log_tasks", "app.tasks.notification_tasks", "app.tasks.cleanup_tasks", "app.tasks.sp_tasks", "app.tasks.dispatch_tasks"],
 )
 
 # Celery設定
@@ -55,6 +55,10 @@ celery_app.conf.update(
         "check-subscription-expiry": {
             "task": "app.tasks.sp_tasks.check_subscription_expiry",
             "schedule": 3600.0,  # 1時間ごと
+        },
+        "check-dispatch-interactions": {
+            "task": "app.tasks.dispatch_tasks.check_dispatch_interactions",
+            "schedule": 1800.0,  # 30分ごと
         },
     },
 )
