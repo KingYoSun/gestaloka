@@ -5,27 +5,9 @@ Neo4j統合テストの基底クラス
 """
 
 
-import pytest
-from neomodel import db
-
 from app.db.neo4j_models import NPC, Location, Player
 from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data, cleanup_test_data
-
-
-@pytest.fixture
-def neo4j_test_db():
-    """テスト用Neo4j接続のフィクスチャー"""
-    # テスト用接続を確実に設定
-    ensure_test_connection()
-
-    # テストごとに全データをクリーンアップ（より確実）
-    cleanup_all_neo4j_data()
-
-    yield db
-
-    # テスト後のクリーンアップ
-    cleanup_all_neo4j_data()
 
 
 class BaseNeo4jIntegrationTest:

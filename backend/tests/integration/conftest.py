@@ -5,10 +5,26 @@ PostgreSQLとNeo4jの両方のデータベースクリーンアップを提供
 """
 
 import pytest
+from neomodel import db
 
 from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data
 from tests.integration.postgres_test_utils import isolated_postgres_test
+
+
+@pytest.fixture
+def neo4j_test_db():
+    """テスト用Neo4j接続のフィクスチャー"""
+    # テスト用接続を確実に設定
+    ensure_test_connection()
+    
+    # テストごとに全データをクリーンアップ（より確実）
+    cleanup_all_neo4j_data()
+    
+    yield db
+    
+    # テスト後のクリーンアップ
+    cleanup_all_neo4j_data()
 
 
 @pytest.fixture(scope="function")
