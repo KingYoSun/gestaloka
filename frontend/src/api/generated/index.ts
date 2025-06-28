@@ -101,6 +101,28 @@ export interface PlayerSP {
 }
 
 // Re-export from other modules if needed
-export * from '@/types';
-export * from '@/types/log';
+// Note: CompletedLog and LogFragment are already exported from @/types
+export type { 
+  User,
+  Character,
+  CharacterCreationForm,
+  GameSession,
+  GameSessionCreate,
+  GameSessionListResponse,
+  GameActionRequest,
+  GameActionResponse,
+  // Exclude CompletedLog and LogFragment to avoid duplicate exports
+} from '@/types';
+
+// Re-export everything except duplicates
+export type {
+  LogFragmentCreate,
+  CompletedLogCreate,
+  LogContract,
+  LogContractCreate,
+  LogContractAccept,
+  CompletedLogRead,
+  LogFragmentRead,
+} from '@/types/log';
+
 export * from '@/types/sp';

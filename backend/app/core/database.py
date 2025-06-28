@@ -25,7 +25,8 @@ engine = create_engine(
 )
 
 # Celeryタスク用のセッションファクトリ
-SessionLocal = lambda: Session(engine)
+def SessionLocal():  # noqa: N802
+    return Session(engine)
 
 
 def create_db_and_tables():

@@ -1,11 +1,12 @@
 """
 探索システム関連のスキーマ
 """
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any, Optional
 
-from app.models.location import LocationType, DangerLevel
+from pydantic import BaseModel, Field
+
+from app.models.location import DangerLevel, LocationType
 
 
 class LocationBase(BaseModel):
@@ -15,7 +16,7 @@ class LocationBase(BaseModel):
     location_type: LocationType = Field(..., description="場所の種類")
     hierarchy_level: int = Field(..., ge=1, le=7, description="階層レベル")
     danger_level: DangerLevel = Field(..., description="危険度")
-    
+
 
 class LocationResponse(LocationBase):
     """場所情報のレスポンス"""
@@ -27,7 +28,7 @@ class LocationResponse(LocationBase):
     has_guild: bool = Field(..., description="ギルドの有無")
     fragment_discovery_rate: int = Field(..., description="ログフラグメント発見率")
     is_discovered: bool = Field(..., description="発見済みかどうか")
-    
+
     class Config:
         from_attributes = True
 
@@ -40,7 +41,7 @@ class LocationConnectionResponse(BaseModel):
     distance: int = Field(..., description="距離")
     min_level_required: int = Field(..., description="必要最小レベル")
     travel_description: Optional[str] = Field(None, description="移動時の説明文")
-    
+
     class Config:
         from_attributes = True
 
@@ -48,7 +49,7 @@ class LocationConnectionResponse(BaseModel):
 class AvailableLocationsResponse(BaseModel):
     """移動可能な場所のレスポンス"""
     current_location: LocationResponse = Field(..., description="現在地")
-    available_locations: List[LocationConnectionResponse] = Field(..., description="移動可能な場所リスト")
+    available_locations: list[LocationConnectionResponse] = Field(..., description="移動可能な場所リスト")
 
 
 class MoveRequest(BaseModel):
@@ -75,7 +76,7 @@ class ExplorationAreaResponse(BaseModel):
     max_fragments_per_exploration: int = Field(..., description="一度の探索で発見可能な最大フラグメント数")
     rare_fragment_chance: int = Field(..., description="レアフラグメント発見率")
     encounter_rate: int = Field(..., description="歪み遭遇率")
-    
+
     class Config:
         from_attributes = True
 
@@ -95,7 +96,7 @@ class FragmentFoundResponse(BaseModel):
 class ExploreResponse(BaseModel):
     """探索レスポンス"""
     success: bool = Field(..., description="探索成功フラグ")
-    fragments_found: List[Dict[str, Any]] = Field(..., description="発見したフラグメント")
+    fragments_found: list[dict[str, Any]] = Field(..., description="発見したフラグメント")
     encounters: int = Field(..., description="遭遇数")
     sp_consumed: int = Field(..., description="消費したSP")
     remaining_sp: int = Field(..., description="残りSP")
@@ -108,7 +109,7 @@ class LocationHistoryResponse(BaseModel):
     arrived_at: datetime = Field(..., description="到着時刻")
     departed_at: Optional[datetime] = Field(None, description="出発時刻")
     sp_consumed: int = Field(..., description="消費したSP")
-    
+
     class Config:
         from_attributes = True
 

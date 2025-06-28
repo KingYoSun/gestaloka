@@ -107,7 +107,7 @@ export function DispatchList() {
       </div>
 
       <div className="space-y-4">
-        {dispatches.map((dispatch) => {
+        {dispatches.map((dispatch: any) => {
           const isActive = dispatch.status === 'DISPATCHED'
           const achievementPercent = (dispatch.achievement_score * 100).toFixed(0)
 
@@ -124,8 +124,8 @@ export function DispatchList() {
                   <CardTitle className="text-lg">
                     ログID: {dispatch.completed_log_id.slice(0, 8)}...
                   </CardTitle>
-                  <Badge variant={statusConfig[dispatch.status].variant}>
-                    {statusConfig[dispatch.status].label}
+                  <Badge variant={statusConfig[dispatch.status as keyof DispatchStatus].variant}>
+                    {statusConfig[dispatch.status as keyof DispatchStatus].label}
                   </Badge>
                 </div>
               </CardHeader>

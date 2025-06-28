@@ -27,7 +27,7 @@ from app.models.log_dispatch import (
 def process_dispatch_activities(dispatch_id: str) -> dict[str, Any]:
     """
     派遣中のログの活動を処理
-    
+
     定期的に実行され、ログの活動をシミュレートします。
     """
     # セッションを直接作成（Celeryタスク内のため）
@@ -218,19 +218,19 @@ def calculate_achievement_score(dispatch: LogDispatch) -> float:
     elif dispatch.objective_type == DispatchObjectiveType.GUARD:
         # 守護任務は期間完了で高スコア
         score = 0.9
-        
+
     elif dispatch.objective_type == DispatchObjectiveType.TRADE:
         # 商業活動は利益率で評価
         if "economic_details" in dispatch.objective_details:
             profit_rate = dispatch.objective_details["economic_details"].get("profit_rate", 0)
             score += min(0.5, profit_rate * 0.01)  # 利益率50%で満点
-        
+
     elif dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
         # 記憶保存は成功率で評価
         if "memory_details" in dispatch.objective_details:
             success_rate = dispatch.objective_details["memory_details"].get("success_rate", 0)
             score += min(0.5, success_rate)
-            
+
     elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
         # 研究は解明度で評価
         if "research_details" in dispatch.objective_details:
@@ -284,7 +284,7 @@ def generate_dispatch_report(dispatch_id: str) -> dict[str, Any]:
         # 派遣タイプ別の詳細データを生成
         economic_details = None
         special_achievements = None
-        
+
         if dispatch.objective_type == DispatchObjectiveType.TRADE:
             economic_details = generate_economic_details(dispatch)
         elif dispatch.objective_type in [
@@ -452,7 +452,7 @@ def generate_economic_details(dispatch: LogDispatch) -> dict:
     total_sales = random.randint(100, 1000)
     total_costs = int(total_sales * random.uniform(0.3, 0.7))
     profit = total_sales - total_costs
-    
+
     details = {
         "total_sales": total_sales,
         "total_costs": total_costs,
@@ -471,7 +471,7 @@ def generate_economic_details(dispatch: LogDispatch) -> dict:
             "Rare materials fetch premium prices in corporate districts",
         ]
     }
-    
+
     return details
 
 
@@ -480,11 +480,11 @@ def generate_special_achievements(dispatch: LogDispatch) -> dict:
     特殊な成果を生成（記憶保存、研究など）
     """
     achievements = {}
-    
+
     if dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
         memories_collected = random.randint(5, 30)
         memories_preserved = int(memories_collected * random.uniform(0.6, 0.95))
-        
+
         achievements = {
             "type": "memory_preservation",
             "memories_collected": memories_collected,
@@ -497,10 +497,10 @@ def generate_special_achievements(dispatch: LogDispatch) -> dict:
             "fading_delayed": f"{random.randint(3, 15)}%",
             "contribution_to_library": random.randint(1, 5),
         }
-        
+
     elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
         research_progress = random.uniform(0.2, 0.8)
-        
+
         achievements = {
             "type": "research",
             "research_target": "Ancient Crystal Formation",
@@ -513,7 +513,7 @@ def generate_special_achievements(dispatch: LogDispatch) -> dict:
             "academic_evaluation": random.choice(["A", "A+", "S"]),
             "published_papers": random.randint(0, 2),
         }
-    
+
     return achievements
 
 

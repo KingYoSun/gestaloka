@@ -1,8 +1,8 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025-06-22
+## 最終更新: 2025-06-28
 
-## 稼働中のサービス（localhost） - 2025/06/22時点
+## 稼働中のサービス（localhost） - 2025/06/28時点
 🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ（最新安定版）  
 🟢 **Neo4j 5.26 LTS**: ポート7474/7687 - グラフデータベース、関係性データ（長期サポート版）  
 🟢 **Redis 8**: ポート6379 - セッション、キャッシュ、Celeryブローカー（最新安定版）  
@@ -31,6 +31,8 @@
 - ✅ SP管理API実装完了
 - ✅ SPシステムのフロントエンド統合完了
 - ✅ 全てのテスト・型・リントエラーを完全解消
+- ✅ ログ派遣システムの完全実装（DispatchAPI、UI、Celeryタスク）
+- ✅ 探索システムの完全実装（Location管理、移動、エリア探索）
 
 ## 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -79,7 +81,14 @@
 - WebSocket (Socket.IO)
 - Celery（Worker/Beat/Flower）
 
-## 最近の変更（2025-06-22）
+## 最近の変更（2025-06-28）
+- 全てのテスト・型・リントエラーを完全解消
+  - フロントエンド：テスト21個成功、型チェックエラー0、リントエラー0
+  - バックエンド：テスト189/193成功、型チェック対応、リントエラー0
+  - 型定義の重複解消、キャメルケース/スネークケース統一
+  - date-fnsパッケージのインストール
+
+### 2025-06-22の変更
 - SPシステムの完全実装
   - SPシステムのデータモデル実装（CharacterSP、SPHistory）
   - SP管理API実装完了（SP消費、回復、履歴取得）
@@ -124,10 +133,22 @@
 - character_stats
 - skills
 - game_sessions
-- action_logs（新規）
-- skill_logs（新規）
-- character_sp（新規）
-- sp_history（新規）
+- action_logs
+- skill_logs
+- character_sp
+- sp_history
+- log_fragments
+- completed_logs
+- log_contracts
+- completed_log_sub_fragments
+- log_dispatches
+- dispatch_encounters
+- dispatch_reports
+- locations
+- location_connections
+- exploration_areas
+- character_location_history
+- exploration_logs
 - alembic_version
 
 ### ENUMタイプ

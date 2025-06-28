@@ -11,14 +11,12 @@ import {
   Send,
   User,
   AlertTriangle,
-  ChevronRight,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 
 interface CompletedLogListProps {
-  characterId: string
   completedLogs: CompletedLogRead[]
   isLoading: boolean
 }
@@ -42,7 +40,6 @@ const statusColors: Record<string, string> = {
 }
 
 export function CompletedLogList({
-  characterId,
   completedLogs,
   isLoading,
 }: CompletedLogListProps) {
@@ -87,7 +84,7 @@ export function CompletedLogList({
       <div className="space-y-4">
         {completedLogs.map((log) => {
           const isDispatchable = log.status === 'completed'
-          const contaminationPercent = (log.contamination_level * 100).toFixed(0)
+          const contaminationPercent = (log.contaminationLevel * 100).toFixed(0)
 
           return (
             <Card
@@ -133,7 +130,7 @@ export function CompletedLogList({
                   <div className="flex items-center gap-1">
                     <User className="h-4 w-4 text-muted-foreground" />
                     <span>
-                      性格特性: {log.personality_traits.length || 0}
+                      性格特性: {log.personalityTraits.length || 0}
                     </span>
                   </div>
                   <div

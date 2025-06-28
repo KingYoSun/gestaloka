@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
+    from app.models.location import Location
     from app.models.log import CompletedLog, LogContract, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.user import User
-    from app.models.location import Location
 
 
 class Character(SQLModel, table=True):
@@ -48,11 +48,11 @@ class Character(SQLModel, table=True):
     hosted_contracts: list["LogContract"] = Relationship(
         back_populates="host_character", sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
     )
-    
+
     # 派遣システム関連
     dispatched_logs: list["LogDispatch"] = Relationship(back_populates="dispatcher")
     log_encounters: list["DispatchEncounter"] = Relationship(back_populates="encountered_character")
-    
+
     # 場所関連
     current_location: Optional["Location"] = Relationship(back_populates="characters")
 

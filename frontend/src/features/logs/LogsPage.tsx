@@ -8,8 +8,8 @@ import { useCreateCompletedLog, useCompletedLogs } from './hooks/useCompletedLog
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { BookOpen, Sparkles, User, Send, ScrollText, Compass } from 'lucide-react'
-import { CompletedLogCreate } from '@/types/log'
+import { BookOpen, Sparkles, User, ScrollText, Compass } from 'lucide-react'
+import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
 import { useToast } from '@/hooks/use-toast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
 
@@ -19,7 +19,7 @@ export function LogsPage() {
   const [showCompilationEditor, setShowCompilationEditor] = useState(false)
   const { data: characters = [], isLoading: isLoadingCharacters } = useCharacters()
   const { data: fragments = [], isLoading: isLoadingFragments } = useLogFragments(selectedCharacterId)
-  const { data: completedLogs = [], isLoading: isLoadingCompletedLogs } = useCompletedLogs(selectedCharacterId)
+  const { data: completedLogs = [] as CompletedLogRead[], isLoading: isLoadingCompletedLogs } = useCompletedLogs(selectedCharacterId)
   const createCompletedLog = useCreateCompletedLog()
   const { toast } = useToast()
 
@@ -51,8 +51,8 @@ export function LogsPage() {
         description: compiledLogData.description,
         skills: [],  // TODO: スキル抽出ロジックを実装
         personalityTraits: [],  // TODO: 性格特性抽出ロジックを実装
-        behaviorPatterns: compiledLogData.behaviorGuidelines ? 
-          { guidelines: compiledLogData.behaviorGuidelines } : {},
+        behaviorPatterns: compiledLogData.isOmnibus ? 
+          { isOmnibus: true } : {},
       }
       
       await createCompletedLog.mutateAsync(logData)
@@ -208,8 +208,7 @@ export function LogsPage() {
         <TabsContent value="completed" className="space-y-6">
           {selectedCharacterId ? (
             <CompletedLogList
-              characterId={selectedCharacterId}
-              completedLogs={completedLogs}
+              completedLogs={completedLogs as CompletedLogRead[]}
               isLoading={isLoadingCompletedLogs}
             />
           ) : (

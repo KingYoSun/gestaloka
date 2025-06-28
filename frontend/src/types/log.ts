@@ -46,9 +46,11 @@ export interface CompletedLog {
 
 // 完成ログの読み取り用型
 export interface CompletedLogRead extends CompletedLog {
-  contamination_level: number
-  personality_traits: string[]
+  created_at: string
 }
+
+// ログフラグメントの読み取り用型
+export type LogFragmentRead = LogFragment
 
 // ログ契約
 export interface LogContract {

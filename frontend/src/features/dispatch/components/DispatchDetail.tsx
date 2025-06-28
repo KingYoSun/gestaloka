@@ -224,7 +224,7 @@ export function DispatchDetail({
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {dispatch.travel_log.map((log, index) => (
+                      {dispatch.travel_log.map((log: any, index: number) => (
                         <div
                           key={index}
                           className="flex gap-3 pb-3 border-b last:border-0"
@@ -271,7 +271,7 @@ export function DispatchDetail({
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {dispatch.encounters.map((encounter) => (
+                      {dispatch.encounters.map((encounter: any) => (
                         <div
                           key={encounter.id}
                           className="p-3 rounded-lg border space-y-2"
@@ -395,7 +395,7 @@ export function DispatchDetail({
                           <div>
                             <h4 className="font-medium mb-2">性格の変化</h4>
                             <ul className="list-disc list-inside text-sm text-muted-foreground">
-                              {report.personality_changes.map((change, i) => (
+                              {report.personality_changes.map((change: any, i: number) => (
                                 <li key={i}>{change}</li>
                               ))}
                             </ul>
@@ -406,7 +406,7 @@ export function DispatchDetail({
                           <div>
                             <h4 className="font-medium mb-2">習得スキル</h4>
                             <div className="flex flex-wrap gap-2">
-                              {report.new_skills_learned.map((skill, i) => (
+                              {report.new_skills_learned.map((skill: any, i: number) => (
                                 <Badge key={i} variant="secondary">
                                   {skill}
                                 </Badge>

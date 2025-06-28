@@ -17,6 +17,15 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 # 設定をインポート
 from app.core.config import settings
 from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
+
+# 新しいモデルを追加する場合は、ここにインポートを追加
+from app.models.location import (  # noqa
+    CharacterLocationHistory,
+    ExplorationArea,
+    ExplorationLog,
+    Location,
+    LocationConnection,
+)
 from app.models.log import (  # noqa
     CompletedLog,
     CompletedLogSubFragment,
@@ -33,15 +42,6 @@ from app.models.sp import PlayerSP, SPTransaction  # noqa
 # 全てのモデルをインポート（自動生成のため必須）
 # 重要: モデルの追加時は必ずここにインポートを追加すること
 from app.models.user import User  # noqa
-
-# 新しいモデルを追加する場合は、ここにインポートを追加
-from app.models.location import (  # noqa
-    Location,
-    LocationConnection,
-    ExplorationArea,
-    CharacterLocationHistory,
-    ExplorationLog,
-)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -78,17 +78,17 @@ export function SPTransactionHistory({
   }
 
   const getTransactionTypeVariant = (type: SPTransactionType) => {
-    if (
-      [
-        SPTransactionType.DAILY_RECOVERY,
-        SPTransactionType.PURCHASE,
-        SPTransactionType.ACHIEVEMENT,
-        SPTransactionType.EVENT_REWARD,
-        SPTransactionType.LOG_RESULT,
-        SPTransactionType.LOGIN_BONUS,
-        SPTransactionType.REFUND,
-      ].includes(type as SPTransactionType)
-    ) {
+    const positiveTypes = [
+      SPTransactionType.DAILY_RECOVERY,
+      SPTransactionType.PURCHASE,
+      SPTransactionType.ACHIEVEMENT,
+      SPTransactionType.EVENT_REWARD,
+      SPTransactionType.LOG_RESULT,
+      SPTransactionType.LOGIN_BONUS,
+      SPTransactionType.REFUND,
+    ] as const
+    
+    if (positiveTypes.includes(type as typeof positiveTypes[number])) {
       return 'default'
     }
     return 'secondary'

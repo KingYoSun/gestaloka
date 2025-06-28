@@ -16,6 +16,7 @@ import {
   LogFragmentCreate,
   CompletedLog,
   CompletedLogCreate,
+  CompletedLogRead,
   LogContract,
   LogContractCreate,
   LogContractAccept,
@@ -293,8 +294,8 @@ class ApiClient {
     )
   }
 
-  async getCompletedLogs(characterId: string): Promise<CompletedLog[]> {
-    return this.requestWithTransform<CompletedLog[]>(
+  async getCompletedLogs(characterId: string): Promise<CompletedLogRead[]> {
+    return this.requestWithTransform<CompletedLogRead[]>(
       `/logs/completed/${characterId}`
     )
   }
@@ -392,6 +393,56 @@ class ApiClient {
     return this.requestWithTransform<SPTransaction>(
       `/sp/transactions/${transactionId}`
     )
+  }
+
+  // 汎用HTTPメソッド
+  async get<T>(
+    endpoint: string,
+    options?: { params?: Record<string, unknown> }
+  ): Promise<T> {
+    let url = endpoint
+    if (options?.params) {
+      const query = new URLSearchParams()
+      Object.entries(options.params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.append(key, String(value))
+        }
+      })
+      const queryString = query.toString()
+      url = `${endpoint}${queryString ? `?${queryString}` : ''}`
+    }
+    return this.requestWithTransform<T>(url)
+  }
+
+  async post<T>(
+    endpoint: string,
+    data?: unknown,
+    options?: RequestInit
+  ): Promise<T> {
+    return this.requestWithTransform<T>(
+      endpoint,
+      { method: 'POST', ...options },
+      data
+    )
+  }
+
+  async patch<T>(
+    endpoint: string,
+    data?: unknown,
+    options?: RequestInit
+  ): Promise<T> {
+    return this.requestWithTransform<T>(
+      endpoint,
+      { method: 'PATCH', ...options },
+      data
+    )
+  }
+
+  async delete<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    return this.requestWithTransform<T>(endpoint, {
+      method: 'DELETE',
+      ...options,
+    })
   }
 }
 

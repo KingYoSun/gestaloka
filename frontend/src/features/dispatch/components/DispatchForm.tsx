@@ -33,12 +33,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { CompletedLogRead } from '@/api/logs'
-import { dispatchApi } from '@/api/dispatch'
-import { useCharacterStore } from '@/stores/character'
+import { dispatchApi, DispatchObjectiveType } from '@/api/dispatch'
+import { useCharacterStore } from '@/stores/characterStore'
 import { Coins, MapPin, Calendar, Target } from 'lucide-react'
 
 const dispatchFormSchema = z.object({
-  objective_type: z.enum(['explore', 'interact', 'collect', 'guard', 'free'], {
+  objective_type: z.enum(['EXPLORE', 'INTERACT', 'COLLECT', 'GUARD', 'FREE'] as const, {
     required_error: '派遣目的を選択してください',
   }),
   objective_detail: z
@@ -62,27 +62,27 @@ interface DispatchFormProps {
 
 const objectiveTypeOptions = [
   {
-    value: 'explore',
+    value: 'EXPLORE',
     label: '探索型',
     description: '新しい場所や情報を発見する',
   },
   {
-    value: 'interact',
+    value: 'INTERACT',
     label: '交流型',
     description: '他のキャラクターとの出会いを求める',
   },
   {
-    value: 'collect',
+    value: 'COLLECT',
     label: '収集型',
     description: '特定のアイテムや情報を収集する',
   },
   {
-    value: 'guard',
+    value: 'GUARD',
     label: '護衛型',
     description: '特定の場所や人物を守る',
   },
   {
-    value: 'free',
+    value: 'FREE',
     label: '自由型',
     description: 'ログの性格に任せて行動する',
   },
@@ -93,7 +93,7 @@ export function DispatchForm({
   open,
   onOpenChange,
 }: DispatchFormProps) {
-  const { currentCharacter } = useCharacterStore()
+  const activeCharacter = useCharacterStore(state => state.getActiveCharacter())
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [spCost, setSpCost] = useState(15)
@@ -101,9 +101,9 @@ export function DispatchForm({
   const form = useForm<DispatchFormValues>({
     resolver: zodResolver(dispatchFormSchema),
     defaultValues: {
-      objective_type: 'explore',
+      objective_type: 'EXPLORE' as const,
       objective_detail: '',
-      initial_location: currentCharacter?.location || 'Starting Village',
+      initial_location: activeCharacter?.location || 'Starting Village',
       dispatch_duration_days: 1,
     },
   })
@@ -112,8 +112,9 @@ export function DispatchForm({
     mutationFn: (data: DispatchFormValues) =>
       dispatchApi.createDispatch({
         ...data,
+        objective_type: data.objective_type as keyof DispatchObjectiveType,
         completed_log_id: completedLog.id,
-        dispatcher_id: currentCharacter!.id,
+        dispatcher_id: activeCharacter!.id,
       }),
     onSuccess: () => {
       toast({
@@ -255,7 +256,7 @@ export function DispatchForm({
                         max={30}
                         step={1}
                         value={[field.value]}
-                        onValueChange={(value) => field.onChange(value[0])}
+                        onValueChange={(value: number[]) => field.onChange(value[0])}
                       />
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
@@ -285,7 +286,7 @@ export function DispatchForm({
               <div className="text-sm text-muted-foreground space-y-1">
                 <p>ログ名: {completedLog.name}</p>
                 <p>称号: {completedLog.title || 'なし'}</p>
-                <p>汚染度: {(completedLog.contamination_level * 100).toFixed(0)}%</p>
+                <p>汚染度: {(completedLog.contaminationLevel * 100).toFixed(0)}%</p>
                 <p>消費SP: {spCost}</p>
               </div>
             </div>

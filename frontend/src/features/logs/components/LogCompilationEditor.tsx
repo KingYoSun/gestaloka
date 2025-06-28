@@ -37,7 +37,6 @@ export function LogCompilationEditor({
   const [logName, setLogName] = useState('')
   const [logTitle, setLogTitle] = useState('')
   const [logDescription, setLogDescription] = useState('')
-  const [behaviorGuidelines, setBehaviorGuidelines] = useState('')
   const [contaminationLevel, setContaminationLevel] = useState(0)
 
   // フラグメントIDのリストから実際のフラグメントオブジェクトを取得
@@ -125,7 +124,7 @@ export function LogCompilationEditor({
       name: logName,
       title: logTitle,
       description: logDescription,
-      behaviorGuidelines,
+      isOmnibus: selectedFragmentIds.length > 3,
     }
 
     onCompile(compiledLogData)
@@ -261,18 +260,6 @@ export function LogCompilationEditor({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="behaviorGuidelines">
-                行動指針（オプション）
-              </Label>
-              <Textarea
-                id="behaviorGuidelines"
-                value={behaviorGuidelines}
-                onChange={(e) => setBehaviorGuidelines(e.target.value)}
-                placeholder="NPCとして活動する際の行動指針を記述"
-                rows={3}
-              />
-            </div>
           </CardContent>
         </Card>
 
