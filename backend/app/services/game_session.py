@@ -331,6 +331,47 @@ class GameSessionService:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, detail="このセッションは既に終了しています"
                 )
+            
+            # SP消費処理
+            from app.core.config import get_settings
+            from app.services.sp_service import SPService
+            from app.models.sp import SPTransactionType
+            
+            settings = get_settings()
+            sp_service = SPService(self.db)
+            
+            # アクションタイプに応じたSP消費量を決定
+            if action_request.action_type == "free_action":
+                sp_cost = settings.SP_COST_FREE_ACTION
+                transaction_type = SPTransactionType.FREE_ACTION
+                sp_description = f"自由行動: {action_request.action_text}"
+            else:  # choice_action
+                sp_cost = settings.SP_COST_CHOICE_ACTION
+                transaction_type = SPTransactionType.SYSTEM_FUNCTION
+                sp_description = f"選択肢選択: {action_request.action_text}"
+            
+            # SP消費を実行
+            try:
+                await sp_service.consume_sp(
+                    user_id=character.user_id,
+                    amount=sp_cost,
+                    transaction_type=transaction_type,
+                    description=sp_description,
+                    related_entity_type="game_session",
+                    related_entity_id=session.id,
+                    metadata={
+                        "action_type": action_request.action_type,
+                        "action_text": action_request.action_text[:100],  # 最初の100文字のみ保存
+                        "session_id": session.id,
+                        "character_id": character.id
+                    }
+                )
+            except Exception as sp_error:
+                logger.warning(f"SP consumption failed: {sp_error}", user_id=character.user_id)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"SP不足です。必要SP: {sp_cost}"
+                )
 
             # セッションデータの取得
             session_data = json.loads(session.session_data) if session.session_data else {}

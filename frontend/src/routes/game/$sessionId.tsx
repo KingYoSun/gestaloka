@@ -128,9 +128,20 @@ function GameSessionPage() {
 
       setActionText('')
       setSelectedChoice(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to execute action:', error)
-      toast.error('行動の実行に失敗しました')
+      
+      // SP不足エラーの特別処理
+      if (error?.response?.status === 400 && error?.response?.data?.detail?.includes('SP不足')) {
+        toast.error(error.response.data.detail, {
+          description: 'SPを回復するか、より簡単な行動を選択してください。',
+          duration: 5000,
+        })
+      } else {
+        toast.error('行動の実行に失敗しました', {
+          description: error?.response?.data?.detail || 'もう一度お試しください。',
+        })
+      }
     } finally {
       setExecutingAction(false)
     }

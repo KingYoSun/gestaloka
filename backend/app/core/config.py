@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     DEFAULT_CHARACTER_ENERGY: int = Field(default=100, validation_alias="DEFAULT_CHARACTER_ENERGY")
     DEFAULT_CHARACTER_ATTACK: int = Field(default=10, validation_alias="DEFAULT_CHARACTER_ATTACK")
     DEFAULT_CHARACTER_DEFENSE: int = Field(default=5, validation_alias="DEFAULT_CHARACTER_DEFENSE")
+    
+    # SP消費設定
+    SP_COST_FREE_ACTION: int = Field(default=3, validation_alias="SP_COST_FREE_ACTION")  # 自由行動のSP消費
+    SP_COST_CHOICE_ACTION: int = Field(default=1, validation_alias="SP_COST_CHOICE_ACTION")  # 選択肢選択のSP消費
+    SP_COST_EXPLORATION: int = Field(default=5, validation_alias="SP_COST_EXPLORATION")  # 探索のSP消費
+    SP_COST_MOVEMENT: int = Field(default=2, validation_alias="SP_COST_MOVEMENT")  # 移動のSP消費
 
     # AI設定
     AI_RESPONSE_TIMEOUT: int = Field(default=30, validation_alias="AI_RESPONSE_TIMEOUT")  # 秒

@@ -3,6 +3,7 @@ Celery設定
 """
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 
@@ -11,7 +12,7 @@ celery_app = Celery(
     "gestaloka",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ai_tasks", "app.tasks.log_tasks", "app.tasks.notification_tasks", "app.tasks.cleanup_tasks"],
+    include=["app.tasks.ai_tasks", "app.tasks.log_tasks", "app.tasks.notification_tasks", "app.tasks.cleanup_tasks", "app.tasks.sp_tasks"],
 )
 
 # Celery設定
@@ -46,6 +47,14 @@ celery_app.conf.update(
         "process-accepted-contracts": {
             "task": "app.tasks.log_tasks.process_accepted_contracts",
             "schedule": 60.0,  # 1分ごと
+        },
+        "daily-sp-recovery": {
+            "task": "app.tasks.sp_tasks.process_daily_sp_recovery",
+            "schedule": crontab(hour=4, minute=0),  # UTC 4時 = JST 13時
+        },
+        "check-subscription-expiry": {
+            "task": "app.tasks.sp_tasks.check_subscription_expiry",
+            "schedule": 3600.0,  # 1時間ごと
         },
     },
 )

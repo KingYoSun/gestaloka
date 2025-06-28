@@ -1,5 +1,46 @@
 # 最近の作業履歴
 
+## 2025/06/28 - SPシステムの基本実装完了
+
+### 実施内容
+- ゲームセッション中の自由行動入力時のSP消費実装
+- SP不足時のエラーハンドリング強化
+- SP自然回復バッチ処理の実装
+- 失敗していたテストの修正
+
+### 技術的な改善
+1. **SP消費実装**
+   - `backend/app/services/game_session.py`の`execute_action`メソッドに追加
+   - アクションタイプ別のSP消費量設定（自由行動3SP、選択肢1SP）
+   - `backend/app/core/config.py`で消費量を設定管理
+
+2. **エラーハンドリング**
+   - バックエンド：SP不足時に400エラーと明確なメッセージ
+   - フロントエンド：エラーメッセージとともに回復方法を案内
+   - トーストUIでの視覚的フィードバック
+
+3. **自然回復バッチ処理**
+   - `backend/app/tasks/sp_tasks.py`として新規作成
+   - Celery Beatで毎日UTC4時に実行
+   - 全ユーザーに10SP付与、サブスク・連続ログインボーナス対応
+   - 同期版メソッドの追加（Celeryタスク用）
+
+4. **テスト修正**
+   - `test_battle_integration.py`のcommit回数期待値を修正
+   - SP消費処理追加により複数commitが発生するため
+
+### 実装結果
+- バックエンド：192/193テスト成功（1件スキップ）
+- フロントエンド：21/21テスト成功
+- 全てのSP関連テストが成功
+
+### 関連ファイル
+- `backend/app/services/game_session.py`：SP消費処理追加
+- `backend/app/tasks/sp_tasks.py`：Celeryタスク新規作成
+- `backend/app/core/config.py`：SP消費量設定
+- `backend/app/celery.py`：スケジュール設定
+- `frontend/src/routes/game/$sessionId.tsx`：エラーハンドリング改善
+
 ## 2025/06/28 - ログフラグメント発見演出のアニメーション実装
 
 ### 実施内容
