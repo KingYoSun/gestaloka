@@ -102,7 +102,7 @@ services:
       - gestaloka-network
     command: start-dev
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/realms/master || exit 1"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -190,6 +190,11 @@ services:
     networks:
       - gestaloka-network
     command: celery -A app.celery worker --loglevel=info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery inspect ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Celery Beat (Scheduler)
   celery-beat:
@@ -217,6 +222,11 @@ services:
     networks:
       - gestaloka-network
     command: celery -A app.celery beat --loglevel=info -s /app/celerybeat/celerybeat-schedule.db
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /app/celerybeat/celerybeat-schedule.db || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # React Frontend
   frontend:
@@ -262,6 +272,11 @@ services:
     networks:
       - gestaloka-network
     command: celery -A app.celery flower --port=5555
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5555/api/workers || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Test Databases (for integration tests)
   # Test Neo4j

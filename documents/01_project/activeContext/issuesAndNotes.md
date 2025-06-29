@@ -2,9 +2,39 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025-06-29
+## 最終更新: 2025/06/29
 
 ## 現在の課題
+
+### 開発環境のヘルスチェック問題（2025/06/29更新・部分的に解決）
+- **解決済み**:
+  - ✅ **Celery Worker**: healthy（ヘルスチェックコマンドを修正）
+  - ✅ **Celery Beat**: healthy（ヘルスチェックを追加）
+  - ✅ **sp_tasks.py**: `get_session()`エラーを修正
+- **未解決**:
+  - ❌ **Flower**: unhealthy（ワーカーとの通信問題、監視機能のみ影響）
+  - ❌ **Frontend**: unhealthy（依存関係の解決問題、Viteキャッシュ関連）
+  - ❌ **Keycloak**: unhealthy（ヘルスチェックコマンドの問題）
+- **正常動作**: PostgreSQL、Neo4j、Redis、Backend、Celery Worker、Celery Beat
+
+### テスト失敗（2025/06/29更新）
+- **バックエンドテスト**: 221件中13件失敗（207件成功、1件スキップ）
+  - 戦闘統合テスト: 6件失敗
+    - `test_battle_trigger_from_action`
+    - `test_battle_action_execution`
+    - `test_battle_victory_flow`
+    - `test_battle_escape_action`
+    - `test_battle_state_persistence`
+    - `test_websocket_battle_events`
+  - AI派遣シミュレーション: 5件失敗
+    - `test_simulate_interaction_with_encounter`
+    - `test_personality_modifiers`
+    - `test_activity_context_building`
+    - `test_trade_activity_simulation`
+    - `test_memory_preservation_activity`
+  - AI派遣相互作用: 2件失敗
+    - `test_hours_since_last_interaction`
+    - `test_interaction_impact_application`
 
 ### パフォーマンス最適化
 - **AI応答時間の短縮**: 現在約20秒 → 協調動作により改善見込み
@@ -124,13 +154,13 @@ make health        # ヘルスチェック
 - **Neo4jブラウザ**: http://localhost:7474 (neo4j/gestaloka_neo4j_password)
 - **Celery監視 (Flower)**: http://localhost:5555
 
-### コード品質チェック（2025/06/28 更新）
+### コード品質チェック（2025/06/29 更新）
 - **テスト**: `make test`
   - フロントエンド: 21件全て成功 ✅
-  - バックエンド: 192/193件成功（1件スキップ）✅
+  - バックエンド: 207/221件成功（1件スキップ、13件失敗）⚠️
 - **型チェック**: `make typecheck`
   - フロントエンド: エラーなし ✅
-  - バックエンド: 21エラー（実行に影響なし）
+  - バックエンド: 82エラー（実行に影響なし、AI統合により増加）
 - **リント**: `make lint`
   - フロントエンド: エラーなし ✅（警告16個）
   - バックエンド: エラーなし ✅
@@ -175,6 +205,7 @@ make health        # ヘルスチェック
   - 主に新規追加ファイルの型定義問題
   - `dispatch_tasks.py`、`dispatch_simulator.py`、`dispatch_interaction.py`
   - 実行には影響なし
+  - 詳細: makeコマンドで`make typecheck`実行時に表示
 
 ### バックエンドのリントエラー（完全解決済み）
 - **2025/06/22**: 完全に解消 ✅
@@ -182,11 +213,16 @@ make health        # ヘルスチェック
   - ruffによる自動フォーマット適用
 
 ### 対処方針
-- 単体テスト: 192/193成功（1件スキップ） ✅
-- 統合テスト: Neo4jテスト環境問題を解決
+- 単体テスト: 207/221成功（1件スキップ、13件失敗）⚠️
+- 統合テスト: 戦闘・AI関連で失敗が発生
 - 型エラー: フロントエンド完全解消 ✅、バックエンド82エラー（AI統合により増加）
 - リントエラー: 完全解消 ✅
-- 品質状態: 実用上問題なし
+- 品質状態: コア機能は正常動作、戦闘・AI機能のテストに問題あり
+- **優先対応事項**:
+  1. ✅ Celeryサービスのヘルスチェック問題解決（Worker/Beat解決済み）
+  2. 戦闘統合テストの修正
+  3. AI関連テストの修正
+  4. 残存するヘルスチェック問題（Flower、Frontend、Keycloak）
 
 ## 既知の警告（機能に影響なし）
 
@@ -247,6 +283,23 @@ make health        # ヘルスチェック
   - コード品質が実用レベルで問題なし
   - 全機能が完全に動作
   - 主要なエラーは全て解消
+
+### ヘルスチェック修正作業（2025/06/29追加）
+- **修正内容**:
+  - `sp_tasks.py`の`check_subscription_expiry`タスクでの`get_session()`使用方法を修正
+    - `for db in get_session():` → `with next(get_session()) as db:`
+  - Celeryワーカーのヘルスチェックコマンドを修正
+    - `celery inspect ping -d celery@$$HOSTNAME` → `celery inspect ping`
+  - Celery Beat、Flowerにヘルスチェックを追加
+  - Keycloakのヘルスチェックをcurl不要な方法に変更
+- **結果**:
+  - Celery Worker: ✅ healthy
+  - Celery Beat: ✅ healthy
+  - 非同期タスク処理が正常に動作
+- **残存問題**:
+  - Flower: ワーカーとの通信問題（監視機能のみ影響）
+  - Frontend: 依存関係解決の問題（date-fns、framer-motion、@radix-ui/react-slider）
+  - Keycloak: ヘルスチェックコマンドの調整が必要
 
 ### SPシステム実装時の問題と解決（2025/06/22追加）
 - **フロントエンドの依存関係問題**:

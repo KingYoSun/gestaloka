@@ -29,7 +29,7 @@ def process_daily_sp_recovery() -> dict[str, Any]:
     Returns:
         処理結果のサマリー
     """
-    for db in get_session():
+    with next(get_session()) as db:
         try:
             sp_service = SPService(db)
             processed_count = 0
@@ -109,7 +109,7 @@ def check_subscription_expiry() -> dict[str, Any]:
     Returns:
         処理結果のサマリー
     """
-    for db in get_session():
+    with next(get_session()) as db:
         try:
             now = datetime.utcnow()
             expired_count = 0
@@ -174,7 +174,7 @@ def grant_login_bonus(user_id: str) -> dict[str, Any]:
     Returns:
         処理結果
     """
-    for db in get_session():
+    with next(get_session()) as db:
         try:
             sp_service = SPService(db)
 
