@@ -287,7 +287,10 @@ NPCタイプ: {npc_type}
         # 行動履歴
         if context.recent_actions:
             variables["recent_actions"] = "\n".join(f"- {action}" for action in context.recent_actions[-5:])
-            variables["last_action"] = context.recent_actions[-1] if context.recent_actions else "なし"
+            variables["last_action"] = context.recent_actions[-1]
+        else:
+            variables["recent_actions"] = "なし"
+            variables["last_action"] = "なし"
 
         # 追加コンテキストから変数を抽出
         for key, value in context.additional_context.items():

@@ -124,29 +124,41 @@ async def test_simulate_interaction_with_encounter(
     simulator = DispatchSimulator()
 
     # 遭遇が発生するようにモック設定
+    from app.models.log_dispatch import DispatchEncounter
+    mock_encounter_obj = DispatchEncounter(
+        id="encounter-1",
+        dispatch_id="test-dispatch-interact",
+        encountered_character_id=None,
+        encountered_npc_name="商人ギルド員",
+        location="商業地区",
+        interaction_type="商談",
+        interaction_summary="商談を行った",
+        outcome="friendly",
+        relationship_change=0.3,
+        items_exchanged=[],
+        occurred_at=datetime.utcnow(),
+    )
+    
     with patch.object(simulator, "_create_ai_driven_encounter") as mock_encounter:
-        mock_encounter.return_value = MagicMock(
-            id="encounter-1",
-            encountered_npc_name="商人ギルド員",
-            interaction_summary="商談を行った",
-            outcome="friendly",
-            relationship_change=0.3,
-        )
+        mock_encounter.return_value = mock_encounter_obj
+        
+        with patch.object(simulator, "_generate_encounter_narrative") as mock_narrative:
+            mock_narrative.return_value = "商人ギルド員との商談が行われた。"
 
-        mock_db = MagicMock(spec=Session)
+            mock_db = MagicMock(spec=Session)
 
-        # シミュレーション実行
-        activity = await simulator.simulate_activity(
-            dispatch=mock_dispatch_interact,
-            completed_log=mock_completed_log,
-            db=mock_db,
-        )
+            # シミュレーション実行
+            activity = await simulator.simulate_activity(
+                dispatch=mock_dispatch_interact,
+                completed_log=mock_completed_log,
+                db=mock_db,
+            )
 
-        # 結果の検証
-        assert activity.encounter is not None
-        assert "商人ギルド員" in activity.action
-        assert activity.success_level > 0.7
-        assert len(activity.relationship_changes) > 0
+            # 結果の検証
+            assert activity.encounter is not None
+            assert "商人ギルド員" in activity.action
+            assert activity.success_level > 0.7
+            assert len(activity.relationship_changes) > 0
 
 
 @pytest.mark.asyncio
@@ -156,7 +168,7 @@ async def test_personality_modifiers():
 
     # 慎重な性格のログ
     cautious_log = MagicMock(
-        personality="慎重、計画的",
+        personality_traits=["慎重", "計画的"],
         contamination_level=0.1,
     )
 
@@ -251,28 +263,39 @@ async def test_fallback_simulation():
         assert "result" in activity
 
 
-def test_activity_context_building():
+def test_activity_context_building(mock_completed_log):
     """活動コンテキスト構築のテスト"""
     simulator = DispatchSimulator()
 
-    mock_dispatch = MagicMock(
+    # LogDispatchオブジェクトを作成
+    mock_dispatch = LogDispatch(
+        id="test-dispatch-guard",
+        completed_log_id=mock_completed_log.id,
+        dispatcher_id="test-player",
+        player_id="test-player",
         objective_type=DispatchObjectiveType.GUARD,
+        objective_detail="エリアの警備",
+        initial_location="拠点",
+        destination="警備地点",
+        sp_cost=10,
+        status="dispatched",
+        current_location="警備地点",
         dispatched_at=datetime.utcnow(),
         travel_log=[
             {"action": "出発", "result": "順調"},
             {"action": "巡回開始", "result": "異常なし"},
         ],
+        discovered_locations=[],
+        collected_items=[],
     )
 
-    mock_log = MagicMock()
-
     # コンテキスト構築
-    context = simulator._build_activity_context(mock_dispatch, mock_log)
+    context = simulator._build_activity_context(mock_dispatch, mock_completed_log)
 
     # 検証
     assert isinstance(context, ActivityContext)
     assert context.dispatch == mock_dispatch
-    assert context.completed_log == mock_log
+    assert context.completed_log == mock_completed_log
     assert len(context.previous_activities) == 2
     assert context.encounter_potential <= 0.2  # 守護型は低い遭遇率
 

@@ -95,8 +95,10 @@ class GeminiClient:
 
             # 非同期実行のためのラッパー
             # 注意: temperatureは初期化時に設定されるため、invoke時には渡さない
+            # temperatureやmax_tokensなどのパラメータを除外
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ["temperature", "max_tokens"]}
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, lambda: self._llm.invoke(messages, **kwargs))
+            result = await loop.run_in_executor(None, lambda: self._llm.invoke(messages, **filtered_kwargs))
 
             self.logger.info("Response generated successfully", response_length=len(result.content))
 

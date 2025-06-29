@@ -204,6 +204,9 @@ def setup_db_mocks(mock_db, mock_game_session, mock_character):
         if "game_session" in stmt_str.lower() and "join" in stmt_str.lower():
             # GameSessionとCharacterのjoinクエリ
             result.first.return_value = (mock_game_session, mock_character)
+        elif "dispatch" in stmt_str.lower() and "completed_log" in stmt_str.lower():
+            # DispatchとCompletedLogのjoinクエリ（NPC遭遇チェック用）
+            result.all.return_value = []  # 空のリストを返す（遭遇なし）
         elif "character" in stmt_str.lower() and "character_stats" not in stmt_str.lower():
             # Characterクエリ
             result.first.return_value = mock_character
