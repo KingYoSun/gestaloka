@@ -298,12 +298,12 @@ async def emit_sp_purchase_event(
             "sp_amount": sp_amount,
             "timestamp": datetime.utcnow().isoformat(),
         }
-        
+
         if error:
             data["error"] = error
-        
+
         await broadcast_to_user(user_id, event_type, data)
-        
+
         logger.info(
             "SP purchase event emitted",
             user_id=user_id,

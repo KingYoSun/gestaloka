@@ -1,6 +1,5 @@
 """SP購入プラン定義"""
 
-from typing import Dict
 
 from pydantic import BaseModel
 
@@ -28,7 +27,7 @@ class SPPlan(BaseModel):
 
 
 # SP購入プラン定義
-SP_PLANS: Dict[str, SPPlan] = {
+SP_PLANS: dict[str, SPPlan] = {
     "small": SPPlan(
         id="small",
         name="スモールパック",

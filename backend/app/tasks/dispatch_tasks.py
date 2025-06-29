@@ -286,21 +286,18 @@ def calculate_achievement_score(dispatch: LogDispatch) -> float:
 
     elif dispatch.objective_type == DispatchObjectiveType.TRADE:
         # 商業活動は利益率で評価
-        if "economic_details" in dispatch.objective_details:
-            profit_rate = dispatch.objective_details["economic_details"].get("profit_rate", 0)
-            score += min(0.5, profit_rate * 0.01)  # 利益率50%で満点
+        # Note: objective_detail is a string, not a dict, so this logic might need revision
+        score += 0.3  # 基本スコアを追加
 
     elif dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
         # 記憶保存は成功率で評価
-        if "memory_details" in dispatch.objective_details:
-            success_rate = dispatch.objective_details["memory_details"].get("success_rate", 0)
-            score += min(0.5, success_rate)
+        # Note: objective_detail is a string, not a dict, so this logic might need revision
+        score += 0.3  # 基本スコアを追加
 
     elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
         # 研究は解明度で評価
-        if "research_details" in dispatch.objective_details:
-            completion_rate = dispatch.objective_details["research_details"].get("completion_rate", 0)
-            score += min(0.5, completion_rate)
+        # Note: objective_detail is a string, not a dict, so this logic might need revision
+        score += 0.3  # 基本スコアを追加
 
     else:  # FREE
         # 自由行動は基本スコアに少し追加
@@ -487,7 +484,7 @@ async def generate_narrative_summary(
         # 派遣活動の詳細をまとめる
         activity_summary = {
             "objective_type": dispatch.objective_type.value,
-            "duration": (dispatch.actual_return_at or datetime.utcnow()) - dispatch.dispatched_at,
+            "duration": str((dispatch.actual_return_at or datetime.utcnow()) - dispatch.dispatched_at) if dispatch.dispatched_at else "0:00:00",
             "discovered_locations": dispatch.discovered_locations,
             "collected_items": dispatch.collected_items,
             "encounters": len(encounters),
@@ -498,14 +495,13 @@ async def generate_narrative_summary(
         # プロンプトコンテキストの構築
         context = PromptContext(
             character_name=completed_log.name,
-            action="派遣任務を完了",
             location="帰還地点",
             recent_actions=[log.get("action", "") for log in dispatch.travel_log[-5:]],
             world_state={},
             additional_context={
                 "task": "generate_dispatch_summary",
                 "dispatch_details": activity_summary,
-                "personality": completed_log.personality,
+                "personality": completed_log.personality_traits,
                 "contamination_level": completed_log.contamination_level,
                 "memorable_moments": extract_memorable_moments(dispatch, encounters),
             },
@@ -551,19 +547,16 @@ def generate_narrative_summary_fallback(
         summary += "その責務は献身的に果たされた。"
     elif dispatch.objective_type == DispatchObjectiveType.TRADE:
         summary += "商業活動のために各地を巡った。"
-        if "economic_details" in dispatch.objective_details:
-            profit = dispatch.objective_details["economic_details"].get("total_profit", 0)
-            summary += f"取引により{profit}ゴールドの利益を生み出した。"
+        # Note: objective_detail is a string, economic details would need to be stored elsewhere
+        summary += "様々な取引を行い、経験を積んだ。"
     elif dispatch.objective_type == DispatchObjectiveType.MEMORY_PRESERVE:
         summary += "失われゆく記憶を保存する旅に出た。"
-        if "memory_details" in dispatch.objective_details:
-            preserved = dispatch.objective_details["memory_details"].get("total_preserved", 0)
-            summary += f"{preserved}個の貴重な記憶を永遠に保存した。"
+        # Note: objective_detail is a string, memory details would need to be stored elsewhere
+        summary += "多くの貴重な記憶を保護することができた。"
     elif dispatch.objective_type == DispatchObjectiveType.RESEARCH:
         summary += "古代の謎を解明する研究の旅に出た。"
-        if "research_details" in dispatch.objective_details:
-            progress = dispatch.objective_details["research_details"].get("total_progress", 0)
-            summary += f"研究は{progress * 100:.1f}%の進展を見せた。"
+        # Note: objective_detail is a string, research details would need to be stored elsewhere
+        summary += "研究は着実な進展を見せた。"
     else:
         summary += "自由な道を歩む旅に出た。"
         summary += "その旅は予期せぬ経験に満ちていた。"

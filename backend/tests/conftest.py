@@ -9,6 +9,11 @@ from sqlmodel.pool import StaticPool
 
 from app.core.database import get_session
 from app.main import app
+from app.models.sp import PlayerSP, SPTransaction  # noqa: F401
+from app.models.sp_purchase import SPPurchase  # noqa: F401
+
+# Import all models to ensure they're registered with SQLModel
+from app.models.user import User  # noqa: F401
 
 
 @pytest.fixture(name="session")

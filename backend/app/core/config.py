@@ -96,13 +96,13 @@ class Settings(BaseSettings):
     SP_COST_CHOICE_ACTION: int = Field(default=1, validation_alias="SP_COST_CHOICE_ACTION")  # 選択肢選択のSP消費
     SP_COST_EXPLORATION: int = Field(default=5, validation_alias="SP_COST_EXPLORATION")  # 探索のSP消費
     SP_COST_MOVEMENT: int = Field(default=2, validation_alias="SP_COST_MOVEMENT")  # 移動のSP消費
-    
+
     # SP購入設定
     PAYMENT_MODE: str = Field(default="test", validation_alias="PAYMENT_MODE")  # test or production
     TEST_MODE_AUTO_APPROVE: bool = Field(default=True, validation_alias="TEST_MODE_AUTO_APPROVE")
     TEST_MODE_APPROVAL_DELAY: int = Field(default=0, validation_alias="TEST_MODE_APPROVAL_DELAY")  # 秒
     SP_PRICE_MULTIPLIER: float = Field(default=1.0, validation_alias="SP_PRICE_MULTIPLIER")  # 価格調整係数
-    
+
     # Stripe設定（将来実装用）
     STRIPE_PUBLIC_KEY: str = Field(default="", validation_alias="STRIPE_PUBLIC_KEY")
     STRIPE_SECRET_KEY: str = Field(default="", validation_alias="STRIPE_SECRET_KEY")

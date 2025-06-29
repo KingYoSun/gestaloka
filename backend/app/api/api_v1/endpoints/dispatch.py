@@ -9,7 +9,6 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc as sa_desc
 from sqlmodel import Session, and_, select
 
 from app.api.deps import get_current_active_user, get_user_character
@@ -232,7 +231,7 @@ async def get_my_dispatches(
         dispatch_stmt = dispatch_stmt.where(LogDispatch.status == status)
 
     dispatch_stmt = (
-        dispatch_stmt.order_by(sa_desc(LogDispatch.created_at))
+        dispatch_stmt.order_by(LogDispatch.created_at.desc())  # type: ignore[attr-defined]
         .offset(skip)
         .limit(limit)
     )
@@ -273,7 +272,7 @@ async def get_dispatch_detail(
     encounter_stmt = (
         select(DispatchEncounter)
         .where(DispatchEncounter.dispatch_id == dispatch_id)
-        .order_by(sa_desc(DispatchEncounter.occurred_at))
+        .order_by(DispatchEncounter.occurred_at.desc())  # type: ignore[attr-defined]
     )
     result = db.exec(encounter_stmt)  # type: ignore[arg-type]
     encounters = result.all()

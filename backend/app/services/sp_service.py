@@ -593,6 +593,61 @@ class SPService:
         self.db.add(transaction)
         return transaction
 
+    def add_sp_sync(
+        self,
+        user_id: str,
+        amount: int,
+        transaction_type: SPTransactionType,
+        description: str,
+        related_entity_type: Optional[str] = None,
+        related_entity_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> SPTransaction:
+        """SPを追加（同期版）"""
+        try:
+            player_sp = self.get_or_create_player_sp_sync(user_id)
+
+            # SPを追加
+            balance_before = player_sp.current_sp
+            player_sp.current_sp += amount
+            player_sp.total_earned_sp += amount
+            player_sp.updated_at = datetime.utcnow()
+
+            # 取引記録を作成
+            transaction = self._create_transaction_sync(
+                player_sp=player_sp,
+                transaction_type=transaction_type,
+                amount=amount,
+                description=description,
+                balance_before=balance_before,
+                related_entity_type=related_entity_type,
+                related_entity_id=related_entity_id,
+                metadata=metadata,
+            )
+
+            self.db.commit()
+            logger.info(
+                "SP added (sync)",
+                user_id=user_id,
+                amount=amount,
+                type=transaction_type.value,
+            )
+
+            # Note: WebSocket events should be handled separately in async context
+            # SPEventEmitter.emit_sp_update() is async and cannot be called here
+
+            return transaction
+
+        except Exception as e:
+            logger.error(
+                "Failed to add SP (sync)",
+                user_id=user_id,
+                amount=amount,
+                error=str(e),
+            )
+            self.db.rollback()
+            raise SPSystemError("SP追加処理に失敗しました")
+
     def _create_transaction_sync(
         self,
         player_sp: PlayerSP,

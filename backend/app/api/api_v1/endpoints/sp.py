@@ -8,12 +8,10 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session, col, select
 
 from app.api.deps import get_current_active_user, get_db
 from app.core.config import settings
-from app.db.database import get_async_db
 from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
 from app.models.sp import SPTransaction, SPTransactionType
@@ -35,8 +33,8 @@ from app.schemas.sp_purchase import (
     SPPurchaseList,
     SPPurchaseStats,
 )
-from app.services.sp_service import SPService
 from app.services.sp_purchase_service import SPPurchaseService
+from app.services.sp_service import SPService
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -297,7 +295,7 @@ async def get_sp_plans() -> SPPlanResponse:
 async def create_purchase(
     request: PurchaseRequest,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
 ) -> PurchaseResponse:
     """
     SP購入申請を作成
@@ -326,7 +324,7 @@ async def create_purchase(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"購入処理中にエラーが発生しました: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"購入処理中にエラーが発生しました: {e!s}")
 
 
 @router.get("/purchases", response_model=SPPurchaseList)
@@ -335,7 +333,7 @@ async def get_user_purchases(
     limit: int = Query(20, ge=1, le=100, description="取得件数"),
     offset: int = Query(0, ge=0, description="オフセット"),
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
 ) -> SPPurchaseList:
     """
     ユーザーの購入履歴を取得
@@ -373,7 +371,7 @@ async def get_user_purchases(
 async def get_purchase_detail(
     purchase_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
 ) -> SPPurchaseDetail:
     """
     購入詳細を取得
@@ -403,7 +401,7 @@ async def get_purchase_detail(
 async def cancel_purchase(
     purchase_id: uuid.UUID,
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_async_db),
+    db: Session = Depends(get_db),
 ) -> SPPurchaseDetail:
     """
     購入をキャンセル
@@ -429,12 +427,12 @@ async def cancel_purchase(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"キャンセル処理中にエラーが発生しました: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"キャンセル処理中にエラーが発生しました: {e!s}")
 
 
 @router.get("/purchase-stats", response_model=SPPurchaseStats)
 async def get_purchase_stats(
-    current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_async_db)
+    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ) -> SPPurchaseStats:
     """
     ユーザーの購入統計を取得

@@ -116,7 +116,7 @@ class DispatchSimulator:
         # 経過時間の計算
         elapsed_hours = int(
             (datetime.utcnow() - dispatch.dispatched_at).total_seconds() / 3600
-        )
+        ) if dispatch.dispatched_at else 0
 
         # 遭遇可能性の計算（時間経過と目的による）
         base_encounter_rate = 0.3
@@ -146,7 +146,6 @@ class DispatchSimulator:
         # AIプロンプトコンテキストの構築
         prompt_context = PromptContext(
             character_name=context.completed_log.name,
-            action=f"探索中（{context.elapsed_hours}時間経過）",
             location=context.current_location,
             recent_actions=[
                 f"{activity.get('action', '')} - {activity.get('result', '')}"
@@ -154,8 +153,9 @@ class DispatchSimulator:
             ],
             world_state=context.world_state,
             additional_context={
+                "action": f"探索中（{context.elapsed_hours}時間経過）",
                 "objective": "新しい場所の発見と地図作成",
-                "personality": context.completed_log.personality,
+                "personality": context.completed_log.personality_traits,
                 "contamination_level": context.completed_log.contamination_level,
                 "discovered_so_far": context.dispatch.discovered_locations,
             },
@@ -366,21 +366,17 @@ class DispatchSimulator:
         )
 
         # 経済詳細を派遣記録に追加
-        if "economic_details" not in context.dispatch.objective_details:
-            context.dispatch.objective_details["economic_details"] = {
-                "transactions": [],
-                "total_profit": 0,
-            }
-
-        context.dispatch.objective_details["economic_details"]["transactions"].append(
-            {
+        # TODO: objective_detail is a string field, not a dict. Need to redesign how economic details are stored.
+        # For now, we'll store this information in the travel_log
+        economic_info = {
+            "economic_transaction": {
                 "timestamp": activity.timestamp.isoformat(),
                 "value": trade_value,
                 "profit": profit,
                 "location": context.current_location,
             }
-        )
-        context.dispatch.objective_details["economic_details"]["total_profit"] += profit
+        }
+        context.dispatch.travel_log.append(economic_info)
 
         return activity
 
@@ -418,15 +414,17 @@ class DispatchSimulator:
         )
 
         # 記憶保存詳細を更新
-        if "memory_details" not in context.dispatch.objective_details:
-            context.dispatch.objective_details["memory_details"] = {
-                "total_found": 0,
-                "total_preserved": 0,
-                "notable_memories": [],
+        # TODO: objective_detail is a string field, not a dict. Need to redesign how memory details are stored.
+        # For now, we'll store this information in the travel_log
+        memory_info = {
+            "memory_preservation": {
+                "timestamp": activity.timestamp.isoformat(),
+                "memories_found": memories_found,
+                "memories_preserved": memories_preserved,
+                "location": context.current_location,
             }
-
-        context.dispatch.objective_details["memory_details"]["total_found"] += memories_found
-        context.dispatch.objective_details["memory_details"]["total_preserved"] += memories_preserved
+        }
+        context.dispatch.travel_log.append(memory_info)
 
         return activity
 
@@ -460,14 +458,16 @@ class DispatchSimulator:
             },
         )
 
-        # 研究詳細を更新
-        if "research_details" not in context.dispatch.objective_details:
-            context.dispatch.objective_details["research_details"] = {
-                "total_progress": 0,
-                "discoveries": [],
+        # TODO: objective_detail is a string field, not a dict. Need to redesign how research details are stored.
+        # For now, we'll store this information in the travel_log
+        research_info = {
+            "research_progress": {
+                "timestamp": activity.timestamp.isoformat(),
+                "progress": progress,
+                "location": context.current_location,
             }
-
-        context.dispatch.objective_details["research_details"]["total_progress"] += progress
+        }
+        context.dispatch.travel_log.append(research_info)
 
         return activity
 
@@ -478,16 +478,16 @@ class DispatchSimulator:
     ) -> SimulatedActivity:
         """自由活動のシミュレーション"""
         # ログの性格に基づいて活動を選択
-        personality = context.completed_log.personality
+        personality = context.completed_log.personality_traits
 
         # AIによる創造的な活動生成
         prompt_context = PromptContext(
             character_name=context.completed_log.name,
-            action="自由に行動中",
             location=context.current_location,
             recent_actions=[],
             world_state=context.world_state,
             additional_context={
+                "action": "自由に行動中",
                 "personality": personality,
                 "skills": context.completed_log.skills,
                 "contamination_level": context.completed_log.contamination_level,
@@ -706,9 +706,9 @@ class DispatchSimulator:
         )
 
         # ログの性格による調整
-        if "友好的" in context.completed_log.personality:
+        if "友好的" in context.completed_log.personality_traits:
             result["relationship_change"] = min(1.0, result["relationship_change"] + 0.2)
-        elif "敵対的" in context.completed_log.personality:
+        elif "敵対的" in context.completed_log.personality_traits:
             result["relationship_change"] = max(-1.0, result["relationship_change"] - 0.2)
 
         return result
@@ -721,11 +721,11 @@ class DispatchSimulator:
         """遭遇の物語を生成"""
         prompt_context = PromptContext(
             character_name=context.completed_log.name,
-            action=f"{encounter.encountered_npc_name}との遭遇",
             location=context.current_location,
             recent_actions=[],
             world_state=context.world_state,
             additional_context={
+                "action": f"{encounter.encountered_npc_name}との遭遇",
                 "encounter_type": encounter.interaction_type,
                 "outcome": encounter.outcome,
                 "npc_name": encounter.encountered_npc_name,
@@ -987,10 +987,10 @@ class DispatchSimulator:
                 activity.narrative += "\n何か奇妙な感覚が残った..."
 
         # 性格による成功率の調整
-        if "慎重" in completed_log.personality:
+        if "慎重" in completed_log.personality_traits:
             # 慎重な性格は安定した結果
             activity.success_level = max(0.4, min(0.8, activity.success_level))
-        elif "大胆" in completed_log.personality:
+        elif "大胆" in completed_log.personality_traits:
             # 大胆な性格は極端な結果
             if activity.success_level > 0.5:
                 activity.success_level = min(1.0, activity.success_level * 1.2)

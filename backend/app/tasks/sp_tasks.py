@@ -29,7 +29,7 @@ def process_daily_sp_recovery() -> dict[str, Any]:
     Returns:
         処理結果のサマリー
     """
-    with get_session() as db:
+    for db in get_session():
         try:
             sp_service = SPService(db)
             processed_count = 0
@@ -37,10 +37,7 @@ def process_daily_sp_recovery() -> dict[str, Any]:
 
             # アクティブなユーザーを取得
             stmt = select(User).where(
-                and_(
-                    col(User.is_active).is_(True),
-                    col(User.is_deleted).is_(False)
-                )
+                col(User.is_active).is_(True)
             )
             users = db.exec(stmt).all()
 
@@ -100,6 +97,9 @@ def process_daily_sp_recovery() -> dict[str, Any]:
             db.rollback()
             raise
 
+    # ジェネレータが空の場合のデフォルト値
+    return {"processed": 0, "errors": 0, "timestamp": datetime.utcnow().isoformat()}
+
 
 @shared_task
 def check_subscription_expiry() -> dict[str, Any]:
@@ -109,7 +109,7 @@ def check_subscription_expiry() -> dict[str, Any]:
     Returns:
         処理結果のサマリー
     """
-    with get_session() as db:
+    for db in get_session():
         try:
             now = datetime.utcnow()
             expired_count = 0
@@ -159,6 +159,9 @@ def check_subscription_expiry() -> dict[str, Any]:
             db.rollback()
             raise
 
+    # ジェネレータが空の場合のデフォルト値
+    return {"expired": 0, "timestamp": datetime.utcnow().isoformat()}
+
 
 @shared_task
 def grant_login_bonus(user_id: str) -> dict[str, Any]:
@@ -171,7 +174,7 @@ def grant_login_bonus(user_id: str) -> dict[str, Any]:
     Returns:
         処理結果
     """
-    with get_session() as db:
+    for db in get_session():
         try:
             sp_service = SPService(db)
 
@@ -196,3 +199,10 @@ def grant_login_bonus(user_id: str) -> dict[str, Any]:
             )
             db.rollback()
             raise
+
+    # ジェネレータが空の場合のデフォルト値
+    return {
+        "success": False,
+        "user_id": user_id,
+        "timestamp": datetime.utcnow().isoformat()
+    }

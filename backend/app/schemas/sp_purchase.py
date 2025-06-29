@@ -1,7 +1,7 @@
 """SP購入スキーマ定義"""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,7 +31,7 @@ class PurchaseResponse(BaseModel):
 class SPPlanResponse(BaseModel):
     """SPプラン一覧レスポンス"""
 
-    plans: List[SPPlan]
+    plans: list[SPPlan]
     payment_mode: str
     currency: str = "JPY"
 
@@ -54,7 +54,7 @@ class SPPurchaseDetail(BaseModel):
 class SPPurchaseList(BaseModel):
     """SP購入履歴リスト"""
 
-    purchases: List[SPPurchaseDetail]
+    purchases: list[SPPurchaseDetail]
     total: int
     limit: int
     offset: int

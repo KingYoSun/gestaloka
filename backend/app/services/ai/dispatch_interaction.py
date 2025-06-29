@@ -47,6 +47,8 @@ class InteractionOutcome(BaseModel):
     relationship_change: float = Field(ge=-1.0, le=1.0)
     items_exchanged: list[dict[str, Any]] = Field(default_factory=list)
     knowledge_shared: list[str] = Field(default_factory=list)
+    narrative: Optional[str] = None
+    outcome: Optional[str] = None
     conflict_resolved: Optional[bool] = None
     alliance_formed: bool = False
 
@@ -124,7 +126,7 @@ class DispatchInteractionManager:
             相互作用すべきかどうか
         """
         # 同じプレイヤーの派遣同士は相互作用しない
-        if dispatch_1.player_id == dispatch_2.player_id:
+        if dispatch_1.dispatcher_id == dispatch_2.dispatcher_id:
             return False
 
         # 最近の活動場所を取得
@@ -348,21 +350,21 @@ class DispatchInteractionManager:
         # プロンプトコンテキストの構築
         context = PromptContext(
             character_name=f"{log_1.name}と{log_2.name}",
-            action=f"{interaction_type}の相互作用",
             location=self._get_current_location(dispatch_1),
             recent_actions=[],
             world_state={},
             additional_context={
+                "action": f"{interaction_type}の相互作用",
                 "interaction_type": interaction_type,
                 "character_1": {
                     "name": log_1.name,
-                    "personality": log_1.personality,
+                    "personality": log_1.personality_traits,
                     "objective": dispatch_1.objective_type.value,
                     "contamination": log_1.contamination_level,
                 },
                 "character_2": {
                     "name": log_2.name,
-                    "personality": log_2.personality,
+                    "personality": log_2.personality_traits,
                     "objective": dispatch_2.objective_type.value,
                     "contamination": log_2.contamination_level,
                 },
@@ -398,7 +400,7 @@ class DispatchInteractionManager:
         log_2: CompletedLog,
     ) -> InteractionOutcome:
         """相互作用の結果を決定"""
-        outcome = InteractionOutcome(success=True)
+        outcome = InteractionOutcome(success=True, relationship_change=0.0)
 
         if interaction_type == "trade_negotiation":
             # 商談の成功率
@@ -465,7 +467,9 @@ class DispatchInteractionManager:
         compatibility = 0.5
 
         # 性格の類似性
-        if any(trait in log_2.personality for trait in log_1.personality.split("、")):
+        # personality_traits is a list, so we can check for common traits
+        common_traits = set(log_1.personality_traits) & set(log_2.personality_traits)
+        if common_traits:
             compatibility += 0.2
 
         # 汚染度の差
@@ -522,21 +526,26 @@ class DispatchInteractionManager:
 
         # 知識共有の処理
         if outcome.knowledge_shared:
-            if "knowledge_gained" not in dispatch.objective_details:
-                dispatch.objective_details["knowledge_gained"] = []
-            dispatch.objective_details["knowledge_gained"].extend(
-                outcome.knowledge_shared
-            )
+            # TODO: objective_detail is a string field, not a dict. Need to store this elsewhere.
+            # For now, we'll add it to the travel log
+            knowledge_entry = {
+                "knowledge_gained": outcome.knowledge_shared,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            dispatch.travel_log.append(knowledge_entry)
             impact["knowledge_gained"] = outcome.knowledge_shared
 
         # 同盟形成の処理
         if outcome.alliance_formed:
-            if "alliances" not in dispatch.objective_details:
-                dispatch.objective_details["alliances"] = []
-            dispatch.objective_details["alliances"].append({
-                "with": log.name if not is_initiator else "other",
-                "formed_at": datetime.utcnow().isoformat(),
-            })
+            # TODO: objective_detail is a string field, not a dict. Need to store this elsewhere.
+            # For now, we'll add it to the travel log
+            alliance_entry = {
+                "alliance_formed": {
+                    "with": log.name if not is_initiator else "other",
+                    "formed_at": datetime.utcnow().isoformat(),
+                }
+            }
+            dispatch.travel_log.append(alliance_entry)
             impact["alliance_formed"] = True
 
         return impact
