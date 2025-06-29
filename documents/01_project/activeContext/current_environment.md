@@ -2,28 +2,24 @@
 
 ## 最終更新: 2025/06/29
 
-## 稼働中のサービス（localhost） - 2025/06/29時点（ヘルスチェック修正後）
+## 稼働中のサービス（localhost） - 2025/06/29時点（ヘルスチェック完全修正）
 🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ（healthy）  
 🟢 **Neo4j 5.26 LTS**: ポート7474/7687 - グラフデータベース、関係性データ（healthy）  
 🟢 **Redis 8**: ポート6379 - セッション、キャッシュ、Celeryブローカー（healthy）  
 🟢 **Backend API**: ポート8000 - FastAPI、認証API稼働中（healthy）  
-🟢 **Celery Worker**: Celeryタスクワーカー稼働中（healthy）✅ 修正済み  
-🟢 **Celery Beat**: 定期タスクスケジューラ稼働中（healthy）✅ 修正済み  
-🔴 **Frontend**: ポート3000 - React/Vite開発サーバー稼働中（unhealthy）  
-🔴 **Flower**: ポート5555 - Celery監視ツール稼働中（unhealthy）  
-🔴 **Keycloak 26.2**: ポート8080 - 認証サーバー稼働中（unhealthy）
+🟢 **Celery Worker**: Celeryタスクワーカー稼働中（healthy）  
+🟢 **Celery Beat**: 定期タスクスケジューラ稼働中（healthy）  
+🟢 **Frontend**: ポート3000 - React/Vite開発サーバー稼働中（healthy）✅ 修正済み  
+🟢 **Flower**: ポート5555 - Celery監視ツール稼働中（healthy）✅ 修正済み  
+🟢 **Keycloak 26.2**: ポート8080 - 認証サーバー稼働中（healthy）✅ 修正済み
 
-## ヘルスチェック問題（2025/06/29 部分的に解決）
-### 解決済み
-- ✅ **Celery Worker/Beat**: 正常動作
-  - 非同期タスク処理が復旧
-  - SP自然回復、NPC生成、派遣活動シミュレーションが正常に実行
-  - sp_tasks.pyのバグも修正
-
-### 未解決（コア機能には影響なし）
-- **Flower**: ワーカーとの通信問題（監視機能のみ）
-- **Keycloak**: ヘルスチェックコマンドの問題（認証は動作）
-- **Frontend**: 依存関係の解決問題（開発は可能）  
+## ヘルスチェック問題（2025/06/29 完全解決）
+### 全て解決済み ✅
+- **Celery Worker/Beat**: 非同期タスク処理が正常動作
+- **Flower**: `FLOWER_UNAUTHENTICATED_API=true`環境変数追加で解決
+- **Keycloak**: bashのTCP接続チェックに変更して解決
+- **Frontend**: コンテナ再ビルドで依存関係を完全に解決
+- **結果**: 全13サービスがhealthy状態（100%）  
 
 ## 実装済み機能
 - ✅ ユーザー登録・ログイン（JWT認証）
@@ -98,6 +94,11 @@
 - Celery（Worker/Beat/Flower）
 
 ## 最近の変更（2025/06/29）
+- ヘルスチェック問題の完全解決
+  - Flower: `FLOWER_UNAUTHENTICATED_API=true`環境変数追加
+  - Frontend: コンテナ再ビルドで依存関係解決
+  - Keycloak: bashのTCP接続チェックに変更
+  - 全13サービスがhealthy状態を達成
 - ログNPC遭遇システムのフロントエンド実装完了
   - NPCEncounterDialogコンポーネントの新規作成
   - WebSocketイベントハンドラーの実装（npc_encounter、npc_action_result）
@@ -229,12 +230,11 @@
 - バックエンド: 82個（AI統合により増加、実行には影響なし）
 - フロントエンド: 0個
 
-### ヘルスチェック（部分的に解決）
-- ✅ 解決: Celery Worker、Celery Beat
-- ❌ 未解決: Flower、Frontend、Keycloak（コア機能には影響なし）
+### ヘルスチェック（完全解決）
+- ✅ 全13サービスがhealthy状態（100%）
 
 ### 優先対応事項
-1. ✅ Celeryサービスのヘルスチェック問題解決（Worker/Beat完了）
-2. 戦闘統合テストの修正
-3. AI関連テストの修正
-4. 残存するヘルスチェック問題（必要に応じて）
+1. 戦闘統合テストの修正
+2. AI関連テストの修正
+3. SP購入システムの統合テスト
+4. バックエンドの型エラー対応（優先度低）

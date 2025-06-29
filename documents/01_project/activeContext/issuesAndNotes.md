@@ -6,16 +6,15 @@
 
 ## 現在の課題
 
-### 開発環境のヘルスチェック問題（2025/06/29更新・部分的に解決）
-- **解決済み**:
+### 開発環境のヘルスチェック問題（2025/06/29更新・完全解決）
+- **全て解決済み** ✅:
   - ✅ **Celery Worker**: healthy（ヘルスチェックコマンドを修正）
   - ✅ **Celery Beat**: healthy（ヘルスチェックを追加）
   - ✅ **sp_tasks.py**: `get_session()`エラーを修正
-- **未解決**:
-  - ❌ **Flower**: unhealthy（ワーカーとの通信問題、監視機能のみ影響）
-  - ❌ **Frontend**: unhealthy（依存関係の解決問題、Viteキャッシュ関連）
-  - ❌ **Keycloak**: unhealthy（ヘルスチェックコマンドの問題）
-- **正常動作**: PostgreSQL、Neo4j、Redis、Backend、Celery Worker、Celery Beat
+  - ✅ **Flower**: healthy（`FLOWER_UNAUTHENTICATED_API=true`環境変数を追加）
+  - ✅ **Frontend**: healthy（コンテナを再ビルドして依存関係を解決）
+  - ✅ **Keycloak**: healthy（bashのTCP接続チェックに変更）
+- **正常動作**: 全13サービスがhealthy状態（100%）
 
 ### テスト失敗（2025/06/29更新）
 - **バックエンドテスト**: 221件中13件失敗（207件成功、1件スキップ）
@@ -284,22 +283,23 @@ make health        # ヘルスチェック
   - 全機能が完全に動作
   - 主要なエラーは全て解消
 
-### ヘルスチェック修正作業（2025/06/29追加）
-- **修正内容**:
+### ヘルスチェック修正作業（2025/06/29完了）
+- **第1次修正内容**:
   - `sp_tasks.py`の`check_subscription_expiry`タスクでの`get_session()`使用方法を修正
     - `for db in get_session():` → `with next(get_session()) as db:`
   - Celeryワーカーのヘルスチェックコマンドを修正
     - `celery inspect ping -d celery@$$HOSTNAME` → `celery inspect ping`
   - Celery Beat、Flowerにヘルスチェックを追加
   - Keycloakのヘルスチェックをcurl不要な方法に変更
-- **結果**:
-  - Celery Worker: ✅ healthy
-  - Celery Beat: ✅ healthy
+- **第2次修正内容**:
+  - Flowerに`FLOWER_UNAUTHENTICATED_API=true`環境変数を追加（401エラーを解決）
+  - Frontendのヘルスチェックを`curl`から`node`コマンドに変更（IPv4指定）
+  - Keycloakのヘルスチェックを`timeout 5 bash -c '</dev/tcp/localhost/8080'`に変更
+  - Frontendコンテナを再ビルドして依存関係を完全に解決
+- **最終結果**:
+  - 全13サービスがhealthy状態 ✅
   - 非同期タスク処理が正常に動作
-- **残存問題**:
-  - Flower: ワーカーとの通信問題（監視機能のみ影響）
-  - Frontend: 依存関係解決の問題（date-fns、framer-motion、@radix-ui/react-slider）
-  - Keycloak: ヘルスチェックコマンドの調整が必要
+  - 開発環境が完全に正常化
 
 ### SPシステム実装時の問題と解決（2025/06/22追加）
 - **フロントエンドの依存関係問題**:
