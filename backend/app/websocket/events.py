@@ -281,6 +281,40 @@ class SPEventEmitter:
             logger.error("Error emitting daily recovery event", error=str(e))
 
 
+async def emit_sp_purchase_event(
+    user_id: str,
+    event_type: str,
+    purchase_id: str,
+    status: str,
+    sp_amount: int,
+    error: Optional[str] = None
+):
+    """SP購入イベント"""
+    try:
+        data = {
+            "type": event_type,
+            "purchase_id": purchase_id,
+            "status": status,
+            "sp_amount": sp_amount,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        
+        if error:
+            data["error"] = error
+        
+        await broadcast_to_user(user_id, event_type, data)
+        
+        logger.info(
+            "SP purchase event emitted",
+            user_id=user_id,
+            event_type=event_type,
+            purchase_id=purchase_id,
+            status=status
+        )
+    except Exception as e:
+        logger.error("Error emitting SP purchase event", error=str(e))
+
+
 class NotificationEmitter:
     """通知エミッター"""
 

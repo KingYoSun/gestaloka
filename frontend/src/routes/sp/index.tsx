@@ -8,6 +8,11 @@ import { Coins, History, TrendingUp, Calendar, RefreshCw } from 'lucide-react'
 import { useSPBalance, useDailyRecovery } from '@/hooks/useSP'
 import { SPDisplay } from '@/components/sp/SPDisplay'
 import { SPTransactionHistory } from '@/components/sp/SPTransactionHistory'
+import { SPPlansGrid } from '@/components/sp/sp-plans-grid'
+import { SPPurchaseDialog } from '@/components/sp/sp-purchase-dialog'
+import { SPPurchaseHistory } from '@/components/sp/sp-purchase-history'
+import { useSPPlans } from '@/hooks/use-sp-purchase'
+import type { SPPlan } from '@/api/sp-purchase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -22,7 +27,10 @@ export const Route = createFileRoute('/sp/')({
 function SPPage() {
   const { data: balance, isLoading } = useSPBalance()
   const dailyRecovery = useDailyRecovery()
+  const { data: plansData } = useSPPlans()
   const [activeTab, setActiveTab] = useState('overview')
+  const [selectedPlan, setSelectedPlan] = useState<SPPlan | null>(null)
+  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('ja-JP').format(num)
@@ -34,6 +42,16 @@ function SPPage() {
     } catch {
       // エラーはuseMutationで処理
     }
+  }
+
+  const handleSelectPlan = (plan: SPPlan) => {
+    setSelectedPlan(plan)
+    setIsPurchaseDialogOpen(true)
+  }
+
+  const handleClosePurchaseDialog = () => {
+    setIsPurchaseDialogOpen(false)
+    setSelectedPlan(null)
   }
 
   if (isLoading) {
@@ -163,6 +181,7 @@ function SPPage() {
           <TabsTrigger value="overview">概要</TabsTrigger>
           <TabsTrigger value="history">取引履歴</TabsTrigger>
           <TabsTrigger value="shop">SPショップ</TabsTrigger>
+          <TabsTrigger value="purchase-history">購入履歴</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -225,13 +244,22 @@ function SPPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-12 text-muted-foreground">
-                SPショップは準備中です
-              </div>
+              <SPPlansGrid onSelectPlan={handleSelectPlan} />
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="purchase-history">
+          <SPPurchaseHistory />
+        </TabsContent>
       </Tabs>
+
+      <SPPurchaseDialog
+        plan={selectedPlan}
+        isOpen={isPurchaseDialogOpen}
+        onClose={handleClosePurchaseDialog}
+        isTestMode={plansData?.payment_mode === 'test'}
+      />
     </div>
   )
 }

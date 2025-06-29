@@ -38,6 +38,7 @@ from app.models.log_dispatch import (  # noqa
     LogDispatch,
 )
 from app.models.sp import PlayerSP, SPTransaction  # noqa
+from app.models.sp_purchase import SPPurchase  # noqa
 
 # 全てのモデルをインポート（自動生成のため必須）
 # 重要: モデルの追加時は必ずここにインポートを追加すること

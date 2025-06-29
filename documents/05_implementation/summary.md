@@ -98,6 +98,12 @@
 ### [testingStrategy.md](testingStrategy.md)
 テスト戦略とNeo4j統合テスト環境の構築ガイド。実データベースを使用したテストの実装方法。
 
+### [spSystemImplementation.md](spSystemImplementation.md)
+SPシステムの実装詳細。モデル設計、API実装、フロントエンド統合。
+
+### [spPurchaseSystem.md](spPurchaseSystem.md)
+SP購入システムの設計書。テストモードと本番モードの切り替え、価格プラン、セキュリティ対策。
+
 ## クイックリファレンス
 
 - 新機能実装：既存の実装パターンを`characterManagementSummary.md`で確認

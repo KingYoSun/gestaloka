@@ -137,11 +137,73 @@
 - バックエンドとの完全な統合
 - ユーザー体験の向上（リアルタイム通知、視覚的フィードバック）
 
+## 完了済みタスク（2025年6月29日 - 続き）
+
+### SP購入システムの実装 ✅
+
+#### システム設計
+- **環境変数による動作モード切り替え**
+  - PAYMENT_MODE: test/production
+  - TEST_MODE_AUTO_APPROVE: 自動承認の有効/無効
+  - TEST_MODE_APPROVAL_DELAY: 承認遅延時間（秒）
+- **設計ドキュメント作成**
+  - documents/05_implementation/spPurchaseSystem.md
+  - MVPフェーズでのテストモード優先設計
+
+#### バックエンド実装
+- **データモデル追加**
+  - SPPurchase: 購入申請管理
+  - PurchaseStatus: 申請ステータス（PENDING、PROCESSING、COMPLETED、FAILED、CANCELLED、REFUNDED）
+  - PaymentMode: 支払いモード（TEST、PRODUCTION）
+- **価格プラン定義**
+  - スモールパック: 100SP / ¥500
+  - ミディアムパック: 250SP / ¥1,000（25%ボーナス）
+  - ラージパック: 600SP / ¥2,000（50%ボーナス）
+  - エクストララージパック: 1300SP / ¥4,000（100%ボーナス）
+- **APIエンドポイント実装** (`/api/v1/sp/`)
+  - GET /plans - プラン一覧取得
+  - POST /purchase - 購入申請作成
+  - GET /purchases - 購入履歴取得
+  - GET /purchases/{id} - 購入詳細取得
+  - POST /purchases/{id}/cancel - 購入キャンセル
+  - GET /purchase-stats - 購入統計取得
+- **サービス層機能**
+  - テストモードでの自動承認
+  - WebSocketイベント送信（purchase_created、purchase_completed、purchase_failed、purchase_cancelled）
+  - SP付与との統合
+  - Celeryタスク対応（遅延承認）
+
+#### フロントエンド実装
+- **APIクライアント・フック**
+  - spPurchaseApi: API関数群
+  - useSPPlans: プラン一覧取得
+  - useCreatePurchase: 購入申請作成
+  - useSPPurchases: 購入履歴取得
+  - useCancelPurchase: 購入キャンセル
+  - useSPPurchaseStats: 購入統計取得
+- **UIコンポーネント**
+  - SPPlanCard: 個別プラン表示（人気バッジ、ボーナス表示）
+  - SPPlansGrid: プラン一覧グリッド
+  - SPPurchaseDialog: 購入確認ダイアログ（テストモード対応）
+  - SPPurchaseHistory: 購入履歴テーブル
+  - SPBalanceCard: SP残高・統計情報カード
+- **既存ページへの統合**
+  - /sp ページにショップタブ追加
+  - 購入履歴タブの新規追加
+  - リアルタイム残高更新
+
+#### 技術的成果
+- バックエンドテスト：全て成功
+- フロントエンド型チェック：エラーなし
+- フロントエンドリント：warningのみ（既存のany型）
+- マイグレーション作成・適用完了
+- WebSocket統合によるリアルタイム更新
+
 ### 最新の達成事項
 
-- **ログNPC出現システム** - フロントエンド実装によりプレイヤー体験が完成
-- **WebSocket統合強化** - NPC遭遇のリアルタイム処理
-- **UI/UXの向上** - 直感的なNPC遭遇インターフェース
+- **SP購入システム** - MVPフェーズ向けのテストモード実装完了
+- **価格プラン設計** - 4段階のプランとボーナス体系確立
+- **UI/UX統合** - 既存SPページへのシームレスな統合
 
 ---
 
