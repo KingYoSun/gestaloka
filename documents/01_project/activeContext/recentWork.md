@@ -1,9 +1,43 @@
 # 最近の作業履歴
 
-## 2025/01/28 - ログNPC遭遇システムのフロントエンド実装
+## 2025/06/29 - ログNPC遭遇システムのフロントエンド実装改善
 
 ### 実施内容
-- NPCEncounterDialogコンポーネントの作成
+- NPCEncounterDialogコンポーネントの改善（Dialog→Card形式）
+- より良いゲーム体験のためのUI/UX改善
+- テストスクリプトの作成
+
+### 技術的詳細
+1. **UI/UXの改善**
+   - Dialogからカード形式に変更（固定位置表示）
+   - アニメーション付きの表示（slide-in効果）
+   - 閉じるボタンの追加
+   - 選択中アクションのハイライト表示
+
+2. **視覚的フィードバック**
+   - NPCタイプ別の色分けバッジ（LOG_NPC: 青、PERMANENT_NPC: 紫、TEMPORARY_NPC: グレー）
+   - 汚染レベルの警告表示（段階的な色変化）
+   - 難易度別の選択肢色分け（easy: 緑、medium: オレンジ、hard: 赤）
+   - ローディング状態の表示
+
+3. **テスト環境の整備**
+   - `test_npc_encounter.py`の作成
+   - 友好的、敵対的、神秘的な遭遇パターンのテストデータ
+   - WebSocket経由でのイベント送信テスト
+
+### 実装結果
+- 型チェック: エラーなし
+- リント: 既存のany型警告のみ（20件）
+- より没入感のあるNPC遭遇体験の実現
+
+### 関連ファイル
+- `frontend/src/features/game/components/NPCEncounterDialog.tsx`（改善）
+- `backend/test_npc_encounter.py`（新規作成）
+
+## 2025/06/29 - ログNPC遭遇システムのフロントエンド実装（初期版）
+
+### 実施内容
+- NPCEncounterDialogコンポーネントの初期実装
 - WebSocketイベントハンドラーの実装（npc_encounter, npc_action_result）
 - useGameWebSocketフックの拡張
 - ゲーム画面への統合
