@@ -1,8 +1,24 @@
 # 最近の作業内容
 
-最終更新: 2025年6月29日
+最終更新: 2025年6月30日
 
 ## 直近の実装内容
+
+### PostgreSQLテスト環境の構築（2025/06/30）
+- **状態**: 進行中
+- **概要**: バックエンドテストをモックからPostgreSQLベースに移行
+- **主要な変更**:
+  - テスト用データベース（gestaloka_test）の構築
+  - トランザクションベースのテスト分離実装
+  - conftest.pyの大幅改修（SQLite→PostgreSQL）
+  - Alembicマイグレーションのテスト環境対応
+- **作成したファイル**:
+  - test_battle_integration_postgres.py（戦闘統合テスト）
+  - test_sp_system_postgres.py（SPシステムテスト）
+- **現在の課題**:
+  - ActionExecuteResponseのbattle_stateフィールド問題
+  - GameSessionService.execute_actionのパラメータ名不一致
+  - 戦闘システムのレスポンス構造の理解が必要
 
 ### SP購入システムの実装（2025/06/29）
 - **状態**: 完了
