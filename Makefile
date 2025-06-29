@@ -101,16 +101,20 @@ dev-full: ## 完全な開発環境を起動
 # テスト
 .PHONY: test
 test: ## 全テストを実行
-	docker-compose exec -T backend sh -c "cd /app && python -m pytest -v"
+	docker-compose exec -T backend sh -c "DOCKER_ENV=true pytest -v"
 	docker-compose exec -T frontend npm test -- --run
 
 .PHONY: test-backend
 test-backend: ## バックエンドテストを実行
-	docker-compose exec -T backend sh -c "cd /app && python -m pytest -v"
+	docker-compose exec -T backend sh -c "DOCKER_ENV=true pytest -v"
 
 .PHONY: test-frontend
 test-frontend: ## フロントエンドテストを実行
 	docker-compose exec -T frontend npm test -- --run
+
+.PHONY: test-db-setup
+test-db-setup: ## テスト用データベースをセットアップ
+	docker-compose exec -T backend python scripts/test_db_setup.py
 
 # Neo4j統合テスト
 .PHONY: test-neo4j-up

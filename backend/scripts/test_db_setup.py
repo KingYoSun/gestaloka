@@ -15,7 +15,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 
 # 環境変数チェック
-if os.environ.get("DOCKER_ENV"):
+if os.environ.get("DOCKER_ENV") or os.path.exists("/.dockerenv"):
     MAIN_DB_URL = "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka"
     TEST_DB_URL = "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka_test"
 else:

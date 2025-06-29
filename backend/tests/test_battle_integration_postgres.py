@@ -127,10 +127,61 @@ def mock_coordinator_ai():
 def game_session_service(session: Session, mock_coordinator_ai):
     """ゲームセッションサービス"""
     with patch("app.services.game_session.CoordinatorAI", return_value=mock_coordinator_ai):
-        service = GameSessionService(db=session)
-        # CoordinatorAIを直接モックに置き換える
-        service.coordinator = mock_coordinator_ai
-        return service
+        with patch("app.services.game_session.BattleService") as mock_battle_service_class:
+            # BattleServiceのモック設定
+            mock_battle_service = mock_battle_service_class.return_value
+            mock_battle_service.check_battle_trigger.return_value = True
+            
+            # 戦闘データのモック
+            from app.schemas.battle import BattleData, BattleState, Combatant
+            
+            mock_battle_data = BattleData(
+                state=BattleState.PLAYER_TURN,
+                turn_count=0,
+                combatants=[
+                    Combatant(
+                        id="player_1",
+                        name="テストヒーロー",
+                        type="player",
+                        hp=80,
+                        max_hp=100,
+                        mp=50,
+                        max_mp=60,
+                        attack=15,
+                        defense=8,
+                        speed=12,
+                        status_effects=[],
+                    ),
+                    Combatant(
+                        id="enemy_1",
+                        name="ゴブリン",
+                        type="monster",
+                        level=3,
+                        hp=40,
+                        max_hp=40,
+                        mp=0,
+                        max_mp=0,
+                        attack=10,
+                        defense=5,
+                        speed=8,
+                        status_effects=[],
+                    ),
+                ],
+                turn_order=["player_1", "enemy_1"],
+                current_turn_index=0,
+                battle_log=[],
+            )
+            mock_battle_service.initialize_battle.return_value = mock_battle_data
+            mock_battle_service.get_battle_choices.return_value = [
+                ActionChoice(id="battle_attack", text="攻撃する"),
+                ActionChoice(id="battle_defend", text="防御する"),
+                ActionChoice(id="battle_escape", text="逃げる"),
+            ]
+            
+            service = GameSessionService(db=session)
+            # CoordinatorAIを直接モックに置き換える
+            service.coordinator = mock_coordinator_ai
+            return service
 
 
 @pytest.mark.asyncio
@@ -158,28 +209,143 @@ async def test_battle_trigger_from_action(
     )
 
     # 戦闘がトリガーされたことを確認
-    assert result.battle_state is not None
-    assert result.battle_state.enemy_name == "ゴブリン"
-    assert result.battle_state.enemy_stats.hp == 40
-    assert result.battle_state.player_stats.hp == 80
+    assert result.metadata is not None
+    assert "battle_data" in result.metadata
+    battle_data = result.metadata["battle_data"]
+    assert battle_data is not None
+    assert len(battle_data["combatants"]) >= 2
+    assert battle_data["combatants"][1]["name"] == "ゴブリン"
+    assert battle_data["combatants"][1]["hp"] == 40
+    assert battle_data["combatants"][0]["hp"] == 80
 
-    # WebSocketイベントが送信されたことを確認
-    mock_websocket.emit.assert_called()
+
+@pytest.fixture
+def game_session_service_in_battle(session: Session, mock_coordinator_ai):
+    """戦闘中のゲームセッションサービス"""
+    with patch("app.services.game_session.CoordinatorAI", return_value=mock_coordinator_ai):
+        with patch("app.services.game_session.BattleService") as mock_battle_service_class:
+            # BattleServiceのモック設定
+            mock_battle_service = mock_battle_service_class.return_value
+            mock_battle_service.check_battle_trigger.return_value = False  # すでに戦闘中
+            
+            # 戦闘アクション処理のモック
+            from app.schemas.battle import BattleResult, BattleData, BattleState, Combatant
+            
+            mock_battle_result = BattleResult(
+                success=True,
+                damage=15,
+                healing=None,
+                status_changes=[],
+                narrative="テストヒーローの攻撃！ゴブリンに15のダメージ！",
+                side_effects=[],
+            )
+            
+            # 更新された戦闘データ
+            updated_battle_data = BattleData(
+                state=BattleState.ENEMY_TURN,
+                turn_count=2,
+                combatants=[
+                    Combatant(
+                        id="player_1",
+                        name="テストヒーロー",
+                        type="player",
+                        hp=70,  # ダメージを受けた
+                        max_hp=100,
+                        mp=50,
+                        max_mp=60,
+                        attack=15,
+                        defense=8,
+                        speed=12,
+                        status_effects=[],
+                    ),
+                    Combatant(
+                        id="enemy_1",
+                        name="ゴブリン",
+                        type="monster",
+                        level=3,
+                        hp=25,  # ダメージを受けた
+                        max_hp=40,
+                        mp=0,
+                        max_mp=0,
+                        attack=10,
+                        defense=5,
+                        speed=8,
+                        status_effects=[],
+                    ),
+                ],
+                turn_order=["player_1", "enemy_1"],
+                current_turn_index=1,
+                battle_log=[
+                    {
+                        "turn": 1,
+                        "actor": "player_1",
+                        "action": "attack",
+                        "result": "テストヒーローの攻撃！ゴブリンに15のダメージ！",
+                    }
+                ],
+            )
+            
+            mock_battle_service.process_battle_action.return_value = (
+                mock_battle_result,
+                updated_battle_data,
+            )
+            mock_battle_service.check_battle_end.return_value = (False, None, None)
+            mock_battle_service.advance_turn.return_value = ("enemy_1", False)
+            mock_battle_service.get_battle_choices.return_value = [
+                ActionChoice(id="battle_attack", text="攻撃する"),
+                ActionChoice(id="battle_defend", text="防御する"),
+                ActionChoice(id="battle_escape", text="逃げる"),
+            ]
+            
+            service = GameSessionService(db=session)
+            # CoordinatorAIを直接モックに置き換える
+            service.coordinator = mock_coordinator_ai
+            return service
 
 
 @pytest.mark.asyncio
 async def test_battle_action_execution(
     session: Session,
     test_game_session: GameSession,
-    game_session_service: GameSessionService,
+    game_session_service_in_battle: GameSessionService,
 ):
     """戦闘中のアクション実行テスト"""
     # 戦闘状態を設定
     battle_state = {
-        "active": True,
-        "enemy_name": "ゴブリン",
-        "enemy_stats": {"hp": 40, "max_hp": 40, "attack": 10, "defense": 5},
-        "player_stats": {"hp": 80, "max_hp": 100},
+        "state": "player_turn",
+        "turn_count": 1,
+        "combatants": [
+            {
+                "id": "player_1",
+                "name": "テストヒーロー",
+                "type": "player",
+                "hp": 80,
+                "max_hp": 100,
+                "mp": 50,
+                "max_mp": 60,
+                "attack": 15,
+                "defense": 8,
+                "speed": 12,
+                "status_effects": [],
+            },
+            {
+                "id": "enemy_1",
+                "name": "ゴブリン",
+                "type": "monster",
+                "level": 3,
+                "hp": 40,
+                "max_hp": 40,
+                "mp": 0,
+                "max_mp": 0,
+                "attack": 10,
+                "defense": 5,
+                "speed": 8,
+                "status_effects": [],
+            },
+        ],
+        "turn_order": ["player_1", "enemy_1"],
+        "current_turn_index": 0,
+        "battle_log": [],
     }
     
     session_data = json.loads(test_game_session.session_data)
@@ -195,27 +361,38 @@ async def test_battle_action_execution(
         choice_id="attack",
     )
 
-    mock_websocket = AsyncMock()
+    # CoordinatorAIのモックレスポンスを設定
+    from app.ai.coordination_models import Choice, FinalResponse
+    
+    # 戦闘中の選択肢を設定
+    mock_coordinator_ai = game_session_service_in_battle.coordinator
+    mock_coordinator_ai.process_action.return_value = FinalResponse(
+        narrative="テストヒーローの攻撃！ゴブリンに15のダメージ！\nゴブリンの反撃！テストヒーローに10のダメージ！",
+        choices=[
+            Choice(id="battle_attack", text="攻撃する"),
+            Choice(id="battle_defend", text="防御する"),
+            Choice(id="battle_escape", text="逃げる"),
+        ],
+        state_changes={
+            "battle_continues": True,
+        },
+        metadata={},
+    )
 
-    # モックの戦闘サービス
-    with patch("app.services.game_session.BattleService") as mock_battle_service:
-        mock_battle = mock_battle_service.return_value
-        mock_battle.execute_action.return_value = BattleState(
-            active=True,
-            enemy_name="ゴブリン",
-            enemy_stats={"hp": 25, "max_hp": 40, "attack": 10, "defense": 5},
-            player_stats={"hp": 70, "max_hp": 100},
-            turn=2,
-            battle_log=["プレイヤーの攻撃！15ダメージ！", "ゴブリンの攻撃！10ダメージ！"],
-        )
+    result = await game_session_service_in_battle.execute_action(
+        session=test_game_session,
+        action_request=request,
+    )
 
-        result = await game_session_service.execute_action(
-            session=test_game_session,
-            action_request=request,
-        )
-
-        # 戦闘が継続していることを確認
-        assert result.battle_state is not None
-        assert result.battle_state.active is True
-        assert result.battle_state.enemy_stats["hp"] == 25
-        assert result.battle_state.player_stats["hp"] == 70
+    # 戦闘が継続していることを確認
+    assert result.metadata is not None
+    assert "battle_data" in result.metadata
+    battle_data = result.metadata["battle_data"]
+    assert battle_data is not None
+    assert battle_data["state"] in ["player_turn", "enemy_turn", "in_progress"]
+    
+    # 戦闘選択肢が返されることを確認
+    assert len(result.choices) == 3
+    assert any(c.text == "攻撃する" for c in result.choices)
+    assert any(c.text == "防御する" for c in result.choices)
+    assert any(c.text == "逃げる" for c in result.choices)

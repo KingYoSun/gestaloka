@@ -44,14 +44,72 @@ def db_session():
 ### Docker環境でのテスト実行
 
 ```bash
-# 全テスト実行
+# テスト用データベースのセットアップ
+make test-db-setup
+
+# 全テスト実行（DOCKER_ENV環境変数を使用）
 make test
 
 # バックエンドテストのみ
 make test-backend
 
-# 特定のテストファイル
-docker-compose exec backend pytest tests/test_battle_integration_postgres.py
+# 特定のテストファイルを実行
+docker-compose exec -T backend sh -c "DOCKER_ENV=true pytest tests/test_battle_integration_postgres.py -xvs"
+```
+
+#### 環境変数の使用
+- **DOCKER_ENV=true**: Docker環境内でのテスト実行を示す
+- この環境変数により、conftest.pyが自動的にpostgresホスト名を使用
+
+### 実装の詳細
+
+#### conftest.pyの改修内容
+```python
+# Docker環境の自動検出
+if os.environ.get("DOCKER_ENV") or os.path.exists("/.dockerenv"):
+    TEST_DATABASE_URL = "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka_test"
+else:
+    TEST_DATABASE_URL = "postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka_test"
+
+# テストデータベースエンジン（セッションスコープ）
+@pytest.fixture(scope="session")
+def test_engine():
+    """テスト用データベースエンジンを作成し、マイグレーションを実行"""
+    # テストデータベースの作成とマイグレーション
+    # Alembicを使用して本番と同じスキーマを適用
+    
+# トランザクションベースのセッション（関数スコープ）
+@pytest.fixture(scope="function")
+def session(test_engine):
+    """各テストに独立したトランザクションを提供"""
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection)
+    
+    yield session
+    
+    session.close()
+    transaction.rollback()
+    connection.close()
+```
+
+### 移行実績（2025年6月30日）
+
+#### 移行前（SQLite）
+- インメモリデータベース使用
+- 制約やトリガーの一部が未サポート
+- 本番環境との差異によるバグ見逃しリスク
+
+#### 移行後（PostgreSQL）  
+- 本番環境と同一のデータベースエンジン
+- 全ての制約とトリガーが正しく動作
+- 98.8%のテスト成功率（82/83テスト）
+
+#### 主な修正項目
+1. **test_battle_integration_postgres.py**: 戦闘統合テストのPostgreSQL対応
+2. **test_sp_purchase.py**: SP購入テストの実行確認
+3. **test_database.py**: データベース接続とトランザクションテスト
+4. **scripts/test_db_setup.py**: テストデータベース初期化スクリプト
 
 # カバレッジ付き実行
 docker-compose exec backend pytest --cov=app tests/

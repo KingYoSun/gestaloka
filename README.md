@@ -127,11 +127,14 @@ make init-db
 
 完全自動化されたMakefileコマンド体系で、ワンコマンドで全ての操作が可能です。
 
-### ✅ コード品質チェック（2025/06/28 更新）
+### ✅ コード品質チェック（2025/06/30 更新）
 ```bash
-make test         # 🧪 全テスト実行（Frontend: 21件成功、Backend: 189/193件成功）
-make typecheck    # 📝 型チェック（Frontend: エラー0件、Backend: 21エラー）
-make lint         # 🔍 リントチェック（全てエラー0件）
+make test         # 🧪 全テスト実行（PostgreSQL使用）
+make test-backend # 🐍 バックエンドテスト（82/83件成功）
+make test-frontend # ⚛️ フロントエンドテスト（21件成功）
+make test-db-setup # 🗄️ テストDB初期化（gestaloka_test作成）
+make typecheck    # 📝 型チェック
+make lint         # 🔍 リントチェック
 make format       # 📐 コード自動整形
 ```
 

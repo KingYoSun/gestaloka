@@ -129,22 +129,26 @@ uvicorn app.main:app --reload  # バックエンド
 
 ### テスト
 ```bash
-# 全テスト実行（Docker経由）
+# 全テスト実行（Docker経由、PostgreSQL使用）
 make test
+
+# テスト用データベースセットアップ
+make test-db-setup
+
+# バックエンドテスト実行（Docker経由、PostgreSQL使用）
+make test-backend
+docker-compose exec -T backend sh -c "DOCKER_ENV=true pytest -v"
 
 # フロントエンドテストを実行（Docker経由）
 make test-frontend
 
-# バックエンドテスト実行（Docker経由）
-make test-backend
-
 # Docker内で特定のテストファイルを実行
-docker-compose exec backend pytest tests/test_gm_ai.py
+docker-compose exec -T backend sh -c "DOCKER_ENV=true pytest tests/test_battle_integration_postgres.py -xvs"
 docker-compose exec frontend npm test src/features/player/Player.test.tsx
 
 # ローカル実行（Docker起動済みの場合のみ）
 cd frontend && npm test
-cd backend && pytest
+cd backend && DOCKER_ENV=true pytest
 ```
 
 ### リント & 型チェック
