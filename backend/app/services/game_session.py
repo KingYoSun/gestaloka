@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
-from sqlmodel import Session, desc, select, col
+from sqlmodel import Session, col, desc, select
 
 from app.ai.coordination_models import Choice
 from app.ai.coordinator import CoordinatorAI
@@ -805,12 +805,12 @@ class GameSessionService:
         派遣中のログNPCが同じ場所にいるか確認し、
         遭遇イベントを発生させる
         """
+        # 現在地に派遣中のログを検索
+        from sqlalchemy import and_
+
         from app.models.log import CompletedLog
         from app.models.log_dispatch import DispatchStatus, LogDispatch
 
-        # 現在地に派遣中のログを検索
-        from sqlalchemy import and_
-        
         stmt = select(LogDispatch, CompletedLog).join(
             CompletedLog,
             col(LogDispatch.completed_log_id) == col(CompletedLog.id)

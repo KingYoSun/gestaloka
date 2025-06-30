@@ -13,6 +13,7 @@ from app.models.location import (
     LocationType,
 )
 from app.models.log import (
+    ActionLog,
     CompletedLog,
     CompletedLogStatus,
     CompletedLogSubFragment,
@@ -40,6 +41,7 @@ from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
 from app.models.user import User
 
 __all__ = [
+    "ActionLog",
     "Character",
     "CharacterLocationHistory",
     "CharacterStats",

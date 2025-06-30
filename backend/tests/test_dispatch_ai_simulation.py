@@ -8,8 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlmodel import Session
 
-from app.models.log import CompletedLog
-from app.models.log import CompletedLogStatus
+from app.models.log import CompletedLog, CompletedLogStatus
 from app.models.log_dispatch import (
     DispatchObjectiveType,
     DispatchStatus,
@@ -145,10 +144,10 @@ async def test_simulate_interaction_with_encounter(
         items_exchanged=[],
         occurred_at=datetime.utcnow(),
     )
-    
+
     with patch.object(simulator, "_create_ai_driven_encounter") as mock_encounter:
         mock_encounter.return_value = mock_encounter_obj
-        
+
         with patch.object(simulator, "_generate_encounter_narrative") as mock_narrative:
             mock_narrative.return_value = "商人ギルド員との商談が行われた。"
 

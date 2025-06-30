@@ -17,7 +17,7 @@ from app.api.api_v1.endpoints import (
     users,
     websocket,
 )
-from app.api.v1.admin import router as admin_router
+from app.api.v1.admin.router import router as admin_router
 
 api_router = APIRouter()
 

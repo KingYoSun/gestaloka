@@ -13,13 +13,20 @@ import pytest
 from sqlmodel import Session
 
 from app.models.character import Character, GameSession
-from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus, LogFragment, EmotionalValence, LogFragmentRarity
+from app.models.log import (
+    CompletedLog,
+    CompletedLogStatus,
+    EmotionalValence,
+    LogContract,
+    LogContractStatus,
+    LogFragment,
+    LogFragmentRarity,
+)
 from app.models.user import User
 from app.services.npc_generator import NPCGenerator
 from tests.integration.base_neo4j_test import BaseNeo4jIntegrationTest
 from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data
-from tests.integration.postgres_test_utils import isolated_postgres_test
 
 
 @contextmanager
@@ -347,7 +354,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             )
             test_db_session.add(game_session)
             test_db_session.commit()
-            
+
             for i in range(3):
                 # まずログフラグメントを作成
                 fragment = LogFragment(
@@ -363,7 +370,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                 )
                 test_db_session.add(fragment)
                 test_db_session.commit()
-                
+
                 # 完成ログを作成
                 log = CompletedLog(
                     id=str(uuid.uuid4()),

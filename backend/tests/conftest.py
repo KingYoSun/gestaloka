@@ -3,14 +3,14 @@
 """
 
 import os
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlmodel import Session, create_engine, text
 
+from alembic import command
+from alembic.config import Config
 from app.core.database import get_session
 from app.main import app
 
@@ -31,24 +31,24 @@ def test_engine():
     else:
         main_db_url = "postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka"
     main_engine = create_engine(main_db_url)
-    
+
     with main_engine.connect() as conn:
         # 他の接続を切断
         conn.execute(text("COMMIT"))
-        
+
         # テストデータベースが存在するか確認
         result = conn.execute(text(
             "SELECT 1 FROM pg_database WHERE datname = 'gestaloka_test'"
         ))
         db_exists = result.scalar() is not None
-        
+
         if not db_exists:
             # データベースが存在しない場合のみ作成
             conn.execute(text("CREATE DATABASE gestaloka_test"))
             print("Test database created.")
-    
+
     main_engine.dispose()
-    
+
     # テストデータベースエンジンを作成
     engine = create_engine(
         TEST_DATABASE_URL,
@@ -56,27 +56,27 @@ def test_engine():
         pool_size=5,
         max_overflow=10,
     )
-    
+
     # テーブルが存在するか確認
     with engine.connect() as conn:
         result = conn.execute(text(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')"
         ))
         tables_exist = result.scalar()
-    
+
     if not tables_exist:
         # テーブルが存在しない場合のみマイグレーション実行
         print("Running migrations...")
         alembic_ini_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
         alembic_cfg = Config(alembic_ini_path)
         alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-        
+
         # 最新のマイグレーションを適用
         command.upgrade(alembic_cfg, "head")
         print("Migrations completed.")
-    
+
     yield engine
-    
+
     # テスト終了後のクリーンアップ
     engine.dispose()
 
@@ -87,9 +87,9 @@ def session(test_engine) -> Generator[Session, None, None]:
     connection = test_engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection)
-    
+
     yield session
-    
+
     # ロールバックしてデータをクリーンアップ
     session.close()
     transaction.rollback()
@@ -103,10 +103,10 @@ def client(session: Session) -> Generator[TestClient, None, None]:
         return session
 
     app.dependency_overrides[get_session] = get_session_override
-    
+
     with TestClient(app) as test_client:
         yield test_client
-    
+
     app.dependency_overrides.clear()
 
 
@@ -115,7 +115,7 @@ def test_user_data():
     """テスト用ユーザーデータ"""
     return {
         "username": "testuser",
-        "email": "test@example.com", 
+        "email": "test@example.com",
         "password": "TestPassword123!"
     }
 

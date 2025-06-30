@@ -46,7 +46,7 @@ def cleanup_all_postgres_data(engine):
             for table in tables:
                 try:
                     conn.execute(text(f"TRUNCATE TABLE {table[0]} CASCADE"))
-                except Exception as e:
+                except Exception:
                     pass  # エラーを無視
 
             # 外部キー制約を再度有効化
@@ -69,14 +69,14 @@ def recreate_schema(engine):
                 FROM pg_tables
                 WHERE schemaname = 'public'
             """))
-            
+
             tables = result.fetchall()
             for table in tables:
                 try:
                     conn.execute(text(f"DROP TABLE IF EXISTS {table[0]} CASCADE"))
                 except Exception as e:
                     print(f"Warning: Could not drop table {table[0]}: {e}")
-            
+
             # ENUMタイプを削除
             enum_types = ['emotionalvalence', 'logfragmentrarity', 'completedlogstatus', 'logcontractstatus']
             for enum_type in enum_types:
@@ -144,10 +144,7 @@ def isolated_postgres_test(recreate: bool = False):
         recreate_schema(engine)
         # モデルをインポートして確実にテーブルが作成される
         # 全てのモデルを明示的にインポート
-        from app.models.user import User
-        from app.models.character import Character, GameSession
-        from app.models.log import LogFragment, CompletedLog, LogContract
-        
+
         SQLModel.metadata.create_all(engine)
     else:
         cleanup_all_postgres_data(engine)

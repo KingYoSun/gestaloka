@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/api/client'
+import { apiClient } from '@/api/client'
 
 export interface PerformanceMetric {
   agent_name: string
@@ -58,13 +58,11 @@ export interface RealtimeMetric {
 
 export const performanceApi = {
   async getStats(hours: number = 24): Promise<PerformanceStats> {
-    const response = await apiClient.get(`/admin/performance/stats?hours=${hours}`)
-    return response.data
+    return await apiClient.get<PerformanceStats>(`/admin/performance/stats?hours=${hours}`)
   },
 
   async runTest(request: PerformanceTestRequest): Promise<PerformanceTestResult> {
-    const response = await apiClient.post('/admin/performance/test', request)
-    return response.data
+    return await apiClient.post<PerformanceTestResult>('/admin/performance/test', request)
   },
 
   async getRealtimeMetrics(): Promise<{
@@ -73,7 +71,11 @@ export const performanceApi = {
     period_start: string
     period_end: string
   }> {
-    const response = await apiClient.get('/admin/performance/realtime')
-    return response.data
+    return await apiClient.get<{
+      metrics: RealtimeMetric[]
+      count: number
+      period_start: string
+      period_end: string
+    }>('/admin/performance/realtime')
   }
 }

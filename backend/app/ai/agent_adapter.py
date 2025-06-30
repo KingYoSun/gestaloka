@@ -17,7 +17,7 @@ class CoordinationAgentAdapter:
     def __init__(self, agent: BaseAgent):
         self.agent = agent
         self.name = agent.role.value
-        
+
         # エージェントタイプからモデルタイプを決定
         try:
             agent_type = AIAgentType(self.name.upper())

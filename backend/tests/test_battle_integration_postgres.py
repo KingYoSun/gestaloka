@@ -11,7 +11,6 @@ from sqlmodel import Session
 
 from app.models.character import Character, CharacterStats, GameSession
 from app.models.user import User
-from app.schemas.battle import BattleState
 from app.schemas.game_session import ActionChoice, ActionExecuteRequest
 from app.services.game_session import GameSessionService
 
@@ -44,7 +43,7 @@ def test_character(session: Session, test_user: User):
     session.add(character)
     session.commit()
     session.refresh(character)
-    
+
     # キャラクターステータスを作成
     stats = CharacterStats(
         id=str(uuid.uuid4()),
@@ -61,7 +60,7 @@ def test_character(session: Session, test_user: User):
     session.add(stats)
     session.commit()
     session.refresh(stats)
-    
+
     character.stats = stats
     return character
 
@@ -85,7 +84,7 @@ def test_game_session(session: Session, test_character: Character):
     session.add(game_session)
     session.commit()
     session.refresh(game_session)
-    
+
     # リレーションシップを設定
     game_session.character = test_character
     return game_session
@@ -131,10 +130,10 @@ def game_session_service(session: Session, mock_coordinator_ai):
             # BattleServiceのモック設定
             mock_battle_service = mock_battle_service_class.return_value
             mock_battle_service.check_battle_trigger.return_value = True
-            
+
             # 戦闘データのモック
             from app.schemas.battle import BattleData, BattleState, Combatant
-            
+
             mock_battle_data = BattleData(
                 state=BattleState.PLAYER_TURN,
                 turn_count=0,
@@ -177,7 +176,7 @@ def game_session_service(session: Session, mock_coordinator_ai):
                 ActionChoice(id="battle_defend", text="防御する"),
                 ActionChoice(id="battle_escape", text="逃げる"),
             ]
-            
+
             service = GameSessionService(db=session)
             # CoordinatorAIを直接モックに置き換える
             service.coordinator = mock_coordinator_ai
@@ -199,8 +198,8 @@ async def test_battle_trigger_from_action(
         choice_id=None,
     )
 
-    # WebSocketのモック
-    mock_websocket = AsyncMock()
+    # WebSocketのモック（現在は使用されていない）
+    # mock_websocket = AsyncMock()
 
     # アクション実行
     result = await game_session_service.execute_action(
@@ -227,10 +226,10 @@ def game_session_service_in_battle(session: Session, mock_coordinator_ai):
             # BattleServiceのモック設定
             mock_battle_service = mock_battle_service_class.return_value
             mock_battle_service.check_battle_trigger.return_value = False  # すでに戦闘中
-            
+
             # 戦闘アクション処理のモック
-            from app.schemas.battle import BattleResult, BattleData, BattleState, Combatant
-            
+            from app.schemas.battle import BattleData, BattleResult, BattleState, Combatant
+
             mock_battle_result = BattleResult(
                 success=True,
                 damage=15,
@@ -239,7 +238,7 @@ def game_session_service_in_battle(session: Session, mock_coordinator_ai):
                 narrative="テストヒーローの攻撃！ゴブリンに15のダメージ！",
                 side_effects=[],
             )
-            
+
             # 更新された戦闘データ
             updated_battle_data = BattleData(
                 state=BattleState.ENEMY_TURN,
@@ -284,7 +283,7 @@ def game_session_service_in_battle(session: Session, mock_coordinator_ai):
                     }
                 ],
             )
-            
+
             mock_battle_service.process_battle_action.return_value = (
                 mock_battle_result,
                 updated_battle_data,
@@ -296,7 +295,7 @@ def game_session_service_in_battle(session: Session, mock_coordinator_ai):
                 ActionChoice(id="battle_defend", text="防御する"),
                 ActionChoice(id="battle_escape", text="逃げる"),
             ]
-            
+
             service = GameSessionService(db=session)
             # CoordinatorAIを直接モックに置き換える
             service.coordinator = mock_coordinator_ai
@@ -347,7 +346,7 @@ async def test_battle_action_execution(
         "current_turn_index": 0,
         "battle_log": [],
     }
-    
+
     session_data = json.loads(test_game_session.session_data)
     session_data["battle_data"] = battle_state
     test_game_session.session_data = json.dumps(session_data)
@@ -363,7 +362,7 @@ async def test_battle_action_execution(
 
     # CoordinatorAIのモックレスポンスを設定
     from app.ai.coordination_models import Choice, FinalResponse
-    
+
     # 戦闘中の選択肢を設定
     mock_coordinator_ai = game_session_service_in_battle.coordinator
     mock_coordinator_ai.process_action.return_value = FinalResponse(
@@ -390,7 +389,7 @@ async def test_battle_action_execution(
     battle_data = result.metadata["battle_data"]
     assert battle_data is not None
     assert battle_data["state"] in ["player_turn", "enemy_turn", "in_progress"]
-    
+
     # 戦闘選択肢が返されることを確認
     assert len(result.choices) == 3
     assert any(c.text == "攻撃する" for c in result.choices)

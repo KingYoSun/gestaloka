@@ -153,7 +153,7 @@ class CoordinatorAI:
 
             # 実行時間を記録
             execution_time = time.time() - start_time
-            
+
             # 各エージェントの平均実行時間を計算
             agent_stats = {}
             for agent_name, times in self.task_execution_times.items():
@@ -163,7 +163,7 @@ class CoordinatorAI:
                         'total_calls': len(times),
                         'total_time': sum(times)
                     }
-            
+
             logger.info(
                 "Action processed",
                 session_id=session.id,

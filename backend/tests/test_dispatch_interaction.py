@@ -57,7 +57,7 @@ def mock_dispatch_1(mock_log_1):
     return LogDispatch(
         id="dispatch-1",
         completed_log_id=mock_log_1.id,
-        player_id="player-1",
+        dispatcher_id="player-1",
         objective_type=DispatchObjectiveType.INTERACT,
         objective_details={},
         destination="市場",
@@ -83,7 +83,7 @@ def mock_dispatch_2(mock_log_2):
     return LogDispatch(
         id="dispatch-2",
         completed_log_id=mock_log_2.id,
-        player_id="player-2",
+        dispatcher_id="player-2",
         objective_type=DispatchObjectiveType.INTERACT,
         objective_details={},
         destination="市場",
@@ -109,13 +109,13 @@ async def test_should_interact_same_location():
     manager = DispatchInteractionManager()
 
     dispatch_1 = MagicMock(
-        player_id="player-1",
+        dispatcher_id="player-1",
         objective_type=DispatchObjectiveType.INTERACT,
         travel_log=[{"location": "市場"}],
     )
 
     dispatch_2 = MagicMock(
-        player_id="player-2",
+        dispatcher_id="player-2",
         objective_type=DispatchObjectiveType.INTERACT,
         travel_log=[{"location": "市場"}],
     )
@@ -143,8 +143,8 @@ def test_should_not_interact_same_player():
     """同じプレイヤーの派遣は相互作用しない"""
     manager = DispatchInteractionManager()
 
-    dispatch_1 = MagicMock(player_id="player-1")
-    dispatch_2 = MagicMock(player_id="player-1")
+    dispatch_1 = MagicMock(dispatcher_id="player-1")
+    dispatch_2 = MagicMock(dispatcher_id="player-1")
 
     assert not manager._should_interact(dispatch_1, dispatch_2)
 
@@ -154,12 +154,12 @@ def test_should_not_interact_different_location():
     manager = DispatchInteractionManager()
 
     dispatch_1 = MagicMock(
-        player_id="player-1",
+        dispatcher_id="player-1",
         travel_log=[{"location": "森"}],
     )
 
     dispatch_2 = MagicMock(
-        player_id="player-2",
+        dispatcher_id="player-2",
         travel_log=[{"location": "山"}],
     )
 
@@ -343,21 +343,21 @@ async def test_check_and_process_interactions():
     active_dispatches = [
         MagicMock(
             id="d1",
-            player_id="p1",
+            dispatcher_id="p1",
             objective_type=DispatchObjectiveType.INTERACT,
             status=DispatchStatus.DISPATCHED,
             travel_log=[{"location": "市場"}],
         ),
         MagicMock(
             id="d2",
-            player_id="p2",
+            dispatcher_id="p2",
             objective_type=DispatchObjectiveType.INTERACT,
             status=DispatchStatus.DISPATCHED,
             travel_log=[{"location": "市場"}],
         ),
         MagicMock(
             id="d3",
-            player_id="p3",
+            dispatcher_id="p3",
             objective_type=DispatchObjectiveType.EXPLORE,
             status=DispatchStatus.DISPATCHED,
             travel_log=[{"location": "森"}],
@@ -393,14 +393,14 @@ def test_hours_since_last_interaction():
     past_interaction_time = datetime.utcnow() - timedelta(hours=6)
 
     dispatch_2 = MagicMock(id="d2")
-    
+
     dispatch_1 = MagicMock(
         id="d1",
         travel_log=[
             {
                 "timestamp": past_interaction_time.isoformat(),
                 "special_type": "dispatch_interaction",
-                "action": f"派遣ログとの遭遇: [派遣ログ] 冒険者B (ID: d2)",
+                "action": "派遣ログとの遭遇: [派遣ログ] 冒険者B (ID: d2)",
             },
         ],
     )

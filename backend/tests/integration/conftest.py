@@ -9,7 +9,6 @@ from neomodel import db
 
 from tests.integration.neo4j_connection import ensure_test_connection
 from tests.integration.neo4j_test_utils import cleanup_all_neo4j_data
-from tests.integration.postgres_test_utils import isolated_postgres_test
 
 
 @pytest.fixture
@@ -56,25 +55,23 @@ def test_db_session():
     # 直接データベース接続を作成
     from sqlalchemy import create_engine
     from sqlmodel import Session, SQLModel
-    from tests.integration.postgres_test_utils import get_test_database_url, cleanup_all_postgres_data
-    
+
+    from tests.integration.postgres_test_utils import cleanup_all_postgres_data, get_test_database_url
+
     database_url = get_test_database_url()
     engine = create_engine(database_url, pool_pre_ping=True)
-    
+
     # データクリーンアップ
     cleanup_all_postgres_data(engine)
-    
+
     # モデルをインポート（必要最小限のみ）
-    from app.models.user import User
-    from app.models.character import Character, GameSession
-    from app.models.log import LogFragment, CompletedLog, LogContract
-    
+
     # テーブル作成
     SQLModel.metadata.create_all(engine)
-    
+
     # セッション作成
     session = Session(engine)
-    
+
     try:
         yield session
     finally:

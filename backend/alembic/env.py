@@ -27,6 +27,7 @@ from app.models.location import (  # noqa
     LocationConnection,
 )
 from app.models.log import (  # noqa
+    ActionLog,
     CompletedLog,
     CompletedLogSubFragment,
     LogContract,

@@ -486,7 +486,7 @@ async def generate_narrative_summary(
         if dispatch.dispatched_at:
             end_time = dispatch.actual_return_at or datetime.utcnow()
             duration_str = str(end_time - dispatch.dispatched_at)
-        
+
         activity_summary = {
             "objective_type": dispatch.objective_type.value,
             "duration": duration_str,

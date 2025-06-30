@@ -2,14 +2,14 @@
 ユーザーサービス
 """
 
-from typing import Optional, List
+from typing import Optional
 
 from passlib.context import CryptContext
 from sqlmodel import Session, select
 
 from app.core.logging import LoggerMixin
 from app.models.user import User as UserModel
-from app.models.user_role import UserRole, RoleType
+from app.models.user_role import RoleType, UserRole
 from app.schemas.user import User, UserCreate, UserUpdate
 from app.utils.security import generate_uuid
 
@@ -22,8 +22,8 @@ class UserService(LoggerMixin):
     def __init__(self, db: Session):
         super().__init__()
         self.db = db
-    
-    async def _get_user_roles(self, user_id: str) -> List[str]:
+
+    async def _get_user_roles(self, user_id: str) -> list[str]:
         """ユーザーのロールを取得"""
         try:
             statement = select(UserRole).where(UserRole.user_id == user_id)
@@ -42,10 +42,10 @@ class UserService(LoggerMixin):
             user = result.first()
             if not user:
                 return None
-            
+
             # ロール情報を取得
             roles = await self._get_user_roles(user_id)
-            
+
             # Userスキーマに変換
             user_schema = User.model_validate(user)
             user_schema.roles = roles
@@ -62,10 +62,10 @@ class UserService(LoggerMixin):
             user = result.first()
             if not user:
                 return None
-            
+
             # ロール情報を取得
             roles = await self._get_user_roles(user.id)
-            
+
             # Userスキーマに変換
             user_schema = User.model_validate(user)
             user_schema.roles = roles
@@ -82,10 +82,10 @@ class UserService(LoggerMixin):
             user = result.first()
             if not user:
                 return None
-            
+
             # ロール情報を取得
             roles = await self._get_user_roles(user.id)
-            
+
             # Userスキーマに変換
             user_schema = User.model_validate(user)
             user_schema.roles = roles
@@ -113,7 +113,7 @@ class UserService(LoggerMixin):
             self.db.add(user_model)
             self.db.commit()
             self.db.refresh(user_model)
-            
+
             # デフォルトのplayerロールを付与
             default_role = UserRole(
                 id=generate_uuid(),
@@ -124,7 +124,7 @@ class UserService(LoggerMixin):
             self.db.commit()
 
             self.log_info("User created", user_id=user_model.id, username=user_create.username)
-            
+
             # ロール情報を含めて返す
             user_schema = User.model_validate(user_model)
             user_schema.roles = [RoleType.PLAYER.value]

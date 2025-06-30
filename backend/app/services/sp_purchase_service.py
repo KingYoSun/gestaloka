@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, func, select
 from sqlmodel import Session, col
 
 from app.core.config import settings

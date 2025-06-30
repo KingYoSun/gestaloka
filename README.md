@@ -67,7 +67,7 @@ make init-db
 | サービス | URL | 説明 |
 |---------|-----|------|
 | **🎮 ゲーム** | http://localhost:3000 | プレイヤー向けフロントエンド |
-| **🛡️ 管理画面** | http://localhost:3000/admin | 管理者専用ダッシュボード (admin/Admin123456!) |
+| **🛡️ 管理画面** | http://localhost:3000/admin | 管理者専用ダッシュボード - AIパフォーマンス監視 |
 | **📡 API** | http://localhost:8000 | バックエンドAPI |
 | **📖 API Docs** | http://localhost:8000/docs | Swagger UI |
 | **🔐 認証管理** | http://localhost:8080/admin | Keycloak (admin/admin_password) |
@@ -129,9 +129,9 @@ make init-db
 
 完全自動化されたMakefileコマンド体系で、ワンコマンドで全ての操作が可能です。
 
-### ✅ コード品質チェック（2025/06/30 更新）
+### ✅ コード品質チェック（2025/06/30 更新 - 全項目クリーン達成 🎉）
 ```bash
-make test         # 🧪 全テスト実行（PostgreSQL使用）
+make test         # 🧪 全テスト実行（246/246件成功 ✅）
 make test-backend # 🐍 バックエンドテスト（225/225件成功 ✅）
 make test-frontend # ⚛️ フロントエンドテスト（21/21件成功 ✅）
 make test-db-setup # 🗄️ テストDB初期化（gestaloka_test作成）
@@ -420,6 +420,7 @@ make clean-all
 - **Celeryタスク管理**: Worker、Beat、Flower統合
 - **データベース連携**: PostgreSQL + Neo4j のハイブリッド構成
 - **型安全なAPI統合**: OpenAPI自動生成によるフロントエンド型定義
+- **管理者用画面**: AIパフォーマンス監視、リアルタイムメトリクス、テスト実行
 - **SP購入システム**: テストモード実装完了（2025/06/29）
   - 購入申請API（プラン一覧、購入、履歴、詳細、キャンセル、統計）
   - 4段階の価格プラン（100SP～1300SP、最大100%ボーナス）

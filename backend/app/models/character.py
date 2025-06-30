@@ -9,7 +9,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.location import Location
-    from app.models.log import CompletedLog, LogContract, LogFragment
+    from app.models.log import ActionLog, CompletedLog, LogContract, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.user import User
 
@@ -55,6 +55,9 @@ class Character(SQLModel, table=True):
 
     # 場所関連
     current_location: Optional["Location"] = Relationship(back_populates="characters")
+
+    # アクションログ関連
+    action_logs: list["ActionLog"] = Relationship(back_populates="character")
 
     def __repr__(self) -> str:
         return f"<Character(id={self.id}, name={self.name})>"
@@ -126,6 +129,7 @@ class GameSession(SQLModel, table=True):
 
     # ログシステム関連
     log_fragments: list["LogFragment"] = Relationship(back_populates="session")
+    action_logs: list["ActionLog"] = Relationship(back_populates="session")
 
     def __repr__(self) -> str:
         return f"<GameSession(id={self.id}, character_id={self.character_id})>"

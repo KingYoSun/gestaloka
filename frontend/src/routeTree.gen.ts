@@ -18,19 +18,16 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpIndexRouteImport } from './routes/sp/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as GameStartRouteImport } from './routes/game/start'
 import { Route as GameSessionIdRouteImport } from './routes/game/$sessionId'
 import { Route as CharacterCreateRouteImport } from './routes/character.create'
 import { Route as CharacterIdRouteImport } from './routes/character.$id'
+import { Route as AdminPerformanceRouteImport } from './routes/admin/performance'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ExplorationRoute = ExplorationRouteImport.update({
-  id: '/exploration',
-  path: '/exploration',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -46,6 +43,11 @@ const LogsRoute = LogsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExplorationRoute = ExplorationRouteImport.update({
+  id: '/exploration',
+  path: '/exploration',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -68,6 +70,11 @@ const SpIndexRoute = SpIndexRouteImport.update({
   path: '/sp/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GameStartRoute = GameStartRouteImport.update({
   id: '/game/start',
   path: '/game/start',
@@ -88,6 +95,11 @@ const CharacterIdRoute = CharacterIdRouteImport.update({
   path: '/character/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminPerformanceRoute = AdminPerformanceRouteImport.update({
+  id: '/admin/performance',
+  path: '/admin/performance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -98,10 +110,12 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/admin/performance': typeof AdminPerformanceRoute
   '/character/$id': typeof CharacterIdRoute
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/admin': typeof AdminIndexRoute
   '/sp': typeof SpIndexRoute
 }
 export interface FileRoutesByTo {
@@ -113,10 +127,12 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/admin/performance': typeof AdminPerformanceRoute
   '/character/$id': typeof CharacterIdRoute
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/admin': typeof AdminIndexRoute
   '/sp': typeof SpIndexRoute
 }
 export interface FileRoutesById {
@@ -129,10 +145,12 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/admin/performance': typeof AdminPerformanceRoute
   '/character/$id': typeof CharacterIdRoute
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/admin/': typeof AdminIndexRoute
   '/sp/': typeof SpIndexRoute
 }
 export interface FileRouteTypes {
@@ -146,10 +164,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/register'
     | '/settings'
+    | '/admin/performance'
     | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/admin'
     | '/sp'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -161,10 +181,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/register'
     | '/settings'
+    | '/admin/performance'
     | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/admin'
     | '/sp'
   id:
     | '__root__'
@@ -176,10 +198,12 @@ export interface FileRouteTypes {
     | '/logs'
     | '/register'
     | '/settings'
+    | '/admin/performance'
     | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/admin/'
     | '/sp/'
   fileRoutesById: FileRoutesById
 }
@@ -192,10 +216,12 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   RegisterRoute: typeof RegisterRoute
   SettingsRoute: typeof SettingsRoute
+  AdminPerformanceRoute: typeof AdminPerformanceRoute
   CharacterIdRoute: typeof CharacterIdRoute
   CharacterCreateRoute: typeof CharacterCreateRoute
   GameSessionIdRoute: typeof GameSessionIdRoute
   GameStartRoute: typeof GameStartRoute
+  AdminIndexRoute: typeof AdminIndexRoute
   SpIndexRoute: typeof SpIndexRoute
 }
 
@@ -206,13 +232,6 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/exploration': {
-      id: '/exploration'
-      path: '/exploration'
-      fullPath: '/exploration'
-      preLoaderRoute: typeof ExplorationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -234,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exploration': {
+      id: '/exploration'
+      path: '/exploration'
+      fullPath: '/exploration'
+      preLoaderRoute: typeof ExplorationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -264,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/game/start': {
       id: '/game/start'
       path: '/game/start'
@@ -292,6 +325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CharacterIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/performance': {
+      id: '/admin/performance'
+      path: '/admin/performance'
+      fullPath: '/admin/performance'
+      preLoaderRoute: typeof AdminPerformanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -304,10 +344,12 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   RegisterRoute: RegisterRoute,
   SettingsRoute: SettingsRoute,
+  AdminPerformanceRoute: AdminPerformanceRoute,
   CharacterIdRoute: CharacterIdRoute,
   CharacterCreateRoute: CharacterCreateRoute,
   GameSessionIdRoute: GameSessionIdRoute,
   GameStartRoute: GameStartRoute,
+  AdminIndexRoute: AdminIndexRoute,
   SpIndexRoute: SpIndexRoute,
 }
 export const routeTree = rootRouteImport

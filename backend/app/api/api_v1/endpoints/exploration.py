@@ -7,7 +7,7 @@ import random
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, and_, select, col
+from sqlmodel import Session, and_, col, select
 
 from app.api.deps import get_current_active_user, get_user_character
 from app.core.database import get_session as get_db
@@ -90,7 +90,7 @@ async def get_available_locations(
         select(LocationConnection).where(
             and_(
                 col(LocationConnection.from_location_id) == current_character.location_id,
-                col(LocationConnection.is_blocked) == False,
+                col(LocationConnection.is_blocked).is_(False),
             )
         )
     ).all()

@@ -1,11 +1,10 @@
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
-from app.models.user_role import UserRole, RoleType
+from app.models.user_role import RoleType, UserRole
 
 
 async def get_current_admin_user(
@@ -21,11 +20,11 @@ async def get_current_admin_user(
         UserRole.role == RoleType.ADMIN
     )
     admin_role = db.exec(stmt).first()
-    
+
     if not admin_role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
         )
-    
+
     return current_user

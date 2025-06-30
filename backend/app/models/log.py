@@ -229,3 +229,36 @@ class LogContract(SQLModel, table=True):
 
 # GameSession モデルに以下を追加:
 # log_fragments: list[LogFragment] = Relationship(back_populates="session")
+
+
+class ActionLog(SQLModel, table=True):
+    """
+    アクションログ（ActionLog）
+    プレイヤーのアクションとAIの応答を記録し、
+    パフォーマンスメトリクスを追跡するためのモデル。
+    """
+
+    __tablename__ = "action_logs"
+
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    session_id: str = Field(foreign_key="game_sessions.id", index=True)
+    character_id: str = Field(foreign_key="characters.id", index=True)
+
+    # アクション情報
+    action_type: str = Field(description="アクションのタイプ（explore, combat, dialogue等）")
+    action_content: str = Field(description="アクションの内容")
+    response_content: str = Field(description="AIの応答内容")
+
+    # パフォーマンスデータ
+    performance_data: Optional[dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON),
+        description="パフォーマンスメトリクス（実行時間、エージェント情報等）"
+    )
+
+    # タイムスタンプ
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # リレーションシップ
+    session: Optional["GameSession"] = Relationship(back_populates="action_logs")
+    character: Optional["Character"] = Relationship(back_populates="action_logs")
