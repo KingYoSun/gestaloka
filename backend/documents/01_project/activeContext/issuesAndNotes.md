@@ -4,26 +4,23 @@
 
 ## 現在の問題
 
-### 戦闘システムのレスポンス構造問題（2025/06/30）
-- **問題**: ActionExecuteResponseにbattle_stateフィールドがない
-- **詳細**: 
-  - レスポンスのmetadataフィールドに戦闘情報が含まれている
-  - GameSessionService.execute_actionのパラメータ名が不一致
-  - パラメータ名: action_descriptionが期待されているがaction_textを渡している
-- **影響**: PostgreSQLベースの戦闘統合テストが失敗
-- **対応策**: 
-  - レスポンス構造の正確な理解が必要
-  - サービス層のインターフェース確認
-  - テストコードの修正
+### テスト失敗（修正完了: 2025/06/30）
+- **状況**: 全225件のテストが成功（100%成功率）
+- **修正内容**: 
+  - AI派遣シミュレーション関連の3件のテストを修正
+  - MagicMockから実際のPydanticモデルインスタンスに変更
+  - 存在しないobjective_detailsフィールドの削除
+- **詳細**: `documents/01_project/progressReports/2025-06-30_テスト修正完了.md`参照
 
 ### 型チェックエラー（バックエンド）
-- **件数**: 39件
+- **件数**: 82件（AI統合により増加）
 - **状況**: 既存コードの型定義不足によるもの
 - **影響**: 動作には影響なし、型安全性の問題
 - **主な箇所**:
   - SQLAlchemyクエリの型定義
   - Alembicマイグレーションファイル
-  - AIエージェント関連のコード
+  - AIエージェント関連のコード（特に新規追加ファイル）
+  - dispatch_tasks.py、dispatch_simulator.py、dispatch_interaction.py
 
 ### ESLint警告（フロントエンド）
 - **件数**: 22件
