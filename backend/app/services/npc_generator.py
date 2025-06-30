@@ -41,7 +41,7 @@ class NPCGenerator:
             self._npc_manager = NPCManagerAgent()
         return self._npc_manager
 
-    async def generate_npc_from_log(
+    def generate_npc_from_log(
         self,
         completed_log_id: uuid.UUID,
         target_location_name: Optional[str] = None,
@@ -121,13 +121,14 @@ class NPCGenerator:
         logger.info("NPC profile created", npc_profile=npc_profile)
 
         # 契約がある場合は関連付けを更新
-        if contract_id:
-            contract_stmt = select(LogContract).where(LogContract.id == contract_id)
-            contract = self.session.exec(contract_stmt).first()
-            if contract:
-                contract.npc_id = npc_node.npc_id
-                self.session.add(contract)
-                self.session.commit()
+        # TODO: LogContractモデルにnpc_idフィールドを追加後、この処理を有効化する
+        # if contract_id:
+        #     contract_stmt = select(LogContract).where(LogContract.id == contract_id)
+        #     contract = self.session.exec(contract_stmt).first()
+        #     if contract:
+        #         contract.npc_id = npc_node.npc_id
+        #         self.session.add(contract)
+        #         self.session.commit()
 
         logger.info(
             "NPC generated successfully", npc_id=npc_node.npc_id, npc_name=npc_node.name, location=target_location_name
@@ -135,7 +136,7 @@ class NPCGenerator:
 
         return npc_profile
 
-    async def process_accepted_contracts(self):
+    def process_accepted_contracts(self):
         """
         受け入れられたログ契約を処理してNPCを生成
 
@@ -151,7 +152,7 @@ class NPCGenerator:
                 target_location = "共通広場"  # デフォルトの出現場所
 
                 # NPCを生成
-                npc_profile = await self.generate_npc_from_log(
+                npc_profile = self.generate_npc_from_log(
                     completed_log_id=contract.completed_log_id,
                     target_location_name=target_location,
                     contract_id=contract.id,

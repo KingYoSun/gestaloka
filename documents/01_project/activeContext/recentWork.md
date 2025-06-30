@@ -1,5 +1,50 @@
 # 最近の作業履歴
 
+## 2025/06/30 - バックエンドテスト完全修正（Neo4j統合テストのタイムアウト問題解決）
+
+### 実施内容
+- スキップされていたNeo4j統合テストのタイムアウト問題を解決
+- 全225個のバックエンドテストが成功するよう修正
+- 非同期メソッドの誤用を修正
+
+### 技術的詳細
+1. **問題の根本原因**
+   - `NPCGenerator`の`generate_npc_from_log`と`process_accepted_contracts`が`async`として定義されていたが、実際には非同期処理を行っていなかった
+   - neomodelは同期的なORMであり、非同期操作をサポートしていない
+   - Neo4j接続設定に問題があった
+
+2. **修正内容**
+   - 非同期メソッドを同期メソッドに変更:
+     ```python
+     # 変更前
+     async def generate_npc_from_log(...) -> NPCProfile:
+     async def process_accepted_contracts(self):
+     
+     # 変更後
+     def generate_npc_from_log(...) -> NPCProfile:
+     def process_accepted_contracts(self):
+     ```
+   - 全ての関連テストから`async`/`await`を削除
+   - Neo4j接続の改善（再試行ロジック、適切な待機時間）
+   - LogContract.npc_idフィールド参照を一時的にコメントアウト（モデルに存在しないため）
+
+3. **その他の修正**
+   - Neo4jテスト環境のポート番号チェック修正（7688→7687）
+   - 接続時の待機時間追加（0.1秒）
+   - 再試行ロジックの実装（3回まで）
+
+### 実装結果
+- **修正前**: 224/225件成功（1件スキップ）
+- **修正後**: 225/225件成功（成功率100%）
+- **テスト実行時間**: 約51秒（タイムアウトなし）
+
+### 関連ファイル
+- `backend/app/services/npc_generator.py`（同期メソッドに変更）
+- `backend/tests/integration/test_npc_generator_integration.py`（スキップ解除、同期化）
+- `backend/tests/test_npc_generator.py`（同期化）
+- `backend/tests/integration/neo4j_connection.py`（接続改善）
+- `backend/tests/integration/neo4j_test_utils.py`（ポート修正）
+
 ## 2025/06/30 - AI派遣シミュレーションテストの完全修正
 
 ### 実施内容

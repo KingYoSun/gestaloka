@@ -5,6 +5,7 @@ Neo4j統合テスト用接続管理
 """
 
 import os
+import time
 from contextlib import contextmanager
 
 from neomodel import config as neo_config
@@ -19,6 +20,7 @@ def get_test_neo4j_url() -> str:
     username = os.getenv("NEO4J_TEST_USERNAME", "neo4j")
     password = os.getenv("NEO4J_TEST_PASSWORD", "test_password")
 
+    # neomodelはURLパラメータをサポートしないため、基本的なURLのみを返す
     return f"bolt://{username}:{password}@{host}:{port}"
 
 
@@ -34,6 +36,8 @@ def ensure_test_connection():
         if hasattr(neo_db, '_driver') and neo_db._driver:
             try:
                 neo_db._driver.close()
+                # ドライバーの完全なクローズを待つ
+                time.sleep(0.1)
             except Exception:
                 pass
             neo_db._driver = None
@@ -72,13 +76,19 @@ def test_neo4j_connection():
             neo_db._driver = original_driver
 
 
-def verify_test_connection() -> bool:
+def verify_test_connection(retries: int = 3) -> bool:
     """テスト用Neo4j接続を検証"""
-    try:
-        ensure_test_connection()
-        # 簡単なクエリで接続を確認
-        result, _ = neo_db.cypher_query("RETURN 1 as test")
-        return result[0][0] == 1
-    except Exception as e:
-        print(f"Neo4j test connection verification failed: {e}")
-        return False
+    for attempt in range(retries):
+        try:
+            ensure_test_connection()
+            # 簡単なクエリで接続を確認
+            result, _ = neo_db.cypher_query("RETURN 1 as test")
+            return result[0][0] == 1
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"Neo4j test connection attempt {attempt + 1} failed: {e}. Retrying...")
+                time.sleep(1)
+            else:
+                print(f"Neo4j test connection verification failed after {retries} attempts: {e}")
+                return False
+    return False

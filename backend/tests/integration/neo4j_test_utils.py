@@ -19,7 +19,7 @@ def cleanup_all_neo4j_data():
     """
     try:
         # 現在の接続がテスト用Neo4jを指していることを確認
-        if "neo4j-test" not in neo_config.DATABASE_URL and "7688" not in neo_config.DATABASE_URL:
+        if "neo4j-test" not in neo_config.DATABASE_URL and "7687" not in neo_config.DATABASE_URL:
             print(f"Warning: Not connected to test Neo4j instance. Skipping cleanup. Current URL: {neo_config.DATABASE_URL}")
             return
 

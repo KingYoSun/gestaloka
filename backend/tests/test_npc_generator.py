@@ -49,8 +49,7 @@ def mock_log_contract(mock_completed_log):
     )
 
 
-@pytest.mark.asyncio
-async def test_generate_npc_from_log(mock_completed_log):
+def test_generate_npc_from_log(mock_completed_log):
     """CompletedLogからNPCを生成するテスト"""
     # モックセッション
     mock_session = MagicMock(spec=Session)
@@ -86,7 +85,7 @@ async def test_generate_npc_from_log(mock_completed_log):
                     generator = NPCGenerator(mock_session)
 
                     # NPCを生成
-                    result = await generator.generate_npc_from_log(
+                    result = generator.generate_npc_from_log(
                         completed_log_id=mock_completed_log.id, target_location_name="共通広場"
                     )
 
@@ -106,8 +105,7 @@ async def test_generate_npc_from_log(mock_completed_log):
                     # register_npcは統合版では呼ばれない（TODO削除されているため）
 
 
-@pytest.mark.asyncio
-async def test_process_accepted_contracts(mock_completed_log, mock_log_contract):
+def test_process_accepted_contracts(mock_completed_log, mock_log_contract):
     """受け入れられた契約を処理するテスト"""
     # モックセッション
     mock_session = MagicMock(spec=Session)
@@ -144,7 +142,7 @@ async def test_process_accepted_contracts(mock_completed_log, mock_log_contract)
                 generator = NPCGenerator(mock_session)
 
                 # 契約を処理
-                await generator.process_accepted_contracts()
+                generator.process_accepted_contracts()
 
                 # 契約ステータスが更新されたことを確認
                 # Neo4j接続エラーが発生した場合、ステータスは変更されない

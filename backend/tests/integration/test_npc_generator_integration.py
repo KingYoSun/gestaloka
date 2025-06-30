@@ -13,7 +13,7 @@ import pytest
 from sqlmodel import Session
 
 from app.models.character import Character, GameSession
-from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus, LogFragment
+from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus, LogFragment, EmotionalValence, LogFragmentRarity
 from app.models.user import User
 from app.services.npc_generator import NPCGenerator
 from tests.integration.base_neo4j_test import BaseNeo4jIntegrationTest
@@ -67,15 +67,10 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         # テスト後のクリーンアップ
         cleanup_all_neo4j_data()
 
-    @pytest.fixture(scope="function")
-    def test_session(self):
-        """テスト用SQLセッション"""
-        # isolated_postgres_testを使用してクリーンな環境を提供
-        with isolated_postgres_test(recreate=True) as session:
-            yield session
+    # test_sessionフィクスチャーを削除し、conftest.pyのtest_db_sessionを使用
 
     @pytest.fixture
-    def test_user(self, test_session: Session) -> User:
+    def test_user(self, test_db_session: Session) -> User:
         """テスト用ユーザー"""
         user = User(
             id=str(uuid.uuid4()),
@@ -86,13 +81,13 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        test_session.add(user)
-        test_session.commit()
-        test_session.refresh(user)
+        test_db_session.add(user)
+        test_db_session.commit()
+        test_db_session.refresh(user)
         return user
 
     @pytest.fixture
-    def test_character(self, test_session: Session, test_user: User) -> Character:
+    def test_character(self, test_db_session: Session, test_user: User) -> Character:
         """テスト用キャラクター"""
         from app.models.character import Character
 
@@ -106,13 +101,13 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        test_session.add(character)
-        test_session.commit()
-        test_session.refresh(character)
+        test_db_session.add(character)
+        test_db_session.commit()
+        test_db_session.refresh(character)
         return character
 
     @pytest.fixture
-    def test_session_obj(self, test_session: Session, test_character: Character) -> GameSession:
+    def test_session_obj(self, test_db_session: Session, test_character: Character) -> GameSession:
         """テスト用ゲームセッション"""
         from app.models.character import GameSession
 
@@ -123,13 +118,13 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        test_session.add(game_session)
-        test_session.commit()
-        test_session.refresh(game_session)
+        test_db_session.add(game_session)
+        test_db_session.commit()
+        test_db_session.refresh(game_session)
         return game_session
 
     @pytest.fixture
-    def test_log_fragment(self, test_session: Session, test_character: Character, test_session_obj: GameSession) -> LogFragment:
+    def test_log_fragment(self, test_db_session: Session, test_character: Character, test_session_obj: GameSession) -> LogFragment:
         """テスト用ログフラグメント"""
         from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
 
@@ -144,13 +139,13 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             importance_score=0.8,
             created_at=datetime.utcnow(),
         )
-        test_session.add(fragment)
-        test_session.commit()
-        test_session.refresh(fragment)
+        test_db_session.add(fragment)
+        test_db_session.commit()
+        test_db_session.refresh(fragment)
         return fragment
 
     @pytest.fixture
-    def completed_log(self, test_session: Session, test_character: Character, test_log_fragment: LogFragment) -> CompletedLog:
+    def completed_log(self, test_db_session: Session, test_character: Character, test_log_fragment: LogFragment) -> CompletedLog:
         """テスト用完成ログ"""
         log = CompletedLog(
             id=str(uuid.uuid4()),
@@ -167,22 +162,21 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        test_session.add(log)
-        test_session.commit()
-        test_session.refresh(log)
+        test_db_session.add(log)
+        test_db_session.commit()
+        test_db_session.refresh(log)
         return log
 
     @pytest.fixture
-    def npc_generator(self, test_session: Session, neo4j_test_db) -> NPCGenerator:
+    def npc_generator(self, test_db_session: Session, neo4j_test_db) -> NPCGenerator:
         """テスト用NPCGenerator"""
         # Neo4j接続が正しく設定されていることを確認
-        generator = NPCGenerator(test_session)
+        generator = NPCGenerator(test_db_session)
         yield generator
         # クリーンアップ
-        test_session.rollback()  # 未コミットの変更をロールバック
+        test_db_session.rollback()  # 未コミットの変更をロールバック
 
-    @pytest.mark.asyncio
-    async def test_generate_npc_from_log_with_real_neo4j(
+    def test_generate_npc_from_log_with_real_neo4j(
         self,
         neo4j_test_db,
         npc_generator: NPCGenerator,
@@ -209,7 +203,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                     neo_db._driver = None
 
                 # NPCを生成
-                npc_profile = await npc_generator.generate_npc_from_log(
+                npc_profile = npc_generator.generate_npc_from_log(
                     completed_log_id=completed_log.id,
                     target_location_name="テスト広場",
                 )
@@ -242,8 +236,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             assert len(location_rels) == 1
             assert location_rels[0].name == "テスト広場"
 
-    @pytest.mark.asyncio
-    async def test_get_npcs_in_location_with_real_neo4j(
+    def test_get_npcs_in_location_with_real_neo4j(
         self,
         neo4j_test_db,
         npc_generator: NPCGenerator,
@@ -280,7 +273,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                     npc_generator.session.commit()
 
                     # NPCを生成
-                    profile = await npc_generator.generate_npc_from_log(
+                    profile = npc_generator.generate_npc_from_log(
                         completed_log_id=log.id,
                         target_location_name=location,
                     )
@@ -298,8 +291,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                 assert len(npcs_in_tavern) == 1
                 assert npcs_in_tavern[0].name == "テストNPC2"
 
-    @pytest.mark.asyncio
-    async def test_move_npc_with_real_neo4j(
+    def test_move_npc_with_real_neo4j(
         self,
         neo4j_test_db,
         npc_generator: NPCGenerator,
@@ -308,7 +300,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         """実際のNeo4jを使用したNPC移動テスト"""
         with patch.object(npc_generator, "_npc_manager", new=AsyncMock()):
             # NPCを生成
-            npc_profile = await npc_generator.generate_npc_from_log(
+            npc_profile = npc_generator.generate_npc_from_log(
                 completed_log_id=completed_log.id,
                 target_location_name="開始地点",
             )
@@ -330,79 +322,102 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             assert len(npcs_at_destination) == 1
             assert npcs_at_destination[0].npc_id == npc_profile.npc_id
 
-    @pytest.mark.skip(reason="タイムアウト問題のため一時的にスキップ")
-    @pytest.mark.asyncio
-    async def test_process_accepted_contracts_with_real_neo4j(
+    def test_process_accepted_contracts_with_real_neo4j(
         self,
         neo4j_test_db,
-        npc_generator: NPCGenerator,
-        test_user: User,
+        test_db_session: Session,
+        test_character: Character,
     ):
         """実際のNeo4jを使用した契約処理テスト"""
-        # 新しいNPCGeneratorインスタンスを作成（セッションを確実に分離）
-        with isolated_postgres_test(recreate=False) as new_session:
-            new_generator = NPCGenerator(new_session)
+        # 既存のtest_sessionを使用してNPCGeneratorを作成
+        npc_generator = NPCGenerator(test_db_session)
 
-            with patch.object(new_generator, "_npc_manager", new=AsyncMock()):
-                # 複数の完成ログと契約を作成
-                logs = []
-                contracts = []
+        with patch.object(npc_generator, "_npc_manager", new=AsyncMock()):
+            # 複数の完成ログと契約を作成
+            logs = []
+            contracts = []
 
-                for i in range(3):
-                    # 完成ログを作成
-                    log = CompletedLog(
-                        id=uuid.uuid4(),
-                        creator_id=test_user.id,
-                        name=f"契約NPC{i+1}",
-                        title=f"契約タイトル{i+1}",
-                        description=f"契約説明{i+1}",
-                        personality_traits=["trait1"],
-                        behavior_patterns=["pattern1"],
-                        skills=["skill1"],
-                        contamination_level=0,
-                        status=CompletedLogStatus.ACTIVE,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    new_session.add(log)
-                    new_session.commit()  # 各ログを個別にコミット
-                    new_session.refresh(log)
-                    logs.append(log)
+            # 最初にゲームセッションを作成
+            game_session = GameSession(
+                id=str(uuid.uuid4()),
+                character_id=test_character.id,
+                is_active=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            test_db_session.add(game_session)
+            test_db_session.commit()
+            
+            for i in range(3):
+                # まずログフラグメントを作成
+                fragment = LogFragment(
+                    id=str(uuid.uuid4()),
+                    character_id=test_character.id,
+                    session_id=game_session.id,
+                    action_description=f"契約フラグメント{i+1}",
+                    keywords=[f"keyword{i+1}"],
+                    emotional_valence=EmotionalValence.POSITIVE,
+                    rarity=LogFragmentRarity.COMMON,
+                    importance_score=0.5,
+                    created_at=datetime.utcnow(),
+                )
+                test_db_session.add(fragment)
+                test_db_session.commit()
+                
+                # 完成ログを作成
+                log = CompletedLog(
+                    id=str(uuid.uuid4()),
+                    creator_id=test_character.id,
+                    core_fragment_id=fragment.id,
+                    name=f"契約NPC{i+1}",
+                    title=f"契約タイトル{i+1}",
+                    description=f"契約説明{i+1}",
+                    personality_traits=["trait1"],
+                    behavior_patterns=["pattern1"],
+                    skills=["skill1"],
+                    contamination_level=0,
+                    status=CompletedLogStatus.ACTIVE,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+                test_db_session.add(log)
+                test_db_session.commit()  # 各ログを個別にコミット
+                test_db_session.refresh(log)
+                logs.append(log)
 
-                    # 契約を作成（最初の2つはACCEPTED、最後の1つはPENDING）
-                    contract = LogContract(
-                        id=uuid.uuid4(),
-                        completed_log_id=log.id,
-                        publisher_id=test_user.id,
-                        contractor_id=test_user.id if i < 2 else None,
-                        status=LogContractStatus.ACCEPTED if i < 2 else LogContractStatus.PENDING,
-                        reward_amount=100,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    new_session.add(contract)
-                    new_session.commit()  # 各契約を個別にコミット
-                    contracts.append(contract)
+                # 契約を作成（最初の2つはACCEPTED、最後の1つはPENDING）
+                contract = LogContract(
+                    id=str(uuid.uuid4()),
+                    completed_log_id=log.id,
+                    creator_id=test_character.id,
+                    host_character_id=test_character.id if i < 2 else None,
+                    behavior_guidelines="テスト行動指針",
+                    status=LogContractStatus.ACCEPTED if i < 2 else LogContractStatus.PENDING,
+                    created_at=datetime.utcnow(),
+                )
+                test_db_session.add(contract)
+                test_db_session.commit()  # 各契約を個別にコミット
+                contracts.append(contract)
 
-                # 契約を処理
-                await new_generator.process_accepted_contracts()
+            # 契約を処理
+            npc_generator.process_accepted_contracts()
 
-                # 結果を確認
-                # DEPLOYEDステータスの契約が2つあるはず
-                deployed_contracts = new_session.query(LogContract).filter(
-                    LogContract.status == LogContractStatus.DEPLOYED
-                ).all()
-                assert len(deployed_contracts) == 2
+            # 結果を確認
+            # DEPLOYEDステータスの契約が2つあるはず
+            deployed_contracts = test_db_session.query(LogContract).filter(
+                LogContract.status == LogContractStatus.DEPLOYED
+            ).all()
+            assert len(deployed_contracts) == 2
 
-                # NPCが実際に生成されているか確認
-                npcs_in_square = new_generator.get_npcs_in_location("共通広場")
-                assert len(npcs_in_square) == 2
-                npc_names = {npc.name for npc in npcs_in_square}
-                assert "契約NPC1" in npc_names
-                assert "契約NPC2" in npc_names
+            # NPCが実際に生成されているか確認
+            npcs_in_square = npc_generator.get_npcs_in_location("共通広場")
+            assert len(npcs_in_square) == 2
+            npc_names = {npc.name for npc in npcs_in_square}
+            assert "契約NPC1" in npc_names
+            assert "契約NPC2" in npc_names
 
-                # PENDINGの契約は処理されていないことを確認
-                pending_contracts = new_session.query(LogContract).filter(
-                    LogContract.status == LogContractStatus.PENDING
-                ).all()
-                assert len(pending_contracts) == 1
+            # PENDINGの契約は処理されていないことを確認
+            pending_contracts = test_db_session.query(LogContract).filter(
+                LogContract.status == LogContractStatus.PENDING
+            ).all()
+            assert len(pending_contracts) == 1
