@@ -5,7 +5,6 @@ APIルーター v1
 from fastapi import APIRouter
 
 from app.api.api_v1.endpoints import (
-    admin,
     auth,
     characters,
     config,
@@ -18,6 +17,7 @@ from app.api.api_v1.endpoints import (
     users,
     websocket,
 )
+from app.api.v1.admin import router as admin_router
 
 api_router = APIRouter()
 
@@ -31,6 +31,6 @@ api_router.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"]
 api_router.include_router(exploration.router, prefix="/exploration", tags=["exploration"])
 api_router.include_router(npcs.router, prefix="/npcs", tags=["npcs"])
 api_router.include_router(sp.router, prefix="/sp", tags=["sp"])
-api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
 api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(config.router, prefix="/config", tags=["config"])

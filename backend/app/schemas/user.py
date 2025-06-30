@@ -3,7 +3,7 @@
 """
 
 from datetime import datetime
-from typing import ClassVar, Optional
+from typing import ClassVar, Optional, List
 
 from pydantic import BaseModel, EmailStr, Field, validator
 
@@ -51,6 +51,7 @@ class User(UserBase):
     id: str
     is_active: bool = True
     is_verified: bool = False
+    roles: List[str] = Field(default_factory=list, description="ユーザーのロール一覧")
     created_at: datetime
     updated_at: datetime
 

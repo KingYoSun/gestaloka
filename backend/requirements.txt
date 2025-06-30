@@ -12,6 +12,7 @@ neomodel==5.4.1
 # 認証関連
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1  # passlib互換性のため固定
 python-keycloak==5.5.1
 
 # LLM・AI関連
@@ -62,7 +63,7 @@ opentelemetry-sdk==1.29.0
 
 # セキュリティ
 cryptography==44.0.0
-bcrypt==4.2.1
+bcrypt==4.0.1  # 4.1.1以降でpasslibとの互換性問題があるため固定
 
 # 日時処理
 python-dateutil==2.9.0.post0

@@ -45,9 +45,11 @@
 - ✅ 派遣ログAI駆動シミュレーション（8種類の目的別活動、相互作用）
 - ✅ SP購入システムの実装（テストモード、環境変数制御、WebSocket統合）
 - ✅ ログNPC遭遇システムのフロントエンド改善（UI/UX向上、アニメーション）
+- ✅ 管理者用画面とパフォーマンス測定機能（管理者認証、リアルタイム監視）
 
 ## 利用可能なURL
 - **フロントエンド**: http://localhost:3000
+- **管理画面**: http://localhost:3000/admin（管理者のみ）
 - **API ドキュメント**: http://localhost:8000/docs
 - **Neo4j ブラウザ**: http://localhost:7474
 - **ヘルスチェック**: http://localhost:8000/health
@@ -87,6 +89,7 @@
 
 ### LLM
 - Gemini 2.5 Pro (安定版: gemini-2.5-pro)
+- Gemini 2.5 Flash (高速版: gemini-2.5-flash)
 
 ### インフラ
 - Docker Compose
@@ -94,6 +97,14 @@
 - Celery（Worker/Beat/Flower）
 
 ## 最近の変更（2025/06/30）
+- 管理者用画面とAIパフォーマンス測定機能の実装
+  - 管理者専用APIエンドポイント（/api/v1/admin/performance/）
+  - ロールベースアクセス制御（RBAC）の実装
+  - user_rolesテーブルの追加とマイグレーション
+  - パフォーマンス測定ダッシュボード（統計、リアルタイム監視、テスト実行）
+  - デフォルト管理者アカウントの作成（admin/Admin123456!）
+  - bcrypt互換性問題の対応（4.0.1に固定）
+  - 詳細は`documents/01_project/progressReports/2025-06-30_管理画面とAIパフォーマンス測定機能の実装.md`参照
 - AI応答時間の最適化実装
   - GM AIエージェント別のLLMモデル切り替え機能追加
   - 軽量モデル（gemini-2.5-flash）と標準モデル（gemini-2.5-pro）の使い分け
@@ -209,6 +220,7 @@
 
 ### PostgreSQLテーブル
 - users
+- user_roles
 - characters
 - character_stats
 - skills
@@ -234,6 +246,7 @@
 ### ENUMタイプ
 - skilllogtype
 - sphistorytype
+- roletype
 
 ## 環境設定
 - **Docker Compose**: 全サービスが正常稼働

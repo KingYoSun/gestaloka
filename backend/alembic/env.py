@@ -43,6 +43,7 @@ from app.models.sp_purchase import SPPurchase  # noqa
 # 全てのモデルをインポート（自動生成のため必須）
 # 重要: モデルの追加時は必ずここにインポートを追加すること
 from app.models.user import User  # noqa
+from app.models.user_role import UserRole  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

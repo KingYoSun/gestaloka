@@ -2,13 +2,14 @@
 ユーザーサービス
 """
 
-from typing import Optional
+from typing import Optional, List
 
 from passlib.context import CryptContext
 from sqlmodel import Session, select
 
 from app.core.logging import LoggerMixin
 from app.models.user import User as UserModel
+from app.models.user_role import UserRole, RoleType
 from app.schemas.user import User, UserCreate, UserUpdate
 from app.utils.security import generate_uuid
 
@@ -21,6 +22,17 @@ class UserService(LoggerMixin):
     def __init__(self, db: Session):
         super().__init__()
         self.db = db
+    
+    async def _get_user_roles(self, user_id: str) -> List[str]:
+        """ユーザーのロールを取得"""
+        try:
+            statement = select(UserRole).where(UserRole.user_id == user_id)
+            result = self.db.exec(statement)
+            roles = result.all()
+            return [role.role.value for role in roles]
+        except Exception as e:
+            self.log_error("Failed to get user roles", user_id=user_id, error=str(e))
+            return []
 
     async def get_by_id(self, user_id: str) -> Optional[User]:
         """IDでユーザーを取得"""
@@ -28,7 +40,16 @@ class UserService(LoggerMixin):
             statement = select(UserModel).where(UserModel.id == user_id)
             result = self.db.exec(statement)
             user = result.first()
-            return User.model_validate(user) if user else None
+            if not user:
+                return None
+            
+            # ロール情報を取得
+            roles = await self._get_user_roles(user_id)
+            
+            # Userスキーマに変換
+            user_schema = User.model_validate(user)
+            user_schema.roles = roles
+            return user_schema
         except Exception as e:
             self.log_error("Failed to get user by ID", user_id=user_id, error=str(e))
             raise
@@ -39,7 +60,16 @@ class UserService(LoggerMixin):
             statement = select(UserModel).where(UserModel.username == username)
             result = self.db.exec(statement)
             user = result.first()
-            return User.model_validate(user) if user else None
+            if not user:
+                return None
+            
+            # ロール情報を取得
+            roles = await self._get_user_roles(user.id)
+            
+            # Userスキーマに変換
+            user_schema = User.model_validate(user)
+            user_schema.roles = roles
+            return user_schema
         except Exception as e:
             self.log_error("Failed to get user by username", username=username, error=str(e))
             raise
@@ -50,7 +80,16 @@ class UserService(LoggerMixin):
             statement = select(UserModel).where(UserModel.email == email)
             result = self.db.exec(statement)
             user = result.first()
-            return User.model_validate(user) if user else None
+            if not user:
+                return None
+            
+            # ロール情報を取得
+            roles = await self._get_user_roles(user.id)
+            
+            # Userスキーマに変換
+            user_schema = User.model_validate(user)
+            user_schema.roles = roles
+            return user_schema
         except Exception as e:
             self.log_error("Failed to get user by email", email=email, error=str(e))
             raise
@@ -74,9 +113,22 @@ class UserService(LoggerMixin):
             self.db.add(user_model)
             self.db.commit()
             self.db.refresh(user_model)
+            
+            # デフォルトのplayerロールを付与
+            default_role = UserRole(
+                id=generate_uuid(),
+                user_id=user_model.id,
+                role=RoleType.PLAYER
+            )
+            self.db.add(default_role)
+            self.db.commit()
 
             self.log_info("User created", user_id=user_model.id, username=user_create.username)
-            return User.model_validate(user_model)
+            
+            # ロール情報を含めて返す
+            user_schema = User.model_validate(user_model)
+            user_schema.roles = [RoleType.PLAYER.value]
+            return user_schema
 
         except Exception as e:
             self.db.rollback()
