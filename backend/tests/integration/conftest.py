@@ -53,25 +53,51 @@ def test_db_session():
 
     各テストに対して独立したデータベース環境を提供
     """
-    with isolated_postgres_test(recreate=True) as session:
+    # 直接データベース接続を作成
+    from sqlalchemy import create_engine
+    from sqlmodel import Session, SQLModel
+    from tests.integration.postgres_test_utils import get_test_database_url, cleanup_all_postgres_data
+    
+    database_url = get_test_database_url()
+    engine = create_engine(database_url, pool_pre_ping=True)
+    
+    # データクリーンアップ
+    cleanup_all_postgres_data(engine)
+    
+    # モデルをインポート（必要最小限のみ）
+    from app.models.user import User
+    from app.models.character import Character, GameSession
+    from app.models.log import LogFragment, CompletedLog, LogContract
+    
+    # テーブル作成
+    SQLModel.metadata.create_all(engine)
+    
+    # セッション作成
+    session = Session(engine)
+    
+    try:
         yield session
+    finally:
+        session.close()
+        cleanup_all_postgres_data(engine)
+        engine.dispose()
 
 
-@pytest.fixture(autouse=True)
-def auto_cleanup_for_integration_tests(request):
-    """
-    統合テストマーカーが付いたテストで自動的にクリーンアップを実行
-    """
-    if request.node.get_closest_marker("integration"):
-        # テスト前のクリーンアップ
-        ensure_test_connection()
-        cleanup_all_neo4j_data()
-
-        yield
-
-        # テスト後のクリーンアップ
-        cleanup_all_neo4j_data()
-    else:
-        yield
+# @pytest.fixture(autouse=True)
+# def auto_cleanup_for_integration_tests(request):
+#     """
+#     統合テストマーカーが付いたテストで自動的にクリーンアップを実行
+#     """
+#     if request.node.get_closest_marker("integration"):
+#         # テスト前のクリーンアップ
+#         ensure_test_connection()
+#         cleanup_all_neo4j_data()
+#
+#         yield
+#
+#         # テスト後のクリーンアップ
+#         cleanup_all_neo4j_data()
+#     else:
+#         yield
 
 
