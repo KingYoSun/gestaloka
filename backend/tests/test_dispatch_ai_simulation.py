@@ -152,20 +152,22 @@ async def test_simulate_interaction_with_encounter(
         with patch.object(simulator, "_generate_encounter_narrative") as mock_narrative:
             mock_narrative.return_value = "商人ギルド員との商談が行われた。"
 
-            mock_db = MagicMock(spec=Session)
+            # ランダム関数をモックして、必ず遭遇が発生するようにする
+            with patch("app.services.ai.dispatch_simulator.random.random", return_value=0.1):
+                mock_db = MagicMock(spec=Session)
 
-            # シミュレーション実行
-            activity = await simulator.simulate_activity(
-                dispatch=mock_dispatch_interact,
-                completed_log=mock_completed_log,
-                db=mock_db,
-            )
+                # シミュレーション実行
+                activity = await simulator.simulate_activity(
+                    dispatch=mock_dispatch_interact,
+                    completed_log=mock_completed_log,
+                    db=mock_db,
+                )
 
-            # 結果の検証
-            assert activity.encounter is not None
-            assert "商人ギルド員" in activity.action
-            assert activity.success_level > 0.7
-            assert len(activity.relationship_changes) > 0
+                # 結果の検証
+                assert activity.encounter is not None
+                assert "商人ギルド員" in activity.action
+                assert activity.success_level > 0.7
+                assert len(activity.relationship_changes) > 0
 
 
 @pytest.mark.asyncio
