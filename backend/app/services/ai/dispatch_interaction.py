@@ -21,6 +21,8 @@ from app.models.log_dispatch import (
     LogDispatch,
 )
 from app.services.ai.agents.dramatist import DramatistAgent
+from app.services.ai.gemini_factory import get_gemini_client_for_agent
+from app.services.ai.model_types import AIAgentType
 from app.services.ai.prompt_manager import PromptContext
 
 logger = structlog.get_logger(__name__)
@@ -60,7 +62,9 @@ class DispatchInteractionManager:
 
     def __init__(self):
         """マネージャーの初期化"""
-        self.dramatist = DramatistAgent()
+        # 適切なGeminiクライアントを使用してエージェントを初期化
+        dramatist_client = get_gemini_client_for_agent(AIAgentType.DRAMATIST)
+        self.dramatist = DramatistAgent(gemini_client=dramatist_client)
         self.logger = logger
 
     async def check_and_process_interactions(

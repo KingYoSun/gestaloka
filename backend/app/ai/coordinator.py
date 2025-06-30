@@ -153,6 +153,17 @@ class CoordinatorAI:
 
             # 実行時間を記録
             execution_time = time.time() - start_time
+            
+            # 各エージェントの平均実行時間を計算
+            agent_stats = {}
+            for agent_name, times in self.task_execution_times.items():
+                if times:
+                    agent_stats[agent_name] = {
+                        'avg_time': sum(times) / len(times),
+                        'total_calls': len(times),
+                        'total_time': sum(times)
+                    }
+            
             logger.info(
                 "Action processed",
                 session_id=session.id,
@@ -160,6 +171,7 @@ class CoordinatorAI:
                 execution_time=execution_time,
                 task_count=len(tasks),
                 cache_hit_rate=self.response_cache.get_hit_rate(),
+                agent_performance=agent_stats,
             )
 
             return final_response
@@ -328,6 +340,18 @@ class CoordinatorAI:
             # タスクIDを追加
             response.task_id = task_id
             response.processing_time = time.time() - start_time
+
+            # パフォーマンスログ
+            logger.info(
+                "Agent execution completed",
+                agent_name=agent.name,
+                task_id=task_id,
+                processing_time=response.processing_time,
+                model_type=getattr(agent, 'model_type', 'unknown'),
+            )
+
+            # 実行時間を記録
+            self.task_execution_times[agent.name].append(response.processing_time)
 
             # キャッシュに保存
             self.response_cache.set(agent.name, context, response)

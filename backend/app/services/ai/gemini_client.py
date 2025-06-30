@@ -17,6 +17,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from app.core.config import settings
 from app.core.exceptions import AIRateLimitError, AIServiceError, AITimeoutError
+from app.services.ai.model_types import ModelType
 
 logger = structlog.get_logger(__name__)
 
@@ -42,20 +43,30 @@ class GeminiClient:
     エラーハンドリング、リトライ、レート制限の管理を行います。
     """
 
-    def __init__(self, config: Optional[GeminiConfig] = None):
+    def __init__(self, config: Optional[GeminiConfig] = None, model_type: Optional[ModelType] = None):
         """
         Geminiクライアントの初期化
 
         Args:
             config: Gemini設定（省略時はデフォルト設定を使用）
+            model_type: 使用するモデルタイプ（fast/standard）
         """
         self.config = config or GeminiConfig()
+        self.model_type = model_type
         self.logger = logger.bind(service="gemini_client")
+
+        # モデルタイプに応じてモデル名を選択
+        if model_type == ModelType.FAST:
+            model_name = settings.GEMINI_MODEL_FAST
+        elif model_type == ModelType.STANDARD:
+            model_name = settings.GEMINI_MODEL_STANDARD
+        else:
+            model_name = self.config.model
 
         # LangChain ChatGoogleGenerativeAI初期化
         # langchain-google-genai 2.1.5ではtemperatureはmodel_kwargsで設定
         kwargs: dict[str, Any] = {
-            "model": self.config.model,
+            "model": model_name,
             "model_kwargs": {
                 "temperature": self.config.temperature,
             },
@@ -66,8 +77,14 @@ class GeminiClient:
             kwargs["google_api_key"] = settings.GEMINI_API_KEY
 
         self._llm = ChatGoogleGenerativeAI(**kwargs)
+        self._model_name = model_name
 
-        self.logger.info("Gemini client initialized", model=self.config.model, temperature=self.config.temperature)
+        self.logger.info(
+            "Gemini client initialized",
+            model=model_name,
+            model_type=model_type,
+            temperature=self.config.temperature,
+        )
 
     @retry(
         stop=stop_after_attempt(3),
@@ -222,7 +239,7 @@ class GeminiClient:
         if "temperature" in kwargs:
             # temperatureが変更された場合は、LLMインスタンスを再初期化
             llm_kwargs: dict[str, Any] = {
-                "model": self.config.model,
+                "model": self._model_name,
                 "temperature": self.config.temperature,
             }
             if self.config.max_tokens:

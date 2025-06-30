@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     MAX_AI_RETRIES: int = Field(default=3, validation_alias="MAX_AI_RETRIES")
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL")
+    GEMINI_MODEL_FAST: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL_FAST")  # 軽量モデル
+    GEMINI_MODEL_STANDARD: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL_STANDARD")  # 標準モデル
 
     # WebSocket設定
     WS_HEARTBEAT_INTERVAL: int = Field(default=30, validation_alias="WS_HEARTBEAT_INTERVAL")  # 秒

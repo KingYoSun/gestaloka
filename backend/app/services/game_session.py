@@ -37,6 +37,8 @@ from app.services.ai.agents import (
     StateManagerAgent,
     TheWorldAI,
 )
+from app.services.ai.gemini_factory import get_gemini_client_for_agent
+from app.services.ai.model_types import AIAgentType
 
 # from app.services.ai.prompt_manager import PromptContext  # 現在未使用
 from app.services.battle import BattleService
@@ -51,18 +53,26 @@ class GameSessionService:
     def __init__(self, db: Session, websocket_manager=None):
         self.db = db
 
+        # 各AIエージェントに適したGeminiクライアントを取得
+        dramatist_client = get_gemini_client_for_agent(AIAgentType.DRAMATIST)
+        state_manager_client = get_gemini_client_for_agent(AIAgentType.STATE_MANAGER)
+        historian_client = get_gemini_client_for_agent(AIAgentType.HISTORIAN)
+        npc_manager_client = get_gemini_client_for_agent(AIAgentType.NPC_MANAGER)
+        the_world_client = get_gemini_client_for_agent(AIAgentType.THE_WORLD)
+        anomaly_client = get_gemini_client_for_agent(AIAgentType.THE_ANOMALY)
+
         # 個別のAIエージェントを初期化（互換性のため保持）
-        self.dramatist_agent = DramatistAgent()
-        self.state_manager_agent = StateManagerAgent()
+        self.dramatist_agent = DramatistAgent(gemini_client=dramatist_client)
+        self.state_manager_agent = StateManagerAgent(gemini_client=state_manager_client)
 
         # CoordinatorAIを初期化
         agents = {
-            "dramatist": DramatistAgent(),
-            "state_manager": StateManagerAgent(),
-            "historian": HistorianAgent(),
-            "npc_manager": NPCManagerAgent(),
-            "the_world": TheWorldAI(),
-            "anomaly": AnomalyAgent(),
+            "dramatist": DramatistAgent(gemini_client=dramatist_client),
+            "state_manager": StateManagerAgent(gemini_client=state_manager_client),
+            "historian": HistorianAgent(gemini_client=historian_client),
+            "npc_manager": NPCManagerAgent(gemini_client=npc_manager_client),
+            "the_world": TheWorldAI(gemini_client=the_world_client),
+            "anomaly": AnomalyAgent(gemini_client=anomaly_client),
         }
         self.coordinator = CoordinatorAI(agents=agents, websocket_manager=websocket_manager)
 

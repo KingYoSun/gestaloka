@@ -94,6 +94,13 @@
 - Celery（Worker/Beat/Flower）
 
 ## 最近の変更（2025/06/30）
+- AI応答時間の最適化実装
+  - GM AIエージェント別のLLMモデル切り替え機能追加
+  - 軽量モデル（gemini-2.5-flash）と標準モデル（gemini-2.5-pro）の使い分け
+  - 環境変数による柔軟なモデル設定（GEMINI_MODEL_FAST、GEMINI_MODEL_STANDARD）
+  - パフォーマンスログの追加による実行時間の可視化
+  - 期待効果：応答時間を20秒から10-15秒へ短縮（25-50%削減）
+  - 詳細は`documents/01_project/progressReports/2025-06-30_AI応答時間最適化.md`参照
 - AI派遣シミュレーションテストの修正完了
   - 失敗していた3件のテストを全て修正
   - MagicMockから実際のPydanticモデルインスタンスに変更

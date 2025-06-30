@@ -20,6 +20,8 @@ from app.models.log_dispatch import (
 )
 from app.services.ai.agents.dramatist import DramatistAgent
 from app.services.ai.agents.npc_manager import NPCManagerAgent
+from app.services.ai.gemini_factory import get_gemini_client_for_agent
+from app.services.ai.model_types import AIAgentType
 from app.services.ai.prompt_manager import PromptContext
 
 logger = structlog.get_logger(__name__)
@@ -60,8 +62,12 @@ class DispatchSimulator:
 
     def __init__(self):
         """シミュレーターの初期化"""
-        self.dramatist = DramatistAgent()
-        self.npc_manager = NPCManagerAgent()
+        # 適切なGeminiクライアントを使用してエージェントを初期化
+        dramatist_client = get_gemini_client_for_agent(AIAgentType.DRAMATIST)
+        npc_manager_client = get_gemini_client_for_agent(AIAgentType.NPC_MANAGER)
+        
+        self.dramatist = DramatistAgent(gemini_client=dramatist_client)
+        self.npc_manager = NPCManagerAgent(gemini_client=npc_manager_client)
         self.logger = logger
 
     async def simulate_activity(
