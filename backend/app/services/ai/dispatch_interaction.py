@@ -258,12 +258,12 @@ class DispatchInteractionManager:
             self._add_to_travel_log(
                 dispatch_1,
                 encounter_1,
-                interaction_result.narrative,
+                interaction_result.narrative or "",
             )
             self._add_to_travel_log(
                 dispatch_2,
                 encounter_2,
-                interaction_result.narrative,
+                interaction_result.narrative or "",
             )
 
             # データベースを更新
@@ -277,8 +277,8 @@ class DispatchInteractionManager:
                 dispatch_id_2=dispatch_2.id,
                 location=self._get_current_location(dispatch_1),
                 interaction_type=interaction_type,
-                outcome=interaction_result.outcome,
-                narrative=interaction_result.narrative,
+                outcome=interaction_result.outcome or "",
+                narrative=interaction_result.narrative or "",
                 impact_on_dispatch_1=impact_1,
                 impact_on_dispatch_2=impact_2,
             )
@@ -518,11 +518,11 @@ class DispatchInteractionManager:
             for exchange in outcome.items_exchanged:
                 if exchange["from"] == log.name:
                     # アイテムを失う
-                    impact["items_lost"] = exchange
+                    impact["items_lost"] = exchange  # type: ignore[assignment]
                 else:
                     # アイテムを得る
                     dispatch.collected_items.append(exchange)
-                    impact["items_gained"] = exchange
+                    impact["items_gained"] = exchange  # type: ignore[assignment]
 
         # 知識共有の処理
         if outcome.knowledge_shared:
@@ -533,7 +533,7 @@ class DispatchInteractionManager:
                 "timestamp": datetime.utcnow().isoformat(),
             }
             dispatch.travel_log.append(knowledge_entry)
-            impact["knowledge_gained"] = outcome.knowledge_shared
+            impact["knowledge_gained"] = outcome.knowledge_shared  # type: ignore[assignment]
 
         # 同盟形成の処理
         if outcome.alliance_formed:
@@ -625,8 +625,8 @@ class DispatchInteractionManager:
 
     def _get_current_location(self, dispatch: LogDispatch) -> str:
         """現在地を取得"""
-        if dispatch.travel_log:
-            return dispatch.travel_log[-1].get("location", "不明な場所")
+        if dispatch.travel_log and isinstance(dispatch.travel_log[-1], dict):
+            return str(dispatch.travel_log[-1].get("location", "不明な場所"))
         return "出発地点"
 
     def _hours_since_last_interaction(
@@ -637,7 +637,7 @@ class DispatchInteractionManager:
         """最後の相互作用からの経過時間を計算"""
         # 活動ログから相互作用を検索
         for log in reversed(dispatch_1.travel_log):
-            if log.get("special_type") == "dispatch_interaction":
+            if isinstance(log, dict) and log.get("special_type") == "dispatch_interaction":
                 if dispatch_2.id in str(log):
                     timestamp = datetime.fromisoformat(log["timestamp"])
                     return (datetime.utcnow() - timestamp).total_seconds() / 3600

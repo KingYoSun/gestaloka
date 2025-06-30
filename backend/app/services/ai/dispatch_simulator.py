@@ -501,7 +501,8 @@ class DispatchSimulator:
         )
 
         # 活動タイプの決定
-        activity_types = self._determine_free_activity_types(personality)
+        personality_str = " ".join(personality) if personality else ""
+        activity_types = self._determine_free_activity_types(personality_str)
         chosen_type = random.choice(activity_types)
 
         activity = SimulatedActivity(
@@ -707,9 +708,11 @@ class DispatchSimulator:
 
         # ログの性格による調整
         if "友好的" in context.completed_log.personality_traits:
-            result["relationship_change"] = min(1.0, result["relationship_change"] + 0.2)
+            current_change = float(str(result["relationship_change"]))
+            result["relationship_change"] = min(1.0, current_change + 0.2)
         elif "敵対的" in context.completed_log.personality_traits:
-            result["relationship_change"] = max(-1.0, result["relationship_change"] - 0.2)
+            current_change = float(str(result["relationship_change"]))
+            result["relationship_change"] = max(-1.0, current_change - 0.2)
 
         return result
 
@@ -767,11 +770,11 @@ class DispatchSimulator:
         return SimulatedActivity(
             timestamp=datetime.utcnow(),
             location=context.current_location,
-            action=chosen["action"],
-            result=chosen["result"],
+            action=str(chosen["action"]),
+            result=str(chosen["result"]),
             narrative="人との繋がりを求めて、旅は続く。",
             success_level=0.4,
-            experience_gained=chosen["experience"],
+            experience_gained=dict(chosen["experience"]) if isinstance(chosen["experience"], dict) else {},
         )
 
     async def _generate_unique_location(
@@ -795,7 +798,7 @@ class DispatchSimulator:
 
         # レスポンスから場所名を抽出
         if response.metadata and "location_name" in response.metadata:
-            return response.metadata["location_name"]
+            return str(response.metadata["location_name"])
 
         # フォールバック
         prefixes = ["隠された", "古の", "忘れられた", "神秘の", "禁断の"]

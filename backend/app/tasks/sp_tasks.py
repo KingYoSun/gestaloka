@@ -97,9 +97,6 @@ def process_daily_sp_recovery() -> dict[str, Any]:
             db.rollback()
             raise
 
-    # ジェネレータが空の場合のデフォルト値
-    return {"processed": 0, "errors": 0, "timestamp": datetime.utcnow().isoformat()}
-
 
 @shared_task
 def check_subscription_expiry() -> dict[str, Any]:
@@ -159,9 +156,6 @@ def check_subscription_expiry() -> dict[str, Any]:
             db.rollback()
             raise
 
-    # ジェネレータが空の場合のデフォルト値
-    return {"expired": 0, "timestamp": datetime.utcnow().isoformat()}
-
 
 @shared_task
 def grant_login_bonus(user_id: str) -> dict[str, Any]:
@@ -199,10 +193,3 @@ def grant_login_bonus(user_id: str) -> dict[str, Any]:
             )
             db.rollback()
             raise
-
-    # ジェネレータが空の場合のデフォルト値
-    return {
-        "success": False,
-        "user_id": user_id,
-        "timestamp": datetime.utcnow().isoformat()
-    }

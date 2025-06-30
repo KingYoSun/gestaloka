@@ -13,6 +13,7 @@ import structlog
 from pydantic import BaseModel, Field
 
 from app.core.exceptions import AIServiceError
+from app.schemas.game_session import ActionChoice
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 
@@ -672,8 +673,8 @@ class NPCManagerAgent(BaseAgent):
                 "encounter_type": "log_npc",
             },
             choices=[
-                {"id": "talk", "text": f"{log_npc.name}と話す", "description": "派遣ログの目的について聞く"},
-                {"id": "help", "text": "協力を申し出る", "description": f"{log_npc.name}の目的達成を手伝う"},
-                {"id": "ignore", "text": "無視する", "description": "関わらずに立ち去る"},
+                ActionChoice(id="talk", text=f"{log_npc.name}と話す"),
+                ActionChoice(id="help", text="協力を申し出る"),
+                ActionChoice(id="ignore", text="無視する"),
             ],
         )

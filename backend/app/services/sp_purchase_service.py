@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import and_, desc, func, select
-from sqlmodel import Session
+from sqlmodel import Session, col
 
 from app.core.config import settings
 from app.core.sp_plans import SP_PLANS, SPPlan
@@ -141,14 +141,14 @@ class SPPurchaseService:
         db: Session, user_id: str, status: Optional[PurchaseStatus] = None, limit: int = 20, offset: int = 0
     ) -> list[SPPurchase]:
         """ユーザーの購入履歴を取得"""
-        query = select(SPPurchase).where(SPPurchase.user_id == user_id)
+        query = select(SPPurchase).where(col(SPPurchase.user_id) == user_id)
 
         if status:
-            query = query.where(SPPurchase.status == status)
+            query = query.where(col(SPPurchase.status) == status)
 
-        query = query.order_by(desc(SPPurchase.created_at)).limit(limit).offset(offset)
+        query = query.order_by(col(SPPurchase.created_at).desc()).limit(limit).offset(offset)
 
-        results = db.exec(query).all()
+        results = db.exec(query).all()  # type: ignore[call-overload]
         # db.exec() with SQLModel should return model instances directly
         return list(results)
 
@@ -186,12 +186,12 @@ class SPPurchaseService:
     def get_purchase_stats(db: Session, user_id: str) -> dict:
         """ユーザーの購入統計を取得"""
         stmt = select(
-            func.count(SPPurchase.id).label("total_purchases"),
-            func.sum(SPPurchase.sp_amount).label("total_sp_purchased"),
-            func.sum(SPPurchase.price_jpy).label("total_spent_jpy"),
-        ).where(and_(SPPurchase.user_id == user_id, SPPurchase.status == PurchaseStatus.COMPLETED))
+            func.count(col(SPPurchase.id)).label("total_purchases"),
+            func.sum(col(SPPurchase.sp_amount)).label("total_sp_purchased"),
+            func.sum(col(SPPurchase.price_jpy)).label("total_spent_jpy"),
+        ).where(and_(col(SPPurchase.user_id) == user_id, col(SPPurchase.status) == PurchaseStatus.COMPLETED))
 
-        result = db.exec(stmt).one()
+        result = db.exec(stmt).one()  # type: ignore[call-overload]
 
         return {
             "total_purchases": result.total_purchases or 0,

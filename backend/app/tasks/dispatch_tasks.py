@@ -273,7 +273,7 @@ def calculate_achievement_score(dispatch: LogDispatch) -> float:
 
     elif dispatch.objective_type == DispatchObjectiveType.INTERACT:
         # 遭遇の数に応じて
-        encounter_count = len([log for log in dispatch.travel_log if "encounter_id" in log])
+        encounter_count = len([log for log in dispatch.travel_log if isinstance(log, dict) and "encounter_id" in log])
         score += min(0.5, encounter_count * 0.1)
 
     elif dispatch.objective_type == DispatchObjectiveType.COLLECT:
@@ -455,7 +455,7 @@ def generate_new_skills(dispatch: LogDispatch) -> list[str]:
             skills.append("Cartography")
 
     elif dispatch.objective_type == DispatchObjectiveType.INTERACT:
-        encounter_count = sum(1 for log in dispatch.travel_log if "encounter_id" in log)
+        encounter_count = sum(1 for log in dispatch.travel_log if isinstance(log, dict) and "encounter_id" in log)
         if encounter_count > 5:
             skills.append("Diplomacy")
 
@@ -482,9 +482,14 @@ async def generate_narrative_summary(
         dramatist = DramatistAgent()
 
         # 派遣活動の詳細をまとめる
+        duration_str = "0:00:00"
+        if dispatch.dispatched_at:
+            end_time = dispatch.actual_return_at or datetime.utcnow()
+            duration_str = str(end_time - dispatch.dispatched_at)
+        
         activity_summary = {
             "objective_type": dispatch.objective_type.value,
-            "duration": str((dispatch.actual_return_at or datetime.utcnow()) - dispatch.dispatched_at) if dispatch.dispatched_at else "0:00:00",
+            "duration": duration_str,
             "discovered_locations": dispatch.discovered_locations,
             "collected_items": dispatch.collected_items,
             "encounters": len(encounters),
@@ -496,7 +501,7 @@ async def generate_narrative_summary(
         context = PromptContext(
             character_name=completed_log.name,
             location="帰還地点",
-            recent_actions=[log.get("action", "") for log in dispatch.travel_log[-5:]],
+            recent_actions=[log.get("action", "") for log in dispatch.travel_log[-5:] if isinstance(log, dict)],
             world_state={},
             additional_context={
                 "task": "generate_dispatch_summary",

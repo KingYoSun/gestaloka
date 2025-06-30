@@ -286,7 +286,7 @@ async def get_sp_plans() -> SPPlanResponse:
     - 現在利用可能な全てのプランを返します
     - payment_modeで現在の支払いモードを確認できます
     """
-    plans = await SPPurchaseService.get_plans()
+    plans = SPPurchaseService.get_plans()
 
     return SPPlanResponse(plans=plans, payment_mode=settings.PAYMENT_MODE, currency="JPY")
 
@@ -308,7 +308,7 @@ async def create_purchase(
         raise HTTPException(status_code=400, detail="Test reason is required in test mode")
 
     try:
-        purchase = await SPPurchaseService.create_purchase(
+        purchase = SPPurchaseService.create_purchase(
             db=db, user_id=current_user.id, plan_id=request.plan_id, test_reason=request.test_reason
         )
 
@@ -341,7 +341,7 @@ async def get_user_purchases(
     - statusでフィルタリング可能
     - 新しい順に返されます
     """
-    purchases = await SPPurchaseService.get_user_purchases(
+    purchases = SPPurchaseService.get_user_purchases(
         db=db, user_id=current_user.id, status=status, limit=limit, offset=offset
     )
 
@@ -378,7 +378,7 @@ async def get_purchase_detail(
 
     - 自分の購入のみ取得可能です
     """
-    purchase = await SPPurchaseService.get_purchase(db=db, purchase_id=purchase_id, user_id=current_user.id)
+    purchase = SPPurchaseService.get_purchase(db=db, purchase_id=purchase_id, user_id=current_user.id)
 
     if not purchase:
         raise HTTPException(status_code=404, detail="Purchase not found")
@@ -409,7 +409,7 @@ async def cancel_purchase(
     - PENDING または PROCESSING 状態の購入のみキャンセル可能
     """
     try:
-        purchase = await SPPurchaseService.cancel_purchase(db=db, purchase_id=purchase_id, user_id=current_user.id)
+        purchase = SPPurchaseService.cancel_purchase(db=db, purchase_id=purchase_id, user_id=current_user.id)
 
         return SPPurchaseDetail(
             id=str(purchase.id),
@@ -439,6 +439,6 @@ async def get_purchase_stats(
 
     - 完了した購入のみが集計対象です
     """
-    stats = await SPPurchaseService.get_purchase_stats(db=db, user_id=current_user.id)
+    stats = SPPurchaseService.get_purchase_stats(db=db, user_id=current_user.id)
 
     return SPPurchaseStats(**stats)

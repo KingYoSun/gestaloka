@@ -104,7 +104,7 @@ class CoordinatorAI:
             npc_encounters = kwargs.get("npc_encounters", [])
             if npc_encounters and hasattr(action, "metadata"):
                 if action.metadata is None:
-                    action.metadata = {}
+                    action.metadata = {}  # type: ignore[unreachable]
                 action.metadata["npc_encounters"] = npc_encounters
 
             # 3. Shared Context更新
@@ -510,7 +510,7 @@ class CoordinatorAI:
                             self.shared_context.context.session_id,
                             npc_data,
                             encounter_type=response.metadata.get("encounter_type", "log_npc"),
-                            choices=[{"id": c.id, "text": c.text, "description": getattr(c, "description", None)} for c in choices],
+                            choices=[{"id": c.id, "text": c.text, "description": getattr(c, "description", None)} for c in choices] if choices else [],
                         )
 
                     # イベントとしても記録

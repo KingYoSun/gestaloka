@@ -5,6 +5,7 @@
 import asyncio
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlmodel import Session
 
@@ -151,17 +152,10 @@ def generate_npc_from_completed_log(self, completed_log_id: str, location: str =
         with Session(engine) as session:
             npc_generator = NPCGenerator(session)
 
-            # asyncioを使って非同期メソッドを実行
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                npc_profile = loop.run_until_complete(
-                    npc_generator.generate_npc_from_log(
-                        completed_log_id=uuid.UUID(completed_log_id), target_location_name=location
-                    )
-                )
-            finally:
-                loop.close()
+            # 同期メソッドを直接呼び出し
+            npc_profile = npc_generator.generate_npc_from_log(
+                completed_log_id=uuid.UUID(completed_log_id), target_location_name=location
+            )
 
         logger.info(
             "NPC generated successfully", task_id=self.request.id, npc_id=npc_profile.npc_id, npc_name=npc_profile.name

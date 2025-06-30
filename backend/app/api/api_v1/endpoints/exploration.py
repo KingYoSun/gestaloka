@@ -7,7 +7,7 @@ import random
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, and_, select
+from sqlmodel import Session, and_, select, col
 
 from app.api.deps import get_current_active_user, get_user_character
 from app.core.database import get_session as get_db
@@ -89,8 +89,8 @@ async def get_available_locations(
     connections = db.exec(
         select(LocationConnection).where(
             and_(
-                LocationConnection.from_location_id == current_character.location_id,
-                ~LocationConnection.is_blocked,
+                col(LocationConnection.from_location_id) == current_character.location_id,
+                col(LocationConnection.is_blocked) == False,
             )
         )
     ).all()
@@ -178,9 +178,9 @@ async def move_to_location(
     current_history = db.exec(
         select(CharacterLocationHistory).where(
             and_(
-                CharacterLocationHistory.character_id == current_character.id,
-                CharacterLocationHistory.location_id == current_character.location_id,
-                CharacterLocationHistory.departed_at.is_(None),
+                col(CharacterLocationHistory.character_id) == current_character.id,
+                col(CharacterLocationHistory.location_id) == current_character.location_id,
+                col(CharacterLocationHistory.departed_at).is_(None),
             )
         )
     ).first()

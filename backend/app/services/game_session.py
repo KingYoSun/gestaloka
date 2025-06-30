@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
-from sqlmodel import Session, desc, select
+from sqlmodel import Session, desc, select, col
 
 from app.ai.coordination_models import Choice
 from app.ai.coordinator import CoordinatorAI
@@ -799,12 +799,16 @@ class GameSessionService:
         from app.models.log_dispatch import DispatchStatus, LogDispatch
 
         # 現在地に派遣中のログを検索
+        from sqlalchemy import and_
+        
         stmt = select(LogDispatch, CompletedLog).join(
             CompletedLog,
-            LogDispatch.completed_log_id == CompletedLog.id
+            col(LogDispatch.completed_log_id) == col(CompletedLog.id)
         ).where(
-            LogDispatch.status == DispatchStatus.DISPATCHED,
-            LogDispatch.current_location == character.location
+            and_(
+                col(LogDispatch.status) == DispatchStatus.DISPATCHED,
+                col(LogDispatch.current_location) == character.location
+            )
         )
 
         results = self.db.exec(stmt).all()
