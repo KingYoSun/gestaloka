@@ -96,7 +96,13 @@ export interface GameMessageMetadata {
   newScene?: string
   choices?: string[]
   characterStatus?: CharacterStatusUpdate
-  [key: string]: string | number | boolean | undefined | string[] | CharacterStatusUpdate
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | undefined
+    | string[]
+    | CharacterStatusUpdate
 }
 
 export interface GameMessage {
@@ -171,7 +177,13 @@ export interface PaginatedResponse<T> {
 }
 
 // WebSocket関連の型定義
-export type WebSocketData = string | number | boolean | null | Record<string, unknown> | unknown[]
+export type WebSocketData =
+  | string
+  | number
+  | boolean
+  | null
+  | Record<string, unknown>
+  | unknown[]
 
 export interface WebSocketMessage {
   type: string
@@ -230,7 +242,13 @@ export interface RegisterForm {
 
 // エラー関連の型定義
 export interface ErrorDetails {
-  [key: string]: string | number | boolean | null | ErrorDetails | ErrorDetails[]
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | null
+    | ErrorDetails
+    | ErrorDetails[]
 }
 
 export interface AppError {

@@ -3,7 +3,13 @@
  */
 
 import { memo, useState, useEffect } from 'react'
-import { Coins, TrendingUp, Calendar, AlertCircle, AlertTriangle } from 'lucide-react'
+import {
+  Coins,
+  TrendingUp,
+  Calendar,
+  AlertCircle,
+  AlertTriangle,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSPBalanceSummary } from '@/hooks/useSP'
 import { SPSubscriptionInfo } from '@/types/sp'
@@ -35,7 +41,11 @@ export const SPDisplay = memo(function SPDisplay({
 
   // SP変更を検知してアニメーション
   useEffect(() => {
-    if (balance?.currentSp !== undefined && previousBalance !== null && balance.currentSp !== previousBalance) {
+    if (
+      balance?.currentSp !== undefined &&
+      previousBalance !== null &&
+      balance.currentSp !== previousBalance
+    ) {
       setIsAnimating(true)
       const timer = setTimeout(() => setIsAnimating(false), 1000)
       return () => clearTimeout(timer)
@@ -55,7 +65,9 @@ export const SPDisplay = memo(function SPDisplay({
 
   if (error || !balance) {
     return (
-      <div className={cn('flex items-center gap-2 text-destructive', className)}>
+      <div
+        className={cn('flex items-center gap-2 text-destructive', className)}
+      >
         <AlertCircle className="h-4 w-4" />
         <span className="text-sm">エラー</span>
       </div>
@@ -71,7 +83,8 @@ export const SPDisplay = memo(function SPDisplay({
   }
 
   const isLowBalance = balance.currentSp < lowBalanceThreshold
-  const balanceChange = previousBalance !== null ? balance.currentSp - previousBalance : 0
+  const balanceChange =
+    previousBalance !== null ? balance.currentSp - previousBalance : 0
 
   if (variant === 'compact') {
     return (
@@ -84,9 +97,13 @@ export const SPDisplay = memo(function SPDisplay({
                 isLowBalance && 'text-orange-500',
                 className
               )}
-              animate={isAnimating ? {
-                scale: [1, 1.1, 1],
-              } : {}}
+              animate={
+                isAnimating
+                  ? {
+                      scale: [1, 1.1, 1],
+                    }
+                  : {}
+              }
               transition={{ duration: 0.3 }}
             >
               {isLowBalance ? (
@@ -94,15 +111,17 @@ export const SPDisplay = memo(function SPDisplay({
               ) : (
                 <Coins className="h-4 w-4 text-yellow-500" />
               )}
-              <span className={cn(
-                "font-semibold",
-                isAnimating && balanceChange > 0 && "text-green-500",
-                isAnimating && balanceChange < 0 && "text-red-500"
-              )}>
+              <span
+                className={cn(
+                  'font-semibold',
+                  isAnimating && balanceChange > 0 && 'text-green-500',
+                  isAnimating && balanceChange < 0 && 'text-red-500'
+                )}
+              >
                 {formatNumber(balance.currentSp)}
               </span>
               <span className="text-xs text-muted-foreground">SP</span>
-              
+
               {/* 変更インジケーター */}
               <AnimatePresence>
                 {isAnimating && balanceChange !== 0 && (
@@ -111,11 +130,12 @@ export const SPDisplay = memo(function SPDisplay({
                     animate={{ opacity: 1, y: -20 }}
                     exit={{ opacity: 0 }}
                     className={cn(
-                      "absolute -top-4 right-0 text-xs font-bold",
-                      balanceChange > 0 ? "text-green-500" : "text-red-500"
+                      'absolute -top-4 right-0 text-xs font-bold',
+                      balanceChange > 0 ? 'text-green-500' : 'text-red-500'
                     )}
                   >
-                    {balanceChange > 0 ? '+' : ''}{formatNumber(balanceChange)}
+                    {balanceChange > 0 ? '+' : ''}
+                    {formatNumber(balanceChange)}
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -123,7 +143,9 @@ export const SPDisplay = memo(function SPDisplay({
           </TooltipTrigger>
           <TooltipContent>
             <div className="space-y-1">
-              <p className="text-sm font-medium">現在のSP: {formatNumber(balance.currentSp)}</p>
+              <p className="text-sm font-medium">
+                現在のSP: {formatNumber(balance.currentSp)}
+              </p>
               {isLowBalance && (
                 <p className="text-xs text-orange-500">
                   ⚠️ SP残高が少なくなっています
@@ -151,7 +173,9 @@ export const SPDisplay = memo(function SPDisplay({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Coins className="h-5 w-5 text-yellow-500" />
-          <span className="text-lg font-bold">{formatNumber(balance.currentSp)}</span>
+          <span className="text-lg font-bold">
+            {formatNumber(balance.currentSp)}
+          </span>
           <span className="text-sm text-muted-foreground">SP</span>
         </div>
         {showSubscription && subscriptionInfo && (
@@ -169,7 +193,9 @@ export const SPDisplay = memo(function SPDisplay({
           <Calendar className="h-3 w-3" />
           <span>
             有効期限:{' '}
-            {new Date(balance.subscriptionExpiresAt).toLocaleDateString('ja-JP')}
+            {new Date(balance.subscriptionExpiresAt).toLocaleDateString(
+              'ja-JP'
+            )}
           </span>
         </div>
       )}

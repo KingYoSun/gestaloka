@@ -35,9 +35,7 @@ export function SPPlansGrid({ onSelectPlan }: SPPlansGridProps) {
   if (!data?.plans.length) {
     return (
       <Alert>
-        <AlertDescription>
-          現在利用可能なプランがありません。
-        </AlertDescription>
+        <AlertDescription>現在利用可能なプランがありません。</AlertDescription>
       </Alert>
     )
   }
@@ -54,14 +52,10 @@ export function SPPlansGrid({ onSelectPlan }: SPPlansGridProps) {
           </AlertDescription>
         </Alert>
       )}
-      
+
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {data.plans.map((plan) => (
-          <SPPlanCard
-            key={plan.id}
-            plan={plan}
-            onSelect={onSelectPlan}
-          />
+        {data.plans.map(plan => (
+          <SPPlanCard key={plan.id} plan={plan} onSelect={onSelectPlan} />
         ))}
       </div>
     </div>

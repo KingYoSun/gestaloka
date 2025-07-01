@@ -59,7 +59,7 @@ export function DispatchDetail({
 
   const recallMutation = useMutation({
     mutationFn: () => dispatchApi.recallDispatch(dispatchId),
-    onSuccess: (data) => {
+    onSuccess: data => {
       toast({
         title: '緊急召還完了',
         description: `${data.recall_cost} SPを消費して召還しました`,
@@ -286,8 +286,8 @@ export function DispatchDetail({
                                 encounter.outcome === 'friendly'
                                   ? 'default'
                                   : encounter.outcome === 'hostile'
-                                  ? 'destructive'
-                                  : 'secondary'
+                                    ? 'destructive'
+                                    : 'secondary'
                               }
                             >
                               {encounter.outcome}
@@ -300,9 +300,7 @@ export function DispatchDetail({
                             <span>{encounter.location}</span>
                             <span>
                               関係性変化:{' '}
-                              {encounter.relationship_change > 0
-                                ? '+'
-                                : ''}
+                              {encounter.relationship_change > 0 ? '+' : ''}
                               {encounter.relationship_change.toFixed(2)}
                             </span>
                           </div>
@@ -395,9 +393,11 @@ export function DispatchDetail({
                           <div>
                             <h4 className="font-medium mb-2">性格の変化</h4>
                             <ul className="list-disc list-inside text-sm text-muted-foreground">
-                              {report.personality_changes.map((change: any, i: number) => (
-                                <li key={i}>{change}</li>
-                              ))}
+                              {report.personality_changes.map(
+                                (change: any, i: number) => (
+                                  <li key={i}>{change}</li>
+                                )
+                              )}
                             </ul>
                           </div>
                         )}
@@ -406,11 +406,13 @@ export function DispatchDetail({
                           <div>
                             <h4 className="font-medium mb-2">習得スキル</h4>
                             <div className="flex flex-wrap gap-2">
-                              {report.new_skills_learned.map((skill: any, i: number) => (
-                                <Badge key={i} variant="secondary">
-                                  {skill}
-                                </Badge>
-                              ))}
+                              {report.new_skills_learned.map(
+                                (skill: any, i: number) => (
+                                  <Badge key={i} variant="secondary">
+                                    {skill}
+                                  </Badge>
+                                )
+                              )}
                             </div>
                           </div>
                         )}

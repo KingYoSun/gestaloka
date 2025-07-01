@@ -2,12 +2,18 @@
  * 現在地情報コンポーネント
  */
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { MapPin, Shield, Store, Hotel, Users } from 'lucide-react';
-import { useExploration } from '@/hooks/useExploration';
-import { LoadingState } from '@/components/ui/LoadingState';
-import type { DangerLevel, LocationType } from '@/api/generated';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { MapPin, Shield, Store, Hotel, Users } from 'lucide-react'
+import { useExploration } from '@/hooks/useExploration'
+import { LoadingState } from '@/components/ui/LoadingState'
+import type { DangerLevel, LocationType } from '@/api/generated'
 
 const locationTypeLabels: Record<LocationType, string> = {
   city: '都市',
@@ -15,25 +21,31 @@ const locationTypeLabels: Record<LocationType, string> = {
   dungeon: 'ダンジョン',
   wild: '荒野',
   special: '特殊',
-};
+}
 
-const dangerLevelConfig: Record<DangerLevel, { label: string; variant: 'default' | 'secondary' | 'destructive' }> = {
+const dangerLevelConfig: Record<
+  DangerLevel,
+  { label: string; variant: 'default' | 'secondary' | 'destructive' }
+> = {
   safe: { label: '安全', variant: 'default' },
   low: { label: '低危険度', variant: 'secondary' },
   medium: { label: '中危険度', variant: 'secondary' },
   high: { label: '高危険度', variant: 'destructive' },
   extreme: { label: '極度の危険', variant: 'destructive' },
-};
+}
 
 export function CurrentLocationInfo() {
-  const { useCurrentLocation } = useExploration();
-  const { data: location, isLoading, error } = useCurrentLocation();
+  const { useCurrentLocation } = useExploration()
+  const { data: location, isLoading, error } = useCurrentLocation()
 
-  if (isLoading) return <LoadingState message="現在地情報を読み込み中..." />;
-  if (error) return <div className="text-destructive">現在地情報の取得に失敗しました</div>;
-  if (!location) return null;
+  if (isLoading) return <LoadingState message="現在地情報を読み込み中..." />
+  if (error)
+    return (
+      <div className="text-destructive">現在地情報の取得に失敗しました</div>
+    )
+  if (!location) return null
 
-  const dangerConfig = dangerLevelConfig[location.danger_level];
+  const dangerConfig = dangerLevelConfig[location.danger_level]
 
   return (
     <Card>
@@ -49,7 +61,9 @@ export function CurrentLocationInfo() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">タイプ</span>
-            <Badge variant="outline">{locationTypeLabels[location.location_type]}</Badge>
+            <Badge variant="outline">
+              {locationTypeLabels[location.location_type]}
+            </Badge>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">階層レベル</span>
@@ -63,8 +77,12 @@ export function CurrentLocationInfo() {
             </Badge>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">フラグメント発見率</span>
-            <span className="font-medium">{location.fragment_discovery_rate}%</span>
+            <span className="text-sm text-muted-foreground">
+              フラグメント発見率
+            </span>
+            <span className="font-medium">
+              {location.fragment_discovery_rate}%
+            </span>
           </div>
         </div>
 
@@ -102,5 +120,5 @@ export function CurrentLocationInfo() {
         </div>
       </CardContent>
     </Card>
-  );
+  )
 }

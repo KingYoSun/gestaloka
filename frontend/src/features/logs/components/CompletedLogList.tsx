@@ -5,13 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DispatchForm } from '@/features/dispatch/components/DispatchForm'
-import {
-  BookOpen,
-  Sparkles,
-  Send,
-  User,
-  AlertTriangle,
-} from 'lucide-react'
+import { BookOpen, Sparkles, Send, User, AlertTriangle } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -49,7 +43,7 @@ export function CompletedLogList({
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
+        {[1, 2, 3].map(i => (
           <Card key={i}>
             <CardHeader>
               <Skeleton className="h-6 w-48" />
@@ -68,9 +62,7 @@ export function CompletedLogList({
       <Card>
         <CardContent className="py-8 text-center">
           <BookOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-          <p className="text-muted-foreground mb-2">
-            完成ログがありません
-          </p>
+          <p className="text-muted-foreground mb-2">完成ログがありません</p>
           <p className="text-sm text-muted-foreground">
             フラグメントを選択して編纂してください
           </p>
@@ -82,7 +74,7 @@ export function CompletedLogList({
   return (
     <>
       <div className="space-y-4">
-        {completedLogs.map((log) => {
+        {completedLogs.map(log => {
           const isDispatchable = log.status === 'completed'
           const contaminationPercent = (log.contaminationLevel * 100).toFixed(0)
 
@@ -123,15 +115,11 @@ export function CompletedLogList({
                 <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-1">
                     <Sparkles className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      スキル: {log.skills.length || 0}
-                    </span>
+                    <span>スキル: {log.skills.length || 0}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      性格特性: {log.personalityTraits.length || 0}
-                    </span>
+                    <span>性格特性: {log.personalityTraits.length || 0}</span>
                   </div>
                   <div
                     className={cn(
@@ -155,7 +143,7 @@ export function CompletedLogList({
                     <Button
                       size="sm"
                       className="gap-2"
-                      onClick={(e) => {
+                      onClick={e => {
                         e.stopPropagation()
                         setSelectedLog(log)
                         setShowDispatchForm(true)
@@ -176,7 +164,7 @@ export function CompletedLogList({
         <DispatchForm
           completedLog={selectedLog}
           open={showDispatchForm}
-          onOpenChange={(open) => {
+          onOpenChange={open => {
             setShowDispatchForm(open)
             if (!open) {
               setSelectedLog(null)

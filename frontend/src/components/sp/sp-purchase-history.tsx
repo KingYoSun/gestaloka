@@ -1,4 +1,10 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,7 +24,8 @@ import { ja } from 'date-fns/locale'
 
 export function SPPurchaseHistory() {
   const { data, isLoading, error } = useSPPurchases()
-  const { mutate: cancelPurchase, isPending: isCancelling } = useCancelPurchase()
+  const { mutate: cancelPurchase, isPending: isCancelling } =
+    useCancelPurchase()
 
   if (isLoading) {
     return (
@@ -45,9 +52,7 @@ export function SPPurchaseHistory() {
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
-            <AlertDescription>
-              購入履歴の取得に失敗しました。
-            </AlertDescription>
+            <AlertDescription>購入履歴の取得に失敗しました。</AlertDescription>
           </Alert>
         </CardContent>
       </Card>
@@ -62,7 +67,13 @@ export function SPPurchaseHistory() {
   }
 
   const getStatusBadge = (status: PurchaseStatus) => {
-    const variants: Record<PurchaseStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+    const variants: Record<
+      PurchaseStatus,
+      {
+        label: string
+        variant: 'default' | 'secondary' | 'destructive' | 'outline'
+      }
+    > = {
       [PurchaseStatus.PENDING]: { label: '申請中', variant: 'secondary' },
       [PurchaseStatus.PROCESSING]: { label: '処理中', variant: 'secondary' },
       [PurchaseStatus.COMPLETED]: { label: '完了', variant: 'default' },
@@ -70,29 +81,27 @@ export function SPPurchaseHistory() {
       [PurchaseStatus.CANCELLED]: { label: 'キャンセル', variant: 'outline' },
       [PurchaseStatus.REFUNDED]: { label: '返金済み', variant: 'outline' },
     }
-    
+
     const config = variants[status]
     return <Badge variant={config.variant}>{config.label}</Badge>
   }
 
   const canCancel = (status: PurchaseStatus) => {
-    return status === PurchaseStatus.PENDING || status === PurchaseStatus.PROCESSING
+    return (
+      status === PurchaseStatus.PENDING || status === PurchaseStatus.PROCESSING
+    )
   }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>購入履歴</CardTitle>
-        <CardDescription>
-          過去のSP購入履歴を確認できます
-        </CardDescription>
+        <CardDescription>過去のSP購入履歴を確認できます</CardDescription>
       </CardHeader>
       <CardContent>
         {!data?.purchases.length ? (
           <Alert>
-            <AlertDescription>
-              購入履歴がありません。
-            </AlertDescription>
+            <AlertDescription>購入履歴がありません。</AlertDescription>
           </Alert>
         ) : (
           <div className="overflow-x-auto">
@@ -108,10 +117,12 @@ export function SPPurchaseHistory() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.purchases.map((purchase) => (
+                {data.purchases.map(purchase => (
                   <TableRow key={purchase.id}>
                     <TableCell>
-                      {format(new Date(purchase.created_at), 'MM/dd HH:mm', { locale: ja })}
+                      {format(new Date(purchase.created_at), 'MM/dd HH:mm', {
+                        locale: ja,
+                      })}
                     </TableCell>
                     <TableCell>{purchase.plan_id}</TableCell>
                     <TableCell className="text-right font-medium">
@@ -120,9 +131,7 @@ export function SPPurchaseHistory() {
                     <TableCell className="text-right">
                       {formatPrice(purchase.price_jpy)}
                     </TableCell>
-                    <TableCell>
-                      {getStatusBadge(purchase.status)}
-                    </TableCell>
+                    <TableCell>{getStatusBadge(purchase.status)}</TableCell>
                     <TableCell className="text-right">
                       {canCancel(purchase.status) && (
                         <Button

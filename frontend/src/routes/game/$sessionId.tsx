@@ -30,7 +30,10 @@ import {
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
-import { BattleStatus, type BattleData } from '@/features/game/components/BattleStatus'
+import {
+  BattleStatus,
+  type BattleData,
+} from '@/features/game/components/BattleStatus'
 import { NPCEncounterDialog } from '@/features/game/components/NPCEncounterDialog'
 
 export const Route = createFileRoute('/game/$sessionId')({
@@ -61,7 +64,8 @@ function GameSessionPage() {
   } = useGameSessionStore()
 
   // WebSocket接続
-  const { sendAction, currentNPCEncounter, sendNPCAction } = useGameWebSocket(sessionId)
+  const { sendAction, currentNPCEncounter, sendNPCAction } =
+    useGameWebSocket(sessionId)
   // const { chatMessages, sendChatMessage } = useChatWebSocket(sessionId)
 
   const messages = getSessionMessages(sessionId)
@@ -80,11 +84,10 @@ function GameSessionPage() {
     }
   }
 
-
   // SP消費量を計算
   const calculateSPCost = (text: string, isChoice: boolean) => {
     if (isChoice) return 2 // 選択肢は一律2SP
-    
+
     // 自由行動のSP消費量を文字数や複雑さで決定（簡易版）
     const length = text.length
     if (length <= 20) return 1
@@ -110,7 +113,11 @@ function GameSessionPage() {
     setShowSPDialog(true)
   }
 
-  const executeAction = async (text: string, isChoice: boolean, choiceIndex?: number) => {
+  const executeAction = async (
+    text: string,
+    isChoice: boolean,
+    choiceIndex?: number
+  ) => {
     setExecutingAction(true)
 
     try {
@@ -131,16 +138,20 @@ function GameSessionPage() {
       setSelectedChoice(null)
     } catch (error: any) {
       console.error('Failed to execute action:', error)
-      
+
       // SP不足エラーの特別処理
-      if (error?.response?.status === 400 && error?.response?.data?.detail?.includes('SP不足')) {
+      if (
+        error?.response?.status === 400 &&
+        error?.response?.data?.detail?.includes('SP不足')
+      ) {
         toast.error(error.response.data.detail, {
           description: 'SPを回復するか、より簡単な行動を選択してください。',
           duration: 5000,
         })
       } else {
         toast.error('行動の実行に失敗しました', {
-          description: error?.response?.data?.detail || 'もう一度お試しください。',
+          description:
+            error?.response?.data?.detail || 'もう一度お試しください。',
         })
       }
     } finally {
@@ -311,7 +322,11 @@ function GameSessionPage() {
         <div className="space-y-4">
           {/* 戦闘状態 */}
           {session.sessionData?.battle_data && (
-            <BattleStatus battleData={session.sessionData.battle_data as unknown as BattleData} />
+            <BattleStatus
+              battleData={
+                session.sessionData.battle_data as unknown as BattleData
+              }
+            />
           )}
 
           {/* 選択肢 */}
@@ -330,8 +345,7 @@ function GameSessionPage() {
                   >
                     <span className="whitespace-normal">{choice}</span>
                     <Badge variant="secondary" className="ml-auto shrink-0">
-                      <Coins className="h-3 w-3 mr-1" />
-                      2 SP
+                      <Coins className="h-3 w-3 mr-1" />2 SP
                     </Badge>
                   </Button>
                 ))}
@@ -357,9 +371,17 @@ function GameSessionPage() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     {selectedChoice !== null ? (
-                      <>選択肢の実行には <strong>2 SP</strong> が必要です</>
+                      <>
+                        選択肢の実行には <strong>2 SP</strong> が必要です
+                      </>
                     ) : (
-                      <>自由行動には <strong>{calculateSPCost(actionText.trim(), false)} SP</strong> が必要です</>
+                      <>
+                        自由行動には{' '}
+                        <strong>
+                          {calculateSPCost(actionText.trim(), false)} SP
+                        </strong>{' '}
+                        が必要です
+                      </>
                     )}
                   </AlertDescription>
                 </Alert>
@@ -379,13 +401,11 @@ function GameSessionPage() {
                 ) : (
                   <>
                     <Send className="mr-2 h-4 w-4" />
-                    {selectedChoice !== null ? (
-                      '選択肢を実行 (2 SP)'
-                    ) : actionText.trim() ? (
-                      `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
-                    ) : (
-                      '行動実行'
-                    )}
+                    {selectedChoice !== null
+                      ? '選択肢を実行 (2 SP)'
+                      : actionText.trim()
+                        ? `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
+                        : '行動実行'}
                   </>
                 )}
               </Button>

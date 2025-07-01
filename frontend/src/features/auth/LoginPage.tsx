@@ -17,14 +17,11 @@ export function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    await handleAsync(
-      async () => {
-        await login(username, password)
-        navigate({ to: '/dashboard' })
-      },
-      'ログインに失敗しました。ユーザー名とパスワードを確認してください。'
-    )
+
+    await handleAsync(async () => {
+      await login(username, password)
+      navigate({ to: '/dashboard' })
+    }, 'ログインに失敗しました。ユーザー名とパスワードを確認してください。')
   }
 
   return (
@@ -74,9 +71,9 @@ export function LoginPage() {
 
           <FormError error={error} />
 
-          <LoadingButton 
-            type="submit" 
-            className="w-full" 
+          <LoadingButton
+            type="submit"
+            className="w-full"
             isLoading={isLoading}
             loadingText="ログイン中..."
           >

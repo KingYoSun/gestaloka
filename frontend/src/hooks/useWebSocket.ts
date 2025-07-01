@@ -117,7 +117,8 @@ export function useGameWebSocket(gameSessionId?: string) {
   const { user } = useAuthStore()
   const [messages, setMessages] = useState<GameMessage[]>([])
   const [gameState, setGameState] = useState<GameState | null>(null)
-  const [currentNPCEncounter, setCurrentNPCEncounter] = useState<NPCEncounterData | null>(null)
+  const [currentNPCEncounter, setCurrentNPCEncounter] =
+    useState<NPCEncounterData | null>(null)
 
   useEffect(() => {
     if (!gameSessionId || !user?.id) return
@@ -185,11 +186,14 @@ export function useGameWebSocket(gameSessionId?: string) {
     const handleNPCEncounter = (data: NPCEncounterData) => {
       setCurrentNPCEncounter(data)
       // メッセージログにも追加
-      setMessages(prev => [...prev, {
-        type: 'system',
-        content: `${data.npc.name}に遭遇しました！`,
-        timestamp: data.timestamp,
-      }])
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'system',
+          content: `${data.npc.name}に遭遇しました！`,
+          timestamp: data.timestamp,
+        },
+      ])
       // 通知も表示
       toast.info('NPCに遭遇しました！', {
         description: `${data.npc.name}${data.npc.title ? ` 「${data.npc.title}」` : ''}が現れました。`,
@@ -198,16 +202,23 @@ export function useGameWebSocket(gameSessionId?: string) {
 
     const handleNPCActionResult = (data: NPCActionResultData) => {
       // 遭遇終了の処理
-      if (data.result.includes('立ち去') || data.result.includes('終了') || data.result.includes('去って')) {
+      if (
+        data.result.includes('立ち去') ||
+        data.result.includes('終了') ||
+        data.result.includes('去って')
+      ) {
         setCurrentNPCEncounter(null)
       }
       // 結果をメッセージログに追加
-      setMessages(prev => [...prev, {
-        type: 'action_result',
-        action: data.action,
-        result: data.result,
-        timestamp: data.timestamp,
-      }])
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'action_result',
+          action: data.action,
+          result: data.result,
+          timestamp: data.timestamp,
+        },
+      ])
     }
 
     // イベントリスナー登録

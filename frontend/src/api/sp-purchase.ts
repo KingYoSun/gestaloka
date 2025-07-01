@@ -89,8 +89,13 @@ export const spPurchaseApi = {
   },
 
   // 購入申請作成
-  createPurchase: async (request: PurchaseRequest): Promise<PurchaseResponse> => {
-    return await apiClient.post<PurchaseResponse>('/api/v1/sp/purchase', request)
+  createPurchase: async (
+    request: PurchaseRequest
+  ): Promise<PurchaseResponse> => {
+    return await apiClient.post<PurchaseResponse>(
+      '/api/v1/sp/purchase',
+      request
+    )
   },
 
   // 購入履歴取得
@@ -99,17 +104,23 @@ export const spPurchaseApi = {
     limit?: number
     offset?: number
   }): Promise<SPPurchaseList> => {
-    return await apiClient.get<SPPurchaseList>('/api/v1/sp/purchases', { params })
+    return await apiClient.get<SPPurchaseList>('/api/v1/sp/purchases', {
+      params,
+    })
   },
 
   // 購入詳細取得
   getPurchaseDetail: async (purchaseId: string): Promise<SPPurchaseDetail> => {
-    return await apiClient.get<SPPurchaseDetail>(`/api/v1/sp/purchases/${purchaseId}`)
+    return await apiClient.get<SPPurchaseDetail>(
+      `/api/v1/sp/purchases/${purchaseId}`
+    )
   },
 
   // 購入キャンセル
   cancelPurchase: async (purchaseId: string): Promise<SPPurchaseDetail> => {
-    return await apiClient.post<SPPurchaseDetail>(`/api/v1/sp/purchases/${purchaseId}/cancel`)
+    return await apiClient.post<SPPurchaseDetail>(
+      `/api/v1/sp/purchases/${purchaseId}/cancel`
+    )
   },
 
   // 購入統計取得
@@ -118,7 +129,12 @@ export const spPurchaseApi = {
   },
 
   // Stripeチェックアウトセッション作成
-  createStripeCheckout: async (request: StripeCheckoutRequest): Promise<StripeCheckoutResponse> => {
-    return await apiClient.post<StripeCheckoutResponse>('/api/v1/sp/stripe/checkout', request)
+  createStripeCheckout: async (
+    request: StripeCheckoutRequest
+  ): Promise<StripeCheckoutResponse> => {
+    return await apiClient.post<StripeCheckoutResponse>(
+      '/api/v1/sp/stripe/checkout',
+      request
+    )
   },
 }

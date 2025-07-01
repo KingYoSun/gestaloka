@@ -56,7 +56,11 @@ export function SPTransactionHistory({
   const [transactionType, setTransactionType] = useState<string | undefined>()
   const [offset, setOffset] = useState(0)
 
-  const { data: transactions, isLoading, error } = useSPTransactions({
+  const {
+    data: transactions,
+    isLoading,
+    error,
+  } = useSPTransactions({
     transactionType,
     relatedEntityType,
     relatedEntityId,
@@ -87,8 +91,8 @@ export function SPTransactionHistory({
       SPTransactionType.LOGIN_BONUS,
       SPTransactionType.REFUND,
     ] as const
-    
-    if (positiveTypes.includes(type as typeof positiveTypes[number])) {
+
+    if (positiveTypes.includes(type as (typeof positiveTypes)[number])) {
       return 'default'
     }
     return 'secondary'
@@ -114,10 +118,13 @@ export function SPTransactionHistory({
     <div className={className}>
       {/* フィルター */}
       <div className="flex items-center gap-2 mb-4">
-        <Select value={transactionType || 'all'} onValueChange={(value: string) => {
-          setTransactionType(value === 'all' ? undefined : value)
-          setOffset(0)
-        }}>
+        <Select
+          value={transactionType || 'all'}
+          onValueChange={(value: string) => {
+            setTransactionType(value === 'all' ? undefined : value)
+            setOffset(0)
+          }}
+        >
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="すべての取引" />
           </SelectTrigger>
@@ -156,12 +163,15 @@ export function SPTransactionHistory({
           <TableBody>
             {transactions?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-8 text-muted-foreground"
+                >
                   取引履歴がありません
                 </TableCell>
               </TableRow>
             ) : (
-              transactions?.map((transaction) => (
+              transactions?.map(transaction => (
                 <TableRow key={transaction.id}>
                   <TableCell>{getTransactionIcon(transaction)}</TableCell>
                   <TableCell>
@@ -173,7 +183,11 @@ export function SPTransactionHistory({
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={getTransactionTypeVariant(transaction.transactionType)}>
+                    <Badge
+                      variant={getTransactionTypeVariant(
+                        transaction.transactionType
+                      )}
+                    >
                       {SPTransactionTypeLabels[transaction.transactionType]}
                     </Badge>
                   </TableCell>
@@ -192,7 +206,10 @@ export function SPTransactionHistory({
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    {new Intl.NumberFormat('ja-JP').format(transaction.balanceAfter)} SP
+                    {new Intl.NumberFormat('ja-JP').format(
+                      transaction.balanceAfter
+                    )}{' '}
+                    SP
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -206,21 +223,33 @@ export function SPTransactionHistory({
                         <DropdownMenuSeparator />
                         <div className="p-2 text-sm space-y-1">
                           <p>
-                            <span className="text-muted-foreground">取引ID:</span>{' '}
-                            <span className="font-mono text-xs">{transaction.id.slice(0, 8)}...</span>
+                            <span className="text-muted-foreground">
+                              取引ID:
+                            </span>{' '}
+                            <span className="font-mono text-xs">
+                              {transaction.id.slice(0, 8)}...
+                            </span>
                           </p>
                           <p>
                             <span className="text-muted-foreground">日時:</span>{' '}
-                            {new Date(transaction.createdAt).toLocaleString('ja-JP')}
+                            {new Date(transaction.createdAt).toLocaleString(
+                              'ja-JP'
+                            )}
                           </p>
-                          {transaction.transactionMetadata && Object.keys(transaction.transactionMetadata).length > 0 && (
-                            <p>
-                              <span className="text-muted-foreground">メタデータ:</span>{' '}
-                              <span className="font-mono text-xs">
-                                {JSON.stringify(transaction.transactionMetadata)}
-                              </span>
-                            </p>
-                          )}
+                          {transaction.transactionMetadata &&
+                            Object.keys(transaction.transactionMetadata)
+                              .length > 0 && (
+                              <p>
+                                <span className="text-muted-foreground">
+                                  メタデータ:
+                                </span>{' '}
+                                <span className="font-mono text-xs">
+                                  {JSON.stringify(
+                                    transaction.transactionMetadata
+                                  )}
+                                </span>
+                              </p>
+                            )}
                         </div>
                       </DropdownMenuContent>
                     </DropdownMenu>

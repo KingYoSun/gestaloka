@@ -22,10 +22,11 @@ export const SPTransactionType = {
   // システム系
   ADJUSTMENT: 'adjustment',
   MIGRATION: 'migration',
-} as const;
+} as const
 
 // eslint-disable-next-line no-redeclare
-export type SPTransactionType = typeof SPTransactionType[keyof typeof SPTransactionType];
+export type SPTransactionType =
+  (typeof SPTransactionType)[keyof typeof SPTransactionType]
 
 /**
  * SP購入パッケージ
@@ -36,10 +37,11 @@ export const SPPurchasePackage = {
   LARGE: 'large',
   EXTRA_LARGE: 'extra_large',
   MEGA: 'mega',
-} as const;
+} as const
 
 // eslint-disable-next-line no-redeclare
-export type SPPurchasePackage = typeof SPPurchasePackage[keyof typeof SPPurchasePackage];
+export type SPPurchasePackage =
+  (typeof SPPurchasePackage)[keyof typeof SPPurchasePackage]
 
 /**
  * SP月額パスの種類
@@ -47,94 +49,95 @@ export type SPPurchasePackage = typeof SPPurchasePackage[keyof typeof SPPurchase
 export const SPSubscriptionType = {
   BASIC: 'basic',
   PREMIUM: 'premium',
-} as const;
+} as const
 
 // eslint-disable-next-line no-redeclare
-export type SPSubscriptionType = typeof SPSubscriptionType[keyof typeof SPSubscriptionType];
+export type SPSubscriptionType =
+  (typeof SPSubscriptionType)[keyof typeof SPSubscriptionType]
 
 /**
  * プレイヤーのSP残高情報
  */
 export interface PlayerSP {
-  id: string;
-  userId: string;
-  currentSp: number;
-  totalEarnedSp: number;
-  totalConsumedSp: number;
-  totalPurchasedSp: number;
-  totalPurchaseAmount: number;
-  activeSubscription: SPSubscriptionType | null;
-  subscriptionExpiresAt: string | null;
-  consecutiveLoginDays: number;
-  lastLoginDate: string | null;
-  createdAt: string;
-  updatedAt: string;
+  id: string
+  userId: string
+  currentSp: number
+  totalEarnedSp: number
+  totalConsumedSp: number
+  totalPurchasedSp: number
+  totalPurchaseAmount: number
+  activeSubscription: SPSubscriptionType | null
+  subscriptionExpiresAt: string | null
+  consecutiveLoginDays: number
+  lastLoginDate: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 /**
  * SP残高の概要（軽量版）
  */
 export interface PlayerSPSummary {
-  currentSp: number;
-  activeSubscription: SPSubscriptionType | null;
-  subscriptionExpiresAt: string | null;
+  currentSp: number
+  activeSubscription: SPSubscriptionType | null
+  subscriptionExpiresAt: string | null
 }
 
 /**
  * SP取引情報
  */
 export interface SPTransaction {
-  id: string;
-  playerSpId: string;
-  userId: string;
-  transactionType: SPTransactionType;
-  amount: number;
-  balanceBefore: number;
-  balanceAfter: number;
-  description: string;
-  transactionMetadata: Record<string, unknown>;
-  relatedEntityType: string | null;
-  relatedEntityId: string | null;
-  purchasePackage: SPPurchasePackage | null;
-  purchaseAmount: number | null;
-  paymentMethod: string | null;
-  createdAt: string;
+  id: string
+  playerSpId: string
+  userId: string
+  transactionType: SPTransactionType
+  amount: number
+  balanceBefore: number
+  balanceAfter: number
+  description: string
+  transactionMetadata: Record<string, unknown>
+  relatedEntityType: string | null
+  relatedEntityId: string | null
+  purchasePackage: SPPurchasePackage | null
+  purchaseAmount: number | null
+  paymentMethod: string | null
+  createdAt: string
 }
 
 /**
  * SP消費リクエスト
  */
 export interface SPConsumeRequest {
-  amount: number;
-  transactionType: SPTransactionType;
-  description: string;
-  relatedEntityType?: string;
-  relatedEntityId?: string;
-  metadata?: Record<string, unknown>;
+  amount: number
+  transactionType: SPTransactionType
+  description: string
+  relatedEntityType?: string
+  relatedEntityId?: string
+  metadata?: Record<string, unknown>
 }
 
 /**
  * SP消費レスポンス
  */
 export interface SPConsumeResponse {
-  success: boolean;
-  transactionId: string;
-  balanceBefore: number;
-  balanceAfter: number;
-  message: string;
+  success: boolean
+  transactionId: string
+  balanceBefore: number
+  balanceAfter: number
+  message: string
 }
 
 /**
  * SP日次回復レスポンス
  */
 export interface SPDailyRecoveryResponse {
-  success: boolean;
-  recoveredAmount: number;
-  loginBonus: number;
-  consecutiveDays: number;
-  totalAmount: number;
-  balanceAfter: number;
-  message: string;
+  success: boolean
+  recoveredAmount: number
+  loginBonus: number
+  consecutiveDays: number
+  totalAmount: number
+  balanceAfter: number
+  message: string
 }
 
 /**
@@ -157,33 +160,39 @@ export const SPTransactionTypeLabels: Record<SPTransactionType, string> = {
   // システム系
   [SPTransactionType.ADJUSTMENT]: 'システム調整',
   [SPTransactionType.MIGRATION]: 'データ移行',
-};
+}
 
 /**
  * 購入パッケージの情報
  */
-export const SPPurchasePackageInfo: Record<SPPurchasePackage, { sp: number; price: number; label: string }> = {
+export const SPPurchasePackageInfo: Record<
+  SPPurchasePackage,
+  { sp: number; price: number; label: string }
+> = {
   [SPPurchasePackage.SMALL]: { sp: 100, price: 500, label: '100 SP' },
   [SPPurchasePackage.MEDIUM]: { sp: 300, price: 1200, label: '300 SP' },
   [SPPurchasePackage.LARGE]: { sp: 500, price: 2000, label: '500 SP' },
   [SPPurchasePackage.EXTRA_LARGE]: { sp: 1000, price: 3500, label: '1,000 SP' },
   [SPPurchasePackage.MEGA]: { sp: 3000, price: 8000, label: '3,000 SP' },
-};
+}
 
 /**
  * サブスクリプションの情報
  */
-export const SPSubscriptionInfo: Record<SPSubscriptionType, { dailyBonus: number; discountRate: number; price: number; label: string }> = {
-  [SPSubscriptionType.BASIC]: { 
-    dailyBonus: 20, 
-    discountRate: 0.1, 
-    price: 1000, 
-    label: 'ベーシックパス' 
+export const SPSubscriptionInfo: Record<
+  SPSubscriptionType,
+  { dailyBonus: number; discountRate: number; price: number; label: string }
+> = {
+  [SPSubscriptionType.BASIC]: {
+    dailyBonus: 20,
+    discountRate: 0.1,
+    price: 1000,
+    label: 'ベーシックパス',
   },
-  [SPSubscriptionType.PREMIUM]: { 
-    dailyBonus: 50, 
-    discountRate: 0.2, 
-    price: 2500, 
-    label: 'プレミアムパス' 
+  [SPSubscriptionType.PREMIUM]: {
+    dailyBonus: 50,
+    discountRate: 0.2,
+    price: 2500,
+    label: 'プレミアムパス',
   },
-};
+}

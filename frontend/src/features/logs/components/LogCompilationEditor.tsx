@@ -7,11 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
-import {
-  AlertTriangle,
-  Sparkles,
-  Star,
-} from 'lucide-react'
+import { AlertTriangle, Sparkles, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LogCompilationEditorProps {
@@ -40,10 +36,10 @@ export function LogCompilationEditor({
   const [contaminationLevel, setContaminationLevel] = useState(0)
 
   // フラグメントIDのリストから実際のフラグメントオブジェクトを取得
-  const selectedFragments = fragments.filter((f) =>
+  const selectedFragments = fragments.filter(f =>
     selectedFragmentIds.includes(f.id)
   )
-  const coreFragment = fragments.find((f) => f.id === coreFragmentId)
+  const coreFragment = fragments.find(f => f.id === coreFragmentId)
 
   // 初期化
   useEffect(() => {
@@ -53,7 +49,7 @@ export function LogCompilationEditor({
         (a, b) => b.importanceScore - a.importanceScore
       )
       setCoreFragmentId(sortedByImportance[0].id)
-      setSelectedFragmentIds(fragments.map((f) => f.id))
+      setSelectedFragmentIds(fragments.map(f => f.id))
     }
   }, [fragments, coreFragmentId])
 
@@ -65,7 +61,7 @@ export function LogCompilationEditor({
     }
 
     const negativeCount = selectedFragments.filter(
-      (f) => f.emotionalValence === 'negative'
+      f => f.emotionalValence === 'negative'
     ).length
     const contamination = negativeCount / selectedFragments.length
     setContaminationLevel(contamination)
@@ -96,7 +92,7 @@ export function LogCompilationEditor({
     // 説明の自動生成
     if (!logDescription && selectedFragments.length > 0) {
       const keywordSet = new Set<string>()
-      selectedFragments.forEach((f) => f.keywords.forEach((k) => keywordSet.add(k)))
+      selectedFragments.forEach(f => f.keywords.forEach(k => keywordSet.add(k)))
       const allKeywords = Array.from(keywordSet).slice(0, 5).join('、')
       setLogDescription(
         `${allKeywords}に関わる${selectedFragments.length}つの記憶から編纂されたログ。`
@@ -107,9 +103,9 @@ export function LogCompilationEditor({
   const handleFragmentToggle = (fragmentId: string) => {
     if (fragmentId === coreFragmentId) return // コアフラグメントは削除不可
 
-    setSelectedFragmentIds((prev) =>
+    setSelectedFragmentIds(prev =>
       prev.includes(fragmentId)
-        ? prev.filter((id) => id !== fragmentId)
+        ? prev.filter(id => id !== fragmentId)
         : [...prev, fragmentId]
     )
   }
@@ -149,7 +145,7 @@ export function LogCompilationEditor({
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {fragments.map((fragment) => {
+            {fragments.map(fragment => {
               const isCore = fragment.id === coreFragmentId
               const isSelected = selectedFragmentIds.includes(fragment.id)
 
@@ -202,7 +198,7 @@ export function LogCompilationEditor({
                         <Button
                           size="sm"
                           variant={isCore ? 'default' : 'outline'}
-                          onClick={(e) => {
+                          onClick={e => {
                             e.stopPropagation()
                             setCoreFragmentId(fragment.id)
                           }}
@@ -234,7 +230,7 @@ export function LogCompilationEditor({
               <Input
                 id="logName"
                 value={logName}
-                onChange={(e) => setLogName(e.target.value)}
+                onChange={e => setLogName(e.target.value)}
                 placeholder="例：勇気と友情の記録"
               />
             </div>
@@ -244,7 +240,7 @@ export function LogCompilationEditor({
               <Input
                 id="logTitle"
                 value={logTitle}
-                onChange={(e) => setLogTitle(e.target.value)}
+                onChange={e => setLogTitle(e.target.value)}
                 placeholder="例：不屈の探求者"
               />
             </div>
@@ -254,12 +250,11 @@ export function LogCompilationEditor({
               <Textarea
                 id="logDescription"
                 value={logDescription}
-                onChange={(e) => setLogDescription(e.target.value)}
+                onChange={e => setLogDescription(e.target.value)}
                 placeholder="このログの内容を説明してください"
                 rows={4}
               />
             </div>
-
           </CardContent>
         </Card>
 
@@ -291,10 +286,10 @@ export function LogCompilationEditor({
                 {contaminationLevel > 0.7
                   ? '高度に汚染されています'
                   : contaminationLevel > 0.5
-                  ? '中程度の汚染'
-                  : contaminationLevel > 0.3
-                  ? '軽度の汚染'
-                  : '清浄'}
+                    ? '中程度の汚染'
+                    : contaminationLevel > 0.3
+                      ? '軽度の汚染'
+                      : '清浄'}
               </p>
               {contaminationLevel > 0.5 && (
                 <p className="text-xs text-yellow-600">
@@ -307,11 +302,7 @@ export function LogCompilationEditor({
 
         {/* アクションボタン */}
         <div className="flex gap-4">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            className="flex-1"
-          >
+          <Button variant="outline" onClick={onCancel} className="flex-1">
             キャンセル
           </Button>
           <Button

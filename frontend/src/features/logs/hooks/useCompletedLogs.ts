@@ -20,7 +20,7 @@ export function useCreateCompletedLog() {
 
   return useMutation({
     mutationFn: (log: CompletedLogCreate) => apiClient.createCompletedLog(log),
-    onSuccess: (data) => {
+    onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
         queryKey: ['completedLogs', data.creatorId],
@@ -31,7 +31,7 @@ export function useCreateCompletedLog() {
         variant: 'success',
       })
     },
-    onError: (error) => {
+    onError: error => {
       toast({
         title: 'エラー',
         description: 'ログの編纂に失敗しました',
@@ -55,7 +55,7 @@ export function useUpdateCompletedLog() {
       logId: string
       updates: Partial<CompletedLogCreate>
     }) => apiClient.updateCompletedLog(logId, updates),
-    onSuccess: (data) => {
+    onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
         queryKey: ['completedLogs', data.creatorId],
@@ -65,7 +65,7 @@ export function useUpdateCompletedLog() {
         variant: 'success',
       })
     },
-    onError: (error) => {
+    onError: error => {
       toast({
         title: 'エラー',
         description: 'ログの更新に失敗しました',

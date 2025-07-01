@@ -1,9 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import {
-  spPurchaseApi,
-  type PurchaseStatus,
-} from '@/api/sp-purchase'
+import { spPurchaseApi, type PurchaseStatus } from '@/api/sp-purchase'
 
 export const useSPPlans = () => {
   return useQuery({
@@ -18,11 +15,11 @@ export const useCreatePurchase = () => {
 
   return useMutation({
     mutationFn: spPurchaseApi.createPurchase,
-    onSuccess: (data) => {
+    onSuccess: data => {
       // 購入履歴とSP残高を更新
       queryClient.invalidateQueries({ queryKey: ['sp-purchases'] })
       queryClient.invalidateQueries({ queryKey: ['sp-balance'] })
-      
+
       if (data.status === 'completed') {
         toast.success('SP購入が完了しました')
       } else {
@@ -81,7 +78,10 @@ export const useCreateStripeCheckout = () => {
   return useMutation({
     mutationFn: spPurchaseApi.createStripeCheckout,
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Stripeチェックアウトの作成に失敗しました')
+      toast.error(
+        error.response?.data?.detail ||
+          'Stripeチェックアウトの作成に失敗しました'
+      )
     },
   })
 }

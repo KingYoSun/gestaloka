@@ -2,11 +2,11 @@
  * 場所マップコンポーネント
  */
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useExploration } from '@/hooks/useExploration';
-import { LoadingState } from '@/components/ui/LoadingState';
-import type { LocationType, DangerLevel } from '@/api/generated';
-import { cn } from '@/lib/utils';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useExploration } from '@/hooks/useExploration'
+import { LoadingState } from '@/components/ui/LoadingState'
+import type { LocationType, DangerLevel } from '@/api/generated'
+import { cn } from '@/lib/utils'
 
 const locationTypeColors: Record<LocationType, string> = {
   city: 'bg-blue-500',
@@ -14,7 +14,7 @@ const locationTypeColors: Record<LocationType, string> = {
   dungeon: 'bg-red-500',
   wild: 'bg-yellow-500',
   special: 'bg-purple-500',
-};
+}
 
 const dangerLevelOpacity: Record<DangerLevel, string> = {
   safe: 'opacity-100',
@@ -22,24 +22,24 @@ const dangerLevelOpacity: Record<DangerLevel, string> = {
   medium: 'opacity-75',
   high: 'opacity-60',
   extreme: 'opacity-40',
-};
+}
 
 export function LocationMap() {
-  const { useAllLocations, useCurrentLocation } = useExploration();
-  const { data: locations, isLoading } = useAllLocations();
-  const { data: currentLocation } = useCurrentLocation();
+  const { useAllLocations, useCurrentLocation } = useExploration()
+  const { data: locations, isLoading } = useAllLocations()
+  const { data: currentLocation } = useCurrentLocation()
 
-  if (isLoading) return <LoadingState message="マップを読み込み中..." />;
-  if (!locations || locations.length === 0) return null;
+  if (isLoading) return <LoadingState message="マップを読み込み中..." />
+  if (!locations || locations.length === 0) return null
 
   // マップの範囲を計算
-  const minX = Math.min(...locations.map(loc => loc.x_coordinate)) - 1;
-  const maxX = Math.max(...locations.map(loc => loc.x_coordinate)) + 1;
-  const minY = Math.min(...locations.map(loc => loc.y_coordinate)) - 1;
-  const maxY = Math.max(...locations.map(loc => loc.y_coordinate)) + 1;
+  const minX = Math.min(...locations.map(loc => loc.x_coordinate)) - 1
+  const maxX = Math.max(...locations.map(loc => loc.x_coordinate)) + 1
+  const minY = Math.min(...locations.map(loc => loc.y_coordinate)) - 1
+  const maxY = Math.max(...locations.map(loc => loc.y_coordinate)) + 1
 
-  const gridCols = maxX - minX + 1;
-  const gridRows = maxY - minY + 1;
+  const gridCols = maxX - minX + 1
+  const gridRows = maxY - minY + 1
 
   return (
     <Card>
@@ -48,7 +48,7 @@ export function LocationMap() {
       </CardHeader>
       <CardContent>
         <div className="w-full overflow-auto">
-          <div 
+          <div
             className="grid gap-1 min-w-[500px]"
             style={{
               gridTemplateColumns: `repeat(${gridCols}, minmax(60px, 1fr))`,
@@ -58,22 +58,22 @@ export function LocationMap() {
             {/* グリッドを生成 */}
             {Array.from({ length: gridRows }).map((_, row) =>
               Array.from({ length: gridCols }).map((_, col) => {
-                const x = minX + col;
-                const y = minY + row;
+                const x = minX + col
+                const y = minY + row
                 const location = locations.find(
                   loc => loc.x_coordinate === x && loc.y_coordinate === y
-                );
-                
+                )
+
                 if (!location) {
                   return (
                     <div
                       key={`${x}-${y}`}
                       className="border border-dashed border-muted rounded-md"
                     />
-                  );
+                  )
                 }
 
-                const isCurrentLocation = currentLocation?.id === location.id;
+                const isCurrentLocation = currentLocation?.id === location.id
 
                 return (
                   <div
@@ -82,7 +82,9 @@ export function LocationMap() {
                       'relative rounded-md border-2 cursor-pointer transition-all hover:scale-105',
                       locationTypeColors[location.location_type],
                       dangerLevelOpacity[location.danger_level],
-                      isCurrentLocation ? 'border-primary ring-2 ring-primary' : 'border-transparent'
+                      isCurrentLocation
+                        ? 'border-primary ring-2 ring-primary'
+                        : 'border-transparent'
                     )}
                     title={`${location.name} (階層${location.hierarchy_level})`}
                   >
@@ -95,7 +97,7 @@ export function LocationMap() {
                       <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full animate-pulse" />
                     )}
                   </div>
-                );
+                )
               })
             )}
           </div>
@@ -117,5 +119,5 @@ export function LocationMap() {
         </div>
       </CardContent>
     </Card>
-  );
+  )
 }

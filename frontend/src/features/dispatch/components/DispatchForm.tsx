@@ -38,9 +38,12 @@ import { useCharacterStore } from '@/stores/characterStore'
 import { Coins, MapPin, Calendar, Target } from 'lucide-react'
 
 const dispatchFormSchema = z.object({
-  objective_type: z.enum(['EXPLORE', 'INTERACT', 'COLLECT', 'GUARD', 'FREE'] as const, {
-    required_error: '派遣目的を選択してください',
-  }),
+  objective_type: z.enum(
+    ['EXPLORE', 'INTERACT', 'COLLECT', 'GUARD', 'FREE'] as const,
+    {
+      required_error: '派遣目的を選択してください',
+    }
+  ),
   objective_detail: z
     .string()
     .min(10, '目的の詳細は10文字以上で入力してください')
@@ -145,7 +148,7 @@ export function DispatchForm({
 
   // 期間が変更されたらSP消費量を更新
   form.register('dispatch_duration_days', {
-    onChange: (e) => {
+    onChange: e => {
       setSpCost(calculateSpCost(e.target.value))
     },
   })
@@ -162,7 +165,7 @@ export function DispatchForm({
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit((data) =>
+            onSubmit={form.handleSubmit(data =>
               createDispatchMutation.mutate(data)
             )}
             className="space-y-6"
@@ -183,7 +186,7 @@ export function DispatchForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {objectiveTypeOptions.map((option) => (
+                      {objectiveTypeOptions.map(option => (
                         <SelectItem key={option.value} value={option.value}>
                           <div>
                             <div className="font-medium">{option.label}</div>
@@ -256,7 +259,9 @@ export function DispatchForm({
                         max={30}
                         step={1}
                         value={[field.value]}
-                        onValueChange={(value: number[]) => field.onChange(value[0])}
+                        onValueChange={(value: number[]) =>
+                          field.onChange(value[0])
+                        }
                       />
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
@@ -286,7 +291,9 @@ export function DispatchForm({
               <div className="text-sm text-muted-foreground space-y-1">
                 <p>ログ名: {completedLog.name}</p>
                 <p>称号: {completedLog.title || 'なし'}</p>
-                <p>汚染度: {(completedLog.contaminationLevel * 100).toFixed(0)}%</p>
+                <p>
+                  汚染度: {(completedLog.contaminationLevel * 100).toFixed(0)}%
+                </p>
                 <p>消費SP: {spCost}</p>
               </div>
             </div>
@@ -299,10 +306,7 @@ export function DispatchForm({
               >
                 キャンセル
               </Button>
-              <Button
-                type="submit"
-                disabled={createDispatchMutation.isPending}
-              >
+              <Button type="submit" disabled={createDispatchMutation.isPending}>
                 {createDispatchMutation.isPending
                   ? '派遣中...'
                   : `派遣する (${spCost} SP)`}

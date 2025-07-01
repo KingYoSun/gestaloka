@@ -2,13 +2,7 @@ import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
-import { 
-  Home,
-  Activity,
-  Users,
-  Settings,
-  LogOut
-} from 'lucide-react'
+import { Home, Activity, Users, Settings, LogOut } from 'lucide-react'
 
 export function AdminLayout() {
   const { user, logout } = useAuthStore()
@@ -39,30 +33,30 @@ export function AdminLayout() {
           <div className="p-6">
             <h2 className="text-2xl font-bold">管理画面</h2>
           </div>
-          
+
           <nav className="px-4 space-y-2">
             <Link
               to="/admin"
               className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
               activeProps={{
-                className: "bg-accent"
+                className: 'bg-accent',
               }}
             >
               <Home className="w-5 h-5" />
               ダッシュボード
             </Link>
-            
+
             <Link
               to="/admin/performance"
               className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
               activeProps={{
-                className: "bg-accent"
+                className: 'bg-accent',
               }}
             >
               <Activity className="w-5 h-5" />
               パフォーマンス
             </Link>
-            
+
             {/* 今後実装予定
             <Link
               to="/admin/users"
@@ -82,18 +76,18 @@ export function AdminLayout() {
               設定
             </Link>
             */}
-            
+
             <div className="flex items-center gap-3 px-4 py-2 rounded-lg opacity-50 cursor-not-allowed">
               <Users className="w-5 h-5" />
               <span className="text-sm">ユーザー管理（準備中）</span>
             </div>
-            
+
             <div className="flex items-center gap-3 px-4 py-2 rounded-lg opacity-50 cursor-not-allowed">
               <Settings className="w-5 h-5" />
               <span className="text-sm">設定（準備中）</span>
             </div>
           </nav>
-          
+
           <div className="absolute bottom-0 w-64 p-4 border-t">
             <div className="flex items-center justify-between">
               <div>

@@ -4,13 +4,31 @@
 export type EmotionalValence = 'positive' | 'negative' | 'neutral'
 
 // ログフラグメントのレアリティ
-export type LogFragmentRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
+export type LogFragmentRarity =
+  | 'common'
+  | 'uncommon'
+  | 'rare'
+  | 'epic'
+  | 'legendary'
 
 // 完成ログのステータス
-export type CompletedLogStatus = 'draft' | 'completed' | 'contracted' | 'active' | 'expired' | 'recalled'
+export type CompletedLogStatus =
+  | 'draft'
+  | 'completed'
+  | 'contracted'
+  | 'active'
+  | 'expired'
+  | 'recalled'
 
 // ログ契約のステータス
-export type LogContractStatus = 'pending' | 'accepted' | 'active' | 'deployed' | 'completed' | 'expired' | 'cancelled'
+export type LogContractStatus =
+  | 'pending'
+  | 'accepted'
+  | 'active'
+  | 'deployed'
+  | 'completed'
+  | 'expired'
+  | 'cancelled'
 
 // ログフラグメント（ログの欠片）
 export interface LogFragment {

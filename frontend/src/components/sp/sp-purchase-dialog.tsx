@@ -11,7 +11,10 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { useCreatePurchase, useCreateStripeCheckout } from '@/hooks/use-sp-purchase'
+import {
+  useCreatePurchase,
+  useCreateStripeCheckout,
+} from '@/hooks/use-sp-purchase'
 import type { SPPlan } from '@/api/sp-purchase'
 import { Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
@@ -23,17 +26,25 @@ interface SPPurchaseDialogProps {
   isTestMode?: boolean
 }
 
-export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: SPPurchaseDialogProps) {
+export function SPPurchaseDialog({
+  plan,
+  isOpen,
+  onClose,
+  isTestMode = false,
+}: SPPurchaseDialogProps) {
   const [testReason, setTestReason] = useState('')
-  const { mutate: createPurchase, isPending: isTestPending } = useCreatePurchase()
-  const { mutate: createStripeCheckout, isPending: isStripePending } = useCreateStripeCheckout()
+  const { mutate: createPurchase, isPending: isTestPending } =
+    useCreatePurchase()
+  const { mutate: createStripeCheckout, isPending: isStripePending } =
+    useCreateStripeCheckout()
   const { toast } = useToast()
-  
+
   const isPending = isTestPending || isStripePending
 
   if (!plan) return null
 
-  const totalSP = plan.sp_amount + Math.floor(plan.sp_amount * (plan.bonus_percentage / 100))
+  const totalSP =
+    plan.sp_amount + Math.floor(plan.sp_amount * (plan.bonus_percentage / 100))
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('ja-JP', {
@@ -47,7 +58,7 @@ export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: 
       if (testReason.length < 10) {
         return
       }
-      
+
       createPurchase(
         {
           plan_id: plan.id,
@@ -71,11 +82,11 @@ export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: 
           plan_id: plan.id,
         },
         {
-          onSuccess: (response) => {
+          onSuccess: response => {
             // Stripeチェックアウトページへリダイレクト
             window.location.href = response.checkout_url
           },
-          onError: (error) => {
+          onError: error => {
             toast({
               title: 'エラー',
               description: 'チェックアウトセッションの作成に失敗しました。',
@@ -111,13 +122,17 @@ export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: 
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">内訳</span>
                 <span className="text-muted-foreground">
-                  {plan.sp_amount} SP + {Math.floor(plan.sp_amount * (plan.bonus_percentage / 100))} ボーナス
+                  {plan.sp_amount} SP +{' '}
+                  {Math.floor(plan.sp_amount * (plan.bonus_percentage / 100))}{' '}
+                  ボーナス
                 </span>
               </div>
             )}
             <div className="flex justify-between pt-2 border-t">
               <span className="text-muted-foreground">金額</span>
-              <span className="font-semibold text-lg">{formatPrice(plan.price_jpy)}</span>
+              <span className="font-semibold text-lg">
+                {formatPrice(plan.price_jpy)}
+              </span>
             </div>
           </div>
 
@@ -130,9 +145,13 @@ export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: 
                 id="test-reason"
                 placeholder="テストプレイのためSPが必要です..."
                 value={testReason}
-                onChange={(e) => setTestReason(e.target.value)}
+                onChange={e => setTestReason(e.target.value)}
                 rows={3}
-                className={testReason.length < 10 && testReason.length > 0 ? 'border-destructive' : ''}
+                className={
+                  testReason.length < 10 && testReason.length > 0
+                    ? 'border-destructive'
+                    : ''
+                }
               />
               {testReason.length > 0 && testReason.length < 10 && (
                 <p className="text-sm text-destructive">
@@ -156,8 +175,8 @@ export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: 
           <Button variant="outline" onClick={onClose} disabled={isPending}>
             キャンセル
           </Button>
-          <Button 
-            onClick={handlePurchase} 
+          <Button
+            onClick={handlePurchase}
             disabled={isPending || (isTestMode && testReason.length < 10)}
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

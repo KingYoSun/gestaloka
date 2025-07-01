@@ -80,7 +80,10 @@ export function useCreateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      showSuccessToast('キャラクター作成成功', `${newCharacter.name}を作成しました`)
+      showSuccessToast(
+        'キャラクター作成成功',
+        `${newCharacter.name}を作成しました`
+      )
     },
     onError: (error: Error) => {
       showErrorToast(error, 'キャラクター作成に失敗しました')
@@ -164,7 +167,10 @@ export function useActivateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      showSuccessToast('キャラクター選択', `${activatedCharacter.name}を選択しました`)
+      showSuccessToast(
+        'キャラクター選択',
+        `${activatedCharacter.name}を選択しました`
+      )
     },
     onError: (error: Error) => {
       showErrorToast(error, 'キャラクターの選択に失敗しました')

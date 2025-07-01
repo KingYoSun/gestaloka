@@ -170,7 +170,9 @@ function CharacterCard({
   isActive,
 }: CharacterCardProps) {
   return (
-    <Card className={`group hover:shadow-lg transition-all duration-200 ${cardStyles.transparent} border-0 shadow-md`}>
+    <Card
+      className={`group hover:shadow-lg transition-all duration-200 ${cardStyles.transparent} border-0 shadow-md`}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">

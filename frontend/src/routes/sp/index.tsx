@@ -14,7 +14,13 @@ import { SPPurchaseHistory } from '@/components/sp/sp-purchase-history'
 import { useSPPlans } from '@/hooks/use-sp-purchase'
 import type { SPPlan } from '@/api/sp-purchase'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
@@ -71,15 +77,18 @@ function SPPage() {
     return (
       <div className="container max-w-6xl py-8">
         <div className="text-center py-12">
-          <p className="text-muted-foreground">SP情報の読み込みに失敗しました</p>
+          <p className="text-muted-foreground">
+            SP情報の読み込みに失敗しました
+          </p>
         </div>
       </div>
     )
   }
 
-  const consumptionRate = balance.totalEarnedSp > 0
-    ? (balance.totalConsumedSp / balance.totalEarnedSp) * 100
-    : 0
+  const consumptionRate =
+    balance.totalEarnedSp > 0
+      ? (balance.totalConsumedSp / balance.totalEarnedSp) * 100
+      : 0
 
   return (
     <div className="container max-w-6xl py-8 space-y-6">
@@ -121,7 +130,9 @@ function SPPage() {
             <Coins className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(balance.currentSp)} SP</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(balance.currentSp)} SP
+            </div>
             <p className="text-xs text-muted-foreground">
               利用可能なストーリーポイント
             </p>
@@ -134,7 +145,9 @@ function SPPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(balance.totalEarnedSp)} SP</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(balance.totalEarnedSp)} SP
+            </div>
             <p className="text-xs text-muted-foreground">
               これまでに獲得した総SP
             </p>
@@ -147,7 +160,9 @@ function SPPage() {
             <History className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(balance.totalConsumedSp)} SP</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(balance.totalConsumedSp)} SP
+            </div>
             <Progress value={consumptionRate} className="h-2 mt-2" />
             <p className="text-xs text-muted-foreground mt-1">
               獲得量の {consumptionRate.toFixed(1)}% を消費
@@ -161,22 +176,28 @@ function SPPage() {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{balance.consecutiveLoginDays} 日</div>
+            <div className="text-2xl font-bold">
+              {balance.consecutiveLoginDays} 日
+            </div>
             <p className="text-xs text-muted-foreground">
               {balance.consecutiveLoginDays >= 30
                 ? '最大ボーナス獲得中！'
                 : balance.consecutiveLoginDays >= 14
-                ? '14日ボーナス獲得中'
-                : balance.consecutiveLoginDays >= 7
-                ? '7日ボーナス獲得中'
-                : '連続ログインでボーナスSP'}
+                  ? '14日ボーナス獲得中'
+                  : balance.consecutiveLoginDays >= 7
+                    ? '7日ボーナス獲得中'
+                    : '連続ログインでボーナスSP'}
             </p>
           </CardContent>
         </Card>
       </div>
 
       {/* タブコンテンツ */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="overview">概要</TabsTrigger>
           <TabsTrigger value="history">取引履歴</TabsTrigger>
@@ -187,7 +208,7 @@ function SPPage() {
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <SPDisplay showSubscription className="h-full" />
-            
+
             <Card>
               <CardHeader>
                 <CardTitle>SPの使い道</CardTitle>

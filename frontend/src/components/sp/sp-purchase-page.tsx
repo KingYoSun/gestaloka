@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useSPPlans } from '@/hooks/use-sp-purchase'
 import { SPPlansGrid } from './sp-plans-grid'
@@ -41,7 +47,7 @@ export function SPPurchasePage() {
               <TabsTrigger value="plans">プラン選択</TabsTrigger>
               <TabsTrigger value="history">購入履歴</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="plans" className="mt-6">
               <Card>
                 <CardHeader>
@@ -55,7 +61,7 @@ export function SPPurchasePage() {
                 </CardContent>
               </Card>
             </TabsContent>
-            
+
             <TabsContent value="history" className="mt-6">
               <SPPurchaseHistory />
             </TabsContent>

@@ -1,5 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { XCircle } from 'lucide-react'
 
@@ -24,10 +30,7 @@ export function SPPurchaseCancel() {
           </p>
 
           <div className="flex flex-col gap-3">
-            <Button
-              onClick={() => navigate({ to: '/sp' })}
-              className="w-full"
-            >
+            <Button onClick={() => navigate({ to: '/sp' })} className="w-full">
               SP購入ページに戻る
             </Button>
             <Button

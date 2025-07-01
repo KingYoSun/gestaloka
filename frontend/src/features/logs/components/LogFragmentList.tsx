@@ -35,9 +35,9 @@ export function LogFragmentList({
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       filtered = filtered.filter(
-        (fragment) =>
+        fragment =>
           fragment.actionDescription.toLowerCase().includes(query) ||
-          fragment.keywords.some((keyword) =>
+          fragment.keywords.some(keyword =>
             keyword.toLowerCase().includes(query)
           )
       )
@@ -46,13 +46,13 @@ export function LogFragmentList({
     // 感情価フィルタ
     if (emotionFilter !== 'all') {
       filtered = filtered.filter(
-        (fragment) => fragment.emotionalValence === emotionFilter
+        fragment => fragment.emotionalValence === emotionFilter
       )
     }
 
     // レアリティフィルタ
     if (rarityFilter !== 'all') {
-      filtered = filtered.filter((fragment) => fragment.rarity === rarityFilter)
+      filtered = filtered.filter(fragment => fragment.rarity === rarityFilter)
     }
 
     // ソート
@@ -112,14 +112,14 @@ export function LogFragmentList({
           <Input
             placeholder="行動やキーワードで検索..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={e => setSearchQuery(e.target.value)}
             className="pl-10"
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <select
             value={emotionFilter}
-            onChange={(e) => setEmotionFilter(e.target.value as FilterOption)}
+            onChange={e => setEmotionFilter(e.target.value as FilterOption)}
             className="px-3 py-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="all">すべての感情価</option>
@@ -130,7 +130,7 @@ export function LogFragmentList({
 
           <select
             value={rarityFilter}
-            onChange={(e) => setRarityFilter(e.target.value as FilterOption)}
+            onChange={e => setRarityFilter(e.target.value as FilterOption)}
             className="px-3 py-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="all">すべてのレアリティ</option>
@@ -143,7 +143,7 @@ export function LogFragmentList({
 
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            onChange={e => setSortBy(e.target.value as SortOption)}
             className="px-3 py-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="date">日付順</option>
@@ -167,7 +167,7 @@ export function LogFragmentList({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {processedFragments.map((fragment) => (
+          {processedFragments.map(fragment => (
             <LogFragmentCard
               key={fragment.id}
               fragment={fragment}

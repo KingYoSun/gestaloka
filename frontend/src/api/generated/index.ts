@@ -21,88 +21,88 @@ export enum DangerLevel {
 }
 
 export interface LocationResponse {
-  id: number;
-  name: string;
-  description: string;
-  location_type: LocationType;
-  hierarchy_level: number;
-  danger_level: DangerLevel;
-  x_coordinate: number;
-  y_coordinate: number;
-  has_inn: boolean;
-  has_shop: boolean;
-  has_guild: boolean;
-  fragment_discovery_rate: number;
-  is_discovered: boolean;
+  id: number
+  name: string
+  description: string
+  location_type: LocationType
+  hierarchy_level: number
+  danger_level: DangerLevel
+  x_coordinate: number
+  y_coordinate: number
+  has_inn: boolean
+  has_shop: boolean
+  has_guild: boolean
+  fragment_discovery_rate: number
+  is_discovered: boolean
 }
 
 export interface LocationConnectionResponse {
-  connection_id: number;
-  to_location: LocationResponse;
-  sp_cost: number;
-  distance: number;
-  min_level_required: number;
-  travel_description?: string;
+  connection_id: number
+  to_location: LocationResponse
+  sp_cost: number
+  distance: number
+  min_level_required: number
+  travel_description?: string
 }
 
 export interface AvailableLocationsResponse {
-  current_location: LocationResponse;
-  available_locations: LocationConnectionResponse[];
+  current_location: LocationResponse
+  available_locations: LocationConnectionResponse[]
 }
 
 export interface MoveRequest {
-  connection_id: number;
+  connection_id: number
 }
 
 export interface MoveResponse {
-  success: boolean;
-  new_location: LocationResponse;
-  sp_consumed: number;
-  remaining_sp: number;
-  travel_narrative: string;
+  success: boolean
+  new_location: LocationResponse
+  sp_consumed: number
+  remaining_sp: number
+  travel_narrative: string
 }
 
 export interface ExplorationAreaResponse {
-  id: number;
-  name: string;
-  description: string;
-  difficulty: number;
-  exploration_sp_cost: number;
-  max_fragments_per_exploration: number;
-  rare_fragment_chance: number;
-  encounter_rate: number;
+  id: number
+  name: string
+  description: string
+  difficulty: number
+  exploration_sp_cost: number
+  max_fragments_per_exploration: number
+  rare_fragment_chance: number
+  encounter_rate: number
 }
 
 export interface ExploreRequest {
-  area_id: number;
+  area_id: number
 }
 
 export interface ExploreResponse {
-  success: boolean;
+  success: boolean
   fragments_found: Array<{
-    keyword: string;
-    rarity: string;
-    description: string;
-  }>;
-  encounters: number;
-  sp_consumed: number;
-  remaining_sp: number;
-  narrative: string;
+    keyword: string
+    rarity: string
+    description: string
+  }>
+  encounters: number
+  sp_consumed: number
+  remaining_sp: number
+  narrative: string
 }
 
 // SP types
 export interface PlayerSP {
-  userId: string;
-  currentSp: number;
-  maxSp: number;
-  lastRecoveryAt: string;
-  createdAt: string;
-  updatedAt: string;
+  userId: string
+  currentSp: number
+  maxSp: number
+  lastRecoveryAt: string
+  createdAt: string
+  updatedAt: string
 }
 
 // Re-export from other modules if needed
 // Note: CompletedLog and LogFragment are already exported from @/types
-export type { 
+export type {
   User,
   Character,
   CharacterCreationForm,
@@ -112,7 +112,7 @@ export type {
   GameActionRequest,
   GameActionResponse,
   // Exclude CompletedLog and LogFragment to avoid duplicate exports
-} from '@/types';
+} from '@/types'
 
 // Re-export everything except duplicates
 export type {
@@ -123,6 +123,6 @@ export type {
   LogContractAccept,
   CompletedLogRead,
   LogFragmentRead,
-} from '@/types/log';
+} from '@/types/log'
 
-export * from '@/types/sp';
+export * from '@/types/sp'

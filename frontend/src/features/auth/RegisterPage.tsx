@@ -18,8 +18,12 @@ export function RegisterPage() {
   })
   const { error, isLoading, handleAsync } = useFormError()
   const [success, setSuccess] = useState(false)
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
-  const [passwordStrength, setPasswordStrength] = useState<ReturnType<typeof getPasswordStrength> | null>(null)
+  const [validationErrors, setValidationErrors] = useState<
+    Record<string, string>
+  >({})
+  const [passwordStrength, setPasswordStrength] = useState<ReturnType<
+    typeof getPasswordStrength
+  > | null>(null)
 
   const navigate = useNavigate()
 
@@ -29,12 +33,12 @@ export function RegisterPage() {
       ...prev,
       [name]: value,
     }))
-    
+
     // パスワード強度の更新
     if (name === 'password') {
       setPasswordStrength(value ? getPasswordStrength(value) : null)
     }
-    
+
     // エラーのクリア
     if (validationErrors[name]) {
       setValidationErrors({ ...validationErrors, [name]: '' })
@@ -47,10 +51,10 @@ export function RegisterPage() {
 
     // Zodバリデーション
     const result = userRegisterSchema.safeParse(formData)
-    
+
     if (!result.success) {
       const errors: Record<string, string> = {}
-      result.error.errors.forEach((err) => {
+      result.error.errors.forEach(err => {
         if (err.path[0]) {
           errors[err.path[0].toString()] = err.message
         }
@@ -59,23 +63,20 @@ export function RegisterPage() {
       return
     }
 
-    await handleAsync(
-      async () => {
-        await apiClient.register({
-          username: formData.username,
-          email: formData.email,
-          password: formData.password,
-          confirm_password: formData.confirmPassword,
-        })
+    await handleAsync(async () => {
+      await apiClient.register({
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+        confirm_password: formData.confirmPassword,
+      })
 
-        setSuccess(true)
-        // 3秒後にログインページへリダイレクト
-        setTimeout(() => {
-          navigate({ to: '/login' })
-        }, 3000)
-      },
-      '登録に失敗しました'
-    )
+      setSuccess(true)
+      // 3秒後にログインページへリダイレクト
+      setTimeout(() => {
+        navigate({ to: '/login' })
+      }, 3000)
+    }, '登録に失敗しました')
   }
 
   if (success) {
@@ -128,7 +129,9 @@ export function RegisterPage() {
                 className={validationErrors.username ? 'border-red-500' : ''}
               />
               {validationErrors.username && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.username}</p>
+                <p className="mt-1 text-sm text-red-600">
+                  {validationErrors.username}
+                </p>
               )}
             </div>
 
@@ -147,7 +150,9 @@ export function RegisterPage() {
                 className={validationErrors.email ? 'border-red-500' : ''}
               />
               {validationErrors.email && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.email}</p>
+                <p className="mt-1 text-sm text-red-600">
+                  {validationErrors.email}
+                </p>
               )}
             </div>
 
@@ -170,30 +175,42 @@ export function RegisterPage() {
                 className={validationErrors.password ? 'border-red-500' : ''}
               />
               {validationErrors.password && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
+                <p className="mt-1 text-sm text-red-600">
+                  {validationErrors.password}
+                </p>
               )}
               {passwordStrength && formData.password && (
                 <div className="mt-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600">パスワード強度:</span>
-                    <span className={`font-medium ${
-                      passwordStrength.label === '弱い' ? 'text-red-600' :
-                      passwordStrength.label === '普通' ? 'text-yellow-600' :
-                      passwordStrength.label === '強い' ? 'text-green-600' :
-                      'text-green-700'
-                    }`}>
+                    <span
+                      className={`font-medium ${
+                        passwordStrength.label === '弱い'
+                          ? 'text-red-600'
+                          : passwordStrength.label === '普通'
+                            ? 'text-yellow-600'
+                            : passwordStrength.label === '強い'
+                              ? 'text-green-600'
+                              : 'text-green-700'
+                      }`}
+                    >
                       {passwordStrength.label}
                     </span>
                   </div>
                   <div className="mt-1 h-2 w-full rounded-full bg-gray-200">
                     <div
                       className={`h-full rounded-full transition-all ${
-                        passwordStrength.label === '弱い' ? 'bg-red-500' :
-                        passwordStrength.label === '普通' ? 'bg-yellow-500' :
-                        passwordStrength.label === '強い' ? 'bg-green-500' :
-                        'bg-green-600'
+                        passwordStrength.label === '弱い'
+                          ? 'bg-red-500'
+                          : passwordStrength.label === '普通'
+                            ? 'bg-yellow-500'
+                            : passwordStrength.label === '強い'
+                              ? 'bg-green-500'
+                              : 'bg-green-600'
                       }`}
-                      style={{ width: `${(passwordStrength.score / 8) * 100}%` }}
+                      style={{
+                        width: `${(passwordStrength.score / 8) * 100}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -218,10 +235,14 @@ export function RegisterPage() {
                 onChange={handleChange}
                 required
                 placeholder="パスワードを再入力"
-                className={validationErrors.confirmPassword ? 'border-red-500' : ''}
+                className={
+                  validationErrors.confirmPassword ? 'border-red-500' : ''
+                }
               />
               {validationErrors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-600">{validationErrors.confirmPassword}</p>
+                <p className="mt-1 text-sm text-red-600">
+                  {validationErrors.confirmPassword}
+                </p>
               )}
             </div>
           </div>

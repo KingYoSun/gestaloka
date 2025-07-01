@@ -41,6 +41,10 @@ export class WebSocketManager {
     // For testing purposes, we need to emit custom events
     // Since the websocketManager doesn't expose emit directly,
     // we'll use the internal emit method
-    ;(websocketManager as unknown as { emit: (event: string, data: unknown) => void }).emit(event, data)
+    ;(
+      websocketManager as unknown as {
+        emit: (event: string, data: unknown) => void
+      }
+    ).emit(event, data)
   }
 }

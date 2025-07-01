@@ -2,22 +2,24 @@
  * ログフラグメント発見アニメーションコンポーネント
  */
 
-import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Star, Zap } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion'
+import { Sparkles, Star, Zap } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 interface FragmentDiscoveryAnimationProps {
-  isDiscovering: boolean;
-  fragmentCount?: number;
-  rarity?: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+  isDiscovering: boolean
+  fragmentCount?: number
+  rarity?: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY'
 }
 
-export function FragmentDiscoveryAnimation({ 
-  isDiscovering, 
+export function FragmentDiscoveryAnimation({
+  isDiscovering,
   fragmentCount = 1,
-  rarity = 'COMMON' 
+  rarity = 'COMMON',
 }: FragmentDiscoveryAnimationProps) {
-  const [particles, setParticles] = useState<Array<{ id: number; x: number; y: number }>>([]);
+  const [particles, setParticles] = useState<
+    Array<{ id: number; x: number; y: number }>
+  >([])
 
   useEffect(() => {
     if (isDiscovering) {
@@ -26,30 +28,40 @@ export function FragmentDiscoveryAnimation({
         id: i,
         x: Math.random() * 100 - 50,
         y: Math.random() * 100 - 50,
-      }));
-      setParticles(newParticles);
+      }))
+      setParticles(newParticles)
     }
-  }, [isDiscovering]);
+  }, [isDiscovering])
 
   const getRarityColor = () => {
     switch (rarity) {
-      case 'LEGENDARY': return 'from-amber-400 to-amber-600';
-      case 'EPIC': return 'from-purple-400 to-purple-600';
-      case 'RARE': return 'from-blue-400 to-blue-600';
-      case 'UNCOMMON': return 'from-green-400 to-green-600';
-      default: return 'from-gray-400 to-gray-600';
+      case 'LEGENDARY':
+        return 'from-amber-400 to-amber-600'
+      case 'EPIC':
+        return 'from-purple-400 to-purple-600'
+      case 'RARE':
+        return 'from-blue-400 to-blue-600'
+      case 'UNCOMMON':
+        return 'from-green-400 to-green-600'
+      default:
+        return 'from-gray-400 to-gray-600'
     }
-  };
+  }
 
   const getRarityGlow = () => {
     switch (rarity) {
-      case 'LEGENDARY': return 'shadow-amber-500/50';
-      case 'EPIC': return 'shadow-purple-500/50';
-      case 'RARE': return 'shadow-blue-500/50';
-      case 'UNCOMMON': return 'shadow-green-500/50';
-      default: return 'shadow-gray-500/50';
+      case 'LEGENDARY':
+        return 'shadow-amber-500/50'
+      case 'EPIC':
+        return 'shadow-purple-500/50'
+      case 'RARE':
+        return 'shadow-blue-500/50'
+      case 'UNCOMMON':
+        return 'shadow-green-500/50'
+      default:
+        return 'shadow-gray-500/50'
     }
-  };
+  }
 
   return (
     <AnimatePresence>
@@ -74,7 +86,7 @@ export function FragmentDiscoveryAnimation({
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+            transition={{ type: 'spring', stiffness: 200, damping: 20 }}
           >
             {/* 中心の光 */}
             <motion.div
@@ -86,7 +98,7 @@ export function FragmentDiscoveryAnimation({
               transition={{
                 duration: 2,
                 repeat: Infinity,
-                ease: "easeInOut"
+                ease: 'easeInOut',
               }}
             >
               <div className="w-full h-full flex items-center justify-center">
@@ -105,7 +117,7 @@ export function FragmentDiscoveryAnimation({
             </motion.div>
 
             {/* パーティクル */}
-            {particles.map((particle) => (
+            {particles.map(particle => (
               <motion.div
                 key={particle.id}
                 className="absolute top-1/2 left-1/2"
@@ -117,7 +129,7 @@ export function FragmentDiscoveryAnimation({
                 }}
                 transition={{
                   duration: 1.5,
-                  ease: "easeOut",
+                  ease: 'easeOut',
                   delay: Math.random() * 0.3,
                 }}
               >
@@ -147,15 +159,19 @@ export function FragmentDiscoveryAnimation({
           </motion.div>
 
           {/* リング効果 */}
-          {[1, 2, 3].map((ring) => (
+          {[1, 2, 3].map(ring => (
             <motion.div
               key={ring}
               className={`absolute w-64 h-64 rounded-full border-2 ${
-                rarity === 'LEGENDARY' ? 'border-amber-400' :
-                rarity === 'EPIC' ? 'border-purple-400' :
-                rarity === 'RARE' ? 'border-blue-400' :
-                rarity === 'UNCOMMON' ? 'border-green-400' :
-                'border-gray-400'
+                rarity === 'LEGENDARY'
+                  ? 'border-amber-400'
+                  : rarity === 'EPIC'
+                    ? 'border-purple-400'
+                    : rarity === 'RARE'
+                      ? 'border-blue-400'
+                      : rarity === 'UNCOMMON'
+                        ? 'border-green-400'
+                        : 'border-gray-400'
               }`}
               style={{
                 top: '50%',
@@ -170,12 +186,12 @@ export function FragmentDiscoveryAnimation({
               transition={{
                 duration: 1.5,
                 delay: ring * 0.2,
-                ease: "easeOut",
+                ease: 'easeOut',
               }}
             />
           ))}
         </motion.div>
       )}
     </AnimatePresence>
-  );
+  )
 }

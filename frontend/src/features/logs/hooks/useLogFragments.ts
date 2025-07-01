@@ -21,7 +21,7 @@ export function useCreateLogFragment() {
   return useMutation({
     mutationFn: (fragment: LogFragmentCreate) =>
       apiClient.createLogFragment(fragment),
-    onSuccess: (data) => {
+    onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
         queryKey: ['logFragments', data.characterId],
@@ -31,7 +31,7 @@ export function useCreateLogFragment() {
         variant: 'success',
       })
     },
-    onError: (error) => {
+    onError: error => {
       toast({
         title: 'エラー',
         description: 'ログフラグメントの作成に失敗しました',

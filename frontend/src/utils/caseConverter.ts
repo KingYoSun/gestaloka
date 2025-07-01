@@ -23,7 +23,9 @@ export function camelToSnake(str: string): string {
 /**
  * オブジェクトのキーをsnake_caseからcamelCaseに変換
  */
-export function snakeToCamelObject<T = ConvertibleObject>(obj: ConvertibleValue): T {
+export function snakeToCamelObject<T = ConvertibleObject>(
+  obj: ConvertibleValue
+): T {
   if (obj === null || obj === undefined) {
     return obj as T
   }
@@ -49,7 +51,9 @@ export function snakeToCamelObject<T = ConvertibleObject>(obj: ConvertibleValue)
 /**
  * オブジェクトのキーをcamelCaseからsnake_caseに変換
  */
-export function camelToSnakeObject<T = ConvertibleObject>(obj: ConvertibleValue): T {
+export function camelToSnakeObject<T = ConvertibleObject>(
+  obj: ConvertibleValue
+): T {
   if (obj === null || obj === undefined) {
     return obj as T
   }

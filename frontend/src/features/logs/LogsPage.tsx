@@ -4,7 +4,10 @@ import { LogFragmentList } from './components/LogFragmentList'
 import { LogCompilationEditor } from './components/LogCompilationEditor'
 import { CompletedLogList } from './components/CompletedLogList'
 import { useLogFragments } from './hooks/useLogFragments'
-import { useCreateCompletedLog, useCompletedLogs } from './hooks/useCompletedLogs'
+import {
+  useCreateCompletedLog,
+  useCompletedLogs,
+} from './hooks/useCompletedLogs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -17,16 +20,21 @@ export function LogsPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [selectedFragmentIds, setSelectedFragmentIds] = useState<string[]>([])
   const [showCompilationEditor, setShowCompilationEditor] = useState(false)
-  const { data: characters = [], isLoading: isLoadingCharacters } = useCharacters()
-  const { data: fragments = [], isLoading: isLoadingFragments } = useLogFragments(selectedCharacterId)
-  const { data: completedLogs = [] as CompletedLogRead[], isLoading: isLoadingCompletedLogs } = useCompletedLogs(selectedCharacterId)
+  const { data: characters = [], isLoading: isLoadingCharacters } =
+    useCharacters()
+  const { data: fragments = [], isLoading: isLoadingFragments } =
+    useLogFragments(selectedCharacterId)
+  const {
+    data: completedLogs = [] as CompletedLogRead[],
+    isLoading: isLoadingCompletedLogs,
+  } = useCompletedLogs(selectedCharacterId)
   const createCompletedLog = useCreateCompletedLog()
   const { toast } = useToast()
 
   const handleFragmentSelect = (fragmentId: string) => {
-    setSelectedFragmentIds((prev) => {
+    setSelectedFragmentIds(prev => {
       if (prev.includes(fragmentId)) {
-        return prev.filter((id) => id !== fragmentId)
+        return prev.filter(id => id !== fragmentId)
       }
       return [...prev, fragmentId]
     })
@@ -45,29 +53,29 @@ export function LogsPage() {
       const logData: CompletedLogCreate = {
         creatorId: selectedCharacterId,
         coreFragmentId: compiledLogData.coreFragmentId,
-        subFragmentIds: compiledLogData.fragmentIds.filter((id: string) => id !== compiledLogData.coreFragmentId),
+        subFragmentIds: compiledLogData.fragmentIds.filter(
+          (id: string) => id !== compiledLogData.coreFragmentId
+        ),
         name: compiledLogData.name,
         title: compiledLogData.title || undefined,
         description: compiledLogData.description,
-        skills: [],  // TODO: スキル抽出ロジックを実装
-        personalityTraits: [],  // TODO: 性格特性抽出ロジックを実装
-        behaviorPatterns: compiledLogData.isOmnibus ? 
-          { isOmnibus: true } : {},
+        skills: [], // TODO: スキル抽出ロジックを実装
+        personalityTraits: [], // TODO: 性格特性抽出ロジックを実装
+        behaviorPatterns: compiledLogData.isOmnibus ? { isOmnibus: true } : {},
       }
-      
+
       await createCompletedLog.mutateAsync(logData)
-      
+
       // 成功時の処理
       toast({
         title: 'ログ編纂完了',
         description: 'ログが正常に編纂されました。',
         variant: 'success',
       })
-      
+
       // UIをリセット
       setShowCompilationEditor(false)
       setSelectedFragmentIds([])
-      
     } catch (error) {
       console.error('Failed to compile log:', error)
       toast({
@@ -79,7 +87,9 @@ export function LogsPage() {
   }
 
   const selectedCharacter = characters.find(c => c.id === selectedCharacterId)
-  const selectedFragments = fragments.filter(f => selectedFragmentIds.includes(f.id))
+  const selectedFragments = fragments.filter(f =>
+    selectedFragmentIds.includes(f.id)
+  )
 
   // 編纂エディターを表示している場合
   if (showCompilationEditor && selectedFragments.length > 0) {
@@ -94,7 +104,7 @@ export function LogsPage() {
             選択したフラグメントを組み合わせて、新しいログを作成します。
           </p>
         </div>
-        
+
         <LogCompilationEditor
           fragments={selectedFragments}
           onCompile={handleCompile}
@@ -138,71 +148,75 @@ export function LogsPage() {
         <TabsContent value="fragments" className="space-y-6">
           {/* キャラクター選択 */}
           <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            キャラクター選択
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoadingCharacters ? (
-            <p className="text-muted-foreground">読み込み中...</p>
-          ) : characters.length === 0 ? (
-            <p className="text-muted-foreground">
-              キャラクターがありません。まずキャラクターを作成してください。
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {characters.map((character) => (
-                <Button
-                  key={character.id}
-                  variant={selectedCharacterId === character.id ? 'default' : 'outline'}
-                  onClick={() => {
-                    setSelectedCharacterId(character.id)
-                    setSelectedFragmentIds([])
-                  }}
-                  className="justify-start"
-                >
-                  <User className="h-4 w-4 mr-2" />
-                  {character.name}
-                </Button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ログフラグメント一覧 */}
-      {selectedCharacterId && (
-        <>
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold">
-              {selectedCharacter?.name} のログフラグメント
-            </h2>
-            {selectedFragmentIds.length > 0 && (
-              <Button 
-                onClick={() => setShowCompilationEditor(true)}
-                className="gap-2"
-              >
-                <Sparkles className="h-4 w-4" />
-                ログを編纂する ({selectedFragmentIds.length})
-              </Button>
-            )}
-          </div>
-
-          <Card>
-            <CardContent className="pt-6">
-              <LogFragmentList
-                fragments={fragments}
-                isLoading={isLoadingFragments}
-                selectedFragmentIds={selectedFragmentIds}
-                onFragmentSelect={handleFragmentSelect}
-                selectionMode="multiple"
-              />
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                キャラクター選択
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingCharacters ? (
+                <p className="text-muted-foreground">読み込み中...</p>
+              ) : characters.length === 0 ? (
+                <p className="text-muted-foreground">
+                  キャラクターがありません。まずキャラクターを作成してください。
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {characters.map(character => (
+                    <Button
+                      key={character.id}
+                      variant={
+                        selectedCharacterId === character.id
+                          ? 'default'
+                          : 'outline'
+                      }
+                      onClick={() => {
+                        setSelectedCharacterId(character.id)
+                        setSelectedFragmentIds([])
+                      }}
+                      className="justify-start"
+                    >
+                      <User className="h-4 w-4 mr-2" />
+                      {character.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
-        </>
-      )}
+
+          {/* ログフラグメント一覧 */}
+          {selectedCharacterId && (
+            <>
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-semibold">
+                  {selectedCharacter?.name} のログフラグメント
+                </h2>
+                {selectedFragmentIds.length > 0 && (
+                  <Button
+                    onClick={() => setShowCompilationEditor(true)}
+                    className="gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    ログを編纂する ({selectedFragmentIds.length})
+                  </Button>
+                )}
+              </div>
+
+              <Card>
+                <CardContent className="pt-6">
+                  <LogFragmentList
+                    fragments={fragments}
+                    isLoading={isLoadingFragments}
+                    selectedFragmentIds={selectedFragmentIds}
+                    onFragmentSelect={handleFragmentSelect}
+                    selectionMode="multiple"
+                  />
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="completed" className="space-y-6">

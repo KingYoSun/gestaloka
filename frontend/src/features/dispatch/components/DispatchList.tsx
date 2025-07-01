@@ -27,7 +27,10 @@ import { DispatchDetail } from './DispatchDetail'
 
 const statusConfig: Record<
   keyof DispatchStatus,
-  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+  {
+    label: string
+    variant: 'default' | 'secondary' | 'destructive' | 'outline'
+  }
 > = {
   PREPARING: { label: '準備中', variant: 'secondary' },
   DISPATCHED: { label: '派遣中', variant: 'default' },
@@ -45,10 +48,12 @@ const objectiveTypeLabels: Record<string, string> = {
 }
 
 export function DispatchList() {
-  const [statusFilter, setStatusFilter] = useState<keyof DispatchStatus | 'all'>(
-    'all'
+  const [statusFilter, setStatusFilter] = useState<
+    keyof DispatchStatus | 'all'
+  >('all')
+  const [selectedDispatchId, setSelectedDispatchId] = useState<string | null>(
+    null
   )
-  const [selectedDispatchId, setSelectedDispatchId] = useState<string | null>(null)
 
   const { data: dispatches, isLoading } = useQuery({
     queryKey: ['dispatches', statusFilter],
@@ -61,7 +66,7 @@ export function DispatchList() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
+        {[1, 2, 3].map(i => (
           <Card key={i}>
             <CardHeader>
               <Skeleton className="h-6 w-48" />
@@ -90,7 +95,7 @@ export function DispatchList() {
       <div className="mb-4">
         <Select
           value={statusFilter}
-          onValueChange={(value) =>
+          onValueChange={value =>
             setStatusFilter(value as keyof DispatchStatus | 'all')
           }
         >
@@ -109,7 +114,9 @@ export function DispatchList() {
       <div className="space-y-4">
         {dispatches.map((dispatch: any) => {
           const isActive = dispatch.status === 'DISPATCHED'
-          const achievementPercent = (dispatch.achievement_score * 100).toFixed(0)
+          const achievementPercent = (dispatch.achievement_score * 100).toFixed(
+            0
+          )
 
           return (
             <Card
@@ -124,8 +131,16 @@ export function DispatchList() {
                   <CardTitle className="text-lg">
                     ログID: {dispatch.completed_log_id.slice(0, 8)}...
                   </CardTitle>
-                  <Badge variant={statusConfig[dispatch.status as keyof DispatchStatus].variant}>
-                    {statusConfig[dispatch.status as keyof DispatchStatus].label}
+                  <Badge
+                    variant={
+                      statusConfig[dispatch.status as keyof DispatchStatus]
+                        .variant
+                    }
+                  >
+                    {
+                      statusConfig[dispatch.status as keyof DispatchStatus]
+                        .label
+                    }
                   </Badge>
                 </div>
               </CardHeader>
@@ -199,7 +214,7 @@ export function DispatchList() {
         <DispatchDetail
           dispatchId={selectedDispatchId}
           open={!!selectedDispatchId}
-          onOpenChange={(open) => {
+          onOpenChange={open => {
             if (!open) setSelectedDispatchId(null)
           }}
         />

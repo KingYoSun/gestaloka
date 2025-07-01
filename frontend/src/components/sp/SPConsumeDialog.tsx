@@ -12,10 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Alert,
-  AlertDescription,
-} from '@/components/ui/alert'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { useSPBalanceSummary, useConsumeSP } from '@/hooks/useSP'
@@ -150,7 +147,9 @@ export function SPConsumeDialog({
           <div className="space-y-2 p-4 rounded-lg bg-muted/50">
             <div className="flex justify-between items-center">
               <span className="text-sm">現在の残高</span>
-              <span className="font-medium">{formatNumber(currentBalance)} SP</span>
+              <span className="font-medium">
+                {formatNumber(currentBalance)} SP
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm">消費後の残高</span>
@@ -167,7 +166,9 @@ export function SPConsumeDialog({
             {/* プログレスバー */}
             <div className="pt-2">
               <Progress
-                value={isInsufficient ? 100 : (finalAmount / currentBalance) * 100}
+                value={
+                  isInsufficient ? 100 : (finalAmount / currentBalance) * 100
+                }
                 className={cn(
                   'h-2',
                   isInsufficient ? '[&>div]:bg-destructive' : ''
@@ -181,8 +182,8 @@ export function SPConsumeDialog({
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                SP残高が不足しています。
-                あと {formatNumber(Math.abs(balanceAfter))} SP必要です。
+                SP残高が不足しています。 あと{' '}
+                {formatNumber(Math.abs(balanceAfter))} SP必要です。
               </AlertDescription>
             </Alert>
           )}

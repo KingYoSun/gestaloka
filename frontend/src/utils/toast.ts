@@ -8,9 +8,12 @@ export const showSuccessToast = (title: string, description?: string) => {
   })
 }
 
-export const showErrorToast = (error: unknown, defaultMessage = 'エラーが発生しました') => {
+export const showErrorToast = (
+  error: unknown,
+  defaultMessage = 'エラーが発生しました'
+) => {
   const description = error instanceof Error ? error.message : defaultMessage
-  
+
   toast({
     title: 'エラー',
     description,

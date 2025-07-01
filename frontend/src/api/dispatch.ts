@@ -90,8 +90,7 @@ export const dispatchApi = {
     status?: keyof DispatchStatus
     skip?: number
     limit?: number
-  }) =>
-    apiClient.get<DispatchRead[]>('/dispatch/dispatches', { params }),
+  }) => apiClient.get<DispatchRead[]>('/dispatch/dispatches', { params }),
 
   // 派遣の詳細情報を取得
   getDispatchDetail: (dispatchId: string) =>
@@ -99,7 +98,9 @@ export const dispatchApi = {
 
   // 派遣報告書を取得
   getDispatchReport: (dispatchId: string) =>
-    apiClient.get<DispatchReportRead>(`/dispatch/dispatches/${dispatchId}/report`),
+    apiClient.get<DispatchReportRead>(
+      `/dispatch/dispatches/${dispatchId}/report`
+    ),
 
   // 派遣を緊急召還する
   recallDispatch: (dispatchId: string) =>

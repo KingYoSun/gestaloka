@@ -66,7 +66,9 @@ export function LogFragmentCard({
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm mb-3 line-clamp-3">{fragment.actionDescription}</p>
+        <p className="text-sm mb-3 line-clamp-3">
+          {fragment.actionDescription}
+        </p>
         <div className="flex flex-wrap gap-1">
           {fragment.keywords.map((keyword, index) => (
             <Badge key={index} variant="outline" className="text-xs">

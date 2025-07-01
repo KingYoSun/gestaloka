@@ -1,9 +1,24 @@
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Loader2, User, Shield, Sparkles, AlertTriangle, Skull, HelpCircle, X } from 'lucide-react'
+import {
+  Loader2,
+  User,
+  Shield,
+  Sparkles,
+  AlertTriangle,
+  Skull,
+  HelpCircle,
+  X,
+} from 'lucide-react'
 import type { NPCEncounterData } from '@/types/websocket'
 
 interface NPCEncounterDialogProps {
@@ -12,7 +27,11 @@ interface NPCEncounterDialogProps {
   isLoading?: boolean
 }
 
-export function NPCEncounterDialog({ encounter, onAction, isLoading = false }: NPCEncounterDialogProps) {
+export function NPCEncounterDialog({
+  encounter,
+  onAction,
+  isLoading = false,
+}: NPCEncounterDialogProps) {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [isVisible, setIsVisible] = useState(false)
 
@@ -65,19 +84,27 @@ export function NPCEncounterDialog({ encounter, onAction, isLoading = false }: N
   // 遭遇タイプのアイコンと色
   const getEncounterIcon = (type: string) => {
     switch (type) {
-      case 'hostile': return <Skull className="h-4 w-4" />
-      case 'friendly': return <User className="h-4 w-4" />
-      case 'mysterious': return <HelpCircle className="h-4 w-4" />
-      default: return <Sparkles className="h-4 w-4" />
+      case 'hostile':
+        return <Skull className="h-4 w-4" />
+      case 'friendly':
+        return <User className="h-4 w-4" />
+      case 'mysterious':
+        return <HelpCircle className="h-4 w-4" />
+      default:
+        return <Sparkles className="h-4 w-4" />
     }
   }
 
   const getEncounterBadgeVariant = (type: string) => {
     switch (type) {
-      case 'hostile': return 'destructive'
-      case 'friendly': return 'default' 
-      case 'mysterious': return 'secondary'
-      default: return 'outline'
+      case 'hostile':
+        return 'destructive'
+      case 'friendly':
+        return 'default'
+      case 'mysterious':
+        return 'secondary'
+      default:
+        return 'outline'
     }
   }
 
@@ -107,15 +134,21 @@ export function NPCEncounterDialog({ encounter, onAction, isLoading = false }: N
           </div>
           <div className="flex items-start gap-2">
             <div className="flex flex-col items-end gap-1">
-              <Badge variant={getEncounterBadgeVariant(encounter.encounter_type)}>
+              <Badge
+                variant={getEncounterBadgeVariant(encounter.encounter_type)}
+              >
                 {getEncounterIcon(encounter.encounter_type)}
                 <span className="ml-1">{encounter.encounter_type}</span>
               </Badge>
-              <Badge className={`${getTypeColor(npc.npc_type)} text-white text-xs`}>
+              <Badge
+                className={`${getTypeColor(npc.npc_type)} text-white text-xs`}
+              >
                 {npc.npc_type.replace('_', ' ')}
               </Badge>
               {npc.contamination_level > 0 && (
-                <div className={`flex items-center gap-1 text-xs ${getContaminationColor(npc.contamination_level)}`}>
+                <div
+                  className={`flex items-center gap-1 text-xs ${getContaminationColor(npc.contamination_level)}`}
+                >
                   <AlertTriangle className="w-3 h-3" />
                   <span>汚染度: {npc.contamination_level}</span>
                 </div>
@@ -139,7 +172,7 @@ export function NPCEncounterDialog({ encounter, onAction, isLoading = false }: N
           {npc.appearance && (
             <p className="text-sm text-muted-foreground">{npc.appearance}</p>
           )}
-          
+
           {npc.personality_traits.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {npc.personality_traits.map((trait, index) => (
@@ -167,24 +200,28 @@ export function NPCEncounterDialog({ encounter, onAction, isLoading = false }: N
             <p className="text-sm font-medium">行動を選択してください:</p>
             <ScrollArea className="max-h-[250px]">
               <div className="space-y-2 pr-4">
-                {choices.map((choice) => (
+                {choices.map(choice => (
                   <Button
                     key={choice.id}
-                    variant={selectedAction === choice.id ? "default" : "outline"}
+                    variant={
+                      selectedAction === choice.id ? 'default' : 'outline'
+                    }
                     className="w-full justify-start text-left h-auto py-3 px-4"
                     onClick={() => handleActionClick(choice.id)}
                     disabled={isLoading}
                   >
                     <div className="flex items-start gap-2 w-full">
                       {choice.difficulty && (
-                        <Badge 
-                          variant="outline" 
+                        <Badge
+                          variant="outline"
                           className={`${getDifficultyColor(choice.difficulty)} border-current shrink-0`}
                         >
                           {choice.difficulty}
                         </Badge>
                       )}
-                      <span className="text-sm break-words flex-1">{choice.text}</span>
+                      <span className="text-sm break-words flex-1">
+                        {choice.text}
+                      </span>
                       {isLoading && selectedAction === choice.id && (
                         <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                       )}

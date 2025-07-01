@@ -9,7 +9,17 @@ interface LoadingButtonProps extends ButtonProps {
 }
 
 export const LoadingButton = forwardRef<HTMLButtonElement, LoadingButtonProps>(
-  ({ isLoading, loadingText = '処理中...', icon: Icon, children, disabled, ...props }, ref) => (
+  (
+    {
+      isLoading,
+      loadingText = '処理中...',
+      icon: Icon,
+      children,
+      disabled,
+      ...props
+    },
+    ref
+  ) => (
     <Button ref={ref} disabled={disabled || isLoading} {...props}>
       {isLoading ? (
         <>

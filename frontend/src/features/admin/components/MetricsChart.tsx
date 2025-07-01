@@ -9,7 +9,7 @@ export function MetricsChart({ data }: MetricsChartProps) {
 
   return (
     <div className="space-y-4">
-      {data.map((metric) => {
+      {data.map(metric => {
         const avgPercent = (metric.avg_execution_time / maxTime) * 100
         const minPercent = (metric.min_execution_time / maxTime) * 100
         const maxPercent = 100
@@ -29,29 +29,31 @@ export function MetricsChart({ data }: MetricsChartProps) {
                 {metric.total_calls}回呼び出し
               </div>
             </div>
-            
+
             <div className="relative h-8 bg-secondary rounded">
               {/* Min-Max range */}
-              <div 
+              <div
                 className="absolute h-full bg-primary/20 rounded"
                 style={{
                   left: `${minPercent}%`,
-                  width: `${maxPercent - minPercent}%`
+                  width: `${maxPercent - minPercent}%`,
                 }}
               />
-              
+
               {/* Average line */}
-              <div 
+              <div
                 className="absolute h-full w-1 bg-primary rounded"
                 style={{
-                  left: `${avgPercent}%`
+                  left: `${avgPercent}%`,
                 }}
               />
-              
+
               {/* Values */}
               <div className="absolute inset-0 flex items-center justify-between px-2 text-xs">
                 <span>{metric.min_execution_time.toFixed(2)}s</span>
-                <span className="font-medium">{metric.avg_execution_time.toFixed(2)}s</span>
+                <span className="font-medium">
+                  {metric.avg_execution_time.toFixed(2)}s
+                </span>
                 <span>{metric.max_execution_time.toFixed(2)}s</span>
               </div>
             </div>

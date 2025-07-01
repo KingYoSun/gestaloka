@@ -40,7 +40,8 @@ export function SPBalanceCard() {
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">現在のSP</span>
             <span className="font-medium">
-              {formatNumber(spData?.current_sp || 0)} / {formatNumber(spData?.max_sp || 0)}
+              {formatNumber(spData?.current_sp || 0)} /{' '}
+              {formatNumber(spData?.max_sp || 0)}
             </span>
           </div>
           <Progress value={spPercentage} className="h-2" />
