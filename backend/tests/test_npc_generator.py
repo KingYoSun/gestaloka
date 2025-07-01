@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlmodel import Session
 
-from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus
+from app.models.log import CompletedLog, CompletedLogStatus
 from app.schemas.npc_schemas import NPCProfile
 from app.services.npc_generator import NPCGenerator
 
@@ -29,22 +29,6 @@ def mock_completed_log():
         skills=["交渉術", "鑑定"],
         contamination_level=45,
         status=CompletedLogStatus.ACTIVE,
-        created_at=datetime.utcnow(),
-    )
-
-
-@pytest.fixture
-def mock_log_contract(mock_completed_log):
-    """テスト用のLogContractを作成"""
-    return LogContract(
-        id=uuid.uuid4(),
-        completed_log_id=mock_completed_log.id,
-        creator_character_id=str(uuid.uuid4()),
-        title="影の商人",
-        description="夜の商人を求む",
-        requirements="レベル10以上",
-        activity_duration_hours=24,
-        status=LogContractStatus.ACCEPTED,
         created_at=datetime.utcnow(),
     )
 
@@ -103,60 +87,6 @@ def test_generate_npc_from_log(mock_completed_log):
                     # モックが呼ばれたことを確認
                     mock_create_npc.assert_called_once()
                     # register_npcは統合版では呼ばれない（TODO削除されているため）
-
-
-def test_process_accepted_contracts(mock_completed_log, mock_log_contract):
-    """受け入れられた契約を処理するテスト"""
-    # モックセッション
-    mock_session = MagicMock(spec=Session)
-
-    # 契約とログを返すように設定
-    mock_session.exec.return_value.all.return_value = [mock_log_contract]
-    mock_session.exec.return_value.first.return_value = mock_completed_log
-
-    with patch("app.services.npc_generator.get_neo4j_session"):
-        with patch("app.services.npc_generator.create_npc_from_log") as mock_create_npc:
-            with patch("app.services.npc_generator.NPCManagerAgent") as mock_agent_class:
-                # モックNPCノードを設定
-                mock_npc_node = MagicMock()
-                mock_npc_node.npc_id = f"log_npc_{mock_completed_log.id}"
-                mock_npc_node.name = mock_completed_log.name
-                mock_npc_node.title = mock_completed_log.title
-                mock_npc_node.personality_traits = mock_completed_log.personality_traits
-                mock_npc_node.behavior_patterns = mock_completed_log.behavior_patterns
-                mock_npc_node.skills = mock_completed_log.skills
-                mock_npc_node.appearance = mock_completed_log.description
-                mock_npc_node.backstory = mock_completed_log.description
-                mock_npc_node.persistence_level = 6
-                mock_npc_node.contamination_level = mock_completed_log.contamination_level
-                mock_npc_node.original_player = mock_completed_log.creator_id
-                mock_npc_node.log_source = str(mock_completed_log.id)
-                mock_create_npc.return_value = mock_npc_node
-
-                # モックエージェントを設定
-                mock_agent = AsyncMock()
-                mock_agent.register_npc = AsyncMock()
-                mock_agent_class.return_value = mock_agent
-
-                # NPCGeneratorを作成
-                generator = NPCGenerator(mock_session)
-
-                # 契約を処理
-                generator.process_accepted_contracts()
-
-                # 契約ステータスが更新されたことを確認
-                # Neo4j接続エラーが発生した場合、ステータスは変更されない
-                if mock_log_contract.status == LogContractStatus.DEPLOYED:
-                    # npc_id属性はLogContractモデルにまだ存在しないためコメントアウト
-                    # assert mock_log_contract.npc_id == mock_npc_node.npc_id
-                    pass
-                else:
-                    # エラーが発生した場合はACCEPTEDのまま
-                    assert mock_log_contract.status == LogContractStatus.ACCEPTED
-
-                # セッションのコミットが呼ばれたことを確認
-                mock_session.commit.assert_called()
-
 
 def test_get_npc_by_id():
     """IDでNPCを取得するテスト"""

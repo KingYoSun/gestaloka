@@ -134,7 +134,6 @@ class CompletedLog(SQLModel, table=True):
         back_populates="completed_log_cores", sa_relationship_kwargs={"foreign_keys": "[CompletedLog.core_fragment_id]"}
     )
     sub_fragments: list["CompletedLogSubFragment"] = Relationship(back_populates="completed_log")
-    contracts: list["LogContract"] = Relationship(back_populates="completed_log")
     dispatches: list["LogDispatch"] = Relationship(back_populates="completed_log")
 
 
@@ -153,65 +152,6 @@ class CompletedLogSubFragment(SQLModel, table=True):
     completed_log: Optional[CompletedLog] = Relationship(back_populates="sub_fragments")
     fragment: Optional[LogFragment] = Relationship(back_populates="completed_log_subs")
 
-
-class LogContractStatus(str, Enum):
-    """ログ契約のステータス"""
-
-    PENDING = "pending"  # 契約待ち
-    ACCEPTED = "accepted"  # 契約受諾
-    ACTIVE = "active"  # 活動中
-    DEPLOYED = "deployed"  # NPC配置済み
-    COMPLETED = "completed"  # 契約完了
-    EXPIRED = "expired"  # 期限切れ
-    CANCELLED = "cancelled"  # キャンセル
-
-
-class LogContract(SQLModel, table=True):
-    """
-    ログ契約（LogContract）
-
-    完成ログを他プレイヤーの世界に送り出す際の契約。
-    活動期間、報酬、行動指針などを定義する。
-    """
-
-    __tablename__ = "log_contracts"
-
-    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    completed_log_id: str = Field(foreign_key="completed_logs.id", index=True)
-    creator_id: str = Field(foreign_key="characters.id", index=True)
-    host_character_id: Optional[str] = Field(default=None, foreign_key="characters.id", index=True)
-
-    # 契約内容
-    activity_duration_hours: int = Field(default=24, description="活動期間（時間）")
-    behavior_guidelines: str = Field(description="行動指針")
-    reward_conditions: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), description="報酬条件")
-    rewards: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON), description="報酬内容")
-
-    # マーケット情報
-    is_public: bool = Field(default=False, description="マーケットに公開するか")
-    price: Optional[int] = Field(default=None, description="マーケット価格")
-
-    # ステータス
-    status: LogContractStatus = Field(default=LogContractStatus.PENDING)
-
-    # 活動記録
-    activity_logs: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON), description="活動記録")
-    performance_score: float = Field(default=0.0, description="パフォーマンススコア")
-
-    # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    activated_at: Optional[datetime] = Field(default=None)
-    completed_at: Optional[datetime] = Field(default=None)
-    expires_at: Optional[datetime] = Field(default=None)
-
-    # リレーションシップ
-    completed_log: Optional[CompletedLog] = Relationship(back_populates="contracts")
-    creator: Optional["Character"] = Relationship(
-        back_populates="created_contracts", sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
-    )
-    host_character: Optional["Character"] = Relationship(
-        back_populates="hosted_contracts", sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
-    )
 
 
 # 既存モデルへの追加が必要なリレーションシップ

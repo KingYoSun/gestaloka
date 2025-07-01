@@ -1,8 +1,24 @@
 # 最近の作業内容
 
-最終更新: 2025年6月30日
+最終更新: 2025年7月1日
 
 ## 直近の実装内容
+
+### LogContractシステムの削除（2025/07/01）
+- **状態**: 完了
+- **概要**: 使用されていないログ契約システムの完全削除
+- **主要な変更**:
+  - LogContractモデルの削除
+  - 関連するCRUD操作の削除
+  - APIエンドポイントの削除
+  - テストファイルの削除
+  - マイグレーションファイルの作成
+- **削除したファイル**:
+  - app/models/log_contract.py
+  - app/crud/log_contract.py
+  - app/api/endpoints/log_contract.py
+  - tests/test_log_contract.py
+- **理由**: ログ派遣（LogDispatch）システムのみを使用し、技術的負債を削減
 
 ### PostgreSQLテスト環境の構築（2025/06/30）
 - **状態**: 進行中

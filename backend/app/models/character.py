@@ -9,7 +9,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.location import Location
-    from app.models.log import ActionLog, CompletedLog, LogContract, LogFragment
+    from app.models.log import ActionLog, CompletedLog, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.user import User
     from app.models.exploration_progress import CharacterExplorationProgress
@@ -43,12 +43,6 @@ class Character(SQLModel, table=True):
     # ログシステム関連
     log_fragments: list["LogFragment"] = Relationship(back_populates="character")
     created_logs: list["CompletedLog"] = Relationship(back_populates="creator")
-    created_contracts: list["LogContract"] = Relationship(
-        back_populates="creator", sa_relationship_kwargs={"foreign_keys": "[LogContract.creator_id]"}
-    )
-    hosted_contracts: list["LogContract"] = Relationship(
-        back_populates="host_character", sa_relationship_kwargs={"foreign_keys": "[LogContract.host_character_id]"}
-    )
 
     # 派遣システム関連
     dispatched_logs: list["LogDispatch"] = Relationship(back_populates="dispatcher")

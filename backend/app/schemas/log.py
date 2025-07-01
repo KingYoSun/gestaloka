@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from app.models.log import (
     CompletedLogStatus,
     EmotionalValence,
-    LogContractStatus,
     LogFragmentRarity,
 )
 
@@ -91,51 +90,6 @@ class CompletedLogRead(CompletedLogBase):
     completed_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
-
-
-# LogContract スキーマ
-class LogContractBase(BaseModel):
-    """ログ契約の基本スキーマ"""
-
-    activity_duration_hours: int = Field(default=24, gt=0, description="活動期間（時間）")
-    behavior_guidelines: str = Field(description="行動指針")
-    reward_conditions: dict[str, Any] = Field(default_factory=dict, description="報酬条件")
-    rewards: dict[str, Any] = Field(default_factory=dict, description="報酬内容")
-    is_public: bool = Field(default=False, description="マーケットに公開するか")
-    price: Optional[int] = Field(default=None, ge=0, description="マーケット価格")
-
-
-class LogContractCreate(LogContractBase):
-    """ログ契約作成スキーマ"""
-
-    completed_log_id: str
-
-
-class LogContractUpdate(BaseModel):
-    """ログ契約更新スキーマ"""
-
-    activity_logs: Optional[list[dict[str, Any]]] = None
-    performance_score: Optional[float] = None
-    status: Optional[LogContractStatus] = None
-
-
-class LogContractRead(LogContractBase):
-    """ログ契約読み取りスキーマ"""
-
-    id: str
-    completed_log_id: str
-    creator_id: str
-    host_character_id: Optional[str]
-    status: LogContractStatus
-    activity_logs: list[dict[str, Any]]
-    performance_score: float
-    created_at: datetime
-    activated_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    expires_at: Optional[datetime]
-
-    model_config = {"from_attributes": True}
-
 
 # 活動記録スキーマ
 class LogActivityEntry(BaseModel):

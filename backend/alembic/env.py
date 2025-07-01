@@ -32,7 +32,6 @@ from app.models.log import (  # noqa
     ActionLog,
     CompletedLog,
     CompletedLogSubFragment,
-    LogContract,
     LogFragment,
 )
 from app.models.log_dispatch import (  # noqa

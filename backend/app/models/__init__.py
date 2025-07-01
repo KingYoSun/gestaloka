@@ -18,8 +18,6 @@ from app.models.log import (
     CompletedLogStatus,
     CompletedLogSubFragment,
     EmotionalValence,
-    LogContract,
-    LogContractStatus,
     LogFragment,
     LogFragmentRarity,
 )
@@ -60,8 +58,6 @@ __all__ = [
     "Location",
     "LocationConnection",
     "LocationType",
-    "LogContract",
-    "LogContractStatus",
     "LogDispatch",
     "LogFragment",
     "LogFragmentRarity",

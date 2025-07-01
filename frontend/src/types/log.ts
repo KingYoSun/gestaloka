@@ -20,16 +20,6 @@ export type CompletedLogStatus =
   | 'expired'
   | 'recalled'
 
-// ログ契約のステータス
-export type LogContractStatus =
-  | 'pending'
-  | 'accepted'
-  | 'active'
-  | 'deployed'
-  | 'completed'
-  | 'expired'
-  | 'cancelled'
-
 // ログフラグメント（ログの欠片）
 export interface LogFragment {
   id: string
@@ -70,25 +60,6 @@ export interface CompletedLogRead extends CompletedLog {
 // ログフラグメントの読み取り用型
 export type LogFragmentRead = LogFragment
 
-// ログ契約
-export interface LogContract {
-  id: string
-  completedLogId: string
-  creatorId: string
-  hostCharacterId?: string
-  activityDurationHours: number
-  behaviorGuidelines: string
-  rewardConditions: Record<string, unknown>
-  rewards: Record<string, unknown>
-  isPublic: boolean
-  price: number
-  status: LogContractStatus
-  createdAt: string
-  acceptedAt?: string
-  deployedAt?: string
-  completedAt?: string
-}
-
 // API リクエスト/レスポンス用の型
 
 // ログフラグメント作成リクエスト
@@ -112,22 +83,6 @@ export interface CompletedLogCreate {
   skills?: string[]
   personalityTraits?: string[]
   behaviorPatterns?: Record<string, unknown>
-}
-
-// ログ契約作成リクエスト
-export interface LogContractCreate {
-  completedLogId: string
-  activityDurationHours: number
-  behaviorGuidelines: string
-  rewardConditions: Record<string, unknown>
-  rewards: Record<string, unknown>
-  isPublic: boolean
-  price?: number
-}
-
-// ログ契約受け入れリクエスト
-export interface LogContractAccept {
-  characterId: string
 }
 
 // ログ編纂時の計算結果

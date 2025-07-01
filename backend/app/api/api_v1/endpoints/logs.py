@@ -21,16 +21,12 @@ from app.models.log import (
     CompletedLogStatus,
     CompletedLogSubFragment,
     EmotionalValence,
-    LogContract,
-    LogContractStatus,
     LogFragment,
 )
 from app.schemas.log import (
     CompletedLogCreate,
     CompletedLogRead,
     CompletedLogUpdate,
-    LogContractCreate,
-    LogContractRead,
     LogFragmentCreate,
     LogFragmentRead,
 )
@@ -271,145 +267,3 @@ async def get_character_completed_logs(
     logs = result.all()
 
     return logs
-
-
-@router.post("/contracts", response_model=LogContractRead)
-async def create_log_contract(
-    *,
-    db: Session = Depends(get_session),
-    contract_in: LogContractCreate,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    ログ契約を作成
-
-    完成ログを他プレイヤーの世界に送り出す際の契約。
-    """
-    # 完成ログと所有権の確認
-    stmt = (
-        select(CompletedLog)
-        .join(Character)
-        .where(
-            and_(
-                CompletedLog.id == contract_in.completed_log_id,
-                Character.user_id == current_user.id,
-                CompletedLog.status == CompletedLogStatus.COMPLETED,
-            )
-        )
-    )
-    result = db.exec(stmt)
-    completed_log = result.first()
-    if not completed_log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Completed log not found or not in completed status",
-        )
-
-    # 契約作成
-    db_contract = LogContract(
-        id=str(uuid4()),
-        **contract_in.model_dump(),
-        creator_id=completed_log.creator_id,
-        status=LogContractStatus.PENDING,
-        created_at=datetime.utcnow(),
-    )
-    db.add(db_contract)
-
-    # 完成ログのステータス更新
-    completed_log.status = CompletedLogStatus.CONTRACTED
-
-    db.commit()
-    db.refresh(db_contract)
-
-    return db_contract
-
-
-@router.get("/contracts/market", response_model=list[LogContractRead])
-def get_market_contracts(
-    *,
-    db: Session = Depends(get_session),
-    skip: int = 0,
-    limit: int = 20,
-) -> Any:
-    """
-    マーケットに公開されている契約一覧を取得
-    """
-    stmt = (
-        select(LogContract)
-        .where(
-            and_(
-                LogContract.is_public == True,  # noqa: E712
-                LogContract.status == LogContractStatus.PENDING,
-            )
-        )
-        .offset(skip)
-        .limit(limit)
-        .order_by(desc(cast(Any, LogContract.created_at)))
-    )
-    result = db.exec(stmt)
-    contracts = result.all()
-
-    return contracts
-
-
-@router.post("/contracts/{contract_id}/accept", response_model=LogContractRead)
-async def accept_log_contract(
-    *,
-    db: Session = Depends(get_session),
-    contract_id: str,
-    character_id: str,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    ログ契約を受け入れる
-
-    他プレイヤーが作成したログをNPCとして自分の世界に迎え入れる。
-    """
-    # キャラクターの所有権確認
-    await get_user_character(character_id, db, current_user)
-
-    # 契約の確認
-    contract_stmt = select(LogContract).where(
-        and_(
-            LogContract.id == contract_id,
-            LogContract.status == LogContractStatus.PENDING,
-            LogContract.is_public == True,  # noqa: E712
-        )
-    )
-    result = db.exec(contract_stmt)
-    contract = result.first()
-    if not contract:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Contract not found or not available",
-        )
-
-    # 契約受入
-    contract.host_character_id = character_id
-    contract.status = LogContractStatus.ACTIVE
-    contract.activated_at = datetime.utcnow()
-
-    # 有効期限の設定
-    from datetime import timedelta
-
-    contract.expires_at = datetime.utcnow() + timedelta(
-        hours=1  # TODO: activity_duration_hoursフィールドの実装
-    )
-
-    # 完成ログのステータス更新
-    log_update_stmt = select(CompletedLog).where(CompletedLog.id == contract.completed_log_id)
-    result = db.exec(log_update_stmt)  # type: ignore[arg-type]
-    completed_log = result.first()
-    if completed_log:
-        completed_log.status = CompletedLogStatus.ACTIVE  # type: ignore[assignment]
-
-    db.commit()
-    db.refresh(contract)
-
-    # バックグラウンドでNPC生成タスクを起動
-    generate_npc_from_completed_log.delay(
-        str(contract.completed_log_id),
-        "共通広場",  # TODO: キャラクターの現在地を取得
-    )
-
-    return contract

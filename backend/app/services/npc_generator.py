@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 
 from app.core.database import get_neo4j_session
 from app.db.neo4j_models import NPC, Location, create_npc_from_log
-from app.models.log import CompletedLog, CompletedLogStatus, LogContract, LogContractStatus
+from app.models.log import CompletedLog, CompletedLogStatus
 from app.schemas.npc_schemas import NPCProfile
 from app.services.ai.agents.npc_manager import NPCManagerAgent
 
@@ -45,7 +45,6 @@ class NPCGenerator:
         self,
         completed_log_id: uuid.UUID,
         target_location_name: Optional[str] = None,
-        contract_id: Optional[uuid.UUID] = None,
     ) -> NPCProfile:
         """
         CompletedLogからNPCを生成
@@ -53,7 +52,6 @@ class NPCGenerator:
         Args:
             completed_log_id: 変換元のCompletedLogのID
             target_location_name: NPCを配置する場所の名前
-            contract_id: ログ契約ID（ある場合）
 
         Returns:
             生成されたNPCのプロファイル
@@ -120,57 +118,11 @@ class NPCGenerator:
         # TODO: NPCマネージャーの統合版APIに合わせて修正が必要
         logger.info("NPC profile created", npc_profile=npc_profile)
 
-        # 契約がある場合は関連付けを更新
-        # TODO: LogContractモデルにnpc_idフィールドを追加後、この処理を有効化する
-        # if contract_id:
-        #     contract_stmt = select(LogContract).where(LogContract.id == contract_id)
-        #     contract = self.session.exec(contract_stmt).first()
-        #     if contract:
-        #         contract.npc_id = npc_node.npc_id
-        #         self.session.add(contract)
-        #         self.session.commit()
-
         logger.info(
             "NPC generated successfully", npc_id=npc_node.npc_id, npc_name=npc_node.name, location=target_location_name
         )
 
         return npc_profile
-
-    def process_accepted_contracts(self):
-        """
-        受け入れられたログ契約を処理してNPCを生成
-
-        定期的に実行されることを想定
-        """
-        # ACCEPTEDステータスの契約を取得
-        stmt = select(LogContract).where(LogContract.status == LogContractStatus.ACCEPTED)
-        contracts = self.session.exec(stmt).all()
-
-        for contract in contracts:
-            try:
-                # ターゲットの場所を決定（将来的にはプレイヤーの現在地など）
-                target_location = "共通広場"  # デフォルトの出現場所
-
-                # NPCを生成
-                npc_profile = self.generate_npc_from_log(
-                    completed_log_id=contract.completed_log_id,
-                    target_location_name=target_location,
-                    contract_id=contract.id,
-                )
-
-                # 契約ステータスを更新
-                contract.status = LogContractStatus.DEPLOYED
-                self.session.add(contract)
-
-                logger.info(
-                    "Contract processed and NPC deployed", contract_id=str(contract.id), npc_id=npc_profile.npc_id
-                )
-
-            except Exception as e:
-                logger.error("Failed to process contract", contract_id=str(contract.id), error=str(e))
-                continue
-
-        self.session.commit()
 
     def get_npc_by_id(self, npc_id: str) -> Optional[NPC]:
         """NPCをIDで取得"""

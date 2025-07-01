@@ -82,7 +82,7 @@ def recreate_schema(engine):
                     print(f"Warning: Could not drop table {table[0]}: {e}")
 
             # ENUMタイプを削除
-            enum_types = ["emotionalvalence", "logfragmentrarity", "completedlogstatus", "logcontractstatus"]
+            enum_types = ["emotionalvalence", "logfragmentrarity", "completedlogstatus"]
             for enum_type in enum_types:
                 try:
                     conn.execute(text(f"DROP TYPE IF EXISTS {enum_type} CASCADE"))
@@ -123,16 +123,6 @@ def recreate_schema(engine):
             """)
             )
 
-            # LogContractStatus ENUM
-            conn.execute(
-                text("""
-                DO $$ BEGIN
-                    CREATE TYPE logcontractstatus AS ENUM ('PENDING', 'ACCEPTED', 'ACTIVE', 'DEPLOYED', 'COMPLETED', 'EXPIRED', 'CANCELLED');
-                EXCEPTION
-                    WHEN duplicate_object THEN null;
-                END $$;
-            """)
-            )
 
             conn.commit()
     except Exception as e:
