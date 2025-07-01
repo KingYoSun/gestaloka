@@ -351,9 +351,13 @@ describe('MinimapCanvas', () => {
     
     // 描画が完了するまで待機
     await waitFor(() => {
-      // 軌跡の描画（点線）
-      expect(mockContext.setLineDash).toHaveBeenCalledWith([3, 3])
+      // 軌跡の描画（線の描画）
+      expect(mockContext.moveTo).toHaveBeenCalled()
+      expect(mockContext.lineTo).toHaveBeenCalled()
       expect(mockContext.stroke).toHaveBeenCalled()
+      // パーティクルの描画
+      expect(mockContext.arc).toHaveBeenCalled()
+      expect(mockContext.fill).toHaveBeenCalled()
     })
   })
 })
