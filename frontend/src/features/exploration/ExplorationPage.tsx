@@ -2,13 +2,16 @@
  * 探索システムメインページ
  */
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LocationMap } from './components/LocationMap';
-import { CurrentLocationInfo } from './components/CurrentLocationInfo';
-import { AvailableLocations } from './components/AvailableLocations';
-import { ExplorationAreas } from './components/ExplorationAreas';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { LocationMap } from './components/LocationMap'
+import { CurrentLocationInfo } from './components/CurrentLocationInfo'
+import { AvailableLocations } from './components/AvailableLocations'
+import { ExplorationAreas } from './components/ExplorationAreas'
+import { Minimap } from './minimap'
 
 export function ExplorationPage() {
+  // TODO: キャラクターIDを適切に取得する
+  const characterId = 'temp-character-id'
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="mb-6">
@@ -27,23 +30,26 @@ export function ExplorationPage() {
         {/* 右側：マップとタブ */}
         <div className="lg:col-span-2 space-y-6">
           <LocationMap />
-          
+
           <Tabs defaultValue="move" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="move">移動</TabsTrigger>
               <TabsTrigger value="explore">探索</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="move" className="space-y-4">
               <AvailableLocations />
             </TabsContent>
-            
+
             <TabsContent value="explore" className="space-y-4">
               <ExplorationAreas />
             </TabsContent>
           </Tabs>
         </div>
       </div>
+
+      {/* ミニマップ */}
+      <Minimap characterId={characterId} />
     </div>
-  );
+  )
 }

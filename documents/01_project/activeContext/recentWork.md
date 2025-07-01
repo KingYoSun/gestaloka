@@ -1,5 +1,46 @@
 # 最近の作業履歴
 
+## 2025/07/01 - 探索システムミニマップ機能Phase 1実装
+
+### 実施内容
+- Canvas ベースの2D描画システム構築
+- 探索進捗追跡機能の実装
+- マップデータAPIエンドポイント作成
+- 基本的なズーム・パン機能実装
+
+### 技術的詳細
+1. **バックエンド実装**
+   - `character_exploration_progress`テーブルの作成
+   - 探索進捗管理サービス (`ExplorationMinimapService`)
+   - マップデータ取得API (`/api/v1/exploration/{character_id}/map-data`)
+   - 進捗更新API (`/api/v1/exploration/{character_id}/update-progress`)
+
+2. **フロントエンド実装**
+   - 多層Canvas構造による効率的な描画
+   - `MinimapCanvas`コンポーネント（描画エンジン）
+   - `Minimap`コンポーネント（UI制御）
+   - マウス/タッチ操作によるインタラクション
+   - キーボードショートカット（Mキー）
+
+3. **ビジュアル表現**
+   - 場所タイプ別の色分け表示
+   - 危険度による外枠色の変化
+   - 接続経路の視覚化（直線、曲線、テレポート等）
+   - 探索進捗のパーセンテージ表示
+
+### 実装結果
+- **統合完了**: バックエンドとフロントエンドの完全統合
+- **テスト**: 6つの統合テスト作成・全合格
+- **パフォーマンス**: 効率的な部分再描画準備済み
+- **拡張性**: Phase 2-4への基盤確立
+
+### 関連ファイル
+- `backend/app/models/exploration_progress.py`（新規）
+- `backend/app/services/exploration_minimap_service.py`（新規）
+- `frontend/src/features/exploration/minimap/`（新規ディレクトリ）
+- `documents/02_architecture/features/minimap_design.md`（新規）
+- `documents/02_architecture/features/minimap_technical_spec.md`（新規）
+
 ## 2025/07/01 - SP購入システムのStripe統合
 
 ### 実施内容

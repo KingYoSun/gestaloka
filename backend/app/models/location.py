@@ -1,15 +1,21 @@
 """
 場所（Location）関連のモデル定義
 """
+
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Dict, Any
 
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from app.models.exploration_progress import CharacterExplorationProgress
 
 
 class LocationType(str, Enum):
     """場所の種類"""
+
     CITY = "city"
     TOWN = "town"
     DUNGEON = "dungeon"
@@ -19,6 +25,7 @@ class LocationType(str, Enum):
 
 class DangerLevel(str, Enum):
     """危険度レベル"""
+
     SAFE = "safe"  # 安全
     LOW = "low"  # 低危険度
     MEDIUM = "medium"  # 中危険度
@@ -28,6 +35,7 @@ class DangerLevel(str, Enum):
 
 class Location(SQLModel, table=True):
     """場所モデル"""
+
     __tablename__ = "locations"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -58,19 +66,29 @@ class Location(SQLModel, table=True):
 
     # リレーション
     connections_from: list["LocationConnection"] = Relationship(
-        back_populates="from_location",
-        sa_relationship_kwargs={"foreign_keys": "[LocationConnection.from_location_id]"}
+        back_populates="from_location", sa_relationship_kwargs={"foreign_keys": "[LocationConnection.from_location_id]"}
     )
     connections_to: list["LocationConnection"] = Relationship(
-        back_populates="to_location",
-        sa_relationship_kwargs={"foreign_keys": "[LocationConnection.to_location_id]"}
+        back_populates="to_location", sa_relationship_kwargs={"foreign_keys": "[LocationConnection.to_location_id]"}
     )
     exploration_areas: list["ExplorationArea"] = Relationship(back_populates="location")
     characters: list["Character"] = Relationship(back_populates="current_location")
+    exploration_progress: list["CharacterExplorationProgress"] = Relationship(back_populates="location")
+
+
+class PathType(str, Enum):
+    """経路の種類"""
+
+    DIRECT = "direct"  # 直線
+    CURVED = "curved"  # 曲線
+    TELEPORT = "teleport"  # テレポート
+    STAIRS = "stairs"  # 階段
+    ELEVATOR = "elevator"  # エレベーター
 
 
 class LocationConnection(SQLModel, table=True):
     """場所間の接続情報"""
+
     __tablename__ = "location_connections"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -86,6 +104,12 @@ class LocationConnection(SQLModel, table=True):
     is_one_way: bool = Field(default=False, description="一方通行かどうか")
     is_blocked: bool = Field(default=False, description="通行不可かどうか")
 
+    # 視覚的表現
+    path_type: PathType = Field(default=PathType.DIRECT, description="経路の種類")
+    path_metadata: Dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column("path_metadata", JSON, default={}), description="経路の視覚的メタデータ"
+    )
+
     # 説明
     travel_description: Optional[str] = Field(default=None, description="移動時の説明文")
 
@@ -94,16 +118,16 @@ class LocationConnection(SQLModel, table=True):
     # リレーション
     from_location: Location = Relationship(
         back_populates="connections_from",
-        sa_relationship_kwargs={"foreign_keys": "[LocationConnection.from_location_id]"}
+        sa_relationship_kwargs={"foreign_keys": "[LocationConnection.from_location_id]"},
     )
     to_location: Location = Relationship(
-        back_populates="connections_to",
-        sa_relationship_kwargs={"foreign_keys": "[LocationConnection.to_location_id]"}
+        back_populates="connections_to", sa_relationship_kwargs={"foreign_keys": "[LocationConnection.to_location_id]"}
     )
 
 
 class ExplorationArea(SQLModel, table=True):
     """探索エリア"""
+
     __tablename__ = "exploration_areas"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -131,6 +155,7 @@ class ExplorationArea(SQLModel, table=True):
 
 class CharacterLocationHistory(SQLModel, table=True):
     """キャラクターの移動履歴"""
+
     __tablename__ = "character_location_history"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -148,6 +173,7 @@ class CharacterLocationHistory(SQLModel, table=True):
 
 class ExplorationLog(SQLModel, table=True):
     """探索ログ"""
+
     __tablename__ = "exploration_logs"
 
     id: Optional[int] = Field(default=None, primary_key=True)

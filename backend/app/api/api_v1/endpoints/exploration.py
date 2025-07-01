@@ -33,8 +33,14 @@ from app.schemas.exploration import (
     MoveRequest,
     MoveResponse,
 )
+from app.schemas.exploration_minimap import (
+    MapDataResponse,
+    UpdateProgressRequest,
+    ExplorationProgressInDB,
+)
 from app.schemas.user import User
 from app.services.sp_service import SPService
+from app.services.exploration_minimap_service import ExplorationMinimapService
 
 router = APIRouter()
 
@@ -394,3 +400,40 @@ def generate_exploration_fragment(
         discovered_at=location.name,
         source_action=f"Exploration of {area.name}",
     )
+
+
+@router.get("/{character_id}/map-data", response_model=MapDataResponse)
+async def get_map_data(
+    character_id: str,
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    current_character: Character = Depends(get_user_character),
+) -> MapDataResponse:
+    """キャラクターのマップデータを取得（ミニマップ用）"""
+    # 権限チェック
+    if current_character.id != character_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view your own map data")
+
+    minimap_service = ExplorationMinimapService(db)
+    return await minimap_service.get_map_data(character_id)
+
+
+@router.post("/{character_id}/update-progress", response_model=ExplorationProgressInDB)
+async def update_exploration_progress(
+    character_id: str,
+    request: UpdateProgressRequest,
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    current_character: Character = Depends(get_user_character),
+) -> ExplorationProgressInDB:
+    """探索進捗を更新"""
+    # 権限チェック
+    if current_character.id != character_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You can only update your own exploration progress"
+        )
+
+    minimap_service = ExplorationMinimapService(db)
+    return await minimap_service.update_exploration_progress(character_id, request)
