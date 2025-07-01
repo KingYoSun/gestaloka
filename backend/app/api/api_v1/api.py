@@ -11,6 +11,7 @@ from app.api.api_v1.endpoints import (
     dispatch,
     exploration,
     game,
+    log_fragments,
     logs,
     narrative,
     npcs,
@@ -29,6 +30,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(characters.router, prefix="/characters", tags=["characters"])
 api_router.include_router(game.router, prefix="/game", tags=["game"])
 api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
+api_router.include_router(log_fragments.router, prefix="/log-fragments", tags=["log-fragments"])
 api_router.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 api_router.include_router(exploration.router, prefix="/exploration", tags=["exploration"])
 api_router.include_router(narrative.router, prefix="/narrative", tags=["narrative"])

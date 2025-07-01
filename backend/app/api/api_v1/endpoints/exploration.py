@@ -14,12 +14,10 @@ from app.core.database import get_session as get_db
 from app.models import (
     Character,
     CharacterLocationHistory,
-    EmotionalValence,
     ExplorationArea,
     ExplorationLog,
     Location,
     LocationConnection,
-    LogFragment,
     LogFragmentRarity,
     SPTransactionType,
 )
@@ -40,6 +38,7 @@ from app.schemas.exploration_minimap import (
 )
 from app.schemas.user import User
 from app.services.exploration_minimap_service import ExplorationMinimapService
+from app.services.log_fragment_service import LogFragmentService
 from app.services.sp_service import SPService
 
 router = APIRouter()
@@ -286,21 +285,41 @@ async def explore_area(
             else:
                 rarity = random.choice([LogFragmentRarity.COMMON, LogFragmentRarity.UNCOMMON])
 
-            # フラグメント生成
-            fragment = generate_exploration_fragment(
+            # フラグメント生成（改善されたサービスを使用）
+            fragment = LogFragmentService.generate_exploration_fragment(
                 character_id=current_character.id, location=location, area=area, rarity=rarity
             )
             db.add(fragment)
-            fragments_found.append(
-                {"keyword": fragment.keyword, "rarity": fragment.rarity, "description": fragment.backstory}
-            )
 
-            narrative_events.append(f"You discovered a {fragment.rarity.lower()} memory fragment: '{fragment.keyword}'")
+            # レスポンス用のフラグメント情報
+            fragment_info = {
+                "keyword": fragment.keyword,
+                "rarity": fragment.rarity,
+                "description": fragment.backstory,
+                "emotional_valence": fragment.emotional_valence,
+                "keywords": fragment.keywords,
+            }
+            fragments_found.append(fragment_info)
+
+            # レアリティに応じた発見演出
+            rarity_descriptions = {
+                LogFragmentRarity.COMMON: "かすかな",
+                LogFragmentRarity.UNCOMMON: "鮮明な",
+                LogFragmentRarity.RARE: "重要な",
+                LogFragmentRarity.EPIC: "伝説的な",
+                LogFragmentRarity.LEGENDARY: "世界を揺るがす",
+            }
+
+            rarity_desc = rarity_descriptions.get(rarity, "不思議な")
+            narrative_events.append(
+                f"あなたは{rarity_desc}記憶の断片を発見した: 『{fragment.keyword}』\n"
+                f"{fragment.backstory}"
+            )
 
     # 遭遇判定
     if random.randint(1, 100) <= area.encounter_rate:
         encounters = 1
-        narrative_events.append("You encountered a distortion in the area, but managed to avoid direct confrontation.")
+        narrative_events.append("探索中、時空の歪みに遭遇した。幸い、直接的な接触は避けることができた。")
 
     # 探索ログ記録
     exploration_log = ExplorationLog(
@@ -322,9 +341,9 @@ async def explore_area(
         encounters=encounters,
         sp_consumed=area.exploration_sp_cost,
         remaining_sp=player_sp.current_sp - area.exploration_sp_cost,
-        narrative="\n".join(narrative_events)
+        narrative="\n\n".join(narrative_events)
         if narrative_events
-        else f"You explored {area.name} but found nothing of interest.",
+        else f"{area.name}を探索したが、特に何も見つからなかった。",
     )
 
 
@@ -345,61 +364,6 @@ def calculate_movement_sp_cost(base_cost: int, hierarchy_level: int, danger_leve
     return max(0, total_cost)  # 負の値にならないように
 
 
-def generate_exploration_fragment(
-    character_id: str, location: Location, area: ExplorationArea, rarity: LogFragmentRarity
-) -> LogFragment:
-    """探索で発見されるログフラグメントを生成"""
-    # 場所とエリアに基づくキーワード候補
-    location_keywords = {
-        "city": ["urban_memory", "crowded_streets", "merchant_tale"],
-        "town": ["village_life", "local_legend", "simple_times"],
-        "dungeon": ["ancient_secret", "trapped_soul", "lost_treasure"],
-        "wild": ["nature_spirit", "survival_story", "beast_encounter"],
-        "special": ["unique_phenomenon", "temporal_anomaly", "reality_shift"],
-    }
-
-    danger_keywords = {
-        "safe": ["peaceful_moment", "childhood_memory", "happy_reunion"],
-        "low": ["minor_conflict", "small_adventure", "daily_struggle"],
-        "medium": ["dangerous_encounter", "narrow_escape", "battle_scar"],
-        "high": ["heroic_deed", "desperate_fight", "sacrifice"],
-        "extreme": ["legendary_battle", "world_changing_event", "ultimate_truth"],
-    }
-
-    # キーワード選択
-    keywords = location_keywords.get(location.location_type.value, ["mysterious_memory"])
-    keywords.extend(danger_keywords.get(location.danger_level.value, ["unknown_experience"]))
-
-    keyword = random.choice(keywords)
-
-    # 感情価決定
-    if location.danger_level.value in ["safe", "low"]:
-        valence = random.choice([EmotionalValence.POSITIVE, EmotionalValence.NEUTRAL])
-    elif location.danger_level.value in ["high", "extreme"]:
-        valence = random.choice([EmotionalValence.NEGATIVE, EmotionalValence.MIXED])
-    else:
-        valence = random.choice(list(EmotionalValence))
-
-    # バックストーリー生成
-    backstories = {
-        LogFragmentRarity.COMMON: f"A faint memory from {location.name}, barely visible in the mists of time.",
-        LogFragmentRarity.UNCOMMON: f"A clear recollection of events that transpired in {area.name}.",
-        LogFragmentRarity.RARE: f"A vivid memory containing important knowledge about {location.name}.",
-        LogFragmentRarity.EPIC: f"A powerful memory that resonates with the very essence of {area.name}.",
-        LogFragmentRarity.LEGENDARY: f"An ancient memory that holds secrets of {location.name}'s true nature.",
-    }
-
-    backstory = backstories.get(rarity, "A mysterious memory fragment.")
-
-    return LogFragment(
-        character_id=character_id,
-        keyword=keyword,
-        emotional_valence=valence,
-        rarity=rarity,
-        backstory=backstory,
-        discovered_at=location.name,
-        source_action=f"Exploration of {area.name}",
-    )
 
 
 @router.get("/{character_id}/map-data", response_model=MapDataResponse)

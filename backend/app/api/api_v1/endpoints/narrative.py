@@ -23,6 +23,7 @@ from app.schemas.narrative import (
 )
 from app.schemas.user import User
 from app.services.gm_ai_service import GMAIService
+from app.services.log_fragment_service import LogFragmentService
 from app.services.sp_service import SPService
 from app.services.websocket_service import WebSocketService
 
@@ -57,6 +58,43 @@ async def perform_narrative_action(
     narrative_result = await gm_ai_service.process_narrative_action(
         character=current_character, action=action.text, current_location=current_location, context=action.context
     )
+
+    # 重要な行動からログフラグメントを生成する可能性を判定
+    fragment_service = LogFragmentService()
+
+    # 行動の重要度を評価（場所移動、特殊なイベント、重要な選択など）
+    importance = 0.3  # 基本重要度
+
+    if narrative_result.location_changed:
+        importance += 0.2  # 場所移動は重要
+
+    if narrative_result.events and any(event in narrative_result.events for event in ["discovery", "encounter", "choice"]):
+        importance += 0.3  # 特殊イベントは重要
+
+    # 重要な行動の場合、ログフラグメント生成
+    if importance >= 0.5:
+        context_data = {
+            "location_id": str(current_location.id),
+            "location_name": current_location.name,
+            "action_type": action.context.get("action_type", "narrative") if action.context else "narrative",
+            "narrative_events": narrative_result.events,
+        }
+
+        if narrative_result.location_changed:
+            context_data["moved_to"] = narrative_result.new_location_id
+            context_data["positive_outcome"] = True
+
+        fragment = fragment_service.generate_action_fragment(
+            character=current_character,
+            action_type=action.context.get("action_type", "narrative") if action.context else "narrative",
+            action_description=f"{action.text} - {narrative_result.narrative[:100]}...",
+            context=context_data,
+            importance=importance,
+        )
+
+        if fragment:
+            db.add(fragment)
+            db.commit()
 
     # 場所が変わった場合の処理
     if narrative_result.location_changed and narrative_result.new_location_id:

@@ -9,6 +9,7 @@ import {
   LogOut,
   MapPin,
   Swords,
+  Gem,
 } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -37,6 +38,11 @@ const navigationItems = [
     name: 'ログ',
     href: '/logs',
     icon: ScrollText,
+  },
+  {
+    name: 'フラグメント',
+    href: '/log-fragments',
+    icon: Gem,
   },
   {
     name: '探索',
