@@ -1,5 +1,54 @@
 # 最近の作業履歴
 
+## 2025/07/01 - 探索システムミニマップ機能Phase 3実装
+
+### 実施内容
+- 霧効果の大幅改善（多層グラデーション、アニメーション対応）
+- 場所タイプ別SVGアイコン表示
+- リッチなツールチップコンポーネント
+- 各種アニメーション効果
+
+### 技術的詳細
+1. **霧効果レンダラー（FogOfWarRenderer）**
+   - 独立したCanvasでの霧描画
+   - 多層グラデーションによる自然な霧の晴れ方
+   - 探索度に応じた段階的な透明度
+   - アニメーション対応（新エリア発見時）
+
+2. **アニメーションマネージャー**
+   - 汎用アニメーション管理クラス
+   - 豊富なイージング関数
+   - 場所発見アニメーション
+   - 接続線パルス効果
+   - ホバーグロー効果
+   - 移動履歴アニメーション
+
+3. **アイコンシステム**
+   - LocationIconコンポーネント（React）
+   - IconRendererクラス（Canvas描画用）
+   - SVGからImageへの変換とキャッシュ
+   - ズームレベル対応
+
+4. **ツールチップ機能強化**
+   - MinimapTooltipコンポーネント
+   - 場所の詳細情報表示
+   - 探索進捗プログレスバー
+   - 接続情報の表示
+   - 最終訪問日時の相対表示
+
+### 実装結果
+- **視覚的インパクト**: ゲーム世界の探索感向上
+- **UX改善**: 直感的な情報表示とフィードバック
+- **パフォーマンス**: 効率的なCanvas描画とキャッシュ
+
+### 関連ファイル
+- `frontend/src/features/exploration/minimap/utils/fogOfWar.ts`（新規）
+- `frontend/src/features/exploration/minimap/utils/animations.ts`（新規）
+- `frontend/src/features/exploration/minimap/components/LocationIcons.tsx`（新規）
+- `frontend/src/features/exploration/minimap/components/MinimapTooltip.tsx`（新規）
+- `frontend/src/features/exploration/minimap/MinimapCanvas.tsx`（大幅更新）
+- `frontend/src/features/exploration/minimap/Minimap.tsx`（更新）
+
 ## 2025/07/01 - 探索システムミニマップ機能Phase 2実装
 
 ### 実施内容

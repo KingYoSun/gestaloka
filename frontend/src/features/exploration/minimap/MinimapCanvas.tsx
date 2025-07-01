@@ -2,8 +2,17 @@
  * ミニマップのCanvas描画コンポーネント
  */
 
-import React, { useRef, useEffect, useCallback, useState } from 'react'
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import { CoordinateSystem } from './utils/mapGeometry'
+import { FogOfWarRenderer, fogPresets } from './utils/fogOfWar'
+import {
+  AnimationManager,
+  drawLocationDiscoveryPulse,
+  drawConnectionPulse,
+  drawHoverGlow,
+  drawTrailAnimation,
+} from './utils/animations'
+import { iconRenderer } from './components/LocationIcons'
 import type {
   MapLocation,
   MapConnection,
@@ -74,6 +83,16 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   const [viewportStart, setViewportStart] = useState({ x: 0, y: 0 })
   const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(null)
   const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null)
+  const [discoveredLocations, setDiscoveredLocations] = useState<Set<string>>(new Set())
+  
+  // 霧効果レンダラー
+  const fogRenderer = useMemo(
+    () => new FogOfWarRenderer(viewport.width, viewport.height),
+    [viewport.width, viewport.height]
+  )
+  
+  // アニメーションマネージャー
+  const animationManager = useMemo(() => new AnimationManager(), [])
 
   // マウス位置から場所を検出
   const getLocationAtPoint = useCallback(
@@ -104,7 +123,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   )
 
   // 描画メインループ
-  const draw = useCallback(() => {
+  const draw = useCallback(async () => {
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -122,28 +141,62 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       drawGrid(ctx, viewport, theme.grid)
     }
 
-    // 接続を描画
-    layerData.connections.forEach(connection => {
-      drawConnection(ctx, connection, layerData.locations, viewport, theme)
-    })
+    // 接続を描画（重要な経路にパルス効果）
+    for (const connection of layerData.connections) {
+      // 現在地に接続されている経路はパルス
+      const isConnectedToCurrent = currentLocation && (
+        connection.from_location_id === currentLocation.id ||
+        connection.to_location_id === currentLocation.id
+      )
+      
+      if (isConnectedToCurrent && animationManager.isAnimating('connection-pulse')) {
+        const fromLocation = layerData.locations.find(
+          loc => loc.id === connection.from_location_id
+        )
+        const toLocation = layerData.locations.find(
+          loc => loc.id === connection.to_location_id
+        )
+        if (fromLocation && toLocation) {
+          const from = CoordinateSystem.worldToScreen(fromLocation.coordinates, viewport)
+          const to = CoordinateSystem.worldToScreen(toLocation.coordinates, viewport)
+          const pulseProgress = animationManager.getProgress('connection-pulse')
+          drawConnectionPulse(ctx, from, to, pulseProgress, theme.connection[connection.path_type])
+        }
+      } else {
+        drawConnection(ctx, connection, layerData.locations, viewport, theme)
+      }
+    }
 
-    // 移動履歴を描画
-    drawTrail(ctx, characterTrail, viewport, theme.trail)
+    // 移動履歴をアニメーションで描画
+    if (characterTrail.length > 1) {
+      const trailPoints = characterTrail.map(h => 
+        CoordinateSystem.worldToScreen(h.coordinates, viewport)
+      )
+      const trailProgress = animationManager.getProgress('trail-animation')
+      drawTrailAnimation(ctx, trailPoints, trailProgress || 1, theme.trail)
+    }
 
     // 場所を描画
-    layerData.locations.forEach(location => {
+    for (const location of layerData.locations) {
       const isHovered = hoveredLocation?.id === location.id
       const isSelected = selectedLocation?.id === location.id
-      drawLocation(ctx, location, viewport, theme, showLabels, isHovered, isSelected)
-    })
+      await drawLocation(ctx, location, viewport, theme, showLabels, isHovered, isSelected)
+    }
 
     // 現在地を描画
     if (currentLocation) {
       drawCurrentLocation(ctx, currentLocation, viewport, theme.currentLocation)
     }
 
-    // 霧効果を適用
-    applyFogOfWar(ctx, layerData, viewport)
+    // 改善された霧効果を適用
+    const fogCanvas = fogRenderer.render(
+      layerData.exploration_progress,
+      layerData.locations,
+      viewport,
+      fogPresets.mystical,
+      Date.now()
+    )
+    ctx.drawImage(fogCanvas, 0, 0)
   }, [
     layerData,
     currentLocation,
@@ -154,7 +207,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     showLabels,
     hoveredLocation,
     selectedLocation,
-    applyFogOfWar,
+    fogRenderer,
+    animationManager,
+    discoveredLocations,
   ])
 
   // 描画関数群
@@ -219,8 +274,12 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     )
     const to = CoordinateSystem.worldToScreen(toLocation.coordinates, viewport)
 
+    // 未発見の接続は半透明に
+    const opacity = connection.is_discovered ? 1 : 0.3
+    ctx.save()
+    ctx.globalAlpha = opacity
     ctx.strokeStyle = theme.connection[connection.path_type]
-    ctx.lineWidth = 2
+    ctx.lineWidth = connection.is_discovered ? 2 : 1
 
     if (connection.path_type === 'curved') {
       // ベジェ曲線で描画
@@ -271,9 +330,11 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       ctx.fill()
       ctx.restore()
     }
+    
+    ctx.restore() // opacityのリストア
   }
 
-  const drawLocation = (
+  const drawLocation = async (
     ctx: CanvasRenderingContext2D,
     location: MapLocation,
     viewport: Viewport,
@@ -283,96 +344,138 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     isSelected: boolean = false
   ) => {
     const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
-    const radius = (isHovered || isSelected ? 10 : 8) * viewport.zoom
+    const baseRadius = 8 * viewport.zoom
+    const radius = (isHovered || isSelected ? baseRadius * 1.3 : baseRadius)
 
-    // ホバー/選択時のハイライト
-    if (isHovered || isSelected) {
-      ctx.save()
-      ctx.shadowBlur = 20
-      ctx.shadowColor = isSelected ? '#ffeb3b' : '#ffffff'
-      ctx.fillStyle = isSelected ? '#ffeb3b' : '#ffffff'
-      ctx.globalAlpha = 0.3
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius + 10, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
+    // 新規発見アニメーション
+    if (!discoveredLocations.has(location.id) && location.is_discovered) {
+      setDiscoveredLocations(prev => new Set([...prev, location.id]))
+      animationManager.start(`discovery-${location.id}`, 2000)
     }
 
-    // 危険度による外枠
-    ctx.strokeStyle = theme.danger[location.danger_level]
+    // 発見アニメーションの描画
+    const discoveryProgress = animationManager.getProgress(`discovery-${location.id}`)
+    if (discoveryProgress < 1) {
+      drawLocationDiscoveryPulse(ctx, pos, discoveryProgress, theme.location[location.type])
+    }
+
+    // ホバー/選択時のグロー効果
+    if (isHovered || isSelected) {
+      const glowIntensity = isSelected ? 1 : 0.7
+      drawHoverGlow(ctx, pos, radius, glowIntensity, isSelected ? '#ffeb3b' : '#ffffff')
+    }
+
+    // 危険度による外枠（グラデーション）
+    const gradient = ctx.createRadialGradient(
+      pos.x, pos.y, radius,
+      pos.x, pos.y, radius + 5
+    )
+    gradient.addColorStop(0, theme.danger[location.danger_level])
+    gradient.addColorStop(1, `${theme.danger[location.danger_level]}00`)
+    ctx.strokeStyle = gradient
     ctx.lineWidth = isHovered || isSelected ? 4 : 3
     ctx.beginPath()
     ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2)
     ctx.stroke()
 
-    // 場所タイプによる塗りつぶし
-    ctx.fillStyle = theme.location[location.type]
+    // 背景円
+    ctx.fillStyle = '#1a1a1a'
     ctx.beginPath()
     ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
     ctx.fill()
 
-    // 探索進捗を表示
+    // アイコンまたは色で塗りつぶし
+    if (viewport.zoom > 0.7 && location.is_discovered) {
+      // ズームが十分な場合はアイコンを表示
+      try {
+        await iconRenderer.drawIcon(
+          ctx,
+          location.type,
+          pos.x,
+          pos.y,
+          radius * 1.5,
+          theme.location[location.type]
+        )
+      } catch {
+        // フォールバック: 色で塗りつぶし
+        ctx.fillStyle = theme.location[location.type]
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    } else {
+      // ズームが小さい場合は色で塗りつぶし
+      ctx.fillStyle = theme.location[location.type]
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 探索進捗リング
     if (
       location.exploration_percentage > 0 &&
       location.exploration_percentage < 100
     ) {
-      ctx.globalAlpha = 0.5
-      ctx.fillStyle = '#ffffff'
+      ctx.save()
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 2
+      ctx.globalAlpha = 0.7
       ctx.beginPath()
       ctx.arc(
         pos.x,
         pos.y,
-        radius,
+        radius - 2,
         -Math.PI / 2,
         -Math.PI / 2 + (Math.PI * 2 * location.exploration_percentage) / 100
       )
-      ctx.lineTo(pos.x, pos.y)
-      ctx.closePath()
-      ctx.fill()
-      ctx.globalAlpha = 1
+      ctx.stroke()
+      ctx.restore()
     }
 
-    // ラベル表示
+    // 完全探索済みの場合のエフェクト
+    if (location.exploration_percentage === 100) {
+      const time = Date.now() / 1000
+      const pulse = Math.sin(time * 2) * 0.2 + 0.8
+      ctx.save()
+      ctx.strokeStyle = '#4caf50'
+      ctx.lineWidth = 2
+      ctx.globalAlpha = pulse * 0.5
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // ラベル表示（改善版）
     if (showLabel && viewport.zoom > 0.5) {
+      ctx.save()
+      
+      // 背景プレート
+      const textMetrics = ctx.measureText(location.name)
+      const textWidth = textMetrics.width
+      const textHeight = 12 * viewport.zoom
+      const padding = 4 * viewport.zoom
+      const labelY = pos.y + radius + 15 * viewport.zoom
+      
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+      ctx.fillRect(
+        pos.x - textWidth / 2 - padding,
+        labelY - textHeight / 2 - padding,
+        textWidth + padding * 2,
+        textHeight + padding * 2
+      )
+      
+      // テキスト
       ctx.fillStyle = '#ffffff'
       ctx.font = `${12 * viewport.zoom}px sans-serif`
       ctx.textAlign = 'center'
-      ctx.fillText(location.name, pos.x, pos.y + radius + 15 * viewport.zoom)
+      ctx.textBaseline = 'middle'
+      ctx.fillText(location.name, pos.x, labelY)
+      
+      ctx.restore()
     }
   }
 
-  const drawTrail = (
-    ctx: CanvasRenderingContext2D,
-    trail: LocationHistory[],
-    viewport: Viewport,
-    color: string
-  ) => {
-    if (trail.length < 2) return
-
-    ctx.strokeStyle = color
-    ctx.lineWidth = 2
-    ctx.setLineDash([3, 3])
-
-    for (let i = 0; i < trail.length - 1; i++) {
-      const from = CoordinateSystem.worldToScreen(
-        trail[i].coordinates,
-        viewport
-      )
-      const to = CoordinateSystem.worldToScreen(
-        trail[i + 1].coordinates,
-        viewport
-      )
-
-      ctx.globalAlpha = 1 - i / trail.length // フェードアウト効果
-      ctx.beginPath()
-      ctx.moveTo(from.x, from.y)
-      ctx.lineTo(to.x, to.y)
-      ctx.stroke()
-    }
-
-    ctx.globalAlpha = 1
-    ctx.setLineDash([])
-  }
 
   const drawCurrentLocation = (
     ctx: CanvasRenderingContext2D,
@@ -398,46 +501,24 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     ctx.fill()
   }
 
-  const applyFogOfWar = (
-    ctx: CanvasRenderingContext2D,
-    layerData: LayerData,
-    viewport: Viewport
-  ) => {
-    // 霧効果の実装（簡略版）
-    ctx.fillStyle = theme.fog
-    ctx.fillRect(0, 0, viewport.width, viewport.height)
+  // 移動履歴が変更されたときにアニメーションを開始
+  useEffect(() => {
+    if (characterTrail.length > 1) {
+      animationManager.start('trail-animation', 3000)
+    }
+  }, [characterTrail, animationManager])
 
-    // 探索済みエリアを明るくする
-    layerData.exploration_progress.forEach((progress) => {
-      const location = layerData.locations.find(
-        loc => loc.id === progress.location_id
-      )
-      if (!location) return
+  // 現在地に接続された経路のパルスアニメーション
+  useEffect(() => {
+    if (currentLocation) {
+      animationManager.start('connection-pulse', 2000)
+    }
+  }, [currentLocation, animationManager])
 
-      const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
-      const radius =
-        100 * viewport.zoom * (progress.exploration_percentage / 100)
-
-      // グラデーションで霧を晴らす
-      const gradient = ctx.createRadialGradient(
-        pos.x,
-        pos.y,
-        0,
-        pos.x,
-        pos.y,
-        radius
-      )
-      gradient.addColorStop(0, 'rgba(0, 0, 0, 0)')
-      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.7)')
-
-      ctx.globalCompositeOperation = 'destination-out'
-      ctx.fillStyle = gradient
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.globalCompositeOperation = 'source-over'
-    })
-  }
+  // 霧レンダラーのサイズ更新
+  useEffect(() => {
+    fogRenderer.resize(viewport.width, viewport.height)
+  }, [viewport.width, viewport.height, fogRenderer])
 
   // マウス/タッチイベントハンドラ
   const handleMouseDown = (e: React.MouseEvent) => {

@@ -28,7 +28,7 @@ const mockMapData: MapDataResponse = {
       name: '第1層',
       locations: [
         {
-          id: 1,
+          id: '1',
           name: '始まりの街',
           coordinates: { x: 0, y: 0 },
           type: 'city',
@@ -38,7 +38,7 @@ const mockMapData: MapDataResponse = {
           last_visited: '2025-01-01T00:00:00Z',
         },
         {
-          id: 2,
+          id: '2',
           name: '森の入口',
           coordinates: { x: 100, y: 50 },
           type: 'wild',
@@ -50,8 +50,8 @@ const mockMapData: MapDataResponse = {
       connections: [
         {
           id: 1,
-          from_location_id: 1,
-          to_location_id: 2,
+          from_location_id: '1',
+          to_location_id: '2',
           path_type: 'direct',
           is_one_way: false,
           is_discovered: true,
@@ -62,7 +62,7 @@ const mockMapData: MapDataResponse = {
         {
           id: '1',
           character_id: 'test-character',
-          location_id: 1,
+          location_id: '1',
           exploration_percentage: 100,
           areas_explored: ['area1', 'area2'],
           created_at: '2025-01-01T00:00:00Z',
@@ -73,14 +73,14 @@ const mockMapData: MapDataResponse = {
   ],
   character_trail: [
     {
-      location_id: 1,
+      location_id: '1',
       timestamp: '2025-01-01T00:00:00Z',
       layer: 1,
       coordinates: { x: 0, y: 0 },
     },
   ],
   current_location: {
-    id: 1,
+    id: '1',
     layer: 1,
     coordinates: { x: 0, y: 0 },
   },

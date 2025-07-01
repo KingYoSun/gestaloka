@@ -2,20 +2,15 @@
  * ミニマップメインコンポーネント
  */
 
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Maximize2, Minimize2, Layers, Navigation } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MinimapCanvas } from './MinimapCanvas'
+import { MinimapTooltip } from './components/MinimapTooltip'
 import { useMapData } from './hooks'
 import type { Viewport, LayerData, MapLocation } from './types'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -53,6 +48,8 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
   })
   const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null)
   const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(null)
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
 
   // 現在のレイヤーデータ
   const currentLayerData: LayerData | null = mapData
@@ -107,6 +104,17 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
   // 場所にホバーしたときのハンドラ
   const handleLocationHover = useCallback((location: MapLocation | null) => {
     setHoveredLocation(location)
+  }, [])
+  
+  // マウス位置の追跡
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (canvasContainerRef.current) {
+      const rect = canvasContainerRef.current.getBoundingClientRect()
+      setMousePosition({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      })
+    }
   }, [])
 
   // 利用可能な接続を取得
@@ -225,47 +233,34 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
       </div>
 
       {/* ミニマップ本体 */}
-      <TooltipProvider>
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className="w-full h-full relative">
-              <MinimapCanvas
-                layerData={currentLayerData}
-                currentLocation={mapData?.current_location}
-                characterTrail={mapData?.character_trail || []}
-                viewport={viewport}
-                onViewportChange={setViewport}
-                showLabels={isExpanded}
-                onLocationSelect={handleLocationSelect}
-                onLocationHover={handleLocationHover}
-              />
-              
-              {/* ホバー時のツールチップ */}
-              {hoveredLocation && (
-                <Tooltip open={true}>
-                  <TooltipTrigger asChild>
-                    <div className="absolute inset-0 pointer-events-none" />
-                  </TooltipTrigger>
-                  <TooltipContent className="bg-black/90 text-white border-white/20">
-                    <div className="space-y-1">
-                      <div className="font-semibold">{hoveredLocation.name}</div>
-                      <div className="text-xs text-white/80">
-                        危険度: {hoveredLocation.danger_level}
-                      </div>
-                      <div className="text-xs text-white/80">
-                        探索進捗: {hoveredLocation.exploration_percentage}%
-                      </div>
-                      {hoveredLocation.last_visited && (
-                        <div className="text-xs text-white/60">
-                          最終訪問: {new Date(hoveredLocation.last_visited).toLocaleDateString()}
-                        </div>
-                      )}
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-          </ContextMenuTrigger>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div 
+            ref={canvasContainerRef}
+            className="w-full h-full relative"
+            onMouseMove={handleMouseMove}
+          >
+            <MinimapCanvas
+              layerData={currentLayerData}
+              currentLocation={mapData?.current_location}
+              characterTrail={mapData?.character_trail || []}
+              viewport={viewport}
+              onViewportChange={setViewport}
+              showLabels={isExpanded}
+              onLocationSelect={handleLocationSelect}
+              onLocationHover={handleLocationHover}
+            />
+            
+            {/* リッチなツールチップ */}
+            <MinimapTooltip
+              location={hoveredLocation!}
+              connections={currentLayerData?.connections || []}
+              x={mousePosition.x}
+              y={mousePosition.y}
+              visible={!!hoveredLocation}
+            />
+          </div>
+        </ContextMenuTrigger>
           
           {/* 右クリックコンテキストメニュー */}
           <ContextMenuContent className="bg-black/90 text-white border-white/20">
@@ -295,7 +290,6 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
             )}
           </ContextMenuContent>
         </ContextMenu>
-      </TooltipProvider>
 
       {/* 凡例（拡張モードのみ） */}
       {isExpanded && (

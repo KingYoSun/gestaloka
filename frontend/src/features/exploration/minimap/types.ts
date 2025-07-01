@@ -7,11 +7,15 @@ export interface Coordinates {
   y: number
 }
 
+export type Point = Coordinates
+
+export type LocationType = 'city' | 'town' | 'dungeon' | 'wild' | 'special'
+
 export interface MapLocation {
-  id: number
+  id: string
   name: string
   coordinates: Coordinates
-  type: 'city' | 'town' | 'dungeon' | 'wild' | 'special'
+  type: LocationType
   danger_level: 'safe' | 'low' | 'medium' | 'high' | 'extreme'
   is_discovered: boolean
   exploration_percentage: number
@@ -20,8 +24,8 @@ export interface MapLocation {
 
 export interface MapConnection {
   id: number
-  from_location_id: number
-  to_location_id: number
+  from_location_id: string
+  to_location_id: string
   path_type: 'direct' | 'curved' | 'teleport' | 'stairs' | 'elevator'
   is_one_way: boolean
   is_discovered: boolean
@@ -32,7 +36,7 @@ export interface MapConnection {
 export interface ExplorationProgress {
   id: string
   character_id: string
-  location_id: number
+  location_id: string
   exploration_percentage: number
   areas_explored: string[]
   fog_revealed_at?: string
@@ -50,14 +54,14 @@ export interface LayerData {
 }
 
 export interface LocationHistory {
-  location_id: number
+  location_id: string
   timestamp: string
   layer: number
   coordinates: Coordinates
 }
 
 export interface CurrentLocation {
-  id: number
+  id: string
   layer: number
   coordinates: Coordinates
 }
@@ -69,7 +73,7 @@ export interface MapDataResponse {
 }
 
 export interface UpdateProgressRequest {
-  location_id: number
+  location_id: string
   exploration_percentage: number
   areas_explored: string[]
 }
