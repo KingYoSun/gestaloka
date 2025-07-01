@@ -12,7 +12,14 @@ celery_app = Celery(
     "gestaloka",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ai_tasks", "app.tasks.log_tasks", "app.tasks.notification_tasks", "app.tasks.cleanup_tasks", "app.tasks.sp_tasks", "app.tasks.dispatch_tasks"],
+    include=[
+        "app.tasks.ai_tasks",
+        "app.tasks.log_tasks",
+        "app.tasks.notification_tasks",
+        "app.tasks.cleanup_tasks",
+        "app.tasks.sp_tasks",
+        "app.tasks.dispatch_tasks",
+    ],
 )
 
 # Celery設定
