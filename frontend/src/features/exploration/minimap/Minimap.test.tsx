@@ -10,6 +10,70 @@ import { explorationApi } from '@/api/explorationApi'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { MapDataResponse } from './types'
 
+// URL.createObjectURLのモック
+global.URL.createObjectURL = vi.fn(() => 'mock-url')
+global.URL.revokeObjectURL = vi.fn()
+
+// Canvas 2Dコンテキストのモック
+const mockContext = {
+  fillRect: vi.fn(),
+  fillStyle: '',
+  strokeStyle: '',
+  lineWidth: 1,
+  globalAlpha: 1,
+  globalCompositeOperation: 'source-over',
+  beginPath: vi.fn(),
+  moveTo: vi.fn(),
+  lineTo: vi.fn(),
+  quadraticCurveTo: vi.fn(),
+  arc: vi.fn(),
+  stroke: vi.fn(),
+  fill: vi.fn(),
+  closePath: vi.fn(),
+  save: vi.fn(),
+  restore: vi.fn(),
+  translate: vi.fn(),
+  rotate: vi.fn(),
+  setLineDash: vi.fn(),
+  createRadialGradient: vi.fn(() => ({
+    addColorStop: vi.fn(),
+  })),
+  fillText: vi.fn(),
+  font: '',
+  textAlign: 'left' as CanvasTextAlign,
+  shadowBlur: 0,
+  shadowColor: '',
+  getImageData: vi.fn(() => ({
+    data: new Uint8ClampedArray(100),
+    width: 10,
+    height: 10,
+  })),
+  measureText: vi.fn(() => ({
+    width: 50,
+    actualBoundingBoxAscent: 10,
+    actualBoundingBoxDescent: 2,
+    fontBoundingBoxAscent: 12,
+    fontBoundingBoxDescent: 3,
+    actualBoundingBoxLeft: 0,
+    actualBoundingBoxRight: 50,
+  })),
+  drawImage: vi.fn(),
+}
+
+// HTMLCanvasElementのモック
+HTMLCanvasElement.prototype.getContext = vi.fn(() => mockContext as any)
+HTMLCanvasElement.prototype.getBoundingClientRect = vi.fn(() => ({
+  left: 0,
+  top: 0,
+  right: 200,
+  bottom: 200,
+  width: 200,
+  height: 200,
+  x: 0,
+  y: 0,
+  toJSON: () => {},
+}))
+
 // モックの設定
 vi.mock('@/api/explorationApi')
 vi.mock('@/stores/characterStore')
@@ -86,14 +150,14 @@ const mockMapData: MapDataResponse = {
   },
 }
 
-const mockAvailableLocations = {
+const mockAvailableLocations: any = {
   current_location: {
     id: 1,
     name: '始まりの街',
     description: 'テスト',
-    location_type: 'city' as const,
+    location_type: 'city',
     hierarchy_level: 1,
-    danger_level: 'safe' as const,
+    danger_level: 'safe',
     x_coordinate: 0,
     y_coordinate: 0,
     has_inn: true,
@@ -109,9 +173,9 @@ const mockAvailableLocations = {
         id: 2,
         name: '森の入口',
         description: 'テスト',
-        location_type: 'wild' as const,
+        location_type: 'wild',
         hierarchy_level: 1,
-        danger_level: 'low' as const,
+        danger_level: 'low',
         x_coordinate: 100,
         y_coordinate: 50,
         has_inn: false,
@@ -180,17 +244,27 @@ describe('Minimap', () => {
   it('キーボードショートカット(M)で拡大/縮小を切り替える', async () => {
     renderMinimap()
 
+    // データ読み込みを待つ
+    await waitFor(() => {
+      expect(screen.getByTitle('拡大 (M)')).toBeInTheDocument()
+    })
+
+    // 初期状態では凡例が表示されていない
+    expect(screen.queryByText('凡例')).not.toBeInTheDocument()
+
+    // Mキーを押して拡大
+    fireEvent.keyDown(window, { key: 'm' })
+    
+    await waitFor(() => {
+      expect(screen.getByText('凡例')).toBeInTheDocument()
+    })
+
+    // 再度Mキーを押して縮小
+    fireEvent.keyDown(window, { key: 'M' })
+    
     await waitFor(() => {
       expect(screen.queryByText('凡例')).not.toBeInTheDocument()
     })
-
-    // Mキーを押して拡大
-    fireEvent.keyPress(window, { key: 'm' })
-    expect(screen.getByText('凡例')).toBeInTheDocument()
-
-    // 再度Mキーを押して縮小
-    fireEvent.keyPress(window, { key: 'M' })
-    expect(screen.queryByText('凡例')).not.toBeInTheDocument()
   })
 
   it('現在地ボタンをクリックすると現在地に中心を合わせる', async () => {

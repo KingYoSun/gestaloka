@@ -3,12 +3,12 @@
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.models.location import LocationType, DangerLevel, PathType
+from app.models.location import DangerLevel, LocationType, PathType
 
 
 class ExplorationProgressBase(BaseModel):
@@ -16,7 +16,7 @@ class ExplorationProgressBase(BaseModel):
 
     location_id: int
     exploration_percentage: int = Field(ge=0, le=100)
-    areas_explored: List[str] = []
+    areas_explored: list[str] = []
 
 
 class ExplorationProgressCreate(ExplorationProgressBase):
@@ -29,7 +29,7 @@ class ExplorationProgressUpdate(BaseModel):
     """探索進捗更新スキーマ"""
 
     exploration_percentage: Optional[int] = Field(None, ge=0, le=100)
-    areas_explored: Optional[List[str]] = None
+    areas_explored: Optional[list[str]] = None
 
 
 class ExplorationProgressInDB(ExplorationProgressBase):
@@ -51,7 +51,7 @@ class MapLocation(BaseModel):
 
     id: int
     name: str
-    coordinates: Dict[str, int] = Field(description="x, y座標")
+    coordinates: dict[str, int] = Field(description="x, y座標")
     type: LocationType
     danger_level: DangerLevel
     is_discovered: bool
@@ -69,7 +69,7 @@ class MapConnection(BaseModel):
     is_one_way: bool
     is_discovered: bool
     sp_cost: int
-    path_metadata: Dict[str, Any] = Field(default_factory=dict)
+    path_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class LayerData(BaseModel):
@@ -77,9 +77,9 @@ class LayerData(BaseModel):
 
     layer: int
     name: str
-    locations: List[MapLocation]
-    connections: List[MapConnection]
-    exploration_progress: List[ExplorationProgressInDB]
+    locations: list[MapLocation]
+    connections: list[MapConnection]
+    exploration_progress: list[ExplorationProgressInDB]
 
 
 class LocationHistory(BaseModel):
@@ -88,7 +88,7 @@ class LocationHistory(BaseModel):
     location_id: int
     timestamp: datetime
     layer: int
-    coordinates: Dict[str, int]
+    coordinates: dict[str, int]
 
 
 class CurrentLocation(BaseModel):
@@ -96,14 +96,14 @@ class CurrentLocation(BaseModel):
 
     id: int
     layer: int
-    coordinates: Dict[str, int]
+    coordinates: dict[str, int]
 
 
 class MapDataResponse(BaseModel):
     """マップデータレスポンス"""
 
-    layers: List[LayerData]
-    character_trail: List[LocationHistory]
+    layers: list[LayerData]
+    character_trail: list[LocationHistory]
     current_location: Optional[CurrentLocation]
 
 
@@ -112,4 +112,4 @@ class UpdateProgressRequest(BaseModel):
 
     location_id: int
     exploration_percentage: int = Field(ge=0, le=100)
-    areas_explored: List[str]
+    areas_explored: list[str]

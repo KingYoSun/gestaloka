@@ -3,24 +3,21 @@
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
 from uuid import UUID
 
-from sqlmodel import Session, select, and_
-from sqlalchemy.orm import selectinload
+from sqlmodel import Session, and_, select
 
 from app.models.character import Character
-from app.models.location import Location, LocationConnection
 from app.models.exploration_progress import CharacterExplorationProgress
-from app.models.location import CharacterLocationHistory
+from app.models.location import CharacterLocationHistory, Location, LocationConnection
 from app.schemas.exploration_minimap import (
-    MapDataResponse,
-    LayerData,
-    MapLocation,
-    MapConnection,
-    LocationHistory,
     CurrentLocation,
     ExplorationProgressInDB,
+    LayerData,
+    LocationHistory,
+    MapConnection,
+    MapDataResponse,
+    MapLocation,
     UpdateProgressRequest,
 )
 
@@ -46,15 +43,15 @@ class ExplorationMinimapService:
         ).all()
 
         # 探索済みの場所IDセット
-        explored_location_ids = {ep.location_id for ep in exploration_progress}
+        # explored_location_ids = {ep.location_id for ep in exploration_progress}
 
         # 全ての発見済み場所を取得
         discovered_locations = self.db.exec(
-            select(Location).where(Location.is_discovered == True)
+            select(Location).where(Location.is_discovered.is_(True))
         ).all()
 
         # 階層別にデータを整理
-        layers_dict: Dict[int, LayerData] = {}
+        layers_dict: dict[int, LayerData] = {}
 
         for location in discovered_locations:
             if location.hierarchy_level not in layers_dict:
@@ -85,7 +82,7 @@ class ExplorationMinimapService:
                 continue
 
             layers_dict[location.hierarchy_level].locations.append(map_location)
-            
+
             if progress:
                 layers_dict[location.hierarchy_level].exploration_progress.append(
                     ExplorationProgressInDB.from_orm(progress)
@@ -97,8 +94,8 @@ class ExplorationMinimapService:
             select(LocationConnection)
             .where(
                 and_(
-                    LocationConnection.from_location_id.in_(list(discovered_location_ids)),
-                    LocationConnection.is_blocked == False,
+                    LocationConnection.from_location_id.in_(list(discovered_location_ids)),  # type: ignore
+                    LocationConnection.is_blocked.is_(False),
                 )
             )
         ).all()
@@ -177,7 +174,7 @@ class ExplorationMinimapService:
 
         return ExplorationProgressInDB.from_orm(progress)
 
-    async def _get_character_trail(self, character_id: str, limit: int = 10) -> List[LocationHistory]:
+    async def _get_character_trail(self, character_id: str, limit: int = 10) -> list[LocationHistory]:
         """キャラクターの移動履歴を取得"""
         history_records = self.db.exec(
             select(CharacterLocationHistory)

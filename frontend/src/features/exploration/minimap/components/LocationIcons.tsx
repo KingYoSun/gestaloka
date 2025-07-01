@@ -178,7 +178,7 @@ export class IconRenderer {
     try {
       const img = await this.getIconImage(type, size, color)
       ctx.drawImage(img, x - size / 2, y - size / 2, size, size)
-    } catch (error) {
+    } catch {
       // フォールバック: シンプルな図形を描画
       this.drawFallbackIcon(ctx, x, y, size, color)
     }

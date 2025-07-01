@@ -128,7 +128,7 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
   const showMoveConfirmation = useCallback((location: MapLocation) => {
     // この場所への接続を検索
     const connection = availableLocations?.available_locations.find(
-      conn => conn.to_location.id === location.id
+      conn => String(conn.to_location.id) === location.id
     )
     
     if (connection) {

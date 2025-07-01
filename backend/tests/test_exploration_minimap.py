@@ -2,15 +2,17 @@
 探索ミニマップ機能のテスト
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 from sqlmodel import Session
+
 from app.models.character import Character
-from app.models.location import Location, LocationConnection, LocationType, DangerLevel, PathType
 from app.models.exploration_progress import CharacterExplorationProgress
-from app.services.exploration_minimap_service import ExplorationMinimapService
-from app.schemas.exploration_minimap import UpdateProgressRequest
+from app.models.location import DangerLevel, Location, LocationConnection, LocationType, PathType
 from app.models.user import User
+from app.schemas.exploration_minimap import UpdateProgressRequest
+from app.services.exploration_minimap_service import ExplorationMinimapService
 
 
 @pytest.fixture
@@ -40,7 +42,7 @@ def exploration_minimap_service(session: Session):
 def test_locations(session: Session):
     """テスト用の場所データ作成"""
     locations = []
-    
+
     # 開始地点（第1層）
     location1 = Location(
         name="火層の入口",
@@ -57,7 +59,7 @@ def test_locations(session: Session):
     )
     session.add(location1)
     locations.append(location1)
-    
+
     # 第1層の別の場所
     location2 = Location(
         name="火層の洞窟",
@@ -71,7 +73,7 @@ def test_locations(session: Session):
     )
     session.add(location2)
     locations.append(location2)
-    
+
     # 第2層の場所
     location3 = Location(
         name="水層の湖畔",
@@ -85,11 +87,11 @@ def test_locations(session: Session):
     )
     session.add(location3)
     locations.append(location3)
-    
+
     session.commit()
     for loc in locations:
         session.refresh(loc)
-    
+
     # 接続を作成
     connection1 = LocationConnection(
         from_location_id=location1.id,
@@ -99,7 +101,7 @@ def test_locations(session: Session):
         path_type=PathType.DIRECT,
     )
     session.add(connection1)
-    
+
     connection2 = LocationConnection(
         from_location_id=location2.id,
         to_location_id=location3.id,
@@ -109,9 +111,9 @@ def test_locations(session: Session):
         min_level_required=5,
     )
     session.add(connection2)
-    
+
     session.commit()
-    
+
     return locations
 
 
@@ -130,7 +132,7 @@ def test_character_with_progress(session: Session, test_user, test_locations):
     session.add(character)
     session.commit()
     session.refresh(character)
-    
+
     # 探索進捗を追加
     progress1 = CharacterExplorationProgress(
         character_id=character.id,
@@ -141,7 +143,7 @@ def test_character_with_progress(session: Session, test_user, test_locations):
         fully_explored_at=datetime.utcnow(),
     )
     session.add(progress1)
-    
+
     progress2 = CharacterExplorationProgress(
         character_id=character.id,
         location_id=test_locations[1].id,
@@ -150,9 +152,9 @@ def test_character_with_progress(session: Session, test_user, test_locations):
         fog_revealed_at=datetime.utcnow(),
     )
     session.add(progress2)
-    
+
     session.commit()
-    
+
     return character
 
 
@@ -160,20 +162,20 @@ def test_character_with_progress(session: Session, test_user, test_locations):
 async def test_get_map_data(exploration_minimap_service, test_character_with_progress, test_locations):
     """マップデータ取得のテスト"""
     character_id = str(test_character_with_progress.id)
-    
+
     map_data = await exploration_minimap_service.get_map_data(character_id)
-    
+
     # 基本構造の確認
     assert map_data is not None
     assert len(map_data.layers) > 0
     assert map_data.current_location is not None
-    
+
     # 現在地の確認
     assert map_data.current_location.id == test_locations[0].id
     assert map_data.current_location.layer == 1
     assert map_data.current_location.coordinates["x"] == 0
     assert map_data.current_location.coordinates["y"] == 0
-    
+
     # レイヤーデータの確認
     layer1 = next((layer for layer in map_data.layers if layer.layer == 1), None)
     assert layer1 is not None
@@ -181,13 +183,13 @@ async def test_get_map_data(exploration_minimap_service, test_character_with_pro
     assert len(layer1.locations) >= 2
     assert len(layer1.connections) >= 1
     assert len(layer1.exploration_progress) >= 2
-    
+
     # 探索進捗の確認
     location1_data = next((loc for loc in layer1.locations if loc.id == test_locations[0].id), None)
     assert location1_data is not None
     assert location1_data.exploration_percentage == 100
     assert location1_data.is_discovered is True
-    
+
     location2_data = next((loc for loc in layer1.locations if loc.id == test_locations[1].id), None)
     assert location2_data is not None
     assert location2_data.exploration_percentage == 50
@@ -197,16 +199,16 @@ async def test_get_map_data(exploration_minimap_service, test_character_with_pro
 async def test_update_exploration_progress_new(exploration_minimap_service, test_character_with_progress, test_locations):
     """新規探索進捗の更新テスト"""
     character_id = str(test_character_with_progress.id)
-    
+
     # 第3の場所の探索進捗を新規作成
     request = UpdateProgressRequest(
         location_id=test_locations[2].id,
         exploration_percentage=30,
         areas_explored=["lakeside", "dock"],
     )
-    
+
     progress = await exploration_minimap_service.update_exploration_progress(character_id, request)
-    
+
     assert progress is not None
     assert str(progress.character_id) == character_id
     assert progress.location_id == test_locations[2].id
@@ -221,16 +223,16 @@ async def test_update_exploration_progress_new(exploration_minimap_service, test
 async def test_update_exploration_progress_existing(exploration_minimap_service, test_character_with_progress, test_locations):
     """既存探索進捗の更新テスト"""
     character_id = str(test_character_with_progress.id)
-    
+
     # 既存の進捗を更新（50% -> 100%）
     request = UpdateProgressRequest(
         location_id=test_locations[1].id,
         exploration_percentage=100,
         areas_explored=["entrance", "first_chamber", "second_chamber", "boss_room"],
     )
-    
+
     progress = await exploration_minimap_service.update_exploration_progress(character_id, request)
-    
+
     assert progress is not None
     assert progress.exploration_percentage == 100
     assert len(progress.areas_explored) == 4
@@ -241,7 +243,7 @@ async def test_update_exploration_progress_existing(exploration_minimap_service,
 async def test_get_character_trail(exploration_minimap_service, test_character_with_progress, test_locations, session: Session):
     """キャラクターの移動履歴取得テスト"""
     from app.models.location import CharacterLocationHistory
-    
+
     # 移動履歴を作成
     history1 = CharacterLocationHistory(
         character_id=test_character_with_progress.id,
@@ -250,7 +252,7 @@ async def test_get_character_trail(exploration_minimap_service, test_character_w
         sp_consumed=0,
     )
     session.add(history1)
-    
+
     history2 = CharacterLocationHistory(
         character_id=test_character_with_progress.id,
         location_id=test_locations[1].id,
@@ -258,13 +260,13 @@ async def test_get_character_trail(exploration_minimap_service, test_character_w
         sp_consumed=10,
     )
     session.add(history2)
-    
+
     session.commit()
-    
+
     # 移動履歴を取得
     character_id = str(test_character_with_progress.id)
     trail = await exploration_minimap_service._get_character_trail(character_id, limit=5)
-    
+
     assert len(trail) == 2
     assert trail[0].location_id == test_locations[1].id  # 最新の履歴が最初
     assert trail[0].layer == 1
@@ -282,9 +284,9 @@ async def test_calculate_sp_cost(exploration_minimap_service, test_locations, se
         from_location=test_locations[0],
         to_location=test_locations[2],
     )
-    
+
     sp_cost = exploration_minimap_service._calculate_sp_cost(connection)
-    
+
     # 基本コスト15 + 階層差1 * 5 = 20
     # 危険度LOW * 1.2 = 24
     assert sp_cost == 24

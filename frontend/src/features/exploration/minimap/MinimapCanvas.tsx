@@ -255,6 +255,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     animationManager,
     discoveredLocations,
     iconCache,
+    drawLocation,
+    startFrame,
+    endFrame,
   ])
 
   // 描画関数群

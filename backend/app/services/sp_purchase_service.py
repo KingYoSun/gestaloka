@@ -200,7 +200,7 @@ class SPPurchaseService:
         }
 
     @staticmethod
-    def approve_purchase_by_stripe(
+    async def approve_purchase_by_stripe(
         db: Session, purchase_id: str, stripe_session_id: str, payment_intent_id: Optional[str] = None
     ) -> Optional[SPPurchase]:
         """Stripe決済完了時に購入を承認"""
@@ -230,7 +230,7 @@ class SPPurchaseService:
 
             # SPを付与
             sp_service = SPService(db)
-            sp_service.add_sp(
+            await sp_service.add_sp(
                 user_id=purchase.user_id,
                 amount=total_sp,
                 transaction_type=SPTransactionType.PURCHASE,

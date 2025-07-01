@@ -1,5 +1,8 @@
 import '@testing-library/jest-dom'
 
+// Set VITE_API_URL to avoid connection errors in tests
+process.env.VITE_API_URL = 'http://localhost:8000'
+
 // Mock ResizeObserver if not available
 if (typeof global.ResizeObserver === 'undefined') {
   global.ResizeObserver = class ResizeObserver {

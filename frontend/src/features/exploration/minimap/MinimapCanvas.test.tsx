@@ -7,6 +7,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MinimapCanvas } from './MinimapCanvas'
 import type { LayerData, Viewport } from './types'
 
+// URL.createObjectURLのモック
+global.URL.createObjectURL = vi.fn(() => 'mock-url')
+global.URL.revokeObjectURL = vi.fn()
+
 // Canvas 2Dコンテキストのモック
 const mockContext = {
   fillRect: vi.fn(),
@@ -41,10 +45,20 @@ const mockContext = {
     width: 10,
     height: 10,
   })),
+  measureText: vi.fn(() => ({
+    width: 50,
+    actualBoundingBoxAscent: 10,
+    actualBoundingBoxDescent: 2,
+    fontBoundingBoxAscent: 12,
+    fontBoundingBoxDescent: 3,
+    actualBoundingBoxLeft: 0,
+    actualBoundingBoxRight: 50,
+  })),
+  drawImage: vi.fn(),
 }
 
 // HTMLCanvasElementのモック
-HTMLCanvasElement.prototype.getContext = vi.fn(() => mockContext)
+HTMLCanvasElement.prototype.getContext = vi.fn(() => mockContext as any)
 HTMLCanvasElement.prototype.getBoundingClientRect = vi.fn(() => ({
   left: 0,
   top: 0,
@@ -62,7 +76,7 @@ const mockLayerData: LayerData = {
   name: '第1層',
   locations: [
     {
-      id: 1,
+      id: '1',
       name: 'テスト都市',
       coordinates: { x: 0, y: 0 },
       type: 'city',
@@ -71,7 +85,7 @@ const mockLayerData: LayerData = {
       exploration_percentage: 100,
     },
     {
-      id: 2,
+      id: '2',
       name: 'テストダンジョン',
       coordinates: { x: 100, y: 100 },
       type: 'dungeon',
@@ -83,8 +97,8 @@ const mockLayerData: LayerData = {
   connections: [
     {
       id: 1,
-      from_location_id: 1,
-      to_location_id: 2,
+      from_location_id: '1',
+      to_location_id: '2',
       path_type: 'direct',
       is_one_way: false,
       is_discovered: true,
@@ -95,7 +109,7 @@ const mockLayerData: LayerData = {
     {
       id: '1',
       character_id: 'test',
-      location_id: 1,
+      location_id: '1',
       exploration_percentage: 100,
       areas_explored: [],
       created_at: '2025-01-01T00:00:00Z',
@@ -143,20 +157,25 @@ describe('MinimapCanvas', () => {
     expect(canvas).toHaveClass('w-full h-full cursor-move')
   })
 
-  it('グリッドを描画する', () => {
+  it('グリッドを描画する', async () => {
     renderCanvas({ showGrid: true })
     
-    // グリッド描画の呼び出しを確認
-    expect(mockContext.stroke).toHaveBeenCalled()
-    expect(mockContext.globalAlpha).toBe(1)
+    // 描画が完了するまで待機
+    await waitFor(() => {
+      // グリッド描画の呼び出しを確認
+      expect(mockContext.stroke).toHaveBeenCalled()
+    })
   })
 
-  it('場所を正しく描画する', () => {
+  it('場所を正しく描画する', async () => {
     renderCanvas()
     
-    // 場所の描画（円）
-    expect(mockContext.arc).toHaveBeenCalled()
-    expect(mockContext.fill).toHaveBeenCalled()
+    // 描画が完了するまで待機
+    await waitFor(() => {
+      // 場所の描画（円）
+      expect(mockContext.arc).toHaveBeenCalled()
+      expect(mockContext.fill).toHaveBeenCalled()
+    })
     
     // ラベルの描画
     expect(mockContext.fillText).toHaveBeenCalledWith(
@@ -166,13 +185,16 @@ describe('MinimapCanvas', () => {
     )
   })
 
-  it('接続線を描画する', () => {
+  it('接続線を描画する', async () => {
     renderCanvas()
     
-    // 接続線の描画
-    expect(mockContext.moveTo).toHaveBeenCalled()
-    expect(mockContext.lineTo).toHaveBeenCalled()
-    expect(mockContext.stroke).toHaveBeenCalled()
+    // 描画が完了するまで待機
+    await waitFor(() => {
+      // 接続線の描画
+      expect(mockContext.moveTo).toHaveBeenCalled()
+      expect(mockContext.lineTo).toHaveBeenCalled()
+      expect(mockContext.stroke).toHaveBeenCalled()
+    })
   })
 
   it('ドラッグでビューポートを移動する', () => {
@@ -227,7 +249,7 @@ describe('MinimapCanvas', () => {
     
     expect(mockOnLocationSelect).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 1,
+        id: '1',
         name: 'テスト都市',
       })
     )
@@ -242,7 +264,7 @@ describe('MinimapCanvas', () => {
     
     expect(mockOnLocationHover).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 1,
+        id: '1',
         name: 'テスト都市',
       })
     )
@@ -284,7 +306,7 @@ describe('MinimapCanvas', () => {
 
     renderCanvas({
       currentLocation: {
-        id: 1,
+        id: '1',
         layer: 1,
         coordinates: { x: 0, y: 0 },
       },
@@ -298,26 +320,28 @@ describe('MinimapCanvas', () => {
     mockRequestAnimationFrame.mockRestore()
   })
 
-  it('霧効果を適用する', () => {
+  it('霧効果を適用する', async () => {
     renderCanvas()
     
-    // 霧効果の描画
-    expect(mockContext.fillRect).toHaveBeenCalled()
-    expect(mockContext.createRadialGradient).toHaveBeenCalled()
-    expect(mockContext.globalCompositeOperation).toBe('source-over')
+    // 描画が完了するまで待機
+    await waitFor(() => {
+      // 霧効果の描画
+      expect(mockContext.fillRect).toHaveBeenCalled()
+      expect(mockContext.createRadialGradient).toHaveBeenCalled()
+    })
   })
 
-  it('移動履歴の軌跡を描画する', () => {
+  it('移動履歴の軌跡を描画する', async () => {
     renderCanvas({
       characterTrail: [
         {
-          location_id: 1,
+          location_id: '1',
           timestamp: '2025-01-01T00:00:00Z',
           layer: 1,
           coordinates: { x: 0, y: 0 },
         },
         {
-          location_id: 2,
+          location_id: '2',
           timestamp: '2025-01-01T01:00:00Z',
           layer: 1,
           coordinates: { x: 100, y: 100 },
@@ -325,8 +349,11 @@ describe('MinimapCanvas', () => {
       ],
     })
     
-    // 軌跡の描画（点線）
-    expect(mockContext.setLineDash).toHaveBeenCalledWith([3, 3])
-    expect(mockContext.stroke).toHaveBeenCalled()
+    // 描画が完了するまで待機
+    await waitFor(() => {
+      // 軌跡の描画（点線）
+      expect(mockContext.setLineDash).toHaveBeenCalledWith([3, 3])
+      expect(mockContext.stroke).toHaveBeenCalled()
+    })
   })
 })

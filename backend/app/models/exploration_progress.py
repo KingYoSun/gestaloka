@@ -5,11 +5,11 @@
 """
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import Column, String, Integer, ForeignKey, TIMESTAMP, text, ARRAY
-from sqlmodel import Field, SQLModel, Relationship
+from sqlalchemy import ARRAY, TIMESTAMP, Column, ForeignKey, Integer, String, text
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.character import Character
 from app.models.location import Location
@@ -67,7 +67,7 @@ class CharacterExplorationProgress(SQLModel, table=True):
         sa_column=Column("fully_explored_at", TIMESTAMP(timezone=True), nullable=True)
     )
 
-    areas_explored: List[str] = Field(
+    areas_explored: list[str] = Field(
         default=[], sa_column=Column("areas_explored", ARRAY(String), nullable=False, default=text("'{}'::text[]"))
     )
 

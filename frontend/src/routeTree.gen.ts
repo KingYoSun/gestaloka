@@ -19,6 +19,8 @@ import { Route as CharactersRouteImport } from './routes/characters'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpIndexRouteImport } from './routes/sp/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as SpSuccessRouteImport } from './routes/sp/success'
+import { Route as SpCancelRouteImport } from './routes/sp/cancel'
 import { Route as GameStartRouteImport } from './routes/game/start'
 import { Route as GameSessionIdRouteImport } from './routes/game/$sessionId'
 import { Route as CharacterCreateRouteImport } from './routes/character.create'
@@ -75,6 +77,16 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SpSuccessRoute = SpSuccessRouteImport.update({
+  id: '/sp/success',
+  path: '/sp/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpCancelRoute = SpCancelRouteImport.update({
+  id: '/sp/cancel',
+  path: '/sp/cancel',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GameStartRoute = GameStartRouteImport.update({
   id: '/game/start',
   path: '/game/start',
@@ -115,6 +127,8 @@ export interface FileRoutesByFullPath {
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/sp/cancel': typeof SpCancelRoute
+  '/sp/success': typeof SpSuccessRoute
   '/admin': typeof AdminIndexRoute
   '/sp': typeof SpIndexRoute
 }
@@ -132,6 +146,8 @@ export interface FileRoutesByTo {
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/sp/cancel': typeof SpCancelRoute
+  '/sp/success': typeof SpSuccessRoute
   '/admin': typeof AdminIndexRoute
   '/sp': typeof SpIndexRoute
 }
@@ -150,6 +166,8 @@ export interface FileRoutesById {
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
   '/game/start': typeof GameStartRoute
+  '/sp/cancel': typeof SpCancelRoute
+  '/sp/success': typeof SpSuccessRoute
   '/admin/': typeof AdminIndexRoute
   '/sp/': typeof SpIndexRoute
 }
@@ -169,6 +187,8 @@ export interface FileRouteTypes {
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/sp/cancel'
+    | '/sp/success'
     | '/admin'
     | '/sp'
   fileRoutesByTo: FileRoutesByTo
@@ -186,6 +206,8 @@ export interface FileRouteTypes {
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/sp/cancel'
+    | '/sp/success'
     | '/admin'
     | '/sp'
   id:
@@ -203,6 +225,8 @@ export interface FileRouteTypes {
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
+    | '/sp/cancel'
+    | '/sp/success'
     | '/admin/'
     | '/sp/'
   fileRoutesById: FileRoutesById
@@ -221,6 +245,8 @@ export interface RootRouteChildren {
   CharacterCreateRoute: typeof CharacterCreateRoute
   GameSessionIdRoute: typeof GameSessionIdRoute
   GameStartRoute: typeof GameStartRoute
+  SpCancelRoute: typeof SpCancelRoute
+  SpSuccessRoute: typeof SpSuccessRoute
   AdminIndexRoute: typeof AdminIndexRoute
   SpIndexRoute: typeof SpIndexRoute
 }
@@ -297,6 +323,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sp/success': {
+      id: '/sp/success'
+      path: '/sp/success'
+      fullPath: '/sp/success'
+      preLoaderRoute: typeof SpSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sp/cancel': {
+      id: '/sp/cancel'
+      path: '/sp/cancel'
+      fullPath: '/sp/cancel'
+      preLoaderRoute: typeof SpCancelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/game/start': {
       id: '/game/start'
       path: '/game/start'
@@ -349,6 +389,8 @@ const rootRouteChildren: RootRouteChildren = {
   CharacterCreateRoute: CharacterCreateRoute,
   GameSessionIdRoute: GameSessionIdRoute,
   GameStartRoute: GameStartRoute,
+  SpCancelRoute: SpCancelRoute,
+  SpSuccessRoute: SpSuccessRoute,
   AdminIndexRoute: AdminIndexRoute,
   SpIndexRoute: SpIndexRoute,
 }

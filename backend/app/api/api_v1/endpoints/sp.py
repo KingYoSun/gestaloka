@@ -14,6 +14,7 @@ from app.api.deps import get_current_active_user, get_db
 from app.core.config import settings
 from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
+from app.core.stripe_config import stripe_service
 from app.models.sp import SPTransaction, SPTransactionType
 from app.models.sp_purchase import PurchaseStatus
 from app.models.user import User
@@ -37,8 +38,6 @@ from app.schemas.sp_purchase import (
 )
 from app.services.sp_purchase_service import SPPurchaseService
 from app.services.sp_service import SPService
-from app.core.stripe_config import stripe_service
-from app.websocket.events import emit_sp_purchase_event
 
 router = APIRouter()
 logger = get_logger(__name__)

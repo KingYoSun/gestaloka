@@ -31,7 +31,6 @@ from app.schemas.log import (
     LogFragmentRead,
 )
 from app.schemas.user import User
-from app.tasks.log_tasks import generate_npc_from_completed_log
 
 router = APIRouter()
 

@@ -118,9 +118,6 @@ export type {
 export type {
   LogFragmentCreate,
   CompletedLogCreate,
-  LogContract,
-  LogContractCreate,
-  LogContractAccept,
   CompletedLogRead,
   LogFragmentRead,
 } from '@/types/log'

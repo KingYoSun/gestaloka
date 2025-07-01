@@ -4,9 +4,9 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -106,7 +106,7 @@ class LocationConnection(SQLModel, table=True):
 
     # 視覚的表現
     path_type: PathType = Field(default=PathType.DIRECT, description="経路の種類")
-    path_metadata: Dict[str, Any] = Field(
+    path_metadata: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column("path_metadata", JSON, default={}), description="経路の視覚的メタデータ"
     )
 

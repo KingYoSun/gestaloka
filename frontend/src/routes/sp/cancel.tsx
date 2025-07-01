@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   Card,
   CardContent,
@@ -9,10 +9,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { XCircle } from 'lucide-react'
 
-export function SPPurchaseCancel() {
+export const Route = createFileRoute('/sp/cancel')({
+  component: SPPurchaseCancel,
+})
+
+function SPPurchaseCancel() {
   const navigate = useNavigate()
-  const searchParams = new URLSearchParams(window.location.search)
-  const purchaseId = searchParams.get('purchase_id')
 
   return (
     <div className="container mx-auto max-w-2xl py-8">
@@ -35,7 +37,7 @@ export function SPPurchaseCancel() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => navigate({ to: '/game' })}
+              onClick={() => navigate({ to: '/' })}
               className="w-full"
             >
               ゲームに戻る

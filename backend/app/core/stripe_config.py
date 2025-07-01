@@ -1,7 +1,9 @@
 """Stripe設定とサービス"""
 
+from typing import Any, Optional
+
 import stripe
-from typing import Dict, Any, Optional
+
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -36,7 +38,7 @@ class StripeConfig:
 
     def get_price_id(self, plan_id: str) -> Optional[str]:
         """プランIDからStripe価格IDを取得"""
-        return self.stripe_price_ids.get(plan_id)
+        return self.stripe_price_ids.get(plan_id) if self.stripe_price_ids else None
 
 
 stripe_config = StripeConfig()
@@ -54,8 +56,8 @@ class StripeService:
         user_id: str,
         success_url: str,
         cancel_url: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """チェックアウトセッションを作成"""
         if not self.config.is_configured:
             raise ValueError("Stripe is not configured")
@@ -95,8 +97,8 @@ class StripeService:
                 "url": session.url,
             }
 
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe error creating checkout session: {str(e)}")
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error creating checkout session: {e!s}")
             raise
 
     async def retrieve_session(self, session_id: str) -> stripe.checkout.Session:
@@ -107,15 +109,15 @@ class StripeService:
         try:
             session = stripe.checkout.Session.retrieve(session_id)
             return session
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe error retrieving session: {str(e)}")
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error retrieving session: {e!s}")
             raise
 
     async def create_payment_intent(
         self,
         amount: int,
         currency: str = "jpy",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> stripe.PaymentIntent:
         """支払いインテントを作成"""
         if not self.config.is_configured:
@@ -129,8 +131,8 @@ class StripeService:
             )
             logger.info(f"Created payment intent: {intent.id}")
             return intent
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe error creating payment intent: {str(e)}")
+        except stripe.StripeError as e:
+            logger.error(f"Stripe error creating payment intent: {e!s}")
             raise
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> stripe.Event:
@@ -143,12 +145,12 @@ class StripeService:
 
         try:
             event = stripe.Webhook.construct_event(payload, sig_header, self.config.stripe_webhook_secret)
-            return event
+            return event  # type: ignore
         except ValueError as e:
-            logger.error(f"Invalid webhook payload: {str(e)}")
+            logger.error(f"Invalid webhook payload: {e!s}")
             raise
-        except stripe.error.SignatureVerificationError as e:
-            logger.error(f"Invalid webhook signature: {str(e)}")
+        except stripe.SignatureVerificationError as e:
+            logger.error(f"Invalid webhook signature: {e!s}")
             raise
 
 

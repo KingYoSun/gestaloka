@@ -184,7 +184,6 @@ export function drawLocationDiscoveryPulse(
   color: string = '#ffeb3b'
 ): void {
   const maxRadius = 50
-  const radius = maxRadius * progress
   const opacity = 1 - progress
 
   ctx.save()

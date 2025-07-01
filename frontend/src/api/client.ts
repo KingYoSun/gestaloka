@@ -17,9 +17,6 @@ import {
   CompletedLog,
   CompletedLogCreate,
   CompletedLogRead,
-  LogContract,
-  LogContractCreate,
-  LogContractAccept,
 } from '@/types/log'
 import {
   PlayerSP,
@@ -300,29 +297,7 @@ class ApiClient {
     )
   }
 
-  // ログ契約関連
-  async createLogContract(contract: LogContractCreate): Promise<LogContract> {
-    return this.requestWithTransform<LogContract>(
-      '/logs/contracts',
-      { method: 'POST' },
-      contract
-    )
-  }
-
-  async getMarketContracts(): Promise<LogContract[]> {
-    return this.requestWithTransform<LogContract[]>('/logs/contracts/market')
-  }
-
-  async acceptLogContract(
-    contractId: string,
-    data: LogContractAccept
-  ): Promise<LogContract> {
-    return this.requestWithTransform<LogContract>(
-      `/logs/contracts/${contractId}/accept`,
-      { method: 'POST' },
-      data
-    )
-  }
+  // ログ契約関連のメソッドは削除されました
 
   // SPシステム関連のAPI
 

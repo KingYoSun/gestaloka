@@ -86,7 +86,7 @@ export function SPPurchaseDialog({
             // Stripeチェックアウトページへリダイレクト
             window.location.href = response.checkout_url
           },
-          onError: error => {
+          onError: () => {
             toast({
               title: 'エラー',
               description: 'チェックアウトセッションの作成に失敗しました。',

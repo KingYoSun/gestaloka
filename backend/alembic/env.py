@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 # 設定をインポート
 from app.core.config import settings
 from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
+from app.models.exploration_progress import CharacterExplorationProgress  # noqa
 
 # 新しいモデルを追加する場合は、ここにインポートを追加
 from app.models.location import (  # noqa
@@ -27,7 +28,6 @@ from app.models.location import (  # noqa
     LocationConnection,
     PathType,
 )
-from app.models.exploration_progress import CharacterExplorationProgress  # noqa
 from app.models.log import (  # noqa
     ActionLog,
     CompletedLog,

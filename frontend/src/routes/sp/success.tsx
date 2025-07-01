@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   Card,
   CardContent,
@@ -12,7 +12,11 @@ import { CheckCircle2 } from 'lucide-react'
 import { useSPPurchaseDetail } from '@/hooks/use-sp-purchase'
 import { useQueryClient } from '@tanstack/react-query'
 
-export function SPPurchaseSuccess() {
+export const Route = createFileRoute('/sp/success')({
+  component: SPPurchaseSuccess,
+})
+
+function SPPurchaseSuccess() {
   const navigate = useNavigate()
   const searchParams = new URLSearchParams(window.location.search)
   const purchaseId = searchParams.get('purchase_id')
@@ -64,7 +68,7 @@ export function SPPurchaseSuccess() {
 
           <div className="flex flex-col gap-3">
             <Button
-              onClick={() => navigate({ to: '/game' })}
+              onClick={() => navigate({ to: '/' })}
               className="w-full"
             >
               ゲームに戻る

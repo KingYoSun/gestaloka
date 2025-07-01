@@ -133,7 +133,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         self, test_db_session: Session, test_character: Character, test_session_obj: GameSession
     ) -> LogFragment:
         """テスト用ログフラグメント"""
-        from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
+        from app.models.log import LogFragment
 
         fragment = LogFragment(
             id=str(uuid.uuid4()),

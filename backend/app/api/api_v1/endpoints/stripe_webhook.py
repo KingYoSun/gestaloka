@@ -1,8 +1,8 @@
 """Stripe Webhookエンドポイント"""
 
-from fastapi import APIRouter, Request, HTTPException, Depends
-from sqlmodel import Session
 import stripe
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlmodel import Session
 
 from app.api.deps import get_db
 from app.core.logging import get_logger
@@ -41,10 +41,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Received Stripe webhook event: {event['type']}")
 
     except ValueError as e:
-        logger.error(f"Invalid webhook payload: {str(e)}")
+        logger.error(f"Invalid webhook payload: {e!s}")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
-        logger.error(f"Invalid webhook signature: {str(e)}")
+    except stripe.SignatureVerificationError as e:
+        logger.error(f"Invalid webhook signature: {e!s}")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     # イベントタイプごとの処理
@@ -74,7 +74,7 @@ async def handle_checkout_completed(session: dict, db: Session):
 
     try:
         # 購入を承認
-        purchase = SPPurchaseService.approve_purchase_by_stripe(
+        purchase = await SPPurchaseService.approve_purchase_by_stripe(
             db=db,
             purchase_id=purchase_id,
             stripe_session_id=session["id"],
@@ -95,7 +95,7 @@ async def handle_checkout_completed(session: dict, db: Session):
             logger.error(f"Failed to approve purchase {purchase_id}")
 
     except Exception as e:
-        logger.error(f"Error processing checkout completed: {str(e)}")
+        logger.error(f"Error processing checkout completed: {e!s}")
 
 
 async def handle_payment_succeeded(payment_intent: dict, db: Session):
@@ -129,4 +129,4 @@ async def handle_payment_failed(payment_intent: dict, db: Session):
                 logger.info(f"Purchase {purchase_id} marked as failed")
 
         except Exception as e:
-            logger.error(f"Error processing payment failed: {str(e)}")
+            logger.error(f"Error processing payment failed: {e!s}")

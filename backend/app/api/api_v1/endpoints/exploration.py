@@ -34,13 +34,13 @@ from app.schemas.exploration import (
     MoveResponse,
 )
 from app.schemas.exploration_minimap import (
+    ExplorationProgressInDB,
     MapDataResponse,
     UpdateProgressRequest,
-    ExplorationProgressInDB,
 )
 from app.schemas.user import User
-from app.services.sp_service import SPService
 from app.services.exploration_minimap_service import ExplorationMinimapService
+from app.services.sp_service import SPService
 
 router = APIRouter()
 
