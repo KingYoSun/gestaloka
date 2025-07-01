@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL")
     GEMINI_MODEL_FAST: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL_FAST")  # 軽量モデル
     GEMINI_MODEL_STANDARD: str = Field(default="gemini-2.5-pro", validation_alias="GEMINI_MODEL_STANDARD")  # 標準モデル
+    AI_RESPONSE_CACHE_ENABLED: bool = Field(default=True, validation_alias="AI_RESPONSE_CACHE_ENABLED")  # レスポンスキャッシュ
+    AI_RESPONSE_CACHE_MAX_ENTRIES: int = Field(default=1000, validation_alias="AI_RESPONSE_CACHE_MAX_ENTRIES")  # 最大キャッシュ数
 
     # WebSocket設定
     WS_HEARTBEAT_INTERVAL: int = Field(default=30, validation_alias="WS_HEARTBEAT_INTERVAL")  # 秒

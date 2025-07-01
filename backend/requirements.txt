@@ -17,7 +17,7 @@ python-keycloak==5.5.1
 
 # LLM・AI関連
 langchain==0.3.25
-langchain-google-genai==2.1.5
+langchain-google-genai==2.1.6
 # google-generativeai==0.8.5  # langchain-google-genaiに含まれるため削除
 tenacity==9.0.0
 

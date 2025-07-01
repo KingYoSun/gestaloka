@@ -186,13 +186,20 @@ def call_gemini_with_retry(prompt):
 - 出力の検証とサニタイゼーション
 
 ### 4. Temperature設定
-- **重要**: langchain-google-genai 2.0.8以降では、temperatureはChatGoogleGenerativeAI初期化時にのみ設定可能
+- **重要**: langchain-google-genai 2.1.6では、temperatureは直接パラメータとして設定可能
 - Gemini 2.5シリーズは0.0～2.0の範囲をサポート（旧バージョンは0.0～1.0）
 - 用途別推奨値:
   - 分析・判定タスク: 0.0～0.3（一貫性重視）
   - 一般的な対話: 0.5～0.7（バランス型）
   - 創造的なタスク: 0.8～1.2（多様性重視）
   - 実験的・混沌的な生成: 1.3～2.0（予測不能性）
+
+### 5. 追加パラメータ（2.1.6以降）
+- **top_p**: Nucleus sampling（0.0-1.0）- 累積確率による単語選択
+- **top_k**: Top-k sampling（1以上）- 上位k個の単語から選択
+- **timeout**: API呼び出しタイムアウト（秒）
+- **max_retries**: 自動リトライ回数
+- **セーフティ設定**: HarmCategory/HarmBlockThresholdによる細かい制御
 
 ## ゲスタロカ特有の考慮事項
 
@@ -212,6 +219,14 @@ def call_gemini_with_retry(prompt):
 - 非同期処理アーキテクチャ
 
 ## モデルバージョン更新履歴
+
+### 2025/07/01
+- langchain-google-genai 2.1.5 → 2.1.6へアップグレード
+- 直接的なtemperature、timeout、max_retriesパラメータ設定のサポート
+- top_p、top_kパラメータの追加サポート
+- HarmCategory、HarmBlockThresholdによるセーフティ設定の統合
+- AIレスポンスキャッシュシステムの実装（APIコスト削減）
+- バッチ処理の並列度制御（最大10並列）による安定性向上
 
 ### 2025/06/18
 - langchain-google-genai 2.0.8でのtemperature設定方法を明確化

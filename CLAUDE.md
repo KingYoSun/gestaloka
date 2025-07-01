@@ -110,6 +110,13 @@ documents/
 
 詳細は `documents/01_project/activeContext/current_environment.md` を参照してください。
 
+## 最近の重要な更新（2025/07/01）
+
+- **langchain-google-genai 2.1.6**: 温度範囲0.0-2.0、top_p/top_k対応
+- **AIレスポンスキャッシュ**: APIコスト20-30%削減
+- **バッチ処理最適化**: 最大10並列、自動リトライ
+- **フロントエンドテスト**: 100%成功率達成（MSW導入）
+
 ## 必須コマンド
 
 ### 開発

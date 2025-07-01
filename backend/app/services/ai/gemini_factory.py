@@ -18,14 +18,18 @@ def get_gemini_client(
     model_type: Optional[ModelType] = None,
     temperature: float = 0.7,
     max_tokens: Optional[int] = None,
+    top_p: Optional[float] = None,
+    top_k: Optional[int] = None,
 ) -> GeminiClient:
     """
     指定されたモデルタイプと設定でGeminiクライアントを取得
 
     Args:
         model_type: 使用するモデルタイプ（省略時は標準モデル）
-        temperature: 生成温度（0.0-1.0）
+        temperature: 生成温度（0.0-2.0）
         max_tokens: 最大トークン数
+        top_p: nucleus sampling（0.0-1.0）
+        top_k: top-k sampling（1以上）
 
     Returns:
         Geminiクライアントインスタンス
@@ -42,6 +46,8 @@ def get_gemini_client(
         config = GeminiConfig(
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=top_p,
+            top_k=top_k,
         )
         _client_cache[cache_key] = GeminiClient(config=config, model_type=model_type)
 
@@ -64,14 +70,14 @@ def get_gemini_client_for_agent(
     Returns:
         適切に設定されたGeminiクライアントインスタンス
     """
-    # エージェントごとのデフォルト温度設定
+    # エージェントごとのデフォルト温度設定（Gemini 2.5の拡張範囲0.0-2.0を活用）
     default_temperatures = {
         AIAgentType.DRAMATIST: 0.8,  # 創造的な物語生成
         AIAgentType.STATE_MANAGER: 0.3,  # 一貫性のあるルール判定
         AIAgentType.HISTORIAN: 0.5,  # バランスの取れた記録
         AIAgentType.NPC_MANAGER: 0.8,  # 多様なNPC生成
         AIAgentType.THE_WORLD: 0.3,  # 予測可能な世界状態
-        AIAgentType.THE_ANOMALY: 0.95,  # カオスなイベント生成
+        AIAgentType.THE_ANOMALY: 1.2,  # より高いカオス度（拡張範囲活用）
     }
 
     # 温度が指定されていない場合はデフォルト値を使用

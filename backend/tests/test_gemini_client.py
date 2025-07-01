@@ -155,9 +155,9 @@ class TestGeminiClient:
 
     def test_config_validation(self):
         """設定値の検証テスト"""
-        # 温度の範囲チェック
+        # 温度の範囲チェック（Gemini 2.5は0.0-2.0をサポート）
         with pytest.raises(ValueError):
-            GeminiConfig(temperature=1.5)  # 範囲外
+            GeminiConfig(temperature=2.5)  # 範囲外
 
         with pytest.raises(ValueError):
             GeminiConfig(temperature=-0.1)  # 範囲外
@@ -167,4 +167,7 @@ class TestGeminiClient:
         assert config.temperature == 0.0
 
         config = GeminiConfig(temperature=1.0)
-        assert config.temperature == 1.0  # langchain-google-genaiは1.0まで対応
+        assert config.temperature == 1.0
+        
+        config = GeminiConfig(temperature=2.0)
+        assert config.temperature == 2.0  # langchain-google-genaiは1.0まで対応
