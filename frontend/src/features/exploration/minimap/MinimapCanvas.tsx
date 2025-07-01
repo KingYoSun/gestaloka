@@ -23,6 +23,8 @@ interface MinimapCanvasProps {
   theme?: MinimapTheme
   showGrid?: boolean
   showLabels?: boolean
+  onLocationSelect?: (location: MapLocation) => void
+  onLocationHover?: (location: MapLocation | null) => void
 }
 
 const defaultTheme: MinimapTheme = {
@@ -63,11 +65,43 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   theme = defaultTheme,
   showGrid = true,
   showLabels = true,
+  onLocationSelect,
+  onLocationHover,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [viewportStart, setViewportStart] = useState({ x: 0, y: 0 })
+  const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(null)
+  const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null)
+
+  // マウス位置から場所を検出
+  const getLocationAtPoint = useCallback(
+    (screenX: number, screenY: number): MapLocation | null => {
+      if (!layerData) return null
+
+      const worldPos = CoordinateSystem.screenToWorld(
+        { x: screenX, y: screenY },
+        viewport
+      )
+
+      // 各場所との距離をチェック
+      for (const location of layerData.locations) {
+        const distance = CoordinateSystem.distance(
+          worldPos,
+          location.coordinates
+        )
+        // クリック判定の半径（ズームレベルに応じて調整）
+        const hitRadius = 15 / viewport.zoom
+        if (distance <= hitRadius) {
+          return location
+        }
+      }
+
+      return null
+    },
+    [layerData, viewport]
+  )
 
   // 描画メインループ
   const draw = useCallback(() => {
@@ -98,7 +132,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
 
     // 場所を描画
     layerData.locations.forEach(location => {
-      drawLocation(ctx, location, viewport, theme, showLabels)
+      const isHovered = hoveredLocation?.id === location.id
+      const isSelected = selectedLocation?.id === location.id
+      drawLocation(ctx, location, viewport, theme, showLabels, isHovered, isSelected)
     })
 
     // 現在地を描画
@@ -116,6 +152,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     theme,
     showGrid,
     showLabels,
+    hoveredLocation,
+    selectedLocation,
+    applyFogOfWar,
   ])
 
   // 描画関数群
@@ -239,14 +278,29 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     location: MapLocation,
     viewport: Viewport,
     theme: MinimapTheme,
-    showLabel: boolean
+    showLabel: boolean,
+    isHovered: boolean = false,
+    isSelected: boolean = false
   ) => {
     const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
-    const radius = 8 * viewport.zoom
+    const radius = (isHovered || isSelected ? 10 : 8) * viewport.zoom
+
+    // ホバー/選択時のハイライト
+    if (isHovered || isSelected) {
+      ctx.save()
+      ctx.shadowBlur = 20
+      ctx.shadowColor = isSelected ? '#ffeb3b' : '#ffffff'
+      ctx.fillStyle = isSelected ? '#ffeb3b' : '#ffffff'
+      ctx.globalAlpha = 0.3
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius + 10, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
 
     // 危険度による外枠
     ctx.strokeStyle = theme.danger[location.danger_level]
-    ctx.lineWidth = 3
+    ctx.lineWidth = isHovered || isSelected ? 4 : 3
     ctx.beginPath()
     ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2)
     ctx.stroke()
@@ -354,7 +408,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     ctx.fillRect(0, 0, viewport.width, viewport.height)
 
     // 探索済みエリアを明るくする
-    layerData.exploration_progress.forEach((progress: any) => {
+    layerData.exploration_progress.forEach((progress) => {
       const location = layerData.locations.find(
         loc => loc.id === progress.location_id
       )
@@ -387,22 +441,58 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
 
   // マウス/タッチイベントハンドラ
   const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true)
-    setDragStart({ x: e.clientX, y: e.clientY })
-    setViewportStart({ x: viewport.x, y: viewport.y })
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const clickedLocation = getLocationAtPoint(x, y)
+
+    if (clickedLocation) {
+      // 場所をクリックした場合
+      setSelectedLocation(clickedLocation)
+      if (onLocationSelect) {
+        onLocationSelect(clickedLocation)
+      }
+    } else {
+      // 空白部分をクリックした場合はドラッグ開始
+      setIsDragging(true)
+      setDragStart({ x: e.clientX, y: e.clientY })
+      setViewportStart({ x: viewport.x, y: viewport.y })
+    }
   }
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
 
-    const dx = (e.clientX - dragStart.x) / viewport.zoom
-    const dy = (e.clientY - dragStart.y) / viewport.zoom
+    if (isDragging) {
+      // ドラッグ中の処理
+      const dx = (e.clientX - dragStart.x) / viewport.zoom
+      const dy = (e.clientY - dragStart.y) / viewport.zoom
 
-    onViewportChange({
-      ...viewport,
-      x: viewportStart.x - dx,
-      y: viewportStart.y - dy,
-    })
+      onViewportChange({
+        ...viewport,
+        x: viewportStart.x - dx,
+        y: viewportStart.y - dy,
+      })
+    } else {
+      // ホバー検出
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      const location = getLocationAtPoint(x, y)
+
+      if (location !== hoveredLocation) {
+        setHoveredLocation(location)
+        if (onLocationHover) {
+          onLocationHover(location)
+        }
+        // カーソルスタイルの変更
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = location ? 'pointer' : 'move'
+        }
+      }
+    }
   }
 
   const handleMouseUp = () => {
@@ -445,11 +535,6 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       const rect = canvas.getBoundingClientRect()
       canvas.width = rect.width
       canvas.height = rect.height
-      onViewportChange({
-        ...viewport,
-        width: rect.width,
-        height: rect.height,
-      })
     }
 
     resizeCanvas()
@@ -483,7 +568,16 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={() => {
+        handleMouseUp()
+        setHoveredLocation(null)
+        if (onLocationHover) {
+          onLocationHover(null)
+        }
+        if (canvasRef.current) {
+          canvasRef.current.style.cursor = 'move'
+        }
+      }}
       onWheel={handleWheel}
     />
   )

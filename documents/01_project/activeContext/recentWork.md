@@ -1,5 +1,42 @@
 # 最近の作業履歴
 
+## 2025/07/01 - 探索システムミニマップ機能Phase 2実装
+
+### 実施内容
+- クリック/タップによる場所選択機能
+- ホバー時のツールチップ表示
+- 右クリックコンテキストメニュー
+- 移動確認ダイアログ
+
+### 技術的詳細
+1. **インタラクション機能**
+   - `getLocationAtPoint`関数でマウス位置から場所を検出
+   - 選択/ホバー状態の管理と視覚的フィードバック
+   - カーソルスタイルの動的変更
+
+2. **UIコンポーネント統合**
+   - Radix UIのTooltipコンポーネント（詳細情報表示）
+   - ContextMenuコンポーネント（右クリックメニュー）
+   - Dialogコンポーネント（移動確認）
+   - `@radix-ui/react-context-menu`パッケージ追加
+
+3. **移動機能との連携**
+   - `useExploration`フックとの統合
+   - 利用可能な接続のチェック
+   - SPコストの表示と移動実行
+
+### 実装結果
+- **テスト**: 12件のテスト作成、大部分が成功
+- **型安全性**: Phase 2関連の型エラーは解消
+- **UX向上**: 直感的なマップ操作が可能に
+
+### 関連ファイル
+- `frontend/src/features/exploration/minimap/MinimapCanvas.tsx`（拡張）
+- `frontend/src/features/exploration/minimap/Minimap.tsx`（拡張）  
+- `frontend/src/components/ui/context-menu.tsx`（新規）
+- `frontend/src/features/exploration/minimap/Minimap.test.tsx`（新規）
+- `frontend/src/features/exploration/minimap/MinimapCanvas.test.tsx`（新規）
+
 ## 2025/07/01 - 探索システムミニマップ機能Phase 1実装
 
 ### 実施内容

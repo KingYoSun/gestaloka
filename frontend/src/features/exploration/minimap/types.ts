@@ -26,7 +26,7 @@ export interface MapConnection {
   is_one_way: boolean
   is_discovered: boolean
   sp_cost: number
-  path_metadata?: Record<string, any>
+  path_metadata?: Record<string, unknown>
 }
 
 export interface ExplorationProgress {
