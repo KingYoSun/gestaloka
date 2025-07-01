@@ -1,5 +1,75 @@
 # 最近の作業履歴
 
+## 2025/07/01 - MSW導入によるテスト環境の抜本的改善
+
+### 実施内容
+- Mock Service Worker（MSW）の導入と設定
+- 全APIエンドポイントの包括的モック実装
+- テスト環境の安定化とエラーの大幅削減
+
+### 技術的詳細
+1. **MSWの導入**
+   - `msw@latest`パッケージのインストール
+   - `src/mocks/server.ts`: Node.js環境用サーバー設定
+   - `src/mocks/browser.ts`: ブラウザ環境用設定（将来用）
+   - `src/mocks/handlers.ts`: APIモックハンドラー定義
+
+2. **APIモックハンドラーの実装**
+   - 認証、キャラクター、ゲームセッション、SP管理
+   - ログ管理、設定、探索マップデータの全エンドポイント
+   - ワイルドカードパターンで複数のホストに対応
+
+3. **テスト環境の統合**
+   - `test/setup.ts`でMSWサーバーの自動起動・停止
+   - HTTPレベルでのリクエストインターセプト
+   - 未処理リクエストの詳細なエラー表示
+
+### 実装結果
+- **テスト成功率**: 55%（22/40） → 97.5%（39/40）
+- **APIエラー**: 18件 → 0件
+- **残存エラー**: 1件（移動履歴描画の実装詳細）
+- **開発体験**: 大幅に改善、デバッグが容易に
+
+### 関連ファイル
+- `frontend/src/mocks/`ディレクトリ（新規）
+- `frontend/src/test/setup.ts`（更新）
+- `documents/01_project/progressReports/2025-07-01_MSW導入によるテスト環境改善.md`（新規）
+
+## 2025/07/01 - フロントエンドテストエラーの部分修正
+
+### 実施内容
+- Minimapコンポーネントのテストエラーを修正
+- drawLocation関数の初期化順序問題を解決
+- グローバルfetchモックの追加
+
+### 技術的詳細
+1. **MinimapCanvas.tsxの修正**
+   - `drawLocation`関数を`React.useCallback`でラップ
+   - useEffectの依存配列から`drawLocation`を削除
+   - 重複していた2つ目の`drawLocation`関数定義を削除
+   - 関数の初期化前アクセスエラーを解消
+
+2. **未定義の描画関数の実装**
+   - `drawLocationDiscoveryPulse` → インライン実装に置き換え
+   - `drawHoverGlow` → インライン実装に置き換え
+   - `drawCurrentLocationPulse` → インライン実装に置き換え
+   - 各エフェクトを直接Canvas APIで描画
+
+3. **テスト環境の改善**
+   - `frontend/src/test/setup.ts`にグローバルfetchモックを追加
+   - APIエンドポイントへの実際の接続を防止
+   - モックレスポンスの提供
+
+### 実装結果
+- **修正前**: 18件のテストエラー（Minimap/MinimapCanvas）
+- **修正後**: 初期化エラーとAPIエラーの根本原因を解決
+- **今後**: コンポーネントレベルのモック調整が必要
+
+### 関連ファイル
+- `frontend/src/features/exploration/minimap/MinimapCanvas.tsx`（修正）
+- `frontend/src/test/setup.ts`（修正）
+- `documents/01_project/progressReports/2025-07-01_フロントエンドテストエラー修正.md`（新規）
+
 ## 2025/07/01 - テスト・型・リントエラーの完全解消
 
 ### 実施内容

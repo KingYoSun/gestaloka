@@ -220,6 +220,10 @@ describe('Minimap', () => {
   it('マップデータを正しく表示する', async () => {
     renderMinimap()
 
+    // 拡大ボタンをクリックして凡例を表示
+    const expandButton = await screen.findByTitle('拡大 (M)')
+    fireEvent.click(expandButton)
+
     await waitFor(() => {
       expect(screen.getByText('凡例')).toBeInTheDocument()
     })
@@ -253,14 +257,14 @@ describe('Minimap', () => {
     expect(screen.queryByText('凡例')).not.toBeInTheDocument()
 
     // Mキーを押して拡大
-    fireEvent.keyDown(window, { key: 'm' })
+    fireEvent.keyPress(window, { key: 'm' })
     
     await waitFor(() => {
       expect(screen.getByText('凡例')).toBeInTheDocument()
     })
 
     // 再度Mキーを押して縮小
-    fireEvent.keyDown(window, { key: 'M' })
+    fireEvent.keyPress(window, { key: 'M' })
     
     await waitFor(() => {
       expect(screen.queryByText('凡例')).not.toBeInTheDocument()

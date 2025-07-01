@@ -1,7 +1,24 @@
 import '@testing-library/jest-dom'
+import { beforeAll, afterEach, afterAll } from 'vitest'
+import { cleanup } from '@testing-library/react'
+import { server } from '@/mocks/server'
 
 // Set VITE_API_URL to avoid connection errors in tests
-process.env.VITE_API_URL = 'http://localhost:8000'
+import.meta.env.VITE_API_URL = 'http://localhost:8000'
+
+// MSWのセットアップ
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: 'error' })
+})
+
+afterEach(() => {
+  cleanup()
+  server.resetHandlers()
+})
+
+afterAll(() => {
+  server.close()
+})
 
 // Mock ResizeObserver if not available
 if (typeof global.ResizeObserver === 'undefined') {

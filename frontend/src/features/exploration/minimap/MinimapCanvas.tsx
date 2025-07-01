@@ -218,10 +218,10 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
 
     // 場所を描画
     for (const location of layerData.locations) {
+      const isCurrent = currentLocation?.location_id === location.id
       const isHovered = hoveredLocation?.id === location.id
       const isSelected = selectedLocation?.id === location.id
-      const cachedIcon = iconCache.get(location.type)
-      drawLocation(ctx, location, viewport, theme, showLabels, isHovered, isSelected, cachedIcon)
+      drawLocation(ctx, location, viewport, theme, isCurrent, isHovered, isSelected)
     }
 
     // 現在地を描画
@@ -255,12 +255,130 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     animationManager,
     discoveredLocations,
     iconCache,
-    drawLocation,
-    startFrame,
-    endFrame,
+    setDiscoveredLocations,
   ])
 
   // 描画関数群
+  const drawLocation = React.useCallback((
+    ctx: CanvasRenderingContext2D,
+    location: MapLocation,
+    viewport: Viewport,
+    theme: MinimapTheme,
+    isCurrent: boolean,
+    isHovered: boolean,
+    isSelected: boolean
+  ) => {
+    const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
+    const radius = Math.max(10, 15 * viewport.zoom)
+    
+    // アイコンキャッシュの取得（非同期だが描画はキャッシュされた結果を使用）
+    const cachedIcon = iconCache.get(location.type)
+    
+    // 未発見の場所は半透明
+    if (!location.is_discovered) {
+      ctx.globalAlpha = 0.3
+    }
+    
+    // 発見アニメーション
+    if (!discoveredLocations.has(location.id) && location.is_discovered) {
+      setDiscoveredLocations(prev => new Set([...prev, location.id]))
+      animationManager.start(`discovery-${location.id}`, 2000)
+    }
+
+    // 発見アニメーションの描画
+    const discoveryProgress = animationManager.getProgress(`discovery-${location.id}`)
+    if (discoveryProgress < 1) {
+      // 発見時のパルスエフェクト
+      ctx.save()
+      ctx.globalAlpha = 1 - discoveryProgress
+      ctx.strokeStyle = theme.location[location.type]
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius + discoveryProgress * 30, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // ホバー/選択時のグロー効果
+    if (isHovered || isSelected) {
+      const glowIntensity = isSelected ? 1 : 0.7
+      const glowColor = isSelected ? '#ffeb3b' : '#ffffff'
+      ctx.save()
+      ctx.shadowColor = glowColor
+      ctx.shadowBlur = 20 * glowIntensity
+      ctx.globalAlpha = 0.5 * glowIntensity
+      ctx.fillStyle = glowColor
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+
+    // 危険度による外枠（グラデーション）
+    const gradient = ctx.createRadialGradient(
+      pos.x, pos.y, radius,
+      pos.x, pos.y, radius + 5
+    )
+    gradient.addColorStop(0, theme.danger[location.danger_level])
+    gradient.addColorStop(1, `${theme.danger[location.danger_level]}00`)
+    ctx.strokeStyle = gradient
+    ctx.lineWidth = isHovered || isSelected ? 4 : 3
+    ctx.beginPath()
+    ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2)
+    ctx.stroke()
+
+    // 背景円
+    ctx.fillStyle = '#1a1a1a'
+    ctx.beginPath()
+    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
+    ctx.fill()
+
+    // アイコンまたは色で塗りつぶし
+    if (viewport.zoom > 0.7 && location.is_discovered && cachedIcon) {
+      // ズームが十分な場合はキャッシュされたアイコンを表示
+      const iconSize = radius * 1.5
+      ctx.drawImage(
+        cachedIcon,
+        pos.x - iconSize / 2,
+        pos.y - iconSize / 2,
+        iconSize,
+        iconSize
+      )
+    } else {
+      // ズームが小さい場合またはアイコンがない場合は色で塗りつぶし
+      ctx.fillStyle = theme.location[location.type]
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 現在地の強調表示（パルスアニメーション）
+    if (isCurrent) {
+      const pulseProgress = animationManager.getProgress('current-location-pulse')
+      // 現在地のパルスエフェクト
+      const pulseScale = 1 + Math.sin(pulseProgress * Math.PI * 2) * 0.2
+      ctx.save()
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 3
+      ctx.globalAlpha = 0.8
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, radius * pulseScale, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // ラベルの表示
+    if (showLabels && viewport.zoom > 0.5) {
+      ctx.fillStyle = '#ffffff'
+      ctx.font = `${Math.max(12, 14 * viewport.zoom)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.fillText(location.name, pos.x, pos.y + radius + 15)
+    }
+
+    // 透明度をリセット
+    ctx.globalAlpha = 1
+  }, [discoveredLocations, setDiscoveredLocations, animationManager, iconCache, showLabels])
+
   const drawGrid = (
     ctx: CanvasRenderingContext2D,
     viewport: Viewport,
@@ -381,142 +499,6 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     
     ctx.restore() // opacityのリストア
   }
-
-  const drawLocation = (
-    ctx: CanvasRenderingContext2D,
-    location: MapLocation,
-    viewport: Viewport,
-    theme: MinimapTheme,
-    showLabel: boolean,
-    isHovered: boolean = false,
-    isSelected: boolean = false,
-    cachedIcon?: HTMLImageElement
-  ) => {
-    const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
-    const baseRadius = 8 * viewport.zoom
-    const radius = (isHovered || isSelected ? baseRadius * 1.3 : baseRadius)
-
-    // 新規発見アニメーション
-    if (!discoveredLocations.has(location.id) && location.is_discovered) {
-      setDiscoveredLocations(prev => new Set([...prev, location.id]))
-      animationManager.start(`discovery-${location.id}`, 2000)
-    }
-
-    // 発見アニメーションの描画
-    const discoveryProgress = animationManager.getProgress(`discovery-${location.id}`)
-    if (discoveryProgress < 1) {
-      drawLocationDiscoveryPulse(ctx, pos, discoveryProgress, theme.location[location.type])
-    }
-
-    // ホバー/選択時のグロー効果
-    if (isHovered || isSelected) {
-      const glowIntensity = isSelected ? 1 : 0.7
-      drawHoverGlow(ctx, pos, radius, glowIntensity, isSelected ? '#ffeb3b' : '#ffffff')
-    }
-
-    // 危険度による外枠（グラデーション）
-    const gradient = ctx.createRadialGradient(
-      pos.x, pos.y, radius,
-      pos.x, pos.y, radius + 5
-    )
-    gradient.addColorStop(0, theme.danger[location.danger_level])
-    gradient.addColorStop(1, `${theme.danger[location.danger_level]}00`)
-    ctx.strokeStyle = gradient
-    ctx.lineWidth = isHovered || isSelected ? 4 : 3
-    ctx.beginPath()
-    ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2)
-    ctx.stroke()
-
-    // 背景円
-    ctx.fillStyle = '#1a1a1a'
-    ctx.beginPath()
-    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-    ctx.fill()
-
-    // アイコンまたは色で塗りつぶし
-    if (viewport.zoom > 0.7 && location.is_discovered && cachedIcon) {
-      // ズームが十分な場合はキャッシュされたアイコンを表示
-      const iconSize = radius * 1.5
-      ctx.drawImage(
-        cachedIcon,
-        pos.x - iconSize / 2,
-        pos.y - iconSize / 2,
-        iconSize,
-        iconSize
-      )
-    } else {
-      // ズームが小さい場合またはアイコンがない場合は色で塗りつぶし
-      ctx.fillStyle = theme.location[location.type]
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
-      ctx.fill()
-    }
-
-    // 探索進捗リング
-    if (
-      location.exploration_percentage > 0 &&
-      location.exploration_percentage < 100
-    ) {
-      ctx.save()
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 2
-      ctx.globalAlpha = 0.7
-      ctx.beginPath()
-      ctx.arc(
-        pos.x,
-        pos.y,
-        radius - 2,
-        -Math.PI / 2,
-        -Math.PI / 2 + (Math.PI * 2 * location.exploration_percentage) / 100
-      )
-      ctx.stroke()
-      ctx.restore()
-    }
-
-    // 完全探索済みの場合のエフェクト
-    if (location.exploration_percentage === 100) {
-      const time = Date.now() / 1000
-      const pulse = Math.sin(time * 2) * 0.2 + 0.8
-      ctx.save()
-      ctx.strokeStyle = '#4caf50'
-      ctx.lineWidth = 2
-      ctx.globalAlpha = pulse * 0.5
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.restore()
-    }
-
-    // ラベル表示（改善版）
-    if (showLabel && viewport.zoom > 0.5) {
-      ctx.save()
-      
-      // 背景プレート
-      const textMetrics = ctx.measureText(location.name)
-      const textWidth = textMetrics.width
-      const textHeight = 12 * viewport.zoom
-      const padding = 4 * viewport.zoom
-      const labelY = pos.y + radius + 15 * viewport.zoom
-      
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-      ctx.fillRect(
-        pos.x - textWidth / 2 - padding,
-        labelY - textHeight / 2 - padding,
-        textWidth + padding * 2,
-        textHeight + padding * 2
-      )
-      
-      // テキスト
-      ctx.fillStyle = '#ffffff'
-      ctx.font = `${12 * viewport.zoom}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(location.name, pos.x, labelY)
-      
-      ctx.restore()
-    }
-  }
-
 
   const drawCurrentLocation = (
     ctx: CanvasRenderingContext2D,
