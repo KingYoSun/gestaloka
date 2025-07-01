@@ -330,4 +330,3 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             npcs_at_destination = npc_generator.get_npcs_in_location("目的地")
             assert len(npcs_at_destination) == 1
             assert npcs_at_destination[0].npc_id == npc_profile.npc_id
-

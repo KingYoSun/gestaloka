@@ -97,6 +97,16 @@ export function useWebSocket() {
     []
   )
 
+  // イベント購読用のヘルパー関数
+  const subscribe = useCallback(
+    <T = unknown>(event: string, handler: (data: T) => void) => {
+      websocketManager.on(event, handler)
+      // クリーンアップ関数を返す
+      return () => websocketManager.off(event, handler)
+    },
+    []
+  )
+
   return {
     status,
     connect,
@@ -107,6 +117,7 @@ export function useWebSocket() {
     emit,
     on,
     off,
+    subscribe,
   }
 }
 

@@ -65,7 +65,7 @@ export const MinimapTooltip: React.FC<MinimapTooltipProps> = ({
 
   // 接続されている場所の数を計算
   const connectionCount = connections.filter(
-    (conn) =>
+    conn =>
       conn.from_location_id === location.id ||
       conn.to_location_id === location.id
   ).length
@@ -240,16 +240,16 @@ export const ConnectionTooltip: React.FC<ConnectionTooltipProps> = ({
           <Separator className="my-1" />
           <div className="flex justify-between items-center gap-3">
             <span className="text-gray-400">タイプ:</span>
-            <span className="text-white">{getPathTypeLabel(connection.path_type)}</span>
+            <span className="text-white">
+              {getPathTypeLabel(connection.path_type)}
+            </span>
           </div>
           <div className="flex justify-between items-center gap-3">
             <span className="text-gray-400">SP消費:</span>
             <span className="text-cyan-400">{connection.sp_cost} SP</span>
           </div>
           {connection.is_one_way && (
-            <div className="text-yellow-400 text-center mt-1">
-              ⚠️ 一方通行
-            </div>
+            <div className="text-yellow-400 text-center mt-1">⚠️ 一方通行</div>
           )}
         </div>
       </Card>

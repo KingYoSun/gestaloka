@@ -88,6 +88,7 @@ def test_generate_npc_from_log(mock_completed_log):
                     mock_create_npc.assert_called_once()
                     # register_npcは統合版では呼ばれない（TODO削除されているため）
 
+
 def test_get_npc_by_id():
     """IDでNPCを取得するテスト"""
     mock_session = MagicMock(spec=Session)

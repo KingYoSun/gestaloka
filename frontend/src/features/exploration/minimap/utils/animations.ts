@@ -31,16 +31,16 @@ export const easings = {
     return t === 0
       ? 0
       : t === 1
-      ? 1
-      : -Math.pow(2, 10 * t - 10) * Math.sin((t * 10 - 10.75) * c4)
+        ? 1
+        : -Math.pow(2, 10 * t - 10) * Math.sin((t * 10 - 10.75) * c4)
   },
   easeOutElastic: (t: number) => {
     const c4 = (2 * Math.PI) / 3
     return t === 0
       ? 0
       : t === 1
-      ? 1
-      : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1
+        ? 1
+        : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1
   },
   easeOutBounce: (t: number) => {
     const n1 = 7.5625
@@ -105,14 +105,21 @@ export class AnimationManager {
    */
   getValue(id: string): any {
     const animation = this.animations.get(id)
-    if (!animation || animation.from === undefined || animation.to === undefined) {
+    if (
+      !animation ||
+      animation.from === undefined ||
+      animation.to === undefined
+    ) {
       return animation?.to
     }
 
     const progress = this.getProgress(id)
-    
+
     // 数値の補間
-    if (typeof animation.from === 'number' && typeof animation.to === 'number') {
+    if (
+      typeof animation.from === 'number' &&
+      typeof animation.to === 'number'
+    ) {
       return animation.from + (animation.to - animation.from) * progress
     }
 
@@ -125,7 +132,10 @@ export class AnimationManager {
     }
 
     // 色の補間
-    if (typeof animation.from === 'string' && typeof animation.to === 'string') {
+    if (
+      typeof animation.from === 'string' &&
+      typeof animation.to === 'string'
+    ) {
       return this.interpolateColor(animation.from, animation.to, progress)
     }
 
@@ -313,7 +323,7 @@ export function drawTrailAnimation(
 
   // 最後の部分的なセグメント
   if (drawLength < totalLength) {
-    const lastSegmentProgress = (totalLength * progress) - drawLength
+    const lastSegmentProgress = totalLength * progress - drawLength
     const from = points[drawLength]
     const to = points[drawLength + 1]
     const partial = {

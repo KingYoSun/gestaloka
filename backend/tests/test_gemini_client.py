@@ -168,6 +168,6 @@ class TestGeminiClient:
 
         config = GeminiConfig(temperature=1.0)
         assert config.temperature == 1.0
-        
+
         config = GeminiConfig(temperature=2.0)
         assert config.temperature == 2.0  # langchain-google-genaiは1.0まで対応

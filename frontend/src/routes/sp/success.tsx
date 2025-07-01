@@ -67,10 +67,7 @@ function SPPurchaseSuccess() {
           )}
 
           <div className="flex flex-col gap-3">
-            <Button
-              onClick={() => navigate({ to: '/' })}
-              className="w-full"
-            >
+            <Button onClick={() => navigate({ to: '/' })} className="w-full">
               ゲームに戻る
             </Button>
             <Button

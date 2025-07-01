@@ -76,7 +76,7 @@ class GeminiClient:
             "timeout": self.config.timeout,
             "max_retries": self.config.max_retries,
         }
-        
+
         # Optional parameters
         if self.config.max_tokens:
             kwargs["max_output_tokens"] = self.config.max_tokens
@@ -86,7 +86,7 @@ class GeminiClient:
             kwargs["top_k"] = self.config.top_k
         if settings.GEMINI_API_KEY:
             kwargs["google_api_key"] = settings.GEMINI_API_KEY
-            
+
         # Safety settings
         if self.config.enable_safety_settings:
             kwargs["safety_settings"] = {
@@ -172,7 +172,7 @@ class GeminiClient:
         # キャッシュチェック（use_cacheパラメータで制御可能）
         use_cache = kwargs.pop("use_cache", True)
         cache_ttl = kwargs.pop("cache_ttl", 3600)  # デフォルト1時間
-        
+
         if use_cache:
             cache_key_data = {
                 "system": system_prompt,
@@ -180,13 +180,10 @@ class GeminiClient:
                 "model": self._model_name,
                 "temperature": self.config.temperature,
             }
-            cached_response = self._cache.get(
-                prompt=f"{system_prompt}\n{user_prompt}",
-                **cache_key_data
-            )
+            cached_response = self._cache.get(prompt=f"{system_prompt}\n{user_prompt}", **cache_key_data)
             if cached_response:
                 return cached_response
-        
+
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
 
         response = await self.generate(messages, **kwargs)
@@ -199,16 +196,13 @@ class GeminiClient:
         else:
             # Handle any other types by converting to string
             result = str(content)  # type: ignore[unreachable]
-            
+
         # キャッシュに保存
         if use_cache:
             self._cache.set(
-                prompt=f"{system_prompt}\n{user_prompt}",
-                value=result,
-                ttl_seconds=cache_ttl,
-                **cache_key_data
+                prompt=f"{system_prompt}\n{user_prompt}", value=result, ttl_seconds=cache_ttl, **cache_key_data
             )
-            
+
         return result
 
     async def stream(self, messages: list[BaseMessage], **kwargs: Any) -> AsyncIterator[str]:
@@ -259,11 +253,11 @@ class GeminiClient:
             # 大きなバッチの場合は同時実行数を制限してレート制限を回避
             max_concurrent = min(10, len(message_batches))  # 最大10並列
             semaphore = asyncio.Semaphore(max_concurrent)
-            
+
             async def limited_generate(messages: list[BaseMessage]) -> AIMessage:
                 async with semaphore:
                     return await self.generate(messages, **kwargs)
-            
+
             # 並列実行
             tasks = [limited_generate(messages) for messages in message_batches]
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -271,21 +265,21 @@ class GeminiClient:
             # エラーチェック
             successful_results: list[AIMessage] = []
             failed_indices: list[tuple[int, Exception]] = []
-            
+
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     failed_indices.append((i, result))
                 else:
                     successful_results.append(result)  # type: ignore[arg-type]
-                    
+
             # 部分的な失敗の場合はリトライ
             if failed_indices and len(failed_indices) < len(message_batches) * 0.5:
                 self.logger.warning(
                     "Partial batch failure, retrying failed items",
                     failed_count=len(failed_indices),
-                    total_count=len(message_batches)
+                    total_count=len(message_batches),
                 )
-                
+
                 # 失敗したアイテムのリトライ（順次実行）
                 for idx, _ in failed_indices:
                     try:
@@ -326,7 +320,7 @@ class GeminiClient:
                 "timeout": self.config.timeout,
                 "max_retries": self.config.max_retries,
             }
-            
+
             # Optional parameters
             if self.config.max_tokens:
                 llm_kwargs["max_output_tokens"] = self.config.max_tokens
@@ -336,7 +330,7 @@ class GeminiClient:
                 llm_kwargs["top_k"] = self.config.top_k
             if settings.GEMINI_API_KEY:
                 llm_kwargs["google_api_key"] = settings.GEMINI_API_KEY
-                
+
             # Safety settings
             if self.config.enable_safety_settings:
                 llm_kwargs["safety_settings"] = {

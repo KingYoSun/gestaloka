@@ -10,7 +10,9 @@ export function useMapData(characterId: string) {
   return useQuery({
     queryKey: ['exploration', 'map-data', characterId],
     queryFn: async () => {
-      const response = await axios.get(`/api/v1/exploration/${characterId}/map-data`)
+      const response = await axios.get(
+        `/api/v1/exploration/${characterId}/map-data`
+      )
       return response.data as MapDataResponse
     },
     refetchInterval: 30000, // 30秒ごとに自動更新

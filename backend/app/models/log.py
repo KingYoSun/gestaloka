@@ -153,7 +153,6 @@ class CompletedLogSubFragment(SQLModel, table=True):
     fragment: Optional[LogFragment] = Relationship(back_populates="completed_log_subs")
 
 
-
 # 既存モデルへの追加が必要なリレーションシップ
 # Character モデルに以下を追加:
 # log_fragments: list[LogFragment] = Relationship(back_populates="character")

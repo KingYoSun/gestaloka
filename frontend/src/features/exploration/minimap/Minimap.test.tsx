@@ -258,14 +258,14 @@ describe('Minimap', () => {
 
     // Mキーを押して拡大
     fireEvent.keyPress(window, { key: 'm' })
-    
+
     await waitFor(() => {
       expect(screen.getByText('凡例')).toBeInTheDocument()
     })
 
     // 再度Mキーを押して縮小
     fireEvent.keyPress(window, { key: 'M' })
-    
+
     await waitFor(() => {
       expect(screen.queryByText('凡例')).not.toBeInTheDocument()
     })
@@ -291,7 +291,7 @@ describe('Minimap', () => {
     })
 
     const canvas = container.querySelector('canvas') as HTMLCanvasElement
-    
+
     // 場所の座標をクリック（始まりの街の位置）
     fireEvent.mouseDown(canvas, { clientX: 100, clientY: 100 })
     fireEvent.mouseUp(canvas)
@@ -308,10 +308,12 @@ describe('Minimap', () => {
       expect(canvas).toBeInTheDocument()
     })
 
-    const contextMenuTrigger = container.querySelector('[data-radix-collection-item]')
+    const contextMenuTrigger = container.querySelector(
+      '[data-radix-collection-item]'
+    )
     if (contextMenuTrigger) {
       fireEvent.contextMenu(contextMenuTrigger)
-      
+
       // コンテキストメニューの項目が表示されることを確認
       await waitFor(() => {
         expect(screen.queryByText(/へ移動/)).toBeInTheDocument()

@@ -56,8 +56,8 @@ export class FogOfWarRenderer {
     this.fogCtx.fillRect(0, 0, width, height)
 
     // 各探索済みエリアの霧を晴らす
-    explorationProgress.forEach((progress) => {
-      const location = locations.find((loc) => loc.id === progress.location_id)
+    explorationProgress.forEach(progress => {
+      const location = locations.find(loc => loc.id === progress.location_id)
       if (!location) return
 
       // アニメーション進行度を計算
@@ -111,7 +111,7 @@ export class FogOfWarRenderer {
 
     this.fogCtx.globalCompositeOperation = 'destination-out'
 
-    layers.forEach((layer) => {
+    layers.forEach(layer => {
       const gradient = this.fogCtx.createRadialGradient(
         screenPos.x,
         screenPos.y,
@@ -123,7 +123,7 @@ export class FogOfWarRenderer {
 
       // 中心は完全に透明
       gradient.addColorStop(0, `rgba(0, 0, 0, 1)`)
-      
+
       // エッジのソフトさを調整
       const edgeStart = 1 - config.edgeSoftness * 0.5
       gradient.addColorStop(edgeStart, `rgba(0, 0, 0, ${1 - layer.opacity})`)

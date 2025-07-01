@@ -32,5 +32,4 @@ export const logsApi = {
 
   getCompletedLogs: (characterId: string) =>
     apiClient.get<CompletedLogRead[]>(`/logs/completed/${characterId}`),
-
 }

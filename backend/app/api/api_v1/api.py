@@ -12,6 +12,7 @@ from app.api.api_v1.endpoints import (
     exploration,
     game,
     logs,
+    narrative,
     npcs,
     sp,
     stripe_webhook,
@@ -30,6 +31,7 @@ api_router.include_router(game.router, prefix="/game", tags=["game"])
 api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
 api_router.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 api_router.include_router(exploration.router, prefix="/exploration", tags=["exploration"])
+api_router.include_router(narrative.router, prefix="/narrative", tags=["narrative"])
 api_router.include_router(npcs.router, prefix="/npcs", tags=["npcs"])
 api_router.include_router(sp.router, prefix="/sp", tags=["sp"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

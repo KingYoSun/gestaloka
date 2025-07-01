@@ -38,17 +38,14 @@ class ExplorationMinimapService:
 
         # 探索進捗を取得
         exploration_progress = self.db.exec(
-            select(CharacterExplorationProgress)
-            .where(CharacterExplorationProgress.character_id == character_id)
+            select(CharacterExplorationProgress).where(CharacterExplorationProgress.character_id == character_id)
         ).all()
 
         # 探索済みの場所IDセット
         # explored_location_ids = {ep.location_id for ep in exploration_progress}
 
         # 全ての発見済み場所を取得
-        discovered_locations = self.db.exec(
-            select(Location).where(Location.is_discovered.is_(True))
-        ).all()
+        discovered_locations = self.db.exec(select(Location).where(Location.is_discovered.is_(True))).all()
 
         # 階層別にデータを整理
         layers_dict: dict[int, LayerData] = {}
@@ -91,8 +88,7 @@ class ExplorationMinimapService:
         # 接続情報を取得
         discovered_location_ids = {loc.id for loc in discovered_locations}
         connections = self.db.exec(
-            select(LocationConnection)
-            .where(
+            select(LocationConnection).where(
                 and_(
                     LocationConnection.from_location_id.in_(list(discovered_location_ids)),  # type: ignore
                     LocationConnection.is_blocked.is_(False),
@@ -103,19 +99,19 @@ class ExplorationMinimapService:
         for conn in connections:
             # 接続先も発見済みの場合のみ表示
             if conn.to_location_id in discovered_location_ids:
-                    layer = conn.from_location.hierarchy_level
-                    if layer in layers_dict and conn.id is not None:
-                        map_connection = MapConnection(
-                            id=conn.id,
-                            from_location_id=conn.from_location_id,
-                            to_location_id=conn.to_location_id,
-                            path_type=conn.path_type,
-                            is_one_way=conn.is_one_way,
-                            is_discovered=True,
-                            sp_cost=self._calculate_sp_cost(conn),
-                            path_metadata=conn.path_metadata or {},
-                        )
-                        layers_dict[layer].connections.append(map_connection)
+                layer = conn.from_location.hierarchy_level
+                if layer in layers_dict and conn.id is not None:
+                    map_connection = MapConnection(
+                        id=conn.id,
+                        from_location_id=conn.from_location_id,
+                        to_location_id=conn.to_location_id,
+                        path_type=conn.path_type,
+                        is_one_way=conn.is_one_way,
+                        is_discovered=True,
+                        sp_cost=self._calculate_sp_cost(conn),
+                        path_metadata=conn.path_metadata or {},
+                    )
+                    layers_dict[layer].connections.append(map_connection)
 
         # 移動履歴を取得
         character_trail = await self._get_character_trail(character_id, limit=10)

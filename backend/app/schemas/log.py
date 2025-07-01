@@ -91,6 +91,7 @@ class CompletedLogRead(CompletedLogBase):
 
     model_config = {"from_attributes": True}
 
+
 # 活動記録スキーマ
 class LogActivityEntry(BaseModel):
     """ログの活動記録エントリー"""

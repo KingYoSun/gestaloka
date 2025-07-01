@@ -83,20 +83,28 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [viewportStart, setViewportStart] = useState({ x: 0, y: 0 })
-  const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(null)
-  const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null)
-  const [discoveredLocations, setDiscoveredLocations] = useState<Set<string>>(new Set())
-  const [iconCache, setIconCache] = useState<Map<string, HTMLImageElement>>(new Map())
-  
+  const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(
+    null
+  )
+  const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(
+    null
+  )
+  const [discoveredLocations, setDiscoveredLocations] = useState<Set<string>>(
+    new Set()
+  )
+  const [iconCache, setIconCache] = useState<Map<string, HTMLImageElement>>(
+    new Map()
+  )
+
   // 霧効果レンダラー
   const fogRenderer = useMemo(
     () => new FogOfWarRenderer(viewport.width, viewport.height),
     [viewport.width, viewport.height]
   )
-  
+
   // アニメーションマネージャー
   const animationManager = useMemo(() => new AnimationManager(), [])
-  
+
   // アイコンのプリロード
   useEffect(() => {
     if (!layerData) return
@@ -110,9 +118,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       })
 
       const newCache = new Map<string, HTMLImageElement>()
-      
+
       await Promise.all(
-        Array.from(uniqueTypes).map(async (type) => {
+        Array.from(uniqueTypes).map(async type => {
           try {
             const img = await iconRenderer.getIconImage(
               type,
@@ -125,7 +133,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
           }
         })
       )
-      
+
       setIconCache(newCache)
     }
 
@@ -163,7 +171,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   // 描画メインループ
   const draw = useCallback(() => {
     const endFrame = performanceMonitor.startFrame()
-    
+
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -184,12 +192,15 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     // 接続を描画（重要な経路にパルス効果）
     for (const connection of layerData.connections) {
       // 現在地に接続されている経路はパルス
-      const isConnectedToCurrent = currentLocation && (
-        connection.from_location_id === currentLocation.id ||
-        connection.to_location_id === currentLocation.id
-      )
-      
-      if (isConnectedToCurrent && animationManager.isAnimating('connection-pulse')) {
+      const isConnectedToCurrent =
+        currentLocation &&
+        (connection.from_location_id === currentLocation.id ||
+          connection.to_location_id === currentLocation.id)
+
+      if (
+        isConnectedToCurrent &&
+        animationManager.isAnimating('connection-pulse')
+      ) {
         const fromLocation = layerData.locations.find(
           loc => loc.id === connection.from_location_id
         )
@@ -197,10 +208,22 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
           loc => loc.id === connection.to_location_id
         )
         if (fromLocation && toLocation) {
-          const from = CoordinateSystem.worldToScreen(fromLocation.coordinates, viewport)
-          const to = CoordinateSystem.worldToScreen(toLocation.coordinates, viewport)
+          const from = CoordinateSystem.worldToScreen(
+            fromLocation.coordinates,
+            viewport
+          )
+          const to = CoordinateSystem.worldToScreen(
+            toLocation.coordinates,
+            viewport
+          )
           const pulseProgress = animationManager.getProgress('connection-pulse')
-          drawConnectionPulse(ctx, from, to, pulseProgress, theme.connection[connection.path_type])
+          drawConnectionPulse(
+            ctx,
+            from,
+            to,
+            pulseProgress,
+            theme.connection[connection.path_type]
+          )
         }
       } else {
         drawConnection(ctx, connection, layerData.locations, viewport, theme)
@@ -209,7 +232,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
 
     // 移動履歴をアニメーションで描画
     if (characterTrail.length > 1) {
-      const trailPoints = characterTrail.map(h => 
+      const trailPoints = characterTrail.map(h =>
         CoordinateSystem.worldToScreen(h.coordinates, viewport)
       )
       const trailProgress = animationManager.getProgress('trail-animation')
@@ -221,7 +244,15 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       const isCurrent = currentLocation?.location_id === location.id
       const isHovered = hoveredLocation?.id === location.id
       const isSelected = selectedLocation?.id === location.id
-      drawLocation(ctx, location, viewport, theme, isCurrent, isHovered, isSelected)
+      drawLocation(
+        ctx,
+        location,
+        viewport,
+        theme,
+        isCurrent,
+        isHovered,
+        isSelected
+      )
     }
 
     // 現在地を描画
@@ -238,7 +269,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       Date.now()
     )
     ctx.drawImage(fogCanvas, 0, 0)
-    
+
     // パフォーマンス計測終了
     endFrame()
   }, [
@@ -259,125 +290,142 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   ])
 
   // 描画関数群
-  const drawLocation = React.useCallback((
-    ctx: CanvasRenderingContext2D,
-    location: MapLocation,
-    viewport: Viewport,
-    theme: MinimapTheme,
-    isCurrent: boolean,
-    isHovered: boolean,
-    isSelected: boolean
-  ) => {
-    const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
-    const radius = Math.max(10, 15 * viewport.zoom)
-    
-    // アイコンキャッシュの取得（非同期だが描画はキャッシュされた結果を使用）
-    const cachedIcon = iconCache.get(location.type)
-    
-    // 未発見の場所は半透明
-    if (!location.is_discovered) {
-      ctx.globalAlpha = 0.3
-    }
-    
-    // 発見アニメーション
-    if (!discoveredLocations.has(location.id) && location.is_discovered) {
-      setDiscoveredLocations(prev => new Set([...prev, location.id]))
-      animationManager.start(`discovery-${location.id}`, 2000)
-    }
+  const drawLocation = React.useCallback(
+    (
+      ctx: CanvasRenderingContext2D,
+      location: MapLocation,
+      viewport: Viewport,
+      theme: MinimapTheme,
+      isCurrent: boolean,
+      isHovered: boolean,
+      isSelected: boolean
+    ) => {
+      const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
+      const radius = Math.max(10, 15 * viewport.zoom)
 
-    // 発見アニメーションの描画
-    const discoveryProgress = animationManager.getProgress(`discovery-${location.id}`)
-    if (discoveryProgress < 1) {
-      // 発見時のパルスエフェクト
-      ctx.save()
-      ctx.globalAlpha = 1 - discoveryProgress
-      ctx.strokeStyle = theme.location[location.type]
-      ctx.lineWidth = 3
+      // アイコンキャッシュの取得（非同期だが描画はキャッシュされた結果を使用）
+      const cachedIcon = iconCache.get(location.type)
+
+      // 未発見の場所は半透明
+      if (!location.is_discovered) {
+        ctx.globalAlpha = 0.3
+      }
+
+      // 発見アニメーション
+      if (!discoveredLocations.has(location.id) && location.is_discovered) {
+        setDiscoveredLocations(prev => new Set([...prev, location.id]))
+        animationManager.start(`discovery-${location.id}`, 2000)
+      }
+
+      // 発見アニメーションの描画
+      const discoveryProgress = animationManager.getProgress(
+        `discovery-${location.id}`
+      )
+      if (discoveryProgress < 1) {
+        // 発見時のパルスエフェクト
+        ctx.save()
+        ctx.globalAlpha = 1 - discoveryProgress
+        ctx.strokeStyle = theme.location[location.type]
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, radius + discoveryProgress * 30, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // ホバー/選択時のグロー効果
+      if (isHovered || isSelected) {
+        const glowIntensity = isSelected ? 1 : 0.7
+        const glowColor = isSelected ? '#ffeb3b' : '#ffffff'
+        ctx.save()
+        ctx.shadowColor = glowColor
+        ctx.shadowBlur = 20 * glowIntensity
+        ctx.globalAlpha = 0.5 * glowIntensity
+        ctx.fillStyle = glowColor
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
+
+      // 危険度による外枠（グラデーション）
+      const gradient = ctx.createRadialGradient(
+        pos.x,
+        pos.y,
+        radius,
+        pos.x,
+        pos.y,
+        radius + 5
+      )
+      gradient.addColorStop(0, theme.danger[location.danger_level])
+      gradient.addColorStop(1, `${theme.danger[location.danger_level]}00`)
+      ctx.strokeStyle = gradient
+      ctx.lineWidth = isHovered || isSelected ? 4 : 3
       ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius + discoveryProgress * 30, 0, Math.PI * 2)
+      ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2)
       ctx.stroke()
-      ctx.restore()
-    }
 
-    // ホバー/選択時のグロー効果
-    if (isHovered || isSelected) {
-      const glowIntensity = isSelected ? 1 : 0.7
-      const glowColor = isSelected ? '#ffeb3b' : '#ffffff'
-      ctx.save()
-      ctx.shadowColor = glowColor
-      ctx.shadowBlur = 20 * glowIntensity
-      ctx.globalAlpha = 0.5 * glowIntensity
-      ctx.fillStyle = glowColor
+      // 背景円
+      ctx.fillStyle = '#1a1a1a'
       ctx.beginPath()
       ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
       ctx.fill()
-      ctx.restore()
-    }
 
-    // 危険度による外枠（グラデーション）
-    const gradient = ctx.createRadialGradient(
-      pos.x, pos.y, radius,
-      pos.x, pos.y, radius + 5
-    )
-    gradient.addColorStop(0, theme.danger[location.danger_level])
-    gradient.addColorStop(1, `${theme.danger[location.danger_level]}00`)
-    ctx.strokeStyle = gradient
-    ctx.lineWidth = isHovered || isSelected ? 4 : 3
-    ctx.beginPath()
-    ctx.arc(pos.x, pos.y, radius + 3, 0, Math.PI * 2)
-    ctx.stroke()
+      // アイコンまたは色で塗りつぶし
+      if (viewport.zoom > 0.7 && location.is_discovered && cachedIcon) {
+        // ズームが十分な場合はキャッシュされたアイコンを表示
+        const iconSize = radius * 1.5
+        ctx.drawImage(
+          cachedIcon,
+          pos.x - iconSize / 2,
+          pos.y - iconSize / 2,
+          iconSize,
+          iconSize
+        )
+      } else {
+        // ズームが小さい場合またはアイコンがない場合は色で塗りつぶし
+        ctx.fillStyle = theme.location[location.type]
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
+        ctx.fill()
+      }
 
-    // 背景円
-    ctx.fillStyle = '#1a1a1a'
-    ctx.beginPath()
-    ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-    ctx.fill()
+      // 現在地の強調表示（パルスアニメーション）
+      if (isCurrent) {
+        const pulseProgress = animationManager.getProgress(
+          'current-location-pulse'
+        )
+        // 現在地のパルスエフェクト
+        const pulseScale = 1 + Math.sin(pulseProgress * Math.PI * 2) * 0.2
+        ctx.save()
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = 3
+        ctx.globalAlpha = 0.8
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, radius * pulseScale, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
 
-    // アイコンまたは色で塗りつぶし
-    if (viewport.zoom > 0.7 && location.is_discovered && cachedIcon) {
-      // ズームが十分な場合はキャッシュされたアイコンを表示
-      const iconSize = radius * 1.5
-      ctx.drawImage(
-        cachedIcon,
-        pos.x - iconSize / 2,
-        pos.y - iconSize / 2,
-        iconSize,
-        iconSize
-      )
-    } else {
-      // ズームが小さい場合またはアイコンがない場合は色で塗りつぶし
-      ctx.fillStyle = theme.location[location.type]
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
-      ctx.fill()
-    }
+      // ラベルの表示
+      if (showLabels && viewport.zoom > 0.5) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `${Math.max(12, 14 * viewport.zoom)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.fillText(location.name, pos.x, pos.y + radius + 15)
+      }
 
-    // 現在地の強調表示（パルスアニメーション）
-    if (isCurrent) {
-      const pulseProgress = animationManager.getProgress('current-location-pulse')
-      // 現在地のパルスエフェクト
-      const pulseScale = 1 + Math.sin(pulseProgress * Math.PI * 2) * 0.2
-      ctx.save()
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 3
-      ctx.globalAlpha = 0.8
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, radius * pulseScale, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.restore()
-    }
-
-    // ラベルの表示
-    if (showLabels && viewport.zoom > 0.5) {
-      ctx.fillStyle = '#ffffff'
-      ctx.font = `${Math.max(12, 14 * viewport.zoom)}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.fillText(location.name, pos.x, pos.y + radius + 15)
-    }
-
-    // 透明度をリセット
-    ctx.globalAlpha = 1
-  }, [discoveredLocations, setDiscoveredLocations, animationManager, iconCache, showLabels])
+      // 透明度をリセット
+      ctx.globalAlpha = 1
+    },
+    [
+      discoveredLocations,
+      setDiscoveredLocations,
+      animationManager,
+      iconCache,
+      showLabels,
+    ]
+  )
 
   const drawGrid = (
     ctx: CanvasRenderingContext2D,
@@ -430,7 +478,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     const fromLocation = locations.find(
       loc => loc.id === connection.from_location_id
     )
-    const toLocation = locations.find(loc => loc.id === connection.to_location_id)
+    const toLocation = locations.find(
+      loc => loc.id === connection.to_location_id
+    )
 
     if (!fromLocation || !toLocation) return
 
@@ -496,7 +546,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       ctx.fill()
       ctx.restore()
     }
-    
+
     ctx.restore() // opacityのリストア
   }
 
@@ -661,10 +711,11 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       if (deltaTime >= frameInterval) {
         lastFrameTime = currentTime - (deltaTime % frameInterval)
         draw()
-        
+
         // 定期的にパフォーマンスメトリクスをログ出力（開発時のみ）
         frameCount++
-        if (frameCount % 300 === 0) { // 5秒ごと
+        if (frameCount % 300 === 0) {
+          // 5秒ごと
           performanceMonitor.logMetrics()
         }
       }

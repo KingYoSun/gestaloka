@@ -152,14 +152,14 @@ describe('MinimapCanvas', () => {
   it('キャンバスを正しくレンダリングする', () => {
     const { container } = renderCanvas()
     const canvas = container.querySelector('canvas')
-    
+
     expect(canvas).toBeInTheDocument()
     expect(canvas).toHaveClass('w-full h-full cursor-move')
   })
 
   it('グリッドを描画する', async () => {
     renderCanvas({ showGrid: true })
-    
+
     // 描画が完了するまで待機
     await waitFor(() => {
       // グリッド描画の呼び出しを確認
@@ -169,14 +169,14 @@ describe('MinimapCanvas', () => {
 
   it('場所を正しく描画する', async () => {
     renderCanvas()
-    
+
     // 描画が完了するまで待機
     await waitFor(() => {
       // 場所の描画（円）
       expect(mockContext.arc).toHaveBeenCalled()
       expect(mockContext.fill).toHaveBeenCalled()
     })
-    
+
     // ラベルの描画
     expect(mockContext.fillText).toHaveBeenCalledWith(
       'テスト都市',
@@ -187,7 +187,7 @@ describe('MinimapCanvas', () => {
 
   it('接続線を描画する', async () => {
     renderCanvas()
-    
+
     // 描画が完了するまで待機
     await waitFor(() => {
       // 接続線の描画
@@ -200,19 +200,19 @@ describe('MinimapCanvas', () => {
   it('ドラッグでビューポートを移動する', () => {
     const { container } = renderCanvas()
     const canvas = container.querySelector('canvas')!
-    
+
     // 空白部分でドラッグ開始（場所をクリックしないように）
     fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10 })
-    
+
     // ドラッグ中
     fireEvent.mouseMove(canvas, { clientX: 60, clientY: 60 })
-    
+
     expect(mockOnViewportChange).toHaveBeenCalledWith({
       ...defaultViewport,
       x: -50,
       y: -50,
     })
-    
+
     // ドラッグ終了
     fireEvent.mouseUp(canvas)
   })
@@ -220,19 +220,19 @@ describe('MinimapCanvas', () => {
   it('ホイールでズームを変更する', () => {
     const { container } = renderCanvas()
     const canvas = container.querySelector('canvas')!
-    
+
     // ズームイン
     fireEvent.wheel(canvas, { deltaY: -100 })
-    
+
     expect(mockOnViewportChange).toHaveBeenCalledWith(
       expect.objectContaining({
         zoom: expect.closeTo(1.1, 0.01),
       })
     )
-    
+
     // ズームアウト
     fireEvent.wheel(canvas, { deltaY: 100 })
-    
+
     expect(mockOnViewportChange).toHaveBeenCalledWith(
       expect.objectContaining({
         zoom: expect.closeTo(0.9, 0.01),
@@ -243,10 +243,10 @@ describe('MinimapCanvas', () => {
   it('場所をクリックすると選択される', () => {
     const { container } = renderCanvas()
     const canvas = container.querySelector('canvas')!
-    
+
     // 場所の座標をクリック（テスト都市の位置）
     fireEvent.mouseDown(canvas, { clientX: 100, clientY: 100 })
-    
+
     expect(mockOnLocationSelect).toHaveBeenCalledWith(
       expect.objectContaining({
         id: '1',
@@ -258,17 +258,17 @@ describe('MinimapCanvas', () => {
   it('場所にホバーするとホバー状態になる', () => {
     const { container } = renderCanvas()
     const canvas = container.querySelector('canvas')!
-    
+
     // 場所の上でマウスを動かす
     fireEvent.mouseMove(canvas, { clientX: 100, clientY: 100 })
-    
+
     expect(mockOnLocationHover).toHaveBeenCalledWith(
       expect.objectContaining({
         id: '1',
         name: 'テスト都市',
       })
     )
-    
+
     // カーソルスタイルが変更される
     expect(canvas.style.cursor).toBe('pointer')
   })
@@ -276,17 +276,18 @@ describe('MinimapCanvas', () => {
   it('空白部分にホバーするとホバー状態が解除される', () => {
     const { container } = renderCanvas()
     const canvas = container.querySelector('canvas')!
-    
+
     // まず場所にホバー
     fireEvent.mouseMove(canvas, { clientX: 100, clientY: 100 })
     expect(mockOnLocationHover).toHaveBeenCalled()
-    
+
     // 空白部分でマウスを動かす
     fireEvent.mouseMove(canvas, { clientX: 10, clientY: 10 })
-    
+
     // ホバー状態が解除されるか、または別の場所が検出されない
     // この座標は場所から十分離れているのでnullが期待される
-    const lastCall = mockOnLocationHover.mock.calls[mockOnLocationHover.mock.calls.length - 1]
+    const lastCall =
+      mockOnLocationHover.mock.calls[mockOnLocationHover.mock.calls.length - 1]
     expect(lastCall[0]).toBeNull()
     expect(canvas.style.cursor).toBe('move')
   })
@@ -322,7 +323,7 @@ describe('MinimapCanvas', () => {
 
   it('霧効果を適用する', async () => {
     renderCanvas()
-    
+
     // 描画が完了するまで待機
     await waitFor(() => {
       // 霧効果の描画
@@ -348,7 +349,7 @@ describe('MinimapCanvas', () => {
         },
       ],
     })
-    
+
     // 描画が完了するまで待機
     await waitFor(() => {
       // 軌跡の描画（線の描画）

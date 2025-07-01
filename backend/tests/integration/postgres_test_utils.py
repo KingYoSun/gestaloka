@@ -123,7 +123,6 @@ def recreate_schema(engine):
             """)
             )
 
-
             conn.commit()
     except Exception as e:
         print(f"PostgreSQL schema recreation error: {e}")

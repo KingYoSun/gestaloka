@@ -33,9 +33,16 @@ import { explorationApi } from '@/api/explorationApi'
 interface MinimapProps {
   characterId: string
   className?: string
+  interactionMode?: 'interactive' | 'view-only'
+  onLocationInfo?: (location: MapLocation) => void
 }
 
-export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
+export const Minimap: React.FC<MinimapProps> = ({
+  characterId,
+  className,
+  interactionMode = 'interactive',
+  onLocationInfo,
+}) => {
   const { data: mapData, isLoading } = useMapData(characterId)
   const [isExpanded, setIsExpanded] = useState(false)
   const [selectedLayer, setSelectedLayer] = useState<number>(1)
@@ -46,14 +53,20 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
     width: 200,
     height: 200,
   })
-  const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null)
-  const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(null)
+  const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(
+    null
+  )
+  const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(
+    null
+  )
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   const canvasContainerRef = useRef<HTMLDivElement>(null)
 
   // 現在のレイヤーデータ
   const currentLayerData: LayerData | null = mapData
-    ? mapData.layers.find((layer: LayerData) => layer.layer === selectedLayer) || null
+    ? mapData.layers.find(
+        (layer: LayerData) => layer.layer === selectedLayer
+      ) || null
     : null
 
   // 現在地に中心を合わせる
@@ -97,15 +110,24 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
   const [targetConnection, setTargetConnection] = useState<number | null>(null)
 
   // 場所を選択したときのハンドラ
-  const handleLocationSelect = useCallback((location: MapLocation) => {
-    setSelectedLocation(location)
-  }, [])
+  const handleLocationSelect = useCallback(
+    (location: MapLocation) => {
+      if (interactionMode === 'view-only') {
+        // view-onlyモードでは情報表示のみ
+        onLocationInfo?.(location)
+      } else {
+        // interactiveモードでは選択状態を設定
+        setSelectedLocation(location)
+      }
+    },
+    [interactionMode, onLocationInfo]
+  )
 
   // 場所にホバーしたときのハンドラ
   const handleLocationHover = useCallback((location: MapLocation | null) => {
     setHoveredLocation(location)
   }, [])
-  
+
   // マウス位置の追跡
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (canvasContainerRef.current) {
@@ -125,20 +147,23 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
   })
 
   // 移動ダイアログを表示
-  const showMoveConfirmation = useCallback((location: MapLocation) => {
-    // この場所への接続を検索
-    const connection = availableLocations?.available_locations.find(
-      conn => String(conn.to_location.id) === location.id
-    )
-    
-    if (connection) {
-      setTargetLocation(location)
-      setTargetConnection(connection.connection_id)
-      setShowMoveDialog(true)
-    } else {
-      toast.error('この場所には直接移動できません')
-    }
-  }, [availableLocations])
+  const showMoveConfirmation = useCallback(
+    (location: MapLocation) => {
+      // この場所への接続を検索
+      const connection = availableLocations?.available_locations.find(
+        conn => String(conn.to_location.id) === location.id
+      )
+
+      if (connection) {
+        setTargetLocation(location)
+        setTargetConnection(connection.connection_id)
+        setShowMoveDialog(true)
+      } else {
+        toast.error('この場所には直接移動できません')
+      }
+    },
+    [availableLocations]
+  )
 
   // 移動実行
   const handleMove = useCallback(() => {
@@ -156,7 +181,7 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
           setTargetConnection(null)
           setSelectedLocation(null)
         },
-        onError: (error) => {
+        onError: error => {
           toast.error('移動に失敗しました')
           console.error(error)
         },
@@ -235,7 +260,7 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
       {/* ミニマップ本体 */}
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          <div 
+          <div
             ref={canvasContainerRef}
             className="w-full h-full relative"
             onMouseMove={handleMouseMove}
@@ -250,7 +275,7 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
               onLocationSelect={handleLocationSelect}
               onLocationHover={handleLocationHover}
             />
-            
+
             {/* リッチなツールチップ */}
             <MinimapTooltip
               location={hoveredLocation!}
@@ -261,11 +286,12 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
             />
           </div>
         </ContextMenuTrigger>
-          
-          {/* 右クリックコンテキストメニュー */}
-          <ContextMenuContent className="bg-black/90 text-white border-white/20">
-            {selectedLocation && (
-              <>
+
+        {/* 右クリックコンテキストメニュー */}
+        <ContextMenuContent className="bg-black/90 text-white border-white/20">
+          {selectedLocation && (
+            <>
+              {interactionMode === 'interactive' ? (
                 <ContextMenuItem
                   onClick={() => showMoveConfirmation(selectedLocation)}
                   className="text-white hover:bg-white/10"
@@ -273,23 +299,32 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
                   <Navigation className="mr-2 h-4 w-4" />
                   {selectedLocation.name}へ移動
                 </ContextMenuItem>
+              ) : (
                 <ContextMenuItem
-                  onClick={() => {
-                    setViewport(prev => ({
-                      ...prev,
-                      x: selectedLocation.coordinates.x,
-                      y: selectedLocation.coordinates.y,
-                    }))
-                  }}
+                  onClick={() => onLocationInfo?.(selectedLocation)}
                   className="text-white hover:bg-white/10"
                 >
-                  <Maximize2 className="mr-2 h-4 w-4" />
-                  中央に表示
+                  <Navigation className="mr-2 h-4 w-4" />
+                  {selectedLocation.name}の詳細を見る
                 </ContextMenuItem>
-              </>
-            )}
-          </ContextMenuContent>
-        </ContextMenu>
+              )}
+              <ContextMenuItem
+                onClick={() => {
+                  setViewport(prev => ({
+                    ...prev,
+                    x: selectedLocation.coordinates.x,
+                    y: selectedLocation.coordinates.y,
+                  }))
+                }}
+                className="text-white hover:bg-white/10"
+              >
+                <Maximize2 className="mr-2 h-4 w-4" />
+                中央に表示
+              </ContextMenuItem>
+            </>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* 凡例（拡張モードのみ） */}
       {isExpanded && (
@@ -316,48 +351,50 @@ export const Minimap: React.FC<MinimapProps> = ({ characterId, className }) => {
         </div>
       )}
 
-      {/* 移動確認ダイアログ */}
-      <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
-        <DialogContent className="bg-gray-900 text-white border-gray-700">
-          <DialogHeader>
-            <DialogTitle>場所への移動</DialogTitle>
-            <DialogDescription className="text-gray-300">
-              {targetLocation?.name}へ移動しますか？
-            </DialogDescription>
-          </DialogHeader>
-          {targetLocation && (
-            <div className="space-y-2 py-4">
-              <div className="flex justify-between">
-                <span className="text-gray-400">危険度:</span>
-                <span>{targetLocation.danger_level}</span>
+      {/* 移動確認ダイアログ（interactiveモードのみ） */}
+      {interactionMode === 'interactive' && (
+        <Dialog open={showMoveDialog} onOpenChange={setShowMoveDialog}>
+          <DialogContent className="bg-gray-900 text-white border-gray-700">
+            <DialogHeader>
+              <DialogTitle>場所への移動</DialogTitle>
+              <DialogDescription className="text-gray-300">
+                {targetLocation?.name}へ移動しますか？
+              </DialogDescription>
+            </DialogHeader>
+            {targetLocation && (
+              <div className="space-y-2 py-4">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">危険度:</span>
+                  <span>{targetLocation.danger_level}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">必要SP:</span>
+                  <span>
+                    {availableLocations?.available_locations.find(
+                      conn => conn.connection_id === targetConnection
+                    )?.sp_cost || '計算中...'}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">必要SP:</span>
-                <span>
-                  {availableLocations?.available_locations.find(
-                    conn => conn.connection_id === targetConnection
-                  )?.sp_cost || '計算中...'}
-                </span>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowMoveDialog(false)}
-              className="border-gray-600 text-gray-300 hover:bg-gray-800"
-            >
-              キャンセル
-            </Button>
-            <Button
-              onClick={handleMove}
-              className="bg-primary hover:bg-primary/90"
-            >
-              移動する
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowMoveDialog(false)}
+                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              >
+                キャンセル
+              </Button>
+              <Button
+                onClick={handleMove}
+                className="bg-primary hover:bg-primary/90"
+              >
+                移動する
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Card>
   )
 }

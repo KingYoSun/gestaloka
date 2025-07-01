@@ -19,6 +19,7 @@ from app.services.exploration_minimap_service import ExplorationMinimapService
 def test_user(session: Session):
     """テスト用ユーザー作成"""
     import uuid
+
     user = User(
         id=str(uuid.uuid4()),
         username="testuser",
@@ -121,6 +122,7 @@ def test_locations(session: Session):
 def test_character_with_progress(session: Session, test_user, test_locations):
     """探索進捗付きのテストキャラクター作成"""
     import uuid
+
     character = Character(
         id=str(uuid.uuid4()),
         user_id=test_user.id,
@@ -196,7 +198,9 @@ async def test_get_map_data(exploration_minimap_service, test_character_with_pro
 
 
 @pytest.mark.asyncio
-async def test_update_exploration_progress_new(exploration_minimap_service, test_character_with_progress, test_locations):
+async def test_update_exploration_progress_new(
+    exploration_minimap_service, test_character_with_progress, test_locations
+):
     """新規探索進捗の更新テスト"""
     character_id = str(test_character_with_progress.id)
 
@@ -220,7 +224,9 @@ async def test_update_exploration_progress_new(exploration_minimap_service, test
 
 
 @pytest.mark.asyncio
-async def test_update_exploration_progress_existing(exploration_minimap_service, test_character_with_progress, test_locations):
+async def test_update_exploration_progress_existing(
+    exploration_minimap_service, test_character_with_progress, test_locations
+):
     """既存探索進捗の更新テスト"""
     character_id = str(test_character_with_progress.id)
 
@@ -240,7 +246,9 @@ async def test_update_exploration_progress_existing(exploration_minimap_service,
 
 
 @pytest.mark.asyncio
-async def test_get_character_trail(exploration_minimap_service, test_character_with_progress, test_locations, session: Session):
+async def test_get_character_trail(
+    exploration_minimap_service, test_character_with_progress, test_locations, session: Session
+):
     """キャラクターの移動履歴取得テスト"""
     from app.models.location import CharacterLocationHistory
 
