@@ -21,7 +21,7 @@ class StripeConfig:
             "large": settings.STRIPE_PRICE_ID_LARGE,
             "xlarge": settings.STRIPE_PRICE_ID_XLARGE,
         }
-        
+
         # Stripe SDKの初期化
         if self.stripe_api_key:
             stripe.api_key = self.stripe_api_key
@@ -142,9 +142,7 @@ class StripeService:
             raise ValueError("Stripe webhook secret is not configured")
 
         try:
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, self.config.stripe_webhook_secret
-            )
+            event = stripe.Webhook.construct_event(payload, sig_header, self.config.stripe_webhook_secret)
             return event
         except ValueError as e:
             logger.error(f"Invalid webhook payload: {str(e)}")

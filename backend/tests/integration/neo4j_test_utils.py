@@ -20,7 +20,9 @@ def cleanup_all_neo4j_data():
     try:
         # 現在の接続がテスト用Neo4jを指していることを確認
         if "neo4j-test" not in neo_config.DATABASE_URL and "7687" not in neo_config.DATABASE_URL:
-            print(f"Warning: Not connected to test Neo4j instance. Skipping cleanup. Current URL: {neo_config.DATABASE_URL}")
+            print(
+                f"Warning: Not connected to test Neo4j instance. Skipping cleanup. Current URL: {neo_config.DATABASE_URL}"
+            )
             return
 
         # まず全ての関係性を削除
@@ -146,7 +148,7 @@ class Neo4jTestStats:
             "nodes_added": self.final_nodes - self.initial_nodes,
             "relationships_added": self.final_relationships - self.initial_relationships,
             "final_nodes": self.final_nodes,
-            "final_relationships": self.final_relationships
+            "final_relationships": self.final_relationships,
         }
 
     def has_leaks(self) -> bool:

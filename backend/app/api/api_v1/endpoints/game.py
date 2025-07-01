@@ -36,7 +36,9 @@ async def get_game_sessions(
 
 @router.post("/sessions", response_model=GameSessionResponse)
 async def create_game_session(
-    session_data: GameSessionCreate, current_user: User = Depends(get_current_active_user), db: Session = Depends(get_session)
+    session_data: GameSessionCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
 ) -> GameSessionResponse:
     """ゲームセッション作成"""
     # キャラクターの所有権確認

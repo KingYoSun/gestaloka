@@ -1,6 +1,7 @@
 """
 探索システム関連のスキーマ
 """
+
 from datetime import datetime
 from typing import Any, Optional
 
@@ -11,6 +12,7 @@ from app.models.location import DangerLevel, LocationType
 
 class LocationBase(BaseModel):
     """場所の基本情報"""
+
     name: str = Field(..., description="場所名")
     description: str = Field(..., description="場所の説明")
     location_type: LocationType = Field(..., description="場所の種類")
@@ -20,6 +22,7 @@ class LocationBase(BaseModel):
 
 class LocationResponse(LocationBase):
     """場所情報のレスポンス"""
+
     id: int = Field(..., description="場所ID")
     x_coordinate: int = Field(..., description="X座標")
     y_coordinate: int = Field(..., description="Y座標")
@@ -35,6 +38,7 @@ class LocationResponse(LocationBase):
 
 class LocationConnectionResponse(BaseModel):
     """場所間接続情報のレスポンス"""
+
     connection_id: int = Field(..., description="接続ID")
     to_location: LocationResponse = Field(..., description="移動先の場所")
     sp_cost: int = Field(..., description="移動に必要なSP")
@@ -48,17 +52,20 @@ class LocationConnectionResponse(BaseModel):
 
 class AvailableLocationsResponse(BaseModel):
     """移動可能な場所のレスポンス"""
+
     current_location: LocationResponse = Field(..., description="現在地")
     available_locations: list[LocationConnectionResponse] = Field(..., description="移動可能な場所リスト")
 
 
 class MoveRequest(BaseModel):
     """移動リクエスト"""
+
     connection_id: int = Field(..., description="使用する接続ID")
 
 
 class MoveResponse(BaseModel):
     """移動レスポンス"""
+
     success: bool = Field(..., description="移動成功フラグ")
     new_location: LocationResponse = Field(..., description="新しい場所")
     sp_consumed: int = Field(..., description="消費したSP")
@@ -68,6 +75,7 @@ class MoveResponse(BaseModel):
 
 class ExplorationAreaResponse(BaseModel):
     """探索エリア情報のレスポンス"""
+
     id: int = Field(..., description="エリアID")
     name: str = Field(..., description="エリア名")
     description: str = Field(..., description="エリアの説明")
@@ -83,11 +91,13 @@ class ExplorationAreaResponse(BaseModel):
 
 class ExploreRequest(BaseModel):
     """探索リクエスト"""
+
     area_id: int = Field(..., description="探索するエリアID")
 
 
 class FragmentFoundResponse(BaseModel):
     """発見したフラグメント情報"""
+
     keyword: str = Field(..., description="キーワード")
     rarity: str = Field(..., description="レアリティ")
     description: str = Field(..., description="説明")
@@ -95,6 +105,7 @@ class FragmentFoundResponse(BaseModel):
 
 class ExploreResponse(BaseModel):
     """探索レスポンス"""
+
     success: bool = Field(..., description="探索成功フラグ")
     fragments_found: list[dict[str, Any]] = Field(..., description="発見したフラグメント")
     encounters: int = Field(..., description="遭遇数")
@@ -105,6 +116,7 @@ class ExploreResponse(BaseModel):
 
 class LocationHistoryResponse(BaseModel):
     """移動履歴のレスポンス"""
+
     location: LocationResponse = Field(..., description="場所情報")
     arrived_at: datetime = Field(..., description="到着時刻")
     departed_at: Optional[datetime] = Field(None, description="出発時刻")
@@ -116,6 +128,7 @@ class LocationHistoryResponse(BaseModel):
 
 class ExplorationStatsResponse(BaseModel):
     """探索統計のレスポンス"""
+
     total_explorations: int = Field(..., description="総探索回数")
     total_fragments_found: int = Field(..., description="総フラグメント発見数")
     total_encounters: int = Field(..., description="総遭遇数")

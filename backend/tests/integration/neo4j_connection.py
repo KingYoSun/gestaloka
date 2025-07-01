@@ -33,7 +33,7 @@ def ensure_test_connection():
         neo_config.DATABASE_URL = test_url
 
         # 既存の接続をクリア
-        if hasattr(neo_db, '_driver') and neo_db._driver:
+        if hasattr(neo_db, "_driver") and neo_db._driver:
             try:
                 neo_db._driver.close()
                 # ドライバーの完全なクローズを待つ
@@ -53,7 +53,7 @@ def test_neo4j_connection():
     """
     # 元の設定を保存
     original_url = neo_config.DATABASE_URL
-    original_driver = getattr(neo_db, '_driver', None)
+    original_driver = getattr(neo_db, "_driver", None)
 
     try:
         # テスト用接続を設定
@@ -64,7 +64,7 @@ def test_neo4j_connection():
         neo_config.DATABASE_URL = original_url
 
         # 接続をクリア
-        if hasattr(neo_db, '_driver') and neo_db._driver:
+        if hasattr(neo_db, "_driver") and neo_db._driver:
             try:
                 neo_db._driver.close()
             except Exception:

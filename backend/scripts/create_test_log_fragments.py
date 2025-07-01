@@ -42,7 +42,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "epic",
         "importance_score": 0.95,
     },
-
     # 戦闘関連（ネガティブ）
     {
         "action_description": "油断から敵の罠にかかり、重傷を負った",
@@ -58,7 +57,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "uncommon",
         "importance_score": 0.75,
     },
-
     # 探索関連（ポジティブ）
     {
         "action_description": "古代の遺跡で貴重な遺物を発見した",
@@ -81,7 +79,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "rare",
         "importance_score": 0.85,
     },
-
     # 探索関連（ネガティブ）
     {
         "action_description": "迷宮で道に迷い、貴重な時間を失った",
@@ -97,7 +94,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "uncommon",
         "importance_score": 0.65,
     },
-
     # 社交関連（ポジティブ）
     {
         "action_description": "困っている旅人を助け、感謝の言葉を受けた",
@@ -120,7 +116,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "epic",
         "importance_score": 0.95,
     },
-
     # 社交関連（ネガティブ）
     {
         "action_description": "信頼していた仲間に裏切られた",
@@ -136,7 +131,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "uncommon",
         "importance_score": 0.65,
     },
-
     # 中立的な記録
     {
         "action_description": "市場で珍しい品物を見つけ、興味深く観察した",
@@ -159,7 +153,6 @@ FRAGMENT_TEMPLATES = [
         "rarity": "common",
         "importance_score": 0.3,
     },
-
     # 伝説的な出来事
     {
         "action_description": "古代の龍と対峙し、その知恵を授かった",
@@ -242,9 +235,7 @@ async def create_test_fragments():
 
         # 作成結果のサマリー
         for character in characters:
-            fragments = session.exec(
-                select(LogFragment).where(LogFragment.character_id == character.id)
-            ).all()
+            fragments = session.exec(select(LogFragment).where(LogFragment.character_id == character.id)).all()
 
             rarity_counts = {}
             valence_counts = {}

@@ -11,12 +11,8 @@ def test_database_connection(session: Session):
     """データベース接続のテスト"""
     # テスト用ユーザーを作成（IDを明示的に設定）
     import uuid
-    user = User(
-        id=str(uuid.uuid4()),
-        username="test_db_user",
-        email="testdb@example.com",
-        hashed_password="dummy_hash"
-    )
+
+    user = User(id=str(uuid.uuid4()), username="test_db_user", email="testdb@example.com", hashed_password="dummy_hash")
     session.add(user)
     session.commit()
 
@@ -34,22 +30,13 @@ def test_transaction_rollback(session: Session):
     """トランザクションのロールバックテスト"""
     # 最初のユーザーを作成
     import uuid
-    user1 = User(
-        id=str(uuid.uuid4()),
-        username="user1",
-        email="user1@example.com",
-        hashed_password="hash1"
-    )
+
+    user1 = User(id=str(uuid.uuid4()), username="user1", email="user1@example.com", hashed_password="hash1")
     session.add(user1)
     session.commit()
 
     # 同じテスト内で別のユーザーを作成（ロールバックされるはず）
-    user2 = User(
-        id=str(uuid.uuid4()),
-        username="user2",
-        email="user2@example.com",
-        hashed_password="hash2"
-    )
+    user2 = User(id=str(uuid.uuid4()), username="user2", email="user2@example.com", hashed_password="hash2")
     session.add(user2)
     # commitはフィクスチャのトランザクション内で実行される
 

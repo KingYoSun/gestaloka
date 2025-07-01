@@ -37,9 +37,7 @@ def test_engine():
         conn.execute(text("COMMIT"))
 
         # テストデータベースが存在するか確認
-        result = conn.execute(text(
-            "SELECT 1 FROM pg_database WHERE datname = 'gestaloka_test'"
-        ))
+        result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = 'gestaloka_test'"))
         db_exists = result.scalar() is not None
 
         if not db_exists:
@@ -59,9 +57,9 @@ def test_engine():
 
     # テーブルが存在するか確認
     with engine.connect() as conn:
-        result = conn.execute(text(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')"
-        ))
+        result = conn.execute(
+            text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')")
+        )
         tables_exist = result.scalar()
 
     if not tables_exist:
@@ -99,6 +97,7 @@ def session(test_engine) -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def client(session: Session) -> Generator[TestClient, None, None]:
     """テスト用FastAPIクライアント"""
+
     def get_session_override():
         return session
 
@@ -113,11 +112,7 @@ def client(session: Session) -> Generator[TestClient, None, None]:
 @pytest.fixture
 def test_user_data():
     """テスト用ユーザーデータ"""
-    return {
-        "username": "testuser",
-        "email": "test@example.com",
-        "password": "TestPassword123!"
-    }
+    return {"username": "testuser", "email": "test@example.com", "password": "TestPassword123!"}
 
 
 @pytest.fixture

@@ -125,9 +125,7 @@ class SPService:
             discount_rate = 0.0
             if player_sp.active_subscription and player_sp.subscription_expires_at:
                 if player_sp.subscription_expires_at > datetime.utcnow():
-                    discount_rate = self.SUBSCRIPTION_BENEFITS[
-                        player_sp.active_subscription
-                    ]["discount_rate"]
+                    discount_rate = self.SUBSCRIPTION_BENEFITS[player_sp.active_subscription]["discount_rate"]
 
             final_amount = int(amount * (1 - discount_rate))
 
@@ -140,9 +138,7 @@ class SPService:
                     current_sp=player_sp.current_sp,
                     action=description,
                 )
-                raise InsufficientSPError(
-                    f"SP残高が不足しています。必要: {final_amount}, 現在: {player_sp.current_sp}"
-                )
+                raise InsufficientSPError(f"SP残高が不足しています。必要: {final_amount}, 現在: {player_sp.current_sp}")
 
             # SPを消費
             balance_before = player_sp.current_sp
@@ -286,9 +282,7 @@ class SPService:
             subscription_bonus: int = 0
             if player_sp.active_subscription and player_sp.subscription_expires_at:
                 if player_sp.subscription_expires_at > now:
-                    subscription_bonus = int(self.SUBSCRIPTION_BENEFITS[
-                        player_sp.active_subscription
-                    ]["daily_bonus"])
+                    subscription_bonus = int(self.SUBSCRIPTION_BENEFITS[player_sp.active_subscription]["daily_bonus"])
 
             # 連続ログイン処理
             login_bonus = 0
@@ -392,13 +386,9 @@ class SPService:
             if end_date:
                 stmt = stmt.where(col(SPTransaction.created_at) <= end_date)
             if related_entity_type:
-                stmt = stmt.where(
-                    col(SPTransaction.related_entity_type) == related_entity_type
-                )
+                stmt = stmt.where(col(SPTransaction.related_entity_type) == related_entity_type)
             if related_entity_id:
-                stmt = stmt.where(
-                    col(SPTransaction.related_entity_id) == related_entity_id
-                )
+                stmt = stmt.where(col(SPTransaction.related_entity_id) == related_entity_id)
 
             # ソートとページネーション
             stmt = stmt.order_by(col(SPTransaction.created_at).desc())
@@ -437,9 +427,7 @@ class SPService:
             subscription_bonus: int = 0
             if player_sp.active_subscription and player_sp.subscription_expires_at:
                 if player_sp.subscription_expires_at > now:
-                    subscription_bonus = int(self.SUBSCRIPTION_BENEFITS[
-                        player_sp.active_subscription
-                    ]["daily_bonus"])
+                    subscription_bonus = int(self.SUBSCRIPTION_BENEFITS[player_sp.active_subscription]["daily_bonus"])
 
             # 連続ログイン処理
             login_bonus = 0

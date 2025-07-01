@@ -131,6 +131,7 @@ async def test_simulate_interaction_with_encounter(
 
     # 遭遇が発生するようにモック設定
     from app.models.log_dispatch import DispatchEncounter
+
     mock_encounter_obj = DispatchEncounter(
         id="encounter-1",
         dispatch_id="test-dispatch-interact",
@@ -362,9 +363,7 @@ async def test_trade_activity_simulation():
     with patch.object(
         simulator.dramatist,
         "process",
-        return_value=MagicMock(
-            narrative="巧みな交渉により大きな利益を得た。"
-        ),
+        return_value=MagicMock(narrative="巧みな交渉により大きな利益を得た。"),
     ):
         activity = await simulator.simulate_activity(
             mock_dispatch,
@@ -425,9 +424,7 @@ async def test_memory_preservation_activity():
     with patch.object(
         simulator.dramatist,
         "process",
-        return_value=MagicMock(
-            narrative="失われた記憶と深く共鳴した。"
-        ),
+        return_value=MagicMock(narrative="失われた記憶と深く共鳴した。"),
     ):
         activity = await simulator.simulate_activity(
             mock_dispatch,

@@ -450,9 +450,7 @@ async def get_purchase_stats(
 
 @router.post("/stripe/checkout", response_model=StripeCheckoutResponse)
 async def create_stripe_checkout(
-    request: StripeCheckoutRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    request: StripeCheckoutRequest, current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
 ) -> StripeCheckoutResponse:
     """
     Stripe チェックアウトセッションを作成
@@ -462,17 +460,11 @@ async def create_stripe_checkout(
     """
     # 本番モードチェック
     if settings.PAYMENT_MODE != "production":
-        raise HTTPException(
-            status_code=400,
-            detail="Stripe checkout is only available in production mode"
-        )
+        raise HTTPException(status_code=400, detail="Stripe checkout is only available in production mode")
 
     # Stripe設定チェック
     if not stripe_service.config.is_configured:
-        raise HTTPException(
-            status_code=500,
-            detail="Stripe is not configured. Please contact support."
-        )
+        raise HTTPException(status_code=500, detail="Stripe is not configured. Please contact support.")
 
     # プランの検証
     plans = SPPurchaseService.get_plans()
@@ -486,7 +478,7 @@ async def create_stripe_checkout(
             db=db,
             user_id=current_user.id,
             plan_id=request.plan_id,
-            test_reason=None  # 本番モードでは不要
+            test_reason=None,  # 本番モードでは不要
         )
 
         # Stripeチェックアウトセッションを作成
@@ -499,7 +491,7 @@ async def create_stripe_checkout(
                 "purchase_id": str(purchase.id),
                 "sp_amount": str(purchase.sp_amount),
                 "price_jpy": str(purchase.price_jpy),
-            }
+            },
         )
 
         # セッションIDを購入レコードに保存
@@ -508,14 +500,12 @@ async def create_stripe_checkout(
         db.commit()
 
         return StripeCheckoutResponse(
-            purchase_id=str(purchase.id),
-            checkout_url=checkout_data["url"],
-            session_id=checkout_data["session_id"]
+            purchase_id=str(purchase.id), checkout_url=checkout_data["url"], session_id=checkout_data["session_id"]
         )
 
     except Exception as e:
         # エラー時は購入申請を削除
-        if 'purchase' in locals():
+        if "purchase" in locals():
             db.delete(purchase)
             db.commit()
         raise HTTPException(status_code=500, detail=f"チェックアウトセッション作成中にエラーが発生しました: {e!s}")

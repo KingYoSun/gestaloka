@@ -36,9 +36,7 @@ def process_daily_sp_recovery() -> dict[str, Any]:
             error_count = 0
 
             # アクティブなユーザーを取得
-            stmt = select(User).where(
-                col(User.is_active).is_(True)
-            )
+            stmt = select(User).where(col(User.is_active).is_(True))
             users = db.exec(stmt).all()
 
             logger.info(f"Processing daily SP recovery for {len(users)} active users")
@@ -55,22 +53,14 @@ def process_daily_sp_recovery() -> dict[str, Any]:
                             user_id=user.id,
                             recovered_amount=result["recovered_amount"],
                             total_amount=result["total_amount"],
-                            consecutive_days=result["consecutive_days"]
+                            consecutive_days=result["consecutive_days"],
                         )
                     else:
-                        logger.debug(
-                            "Daily SP recovery skipped",
-                            user_id=user.id,
-                            reason=result["message"]
-                        )
+                        logger.debug("Daily SP recovery skipped", user_id=user.id, reason=result["message"])
 
                 except Exception as e:
                     error_count += 1
-                    logger.error(
-                        "Failed to process daily SP recovery for user",
-                        user_id=user.id,
-                        error=str(e)
-                    )
+                    logger.error("Failed to process daily SP recovery for user", user_id=user.id, error=str(e))
 
             # 結果をコミット
             db.commit()
@@ -79,21 +69,15 @@ def process_daily_sp_recovery() -> dict[str, Any]:
                 "total_users": len(users),
                 "processed": processed_count,
                 "errors": error_count,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
-            logger.info(
-                "Daily SP recovery batch completed",
-                **summary
-            )
+            logger.info("Daily SP recovery batch completed", **summary)
 
             return summary
 
         except Exception as e:
-            logger.error(
-                "Failed to process daily SP recovery batch",
-                error=str(e)
-            )
+            logger.error("Failed to process daily SP recovery batch", error=str(e))
             db.rollback()
             raise
 
@@ -113,10 +97,7 @@ def check_subscription_expiry() -> dict[str, Any]:
 
             # 期限切れのサブスクリプションを持つプレイヤーを取得
             stmt = select(PlayerSP).where(
-                and_(
-                    col(PlayerSP.active_subscription).is_not(None),
-                    col(PlayerSP.subscription_expires_at) <= now
-                )
+                and_(col(PlayerSP.active_subscription).is_not(None), col(PlayerSP.subscription_expires_at) <= now)
             )
             expired_players = db.exec(stmt).all()
 
@@ -128,31 +109,18 @@ def check_subscription_expiry() -> dict[str, Any]:
                 player_sp.updated_at = now
                 expired_count += 1
 
-                logger.info(
-                    "Subscription expired",
-                    user_id=player_sp.user_id,
-                    player_sp_id=player_sp.id
-                )
+                logger.info("Subscription expired", user_id=player_sp.user_id, player_sp_id=player_sp.id)
 
             db.commit()
 
-            summary = {
-                "expired": expired_count,
-                "timestamp": now.isoformat()
-            }
+            summary = {"expired": expired_count, "timestamp": now.isoformat()}
 
-            logger.info(
-                "Subscription expiry check completed",
-                **summary
-            )
+            logger.info("Subscription expiry check completed", **summary)
 
             return summary
 
         except Exception as e:
-            logger.error(
-                "Failed to check subscription expiry",
-                error=str(e)
-            )
+            logger.error("Failed to check subscription expiry", error=str(e))
             db.rollback()
             raise
 
@@ -177,19 +145,11 @@ def grant_login_bonus(user_id: str) -> dict[str, Any]:
 
             db.commit()
 
-            logger.info(
-                "Login bonus granted",
-                user_id=user_id,
-                result=result
-            )
+            logger.info("Login bonus granted", user_id=user_id, result=result)
 
             return result
 
         except Exception as e:
-            logger.error(
-                "Failed to grant login bonus",
-                user_id=user_id,
-                error=str(e)
-            )
+            logger.error("Failed to grant login bonus", user_id=user_id, error=str(e))
             db.rollback()
             raise

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.log import ActionLog, CompletedLog, LogContract, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.user import User
+    from app.models.exploration_progress import CharacterExplorationProgress
 
 
 class Character(SQLModel, table=True):
@@ -58,6 +59,9 @@ class Character(SQLModel, table=True):
 
     # アクションログ関連
     action_logs: list["ActionLog"] = Relationship(back_populates="character")
+
+    # 探索進捗関連
+    exploration_progress: list["CharacterExplorationProgress"] = Relationship(back_populates="character")
 
     def __repr__(self) -> str:
         return f"<Character(id={self.id}, name={self.name})>"

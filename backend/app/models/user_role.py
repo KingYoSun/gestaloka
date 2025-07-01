@@ -11,6 +11,7 @@ from sqlmodel import Field, SQLModel
 
 class RoleType(str, Enum):
     """ロールタイプ"""
+
     ADMIN = "admin"
     PLAYER = "player"
     MODERATOR = "moderator"
@@ -18,6 +19,7 @@ class RoleType(str, Enum):
 
 class UserRole(SQLModel, table=True):
     """ユーザーロール"""
+
     __tablename__ = "user_roles"
 
     id: Optional[str] = Field(default=None, primary_key=True, nullable=False, index=True)

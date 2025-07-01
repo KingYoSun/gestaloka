@@ -24,6 +24,7 @@ engine = create_engine(
     max_overflow=20,
 )
 
+
 # Celeryタスク用のセッションファクトリ
 def SessionLocal():  # noqa: N802
     return Session(engine)

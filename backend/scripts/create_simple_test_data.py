@@ -11,7 +11,7 @@ BASE_URL = "http://localhost:8000"
 # テスト用の認証情報
 TEST_USER = {
     "email": "test@example.com",
-    "password": "testpassword123"  # 8文字以上必須
+    "password": "testpassword123",  # 8文字以上必須
 }
 
 # テストキャラクターのデータ
@@ -28,13 +28,13 @@ TEST_CHARACTER = {
         "mana": 50,
         "max_mana": 50,
         "experience": 0,
-        "level": 1
+        "level": 1,
     },
     "skills": [
         {"name": "剣術", "level": 8, "description": "剣を使った戦闘技術"},
         {"name": "盾術", "level": 7, "description": "盾を使った防御技術"},
-        {"name": "応急手当", "level": 5, "description": "簡単な治療技術"}
-    ]
+        {"name": "応急手当", "level": 5, "description": "簡単な治療技術"},
+    ],
 }
 
 # ログフラグメントのテストデータ
@@ -43,31 +43,31 @@ TEST_FRAGMENTS = [
         "action_description": "荒野の獣との戦闘で巧みな戦術を用いて勝利した",
         "keywords": ["戦闘", "戦術", "勝利"],
         "emotional_valence": "positive",
-        "context_data": {"location": "荒野", "weather": "晴れ"}
+        "context_data": {"location": "荒野", "weather": "晴れ"},
     },
     {
         "action_description": "困っている旅人を助け、感謝の言葉を受けた",
         "keywords": ["善行", "助け", "感謝"],
         "emotional_valence": "positive",
-        "context_data": {"location": "街道", "weather": "曇り"}
+        "context_data": {"location": "街道", "weather": "曇り"},
     },
     {
         "action_description": "油断から敵の罠にかかり、重傷を負った",
         "keywords": ["失敗", "罠", "負傷"],
         "emotional_valence": "negative",
-        "context_data": {"location": "洞窟", "weather": "不明"}
+        "context_data": {"location": "洞窟", "weather": "不明"},
     },
     {
         "action_description": "古代の遺跡で貴重な遺物を発見した",
         "keywords": ["探索", "発見", "遺跡"],
         "emotional_valence": "positive",
-        "context_data": {"location": "遺跡", "weather": "霧"}
+        "context_data": {"location": "遺跡", "weather": "霧"},
     },
     {
         "action_description": "静かな夜に星空を眺めて過ごした",
         "keywords": ["休息", "平穏", "内省"],
         "emotional_valence": "neutral",
-        "context_data": {"location": "野営地", "weather": "晴れ"}
+        "context_data": {"location": "野営地", "weather": "晴れ"},
     },
 ]
 
@@ -82,8 +82,7 @@ async def main():
 
         # まずログインを試みる
         login_response = await session.post(
-            f"{BASE_URL}/api/v1/auth/login",
-            data={"username": TEST_USER["email"], "password": TEST_USER["password"]}
+            f"{BASE_URL}/api/v1/auth/login", data={"username": TEST_USER["email"], "password": TEST_USER["password"]}
         )
 
         if login_response.status == 200:
@@ -98,8 +97,8 @@ async def main():
                     "email": TEST_USER["email"],
                     "username": "testuser",
                     "password": TEST_USER["password"],
-                    "confirm_password": TEST_USER["password"]
-                }
+                    "confirm_password": TEST_USER["password"],
+                },
             )
 
             if register_response.status == 201 or register_response.status == 200:
@@ -107,7 +106,7 @@ async def main():
                 # 再度ログイン
                 login_response = await session.post(
                     f"{BASE_URL}/api/v1/auth/login",
-                    data={"username": TEST_USER["email"], "password": TEST_USER["password"]}
+                    data={"username": TEST_USER["email"], "password": TEST_USER["password"]},
                 )
                 auth_data = await login_response.json()
             else:
@@ -121,11 +120,7 @@ async def main():
 
         # 2. キャラクター作成
         print("\n2. キャラクター作成...")
-        char_response = await session.post(
-            f"{BASE_URL}/api/v1/characters",
-            json=TEST_CHARACTER,
-            headers=headers
-        )
+        char_response = await session.post(f"{BASE_URL}/api/v1/characters", json=TEST_CHARACTER, headers=headers)
 
         if char_response.status == 201 or char_response.status == 200:
             character_data = await char_response.json()
@@ -140,9 +135,7 @@ async def main():
         # 3. ゲームセッション作成
         print("\n3. ゲームセッション作成...")
         session_response = await session.post(
-            f"{BASE_URL}/api/v1/sessions",
-            json={"character_id": character_id},
-            headers=headers
+            f"{BASE_URL}/api/v1/sessions", json={"character_id": character_id}, headers=headers
         )
 
         if session_response.status == 201 or session_response.status == 200:
@@ -156,16 +149,10 @@ async def main():
         # 4. ログフラグメント作成
         print("\n4. ログフラグメント作成...")
         for i, fragment in enumerate(TEST_FRAGMENTS):
-            fragment_data = {
-                "character_id": character_id,
-                "session_id": session_id,
-                **fragment
-            }
+            fragment_data = {"character_id": character_id, "session_id": session_id, **fragment}
 
             fragment_response = await session.post(
-                f"{BASE_URL}/api/v1/logs/fragments",
-                json=fragment_data,
-                headers=headers
+                f"{BASE_URL}/api/v1/logs/fragments", json=fragment_data, headers=headers
             )
 
             if fragment_response.status == 201 or fragment_response.status == 200:

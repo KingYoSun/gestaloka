@@ -44,9 +44,7 @@ async def create_test_character_and_session():
             print(f"✅ テストユーザーを作成しました: {user.username}")
 
         # 既存のキャラクターをチェック
-        existing_chars = session.exec(
-            select(Character).where(Character.user_id == user.id)
-        ).all()
+        existing_chars = session.exec(select(Character).where(Character.user_id == user.id)).all()
 
         if existing_chars:
             print(f"既に{len(existing_chars)}個のキャラクターが存在します")
@@ -67,8 +65,8 @@ async def create_test_character_and_session():
                 "skills": [
                     {"name": "剣術", "level": 8, "description": "剣を使った戦闘技術"},
                     {"name": "盾術", "level": 7, "description": "盾を使った防御技術"},
-                    {"name": "応急手当", "level": 5, "description": "簡単な治療技術"}
-                ]
+                    {"name": "応急手当", "level": 5, "description": "簡単な治療技術"},
+                ],
             },
             {
                 "name": "シャドウ・ウィスパー",
@@ -78,8 +76,8 @@ async def create_test_character_and_session():
                 "skills": [
                     {"name": "隠密", "level": 9, "description": "音を立てずに行動する技術"},
                     {"name": "鍵開け", "level": 8, "description": "錠前を開ける技術"},
-                    {"name": "情報収集", "level": 7, "description": "情報を集める技術"}
-                ]
+                    {"name": "情報収集", "level": 7, "description": "情報を集める技術"},
+                ],
             },
             {
                 "name": "アルカディウス・セージ",
@@ -89,9 +87,9 @@ async def create_test_character_and_session():
                 "skills": [
                     {"name": "火炎魔法", "level": 9, "description": "火を操る魔法"},
                     {"name": "治癒魔法", "level": 7, "description": "傷を癒す魔法"},
-                    {"name": "古代言語", "level": 10, "description": "古代の文字を読む技術"}
-                ]
-            }
+                    {"name": "古代言語", "level": 10, "description": "古代の文字を読む技術"},
+                ],
+            },
         ]
 
         created_characters = []
@@ -100,14 +98,7 @@ async def create_test_character_and_session():
         for char_data in test_characters:
             # 初期ステータス
             initial_stats = CharacterStats(
-                health=100,
-                max_health=100,
-                stamina=100,
-                max_stamina=100,
-                mana=50,
-                max_mana=50,
-                experience=0,
-                level=1
+                health=100, max_health=100, stamina=100, max_stamina=100, mana=50, max_mana=50, experience=0, level=1
             )
 
             # スキル

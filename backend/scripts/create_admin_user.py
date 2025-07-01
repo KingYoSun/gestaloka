@@ -37,19 +37,12 @@ async def create_admin_user():
             print(f"Admin user '{admin_username}' already exists")
 
             # adminロールを持っているかチェック
-            stmt = select(UserRole).where(
-                UserRole.user_id == existing_user.id,
-                UserRole.role == RoleType.ADMIN
-            )
+            stmt = select(UserRole).where(UserRole.user_id == existing_user.id, UserRole.role == RoleType.ADMIN)
             admin_role = db.exec(stmt).first()
 
             if not admin_role:
                 # adminロールを付与
-                admin_role = UserRole(
-                    id=generate_uuid(),
-                    user_id=existing_user.id,
-                    role=RoleType.ADMIN
-                )
+                admin_role = UserRole(id=generate_uuid(), user_id=existing_user.id, role=RoleType.ADMIN)
                 db.add(admin_role)
                 db.commit()
                 print(f"Admin role granted to user '{admin_username}'")
@@ -57,21 +50,13 @@ async def create_admin_user():
                 print(f"User '{admin_username}' already has admin role")
         else:
             # 新規adminユーザーを作成
-            user_create = UserCreate(
-                username=admin_username,
-                email=admin_email,
-                password=admin_password
-            )
+            user_create = UserCreate(username=admin_username, email=admin_email, password=admin_password)
 
             # ユーザーを作成（デフォルトでplayerロールが付与される）
             new_user = await user_service.create(user_create)
 
             # adminロールを追加
-            admin_role = UserRole(
-                id=generate_uuid(),
-                user_id=new_user.id,
-                role=RoleType.ADMIN
-            )
+            admin_role = UserRole(id=generate_uuid(), user_id=new_user.id, role=RoleType.ADMIN)
             db.add(admin_role)
             db.commit()
 

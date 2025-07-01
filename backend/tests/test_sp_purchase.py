@@ -39,19 +39,13 @@ class TestSPPurchaseService:
         try:
             # テストユーザー作成
             test_user = User(
-                id="test-user-id",
-                username="testuser",
-                email="test@example.com",
-                hashed_password="dummy_hash"
+                id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash"
             )
             session.add(test_user)
             session.commit()
 
             purchase = SPPurchaseService.create_purchase(
-                db=session,
-                user_id=test_user.id,
-                plan_id="small",
-                test_reason="テスト購入のため"
+                db=session, user_id=test_user.id, plan_id="small", test_reason="テスト購入のため"
             )
 
             assert purchase.user_id == test_user.id
@@ -75,19 +69,13 @@ class TestSPPurchaseService:
         with pytest.raises(ValueError) as exc:
             # テストユーザー作成
             test_user = User(
-                id="test-user-id",
-                username="testuser",
-                email="test@example.com",
-                hashed_password="dummy_hash"
+                id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash"
             )
             session.add(test_user)
             session.commit()
 
             SPPurchaseService.create_purchase(
-                db=session,
-                user_id=test_user.id,
-                plan_id="invalid_plan",
-                test_reason="テスト"
+                db=session, user_id=test_user.id, plan_id="invalid_plan", test_reason="テスト"
             )
 
         assert "Invalid plan_id" in str(exc.value)
@@ -96,10 +84,7 @@ class TestSPPurchaseService:
         """無効なユーザーIDでの購入申請のテスト"""
         with pytest.raises(ValueError) as exc:
             SPPurchaseService.create_purchase(
-                db=session,
-                user_id="invalid_user_id",
-                plan_id="small",
-                test_reason="テスト"
+                db=session, user_id="invalid_user_id", plan_id="small", test_reason="テスト"
             )
 
         assert "User not found" in str(exc.value)
@@ -115,19 +100,13 @@ class TestSPPurchaseService:
         try:
             # テストユーザー作成
             test_user = User(
-                id="test-user-id",
-                username="testuser",
-                email="test@example.com",
-                hashed_password="dummy_hash"
+                id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash"
             )
             session.add(test_user)
             session.commit()
 
             purchase = SPPurchaseService.create_purchase(
-                db=session,
-                user_id=test_user.id,
-                plan_id="medium",
-                test_reason="承認テスト"
+                db=session, user_id=test_user.id, plan_id="medium", test_reason="承認テスト"
             )
 
             # 承認
@@ -135,9 +114,7 @@ class TestSPPurchaseService:
                 mock_add_sp.return_value = None
 
                 approved, event_type, error = SPPurchaseService.approve_test_purchase(
-                    db=session,
-                    purchase_id=purchase.id,
-                    system_approved=True
+                    db=session, purchase_id=purchase.id, system_approved=True
                 )
 
                 assert approved.status == PurchaseStatus.COMPLETED
@@ -153,12 +130,7 @@ class TestSPPurchaseService:
     def test_get_user_purchases(self, session: Session):
         """ユーザー購入履歴取得のテスト"""
         # テストユーザー作成
-        test_user = User(
-            id="test-user-id",
-            username="testuser",
-            email="test@example.com",
-            hashed_password="dummy_hash"
-        )
+        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
         session.add(test_user)
         session.commit()
 
@@ -170,25 +142,20 @@ class TestSPPurchaseService:
                 sp_amount=100,
                 price_jpy=500,
                 status=PurchaseStatus.COMPLETED if i == 0 else PurchaseStatus.PENDING,
-                payment_mode=PaymentMode.TEST
+                payment_mode=PaymentMode.TEST,
             )
             session.add(purchase)
 
         session.commit()
 
         # 全履歴取得
-        purchases = SPPurchaseService.get_user_purchases(
-            db=session,
-            user_id=test_user.id
-        )
+        purchases = SPPurchaseService.get_user_purchases(db=session, user_id=test_user.id)
 
         assert len(purchases) >= 3
 
         # ステータスフィルタ
         completed = SPPurchaseService.get_user_purchases(
-            db=session,
-            user_id=test_user.id,
-            status=PurchaseStatus.COMPLETED
+            db=session, user_id=test_user.id, status=PurchaseStatus.COMPLETED
         )
 
         assert len(completed) >= 1
@@ -198,12 +165,7 @@ class TestSPPurchaseService:
     def test_cancel_purchase(self, session: Session):
         """購入キャンセルのテスト"""
         # テストユーザー作成
-        test_user = User(
-            id="test-user-id",
-            username="testuser",
-            email="test@example.com",
-            hashed_password="dummy_hash"
-        )
+        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
         session.add(test_user)
         session.commit()
 
@@ -214,17 +176,13 @@ class TestSPPurchaseService:
             sp_amount=600,
             price_jpy=2000,
             status=PurchaseStatus.PENDING,
-            payment_mode=PaymentMode.TEST
+            payment_mode=PaymentMode.TEST,
         )
         session.add(purchase)
         session.commit()
 
         # キャンセル
-        cancelled = SPPurchaseService.cancel_purchase(
-            db=session,
-            purchase_id=purchase.id,
-            user_id=test_user.id
-        )
+        cancelled = SPPurchaseService.cancel_purchase(db=session, purchase_id=purchase.id, user_id=test_user.id)
 
         assert cancelled.status == PurchaseStatus.CANCELLED
         assert cancelled.updated_at > purchase.created_at
@@ -232,12 +190,7 @@ class TestSPPurchaseService:
     def test_cancel_completed_purchase_fails(self, session: Session):
         """完了済み購入のキャンセル失敗テスト"""
         # テストユーザー作成
-        test_user = User(
-            id="test-user-id",
-            username="testuser",
-            email="test@example.com",
-            hashed_password="dummy_hash"
-        )
+        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
         session.add(test_user)
         session.commit()
 
@@ -248,30 +201,21 @@ class TestSPPurchaseService:
             sp_amount=100,
             price_jpy=500,
             status=PurchaseStatus.COMPLETED,
-            payment_mode=PaymentMode.TEST
+            payment_mode=PaymentMode.TEST,
         )
         session.add(purchase)
         session.commit()
 
         # キャンセル試行
         with pytest.raises(ValueError) as exc:
-            SPPurchaseService.cancel_purchase(
-                db=session,
-                purchase_id=purchase.id,
-                user_id=test_user.id
-            )
+            SPPurchaseService.cancel_purchase(db=session, purchase_id=purchase.id, user_id=test_user.id)
 
         assert "Cannot cancel purchase with status" in str(exc.value)
 
     def test_get_purchase_stats(self, session: Session):
         """購入統計取得のテスト"""
         # テストユーザー作成
-        test_user = User(
-            id="test-user-id",
-            username="testuser",
-            email="test@example.com",
-            hashed_password="dummy_hash"
-        )
+        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
         session.add(test_user)
         session.commit()
 
@@ -283,7 +227,7 @@ class TestSPPurchaseService:
                 sp_amount=100,
                 price_jpy=500,
                 status=PurchaseStatus.COMPLETED,
-                payment_mode=PaymentMode.TEST
+                payment_mode=PaymentMode.TEST,
             ),
             SPPurchase(
                 user_id=test_user.id,
@@ -291,7 +235,7 @@ class TestSPPurchaseService:
                 sp_amount=250,
                 price_jpy=1000,
                 status=PurchaseStatus.COMPLETED,
-                payment_mode=PaymentMode.TEST
+                payment_mode=PaymentMode.TEST,
             ),
             SPPurchase(
                 user_id=test_user.id,
@@ -299,8 +243,8 @@ class TestSPPurchaseService:
                 sp_amount=600,
                 price_jpy=2000,
                 status=PurchaseStatus.PENDING,  # これは集計対象外
-                payment_mode=PaymentMode.TEST
-            )
+                payment_mode=PaymentMode.TEST,
+            ),
         ]
 
         for purchase in purchases:
@@ -309,10 +253,7 @@ class TestSPPurchaseService:
         session.commit()
 
         # 統計取得
-        stats = SPPurchaseService.get_purchase_stats(
-            db=session,
-            user_id=test_user.id
-        )
+        stats = SPPurchaseService.get_purchase_stats(db=session, user_id=test_user.id)
 
         assert stats["total_purchases"] >= 2
         assert stats["total_sp_purchased"] >= 350  # 100 + 250

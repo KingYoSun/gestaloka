@@ -31,9 +31,7 @@ class SPPurchaseService:
         return plans
 
     @staticmethod
-    def create_purchase(
-        db: Session, user_id: str, plan_id: str, test_reason: Optional[str] = None
-    ) -> SPPurchase:
+    def create_purchase(db: Session, user_id: str, plan_id: str, test_reason: Optional[str] = None) -> SPPurchase:
         """SP購入申請を作成"""
         # プランの存在確認
         if plan_id not in SP_PLANS:
@@ -68,7 +66,9 @@ class SPPurchaseService:
                 pass
             else:
                 # 即座に承認
-                purchase, event_type, error = SPPurchaseService.approve_test_purchase(db, purchase.id, system_approved=True)
+                purchase, event_type, error = SPPurchaseService.approve_test_purchase(
+                    db, purchase.id, system_approved=True
+                )
                 # Note: WebSocket events for auto-approval should be handled by the caller if needed
                 # Return the updated purchase object
                 return purchase
@@ -201,82 +201,75 @@ class SPPurchaseService:
 
     @staticmethod
     def approve_purchase_by_stripe(
-        db: Session,
-        purchase_id: str,
-        stripe_session_id: str,
-        payment_intent_id: Optional[str] = None
+        db: Session, purchase_id: str, stripe_session_id: str, payment_intent_id: Optional[str] = None
     ) -> Optional[SPPurchase]:
         """Stripe決済完了時に購入を承認"""
         try:
             purchase = db.get(SPPurchase, uuid.UUID(purchase_id))
-            
+
             if not purchase:
                 return None
-                
+
             if purchase.status != PurchaseStatus.PENDING:
                 # 既に処理済みの場合はスキップ
                 return purchase
-                
+
             # ステータスを更新
             purchase.status = PurchaseStatus.COMPLETED
             purchase.approved_at = datetime.utcnow()
             purchase.stripe_checkout_session_id = stripe_session_id
             if payment_intent_id:
                 purchase.stripe_payment_intent_id = payment_intent_id
-                
+
             # ボーナスSPを計算
             plan = SP_PLANS.get(purchase.plan_id)
             if not plan:
                 raise ValueError(f"Invalid plan_id: {purchase.plan_id}")
-                
+
             total_sp = plan.sp_amount + plan.bonus_sp
-            
+
             # SPを付与
             sp_service = SPService(db)
             sp_service.add_sp(
                 user_id=purchase.user_id,
                 amount=total_sp,
                 transaction_type=SPTransactionType.PURCHASE,
-                description=f"SP購入: {plan.name}"
+                description=f"SP購入: {plan.name}",
             )
-            
+
             db.add(purchase)
             db.commit()
             db.refresh(purchase)
-            
+
             return purchase
-            
+
         except Exception as e:
             db.rollback()
             raise e
 
     @staticmethod
-    def fail_purchase(
-        db: Session,
-        purchase_id: str,
-        reason: str
-    ) -> Optional[SPPurchase]:
+    def fail_purchase(db: Session, purchase_id: str, reason: str) -> Optional[SPPurchase]:
         """購入を失敗状態に更新"""
         try:
             purchase = db.get(SPPurchase, uuid.UUID(purchase_id))
-            
+
             if not purchase:
                 return None
-                
+
             if purchase.status not in [PurchaseStatus.PENDING, PurchaseStatus.PROCESSING]:
                 # 既に確定している場合はスキップ
                 return purchase
-                
+
             # ステータスを更新
             purchase.status = PurchaseStatus.FAILED
             purchase.updated_at = datetime.utcnow()
-            
+
             db.add(purchase)
             db.commit()
             db.refresh(purchase)
-            
+
             return purchase
-            
+
         except Exception as e:
             db.rollback()
             raise e

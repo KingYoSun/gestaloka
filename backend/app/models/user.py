@@ -30,10 +30,7 @@ class User(SQLModel, table=True):
 
     # リレーション
     characters: list["Character"] = Relationship(back_populates="user")
-    player_sp: Optional["PlayerSP"] = Relationship(
-        back_populates="user",
-        sa_relationship_kwargs={"uselist": False}
-    )
+    player_sp: Optional["PlayerSP"] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
     sp_transactions: list["SPTransaction"] = Relationship(back_populates="user")
     sp_purchases: list["SPPurchase"] = Relationship(back_populates="user")
 

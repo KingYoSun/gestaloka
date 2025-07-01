@@ -98,15 +98,9 @@ class SPConsumeRequest(BaseModel):
     amount: int = Field(gt=0, description="消費するSP量")
     transaction_type: SPTransactionType = Field(description="取引の種類")
     description: str = Field(description="取引の説明")
-    related_entity_type: Optional[str] = Field(
-        default=None, description="関連エンティティの種類"
-    )
-    related_entity_id: Optional[str] = Field(
-        default=None, description="関連エンティティのID"
-    )
-    metadata: dict = Field(
-        default_factory=dict, description="追加のメタデータ"
-    )
+    related_entity_type: Optional[str] = Field(default=None, description="関連エンティティの種類")
+    related_entity_id: Optional[str] = Field(default=None, description="関連エンティティのID")
+    metadata: dict = Field(default_factory=dict, description="追加のメタデータ")
 
 
 class SPConsumeResponse(BaseModel):

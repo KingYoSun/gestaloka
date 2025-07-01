@@ -120,9 +120,9 @@ class DispatchSimulator:
     ) -> ActivityContext:
         """活動コンテキストを構築"""
         # 経過時間の計算
-        elapsed_hours = int(
-            (datetime.utcnow() - dispatch.dispatched_at).total_seconds() / 3600
-        ) if dispatch.dispatched_at else 0
+        elapsed_hours = (
+            int((datetime.utcnow() - dispatch.dispatched_at).total_seconds() / 3600) if dispatch.dispatched_at else 0
+        )
 
         # 遭遇可能性の計算（時間経過と目的による）
         base_encounter_rate = 0.3
@@ -189,11 +189,7 @@ class DispatchSimulator:
             timestamp=datetime.utcnow(),
             location=context.current_location,
             action="周辺地域の詳細な調査",
-            result=(
-                f"{discovered_location}を発見した"
-                if discovered_location
-                else "既知の地域の詳細な地図を作成した"
-            ),
+            result=(f"{discovered_location}を発見した" if discovered_location else "既知の地域の詳細な地図を作成した"),
             narrative=response.narrative or "探索は続く...",
             success_level=0.8 if discovered_location else 0.5,
             discovered_location=discovered_location,
@@ -237,9 +233,7 @@ class DispatchSimulator:
                         {
                             "target": encounter.encountered_npc_name,
                             "change": encounter.relationship_change,
-                            "new_status": self._determine_relationship_status(
-                                encounter.relationship_change
-                            ),
+                            "new_status": self._determine_relationship_status(encounter.relationship_change),
                         }
                     ],
                 )
@@ -274,11 +268,7 @@ class DispatchSimulator:
             timestamp=datetime.utcnow(),
             location=context.current_location,
             action="貴重な資源の探索",
-            result=(
-                f"{collected_item['name']}を発見した"
-                if collected_item
-                else "有用なものは見つからなかった"
-            ),
+            result=(f"{collected_item['name']}を発見した" if collected_item else "有用なものは見つからなかった"),
             narrative=await self._generate_collection_narrative(
                 context,
                 collected_item,
@@ -545,28 +535,34 @@ class DispatchSimulator:
 
         # 性格による追加活動
         if "慈悲深い" in personality or "親切" in personality:
-            base_activities.append({
-                "action": "困っている人々への援助",
-                "result": "感謝の言葉を受けた",
-                "default_narrative": "小さな親切が、誰かの一日を明るくした。",
-                "experience": {"kindness": 20, "social": 10},
-            })
+            base_activities.append(
+                {
+                    "action": "困っている人々への援助",
+                    "result": "感謝の言葉を受けた",
+                    "default_narrative": "小さな親切が、誰かの一日を明るくした。",
+                    "experience": {"kindness": 20, "social": 10},
+                }
+            )
 
         if "学究的" in personality or "知的" in personality:
-            base_activities.append({
-                "action": "古文書の解読と研究",
-                "result": "新たな知識を得た",
-                "default_narrative": "知識の探求は、終わりなき旅である。",
-                "experience": {"research": 15, "wisdom": 15},
-            })
+            base_activities.append(
+                {
+                    "action": "古文書の解読と研究",
+                    "result": "新たな知識を得た",
+                    "default_narrative": "知識の探求は、終わりなき旅である。",
+                    "experience": {"research": 15, "wisdom": 15},
+                }
+            )
 
         if "冒険好き" in personality:
-            base_activities.append({
-                "action": "危険な場所への挑戦",
-                "result": "スリルを味わった",
-                "default_narrative": "危険と隣り合わせの瞬間こそ、生きている実感。",
-                "experience": {"courage": 20, "exploration": 15},
-            })
+            base_activities.append(
+                {
+                    "action": "危険な場所への挑戦",
+                    "result": "スリルを味わった",
+                    "default_narrative": "危険と隣り合わせの瞬間こそ、生きている実感。",
+                    "experience": {"courage": 20, "exploration": 15},
+                }
+            )
 
         return base_activities
 
@@ -834,10 +830,12 @@ class DispatchSimulator:
 
         # 汚染度による特殊アイテム
         if context.completed_log.contamination_level > 0.7:
-            default_items.extend([
-                {"name": "歪んだ記憶の欠片", "rarity": "rare", "value": 200},
-                {"name": "汚染された宝石", "rarity": "uncommon", "value": 80},
-            ])
+            default_items.extend(
+                [
+                    {"name": "歪んだ記憶の欠片", "rarity": "rare", "value": 200},
+                    {"name": "汚染された宝石", "rarity": "uncommon", "value": 80},
+                ]
+            )
 
         # アイテム選択
         location_key = None

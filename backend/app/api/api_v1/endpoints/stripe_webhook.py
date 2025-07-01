@@ -16,13 +16,10 @@ router = APIRouter()
 
 
 @router.post("/stripe/webhook")
-async def stripe_webhook(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Stripe Webhookエンドポイント
-    
+
     Stripeからの支払い完了通知を受け取り、SP購入を処理します
     """
     # Stripeが設定されているかチェック
@@ -33,7 +30,7 @@ async def stripe_webhook(
     # リクエストボディとヘッダーを取得
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
-    
+
     if not sig_header:
         logger.error("Missing stripe-signature header")
         raise HTTPException(status_code=400, detail="Missing stripe-signature header")
@@ -66,11 +63,11 @@ async def stripe_webhook(
 async def handle_checkout_completed(session: dict, db: Session):
     """チェックアウト完了時の処理"""
     logger.info(f"Processing checkout.session.completed: {session['id']}")
-    
+
     # メタデータから購入情報を取得
     metadata = session.get("metadata", {})
     purchase_id = metadata.get("purchase_id")
-    
+
     if not purchase_id:
         logger.error("No purchase_id in checkout session metadata")
         return
@@ -81,9 +78,9 @@ async def handle_checkout_completed(session: dict, db: Session):
             db=db,
             purchase_id=purchase_id,
             stripe_session_id=session["id"],
-            payment_intent_id=session.get("payment_intent")
+            payment_intent_id=session.get("payment_intent"),
         )
-        
+
         if purchase:
             # WebSocketイベント送信
             await emit_sp_purchase_event(
@@ -96,7 +93,7 @@ async def handle_checkout_completed(session: dict, db: Session):
             logger.info(f"Purchase {purchase_id} approved via Stripe webhook")
         else:
             logger.error(f"Failed to approve purchase {purchase_id}")
-            
+
     except Exception as e:
         logger.error(f"Error processing checkout completed: {str(e)}")
 
@@ -110,20 +107,16 @@ async def handle_payment_succeeded(payment_intent: dict, db: Session):
 async def handle_payment_failed(payment_intent: dict, db: Session):
     """支払い失敗時の処理"""
     logger.info(f"Processing payment_intent.payment_failed: {payment_intent['id']}")
-    
+
     # メタデータから購入情報を取得
     metadata = payment_intent.get("metadata", {})
     purchase_id = metadata.get("purchase_id")
-    
+
     if purchase_id:
         try:
             # 購入を失敗状態に更新
-            purchase = SPPurchaseService.fail_purchase(
-                db=db,
-                purchase_id=purchase_id,
-                reason="Payment failed"
-            )
-            
+            purchase = SPPurchaseService.fail_purchase(db=db, purchase_id=purchase_id, reason="Payment failed")
+
             if purchase:
                 # WebSocketイベント送信
                 await emit_sp_purchase_event(
@@ -134,6 +127,6 @@ async def handle_payment_failed(payment_intent: dict, db: Session):
                     sp_amount=purchase.sp_amount,
                 )
                 logger.info(f"Purchase {purchase_id} marked as failed")
-                
+
         except Exception as e:
             logger.error(f"Error processing payment failed: {str(e)}")

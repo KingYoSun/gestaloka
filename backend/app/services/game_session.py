@@ -82,11 +82,8 @@ class GameSessionService:
     async def create_session(self, character: Character, session_data: GameSessionCreate) -> GameSessionResponse:
         """新しいゲームセッションを作成"""
         try:
-
             # 既存のアクティブなセッションを非アクティブ化
-            stmt = select(GameSession).where(
-                GameSession.character_id == character.id, GameSession.is_active is True
-            )
+            stmt = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active is True)
             existing_sessions = self.db.exec(stmt).all()
 
             for session in existing_sessions:
@@ -179,9 +176,7 @@ class GameSessionService:
         """ゲームセッションレスポンスを生成"""
         try:
             # キャラクター情報を取得
-            character = self.db.exec(
-                select(Character).where(Character.id == session.character_id)
-            ).first()
+            character = self.db.exec(select(Character).where(Character.id == session.character_id)).first()
             if not character:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
             session_data = json.loads(session.session_data) if session.session_data else None
@@ -210,9 +205,7 @@ class GameSessionService:
         """ゲームセッションを更新"""
         try:
             # キャラクター情報を取得
-            character = self.db.exec(
-                select(Character).where(Character.id == session.character_id)
-            ).first()
+            character = self.db.exec(select(Character).where(Character.id == session.character_id)).first()
             if not character:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
@@ -256,9 +249,7 @@ class GameSessionService:
         """ゲームセッションを終了"""
         try:
             # キャラクター情報を取得
-            character = self.db.exec(
-                select(Character).where(Character.id == session.character_id)
-            ).first()
+            character = self.db.exec(select(Character).where(Character.id == session.character_id)).first()
             if not character:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
@@ -318,15 +309,11 @@ class GameSessionService:
             character.location, f"{character.name}は{character.location}にいます。新たな物語が始まります。"
         )
 
-    async def execute_action(
-        self, session: GameSession, action_request: ActionExecuteRequest
-    ) -> ActionExecuteResponse:
+    async def execute_action(self, session: GameSession, action_request: ActionExecuteRequest) -> ActionExecuteResponse:
         """プレイヤーのアクションを実行しAIレスポンスを生成"""
         try:
             # キャラクター情報を取得
-            character = self.db.exec(
-                select(Character).where(Character.id == session.character_id)
-            ).first()
+            character = self.db.exec(select(Character).where(Character.id == session.character_id)).first()
             if not character:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="キャラクターが見つかりません")
 
@@ -373,15 +360,12 @@ class GameSessionService:
                         "action_type": action_request.action_type,
                         "action_text": action_request.action_text[:100],  # 最初の100文字のみ保存
                         "session_id": session.id,
-                        "character_id": character.id
-                    }
+                        "character_id": character.id,
+                    },
                 )
             except Exception as sp_error:
                 logger.warning(f"SP consumption failed: {sp_error}", user_id=character.user_id)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"SP不足です。必要SP: {sp_cost}"
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"SP不足です。必要SP: {sp_cost}")
 
             # セッションデータの取得
             session_data = json.loads(session.session_data) if session.session_data else {}
@@ -811,13 +795,14 @@ class GameSessionService:
         from app.models.log import CompletedLog
         from app.models.log_dispatch import DispatchStatus, LogDispatch
 
-        stmt = select(LogDispatch, CompletedLog).join(
-            CompletedLog,
-            col(LogDispatch.completed_log_id) == col(CompletedLog.id)
-        ).where(
-            and_(
-                col(LogDispatch.status) == DispatchStatus.DISPATCHED,
-                col(LogDispatch.current_location) == character.location
+        stmt = (
+            select(LogDispatch, CompletedLog)
+            .join(CompletedLog, col(LogDispatch.completed_log_id) == col(CompletedLog.id))
+            .where(
+                and_(
+                    col(LogDispatch.status) == DispatchStatus.DISPATCHED,
+                    col(LogDispatch.current_location) == character.location,
+                )
             )
         )
 

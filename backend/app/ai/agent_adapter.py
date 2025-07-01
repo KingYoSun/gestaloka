@@ -22,9 +22,9 @@ class CoordinationAgentAdapter:
         try:
             agent_type = AIAgentType(self.name.upper())
             model_type = AGENT_MODEL_MAPPING.get(agent_type)
-            self.model_type = model_type.value if model_type else 'unknown'
+            self.model_type = model_type.value if model_type else "unknown"
         except ValueError:
-            self.model_type = 'unknown'
+            self.model_type = "unknown"
 
     async def process(self, context: dict[str, Any], shared_context: SharedContext) -> AIResponse:
         """

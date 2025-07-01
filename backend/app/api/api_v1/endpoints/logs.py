@@ -100,7 +100,9 @@ async def get_character_fragments(
 
     # フラグメント取得
     fragment_stmt = (
-        select(LogFragment).where(LogFragment.character_id == character_id).order_by(desc(cast(Any, LogFragment.created_at)))
+        select(LogFragment)
+        .where(LogFragment.character_id == character_id)
+        .order_by(desc(cast(Any, LogFragment.created_at)))
     )
     result = db.exec(fragment_stmt)
     fragments = result.all()
@@ -159,11 +161,7 @@ async def create_completed_log(
 
     # 汚染度の計算
     all_fragments = [core_fragment, *sub_fragments]
-    negative_count = sum(
-        1
-        for f in all_fragments
-        if f.emotional_valence == EmotionalValence.NEGATIVE
-    )
+    negative_count = sum(1 for f in all_fragments if f.emotional_valence == EmotionalValence.NEGATIVE)
     total_count = len(all_fragments)
     contamination_level = negative_count / total_count if total_count > 0 else 0.0
 
@@ -265,7 +263,9 @@ async def get_character_completed_logs(
 
     # 完成ログ取得
     log_stmt = (
-        select(CompletedLog).where(CompletedLog.creator_id == character_id).order_by(desc(cast(Any, CompletedLog.created_at)))
+        select(CompletedLog)
+        .where(CompletedLog.creator_id == character_id)
+        .order_by(desc(cast(Any, CompletedLog.created_at)))
     )
     result = db.exec(log_stmt)
     logs = result.all()

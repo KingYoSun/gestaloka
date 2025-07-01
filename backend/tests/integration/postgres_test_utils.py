@@ -35,12 +35,14 @@ def cleanup_all_postgres_data(engine):
             conn.execute(text("SET session_replication_role = 'replica';"))
 
             # 全テーブルのデータを削除（システムテーブルを除く）
-            result = conn.execute(text("""
+            result = conn.execute(
+                text("""
                 SELECT tablename
                 FROM pg_tables
                 WHERE schemaname = 'public'
                 AND tablename NOT LIKE 'alembic%'
-            """))
+            """)
+            )
 
             tables = result.fetchall()
             for table in tables:
@@ -64,11 +66,13 @@ def recreate_schema(engine):
     try:
         with engine.begin() as conn:  # begin()を使用して自動的にコミット/ロールバック
             # 全テーブルを削除（CASCADE で依存関係も含めて削除）
-            result = conn.execute(text("""
+            result = conn.execute(
+                text("""
                 SELECT tablename
                 FROM pg_tables
                 WHERE schemaname = 'public'
-            """))
+            """)
+            )
 
             tables = result.fetchall()
             for table in tables:
@@ -78,7 +82,7 @@ def recreate_schema(engine):
                     print(f"Warning: Could not drop table {table[0]}: {e}")
 
             # ENUMタイプを削除
-            enum_types = ['emotionalvalence', 'logfragmentrarity', 'completedlogstatus', 'logcontractstatus']
+            enum_types = ["emotionalvalence", "logfragmentrarity", "completedlogstatus", "logcontractstatus"]
             for enum_type in enum_types:
                 try:
                     conn.execute(text(f"DROP TYPE IF EXISTS {enum_type} CASCADE"))
@@ -87,40 +91,48 @@ def recreate_schema(engine):
 
             # ENUMタイプを事前に作成
             # EmotionalValence ENUM
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 DO $$ BEGIN
                     CREATE TYPE emotionalvalence AS ENUM ('POSITIVE', 'NEGATIVE', 'NEUTRAL');
                 EXCEPTION
                     WHEN duplicate_object THEN null;
                 END $$;
-            """))
+            """)
+            )
 
             # LogFragmentRarity ENUM
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 DO $$ BEGIN
                     CREATE TYPE logfragmentrarity AS ENUM ('COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY');
                 EXCEPTION
                     WHEN duplicate_object THEN null;
                 END $$;
-            """))
+            """)
+            )
 
             # CompletedLogStatus ENUM
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 DO $$ BEGIN
                     CREATE TYPE completedlogstatus AS ENUM ('DRAFT', 'COMPLETED', 'CONTRACTED', 'ACTIVE', 'EXPIRED', 'RECALLED');
                 EXCEPTION
                     WHEN duplicate_object THEN null;
                 END $$;
-            """))
+            """)
+            )
 
             # LogContractStatus ENUM
-            conn.execute(text("""
+            conn.execute(
+                text("""
                 DO $$ BEGIN
                     CREATE TYPE logcontractstatus AS ENUM ('PENDING', 'ACCEPTED', 'ACTIVE', 'DEPLOYED', 'COMPLETED', 'EXPIRED', 'CANCELLED');
                 EXCEPTION
                     WHEN duplicate_object THEN null;
                 END $$;
-            """))
+            """)
+            )
 
             conn.commit()
     except Exception as e:
@@ -208,12 +220,14 @@ class PostgresTestStats:
     def capture_initial(self):
         """初期状態を記録"""
         with self.engine.connect() as conn:
-            result = conn.execute(text("""
+            result = conn.execute(
+                text("""
                 SELECT tablename
                 FROM pg_tables
                 WHERE schemaname = 'public'
                 AND tablename NOT LIKE 'alembic%'
-            """))
+            """)
+            )
 
             tables = result.fetchall()
             for table in tables:
@@ -223,12 +237,14 @@ class PostgresTestStats:
     def capture_final(self):
         """最終状態を記録"""
         with self.engine.connect() as conn:
-            result = conn.execute(text("""
+            result = conn.execute(
+                text("""
                 SELECT tablename
                 FROM pg_tables
                 WHERE schemaname = 'public'
                 AND tablename NOT LIKE 'alembic%'
-            """))
+            """)
+            )
 
             tables = result.fetchall()
             for table in tables:
@@ -244,11 +260,7 @@ class PostgresTestStats:
             initial = self.initial_counts.get(table, 0)
             final = self.final_counts.get(table, 0)
             if initial != final:
-                diff[table] = {
-                    "initial": initial,
-                    "final": final,
-                    "added": final - initial
-                }
+                diff[table] = {"initial": initial, "final": final, "added": final - initial}
 
         return diff
 

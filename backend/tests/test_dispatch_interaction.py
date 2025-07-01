@@ -130,10 +130,7 @@ async def test_should_interact_same_location():
         # should_interact = manager._should_interact(dispatch_1, dispatch_2)
 
         # 交流型同士は80%の確率なので、複数回実行して確認
-        interactions = [
-            manager._should_interact(dispatch_1, dispatch_2)
-            for _ in range(100)
-        ]
+        interactions = [manager._should_interact(dispatch_1, dispatch_2) for _ in range(100)]
         interaction_rate = sum(interactions) / len(interactions)
 
         assert 0.7 < interaction_rate < 0.9  # 約80%
@@ -220,9 +217,7 @@ async def test_process_interaction_success(
     with patch.object(
         manager.dramatist,
         "process",
-        return_value=MagicMock(
-            narrative="二人の冒険者は意気投合し、情報を交換した。"
-        ),
+        return_value=MagicMock(narrative="二人の冒険者は意気投合し、情報を交換した。"),
     ):
         interaction = await manager._process_interaction(
             mock_dispatch_1,
@@ -459,4 +454,3 @@ def test_interaction_impact_application():
     assert dispatch.collected_items[0]["item"] == "地図"
     assert "knowledge_gained" in impact
     assert "alliance_formed" in impact
-

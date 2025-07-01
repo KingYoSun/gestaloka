@@ -1,6 +1,5 @@
 """SP購入プラン定義"""
 
-
 from pydantic import BaseModel
 
 

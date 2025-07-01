@@ -349,10 +349,7 @@ def generate_dispatch_report(dispatch_id: str) -> dict[str, Any]:
 
         if dispatch.objective_type == DispatchObjectiveType.TRADE:
             economic_details = generate_economic_details(dispatch)
-        elif dispatch.objective_type in [
-            DispatchObjectiveType.MEMORY_PRESERVE,
-            DispatchObjectiveType.RESEARCH
-        ]:
+        elif dispatch.objective_type in [DispatchObjectiveType.MEMORY_PRESERVE, DispatchObjectiveType.RESEARCH]:
             special_achievements = generate_special_achievements(dispatch)
 
         # 報告書を生成
@@ -389,35 +386,43 @@ def extract_memorable_moments(dispatch: LogDispatch, encounters: list[DispatchEn
 
     # 最初の発見
     if dispatch.discovered_locations:
-        moments.append({
-            "type": "discovery",
-            "description": f"Discovered {dispatch.discovered_locations[0]}",
-            "impact": "high",
-        })
+        moments.append(
+            {
+                "type": "discovery",
+                "description": f"Discovered {dispatch.discovered_locations[0]}",
+                "impact": "high",
+            }
+        )
 
     # 重要な遭遇
     for encounter in encounters:
         if encounter.relationship_change > 0.7:
-            moments.append({
-                "type": "encounter",
-                "description": f"Formed a strong bond with {encounter.encountered_npc_name}",
-                "impact": "high",
-            })
+            moments.append(
+                {
+                    "type": "encounter",
+                    "description": f"Formed a strong bond with {encounter.encountered_npc_name}",
+                    "impact": "high",
+                }
+            )
         elif encounter.relationship_change < -0.5:
-            moments.append({
-                "type": "conflict",
-                "description": f"Had a serious conflict with {encounter.encountered_npc_name}",
-                "impact": "medium",
-            })
+            moments.append(
+                {
+                    "type": "conflict",
+                    "description": f"Had a serious conflict with {encounter.encountered_npc_name}",
+                    "impact": "medium",
+                }
+            )
 
     # レアアイテムの発見
     for item in dispatch.collected_items:
         if item.get("rarity") == "rare":
-            moments.append({
-                "type": "treasure",
-                "description": f"Found rare item: {item['name']}",
-                "impact": "high",
-            })
+            moments.append(
+                {
+                    "type": "treasure",
+                    "description": f"Found rare item: {item['name']}",
+                    "impact": "high",
+                }
+            )
 
     return moments[:5]  # 最大5つまで
 
@@ -601,7 +606,7 @@ def generate_economic_details(dispatch: LogDispatch) -> dict:
         "market_insights": [
             "High demand for healing items in the lower levels",
             "Rare materials fetch premium prices in corporate districts",
-        ]
+        ],
     }
 
     return details
@@ -716,9 +721,7 @@ def check_dispatch_interactions() -> dict[str, Any]:
         interaction_manager = DispatchInteractionManager()
 
         # 相互作用をチェックして処理（非同期関数を同期的に実行）
-        interactions = asyncio.run(
-            interaction_manager.check_and_process_interactions(db)
-        )
+        interactions = asyncio.run(interaction_manager.check_and_process_interactions(db))
 
         # 結果をまとめる
         result = {

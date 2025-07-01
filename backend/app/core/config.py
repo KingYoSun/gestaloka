@@ -103,7 +103,6 @@ class Settings(BaseSettings):
     TEST_MODE_APPROVAL_DELAY: int = Field(default=0, validation_alias="TEST_MODE_APPROVAL_DELAY")  # 秒
     SP_PRICE_MULTIPLIER: float = Field(default=1.0, validation_alias="SP_PRICE_MULTIPLIER")  # 価格調整係数
 
-
     # AI設定
     AI_RESPONSE_TIMEOUT: int = Field(default=30, validation_alias="AI_RESPONSE_TIMEOUT")  # 秒
     MAX_AI_RETRIES: int = Field(default=3, validation_alias="MAX_AI_RETRIES")

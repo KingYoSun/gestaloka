@@ -630,7 +630,9 @@ class NPCManagerAgent(BaseAgent):
                 traits=encounter.get("personality_traits", []),
                 motivations=[f"{encounter['objective_type']}を遂行する"],
                 fears=["目的の失敗", "汚染の進行"],
-                speech_pattern=encounter.get("behavior_patterns", ["標準的"])[0] if encounter.get("behavior_patterns") else "標準的",
+                speech_pattern=encounter.get("behavior_patterns", ["標準的"])[0]
+                if encounter.get("behavior_patterns")
+                else "標準的",
                 alignment="中立",
             ),
             background="他のプレイヤーから派遣されたログ",

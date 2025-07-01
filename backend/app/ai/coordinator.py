@@ -159,9 +159,9 @@ class CoordinatorAI:
             for agent_name, times in self.task_execution_times.items():
                 if times:
                     agent_stats[agent_name] = {
-                        'avg_time': sum(times) / len(times),
-                        'total_calls': len(times),
-                        'total_time': sum(times)
+                        "avg_time": sum(times) / len(times),
+                        "total_calls": len(times),
+                        "total_time": sum(times),
                     }
 
             logger.info(
@@ -347,7 +347,7 @@ class CoordinatorAI:
                 agent_name=agent.name,
                 task_id=task_id,
                 processing_time=response.processing_time,
-                model_type=getattr(agent, 'model_type', 'unknown'),
+                model_type=getattr(agent, "model_type", "unknown"),
             )
 
             # 実行時間を記録
@@ -534,7 +534,12 @@ class CoordinatorAI:
                             self.shared_context.context.session_id,
                             npc_data,
                             encounter_type=response.metadata.get("encounter_type", "log_npc"),
-                            choices=[{"id": c.id, "text": c.text, "description": getattr(c, "description", None)} for c in choices] if choices else [],
+                            choices=[
+                                {"id": c.id, "text": c.text, "description": getattr(c, "description", None)}
+                                for c in choices
+                            ]
+                            if choices
+                            else [],
                         )
 
                     # イベントとしても記録

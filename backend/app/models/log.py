@@ -251,9 +251,7 @@ class ActionLog(SQLModel, table=True):
 
     # パフォーマンスデータ
     performance_data: Optional[dict[str, Any]] = Field(
-        default=None,
-        sa_column=Column(JSON),
-        description="パフォーマンスメトリクス（実行時間、エージェント情報等）"
+        default=None, sa_column=Column(JSON), description="パフォーマンスメトリクス（実行時間、エージェント情報等）"
     )
 
     # タイムスタンプ

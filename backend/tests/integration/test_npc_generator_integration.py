@@ -52,7 +52,7 @@ def setup_test_neo4j():
 
         # 元の設定に戻す
         neo_config.DATABASE_URL = original_url
-        if hasattr(neo_db, '_driver') and neo_db._driver:
+        if hasattr(neo_db, "_driver") and neo_db._driver:
             neo_db._driver.close()
             neo_db._driver = None
 
@@ -131,7 +131,9 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         return game_session
 
     @pytest.fixture
-    def test_log_fragment(self, test_db_session: Session, test_character: Character, test_session_obj: GameSession) -> LogFragment:
+    def test_log_fragment(
+        self, test_db_session: Session, test_character: Character, test_session_obj: GameSession
+    ) -> LogFragment:
         """テスト用ログフラグメント"""
         from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
 
@@ -152,7 +154,9 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
         return fragment
 
     @pytest.fixture
-    def completed_log(self, test_db_session: Session, test_character: Character, test_log_fragment: LogFragment) -> CompletedLog:
+    def completed_log(
+        self, test_db_session: Session, test_character: Character, test_log_fragment: LogFragment
+    ) -> CompletedLog:
         """テスト用完成ログ"""
         log = CompletedLog(
             id=str(uuid.uuid4()),
@@ -205,7 +209,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
                 neo_config.DATABASE_URL = test_url
 
                 # 既存の接続をクリア
-                if hasattr(neo_db, '_driver') and neo_db._driver:
+                if hasattr(neo_db, "_driver") and neo_db._driver:
                     neo_db._driver.close()
                     neo_db._driver = None
 
@@ -217,7 +221,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             finally:
                 # 元の設定に戻す
                 neo_config.DATABASE_URL = original_url
-                if hasattr(neo_db, '_driver') and neo_db._driver:
+                if hasattr(neo_db, "_driver") and neo_db._driver:
                     neo_db._driver.close()
                     neo_db._driver = None
 
@@ -411,9 +415,9 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
 
             # 結果を確認
             # DEPLOYEDステータスの契約が2つあるはず
-            deployed_contracts = test_db_session.query(LogContract).filter(
-                LogContract.status == LogContractStatus.DEPLOYED
-            ).all()
+            deployed_contracts = (
+                test_db_session.query(LogContract).filter(LogContract.status == LogContractStatus.DEPLOYED).all()
+            )
             assert len(deployed_contracts) == 2
 
             # NPCが実際に生成されているか確認
@@ -424,7 +428,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
             assert "契約NPC2" in npc_names
 
             # PENDINGの契約は処理されていないことを確認
-            pending_contracts = test_db_session.query(LogContract).filter(
-                LogContract.status == LogContractStatus.PENDING
-            ).all()
+            pending_contracts = (
+                test_db_session.query(LogContract).filter(LogContract.status == LogContractStatus.PENDING).all()
+            )
             assert len(pending_contracts) == 1

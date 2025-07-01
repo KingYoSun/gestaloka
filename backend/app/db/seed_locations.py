@@ -1,6 +1,7 @@
 """
 場所の初期データを設定するスクリプト
 """
+
 from sqlmodel import Session, select
 
 from app.core.database import engine
@@ -30,7 +31,7 @@ def seed_locations():
             has_guild=True,
             fragment_discovery_rate=5,
             is_starting_location=True,
-            is_discovered=True
+            is_discovered=True,
         )
         session.add(nexus)
 
@@ -47,7 +48,7 @@ def seed_locations():
             has_shop=True,
             has_guild=False,
             fragment_discovery_rate=10,
-            is_discovered=True
+            is_discovered=True,
         )
         session.add(market_district)
 
@@ -64,7 +65,7 @@ def seed_locations():
             has_shop=False,
             has_guild=False,
             fragment_discovery_rate=15,
-            is_discovered=True
+            is_discovered=True,
         )
         session.add(outer_ward)
 
@@ -81,7 +82,7 @@ def seed_locations():
             has_shop=False,
             has_guild=False,
             fragment_discovery_rate=25,
-            is_discovered=False
+            is_discovered=False,
         )
         session.add(forgotten_woods)
 
@@ -98,7 +99,7 @@ def seed_locations():
             has_shop=False,
             has_guild=False,
             fragment_discovery_rate=40,
-            is_discovered=False
+            is_discovered=False,
         )
         session.add(ancient_ruins)
 
@@ -115,41 +116,34 @@ def seed_locations():
             has_shop=False,
             has_guild=True,
             fragment_discovery_rate=20,
-            is_discovered=False
+            is_discovered=False,
         )
         session.add(elevator_entrance)
 
         session.commit()
 
         # 場所間の接続を作成
-        locations = {
-            loc.name: loc for loc in session.exec(select(Location)).all()
-        }
+        locations = {loc.name: loc for loc in session.exec(select(Location)).all()}
 
         connections = [
             # Nexusから各地へ
             ("Nexus", "Market District", 0, 1),
             ("Nexus", "Outer Ward", 0, 1),
             ("Nexus", "Elevator Tower Entrance", 5, 1),
-
             # Market Districtから
             ("Market District", "Nexus", 0, 1),
             ("Market District", "Outer Ward", 0, 1),
-
             # Outer Wardから
             ("Outer Ward", "Nexus", 0, 1),
             ("Outer Ward", "Market District", 0, 1),
             ("Outer Ward", "Forgotten Woods", 5, 2),
             ("Outer Ward", "Ancient Ruins", 10, 3),
-
             # Forgotten Woodsから
             ("Forgotten Woods", "Outer Ward", 3, 2),
             ("Forgotten Woods", "Ancient Ruins", 8, 2),
-
             # Ancient Ruinsから
             ("Ancient Ruins", "Outer Ward", 8, 3),
             ("Ancient Ruins", "Forgotten Woods", 10, 2),
-
             # Elevator Tower Entranceから
             ("Elevator Tower Entrance", "Nexus", 3, 1),
         ]
@@ -166,7 +160,7 @@ def seed_locations():
                 min_level_required=1,
                 is_one_way=False,
                 is_blocked=False,
-                travel_description=f"Travel from {from_name} to {to_name}"
+                travel_description=f"Travel from {from_name} to {to_name}",
             )
             session.add(connection)
 
@@ -177,25 +171,38 @@ def seed_locations():
             # Nexus
             (locations["Nexus"].id, "Central Plaza", "The heart of Nexus, always crowded with people.", 1, 0, 1, 5, 0),
             (locations["Nexus"].id, "Guild Archives", "Ancient records and forgotten tales.", 2, 5, 2, 10, 5),
-
             # Market District
-            (locations["Market District"].id, "Merchant Stalls", "Countless shops with hidden treasures.", 1, 3, 1, 8, 10),
+            (
+                locations["Market District"].id,
+                "Merchant Stalls",
+                "Countless shops with hidden treasures.",
+                1,
+                3,
+                1,
+                8,
+                10,
+            ),
             (locations["Market District"].id, "Black Market", "Where forbidden memories are traded.", 3, 10, 2, 15, 20),
-
             # Outer Ward
             (locations["Outer Ward"].id, "Abandoned Houses", "Empty homes with lingering memories.", 2, 5, 2, 12, 15),
             (locations["Outer Ward"].id, "Old Cemetery", "Where the forgotten rest.", 3, 8, 3, 20, 25),
-
             # Forgotten Woods
             (locations["Forgotten Woods"].id, "Memory Grove", "Trees that whisper of the past.", 4, 10, 3, 25, 30),
             (locations["Forgotten Woods"].id, "Lost Path", "A trail that leads to forgotten places.", 5, 15, 2, 30, 40),
-
             # Ancient Ruins
             (locations["Ancient Ruins"].id, "Hall of Echoes", "Where past and present blur.", 6, 20, 3, 35, 50),
             (locations["Ancient Ruins"].id, "Sealed Chamber", "A vault of ancient memories.", 8, 30, 4, 50, 60),
-
             # Elevator Tower Entrance
-            (locations["Elevator Tower Entrance"].id, "Waiting Hall", "Where travelers prepare for ascension.", 2, 5, 1, 10, 10),
+            (
+                locations["Elevator Tower Entrance"].id,
+                "Waiting Hall",
+                "Where travelers prepare for ascension.",
+                2,
+                5,
+                1,
+                10,
+                10,
+            ),
         ]
 
         for loc_id, name, desc, diff, sp_cost, max_frag, rare_chance, enc_rate in exploration_areas:
@@ -207,7 +214,7 @@ def seed_locations():
                 exploration_sp_cost=sp_cost,
                 max_fragments_per_exploration=max_frag,
                 rare_fragment_chance=rare_chance,
-                encounter_rate=enc_rate
+                encounter_rate=enc_rate,
             )
             session.add(area)
 

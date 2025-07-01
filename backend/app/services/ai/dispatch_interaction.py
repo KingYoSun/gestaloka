@@ -108,9 +108,7 @@ class DispatchInteractionManager:
 
     def _get_active_dispatches(self, db: Session) -> list[LogDispatch]:
         """活動中の派遣を取得"""
-        stmt = select(LogDispatch).where(
-            LogDispatch.status == DispatchStatus.DISPATCHED
-        )
+        stmt = select(LogDispatch).where(LogDispatch.status == DispatchStatus.DISPATCHED)
         result = db.exec(stmt)
         return list(result.all())
 
@@ -325,9 +323,7 @@ class DispatchInteractionManager:
             return "inspection"
 
         # 汚染度による影響
-        high_contamination = (
-            log_1.contamination_level > 0.7 or log_2.contamination_level > 0.7
-        )
+        high_contamination = log_1.contamination_level > 0.7 or log_2.contamination_level > 0.7
         if high_contamination:
             return random.choice(["mysterious_encounter", "conflict", "alliance"])
 

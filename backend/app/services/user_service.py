@@ -115,11 +115,7 @@ class UserService(LoggerMixin):
             self.db.refresh(user_model)
 
             # デフォルトのplayerロールを付与
-            default_role = UserRole(
-                id=generate_uuid(),
-                user_id=user_model.id,
-                role=RoleType.PLAYER
-            )
+            default_role = UserRole(id=generate_uuid(), user_id=user_model.id, role=RoleType.PLAYER)
             self.db.add(default_role)
             self.db.commit()
 

@@ -3,8 +3,6 @@
 """
 
 
-
-
 def validate_password(password: str, field_name: str = "password") -> str:
     """
     パスワードの共通バリデーション

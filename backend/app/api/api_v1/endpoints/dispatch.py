@@ -33,9 +33,7 @@ from app.schemas.user import User
 router = APIRouter()
 
 
-async def check_sp_balance(
-    user_id: str, required_sp: int, db: Session
-) -> PlayerSP:
+async def check_sp_balance(user_id: str, required_sp: int, db: Session) -> PlayerSP:
     """
     SPの残高を確認し、十分なSPがあるかチェック
     """

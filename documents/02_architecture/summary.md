@@ -54,8 +54,13 @@
 ### frontend/
 - **[componentArchitecture.md](frontend/componentArchitecture.md)**: フロントエンドコンポーネントアーキテクチャとDRY原則
 
+### features/
+- **[minimap_design.md](features/minimap_design.md)**: ミニマップ機能の設計書（UI/UX、実装フェーズ）
+- **[minimap_technical_spec.md](features/minimap_technical_spec.md)**: ミニマップ機能の技術仕様（API、DB、Canvas実装）
+
 ## クイックリファレンス
 
 - 新機能設計時：`design_doc.md`でシステム全体像を確認
 - 実装パターン：`systemPatterns.md`で確立されたパターンを参照
 - AI実装時：`api/gemini_api_specification.md`でAPI仕様を確認
+- 機能設計時：`features/`内の該当設計書を参照

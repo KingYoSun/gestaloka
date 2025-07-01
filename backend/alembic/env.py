@@ -25,7 +25,9 @@ from app.models.location import (  # noqa
     ExplorationLog,
     Location,
     LocationConnection,
+    PathType,
 )
+from app.models.exploration_progress import CharacterExplorationProgress  # noqa
 from app.models.log import (  # noqa
     ActionLog,
     CompletedLog,

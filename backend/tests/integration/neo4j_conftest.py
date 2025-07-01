@@ -22,10 +22,7 @@ from tests.integration.neo4j_test_utils import (
 def neo4j_test_config():
     """Neo4jテスト設定"""
     return {
-        "url": os.getenv(
-            "NEO4J_TEST_URL",
-            "bolt://neo4j:test_password@neo4j-test:7687"
-        ),
+        "url": os.getenv("NEO4J_TEST_URL", "bolt://neo4j:test_password@neo4j-test:7687"),
         "username": os.getenv("NEO4J_TEST_USERNAME", "neo4j"),
         "password": os.getenv("NEO4J_TEST_PASSWORD", "test_password"),
     }
@@ -73,9 +70,7 @@ def neo4j_test_session(cleanup_before: bool = True, cleanup_after: bool = True):
 # pytest設定
 def pytest_configure(config):
     """pytest設定のカスタマイズ"""
-    config.addinivalue_line(
-        "markers", "neo4j: mark test as requiring Neo4j database"
-    )
+    config.addinivalue_line("markers", "neo4j: mark test as requiring Neo4j database")
 
 
 @pytest.fixture(autouse=True)

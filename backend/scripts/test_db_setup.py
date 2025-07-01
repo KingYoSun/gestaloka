@@ -34,11 +34,13 @@ def setup_test_database():
     with engine.connect() as conn:
         # 既存の接続を切断
         conn.execute(text("COMMIT"))
-        conn.execute(text("""
+        conn.execute(
+            text("""
             SELECT pg_terminate_backend(pid)
             FROM pg_stat_activity
             WHERE datname = 'gestaloka_test' AND pid <> pg_backend_pid()
-        """))
+        """)
+        )
         conn.execute(text("COMMIT"))
 
         # データベースを削除して再作成
