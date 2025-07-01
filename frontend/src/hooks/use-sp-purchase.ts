@@ -76,3 +76,12 @@ export const useSPPurchaseStats = () => {
     queryFn: spPurchaseApi.getPurchaseStats,
   })
 }
+
+export const useCreateStripeCheckout = () => {
+  return useMutation({
+    mutationFn: spPurchaseApi.createStripeCheckout,
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Stripeチェックアウトの作成に失敗しました')
+    },
+  })
+}

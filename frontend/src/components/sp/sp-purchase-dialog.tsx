@@ -11,9 +11,10 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { useCreatePurchase } from '@/hooks/use-sp-purchase'
+import { useCreatePurchase, useCreateStripeCheckout } from '@/hooks/use-sp-purchase'
 import type { SPPlan } from '@/api/sp-purchase'
 import { Loader2 } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
 
 interface SPPurchaseDialogProps {
   plan: SPPlan | null
@@ -24,7 +25,11 @@ interface SPPurchaseDialogProps {
 
 export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: SPPurchaseDialogProps) {
   const [testReason, setTestReason] = useState('')
-  const { mutate: createPurchase, isPending } = useCreatePurchase()
+  const { mutate: createPurchase, isPending: isTestPending } = useCreatePurchase()
+  const { mutate: createStripeCheckout, isPending: isStripePending } = useCreateStripeCheckout()
+  const { toast } = useToast()
+  
+  const isPending = isTestPending || isStripePending
 
   if (!plan) return null
 
@@ -38,22 +43,48 @@ export function SPPurchaseDialog({ plan, isOpen, onClose, isTestMode = false }: 
   }
 
   const handlePurchase = () => {
-    if (isTestMode && testReason.length < 10) {
-      return
-    }
-
-    createPurchase(
-      {
-        plan_id: plan.id,
-        test_reason: isTestMode ? testReason : undefined,
-      },
-      {
-        onSuccess: () => {
-          onClose()
-          setTestReason('')
-        },
+    if (isTestMode) {
+      if (testReason.length < 10) {
+        return
       }
-    )
+      
+      createPurchase(
+        {
+          plan_id: plan.id,
+          test_reason: testReason,
+        },
+        {
+          onSuccess: () => {
+            onClose()
+            setTestReason('')
+            toast({
+              title: '購入申請を受け付けました',
+              description: 'SPが付与されました。',
+            })
+          },
+        }
+      )
+    } else {
+      // 本番モード: Stripeチェックアウトへリダイレクト
+      createStripeCheckout(
+        {
+          plan_id: plan.id,
+        },
+        {
+          onSuccess: (response) => {
+            // Stripeチェックアウトページへリダイレクト
+            window.location.href = response.checkout_url
+          },
+          onError: (error) => {
+            toast({
+              title: 'エラー',
+              description: 'チェックアウトセッションの作成に失敗しました。',
+              variant: 'destructive',
+            })
+          },
+        }
+      )
+    }
   }
 
   return (

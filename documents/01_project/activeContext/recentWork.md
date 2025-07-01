@@ -1,5 +1,47 @@
 # 最近の作業履歴
 
+## 2025/07/01 - SP購入システムのStripe統合
+
+### 実施内容
+- Stripe SDK統合によるリアル決済機能の実装
+- テストモードと本番モードの切り替え機能
+- セキュアなWebhook処理システム
+- 決済フローのUI/UX改善
+
+### 技術的詳細
+1. **バックエンド実装**
+   - `app/core/stripe_config.py`: Stripe設定管理クラス
+   - チェックアウトセッション作成API (`/api/v1/sp/stripe/checkout`)
+   - Webhook受信エンドポイント (`/api/v1/stripe/webhook`)
+   - 署名検証によるセキュリティ確保
+   - 環境変数による設定管理
+
+2. **フロントエンド実装**
+   - 購入ダイアログの改善（テスト/本番モード対応）
+   - Stripeチェックアウトへのリダイレクト処理
+   - 決済成功ページ (`/sp/success`)
+   - 決済キャンセルページ (`/sp/cancel`)
+   - `useCreateStripeCheckout`カスタムフック
+
+3. **セキュリティ対策**
+   - Webhook署名検証の実装
+   - 環境変数での機密情報管理（`.env.example`作成）
+   - 本番モードチェックによる誤動作防止
+   - 適切なエラーハンドリング
+
+### 実装結果
+- **統合完了**: Stripe決済システムの完全統合
+- **柔軟性**: 環境変数による簡単なモード切り替え
+- **セキュリティ**: 業界標準のセキュリティ実装
+- **ドキュメント**: 詳細な統合ガイド作成
+
+### 関連ファイル
+- `backend/app/core/stripe_config.py`（新規）
+- `backend/app/api/api_v1/endpoints/stripe_webhook.py`（新規）
+- `frontend/src/routes/sp/success.tsx`（新規）
+- `frontend/src/routes/sp/cancel.tsx`（新規）
+- `documents/05_implementation/stripe_integration_guide.md`（新規）
+
 ## 2025/06/30 - コード品質の全面改善（テスト・型・リント）
 
 ### 実施内容

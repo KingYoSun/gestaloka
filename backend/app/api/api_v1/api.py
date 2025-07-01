@@ -14,6 +14,7 @@ from app.api.api_v1.endpoints import (
     logs,
     npcs,
     sp,
+    stripe_webhook,
     users,
     websocket,
 )
@@ -34,3 +35,6 @@ api_router.include_router(sp.router, prefix="/sp", tags=["sp"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
 api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(config.router, prefix="/config", tags=["config"])
+
+# Stripe Webhookは認証不要なので別途追加
+api_router.include_router(stripe_webhook.router, tags=["stripe"])

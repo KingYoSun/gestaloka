@@ -32,9 +32,13 @@ from app.schemas.sp_purchase import (
     SPPurchaseDetail,
     SPPurchaseList,
     SPPurchaseStats,
+    StripeCheckoutRequest,
+    StripeCheckoutResponse,
 )
 from app.services.sp_purchase_service import SPPurchaseService
 from app.services.sp_service import SPService
+from app.core.stripe_config import stripe_service
+from app.websocket.events import emit_sp_purchase_event
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -442,3 +446,76 @@ async def get_purchase_stats(
     stats = SPPurchaseService.get_purchase_stats(db=db, user_id=current_user.id)
 
     return SPPurchaseStats(**stats)
+
+
+@router.post("/stripe/checkout", response_model=StripeCheckoutResponse)
+async def create_stripe_checkout(
+    request: StripeCheckoutRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> StripeCheckoutResponse:
+    """
+    Stripe チェックアウトセッションを作成
+
+    - 本番モードでのみ利用可能
+    - 成功時にはStripeのチェックアウトページへリダイレクトするURLが返されます
+    """
+    # 本番モードチェック
+    if settings.PAYMENT_MODE != "production":
+        raise HTTPException(
+            status_code=400,
+            detail="Stripe checkout is only available in production mode"
+        )
+
+    # Stripe設定チェック
+    if not stripe_service.config.is_configured:
+        raise HTTPException(
+            status_code=500,
+            detail="Stripe is not configured. Please contact support."
+        )
+
+    # プランの検証
+    plans = SPPurchaseService.get_plans()
+    plan = next((p for p in plans if p.id == request.plan_id), None)
+    if not plan:
+        raise HTTPException(status_code=400, detail="Invalid plan ID")
+
+    try:
+        # 購入申請を作成（PENDING状態）
+        purchase = SPPurchaseService.create_purchase(
+            db=db,
+            user_id=current_user.id,
+            plan_id=request.plan_id,
+            test_reason=None  # 本番モードでは不要
+        )
+
+        # Stripeチェックアウトセッションを作成
+        checkout_data = await stripe_service.create_checkout_session(
+            plan_id=request.plan_id,
+            user_id=current_user.id,
+            success_url=f"{settings.STRIPE_SUCCESS_URL}?purchase_id={purchase.id}",
+            cancel_url=f"{settings.STRIPE_CANCEL_URL}?purchase_id={purchase.id}",
+            metadata={
+                "purchase_id": str(purchase.id),
+                "sp_amount": str(purchase.sp_amount),
+                "price_jpy": str(purchase.price_jpy),
+            }
+        )
+
+        # セッションIDを購入レコードに保存
+        purchase.stripe_checkout_session_id = checkout_data["session_id"]
+        db.add(purchase)
+        db.commit()
+
+        return StripeCheckoutResponse(
+            purchase_id=str(purchase.id),
+            checkout_url=checkout_data["url"],
+            session_id=checkout_data["session_id"]
+        )
+
+    except Exception as e:
+        # エラー時は購入申請を削除
+        if 'purchase' in locals():
+            db.delete(purchase)
+            db.commit()
+        raise HTTPException(status_code=500, detail=f"チェックアウトセッション作成中にエラーが発生しました: {e!s}")

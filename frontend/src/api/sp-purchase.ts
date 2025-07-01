@@ -71,6 +71,16 @@ export interface SPPurchaseStats {
   total_spent_jpy: number
 }
 
+export interface StripeCheckoutRequest {
+  plan_id: string
+}
+
+export interface StripeCheckoutResponse {
+  purchase_id: string
+  checkout_url: string
+  session_id: string
+}
+
 // API関数
 export const spPurchaseApi = {
   // プラン一覧取得
@@ -105,5 +115,10 @@ export const spPurchaseApi = {
   // 購入統計取得
   getPurchaseStats: async (): Promise<SPPurchaseStats> => {
     return await apiClient.get<SPPurchaseStats>('/api/v1/sp/purchase-stats')
+  },
+
+  // Stripeチェックアウトセッション作成
+  createStripeCheckout: async (request: StripeCheckoutRequest): Promise<StripeCheckoutResponse> => {
+    return await apiClient.post<StripeCheckoutResponse>('/api/v1/sp/stripe/checkout', request)
   },
 }

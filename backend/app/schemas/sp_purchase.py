@@ -66,3 +66,17 @@ class SPPurchaseStats(BaseModel):
     total_purchases: int = Field(..., description="総購入回数")
     total_sp_purchased: int = Field(..., description="総購入SP")
     total_spent_jpy: int = Field(..., description="総支払額（円）")
+
+
+class StripeCheckoutRequest(BaseModel):
+    """Stripeチェックアウトリクエスト"""
+
+    plan_id: str = Field(..., description="購入するプランID")
+
+
+class StripeCheckoutResponse(BaseModel):
+    """Stripeチェックアウトレスポンス"""
+
+    purchase_id: str = Field(..., description="購入申請ID")
+    checkout_url: str = Field(..., description="StripeチェックアウトページへのリダイレクトURL")
+    session_id: str = Field(..., description="StripeチェックアウトセッションID")

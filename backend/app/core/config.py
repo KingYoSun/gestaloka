@@ -103,10 +103,6 @@ class Settings(BaseSettings):
     TEST_MODE_APPROVAL_DELAY: int = Field(default=0, validation_alias="TEST_MODE_APPROVAL_DELAY")  # 秒
     SP_PRICE_MULTIPLIER: float = Field(default=1.0, validation_alias="SP_PRICE_MULTIPLIER")  # 価格調整係数
 
-    # Stripe設定（将来実装用）
-    STRIPE_PUBLIC_KEY: str = Field(default="", validation_alias="STRIPE_PUBLIC_KEY")
-    STRIPE_SECRET_KEY: str = Field(default="", validation_alias="STRIPE_SECRET_KEY")
-    STRIPE_WEBHOOK_SECRET: str = Field(default="", validation_alias="STRIPE_WEBHOOK_SECRET")
 
     # AI設定
     AI_RESPONSE_TIMEOUT: int = Field(default=30, validation_alias="AI_RESPONSE_TIMEOUT")  # 秒
@@ -130,6 +126,16 @@ class Settings(BaseSettings):
 
     # 開発設定
     RELOAD_ON_CHANGE: bool = Field(default=True, validation_alias="RELOAD_ON_CHANGE")
+
+    # Stripe設定
+    STRIPE_API_KEY: str = Field(default="", validation_alias="STRIPE_API_KEY")
+    STRIPE_WEBHOOK_SECRET: str = Field(default="", validation_alias="STRIPE_WEBHOOK_SECRET")
+    STRIPE_PRICE_ID_SMALL: str = Field(default="", validation_alias="STRIPE_PRICE_ID_SMALL")
+    STRIPE_PRICE_ID_MEDIUM: str = Field(default="", validation_alias="STRIPE_PRICE_ID_MEDIUM")
+    STRIPE_PRICE_ID_LARGE: str = Field(default="", validation_alias="STRIPE_PRICE_ID_LARGE")
+    STRIPE_PRICE_ID_XLARGE: str = Field(default="", validation_alias="STRIPE_PRICE_ID_XLARGE")
+    STRIPE_SUCCESS_URL: str = Field(default="http://localhost:3000/sp/success", validation_alias="STRIPE_SUCCESS_URL")
+    STRIPE_CANCEL_URL: str = Field(default="http://localhost:3000/sp/cancel", validation_alias="STRIPE_CANCEL_URL")
 
     class Config:
         env_file = ".env"

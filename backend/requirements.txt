@@ -75,3 +75,6 @@ pydantic-extra-types==2.10.5
 
 # バリデーション
 email-validator==2.2.0
+
+# 決済処理
+stripe==11.3.0

@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/06/30
+## 最終更新: 2025/07/01
 
 ## 稼働中のサービス（localhost） - 2025/06/29時点（ヘルスチェック完全修正）
 🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ（healthy）  
@@ -46,6 +46,7 @@
 - ✅ SP購入システムの実装（テストモード、環境変数制御、WebSocket統合）
 - ✅ ログNPC遭遇システムのフロントエンド改善（UI/UX向上、アニメーション）
 - ✅ 管理者用画面とパフォーマンス測定機能（管理者認証、リアルタイム監視）
+- ✅ SP購入システムのStripe統合（テスト/本番モード切り替え、Webhook対応）
 
 ## 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -96,7 +97,18 @@
 - WebSocket (Socket.IO)
 - Celery（Worker/Beat/Flower）
 
-## 最近の変更（2025/06/30）
+## 最近の変更（2025/07/01）
+- SP購入システムのStripe統合実装
+  - Stripe SDK統合とAPIエンドポイント実装
+  - チェックアウトセッション作成機能（/api/v1/sp/stripe/checkout）
+  - Webhook受信エンドポイント（/api/v1/stripe/webhook）
+  - フロントエンド決済フロー改善（テスト/本番モード切り替え）
+  - 決済成功・キャンセルページの実装（/sp/success、/sp/cancel）
+  - セキュリティ対策（Webhook署名検証、環境変数管理）
+  - Stripe統合ガイドドキュメント作成
+  - 詳細は`documents/01_project/progressReports/2025-07-01_SP購入システムStripe統合.md`参照
+
+### 2025/06/30の変更
 - 管理者用画面とAIパフォーマンス測定機能の実装
   - 管理者専用APIエンドポイント（/api/v1/admin/performance/）
   - ロールベースアクセス制御（RBAC）の実装
