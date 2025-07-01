@@ -77,6 +77,8 @@ export const LocationIcon: React.FC<LocationIconProps> = ({
 export class IconRenderer {
   private iconCache: Map<string, HTMLImageElement> = new Map()
   private loadingPromises: Map<string, Promise<HTMLImageElement>> = new Map()
+  private maxCacheSize = 50
+  private cacheAccessOrder: string[] = []
 
   /**
    * SVGアイコンをCanvasに描画可能な画像として取得
@@ -90,6 +92,8 @@ export class IconRenderer {
     
     // キャッシュチェック
     if (this.iconCache.has(cacheKey)) {
+      // LRU: アクセス順を更新
+      this.updateCacheAccess(cacheKey)
       return this.iconCache.get(cacheKey)!
     }
 
@@ -104,7 +108,7 @@ export class IconRenderer {
 
     try {
       const img = await loadPromise
-      this.iconCache.set(cacheKey, img)
+      this.addToCache(cacheKey, img)
       this.loadingPromises.delete(cacheKey)
       return img
     } catch (error) {
@@ -199,11 +203,41 @@ export class IconRenderer {
   }
 
   /**
+   * LRUキャッシュにアイテムを追加
+   */
+  private addToCache(key: string, img: HTMLImageElement): void {
+    // キャッシュサイズ制限チェック
+    if (this.iconCache.size >= this.maxCacheSize && !this.iconCache.has(key)) {
+      // 最も古いアイテムを削除
+      const oldestKey = this.cacheAccessOrder[0]
+      if (oldestKey) {
+        this.iconCache.delete(oldestKey)
+        this.cacheAccessOrder.shift()
+      }
+    }
+    
+    this.iconCache.set(key, img)
+    this.updateCacheAccess(key)
+  }
+  
+  /**
+   * キャッシュアクセス順を更新
+   */
+  private updateCacheAccess(key: string): void {
+    const index = this.cacheAccessOrder.indexOf(key)
+    if (index > -1) {
+      this.cacheAccessOrder.splice(index, 1)
+    }
+    this.cacheAccessOrder.push(key)
+  }
+  
+  /**
    * キャッシュをクリア
    */
   clearCache(): void {
     this.iconCache.clear()
     this.loadingPromises.clear()
+    this.cacheAccessOrder = []
   }
 }
 

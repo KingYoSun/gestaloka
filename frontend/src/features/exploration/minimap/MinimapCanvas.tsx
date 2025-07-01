@@ -13,6 +13,7 @@ import {
   drawTrailAnimation,
 } from './utils/animations'
 import { iconRenderer } from './components/LocationIcons'
+import { performanceMonitor } from './utils/performanceMonitor'
 import type {
   MapLocation,
   MapConnection,
@@ -21,6 +22,7 @@ import type {
   CurrentLocation,
   LocationHistory,
   MinimapTheme,
+  LocationType,
 } from './types'
 
 interface MinimapCanvasProps {
@@ -84,6 +86,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   const [hoveredLocation, setHoveredLocation] = useState<MapLocation | null>(null)
   const [selectedLocation, setSelectedLocation] = useState<MapLocation | null>(null)
   const [discoveredLocations, setDiscoveredLocations] = useState<Set<string>>(new Set())
+  const [iconCache, setIconCache] = useState<Map<string, HTMLImageElement>>(new Map())
   
   // 霧効果レンダラー
   const fogRenderer = useMemo(
@@ -93,6 +96,41 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   
   // アニメーションマネージャー
   const animationManager = useMemo(() => new AnimationManager(), [])
+  
+  // アイコンのプリロード
+  useEffect(() => {
+    if (!layerData) return
+
+    const preloadIcons = async () => {
+      const uniqueTypes = new Set<LocationType>()
+      layerData.locations.forEach(loc => {
+        if (loc.is_discovered) {
+          uniqueTypes.add(loc.type)
+        }
+      })
+
+      const newCache = new Map<string, HTMLImageElement>()
+      
+      await Promise.all(
+        Array.from(uniqueTypes).map(async (type) => {
+          try {
+            const img = await iconRenderer.getIconImage(
+              type,
+              24, // デフォルトサイズ
+              theme.location[type]
+            )
+            newCache.set(type, img)
+          } catch (error) {
+            console.warn(`Failed to preload icon for type ${type}:`, error)
+          }
+        })
+      )
+      
+      setIconCache(newCache)
+    }
+
+    preloadIcons()
+  }, [layerData, theme])
 
   // マウス位置から場所を検出
   const getLocationAtPoint = useCallback(
@@ -123,7 +161,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
   )
 
   // 描画メインループ
-  const draw = useCallback(async () => {
+  const draw = useCallback(() => {
+    const endFrame = performanceMonitor.startFrame()
+    
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -180,7 +220,8 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     for (const location of layerData.locations) {
       const isHovered = hoveredLocation?.id === location.id
       const isSelected = selectedLocation?.id === location.id
-      await drawLocation(ctx, location, viewport, theme, showLabels, isHovered, isSelected)
+      const cachedIcon = iconCache.get(location.type)
+      drawLocation(ctx, location, viewport, theme, showLabels, isHovered, isSelected, cachedIcon)
     }
 
     // 現在地を描画
@@ -197,6 +238,9 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
       Date.now()
     )
     ctx.drawImage(fogCanvas, 0, 0)
+    
+    // パフォーマンス計測終了
+    endFrame()
   }, [
     layerData,
     currentLocation,
@@ -210,6 +254,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     fogRenderer,
     animationManager,
     discoveredLocations,
+    iconCache,
   ])
 
   // 描画関数群
@@ -334,14 +379,15 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     ctx.restore() // opacityのリストア
   }
 
-  const drawLocation = async (
+  const drawLocation = (
     ctx: CanvasRenderingContext2D,
     location: MapLocation,
     viewport: Viewport,
     theme: MinimapTheme,
     showLabel: boolean,
     isHovered: boolean = false,
-    isSelected: boolean = false
+    isSelected: boolean = false,
+    cachedIcon?: HTMLImageElement
   ) => {
     const pos = CoordinateSystem.worldToScreen(location.coordinates, viewport)
     const baseRadius = 8 * viewport.zoom
@@ -385,26 +431,18 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     ctx.fill()
 
     // アイコンまたは色で塗りつぶし
-    if (viewport.zoom > 0.7 && location.is_discovered) {
-      // ズームが十分な場合はアイコンを表示
-      try {
-        await iconRenderer.drawIcon(
-          ctx,
-          location.type,
-          pos.x,
-          pos.y,
-          radius * 1.5,
-          theme.location[location.type]
-        )
-      } catch {
-        // フォールバック: 色で塗りつぶし
-        ctx.fillStyle = theme.location[location.type]
-        ctx.beginPath()
-        ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
-        ctx.fill()
-      }
+    if (viewport.zoom > 0.7 && location.is_discovered && cachedIcon) {
+      // ズームが十分な場合はキャッシュされたアイコンを表示
+      const iconSize = radius * 1.5
+      ctx.drawImage(
+        cachedIcon,
+        pos.x - iconSize / 2,
+        pos.y - iconSize / 2,
+        iconSize,
+        iconSize
+      )
     } else {
-      // ズームが小さい場合は色で塗りつぶし
+      // ズームが小さい場合またはアイコンがない場合は色で塗りつぶし
       ctx.fillStyle = theme.location[location.type]
       ctx.beginPath()
       ctx.arc(pos.x, pos.y, radius * 0.8, 0, Math.PI * 2)
@@ -623,24 +661,35 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     return () => window.removeEventListener('resize', resizeCanvas)
   }, [])
 
-  // 描画の実行
+  // 統合されたアニメーションループ
   useEffect(() => {
-    draw()
-  }, [draw])
-
-  // アニメーションループ（現在地のパルス効果用）
-  useEffect(() => {
-    if (!currentLocation) return
-
     let animationFrameId: number
-    const animate = () => {
-      draw()
+    let lastFrameTime = 0
+    let frameCount = 0
+    const targetFPS = 60
+    const frameInterval = 1000 / targetFPS
+
+    const animate = (currentTime: number) => {
+      const deltaTime = currentTime - lastFrameTime
+
+      // フレームレート制限
+      if (deltaTime >= frameInterval) {
+        lastFrameTime = currentTime - (deltaTime % frameInterval)
+        draw()
+        
+        // 定期的にパフォーマンスメトリクスをログ出力（開発時のみ）
+        frameCount++
+        if (frameCount % 300 === 0) { // 5秒ごと
+          performanceMonitor.logMetrics()
+        }
+      }
+
       animationFrameId = requestAnimationFrame(animate)
     }
-    animate()
 
+    animationFrameId = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(animationFrameId)
-  }, [currentLocation, draw])
+  }, [draw])
 
   return (
     <canvas

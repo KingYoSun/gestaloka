@@ -211,22 +211,28 @@ class FogOfWarRenderer {
 }
 ```
 
-### パフォーマンスモニタリング
+### パフォーマンスモニタリング（実装済み）
 
 ```typescript
 class PerformanceMonitor {
   private frameTimings: number[] = [];
   private readonly maxSamples = 60;
+  private enabled = false;
   
-  measureFrame(callback: () => void): void {
-    const start = performance.now();
-    callback();
-    const end = performance.now();
+  startFrame(): () => void {
+    if (!this.enabled) return () => {};
     
-    this.frameTimings.push(end - start);
-    if (this.frameTimings.length > this.maxSamples) {
-      this.frameTimings.shift();
-    }
+    const startTime = performance.now();
+    
+    return () => {
+      const endTime = performance.now();
+      const frameTime = endTime - startTime;
+      
+      this.frameTimings.push(frameTime);
+      if (this.frameTimings.length > this.maxSamples) {
+        this.frameTimings.shift();
+      }
+    };
   }
   
   getMetrics(): PerformanceMetrics {
@@ -235,12 +241,34 @@ class PerformanceMonitor {
     
     return {
       averageFrameTime: avg,
-      fps: fps,
-      droppedFrames: this.frameTimings.filter(t => t > 16.67).length
+      fps: Math.round(fps),
+      droppedFrames: this.frameTimings.filter(t => t > 16.67).length,
+      renderTime: {
+        min: Math.min(...this.frameTimings),
+        max: Math.max(...this.frameTimings),
+        average: avg
+      }
     };
   }
 }
 ```
+
+### 実装済み最適化（2025/07/01）
+
+1. **描画最適化**
+   - アイコンの事前ロードによる同期描画
+   - 単一のrequestAnimationFrameループ（60FPS制限）
+   - 不要な再描画の防止
+
+2. **メモリ最適化**
+   - IconRendererのLRUキャッシュ（最大50アイコン）
+   - 自動的な古いアイコンの削除
+   - メモリ使用量の上限設定
+
+3. **レイヤー管理（LayerManager）**
+   - OffscreenCanvasによる効率的な描画
+   - 静的/動的要素の分離
+   - ダーティフラグによる部分更新
 
 ## 状態管理
 
