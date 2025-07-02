@@ -5,13 +5,16 @@ SPサブスクリプションモデル定義
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, Column, Index
 from sqlalchemy import Enum as SQLEnum
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.sp import SPSubscriptionType
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class SubscriptionStatus(str, Enum):
@@ -42,11 +45,11 @@ class SPSubscription(SQLModel, table=True):
 
     # サブスクリプション情報
     subscription_type: SPSubscriptionType = Field(
-        sa_type=SQLEnum(SPSubscriptionType),
+        sa_column=Column(SQLEnum(SPSubscriptionType)),
         description="サブスクリプションタイプ"
     )
     status: SubscriptionStatus = Field(
-        sa_type=SQLEnum(SubscriptionStatus),
+        sa_column=Column(SQLEnum(SubscriptionStatus), default=SubscriptionStatus.PENDING),
         default=SubscriptionStatus.PENDING,
         description="ステータス"
     )

@@ -15,7 +15,6 @@ import { useSPPlans } from '@/hooks/use-sp-purchase'
 import type { SPPlan } from '@/api/sp-purchase'
 import { SubscriptionPlans } from '@/features/sp/components/SubscriptionPlans'
 import { SubscriptionManagement } from '@/features/sp/components/SubscriptionManagement'
-import { useCurrentSubscription } from '@/features/sp/hooks/useSubscription'
 import { Button } from '@/components/ui/button'
 import {
   Card,

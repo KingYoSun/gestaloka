@@ -68,7 +68,7 @@ async def perform_narrative_action(
     if narrative_result.location_changed:
         importance += 0.2  # 場所移動は重要
 
-    if narrative_result.events and any(event in narrative_result.events for event in ["discovery", "encounter", "choice"]):
+    if narrative_result.events and any(event_name in [e.event_type for e in narrative_result.events] for event_name in ["discovery", "encounter", "choice"]):
         importance += 0.3  # 特殊イベントは重要
 
     # 重要な行動の場合、ログフラグメント生成

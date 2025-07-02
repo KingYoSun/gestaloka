@@ -7,9 +7,7 @@ import { CoordinateSystem } from './utils/mapGeometry'
 import { FogOfWarRenderer, fogPresets } from './utils/fogOfWar'
 import {
   AnimationManager,
-  drawLocationDiscoveryPulse,
   drawConnectionPulse,
-  drawHoverGlow,
   drawTrailAnimation,
 } from './utils/animations'
 import { iconRenderer } from './components/LocationIcons'

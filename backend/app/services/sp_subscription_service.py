@@ -3,7 +3,7 @@ SPサブスクリプションサービス
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, ClassVar, Optional
 
 from sqlalchemy import and_
 from sqlmodel import Session, col, select
@@ -30,7 +30,7 @@ class SPSubscriptionService:
     """SPサブスクリプション管理サービス"""
 
     # サブスクリプションプラン定義
-    SUBSCRIPTION_PLANS = {
+    SUBSCRIPTION_PLANS: ClassVar[dict[SPSubscriptionType, dict[str, Any]]] = {
         SPSubscriptionType.BASIC: {
             "name": "ベーシックパス",
             "price": 1000,
@@ -71,11 +71,11 @@ class SPSubscriptionService:
             plans.append(
                 SubscriptionBenefits(
                     subscription_type=sub_type,
-                    name=plan_info["name"],
-                    price=plan_info["price"],
-                    daily_bonus=plan_info["daily_bonus"],
-                    discount_rate=plan_info["discount_rate"],
-                    features=plan_info["features"],
+                    name=str(plan_info["name"]),
+                    price=int(plan_info["price"]),
+                    daily_bonus=int(plan_info["daily_bonus"]),
+                    discount_rate=float(plan_info["discount_rate"]),
+                    features=list(plan_info["features"]),
                 )
             )
         return plans
@@ -98,7 +98,7 @@ class SPSubscriptionService:
             .where(col(SPSubscription.user_id) == user_id)
             .order_by(col(SPSubscription.created_at).desc())
         )
-        return self.db.exec(stmt).all()
+        return list(self.db.exec(stmt).all())
 
     async def create_subscription(
         self, user_id: str, data: SPSubscriptionCreate
@@ -145,7 +145,7 @@ class SPSubscriptionService:
                 self.db.add(subscription)
 
                 # PlayerSPも更新
-                player_sp = self.sp_service._get_or_create_player_sp(user_id)
+                player_sp = await self.sp_service.get_or_create_player_sp(user_id)
                 player_sp.active_subscription = data.subscription_type
                 player_sp.subscription_expires_at = subscription.expires_at
 
@@ -182,10 +182,10 @@ class SPSubscriptionService:
                 # Stripeサブスクリプションを作成
                 stripe_data = await self.stripe_service.create_subscription(
                     customer_id=stripe_customer_id,
-                    price_id=plan_info["stripe_price_id"],
+                    price_id=str(plan_info["stripe_price_id"]),
                     payment_method_id=data.payment_method_id,
                     trial_days=data.trial_days,
-                    extra_data={
+                    metadata={
                         "user_id": user_id,
                         "subscription_type": data.subscription_type,
                     },
@@ -270,7 +270,7 @@ class SPSubscriptionService:
                 subscription.cancelled_at = datetime.utcnow()
 
                 # PlayerSPも更新
-                player_sp = self.sp_service._get_or_create_player_sp(user_id)
+                player_sp = await self.sp_service.get_or_create_player_sp(user_id)
                 if data.immediate:
                     player_sp.active_subscription = None
                     player_sp.subscription_expires_at = None
@@ -311,7 +311,7 @@ class SPSubscriptionService:
                     transaction_type="cancel",
                     amount=0,
                     status="completed",
-                    extra_data={"reason": data.reason} if data.reason else {},
+                    metadata={"reason": data.reason} if data.reason else {},
                 )
                 self.db.add(transaction)
 
@@ -381,7 +381,7 @@ class SPSubscriptionService:
                 "message": "サブスクリプションの更新に失敗しました",
             }
 
-    def activate_subscription(self, subscription_id: str) -> bool:
+    async def activate_subscription(self, subscription_id: str) -> bool:
         """サブスクリプションを有効化（Webhookから呼ばれる）"""
         try:
             subscription = self.db.get(SPSubscription, subscription_id)
@@ -396,7 +396,7 @@ class SPSubscriptionService:
             subscription.next_billing_date = subscription.expires_at
 
             # PlayerSPも更新
-            player_sp = self.sp_service._get_or_create_player_sp(subscription.user_id)
+            player_sp = await self.sp_service.get_or_create_player_sp(subscription.user_id)
             player_sp.active_subscription = subscription.subscription_type
             player_sp.subscription_expires_at = subscription.expires_at
 
@@ -451,7 +451,7 @@ class SPSubscriptionService:
 
         return SPSubscriptionResponse(
             **subscription.model_dump(),
-            is_active=is_active,
+            is_active=bool(is_active),
             days_remaining=days_remaining,
             is_trial=is_trial,
         )
@@ -473,10 +473,10 @@ class SPSubscriptionService:
         # 新規作成
         result = await self.stripe_service.create_customer(
             email=user.email,
-            extra_data={"user_id": user.id, "username": user.username},
+            metadata={"user_id": user.id, "username": user.username},
         )
 
         if result["success"]:
-            return result["customer_id"]
+            return str(result["customer_id"])
         else:
             raise Exception(f"Failed to create Stripe customer: {result['message']}")

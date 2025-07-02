@@ -61,11 +61,11 @@ export const handlers = [
   }),
 
   // ログ関連
-  http.get('*/api/v1/logs/fragments/:characterId', ({ params }) => {
+  http.get('*/api/v1/logs/fragments/:characterId', () => {
     return HttpResponse.json([])
   }),
 
-  http.get('*/api/v1/logs/completed/:characterId', ({ params }) => {
+  http.get('*/api/v1/logs/completed/:characterId', () => {
     return HttpResponse.json([])
   }),
 

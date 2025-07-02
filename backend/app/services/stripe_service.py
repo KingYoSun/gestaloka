@@ -2,10 +2,11 @@
 Stripe統合サービス
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import stripe
-from stripe.error import StripeError
+from stripe import Customer, Subscription
+from stripe.error import SignatureVerificationError, StripeError
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -136,10 +137,10 @@ class StripeService:
         try:
             if immediate:
                 # 即座にキャンセル
-                subscription = stripe.Subscription.delete(subscription_id)
+                stripe.Subscription.cancel(subscription_id)
             else:
                 # 期限まで有効（自動更新を無効化）
-                subscription = stripe.Subscription.modify(
+                stripe.Subscription.modify(
                     subscription_id,
                     cancel_at_period_end=True,
                 )
@@ -166,17 +167,18 @@ class StripeService:
         """サブスクリプションの決済方法を更新"""
         try:
             # サブスクリプションを取得
-            subscription = stripe.Subscription.retrieve(subscription_id)
+            subscription = cast(Subscription, stripe.Subscription.retrieve(subscription_id))
+            customer_id = str(subscription.customer) if isinstance(subscription.customer, Customer) else subscription.customer
 
             # 決済方法を顧客に紐付け
             stripe.PaymentMethod.attach(
                 payment_method_id,
-                customer=subscription.customer,
+                customer=customer_id,
             )
 
             # デフォルトの決済方法として設定
             stripe.Customer.modify(
-                subscription.customer,
+                customer_id,
                 invoice_settings={
                     "default_payment_method": payment_method_id,
                 },
@@ -206,6 +208,6 @@ class StripeService:
         except ValueError:
             logger.error("Invalid webhook payload")
             return None
-        except stripe.error.SignatureVerificationError:
+        except SignatureVerificationError:
             logger.error("Invalid webhook signature")
             return None

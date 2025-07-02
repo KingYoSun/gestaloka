@@ -4,8 +4,7 @@ Admin SP management endpoints.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.api.deps import get_db
 from app.api.v1.admin.deps import get_current_admin_user
@@ -38,7 +37,7 @@ async def get_all_players_sp(
 
     if search:
         query = query.where(
-            (User.username.ilike(f"%{search}%")) | (User.email.ilike(f"%{search}%"))
+            (col(User.username).ilike(f"%{search}%")) | (col(User.email).ilike(f"%{search}%"))
         )
 
     query = query.offset(skip).limit(limit)
@@ -117,7 +116,7 @@ async def get_player_sp_transactions(
     total = len(db.exec(count_query).all())
 
     # Get paginated results
-    query = query.order_by(desc(SPTransaction.created_at)).offset(skip).limit(limit)
+    query = query.order_by(col(SPTransaction.created_at).desc()).offset(skip).limit(limit)
     transactions = db.exec(query).all()
 
     return SPTransactionHistory(
@@ -162,7 +161,7 @@ async def adjust_player_sp(
     # Apply adjustment
     if adjustment.amount > 0:
         # Add SP
-        result = await sp_service.add_sp(
+        await sp_service.add_sp(
             user_id=str(adjustment.user_id),
             amount=adjustment.amount,
             transaction_type=SPTransactionType.ADMIN_GRANT,
@@ -170,7 +169,7 @@ async def adjust_player_sp(
         )
     else:
         # Deduct SP
-        result = await sp_service.consume_sp(
+        await sp_service.consume_sp(
             user_id=str(adjustment.user_id),
             amount=abs(adjustment.amount),
             transaction_type=SPTransactionType.ADMIN_DEDUCT,
@@ -218,14 +217,14 @@ async def batch_adjust_sp(
 
             # Apply adjustment
             if adjustment.amount > 0:
-                result = await sp_service.add_sp(
+                await sp_service.add_sp(
                     user_id=str(adjustment.user_id),
                     amount=adjustment.amount,
                     transaction_type=SPTransactionType.ADMIN_GRANT,
                     description=f"一括付与: {adjustment.reason or 'イベント配布'} (by {admin_user.username})"
                 )
             elif adjustment.amount < 0 and abs(adjustment.amount) <= player_sp.current_sp:
-                result = await sp_service.consume_sp(
+                await sp_service.consume_sp(
                     user_id=str(adjustment.user_id),
                     amount=abs(adjustment.amount),
                     transaction_type=SPTransactionType.ADMIN_DEDUCT,
