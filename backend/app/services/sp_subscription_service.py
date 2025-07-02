@@ -10,7 +10,7 @@ from sqlmodel import Session, col, select
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.models.sp import PlayerSP, SPSubscriptionType
+from app.models.sp import SPSubscriptionType
 from app.models.sp_subscription import SPSubscription, SubscriptionStatus, SubscriptionTransaction
 from app.models.user import User
 from app.schemas.sp_subscription import (
@@ -266,7 +266,7 @@ class SPSubscriptionService:
                 else:
                     # 期限まで有効
                     subscription.auto_renew = False
-                
+
                 subscription.cancelled_at = datetime.utcnow()
 
                 # PlayerSPも更新
@@ -439,7 +439,7 @@ class SPSubscriptionService:
             and subscription.expires_at
             and subscription.expires_at > now
         )
-        
+
         days_remaining = None
         if is_active and subscription.expires_at:
             days_remaining = (subscription.expires_at - now).days
@@ -466,7 +466,7 @@ class SPSubscriptionService:
             )
         ).limit(1)
         existing_sub = self.db.exec(stmt).first()
-        
+
         if existing_sub and existing_sub.stripe_customer_id:
             return existing_sub.stripe_customer_id
 
@@ -475,7 +475,7 @@ class SPSubscriptionService:
             email=user.email,
             extra_data={"user_id": user.id, "username": user.username},
         )
-        
+
         if result["success"]:
             return result["customer_id"]
         else:

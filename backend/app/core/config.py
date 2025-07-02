@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     STRIPE_PRICE_ID_XLARGE: str = Field(default="", validation_alias="STRIPE_PRICE_ID_XLARGE")
     STRIPE_SUCCESS_URL: str = Field(default="http://localhost:3000/sp/success", validation_alias="STRIPE_SUCCESS_URL")
     STRIPE_CANCEL_URL: str = Field(default="http://localhost:3000/sp/cancel", validation_alias="STRIPE_CANCEL_URL")
-    
+
     # Stripeサブスクリプション価格ID
     STRIPE_SUBSCRIPTION_BASIC_PRICE_ID: str = Field(default="", validation_alias="STRIPE_SUBSCRIPTION_BASIC_PRICE_ID")
     STRIPE_SUBSCRIPTION_PREMIUM_PRICE_ID: str = Field(default="", validation_alias="STRIPE_SUBSCRIPTION_PREMIUM_PRICE_ID")

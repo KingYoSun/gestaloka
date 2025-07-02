@@ -94,7 +94,7 @@ class StripeService:
                     payment_method_id,
                     customer=customer_id,
                 )
-                
+
                 # デフォルトの決済方法として設定
                 stripe.Customer.modify(
                     customer_id,
@@ -149,7 +149,7 @@ class StripeService:
                 "message": (
                     "サブスクリプションをキャンセルしました"
                     if immediate
-                    else f"サブスクリプションは期限まで有効です"
+                    else "サブスクリプションは期限まで有効です"
                 ),
             }
 
@@ -167,13 +167,13 @@ class StripeService:
         try:
             # サブスクリプションを取得
             subscription = stripe.Subscription.retrieve(subscription_id)
-            
+
             # 決済方法を顧客に紐付け
             stripe.PaymentMethod.attach(
                 payment_method_id,
                 customer=subscription.customer,
             )
-            
+
             # デフォルトの決済方法として設定
             stripe.Customer.modify(
                 subscription.customer,

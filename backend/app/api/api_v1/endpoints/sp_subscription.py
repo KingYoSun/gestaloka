@@ -37,17 +37,17 @@ async def get_subscription_plans(
         SubscriptionPlansResponse: プラン一覧と現在のサブスクリプション情報
     """
     service = SPSubscriptionService(db)
-    
+
     # プラン一覧を取得
     plans = service.get_subscription_plans()
-    
+
     # 現在のサブスクリプションを取得
     current_subscription = service.get_active_subscription(current_user.id)
     current_subscription_response = None
-    
+
     if current_subscription:
         current_subscription_response = service.to_response(current_subscription)
-    
+
     return SubscriptionPlansResponse(
         plans=plans,
         current_subscription=current_subscription_response,
@@ -70,13 +70,13 @@ async def get_current_subscription(
     """
     service = SPSubscriptionService(db)
     subscription = service.get_active_subscription(current_user.id)
-    
+
     if not subscription:
         raise HTTPException(
             status_code=404,
             detail="有効なサブスクリプションがありません",
         )
-    
+
     return service.to_response(subscription)
 
 
@@ -93,16 +93,16 @@ async def get_subscription_history(
     """
     service = SPSubscriptionService(db)
     subscriptions = service.get_user_subscriptions(current_user.id)
-    
+
     # レスポンス形式に変換
     subscription_responses = [
         service.to_response(sub) for sub in subscriptions
     ]
-    
+
     # カウント計算
     active_count = sum(1 for sub in subscription_responses if sub.is_active)
     cancelled_count = sum(1 for sub in subscriptions if sub.cancelled_at is not None)
-    
+
     return SPSubscriptionListResponse(
         subscriptions=subscription_responses,
         total=len(subscriptions),
@@ -130,18 +130,18 @@ async def purchase_subscription(
         HTTPException: 購入に失敗した場合
     """
     service = SPSubscriptionService(db)
-    
+
     try:
         result = await service.create_subscription(current_user.id, data)
-        
+
         if not result["success"]:
             raise HTTPException(
                 status_code=400,
                 detail=result["message"],
             )
-        
+
         return SPSubscriptionPurchaseResponse(**result)
-        
+
     except Exception as e:
         logger.error(
             "Failed to purchase subscription",
@@ -173,18 +173,18 @@ async def cancel_subscription(
         HTTPException: キャンセルに失敗した場合
     """
     service = SPSubscriptionService(db)
-    
+
     try:
         result = await service.cancel_subscription(current_user.id, data)
-        
+
         if not result["success"]:
             raise HTTPException(
                 status_code=400,
                 detail=result["message"],
             )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(
             "Failed to cancel subscription",
@@ -216,18 +216,18 @@ async def update_subscription(
         HTTPException: 更新に失敗した場合
     """
     service = SPSubscriptionService(db)
-    
+
     try:
         result = await service.update_subscription(current_user.id, data)
-        
+
         if not result["success"]:
             raise HTTPException(
                 status_code=400,
                 detail=result["message"],
             )
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(
             "Failed to update subscription",

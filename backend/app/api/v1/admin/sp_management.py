@@ -1,16 +1,16 @@
 """
 Admin SP management endpoints.
 """
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from app.api.deps import get_db
 from app.api.v1.admin.deps import get_current_admin_user
 from app.models.sp import PlayerSP, SPTransaction, SPTransactionType
 from app.models.user import User
-from sqlalchemy import desc
 from app.schemas.admin.sp_management import (
     AdminSPAdjustment,
     AdminSPAdjustmentResponse,
@@ -22,7 +22,7 @@ from app.services.sp_service import SPService
 router = APIRouter()
 
 
-@router.get("/players", response_model=List[PlayerSPDetail])
+@router.get("/players", response_model=list[PlayerSPDetail])
 async def get_all_players_sp(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
@@ -35,15 +35,15 @@ async def get_all_players_sp(
     検索機能付き（ユーザー名、メールアドレス）。
     """
     query = select(PlayerSP).join(User)
-    
+
     if search:
         query = query.where(
             (User.username.ilike(f"%{search}%")) | (User.email.ilike(f"%{search}%"))
         )
-    
+
     query = query.offset(skip).limit(limit)
     results = db.exec(query).all()
-    
+
     return [
         PlayerSPDetail(
             user_id=int(sp.user_id),
@@ -72,13 +72,13 @@ async def get_player_sp_detail(
     """
     stmt = select(PlayerSP).where(PlayerSP.user_id == user_id)
     player_sp = db.exec(stmt).first()
-    
+
     if not player_sp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Player SP data not found"
         )
-    
+
     return PlayerSPDetail(
         user_id=int(player_sp.user_id),
         username=player_sp.user.username if player_sp.user else "",
@@ -106,20 +106,20 @@ async def get_player_sp_transactions(
     特定プレイヤーのSP取引履歴を取得。
     """
     query = select(SPTransaction).where(SPTransaction.user_id == user_id)
-    
+
     if transaction_type:
         query = query.where(SPTransaction.transaction_type == transaction_type)
-    
+
     # Get total count
     count_query = select(SPTransaction).where(SPTransaction.user_id == user_id)
     if transaction_type:
         count_query = count_query.where(SPTransaction.transaction_type == transaction_type)
     total = len(db.exec(count_query).all())
-    
+
     # Get paginated results
     query = query.order_by(desc(SPTransaction.created_at)).offset(skip).limit(limit)
     transactions = db.exec(query).all()
-    
+
     return SPTransactionHistory(
         transactions=list(transactions),
         total=total,
@@ -139,7 +139,7 @@ async def adjust_player_sp(
     管理者による付与・減算が可能。
     """
     sp_service = SPService(db)
-    
+
     # Check if user exists
     stmt = select(User).where(User.id == str(adjustment.user_id))
     user = db.exec(stmt).first()
@@ -148,17 +148,17 @@ async def adjust_player_sp(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     # Get or create player SP
     player_sp = await sp_service.get_or_create_player_sp(str(adjustment.user_id))
-    
+
     # Validate adjustment
     if adjustment.amount < 0 and abs(adjustment.amount) > player_sp.current_sp:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot deduct {abs(adjustment.amount)} SP. Current balance: {player_sp.current_sp}"
         )
-    
+
     # Apply adjustment
     if adjustment.amount > 0:
         # Add SP
@@ -176,10 +176,10 @@ async def adjust_player_sp(
             transaction_type=SPTransactionType.ADMIN_DEDUCT,
             description=f"管理者減算: {adjustment.reason or '理由なし'} (by {admin_user.username})"
         )
-    
+
     # Get updated player SP
     player_sp = await sp_service.get_or_create_player_sp(str(adjustment.user_id))
-    
+
     return AdminSPAdjustmentResponse(
         user_id=adjustment.user_id,
         username=user.username,
@@ -191,9 +191,9 @@ async def adjust_player_sp(
     )
 
 
-@router.post("/batch-adjust", response_model=List[AdminSPAdjustmentResponse])
+@router.post("/batch-adjust", response_model=list[AdminSPAdjustmentResponse])
 async def batch_adjust_sp(
-    adjustments: List[AdminSPAdjustment],
+    adjustments: list[AdminSPAdjustment],
     admin_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
@@ -203,7 +203,7 @@ async def batch_adjust_sp(
     """
     sp_service = SPService(db)
     results = []
-    
+
     for adjustment in adjustments:
         try:
             # Check if user exists
@@ -211,11 +211,11 @@ async def batch_adjust_sp(
             user = db.exec(stmt).first()
             if not user:
                 continue
-            
+
             # Get or create player SP
             player_sp = await sp_service.get_or_create_player_sp(str(adjustment.user_id))
             previous_sp = player_sp.current_sp
-            
+
             # Apply adjustment
             if adjustment.amount > 0:
                 result = await sp_service.add_sp(
@@ -233,10 +233,10 @@ async def batch_adjust_sp(
                 )
             else:
                 continue
-            
+
             # Get updated player SP
             player_sp = await sp_service.get_or_create_player_sp(str(adjustment.user_id))
-            
+
             results.append(AdminSPAdjustmentResponse(
                 user_id=adjustment.user_id,
                 username=user.username,
@@ -249,5 +249,5 @@ async def batch_adjust_sp(
         except Exception:
             # Skip failed adjustments
             continue
-    
+
     return results

@@ -2,11 +2,11 @@
 Admin SP management schemas.
 """
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.sp import SPTransaction, SPTransactionType
+from app.models.sp import SPTransaction
 
 
 class AdminSPAdjustment(BaseModel):
@@ -44,7 +44,7 @@ class PlayerSPDetail(BaseModel):
 
 class SPTransactionHistory(BaseModel):
     """SP取引履歴"""
-    transactions: List[SPTransaction]
+    transactions: list[SPTransaction]
     total: int
     skip: int
     limit: int
