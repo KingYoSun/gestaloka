@@ -13,6 +13,14 @@
   - /questsルートの追加とナビゲーション統合
   - ゲーム画面へのクエストステータスウィジェット追加
   - React Query活用による効率的な状態管理
+- **記憶継承システムのフロントエンドUI実装** ✅
+  - APIクライアント作成（memoryInheritance.ts）
+  - 4つのUIコンポーネント実装（メイン画面/フラグメント選択/プレビュー/履歴）
+  - カスタムフック実装（useMemoryInheritance、useMemoryInheritanceScreen）
+  - /memoryルートの追加とナビゲーション統合
+  - ゲーム画面への記憶継承クイックアクセスボタン追加
+  - Radix UIコンポーネント追加（radio-group、checkbox）
+  - 型定義追加（LogFragment、Character）とフック作成（useCharacter、useLogFragments）
 
 ### 2025/07/01の主な実装（午後更新）
 - **Gemini API最適化とlangchain-google-genaiアップグレード** ✅

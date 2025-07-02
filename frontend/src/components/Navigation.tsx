@@ -11,6 +11,7 @@ import {
   Swords,
   Gem,
   Target,
+  Sparkles,
 } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -49,6 +50,11 @@ const navigationItems = [
     name: 'クエスト',
     href: '/quests',
     icon: Target,
+  },
+  {
+    name: '記憶継承',
+    href: '/memory',
+    icon: Sparkles,
   },
   {
     name: '探索',

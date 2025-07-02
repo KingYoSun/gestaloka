@@ -27,6 +27,7 @@ import {
   AlertCircle,
   MessageSquare,
   Coins,
+  Sparkles,
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
@@ -221,6 +222,14 @@ function GameSessionPage() {
           </Badge>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => (window.location.href = '/memory')}
+          >
+            <Sparkles className="h-4 w-4 mr-2" />
+            記憶継承
+          </Button>
           <Button
             variant="outline"
             size="sm"

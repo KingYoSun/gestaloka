@@ -100,6 +100,19 @@ export interface PlayerSP {
   updatedAt: string
 }
 
+// LogFragment type for memory inheritance
+export interface LogFragment {
+  id: string;
+  character_id: string;
+  title: string;
+  content: string;
+  rarity: string;
+  emotional_valence?: string;
+  keywords: string[];
+  metadata?: Record<string, any>;
+  created_at: string;
+}
+
 // Re-export from other modules if needed
 // Note: CompletedLog and LogFragment are already exported from @/types
 export type {

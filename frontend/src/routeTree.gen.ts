@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as QuestsRouteImport } from './routes/quests'
+import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ExplorationRouteImport } from './routes/exploration'
@@ -41,6 +42,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const QuestsRoute = QuestsRouteImport.update({
   id: '/quests',
   path: '/quests',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MemoryRoute = MemoryRouteImport.update({
+  id: '/memory',
+  path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/memory': typeof MemoryRoute
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/memory': typeof MemoryRoute
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/memory': typeof MemoryRoute
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/exploration'
     | '/login'
     | '/logs'
+    | '/memory'
     | '/quests'
     | '/register'
     | '/settings'
@@ -209,6 +219,7 @@ export interface FileRouteTypes {
     | '/exploration'
     | '/login'
     | '/logs'
+    | '/memory'
     | '/quests'
     | '/register'
     | '/settings'
@@ -229,6 +240,7 @@ export interface FileRouteTypes {
     | '/exploration'
     | '/login'
     | '/logs'
+    | '/memory'
     | '/quests'
     | '/register'
     | '/settings'
@@ -250,6 +262,7 @@ export interface RootRouteChildren {
   ExplorationRoute: typeof ExplorationRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
+  MemoryRoute: typeof MemoryRoute
   QuestsRoute: typeof QuestsRoute
   RegisterRoute: typeof RegisterRoute
   SettingsRoute: typeof SettingsRoute
@@ -292,6 +305,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/memory': {
+      id: '/memory'
+      path: '/memory'
+      fullPath: '/memory'
+      preLoaderRoute: typeof MemoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -402,6 +422,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExplorationRoute: ExplorationRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
+  MemoryRoute: MemoryRoute,
   QuestsRoute: QuestsRoute,
   RegisterRoute: RegisterRoute,
   SettingsRoute: SettingsRoute,
