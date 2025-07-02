@@ -95,9 +95,7 @@ async def get_subscription_history(
     subscriptions = service.get_user_subscriptions(current_user.id)
 
     # レスポンス形式に変換
-    subscription_responses = [
-        service.to_response(sub) for sub in subscriptions
-    ]
+    subscription_responses = [service.to_response(sub) for sub in subscriptions]
 
     # カウント計算
     active_count = sum(1 for sub in subscription_responses if sub.is_active)

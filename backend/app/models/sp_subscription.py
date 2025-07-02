@@ -45,13 +45,12 @@ class SPSubscription(SQLModel, table=True):
 
     # サブスクリプション情報
     subscription_type: SPSubscriptionType = Field(
-        sa_column=Column(SQLEnum(SPSubscriptionType)),
-        description="サブスクリプションタイプ"
+        sa_column=Column(SQLEnum(SPSubscriptionType)), description="サブスクリプションタイプ"
     )
     status: SubscriptionStatus = Field(
         sa_column=Column(SQLEnum(SubscriptionStatus), default=SubscriptionStatus.PENDING),
         default=SubscriptionStatus.PENDING,
-        description="ステータス"
+        description="ステータス",
     )
 
     # 期間情報

@@ -143,9 +143,7 @@ export function ItemExchangeDialog({
                 <Card className="h-full flex flex-col">
                   <CardHeader>
                     <CardTitle className="text-lg">あなたのアイテム</CardTitle>
-                    <CardDescription>
-                      提供するアイテムを選択
-                    </CardDescription>
+                    <CardDescription>提供するアイテムを選択</CardDescription>
                   </CardHeader>
                   <CardContent className="flex-1 overflow-hidden">
                     <ScrollArea className="h-full">
@@ -292,9 +290,7 @@ export function ItemExchangeDialog({
                           ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">
-                        なし
-                      </p>
+                      <p className="text-sm text-muted-foreground">なし</p>
                     )}
                   </div>
 
@@ -325,9 +321,7 @@ export function ItemExchangeDialog({
                           ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-muted-foreground">
-                        なし
-                      </p>
+                      <p className="text-sm text-muted-foreground">なし</p>
                     )}
                   </div>
 

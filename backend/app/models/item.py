@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 class ItemType(str, Enum):
     """アイテムタイプ"""
+
     WEAPON = "weapon"
     ARMOR = "armor"
     ACCESSORY = "accessory"
@@ -23,6 +24,7 @@ class ItemType(str, Enum):
 
 class ItemRarity(str, Enum):
     """アイテムレアリティ"""
+
     COMMON = "COMMON"
     UNCOMMON = "UNCOMMON"
     RARE = "RARE"
@@ -32,6 +34,7 @@ class ItemRarity(str, Enum):
 
 class Item(SQLModel, table=True):
     """アイテムマスタ"""
+
     __tablename__ = "items"
 
     id: str = Field(primary_key=True)
@@ -52,6 +55,7 @@ class Item(SQLModel, table=True):
 
 class CharacterItem(SQLModel, table=True):
     """キャラクターの所持アイテム"""
+
     __tablename__ = "character_items"
 
     id: str = Field(primary_key=True)
@@ -67,4 +71,3 @@ class CharacterItem(SQLModel, table=True):
     # リレーション
     character: Optional["Character"] = Relationship(back_populates="items")
     item: Optional[Item] = Relationship(back_populates="character_items")
-

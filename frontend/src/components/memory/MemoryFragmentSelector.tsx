@@ -1,15 +1,15 @@
-import { LogFragment } from '@/api/generated';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
-import { Sparkles, Star } from 'lucide-react';
+import { LogFragment } from '@/api/generated'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
+import { Sparkles, Star } from 'lucide-react'
 
 interface MemoryFragmentSelectorProps {
-  fragments: LogFragment[];
-  selectedIds: string[];
-  onToggleSelection: (fragmentId: string) => void;
+  fragments: LogFragment[]
+  selectedIds: string[]
+  onToggleSelection: (fragmentId: string) => void
 }
 
 const rarityColors: Record<string, string> = {
@@ -20,7 +20,7 @@ const rarityColors: Record<string, string> = {
   LEGENDARY: 'bg-orange-500',
   UNIQUE: 'bg-red-500',
   ARCHITECT: 'bg-gradient-to-r from-purple-600 to-pink-600',
-};
+}
 
 const rarityTextColors: Record<string, string> = {
   COMMON: 'text-gray-600',
@@ -29,8 +29,9 @@ const rarityTextColors: Record<string, string> = {
   EPIC: 'text-purple-600',
   LEGENDARY: 'text-orange-600',
   UNIQUE: 'text-red-600',
-  ARCHITECT: 'text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600',
-};
+  ARCHITECT:
+    'text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600',
+}
 
 export function MemoryFragmentSelector({
   fragments,
@@ -40,17 +41,17 @@ export function MemoryFragmentSelector({
   return (
     <ScrollArea className="h-[500px] pr-4">
       <div className="space-y-2">
-        {fragments.map((fragment) => {
-          const isSelected = selectedIds.includes(fragment.id);
-          const isArchitect = fragment.rarity === 'ARCHITECT';
-          
+        {fragments.map(fragment => {
+          const isSelected = selectedIds.includes(fragment.id)
+          const isArchitect = fragment.rarity === 'ARCHITECT'
+
           return (
             <Card
               key={fragment.id}
               className={cn(
-                "p-4 cursor-pointer transition-all",
-                isSelected && "ring-2 ring-primary",
-                isArchitect && "border-purple-500"
+                'p-4 cursor-pointer transition-all',
+                isSelected && 'ring-2 ring-primary',
+                isArchitect && 'border-purple-500'
               )}
               onClick={() => onToggleSelection(fragment.id)}
             >
@@ -60,7 +61,7 @@ export function MemoryFragmentSelector({
                   onCheckedChange={() => onToggleSelection(fragment.id)}
                   onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 />
-                
+
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium flex items-center gap-2">
@@ -72,28 +73,32 @@ export function MemoryFragmentSelector({
                     <Badge
                       variant="outline"
                       className={cn(
-                        "text-xs",
+                        'text-xs',
                         rarityTextColors[fragment.rarity]
                       )}
                     >
                       <Star
                         className={cn(
-                          "w-3 h-3 mr-1",
+                          'w-3 h-3 mr-1',
                           rarityColors[fragment.rarity]
                         )}
                       />
                       {fragment.rarity}
                     </Badge>
                   </div>
-                  
+
                   <p className="text-sm text-muted-foreground line-clamp-2">
                     {fragment.content}
                   </p>
-                  
+
                   {fragment.keywords && fragment.keywords.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {fragment.keywords.slice(0, 3).map((keyword: string) => (
-                        <Badge key={keyword} variant="secondary" className="text-xs">
+                        <Badge
+                          key={keyword}
+                          variant="secondary"
+                          className="text-xs"
+                        >
                           {keyword}
                         </Badge>
                       ))}
@@ -107,9 +112,9 @@ export function MemoryFragmentSelector({
                 </div>
               </div>
             </Card>
-          );
+          )
         })}
       </div>
     </ScrollArea>
-  );
+  )
 }

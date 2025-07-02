@@ -312,8 +312,7 @@ async def explore_area(
 
             rarity_desc = rarity_descriptions.get(rarity, "不思議な")
             narrative_events.append(
-                f"あなたは{rarity_desc}記憶の断片を発見した: 『{fragment.keyword}』\n"
-                f"{fragment.backstory}"
+                f"あなたは{rarity_desc}記憶の断片を発見した: 『{fragment.keyword}』\n" f"{fragment.backstory}"
             )
 
     # 遭遇判定
@@ -362,8 +361,6 @@ def calculate_movement_sp_cost(base_cost: int, hierarchy_level: int, danger_leve
     total_cost += danger_multipliers.get(danger_level.lower(), 0)
 
     return max(0, total_cost)  # 負の値にならないように
-
-
 
 
 @router.get("/{character_id}/map-data", response_model=MapDataResponse)

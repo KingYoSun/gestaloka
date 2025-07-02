@@ -4,7 +4,7 @@
 
 ## 最終更新: 2025/07/03
 
-### 2025/07/03の主な実装
+### 2025/07/03の主な実装と修正
 - **動的クエストシステムのフロントエンドUI実装** ✅
   - 5つのUIコンポーネント実装（提案/進行中/履歴/宣言/統合パネル）
   - カスタムフック実装（useQuests、useActiveQuests等）
@@ -21,6 +21,27 @@
   - ゲーム画面への記憶継承クイックアクセスボタン追加
   - Radix UIコンポーネント追加（radio-group、checkbox）
   - 型定義追加（LogFragment、Character）とフック作成（useCharacter、useLogFragments）
+- **コードエラーの解消** ✅
+  - バックエンドのインポートエラー修正
+    - `app.core.logger` → `app.core.logging`への変更
+    - `app.core.auth` → `app.api.deps`への変更
+    - `app.models.log_fragment` → `app.models.log`への変更
+    - `app.models.skill` → `app.models.character`への変更
+    - `app.models.sp_transaction` → `app.models.sp`への変更
+  - 属性参照エラーの修正
+    - `ActionLog.action_description` → `ActionLog.action_content`
+    - `ActionLog.result_description` → `ActionLog.response_content`
+    - `LogFragment.content` → `LogFragment.action_description`
+    - `LogFragment.emotional_tags` → `LogFragment.emotional_valence`
+    - `LocationEvent.event_type` → `LocationEvent.type`
+  - SQLAlchemy/SQLModelエラーの修正
+    - `datetime.desc()` → `desc(datetime)`（sqlmodelからdescをインポート）
+    - `bool_field == True` → `bool_field`
+    - `bool_field == False` → `~bool_field`
+  - その他の修正
+    - `LogFragmentService()`初期化時に`db`パラメータ追加
+    - リントエラーの自動修正（インポート順序、末尾改行等）
+  - バックエンドのリント・型チェック完全成功
 
 ### 2025/07/01の主な実装（午後更新）
 - **Gemini API最適化とlangchain-google-genaiアップグレード** ✅
@@ -134,6 +155,17 @@
   - 型安全性の向上のため具体的な型定義が望ましい
 
 ## 技術的注意事項
+
+### モデル・スキーマの変更時の注意
+- **インポートパスの確認**: モデル分割やリファクタリング時は、既存のインポートパスを確認
+  - 例: `log_fragment.py`は存在せず、`LogFragment`は`log.py`に定義
+  - 例: `Skill`と`CharacterSkill`は`character.py`に定義
+- **属性名の確認**: モデルの属性名は実装を確認してから使用
+  - 例: `ActionLog`には`action_content`と`response_content`を使用
+  - 例: `LogFragment`には`action_description`を使用（`content`は存在しない）
+- **SQLAlchemy/SQLModelの記法**: 
+  - order_byで降順: `desc(column)`を使用（`column.desc()`ではない）
+  - bool比較: 直接評価または`~`演算子を使用
 
 ### Alembicマイグレーション
 - **重要**: 新しいモデル追加時は必ず以下の手順を実行

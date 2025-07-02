@@ -1,6 +1,7 @@
 """
 Admin SP management schemas.
 """
+
 from datetime import datetime
 from typing import Optional
 
@@ -11,6 +12,7 @@ from app.models.sp import SPTransaction
 
 class AdminSPAdjustment(BaseModel):
     """SP調整リクエスト"""
+
     user_id: int = Field(..., description="対象ユーザーID")
     amount: int = Field(..., description="調整量（正の値で付与、負の値で減算）")
     reason: Optional[str] = Field(None, description="調整理由")
@@ -18,6 +20,7 @@ class AdminSPAdjustment(BaseModel):
 
 class AdminSPAdjustmentResponse(BaseModel):
     """SP調整レスポンス"""
+
     user_id: int
     username: str
     previous_sp: int
@@ -30,6 +33,7 @@ class AdminSPAdjustmentResponse(BaseModel):
 
 class PlayerSPDetail(BaseModel):
     """プレイヤーSP詳細情報"""
+
     user_id: int
     username: str
     email: str
@@ -44,6 +48,7 @@ class PlayerSPDetail(BaseModel):
 
 class SPTransactionHistory(BaseModel):
     """SP取引履歴"""
+
     transactions: list[SPTransaction]
     total: int
     skip: int

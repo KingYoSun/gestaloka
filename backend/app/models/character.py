@@ -5,17 +5,17 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlmodel import Field, Relationship, SQLModel
 from sqlalchemy import JSON
+from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.exploration_progress import CharacterExplorationProgress
+    from app.models.item import CharacterItem
     from app.models.location import Location
     from app.models.log import ActionLog, CompletedLog, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
-    from app.models.user import User
     from app.models.title import CharacterTitle
-    from app.models.item import CharacterItem
+    from app.models.user import User
 
 
 class Character(SQLModel, table=True):

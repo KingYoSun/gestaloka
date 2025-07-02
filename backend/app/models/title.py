@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 class CharacterTitle(SQLModel, table=True):
     """キャラクターの称号"""
+
     __tablename__ = "character_titles"
 
     id: str = Field(primary_key=True)
@@ -26,4 +27,3 @@ class CharacterTitle(SQLModel, table=True):
 
     # リレーション
     character: Optional["Character"] = Relationship(back_populates="titles")
-

@@ -2,9 +2,21 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Search, Gem } from 'lucide-react'
 import { apiClient } from '@/api/client'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { LogFragmentRarity, EmotionalValence } from '@/api/generated'
@@ -28,7 +40,9 @@ const emotionalValenceColors = {
 
 export function LogFragments() {
   const [searchKeyword, setSearchKeyword] = useState('')
-  const [selectedRarity, setSelectedRarity] = useState<LogFragmentRarity | 'all'>('all')
+  const [selectedRarity, setSelectedRarity] = useState<
+    LogFragmentRarity | 'all'
+  >('all')
   const [currentPage, setCurrentPage] = useState(0)
   const pageSize = 20
 
@@ -36,17 +50,20 @@ export function LogFragments() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['logFragments', searchKeyword, selectedRarity, currentPage],
     queryFn: async () => {
-      const response = await apiClient.get(`/api/v1/log-fragments/{character_id}/fragments`, {
-        params: {
-          path: { character_id: localStorage.getItem('characterId') || '' },
-          query: {
-            keyword: searchKeyword || undefined,
-            rarity: selectedRarity !== 'all' ? selectedRarity : undefined,
-            limit: pageSize,
-            offset: currentPage * pageSize,
+      const response = await apiClient.get(
+        `/api/v1/log-fragments/{character_id}/fragments`,
+        {
+          params: {
+            path: { character_id: localStorage.getItem('characterId') || '' },
+            query: {
+              keyword: searchKeyword || undefined,
+              rarity: selectedRarity !== 'all' ? selectedRarity : undefined,
+              limit: pageSize,
+              offset: currentPage * pageSize,
+            },
           },
-        },
-      })
+        }
+      )
       return response.data
     },
     enabled: !!localStorage.getItem('characterId'),
@@ -101,7 +118,9 @@ export function LogFragments() {
               <CardTitle className="text-lg">総フラグメント数</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{data.statistics.total_fragments}</div>
+              <div className="text-2xl font-bold">
+                {data.statistics.total_fragments}
+              </div>
             </CardContent>
           </Card>
           <Card>
@@ -109,7 +128,9 @@ export function LogFragments() {
               <CardTitle className="text-lg">ユニークキーワード</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{data.statistics.unique_keywords}</div>
+              <div className="text-2xl font-bold">
+                {data.statistics.unique_keywords}
+              </div>
             </CardContent>
           </Card>
           <Card>
@@ -118,15 +139,19 @@ export function LogFragments() {
             </CardHeader>
             <CardContent>
               <div className="space-y-1 text-sm">
-                {Object.entries(data.statistics.by_rarity).map(([rarity, count]) => (
-                  <div key={rarity} className="flex justify-between">
-                    <span className="flex items-center gap-1">
-                      <div className={`w-2 h-2 rounded-full ${rarityColors[rarity as LogFragmentRarity]}`} />
-                      {getRarityLabel(rarity as LogFragmentRarity)}
-                    </span>
-                    <span>{count}</span>
-                  </div>
-                ))}
+                {Object.entries(data.statistics.by_rarity).map(
+                  ([rarity, count]) => (
+                    <div key={rarity} className="flex justify-between">
+                      <span className="flex items-center gap-1">
+                        <div
+                          className={`w-2 h-2 rounded-full ${rarityColors[rarity as LogFragmentRarity]}`}
+                        />
+                        {getRarityLabel(rarity as LogFragmentRarity)}
+                      </span>
+                      <span>{count}</span>
+                    </div>
+                  )
+                )}
               </div>
             </CardContent>
           </Card>
@@ -141,12 +166,17 @@ export function LogFragments() {
             <Input
               placeholder="キーワードで検索..."
               value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
+              onChange={e => setSearchKeyword(e.target.value)}
               className="pl-10"
             />
           </div>
         </div>
-        <Select value={selectedRarity} onValueChange={(value) => setSelectedRarity(value as LogFragmentRarity | 'all')}>
+        <Select
+          value={selectedRarity}
+          onValueChange={value =>
+            setSelectedRarity(value as LogFragmentRarity | 'all')
+          }
+        >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="レアリティ" />
           </SelectTrigger>
@@ -164,8 +194,11 @@ export function LogFragments() {
       {/* フラグメント一覧 */}
       <ScrollArea className="h-[calc(100vh-400px)]">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {data?.fragments.map((fragment) => (
-            <Card key={fragment.id} className="hover:shadow-lg transition-shadow">
+          {data?.fragments.map(fragment => (
+            <Card
+              key={fragment.id}
+              className="hover:shadow-lg transition-shadow"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
@@ -174,16 +207,22 @@ export function LogFragments() {
                       {fragment.keyword}
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      {fragment.discovered_at && `${fragment.discovered_at}で発見`}
+                      {fragment.discovered_at &&
+                        `${fragment.discovered_at}で発見`}
                     </CardDescription>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <Badge className={rarityColors[fragment.rarity]} variant="secondary">
+                    <Badge
+                      className={rarityColors[fragment.rarity]}
+                      variant="secondary"
+                    >
                       {getRarityLabel(fragment.rarity)}
                     </Badge>
-                    <Badge 
-                      variant="outline" 
-                      className={emotionalValenceColors[fragment.emotional_valence]}
+                    <Badge
+                      variant="outline"
+                      className={
+                        emotionalValenceColors[fragment.emotional_valence]
+                      }
                     >
                       {getEmotionalValenceLabel(fragment.emotional_valence)}
                     </Badge>
@@ -191,7 +230,9 @@ export function LogFragments() {
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-600 mb-3">{fragment.backstory}</p>
+                <p className="text-sm text-gray-600 mb-3">
+                  {fragment.backstory}
+                </p>
                 <div className="flex flex-wrap gap-1">
                   {fragment.keywords.map((keyword, index) => (
                     <Badge key={index} variant="outline" className="text-xs">

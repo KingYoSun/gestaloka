@@ -102,7 +102,9 @@ class Settings(BaseSettings):
     TEST_MODE_AUTO_APPROVE: bool = Field(default=True, validation_alias="TEST_MODE_AUTO_APPROVE")
     TEST_MODE_APPROVAL_DELAY: int = Field(default=0, validation_alias="TEST_MODE_APPROVAL_DELAY")  # 秒
     SP_PRICE_MULTIPLIER: float = Field(default=1.0, validation_alias="SP_PRICE_MULTIPLIER")  # 価格調整係数
-    SP_PURCHASE_TEST_MODE: bool = Field(default=True, validation_alias="SP_PURCHASE_TEST_MODE")  # サブスクリプションテストモード
+    SP_PURCHASE_TEST_MODE: bool = Field(
+        default=True, validation_alias="SP_PURCHASE_TEST_MODE"
+    )  # サブスクリプションテストモード
 
     # AI設定
     AI_RESPONSE_TIMEOUT: int = Field(default=30, validation_alias="AI_RESPONSE_TIMEOUT")  # 秒
@@ -146,7 +148,9 @@ class Settings(BaseSettings):
 
     # Stripeサブスクリプション価格ID
     STRIPE_SUBSCRIPTION_BASIC_PRICE_ID: str = Field(default="", validation_alias="STRIPE_SUBSCRIPTION_BASIC_PRICE_ID")
-    STRIPE_SUBSCRIPTION_PREMIUM_PRICE_ID: str = Field(default="", validation_alias="STRIPE_SUBSCRIPTION_PREMIUM_PRICE_ID")
+    STRIPE_SUBSCRIPTION_PREMIUM_PRICE_ID: str = Field(
+        default="", validation_alias="STRIPE_SUBSCRIPTION_PREMIUM_PRICE_ID"
+    )
 
     class Config:
         env_file = ".env"

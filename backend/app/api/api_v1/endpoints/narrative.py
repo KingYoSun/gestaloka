@@ -60,7 +60,7 @@ async def perform_narrative_action(
     )
 
     # 重要な行動からログフラグメントを生成する可能性を判定
-    fragment_service = LogFragmentService()
+    fragment_service = LogFragmentService(db)
 
     # 行動の重要度を評価（場所移動、特殊なイベント、重要な選択など）
     importance = 0.3  # 基本重要度
@@ -68,7 +68,10 @@ async def perform_narrative_action(
     if narrative_result.location_changed:
         importance += 0.2  # 場所移動は重要
 
-    if narrative_result.events and any(event_name in [e.event_type for e in narrative_result.events] for event_name in ["discovery", "encounter", "choice"]):
+    if narrative_result.events and any(
+        event_name in [e.type for e in narrative_result.events]
+        for event_name in ["discovery", "encounter", "choice"]
+    ):
         importance += 0.3  # 特殊イベントは重要
 
     # 重要な行動の場合、ログフラグメント生成
@@ -154,7 +157,10 @@ async def perform_narrative_action(
 
     # 次の行動選択肢を生成
     action_choices = await generate_action_choices(
-        db, current_character, narrative_result.narrative, str(current_character.location_id) if current_character.location_id else ""
+        db,
+        current_character,
+        narrative_result.narrative,
+        str(current_character.location_id) if current_character.location_id else "",
     )
 
     return NarrativeResponse(
@@ -202,7 +208,7 @@ async def update_location_history(db: Session, character: Character, new_locatio
     current_history = db.exec(
         select(CharacterLocationHistory).where(
             CharacterLocationHistory.character_id == character.id,
-            CharacterLocationHistory.departed_at == None  # noqa: E711
+            CharacterLocationHistory.departed_at == None,  # noqa: E711
         )
     ).first()
 
@@ -224,20 +230,12 @@ async def generate_action_choices(
     # 基本行動
     choices.append(
         ActionChoice(
-            text="周囲を詳しく調べる",
-            action_type="investigate",
-            description="この場所の詳細を探索します",
-            metadata={}
+            text="周囲を詳しく調べる", action_type="investigate", description="この場所の詳細を探索します", metadata={}
         )
     )
 
     choices.append(
-        ActionChoice(
-            text="休憩する",
-            action_type="rest",
-            description="少し休んで体力を回復します",
-            metadata={}
-        )
+        ActionChoice(text="休憩する", action_type="rest", description="少し休んで体力を回復します", metadata={})
     )
 
     # 場所の接続に基づく選択肢
@@ -247,7 +245,7 @@ async def generate_action_choices(
         connections = db.exec(
             select(LocationConnection).where(
                 LocationConnection.from_location_id == location.id,
-                LocationConnection.is_blocked == False  # noqa: E712
+                LocationConnection.is_blocked == False,  # noqa: E712
             )
         ).all()
 
@@ -277,22 +275,12 @@ async def generate_action_choices(
     # 文脈依存の選択肢
     if "扉" in narrative_context:
         choices.append(
-            ActionChoice(
-                text="扉を開ける",
-                action_type="interact",
-                description=None,
-                metadata={"object": "door"}
-            )
+            ActionChoice(text="扉を開ける", action_type="interact", description=None, metadata={"object": "door"})
         )
 
     if "人影" in narrative_context or "誰か" in narrative_context:
         choices.append(
-            ActionChoice(
-                text="人影に近づく",
-                action_type="approach",
-                description=None,
-                metadata={"target": "figure"}
-            )
+            ActionChoice(text="人影に近づく", action_type="approach", description=None, metadata={"target": "figure"})
         )
 
     return choices[:5]  # 最大5つの選択肢

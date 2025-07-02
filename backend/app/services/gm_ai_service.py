@@ -74,7 +74,8 @@ class GMAIService(AIBaseService):
         # 利用可能な接続情報を追加
         connections = self.db.exec(
             select(LocationConnection).where(
-                LocationConnection.from_location_id == location.id, LocationConnection.is_blocked == False  # noqa: E712
+                LocationConnection.from_location_id == location.id,
+                LocationConnection.is_blocked == False,  # noqa: E712
             )
         ).all()
 

@@ -1,6 +1,7 @@
 """
 Admin SP management endpoints.
 """
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -36,9 +37,7 @@ async def get_all_players_sp(
     query = select(PlayerSP).join(User)
 
     if search:
-        query = query.where(
-            (col(User.username).ilike(f"%{search}%")) | (col(User.email).ilike(f"%{search}%"))
-        )
+        query = query.where((col(User.username).ilike(f"%{search}%")) | (col(User.email).ilike(f"%{search}%")))
 
     query = query.offset(skip).limit(limit)
     results = db.exec(query).all()
@@ -73,10 +72,7 @@ async def get_player_sp_detail(
     player_sp = db.exec(stmt).first()
 
     if not player_sp:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Player SP data not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player SP data not found")
 
     return PlayerSPDetail(
         user_id=int(player_sp.user_id),
@@ -143,10 +139,7 @@ async def adjust_player_sp(
     stmt = select(User).where(User.id == str(adjustment.user_id))
     user = db.exec(stmt).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Get or create player SP
     player_sp = await sp_service.get_or_create_player_sp(str(adjustment.user_id))
@@ -155,7 +148,7 @@ async def adjust_player_sp(
     if adjustment.amount < 0 and abs(adjustment.amount) > player_sp.current_sp:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot deduct {abs(adjustment.amount)} SP. Current balance: {player_sp.current_sp}"
+            detail=f"Cannot deduct {abs(adjustment.amount)} SP. Current balance: {player_sp.current_sp}",
         )
 
     # Apply adjustment
@@ -165,7 +158,7 @@ async def adjust_player_sp(
             user_id=str(adjustment.user_id),
             amount=adjustment.amount,
             transaction_type=SPTransactionType.ADMIN_GRANT,
-            description=f"管理者付与: {adjustment.reason or '理由なし'} (by {admin_user.username})"
+            description=f"管理者付与: {adjustment.reason or '理由なし'} (by {admin_user.username})",
         )
     else:
         # Deduct SP
@@ -173,7 +166,7 @@ async def adjust_player_sp(
             user_id=str(adjustment.user_id),
             amount=abs(adjustment.amount),
             transaction_type=SPTransactionType.ADMIN_DEDUCT,
-            description=f"管理者減算: {adjustment.reason or '理由なし'} (by {admin_user.username})"
+            description=f"管理者減算: {adjustment.reason or '理由なし'} (by {admin_user.username})",
         )
 
     # Get updated player SP
@@ -221,14 +214,14 @@ async def batch_adjust_sp(
                     user_id=str(adjustment.user_id),
                     amount=adjustment.amount,
                     transaction_type=SPTransactionType.ADMIN_GRANT,
-                    description=f"一括付与: {adjustment.reason or 'イベント配布'} (by {admin_user.username})"
+                    description=f"一括付与: {adjustment.reason or 'イベント配布'} (by {admin_user.username})",
                 )
             elif adjustment.amount < 0 and abs(adjustment.amount) <= player_sp.current_sp:
                 await sp_service.consume_sp(
                     user_id=str(adjustment.user_id),
                     amount=abs(adjustment.amount),
                     transaction_type=SPTransactionType.ADMIN_DEDUCT,
-                    description=f"一括減算: {adjustment.reason or '理由なし'} (by {admin_user.username})"
+                    description=f"一括減算: {adjustment.reason or '理由なし'} (by {admin_user.username})",
                 )
             else:
                 continue
@@ -236,15 +229,17 @@ async def batch_adjust_sp(
             # Get updated player SP
             player_sp = await sp_service.get_or_create_player_sp(str(adjustment.user_id))
 
-            results.append(AdminSPAdjustmentResponse(
-                user_id=adjustment.user_id,
-                username=user.username,
-                previous_sp=previous_sp,
-                current_sp=player_sp.current_sp,
-                adjustment_amount=adjustment.amount,
-                reason=adjustment.reason,
-                adjusted_by=admin_user.username,
-            ))
+            results.append(
+                AdminSPAdjustmentResponse(
+                    user_id=adjustment.user_id,
+                    username=user.username,
+                    previous_sp=previous_sp,
+                    current_sp=player_sp.current_sp,
+                    adjustment_amount=adjustment.amount,
+                    reason=adjustment.reason,
+                    adjusted_by=admin_user.username,
+                )
+            )
         except Exception:
             # Skip failed adjustments
             continue

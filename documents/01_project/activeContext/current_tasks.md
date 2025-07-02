@@ -25,7 +25,18 @@
 なし
 
 ### 完了したタスク ✅
-1. **ログ遭遇システムの改善（2025-07-02）**
+1. **コードエラーの解消（2025-07-03）**
+   - バックエンドのインポートエラー修正
+     - モジュールパス修正（logger→logging、auth→deps、log_fragment→log等）
+   - 属性参照エラーの修正
+     - ActionLog、LogFragment、LocationEventの属性名修正
+   - SQLAlchemy/SQLModelエラーの修正
+     - datetime.desc()→desc(datetime)
+     - bool比較の修正（== True/False → 直接評価）
+   - リントエラーの自動修正（インポート順序等）
+   - バックエンドのリント・型チェック完全成功
+
+2. **ログ遭遇システムの改善（2025-07-02）**
    - 遭遇確率システムの実装
    - 複数NPC同時遭遇のサポート
    - 遭遇後のアイテム交換システムAPIの実装

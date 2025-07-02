@@ -1,47 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Sparkles, Target, History, Brain } from 'lucide-react';
-import { QuestProposals } from './QuestProposals';
-import { ActiveQuests } from './ActiveQuests';
-import { QuestHistory } from './QuestHistory';
-import { QuestDeclaration } from './QuestDeclaration';
-import { useActiveCharacter } from '@/hooks/useActiveCharacter';
-import { useActiveQuests, useInferImplicitQuest } from '@/hooks/useQuests';
-import { toast } from 'sonner';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import React, { useState, useEffect } from 'react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Sparkles, Target, History, Brain } from 'lucide-react'
+import { QuestProposals } from './QuestProposals'
+import { ActiveQuests } from './ActiveQuests'
+import { QuestHistory } from './QuestHistory'
+import { QuestDeclaration } from './QuestDeclaration'
+import { useActiveCharacter } from '@/hooks/useActiveCharacter'
+import { useActiveQuests, useInferImplicitQuest } from '@/hooks/useQuests'
+import { toast } from 'sonner'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export const QuestPanel: React.FC = () => {
-  const { character } = useActiveCharacter();
-  const { activeQuests } = useActiveQuests(character?.id);
-  const inferQuest = useInferImplicitQuest(character?.id);
-  const [activeTab, setActiveTab] = useState('active');
+  const { character } = useActiveCharacter()
+  const { activeQuests } = useActiveQuests(character?.id)
+  const inferQuest = useInferImplicitQuest(character?.id)
+  const [activeTab, setActiveTab] = useState('active')
 
   // 暗黙的クエストの推測を定期的に実行
   useEffect(() => {
-    if (!character?.id) return;
+    if (!character?.id) return
 
     const inferImplicitQuestPeriodically = async () => {
       try {
-        const quest = await inferQuest.mutateAsync();
+        const quest = await inferQuest.mutateAsync()
         if (quest) {
-          toast.success(`新しいクエストが推測されました - 「${quest.title}」`);
+          toast.success(`新しいクエストが推測されました - 「${quest.title}」`)
         }
       } catch (error) {
         // エラーは静かに処理
-        console.error('Failed to infer implicit quest:', error);
+        console.error('Failed to infer implicit quest:', error)
       }
-    };
+    }
 
     // 初回実行
-    inferImplicitQuestPeriodically();
+    inferImplicitQuestPeriodically()
 
     // 5分ごとに実行
-    const interval = setInterval(inferImplicitQuestPeriodically, 5 * 60 * 1000);
+    const interval = setInterval(inferImplicitQuestPeriodically, 5 * 60 * 1000)
 
-    return () => clearInterval(interval);
-  }, [character?.id]);
+    return () => clearInterval(interval)
+  }, [character?.id])
 
   if (!character) {
     return (
@@ -50,7 +50,7 @@ export const QuestPanel: React.FC = () => {
           キャラクターを選択してクエストを管理してください
         </AlertDescription>
       </Alert>
-    );
+    )
   }
 
   return (
@@ -91,15 +91,15 @@ export const QuestPanel: React.FC = () => {
           <TabsContent value="active" className="mt-0">
             <ActiveQuests />
           </TabsContent>
-          
+
           <TabsContent value="proposals" className="mt-0">
             <QuestProposals />
           </TabsContent>
-          
+
           <TabsContent value="declare" className="mt-0">
             <QuestDeclaration />
           </TabsContent>
-          
+
           <TabsContent value="history" className="mt-0">
             <QuestHistory />
           </TabsContent>
@@ -113,14 +113,18 @@ export const QuestPanel: React.FC = () => {
           size="sm"
           onClick={async () => {
             try {
-              const quest = await inferQuest.mutateAsync();
+              const quest = await inferQuest.mutateAsync()
               if (quest) {
-                toast.success(`新しいクエストが推測されました - 「${quest.title}」`);
+                toast.success(
+                  `新しいクエストが推測されました - 「${quest.title}」`
+                )
               } else {
-                toast.info('現在の行動パターンからは新しいクエストを推測できませんでした');
+                toast.info(
+                  '現在の行動パターンからは新しいクエストを推測できませんでした'
+                )
               }
             } catch (error) {
-              toast.error('クエストの推測に失敗しました');
+              toast.error('クエストの推測に失敗しました')
             }
           }}
           disabled={inferQuest.isPending}
@@ -131,5 +135,5 @@ export const QuestPanel: React.FC = () => {
         </Button>
       </div>
     </div>
-  );
-};
+  )
+}

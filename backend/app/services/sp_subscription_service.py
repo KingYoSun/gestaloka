@@ -100,9 +100,7 @@ class SPSubscriptionService:
         )
         return list(self.db.exec(stmt).all())
 
-    async def create_subscription(
-        self, user_id: str, data: SPSubscriptionCreate
-    ) -> dict:
+    async def create_subscription(self, user_id: str, data: SPSubscriptionCreate) -> dict:
         """サブスクリプションを作成"""
         try:
             # ユーザー取得
@@ -205,11 +203,7 @@ class SPSubscriptionService:
                     price=plan_info["price"],
                     currency="jpy",
                     auto_renew=data.auto_renew,
-                    trial_end=(
-                        datetime.utcnow() + timedelta(days=data.trial_days)
-                        if data.trial_days
-                        else None
-                    ),
+                    trial_end=(datetime.utcnow() + timedelta(days=data.trial_days) if data.trial_days else None),
                 )
                 self.db.add(subscription)
 
@@ -244,9 +238,7 @@ class SPSubscriptionService:
                 "message": "サブスクリプションの作成に失敗しました",
             }
 
-    async def cancel_subscription(
-        self, user_id: str, data: SPSubscriptionCancel
-    ) -> dict:
+    async def cancel_subscription(self, user_id: str, data: SPSubscriptionCancel) -> dict:
         """サブスクリプションをキャンセル"""
         try:
             # アクティブなサブスクリプションを取得
@@ -334,9 +326,7 @@ class SPSubscriptionService:
                 "message": "サブスクリプションのキャンセルに失敗しました",
             }
 
-    async def update_subscription(
-        self, user_id: str, data: SPSubscriptionUpdate
-    ) -> dict:
+    async def update_subscription(self, user_id: str, data: SPSubscriptionUpdate) -> dict:
         """サブスクリプションを更新"""
         try:
             # アクティブなサブスクリプションを取得
@@ -444,10 +434,7 @@ class SPSubscriptionService:
         if is_active and subscription.expires_at:
             days_remaining = (subscription.expires_at - now).days
 
-        is_trial = (
-            subscription.trial_end is not None
-            and subscription.trial_end > now
-        )
+        is_trial = subscription.trial_end is not None and subscription.trial_end > now
 
         return SPSubscriptionResponse(
             **subscription.model_dump(),
@@ -459,12 +446,16 @@ class SPSubscriptionService:
     async def _get_or_create_stripe_customer(self, user: User) -> str:
         """Stripe顧客を取得または作成"""
         # 既存のサブスクリプションから顧客IDを探す
-        stmt = select(SPSubscription).where(
-            and_(
-                col(SPSubscription.user_id) == user.id,
-                col(SPSubscription.stripe_customer_id).is_not(None),
+        stmt = (
+            select(SPSubscription)
+            .where(
+                and_(
+                    col(SPSubscription.user_id) == user.id,
+                    col(SPSubscription.stripe_customer_id).is_not(None),
+                )
             )
-        ).limit(1)
+            .limit(1)
+        )
         existing_sub = self.db.exec(stmt).first()
 
         if existing_sub and existing_sub.stripe_customer_id:

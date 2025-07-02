@@ -39,9 +39,7 @@ async def get_character_fragments(
 
     if keyword:
         # キーワードで部分一致検索（メインキーワードまたはキーワードリスト内）
-        query = query.where(
-            col(LogFragment.keyword).contains(keyword) | col(LogFragment.keywords).contains(keyword)
-        )
+        query = query.where(col(LogFragment.keyword).contains(keyword) | col(LogFragment.keywords).contains(keyword))
 
     # 総数を取得
     count_query = select(LogFragment).where(LogFragment.character_id == current_character.id)

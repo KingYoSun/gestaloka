@@ -265,14 +265,18 @@ function NPCEncounterContent({
       <div className="flex items-start justify-between">
         <div className="flex flex-col gap-1">
           <Badge
-            variant={getEncounterBadgeVariant(encounter.encounter_type) as 'default' | 'destructive' | 'secondary' | 'outline'}
+            variant={
+              getEncounterBadgeVariant(encounter.encounter_type) as
+                | 'default'
+                | 'destructive'
+                | 'secondary'
+                | 'outline'
+            }
           >
             {getEncounterIcon(encounter.encounter_type)}
             <span className="ml-1">{encounter.encounter_type}</span>
           </Badge>
-          <Badge
-            className={`${getTypeColor(npc.npc_type)} text-white text-xs`}
-          >
+          <Badge className={`${getTypeColor(npc.npc_type)} text-white text-xs`}>
             {npc.npc_type.replace('_', ' ')}
           </Badge>
           {npc.contamination_level > 0 && (
@@ -322,9 +326,7 @@ function NPCEncounterContent({
               {choices.map(choice => (
                 <Button
                   key={choice.id}
-                  variant={
-                    selectedAction === choice.id ? 'default' : 'outline'
-                  }
+                  variant={selectedAction === choice.id ? 'default' : 'outline'}
                   className="w-full justify-start text-left h-auto py-3 px-4"
                   onClick={() => handleActionClick(choice.id)}
                   disabled={isLoading}

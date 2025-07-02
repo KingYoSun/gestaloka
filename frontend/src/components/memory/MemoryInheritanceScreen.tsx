@@ -1,17 +1,19 @@
-import { useMemoryInheritanceScreen } from '@/hooks/useMemoryInheritance';
-import { MemoryFragmentSelector } from './MemoryFragmentSelector';
-import { MemoryInheritancePreview } from './MemoryInheritancePreview';
-import { MemoryInheritanceHistory } from './MemoryInheritanceHistory';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Loader2, Sparkles } from 'lucide-react';
+import { useMemoryInheritanceScreen } from '@/hooks/useMemoryInheritance'
+import { MemoryFragmentSelector } from './MemoryFragmentSelector'
+import { MemoryInheritancePreview } from './MemoryInheritancePreview'
+import { MemoryInheritanceHistory } from './MemoryInheritanceHistory'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Loader2, Sparkles } from 'lucide-react'
 
 interface MemoryInheritanceScreenProps {
-  characterId: string;
+  characterId: string
 }
 
-export function MemoryInheritanceScreen({ characterId }: MemoryInheritanceScreenProps) {
+export function MemoryInheritanceScreen({
+  characterId,
+}: MemoryInheritanceScreenProps) {
   const {
     fragments,
     isLoadingFragments,
@@ -27,7 +29,7 @@ export function MemoryInheritanceScreen({ characterId }: MemoryInheritanceScreen
     executeInheritance,
     isExecuting,
     canExecute,
-  } = useMemoryInheritanceScreen(characterId);
+  } = useMemoryInheritanceScreen(characterId)
 
   return (
     <div className="container mx-auto p-4 max-w-7xl">
@@ -154,5 +156,5 @@ export function MemoryInheritanceScreen({ characterId }: MemoryInheritanceScreen
         </TabsContent>
       </Tabs>
     </div>
-  );
+  )
 }

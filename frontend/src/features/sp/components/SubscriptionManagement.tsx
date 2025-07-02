@@ -2,26 +2,43 @@
  * サブスクリプション管理画面
  */
 
-import { useState } from 'react';
-import { Calendar, CreditCard, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useCancelSubscription, useCurrentSubscription, useUpdateSubscription } from '../hooks/useSubscription';
-import { SPSubscriptionType, SubscriptionStatus } from '../types/subscription';
-import { formatDate } from '@/lib/utils';
+import { useState } from 'react'
+import { Calendar, CreditCard, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  useCancelSubscription,
+  useCurrentSubscription,
+  useUpdateSubscription,
+} from '../hooks/useSubscription'
+import { SPSubscriptionType, SubscriptionStatus } from '../types/subscription'
+import { formatDate } from '@/lib/utils'
 
 export const SubscriptionManagement = () => {
-  const { data: subscription, isLoading, error } = useCurrentSubscription();
-  const updateMutation = useUpdateSubscription();
-  const cancelMutation = useCancelSubscription();
-  const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [cancelImmediate, setCancelImmediate] = useState(false);
+  const { data: subscription, isLoading, error } = useCurrentSubscription()
+  const updateMutation = useUpdateSubscription()
+  const cancelMutation = useCancelSubscription()
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [cancelImmediate, setCancelImmediate] = useState(false)
 
   if (isLoading) {
     return (
@@ -33,7 +50,7 @@ export const SubscriptionManagement = () => {
           <Skeleton className="h-32" />
         </CardContent>
       </Card>
-    );
+    )
   }
 
   if (error || !subscription) {
@@ -44,35 +61,35 @@ export const SubscriptionManagement = () => {
           有効なサブスクリプションがありません
         </AlertDescription>
       </Alert>
-    );
+    )
   }
 
   const handleAutoRenewToggle = (checked: boolean) => {
-    updateMutation.mutate({ auto_renew: checked });
-  };
+    updateMutation.mutate({ auto_renew: checked })
+  }
 
   const handleCancel = () => {
     cancelMutation.mutate({
       immediate: cancelImmediate,
       reason: '手動キャンセル',
-    });
-    setShowCancelDialog(false);
-  };
+    })
+    setShowCancelDialog(false)
+  }
 
   const getStatusBadge = () => {
     switch (subscription.status) {
       case SubscriptionStatus.ACTIVE:
-        return <Badge className="bg-green-500">有効</Badge>;
+        return <Badge className="bg-green-500">有効</Badge>
       case SubscriptionStatus.CANCELLED:
-        return <Badge variant="secondary">キャンセル済み</Badge>;
+        return <Badge variant="secondary">キャンセル済み</Badge>
       case SubscriptionStatus.EXPIRED:
-        return <Badge variant="destructive">期限切れ</Badge>;
+        return <Badge variant="destructive">期限切れ</Badge>
       case SubscriptionStatus.PENDING:
-        return <Badge variant="outline">処理中</Badge>;
+        return <Badge variant="outline">処理中</Badge>
       default:
-        return <Badge variant="secondary">{subscription.status}</Badge>;
+        return <Badge variant="secondary">{subscription.status}</Badge>
     }
-  };
+  }
 
   return (
     <>
@@ -95,19 +112,29 @@ export const SubscriptionManagement = () => {
             <div className="flex items-center space-x-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm">
-                開始日: {subscription.started_at ? formatDate(subscription.started_at) : '-'}
+                開始日:{' '}
+                {subscription.started_at
+                  ? formatDate(subscription.started_at)
+                  : '-'}
               </span>
             </div>
 
             <div className="flex items-center space-x-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm">
-                有効期限: {subscription.expires_at ? formatDate(subscription.expires_at) : '-'}
+                有効期限:{' '}
+                {subscription.expires_at
+                  ? formatDate(subscription.expires_at)
+                  : '-'}
               </span>
             </div>
 
             {subscription.days_remaining !== undefined && (
-              <Alert className={subscription.days_remaining <= 7 ? 'border-yellow-500' : ''}>
+              <Alert
+                className={
+                  subscription.days_remaining <= 7 ? 'border-yellow-500' : ''
+                }
+              >
                 <AlertDescription>
                   残り {subscription.days_remaining} 日で更新されます
                 </AlertDescription>
@@ -165,19 +192,20 @@ export const SubscriptionManagement = () => {
           )}
 
           {/* キャンセル済みの場合 */}
-          {subscription.status === SubscriptionStatus.CANCELLED && subscription.cancelled_at && (
-            <Alert>
-              <AlertDescription>
-                {formatDate(subscription.cancelled_at)} にキャンセルされました
-                {subscription.expires_at && (
-                  <>
-                    <br />
-                    {formatDate(subscription.expires_at)} まで利用可能です
-                  </>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+          {subscription.status === SubscriptionStatus.CANCELLED &&
+            subscription.cancelled_at && (
+              <Alert>
+                <AlertDescription>
+                  {formatDate(subscription.cancelled_at)} にキャンセルされました
+                  {subscription.expires_at && (
+                    <>
+                      <br />
+                      {formatDate(subscription.expires_at)} まで利用可能です
+                    </>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
         </CardContent>
       </Card>
 
@@ -213,7 +241,10 @@ export const SubscriptionManagement = () => {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelDialog(false)}
+            >
               戻る
             </Button>
             <Button
@@ -227,5 +258,5 @@ export const SubscriptionManagement = () => {
         </DialogContent>
       </Dialog>
     </>
-  );
-};
+  )
+}

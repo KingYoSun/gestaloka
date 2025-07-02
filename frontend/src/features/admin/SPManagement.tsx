@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Table,
   TableBody,
@@ -7,9 +7,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+} from '@/components/ui/table'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -17,79 +17,84 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/components/ui/use-toast';
-import { Loader2, Search, Plus, Minus, History } from 'lucide-react';
-import { adminSPManagementApi, PlayerSPDetail, AdminSPAdjustment } from '@/api/admin/spManagement';
-import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
-import { ja } from 'date-fns/locale';
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/use-toast'
+import { Loader2, Search, Plus, Minus, History } from 'lucide-react'
+import {
+  adminSPManagementApi,
+  PlayerSPDetail,
+  AdminSPAdjustment,
+} from '@/api/admin/spManagement'
+import { Badge } from '@/components/ui/badge'
+import { format } from 'date-fns'
+import { ja } from 'date-fns/locale'
 
 export function SPManagement() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [search, setSearch] = useState('');
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [search, setSearch] = useState('')
   const [adjustDialog, setAdjustDialog] = useState<{
-    open: boolean;
-    player?: PlayerSPDetail;
-  }>({ open: false });
-  const [adjustAmount, setAdjustAmount] = useState('');
-  const [adjustReason, setAdjustReason] = useState('');
+    open: boolean
+    player?: PlayerSPDetail
+  }>({ open: false })
+  const [adjustAmount, setAdjustAmount] = useState('')
+  const [adjustReason, setAdjustReason] = useState('')
   const [historyDialog, setHistoryDialog] = useState<{
-    open: boolean;
-    userId?: string;
-  }>({ open: false });
+    open: boolean
+    userId?: string
+  }>({ open: false })
 
   // Fetch players SP data
   const { data: players, isLoading } = useQuery({
     queryKey: ['admin', 'sp', 'players', search],
-    queryFn: () => adminSPManagementApi.getAllPlayersSP({ search: search || undefined }),
-  });
+    queryFn: () =>
+      adminSPManagementApi.getAllPlayersSP({ search: search || undefined }),
+  })
 
   // Adjust SP mutation
   const adjustMutation = useMutation({
     mutationFn: (adjustment: AdminSPAdjustment) =>
       adminSPManagementApi.adjustPlayerSP(adjustment),
-    onSuccess: (data) => {
+    onSuccess: data => {
       toast({
         title: 'SP調整完了',
         description: `${data.username}のSPを${data.adjustment_amount > 0 ? '+' : ''}${data.adjustment_amount}調整しました。`,
-      });
-      queryClient.invalidateQueries({ queryKey: ['admin', 'sp'] });
-      setAdjustDialog({ open: false });
-      setAdjustAmount('');
-      setAdjustReason('');
+      })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sp'] })
+      setAdjustDialog({ open: false })
+      setAdjustAmount('')
+      setAdjustReason('')
     },
     onError: (error: any) => {
       toast({
         title: 'エラー',
         description: error.response?.data?.detail || 'SP調整に失敗しました。',
         variant: 'destructive',
-      });
+      })
     },
-  });
+  })
 
   const handleAdjust = () => {
-    if (!adjustDialog.player || !adjustAmount) return;
+    if (!adjustDialog.player || !adjustAmount) return
 
-    const amount = parseInt(adjustAmount);
+    const amount = parseInt(adjustAmount)
     if (isNaN(amount) || amount === 0) {
       toast({
         title: 'エラー',
         description: '有効な数値を入力してください。',
         variant: 'destructive',
-      });
-      return;
+      })
+      return
     }
 
     adjustMutation.mutate({
       user_id: adjustDialog.player.user_id,
       amount,
       reason: adjustReason || undefined,
-    });
-  };
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -107,7 +112,7 @@ export function SPManagement() {
           <Input
             placeholder="ユーザー名またはメールで検索..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
             className="pl-8"
           />
         </div>
@@ -137,14 +142,19 @@ export function SPManagement() {
               </TableRow>
             ) : players?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                <TableCell
+                  colSpan={8}
+                  className="text-center py-8 text-muted-foreground"
+                >
                   プレイヤーが見つかりません
                 </TableCell>
               </TableRow>
             ) : (
-              players?.map((player) => (
+              players?.map(player => (
                 <TableRow key={player.user_id}>
-                  <TableCell className="font-medium">{player.username}</TableCell>
+                  <TableCell className="font-medium">
+                    {player.username}
+                  </TableCell>
                   <TableCell>{player.email}</TableCell>
                   <TableCell className="text-right font-mono">
                     {player.current_sp.toLocaleString()}
@@ -162,9 +172,13 @@ export function SPManagement() {
                   </TableCell>
                   <TableCell>
                     {player.last_daily_recovery
-                      ? format(new Date(player.last_daily_recovery), 'M/d HH:mm', {
-                          locale: ja,
-                        })
+                      ? format(
+                          new Date(player.last_daily_recovery),
+                          'M/d HH:mm',
+                          {
+                            locale: ja,
+                          }
+                        )
                       : '-'}
                   </TableCell>
                   <TableCell>
@@ -180,7 +194,10 @@ export function SPManagement() {
                         size="sm"
                         variant="ghost"
                         onClick={() =>
-                          setHistoryDialog({ open: true, userId: String(player.user_id) })
+                          setHistoryDialog({
+                            open: true,
+                            userId: String(player.user_id),
+                          })
                         }
                       >
                         <History className="h-4 w-4" />
@@ -195,7 +212,10 @@ export function SPManagement() {
       </div>
 
       {/* SP Adjustment Dialog */}
-      <Dialog open={adjustDialog.open} onOpenChange={(open) => setAdjustDialog({ open })}>
+      <Dialog
+        open={adjustDialog.open}
+        onOpenChange={open => setAdjustDialog({ open })}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>SP調整</DialogTitle>
@@ -225,7 +245,7 @@ export function SPManagement() {
                   id="adjust-amount"
                   type="number"
                   value={adjustAmount}
-                  onChange={(e) => setAdjustAmount(e.target.value)}
+                  onChange={e => setAdjustAmount(e.target.value)}
                   placeholder="例: 100 or -50"
                   className="text-center"
                 />
@@ -247,7 +267,7 @@ export function SPManagement() {
               <Textarea
                 id="adjust-reason"
                 value={adjustReason}
-                onChange={(e) => setAdjustReason(e.target.value)}
+                onChange={e => setAdjustReason(e.target.value)}
                 placeholder="例: イベント報酬、バグ補填など"
                 rows={3}
               />
@@ -257,9 +277,9 @@ export function SPManagement() {
             <Button
               variant="outline"
               onClick={() => {
-                setAdjustDialog({ open: false });
-                setAdjustAmount('');
-                setAdjustReason('');
+                setAdjustDialog({ open: false })
+                setAdjustAmount('')
+                setAdjustReason('')
               }}
             >
               キャンセル
@@ -281,10 +301,10 @@ export function SPManagement() {
       <TransactionHistoryDialog
         open={historyDialog.open}
         userId={historyDialog.userId}
-        onOpenChange={(open) => setHistoryDialog({ open })}
+        onOpenChange={open => setHistoryDialog({ open })}
       />
     </div>
-  );
+  )
 }
 
 // Transaction History Dialog Component
@@ -293,16 +313,18 @@ function TransactionHistoryDialog({
   userId,
   onOpenChange,
 }: {
-  open: boolean;
-  userId?: string;
-  onOpenChange: (open: boolean) => void;
+  open: boolean
+  userId?: string
+  onOpenChange: (open: boolean) => void
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'sp', 'transactions', userId],
     queryFn: () =>
-      userId ? adminSPManagementApi.getPlayerTransactions(userId, { limit: 50 }) : null,
+      userId
+        ? adminSPManagementApi.getPlayerTransactions(userId, { limit: 50 })
+        : null,
     enabled: !!userId && open,
-  });
+  })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -327,10 +349,12 @@ function TransactionHistoryDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data?.transactions.map((tx) => (
+                {data?.transactions.map(tx => (
                   <TableRow key={tx.id}>
                     <TableCell>
-                      {format(new Date(tx.created_at), 'M/d HH:mm', { locale: ja })}
+                      {format(new Date(tx.created_at), 'M/d HH:mm', {
+                        locale: ja,
+                      })}
                     </TableCell>
                     <TableCell>
                       <Badge variant={tx.amount > 0 ? 'default' : 'secondary'}>
@@ -348,7 +372,9 @@ function TransactionHistoryDialog({
                     <TableCell className="text-right font-mono">
                       {tx.balance_after.toLocaleString()}
                     </TableCell>
-                    <TableCell className="text-sm">{tx.description || '-'}</TableCell>
+                    <TableCell className="text-sm">
+                      {tx.description || '-'}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -357,5 +383,5 @@ function TransactionHistoryDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

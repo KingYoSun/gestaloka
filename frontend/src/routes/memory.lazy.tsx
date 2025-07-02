@@ -1,13 +1,13 @@
-import { createLazyFileRoute } from '@tanstack/react-router';
-import { MemoryInheritanceScreen } from '@/components/memory/MemoryInheritanceScreen';
-import { useCharacter } from '@/hooks/useCharacter';
+import { createLazyFileRoute } from '@tanstack/react-router'
+import { MemoryInheritanceScreen } from '@/components/memory/MemoryInheritanceScreen'
+import { useCharacter } from '@/hooks/useCharacter'
 
 export const Route = createLazyFileRoute('/memory')({
   component: MemoryRoute,
-});
+})
 
 function MemoryRoute() {
-  const { currentCharacter } = useCharacter();
+  const { currentCharacter } = useCharacter()
 
   if (!currentCharacter) {
     return (
@@ -16,8 +16,8 @@ function MemoryRoute() {
           キャラクターを選択してください
         </p>
       </div>
-    );
+    )
   }
 
-  return <MemoryInheritanceScreen characterId={currentCharacter.id} />;
+  return <MemoryInheritanceScreen characterId={currentCharacter.id} />
 }

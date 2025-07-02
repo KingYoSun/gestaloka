@@ -57,9 +57,7 @@ class StripeService:
                 "message": "決済セッションの作成に失敗しました",
             }
 
-    async def create_customer(
-        self, email: str, metadata: Optional[dict[str, Any]] = None
-    ) -> dict[str, Any]:
+    async def create_customer(self, email: str, metadata: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         """Stripe顧客を作成"""
         try:
             customer = stripe.Customer.create(
@@ -130,9 +128,7 @@ class StripeService:
                 "message": "サブスクリプションの作成に失敗しました",
             }
 
-    async def cancel_subscription(
-        self, subscription_id: str, immediate: bool = False
-    ) -> dict[str, Any]:
+    async def cancel_subscription(self, subscription_id: str, immediate: bool = False) -> dict[str, Any]:
         """Stripeサブスクリプションをキャンセル"""
         try:
             if immediate:
@@ -148,9 +144,7 @@ class StripeService:
             return {
                 "success": True,
                 "message": (
-                    "サブスクリプションをキャンセルしました"
-                    if immediate
-                    else "サブスクリプションは期限まで有効です"
+                    "サブスクリプションをキャンセルしました" if immediate else "サブスクリプションは期限まで有効です"
                 ),
             }
 
@@ -161,14 +155,14 @@ class StripeService:
                 "message": "サブスクリプションのキャンセルに失敗しました",
             }
 
-    async def update_subscription_payment_method(
-        self, subscription_id: str, payment_method_id: str
-    ) -> dict[str, Any]:
+    async def update_subscription_payment_method(self, subscription_id: str, payment_method_id: str) -> dict[str, Any]:
         """サブスクリプションの決済方法を更新"""
         try:
             # サブスクリプションを取得
             subscription = cast(Subscription, stripe.Subscription.retrieve(subscription_id))
-            customer_id = str(subscription.customer) if isinstance(subscription.customer, Customer) else subscription.customer
+            customer_id = (
+                str(subscription.customer) if isinstance(subscription.customer, Customer) else subscription.customer
+            )
 
             # 決済方法を顧客に紐付け
             stripe.PaymentMethod.attach(
@@ -196,14 +190,10 @@ class StripeService:
                 "message": "決済方法の更新に失敗しました",
             }
 
-    def verify_webhook_signature(
-        self, payload: bytes, signature: str
-    ) -> Optional[dict[str, Any]]:
+    def verify_webhook_signature(self, payload: bytes, signature: str) -> Optional[dict[str, Any]]:
         """Webhookの署名を検証してイベントを返す"""
         try:
-            event = stripe.Webhook.construct_event(
-                payload, signature, settings.STRIPE_WEBHOOK_SECRET
-            )
+            event = stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
             return event
         except ValueError:
             logger.error("Invalid webhook payload")

@@ -73,9 +73,7 @@ class LogFragment(SQLModel, table=True):
 
     # 記憶継承システム用フィールド
     memory_type: Optional[str] = Field(default=None, description="記憶のタイプ（勇気/友情/知恵/犠牲/勝利/真実など）")
-    combination_tags: list[str] = Field(
-        default_factory=list, sa_column=Column(JSON), description="組み合わせ用のタグ"
-    )
+    combination_tags: list[str] = Field(default_factory=list, sa_column=Column(JSON), description="組み合わせ用のタグ")
     world_truth: Optional[str] = Field(default=None, description="世界の真実（アーキテクトレアリティ限定）")
     acquisition_context: Optional[str] = Field(default=None, description="獲得時の詳細な状況")
     is_consumed: bool = Field(default=False, description="消費されたかどうか（常にFalseで永続性を保証）")

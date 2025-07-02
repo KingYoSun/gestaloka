@@ -10,7 +10,7 @@ from typing import ClassVar, Optional
 
 from sqlmodel import Session
 
-from app.core.logger import get_logger  # type: ignore
+from app.core.logging import get_logger
 from app.models import (
     Character,
     EmotionalValence,
@@ -271,15 +271,19 @@ class LogFragmentService:
         emotion: str,
     ) -> str:
         """バックストーリーを生成"""
-        templates = LogFragmentService.BACKSTORY_TEMPLATES.get(rarity, LogFragmentService.BACKSTORY_TEMPLATES[LogFragmentRarity.COMMON])
+        templates = LogFragmentService.BACKSTORY_TEMPLATES.get(
+            rarity, LogFragmentService.BACKSTORY_TEMPLATES[LogFragmentRarity.COMMON]
+        )
         template = random.choice(templates)
 
-        return str(template.format(
-            location=location,
-            area=area,
-            keyword=keyword,
-            emotion=emotion,
-        ))
+        return str(
+            template.format(
+                location=location,
+                area=area,
+                keyword=keyword,
+                emotion=emotion,
+            )
+        )
 
     @staticmethod
     def _calculate_importance_score(rarity: LogFragmentRarity) -> float:
@@ -301,7 +305,7 @@ class LogFragmentService:
         summary: str,
         emotional_keywords: list[str],
         uniqueness_score: float,
-        difficulty_score: float
+        difficulty_score: float,
     ) -> Optional[LogFragment]:
         """
         クエスト完了時に記憶フラグメントを生成
@@ -341,10 +345,7 @@ class LogFragmentService:
 
             # バックストーリーの生成
             backstory = self._generate_quest_backstory(
-                quest=quest,
-                summary=summary,
-                rarity=rarity,
-                character_name=character.name
+                quest=quest, summary=summary, rarity=rarity, character_name=character.name
             )
 
             # コンビネーションタグの生成
@@ -365,12 +366,12 @@ class LogFragmentService:
                     "completion_summary": summary,
                     "theme": theme,
                     "uniqueness_score": uniqueness_score,
-                    "difficulty_score": difficulty_score
+                    "difficulty_score": difficulty_score,
                 },
                 memory_type=self._classify_memory_type(theme),
                 combination_tags=combination_tags,
                 world_truth=world_truth,
-                acquisition_context=f"クエスト「{quest.title}」の完了により獲得"
+                acquisition_context=f"クエスト「{quest.title}」の完了により獲得",
             )
 
             self.db.add(fragment)
@@ -403,9 +404,18 @@ class LogFragmentService:
     def _is_architect_memory(self, quest: Quest, theme: str) -> bool:
         """アーキテクト記憶かどうかを判定"""
         architect_keywords = [
-            "世界の真実", "階層情報圏", "アストラルネット", "フェイディング",
-            "設計者", "アーキテクト", "スクリプト", "世界のコード",
-            "忘却領域", "来訪者", "世界の終焉", "情報記録庫"
+            "世界の真実",
+            "階層情報圏",
+            "アストラルネット",
+            "フェイディング",
+            "設計者",
+            "アーキテクト",
+            "スクリプト",
+            "世界のコード",
+            "忘却領域",
+            "来訪者",
+            "世界の終焉",
+            "情報記録庫",
         ]
 
         # クエストの説明やイベントにアーキテクトキーワードが含まれるか
@@ -430,7 +440,7 @@ class LogFragmentService:
             "フェイディング": "世界が徐々に情報として消失していく現象の真相",
             "設計者": "この世界を創造した存在についての手がかり",
             "スクリプト": "スキルや魔法が実行可能なコードであることの発見",
-            "来訪者": "異世界からの来訪者が持つ特別な意味と役割"
+            "来訪者": "異世界からの来訪者が持つ特別な意味と役割",
         }
 
         for pattern, truth in truth_patterns.items():
@@ -463,11 +473,7 @@ class LogFragmentService:
             return EmotionalValence.NEUTRAL
 
     def _generate_quest_backstory(
-        self,
-        quest: Quest,
-        summary: str,
-        rarity: LogFragmentRarity,
-        character_name: str
+        self, quest: Quest, summary: str, rarity: LogFragmentRarity, character_name: str
     ) -> str:
         """クエストのバックストーリーを生成"""
         if rarity == LogFragmentRarity.ARCHITECT:
@@ -479,7 +485,7 @@ class LogFragmentService:
             LogFragmentRarity.RARE: "困難を乗り越えて手に入れた",
             LogFragmentRarity.EPIC: "偉大な物語の完結として刻まれた",
             LogFragmentRarity.LEGENDARY: "伝説として語り継がれるべき",
-            LogFragmentRarity.UNIQUE: f"{character_name}だけが達成できた"
+            LogFragmentRarity.UNIQUE: f"{character_name}だけが達成できた",
         }
 
         desc = rarity_descriptions.get(rarity, "特別な")
@@ -496,7 +502,7 @@ class LogFragmentService:
             "探索": ["exploration", "discovery"],
             "対話": ["dialogue", "social"],
             "謎解き": ["puzzle", "mystery"],
-            "成長": ["growth", "development"]
+            "成長": ["growth", "development"],
         }
 
         for category, cat_tags in category_mappings.items():
@@ -513,7 +519,7 @@ class LogFragmentService:
             "知恵": ["知識", "謎", "発見", "理解"],
             "犠牲": ["代償", "失う", "守る", "捧げる"],
             "勝利": ["成功", "達成", "克服", "制覇"],
-            "真実": ["秘密", "正体", "本質", "核心"]
+            "真実": ["秘密", "正体", "本質", "核心"],
         }
 
         for memory_type, keywords in type_keywords.items():

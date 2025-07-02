@@ -1,13 +1,15 @@
 """
 動的クエストシステムのAPIエンドポイント
 """
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app.api.deps import get_user_character as get_current_character, get_db
-from app.core.logger import get_logger  # type: ignore
+from app.api.deps import get_db
+from app.api.deps import get_user_character as get_current_character
+from app.core.logging import get_logger
 from app.models.character import Character
 from app.models.quest import Quest, QuestOrigin, QuestProposal, QuestStatus
 from app.services.quest_service import QuestService
@@ -22,7 +24,7 @@ async def get_quest_proposals(
     character_id: str,
     session_id: str,
     db: Session = Depends(get_db),
-    current_character: Character = Depends(get_current_character)
+    current_character: Character = Depends(get_current_character),
 ):
     """
     最近の行動を分析してクエストを提案する
@@ -36,15 +38,11 @@ async def get_quest_proposals(
     """
     if current_character.id != character_id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="他のキャラクターのクエスト提案は取得できません"
+            status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエスト提案は取得できません"
         )
 
     quest_service = QuestService(db)
-    proposals = await quest_service.analyze_and_propose_quests(
-        character_id=character_id,
-        session_id=session_id
-    )
+    proposals = await quest_service.analyze_and_propose_quests(character_id=character_id, session_id=session_id)
 
     return proposals
 
@@ -57,7 +55,7 @@ def create_quest(
     origin: QuestOrigin = QuestOrigin.PLAYER_DECLARED,
     session_id: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_character: Character = Depends(get_current_character)
+    current_character: Character = Depends(get_current_character),
 ):
     """
     新しいクエストを作成する
@@ -73,18 +71,11 @@ def create_quest(
         作成されたクエスト
     """
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="他のキャラクターのクエストは作成できません"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエストは作成できません")
 
     quest_service = QuestService(db)
     quest = quest_service.create_quest(
-        character_id=character_id,
-        title=title,
-        description=description,
-        origin=origin,
-        session_id=session_id
+        character_id=character_id, title=title, description=description, origin=origin, session_id=session_id
     )
 
     # WebSocket通知
@@ -99,7 +90,7 @@ def accept_quest(
     character_id: str,
     quest_id: str,
     db: Session = Depends(get_db),
-    current_character: Character = Depends(get_current_character)
+    current_character: Character = Depends(get_current_character),
 ):
     """
     提案されたクエストを受諾する
@@ -112,19 +103,13 @@ def accept_quest(
         更新されたクエスト
     """
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="他のキャラクターのクエストは受諾できません"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエストは受諾できません")
 
     quest_service = QuestService(db)
     quest = quest_service.accept_quest(quest_id)
 
     if not quest:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="クエストが見つかりません"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="クエストが見つかりません")
 
     # WebSocket通知
     websocket_service = WebSocketService()
@@ -138,7 +123,7 @@ async def update_quest_progress(
     character_id: str,
     quest_id: str,
     db: Session = Depends(get_db),
-    current_character: Character = Depends(get_current_character)
+    current_character: Character = Depends(get_current_character),
 ):
     """
     クエストの進行状況を更新する
@@ -151,22 +136,13 @@ async def update_quest_progress(
         更新されたクエスト
     """
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="他のキャラクターのクエストは更新できません"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエストは更新できません")
 
     quest_service = QuestService(db)
-    quest = await quest_service.update_quest_progress(
-        quest_id=quest_id,
-        character_id=character_id
-    )
+    quest = await quest_service.update_quest_progress(quest_id=quest_id, character_id=character_id)
 
     if not quest:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="クエストが見つかりません"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="クエストが見つかりません")
 
     # WebSocket通知
     websocket_service = WebSocketService()
@@ -186,7 +162,7 @@ def get_character_quests(
     limit: int = 20,
     offset: int = 0,
     db: Session = Depends(get_db),
-    current_character: Character = Depends(get_current_character)
+    current_character: Character = Depends(get_current_character),
 ):
     """
     キャラクターのクエストを取得する
@@ -201,18 +177,10 @@ def get_character_quests(
         クエストのリスト
     """
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="他のキャラクターのクエストは取得できません"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエストは取得できません")
 
     quest_service = QuestService(db)
-    quests = quest_service.get_character_quests(
-        character_id=character_id,
-        status=status,
-        limit=limit,
-        offset=offset
-    )
+    quests = quest_service.get_character_quests(character_id=character_id, status=status, limit=limit, offset=offset)
 
     return quests
 
@@ -222,7 +190,7 @@ async def infer_implicit_quest(
     character_id: str,
     session_id: str,
     db: Session = Depends(get_db),
-    current_character: Character = Depends(get_current_character)
+    current_character: Character = Depends(get_current_character),
 ):
     """
     プレイヤーの行動から暗黙的なクエストを推測する
@@ -235,16 +203,10 @@ async def infer_implicit_quest(
         推測されたクエスト（作成された場合）
     """
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="他のキャラクターのクエストは推測できません"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエストは推測できません")
 
     quest_service = QuestService(db)
-    quest = await quest_service.infer_implicit_quest(
-        character_id=character_id,
-        session_id=session_id
-    )
+    quest = await quest_service.infer_implicit_quest(character_id=character_id, session_id=session_id)
 
     if quest:
         # WebSocket通知
@@ -252,4 +214,3 @@ async def infer_implicit_quest(
         websocket_service.notify_quest_created(character_id, quest)
 
     return quest
-

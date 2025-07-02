@@ -128,8 +128,9 @@ export function useGameWebSocket(gameSessionId?: string) {
   const { user } = useAuthStore()
   const [messages, setMessages] = useState<GameMessage[]>([])
   const [gameState, setGameState] = useState<GameState | null>(null)
-  const [currentNPCEncounters, setCurrentNPCEncounters] =
-    useState<NPCEncounterData[]>([])
+  const [currentNPCEncounters, setCurrentNPCEncounters] = useState<
+    NPCEncounterData[]
+  >([])
 
   useEffect(() => {
     if (!gameSessionId || !user?.id) return
@@ -194,10 +195,12 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     // NPC遭遇イベントハンドラー
-    const handleNPCEncounter = (data: NPCEncounterData | NPCEncounterData[]) => {
+    const handleNPCEncounter = (
+      data: NPCEncounterData | NPCEncounterData[]
+    ) => {
       const encounters = Array.isArray(data) ? data : [data]
       setCurrentNPCEncounters(encounters)
-      
+
       // メッセージログにも追加
       if (encounters.length === 1) {
         const npc = encounters[0].npc
@@ -239,7 +242,7 @@ export function useGameWebSocket(gameSessionId?: string) {
         data.result.includes('去って')
       ) {
         // 該当NPCの遭遇を削除
-        setCurrentNPCEncounters(prev => 
+        setCurrentNPCEncounters(prev =>
           prev.filter(encounter => encounter.npc.npc_id !== data.npc_id)
         )
       }

@@ -45,7 +45,7 @@ class ExplorationMinimapService:
         # explored_location_ids = {ep.location_id for ep in exploration_progress}
 
         # 全ての発見済み場所を取得
-        discovered_locations = self.db.exec(select(Location).where(Location.is_discovered.is_(True))).all()
+        discovered_locations = self.db.exec(select(Location).where(Location.is_discovered)).all()
 
         # 階層別にデータを整理
         layers_dict: dict[int, LayerData] = {}
@@ -91,7 +91,7 @@ class ExplorationMinimapService:
             select(LocationConnection).where(
                 and_(
                     LocationConnection.from_location_id.in_(list(discovered_location_ids)),  # type: ignore
-                    LocationConnection.is_blocked.is_(False),
+                    ~LocationConnection.is_blocked,
                 )
             )
         ).all()

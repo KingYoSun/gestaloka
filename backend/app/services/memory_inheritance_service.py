@@ -9,11 +9,10 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlmodel import Session, select
 
-from app.models.character import Character
+from app.models.character import Character, CharacterSkill, Skill
 from app.models.item import CharacterItem, Item
-from app.models.log_fragment import LogFragment, LogFragmentRarity
-from app.models.skill import CharacterSkill, Skill
-from app.models.sp_transaction import SPTransactionType
+from app.models.log import LogFragment, LogFragmentRarity
+from app.models.sp import SPTransactionType
 from app.models.title import CharacterTitle
 from app.schemas.memory_inheritance import (
     MemoryCombinationPreview,
@@ -31,13 +30,10 @@ class MemoryInheritanceService:
         self.session = session
         self.sp_service = SPService(session)
         from app.services.gm_ai_service import GMAIService
+
         self.ai_service = GMAIService(session)
 
-    def get_combination_preview(
-        self,
-        character_id: str,
-        fragment_ids: list[str]
-    ) -> MemoryCombinationPreview:
+    def get_combination_preview(self, character_id: str, fragment_ids: list[str]) -> MemoryCombinationPreview:
         """記憶の組み合わせプレビューを取得"""
         # キャラクターと記憶フラグメントを取得
         self._get_character(character_id)  # 権限チェックのみ
@@ -64,13 +60,11 @@ class MemoryInheritanceService:
             possible_types=possible_types,
             previews=previews,
             sp_costs=sp_costs,
-            combo_bonus=self._calculate_combo_bonus(len(fragments))
+            combo_bonus=self._calculate_combo_bonus(len(fragments)),
         )
 
     async def execute_inheritance(
-        self,
-        character_id: str,
-        request: MemoryInheritanceRequest
+        self, character_id: str, request: MemoryInheritanceRequest
     ) -> MemoryInheritanceResult:
         """記憶継承を実行"""
         # キャラクターと記憶フラグメントを取得
@@ -107,7 +101,7 @@ class MemoryInheritanceService:
             user_id=character_id,
             amount=sp_cost,
             description=f"記憶継承: {request.inheritance_type.value}",
-            transaction_type=SPTransactionType.MEMORY_INHERITANCE
+            transaction_type=SPTransactionType.MEMORY_INHERITANCE,
         )
 
         # 組み合わせ履歴を記録
@@ -120,7 +114,7 @@ class MemoryInheritanceService:
             inheritance_type=request.inheritance_type,
             result=result,
             sp_consumed=sp_cost,
-            fragments_used=request.fragment_ids
+            fragments_used=request.fragment_ids,
         )
 
     def _get_character(self, character_id: str) -> Character:
@@ -135,10 +129,7 @@ class MemoryInheritanceService:
         fragments = []
         for fragment_id in fragment_ids:
             fragment = self.session.exec(
-                select(LogFragment).where(
-                    LogFragment.id == fragment_id,
-                    LogFragment.character_id == character_id
-                )
+                select(LogFragment).where(LogFragment.id == fragment_id, LogFragment.character_id == character_id)
             ).first()
             if fragment:
                 fragments.append(fragment)
@@ -175,9 +166,7 @@ class MemoryInheritanceService:
         return possible_types
 
     def _calculate_sp_costs(
-        self,
-        fragments: list[LogFragment],
-        possible_types: list[MemoryInheritanceType]
+        self, fragments: list[LogFragment], possible_types: list[MemoryInheritanceType]
     ) -> dict[str, int]:
         """各継承タイプのSP消費を計算"""
         costs = {}
@@ -185,18 +174,14 @@ class MemoryInheritanceService:
             costs[inheritance_type.value] = self._calculate_sp_cost(fragments, inheritance_type)
         return costs
 
-    def _calculate_sp_cost(
-        self,
-        fragments: list[LogFragment],
-        inheritance_type: MemoryInheritanceType
-    ) -> int:
+    def _calculate_sp_cost(self, fragments: list[LogFragment], inheritance_type: MemoryInheritanceType) -> int:
         """SP消費を計算"""
         # 基本コスト
         base_costs = {
             MemoryInheritanceType.SKILL: 30,
             MemoryInheritanceType.TITLE: 50,
             MemoryInheritanceType.ITEM: 100,
-            MemoryInheritanceType.LOG_ENHANCEMENT: 20
+            MemoryInheritanceType.LOG_ENHANCEMENT: 20,
         }
         base_cost = base_costs.get(inheritance_type, 50)
 
@@ -208,7 +193,7 @@ class MemoryInheritanceService:
             LogFragmentRarity.EPIC: 2.0,
             LogFragmentRarity.LEGENDARY: 3.0,
             LogFragmentRarity.UNIQUE: 2.5,
-            LogFragmentRarity.ARCHITECT: 5.0
+            LogFragmentRarity.ARCHITECT: 5.0,
         }
 
         # 最高レアリティの倍率を適用
@@ -233,9 +218,7 @@ class MemoryInheritanceService:
         return None
 
     def _generate_preview(
-        self,
-        fragments: list[LogFragment],
-        inheritance_type: MemoryInheritanceType
+        self, fragments: list[LogFragment], inheritance_type: MemoryInheritanceType
     ) -> Optional[dict[str, Any]]:
         """プレビューを生成"""
         if inheritance_type == MemoryInheritanceType.SKILL:
@@ -261,19 +244,15 @@ class MemoryInheritanceService:
             return {
                 "name": "聖剣術",
                 "description": "聖なる力を宿した剣術。守護の意志が攻撃力を高める",
-                "estimated_power": "A"
+                "estimated_power": "A",
             }
         elif "魔法" in keywords and "知識" in keywords:
-            return {
-                "name": "賢者の魔術",
-                "description": "古代の知識に基づく高度な魔術",
-                "estimated_power": "S"
-            }
+            return {"name": "賢者の魔術", "description": "古代の知識に基づく高度な魔術", "estimated_power": "S"}
         else:
             return {
                 "name": "未知のスキル",
                 "description": "記憶の組み合わせから新しいスキルが生まれる",
-                "estimated_power": "?"
+                "estimated_power": "?",
             }
 
     def _preview_title(self, fragments: list[LogFragment]) -> dict[str, Any]:
@@ -284,20 +263,16 @@ class MemoryInheritanceService:
             return {
                 "title": "真の英雄",
                 "description": "勇気と犠牲の精神を体現する者",
-                "effects": ["カリスマ+10", "防御力+5%"]
+                "effects": ["カリスマ+10", "防御力+5%"],
             }
         elif "知恵" in memory_types and "探求" in memory_types:
             return {
                 "title": "賢者",
                 "description": "真理を追求し続ける者",
-                "effects": ["経験値+15%", "スキル習得速度+20%"]
+                "effects": ["経験値+15%", "スキル習得速度+20%"],
             }
         else:
-            return {
-                "title": "記憶の継承者",
-                "description": "複数の記憶を受け継ぐ者",
-                "effects": ["SP回復+5/日"]
-            }
+            return {"title": "記憶の継承者", "description": "複数の記憶を受け継ぐ者", "effects": ["SP回復+5/日"]}
 
     def _preview_item(self, fragments: list[LogFragment]) -> dict[str, Any]:
         """アイテム生成のプレビュー"""
@@ -309,14 +284,14 @@ class MemoryInheritanceService:
                 "name": "記憶の結晶",
                 "type": "特殊アイテム",
                 "description": "強力な記憶が結晶化した神秘的なアイテム",
-                "rarity": "LEGENDARY"
+                "rarity": "LEGENDARY",
             }
         else:
             return {
                 "name": "思い出の護符",
                 "type": "アクセサリー",
                 "description": "記憶の力を宿した護符",
-                "rarity": "RARE"
+                "rarity": "RARE",
             }
 
     def _preview_log_enhancement(self, fragments: list[LogFragment]) -> dict[str, Any]:
@@ -324,26 +299,16 @@ class MemoryInheritanceService:
         return {
             "enhancement": "記憶の共鳴",
             "description": "この記憶を持つログは特別な共感を呼び起こす",
-            "effects": [
-                "初期好感度+50%",
-                "特殊イベント発生率+30%",
-                "記憶関連の選択肢が追加"
-            ]
+            "effects": ["初期好感度+50%", "特殊イベント発生率+30%", "記憶関連の選択肢が追加"],
         }
 
-    async def _inherit_skill(
-        self,
-        character: Character,
-        fragments: list[LogFragment]
-    ) -> dict[str, Any]:
+    async def _inherit_skill(self, character: Character, fragments: list[LogFragment]) -> dict[str, Any]:
         """スキルを継承"""
         # AIを使用してスキルを生成
         skill_data = await self._generate_skill_with_ai(fragments)
 
         # スキルを作成または取得
-        skill = self.session.exec(
-            select(Skill).where(Skill.name == skill_data["name"])
-        ).first()
+        skill = self.session.exec(select(Skill).where(Skill.name == skill_data["name"])).first()
 
         if not skill:
             skill = Skill(
@@ -353,7 +318,7 @@ class MemoryInheritanceService:
                 skill_type=skill_data["type"],
                 base_power=skill_data["power"],
                 sp_cost=skill_data["sp_cost"],
-                cooldown_turns=skill_data.get("cooldown", 0)
+                cooldown_turns=skill_data.get("cooldown", 0),
             )
             self.session.add(skill)
 
@@ -364,22 +329,13 @@ class MemoryInheritanceService:
             skill_id=skill.id,
             level=1,
             experience=0,
-            unlocked_at="memory_inheritance"
+            unlocked_at="memory_inheritance",
         )
         self.session.add(char_skill)
 
-        return {
-            "type": "skill",
-            "skill_id": skill.id,
-            "name": skill.name,
-            "description": skill.description
-        }
+        return {"type": "skill", "skill_id": skill.id, "name": skill.name, "description": skill.description}
 
-    async def _inherit_title(
-        self,
-        character: Character,
-        fragments: list[LogFragment]
-    ) -> dict[str, Any]:
+    async def _inherit_title(self, character: Character, fragments: list[LogFragment]) -> dict[str, Any]:
         """称号を獲得"""
         # AIを使用して称号を生成
         title_data = await self._generate_title_with_ai(fragments)
@@ -391,7 +347,7 @@ class MemoryInheritanceService:
             title=title_data["title"],
             description=title_data["description"],
             acquired_at="memory_inheritance",
-            effects=title_data.get("effects", {})
+            effects=title_data.get("effects", {}),
         )
         self.session.add(char_title)
 
@@ -400,14 +356,10 @@ class MemoryInheritanceService:
             "title_id": char_title.id,
             "title": char_title.title,
             "description": char_title.description,
-            "effects": char_title.effects
+            "effects": char_title.effects,
         }
 
-    async def _inherit_item(
-        self,
-        character: Character,
-        fragments: list[LogFragment]
-    ) -> dict[str, Any]:
+    async def _inherit_item(self, character: Character, fragments: list[LogFragment]) -> dict[str, Any]:
         """アイテムを生成"""
         # AIを使用してアイテムを生成
         item_data = await self._generate_item_with_ai(fragments)
@@ -420,17 +372,13 @@ class MemoryInheritanceService:
             item_type=item_data["type"],
             rarity=item_data["rarity"],
             effects=item_data.get("effects", {}),
-            tradeable=False  # 記憶から生成されたアイテムは取引不可
+            tradeable=False,  # 記憶から生成されたアイテムは取引不可
         )
         self.session.add(item)
 
         # キャラクターのインベントリに追加
         char_item = CharacterItem(
-            id=str(uuid4()),
-            character_id=character.id,
-            item_id=item.id,
-            quantity=1,
-            obtained_at="memory_inheritance"
+            id=str(uuid4()), character_id=character.id, item_id=item.id, quantity=1, obtained_at="memory_inheritance"
         )
         self.session.add(char_item)
 
@@ -439,14 +387,10 @@ class MemoryInheritanceService:
             "item_id": item.id,
             "name": item.name,
             "description": item.description,
-            "rarity": item.rarity
+            "rarity": item.rarity,
         }
 
-    async def _create_log_enhancement(
-        self,
-        character: Character,
-        fragments: list[LogFragment]
-    ) -> dict[str, Any]:
+    async def _create_log_enhancement(self, character: Character, fragments: list[LogFragment]) -> dict[str, Any]:
         """ログ強化を作成"""
         # 強化データを生成
         enhancement_data = await self._generate_enhancement_with_ai(fragments)
@@ -458,7 +402,7 @@ class MemoryInheritanceService:
             "name": enhancement_data["name"],
             "description": enhancement_data["description"],
             "effects": enhancement_data["effects"],
-            "fragment_ids": [f.id for f in fragments]
+            "fragment_ids": [f.id for f in fragments],
         }
 
         # キャラクターのメタデータに保存
@@ -476,7 +420,8 @@ class MemoryInheritanceService:
         fragment_info = self._format_fragments_for_ai(fragments)
 
         messages = [
-            SystemMessage(content="""あなたはゲスタロカの記憶継承システムのAIです。
+            SystemMessage(
+                content="""あなたはゲスタロカの記憶継承システムのAIです。
 プレイヤーが組み合わせた記憶フラグメントから、新しいスキルを生成してください。
 
 スキルは以下の形式で生成してください：
@@ -487,13 +432,13 @@ class MemoryInheritanceService:
 - sp_cost: SP消費（5-50）
 - cooldown: クールダウンターン数（0-5）
 
-記憶の内容とテーマから、それらしいスキルを考えてください。"""),
-            HumanMessage(content=f"以下の記憶フラグメントから新しいスキルを生成してください：\n\n{fragment_info}")
+記憶の内容とテーマから、それらしいスキルを考えてください。"""
+            ),
+            HumanMessage(content=f"以下の記憶フラグメントから新しいスキルを生成してください：\n\n{fragment_info}"),
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}",
-            agent_type="memory_inheritance"
+            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
         )
 
         # レスポンスをパース（実際の実装では適切なパースが必要）
@@ -504,7 +449,8 @@ class MemoryInheritanceService:
         fragment_info = self._format_fragments_for_ai(fragments)
 
         messages = [
-            SystemMessage(content="""あなたはゲスタロカの記憶継承システムのAIです。
+            SystemMessage(
+                content="""あなたはゲスタロカの記憶継承システムのAIです。
 プレイヤーが組み合わせた記憶フラグメントから、新しい称号を生成してください。
 
 称号は以下の形式で生成してください：
@@ -512,13 +458,13 @@ class MemoryInheritanceService:
 - description: 称号の説明（50文字程度）
 - effects: 称号の効果（ステータスボーナスなど）
 
-記憶の内容から、プレイヤーの功績や特性を表す称号を考えてください。"""),
-            HumanMessage(content=f"以下の記憶フラグメントから新しい称号を生成してください：\n\n{fragment_info}")
+記憶の内容から、プレイヤーの功績や特性を表す称号を考えてください。"""
+            ),
+            HumanMessage(content=f"以下の記憶フラグメントから新しい称号を生成してください：\n\n{fragment_info}"),
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}",
-            agent_type="memory_inheritance"
+            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
         )
         return self._parse_title_response(response)
 
@@ -527,7 +473,8 @@ class MemoryInheritanceService:
         fragment_info = self._format_fragments_for_ai(fragments)
 
         messages = [
-            SystemMessage(content="""あなたはゲスタロカの記憶継承システムのAIです。
+            SystemMessage(
+                content="""あなたはゲスタロカの記憶継承システムのAIです。
 プレイヤーが組み合わせた記憶フラグメントから、新しいアイテムを生成してください。
 
 アイテムは以下の形式で生成してください：
@@ -537,13 +484,13 @@ class MemoryInheritanceService:
 - rarity: レアリティ（COMMON/UNCOMMON/RARE/EPIC/LEGENDARY）
 - effects: アイテムの効果
 
-記憶が結晶化したような、特別なアイテムを考えてください。"""),
-            HumanMessage(content=f"以下の記憶フラグメントから新しいアイテムを生成してください：\n\n{fragment_info}")
+記憶が結晶化したような、特別なアイテムを考えてください。"""
+            ),
+            HumanMessage(content=f"以下の記憶フラグメントから新しいアイテムを生成してください：\n\n{fragment_info}"),
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}",
-            agent_type="memory_inheritance"
+            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
         )
         return self._parse_item_response(response)
 
@@ -552,7 +499,8 @@ class MemoryInheritanceService:
         fragment_info = self._format_fragments_for_ai(fragments)
 
         messages = [
-            SystemMessage(content="""あなたはゲスタロカの記憶継承システムのAIです。
+            SystemMessage(
+                content="""あなたはゲスタロカの記憶継承システムのAIです。
 プレイヤーが組み合わせた記憶フラグメントから、ログ強化効果を生成してください。
 
 ログ強化は以下の形式で生成してください：
@@ -560,13 +508,13 @@ class MemoryInheritanceService:
 - description: 強化の説明（100文字程度）
 - effects: 強化効果のリスト（初期好感度ボーナス、特殊イベント、追加選択肢など）
 
-この記憶を持つログが他のプレイヤーの世界でNPCとして活動する際の特別な効果を考えてください。"""),
-            HumanMessage(content=f"以下の記憶フラグメントからログ強化効果を生成してください：\n\n{fragment_info}")
+この記憶を持つログが他のプレイヤーの世界でNPCとして活動する際の特別な効果を考えてください。"""
+            ),
+            HumanMessage(content=f"以下の記憶フラグメントからログ強化効果を生成してください：\n\n{fragment_info}"),
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}",
-            agent_type="memory_inheritance"
+            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
         )
         return self._parse_enhancement_response(response)
 
@@ -577,9 +525,9 @@ class MemoryInheritanceService:
             info.append(f"""記憶フラグメント: {f.keywords[0] if f.keywords else "無題"}
 レアリティ: {f.rarity.value}
 タイプ: {f.memory_type or "不明"}
-内容: {f.content[:200]}...
+内容: {f.action_description[:200] if len(f.action_description) > 200 else f.action_description}
 キーワード: {", ".join(f.keywords or [])}
-感情タグ: {", ".join(f.emotional_tags or [])}""")
+感情価: {f.emotional_valence.value}""")
 
         return "\n\n".join(info)
 
@@ -592,7 +540,7 @@ class MemoryInheritanceService:
             "type": "special",
             "power": 50,
             "sp_cost": 20,
-            "cooldown": 3
+            "cooldown": 3,
         }
 
     def _parse_title_response(self, response: str) -> dict[str, Any]:
@@ -600,10 +548,7 @@ class MemoryInheritanceService:
         return {
             "title": "記憶の継承者",
             "description": "複数の記憶を受け継ぎし者",
-            "effects": {
-                "sp_recovery": 5,
-                "exp_bonus": 10
-            }
+            "effects": {"sp_recovery": 5, "exp_bonus": 10},
         }
 
     def _parse_item_response(self, response: str) -> dict[str, Any]:
@@ -613,9 +558,7 @@ class MemoryInheritanceService:
             "description": "強力な記憶が物質化した神秘的なアイテム",
             "type": "special",
             "rarity": "EPIC",
-            "effects": {
-                "all_stats": 5
-            }
+            "effects": {"all_stats": 5},
         }
 
     def _parse_enhancement_response(self, response: str) -> dict[str, Any]:
@@ -623,11 +566,7 @@ class MemoryInheritanceService:
         return {
             "name": "記憶の共鳴",
             "description": "この記憶を持つログは特別な共感を呼び起こす",
-            "effects": [
-                "初期好感度+50%",
-                "特殊イベント発生率+30%",
-                "記憶関連の選択肢が追加"
-            ]
+            "effects": ["初期好感度+50%", "特殊イベント発生率+30%", "記憶関連の選択肢が追加"],
         }
 
     def _record_inheritance_history(
@@ -635,7 +574,7 @@ class MemoryInheritanceService:
         character: Character,
         fragments: list[LogFragment],
         inheritance_type: MemoryInheritanceType,
-        result: dict[str, Any]
+        result: dict[str, Any],
     ) -> None:
         """継承履歴を記録"""
         if not character.character_metadata:
@@ -648,8 +587,7 @@ class MemoryInheritanceService:
             "timestamp": "current_timestamp",
             "fragment_ids": [f.id for f in fragments],
             "inheritance_type": inheritance_type.value,
-            "result": result
+            "result": result,
         }
 
         character.character_metadata["inheritance_history"].append(history_entry)
-

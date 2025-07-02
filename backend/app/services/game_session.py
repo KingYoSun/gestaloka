@@ -395,13 +395,11 @@ class GameSessionService:
 
             # クエストの暗黙的推測
             from app.services.quest_service import QuestService
+
             quest_service = QuestService(self.db)
 
             # 行動パターンから暗黙的クエストを推測
-            implicit_quest = await quest_service.infer_implicit_quest(
-                character_id=character.id,
-                session_id=session.id
-            )
+            implicit_quest = await quest_service.infer_implicit_quest(character_id=character.id, session_id=session.id)
 
             if implicit_quest:
                 logger.info(f"Implicit quest inferred: {implicit_quest.title}")
@@ -547,18 +545,19 @@ class GameSessionService:
             from sqlmodel import and_
 
             from app.models.quest import Quest, QuestStatus
+
             active_quests = self.db.exec(
-                select(Quest)
-                .where(
+                select(Quest).where(
                     and_(
                         Quest.character_id == character.id,
-                        Quest.status.in_([QuestStatus.ACTIVE, QuestStatus.PROGRESSING])  # type: ignore
+                        Quest.status.in_([QuestStatus.ACTIVE, QuestStatus.PROGRESSING]),  # type: ignore
                     )
                 )
             ).all()
 
             # 最新のアクションログを取得（クエスト更新用）
             from app.models.log import ActionLog
+
             latest_action_log = self.db.exec(
                 select(ActionLog)
                 .where(ActionLog.session_id == session.id)
@@ -569,9 +568,7 @@ class GameSessionService:
             # 各アクティブクエストの進行状況を更新
             for quest in active_quests:
                 updated_quest = await quest_service.update_quest_progress(
-                    quest_id=quest.id,
-                    character_id=character.id,
-                    recent_action=latest_action_log
+                    quest_id=quest.id, character_id=character.id, recent_action=latest_action_log
                 )
                 if updated_quest and updated_quest.status == QuestStatus.COMPLETED:
                     logger.info(f"Quest completed: {updated_quest.title}")
@@ -963,13 +960,13 @@ class GameSessionService:
 
         # 目的タイプによる確率修正
         objective_modifiers = {
-            DispatchObjectiveType.INTERACT: 0.5,      # 交流型は高確率
-            DispatchObjectiveType.TRADE: 0.3,         # 商業型は中確率
-            DispatchObjectiveType.EXPLORE: 0.2,       # 探索型は低確率
-            DispatchObjectiveType.GUARD: 0.1,         # 護衛型は極低確率
-            DispatchObjectiveType.FREE: 0.3,          # 自由型は中確率
-            DispatchObjectiveType.RESEARCH: 0.15,     # 研究型は低確率
-            DispatchObjectiveType.MEMORY_PRESERVE: 0.2, # 記憶保存型は低確率
+            DispatchObjectiveType.INTERACT: 0.5,  # 交流型は高確率
+            DispatchObjectiveType.TRADE: 0.3,  # 商業型は中確率
+            DispatchObjectiveType.EXPLORE: 0.2,  # 探索型は低確率
+            DispatchObjectiveType.GUARD: 0.1,  # 護衛型は極低確率
+            DispatchObjectiveType.FREE: 0.3,  # 自由型は中確率
+            DispatchObjectiveType.RESEARCH: 0.15,  # 研究型は低確率
+            DispatchObjectiveType.MEMORY_PRESERVE: 0.2,  # 記憶保存型は低確率
         }
 
         objective_modifier = objective_modifiers.get(dispatch.objective_type, 0.2)

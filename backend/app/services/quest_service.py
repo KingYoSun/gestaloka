@@ -1,13 +1,14 @@
 """
 動的クエストサービス
 """
+
 import json
 from datetime import datetime
 from typing import Optional
 
-from sqlmodel import Session, and_, select
+from sqlmodel import Session, and_, desc, select
 
-from app.core.logger import get_logger
+from app.core.logging import get_logger
 from app.models.log import ActionLog
 from app.models.quest import Quest, QuestOrigin, QuestProposal, QuestStatus
 from app.services.gm_ai_service import GMAIService
@@ -25,10 +26,7 @@ class QuestService:
         self.log_fragment_service = LogFragmentService(db)
 
     async def analyze_and_propose_quests(
-        self,
-        character_id: str,
-        session_id: str,
-        recent_actions_count: int = 10
+        self, character_id: str, session_id: str, recent_actions_count: int = 10
     ) -> list[QuestProposal]:
         """
         最近の行動を分析してクエストを提案する
@@ -46,7 +44,7 @@ class QuestService:
             recent_actions = self.db.exec(
                 select(ActionLog)
                 .where(ActionLog.character_id == character_id)
-                .order_by(ActionLog.created_at.desc())
+                .order_by(desc(ActionLog.created_at))
                 .limit(recent_actions_count)
             ).all()
 
@@ -56,11 +54,10 @@ class QuestService:
 
             # 現在のアクティブなクエストを取得
             active_quests = self.db.exec(
-                select(Quest)
-                .where(
+                select(Quest).where(
                     and_(
                         Quest.character_id == character_id,
-                        Quest.status.in_([QuestStatus.ACTIVE, QuestStatus.PROGRESSING])  # type: ignore
+                        Quest.status.in_([QuestStatus.ACTIVE, QuestStatus.PROGRESSING]),  # type: ignore
                     )
                 )
             ).all()
@@ -69,19 +66,15 @@ class QuestService:
             action_summaries = [
                 {
                     "action": action.action_type,
-                    "description": action.action_description,
-                    "result": action.result_description,
-                    "timestamp": action.created_at.isoformat()
+                    "description": action.action_content,
+                    "result": action.response_content,
+                    "timestamp": action.created_at.isoformat(),
                 }
                 for action in reversed(recent_actions)
             ]
 
             active_quest_summaries = [
-                {
-                    "title": quest.title,
-                    "description": quest.description,
-                    "progress": quest.progress_percentage
-                }
+                {"title": quest.title, "description": quest.description, "progress": quest.progress_percentage}
                 for quest in active_quests
             ]
 
@@ -115,8 +108,7 @@ JSON形式で回答してください。
 
             # AI応答を取得
             response = await self.gm_ai_service.generate_narrative(  # type: ignore
-                prompt=prompt,
-                context_type="quest_proposal"
+                prompt=prompt, context_type="quest_proposal"
             )
 
             # レスポンスをパース
@@ -133,7 +125,7 @@ JSON形式で回答してください。
                         reasoning=prop_data.get("reasoning", ""),
                         difficulty_estimate=float(prop_data.get("difficulty_estimate", 0.5)),
                         relevance_score=float(prop_data.get("relevance_score", 0.5)),
-                        suggested_rewards=prop_data.get("suggested_rewards", [])
+                        suggested_rewards=prop_data.get("suggested_rewards", []),
                     )
                     proposals.append(proposal)
 
@@ -154,7 +146,7 @@ JSON形式で回答してください。
         description: str,
         origin: QuestOrigin,
         session_id: Optional[str] = None,
-        context_summary: Optional[str] = None
+        context_summary: Optional[str] = None,
     ) -> Quest:
         """
         新しいクエストを作成する
@@ -176,7 +168,7 @@ JSON形式で回答してください。
             title=title,
             description=description,
             origin=origin,
-            context_summary=context_summary
+            context_summary=context_summary,
         )
 
         self.db.add(quest)
@@ -215,10 +207,7 @@ JSON形式で回答してください。
         return quest
 
     async def update_quest_progress(
-        self,
-        quest_id: str,
-        character_id: str,
-        recent_action: Optional[ActionLog] = None
+        self, quest_id: str, character_id: str, recent_action: Optional[ActionLog] = None
     ) -> Optional[Quest]:
         """
         クエストの進行状況を更新する
@@ -243,8 +232,8 @@ JSON形式で回答してください。
             event = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "action_id": recent_action.id,
-                "description": recent_action.result_description,
-                "importance": 0.5  # AIで後で評価
+                "description": recent_action.response_content,
+                "importance": 0.5,  # AIで後で評価
             }
             quest.key_events.append(event)
 
@@ -271,8 +260,7 @@ JSON形式で回答してください。
 """
 
         response = await self.gm_ai_service.generate_narrative(  # type: ignore
-            prompt=prompt,
-            context_type="quest_progress"
+            prompt=prompt, context_type="quest_progress"
         )
 
         try:
@@ -280,8 +268,12 @@ JSON形式で回答してください。
 
             # 進行状況を更新
             quest.progress_percentage = float(progress_data.get("progress_percentage", quest.progress_percentage))
-            quest.narrative_completeness = float(progress_data.get("narrative_completeness", quest.narrative_completeness))
-            quest.emotional_satisfaction = float(progress_data.get("emotional_satisfaction", quest.emotional_satisfaction))
+            quest.narrative_completeness = float(
+                progress_data.get("narrative_completeness", quest.narrative_completeness)
+            )
+            quest.emotional_satisfaction = float(
+                progress_data.get("emotional_satisfaction", quest.emotional_satisfaction)
+            )
             quest.last_progress_at = datetime.utcnow()
 
             # ステータスの更新
@@ -333,8 +325,7 @@ JSON形式で回答してください。
 """
 
         response = await self.gm_ai_service.generate_narrative(  # type: ignore
-            prompt=prompt,
-            context_type="quest_completion"
+            prompt=prompt, context_type="quest_completion"
         )
 
         try:
@@ -349,7 +340,7 @@ JSON形式で回答してください。
                 summary=completion_data.get("story_summary", ""),
                 emotional_keywords=completion_data.get("emotional_keywords", []),
                 uniqueness_score=float(completion_data.get("uniqueness_score", 0.5)),
-                difficulty_score=float(completion_data.get("difficulty_score", 0.5))
+                difficulty_score=float(completion_data.get("difficulty_score", 0.5)),
             )
 
             logger.info(f"Quest {quest.id} completed and memory fragment generated")
@@ -358,11 +349,7 @@ JSON形式で回答してください。
             logger.error(f"Error completing quest: {e}")
 
     def get_character_quests(
-        self,
-        character_id: str,
-        status: Optional[QuestStatus] = None,
-        limit: int = 20,
-        offset: int = 0
+        self, character_id: str, status: Optional[QuestStatus] = None, limit: int = 20, offset: int = 0
     ) -> list[Quest]:
         """
         キャラクターのクエストを取得する
@@ -385,11 +372,7 @@ JSON形式で回答してください。
 
         return list(self.db.exec(query).all())
 
-    async def infer_implicit_quest(
-        self,
-        character_id: str,
-        session_id: str
-    ) -> Optional[Quest]:
+    async def infer_implicit_quest(self, character_id: str, session_id: str) -> Optional[Quest]:
         """
         プレイヤーの行動から暗黙的なクエストを推測する
 
@@ -403,13 +386,8 @@ JSON形式で回答してください。
         # 最近の行動を分析
         recent_actions = self.db.exec(
             select(ActionLog)
-            .where(
-                and_(
-                    ActionLog.character_id == character_id,
-                    ActionLog.session_id == session_id
-                )
-            )
-            .order_by(ActionLog.created_at.desc())
+            .where(and_(ActionLog.character_id == character_id, ActionLog.session_id == session_id))
+            .order_by(desc(ActionLog.created_at))
             .limit(20)
         ).all()
 
@@ -437,7 +415,7 @@ JSON形式で回答してください。
 {json.dumps(action_patterns, ensure_ascii=False)}
 
 最近の行動:
-{[{"action": a.action_type, "description": a.action_description} for a in recent_actions[:5]]}
+{[{"action": a.action_type, "description": a.action_content} for a in recent_actions[:5]]}
 
 プレイヤーが明示的に宣言していないが、行動から読み取れる目標を1つ提案してください。
 
@@ -450,8 +428,7 @@ JSON形式で回答してください。
 """
 
             response = await self.gm_ai_service.generate_narrative(  # type: ignore
-                prompt=prompt,
-                context_type="implicit_quest"
+                prompt=prompt, context_type="implicit_quest"
             )
 
             try:
@@ -465,7 +442,7 @@ JSON形式で回答してください。
                         description=quest_data.get("description", ""),
                         origin=QuestOrigin.BEHAVIOR_INFERRED,
                         session_id=session_id,
-                        context_summary=f"行動パターンから推測: {dominant_pattern[0]}が{dominant_pattern[1]}回"
+                        context_summary=f"行動パターンから推測: {dominant_pattern[0]}が{dominant_pattern[1]}回",
                     )
 
                     # 自動的にアクティブ化
@@ -482,4 +459,3 @@ JSON形式で回答してください。
                 logger.error(f"Error creating implicit quest: {e}")
 
         return None
-

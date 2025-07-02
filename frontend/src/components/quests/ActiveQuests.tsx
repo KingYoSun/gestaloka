@@ -1,65 +1,77 @@
-import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import React from 'react'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Target,
   TrendingUp,
   Clock,
   AlertCircle,
   CheckCircle2,
-  Activity
-} from 'lucide-react';
-import { useActiveQuests, useUpdateQuestProgress } from '@/hooks/useQuests';
-import { useActiveCharacter } from '@/hooks/useActiveCharacter';
-import type { Quest } from '@/types/quest';
-import { QuestStatus, QuestStatusDisplay, QuestOriginDisplay } from '@/types/quest';
-import { toast } from 'sonner';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Skeleton } from '@/components/ui/skeleton';
-import { formatDistanceToNow } from 'date-fns';
-import { ja } from 'date-fns/locale';
+  Activity,
+} from 'lucide-react'
+import { useActiveQuests, useUpdateQuestProgress } from '@/hooks/useQuests'
+import { useActiveCharacter } from '@/hooks/useActiveCharacter'
+import type { Quest } from '@/types/quest'
+import {
+  QuestStatus,
+  QuestStatusDisplay,
+  QuestOriginDisplay,
+} from '@/types/quest'
+import { toast } from 'sonner'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
+import { formatDistanceToNow } from 'date-fns'
+import { ja } from 'date-fns/locale'
 
 interface QuestCardProps {
-  quest: Quest;
-  onUpdateProgress: (questId: string) => void;
-  isUpdating: boolean;
+  quest: Quest
+  onUpdateProgress: (questId: string) => void
+  isUpdating: boolean
 }
 
 const QuestCard: React.FC<QuestCardProps> = ({
   quest,
   onUpdateProgress,
-  isUpdating
+  isUpdating,
 }) => {
   const getStatusIcon = (status: QuestStatus) => {
     switch (status) {
       case QuestStatus.ACTIVE:
-        return <Target className="h-4 w-4" />;
+        return <Target className="h-4 w-4" />
       case QuestStatus.PROGRESSING:
-        return <TrendingUp className="h-4 w-4" />;
+        return <TrendingUp className="h-4 w-4" />
       case QuestStatus.NEAR_COMPLETION:
-        return <AlertCircle className="h-4 w-4" />;
+        return <AlertCircle className="h-4 w-4" />
       case QuestStatus.COMPLETED:
-        return <CheckCircle2 className="h-4 w-4" />;
+        return <CheckCircle2 className="h-4 w-4" />
       default:
-        return <Activity className="h-4 w-4" />;
+        return <Activity className="h-4 w-4" />
     }
-  };
+  }
 
-  const getStatusVariant = (status: QuestStatus): "default" | "secondary" | "destructive" | "outline" => {
+  const getStatusVariant = (
+    status: QuestStatus
+  ): 'default' | 'secondary' | 'destructive' | 'outline' => {
     switch (status) {
       case QuestStatus.ACTIVE:
-        return "default";
+        return 'default'
       case QuestStatus.PROGRESSING:
-        return "secondary";
+        return 'secondary'
       case QuestStatus.NEAR_COMPLETION:
-        return "destructive";
+        return 'destructive'
       default:
-        return "outline";
+        return 'outline'
     }
-  };
+  }
 
   // const getProgressColor = (percentage: number) => {
   //   if (percentage >= 80) return "bg-green-500";
@@ -74,7 +86,10 @@ const QuestCard: React.FC<QuestCardProps> = ({
           <div className="space-y-1 flex-1">
             <CardTitle className="text-lg">{quest.title}</CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant={getStatusVariant(quest.status)} className="flex items-center gap-1">
+              <Badge
+                variant={getStatusVariant(quest.status)}
+                className="flex items-center gap-1"
+              >
                 {getStatusIcon(quest.status)}
                 <span>{QuestStatusDisplay[quest.status]}</span>
               </Badge>
@@ -86,7 +101,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
                   <Clock className="h-3 w-3" />
                   {formatDistanceToNow(new Date(quest.last_progress_at), {
                     addSuffix: true,
-                    locale: ja
+                    locale: ja,
                   })}
                 </span>
               )}
@@ -106,10 +121,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
               <span>進行度</span>
               <span className="font-medium">{quest.progress_percentage}%</span>
             </div>
-            <Progress 
-              value={quest.progress_percentage} 
-              className="h-2"
-            />
+            <Progress value={quest.progress_percentage} className="h-2" />
           </div>
 
           {quest.narrative_completeness > 0 && (
@@ -120,8 +132,8 @@ const QuestCard: React.FC<QuestCardProps> = ({
                   {Math.round(quest.narrative_completeness * 100)}%
                 </span>
               </div>
-              <Progress 
-                value={quest.narrative_completeness * 100} 
+              <Progress
+                value={quest.narrative_completeness * 100}
                 className="h-1.5"
               />
             </div>
@@ -135,8 +147,8 @@ const QuestCard: React.FC<QuestCardProps> = ({
                   {Math.round(quest.emotional_satisfaction * 100)}%
                 </span>
               </div>
-              <Progress 
-                value={quest.emotional_satisfaction * 100} 
+              <Progress
+                value={quest.emotional_satisfaction * 100}
                 className="h-1.5"
               />
             </div>
@@ -174,31 +186,33 @@ const QuestCard: React.FC<QuestCardProps> = ({
         )}
       </CardContent>
     </Card>
-  );
-};
+  )
+}
 
 export const ActiveQuests: React.FC = () => {
-  const { character } = useActiveCharacter();
-  const { activeQuests, isLoading, error, refetch } = useActiveQuests(character?.id);
-  const updateProgress = useUpdateQuestProgress(character?.id);
+  const { character } = useActiveCharacter()
+  const { activeQuests, isLoading, error, refetch } = useActiveQuests(
+    character?.id
+  )
+  const updateProgress = useUpdateQuestProgress(character?.id)
 
   const handleUpdateProgress = async (questId: string) => {
     try {
-      const updatedQuest = await updateProgress.mutateAsync(questId);
-      toast.success(`進行状況を更新しました - 進行度: ${updatedQuest.progress_percentage}%`);
+      const updatedQuest = await updateProgress.mutateAsync(questId)
+      toast.success(
+        `進行状況を更新しました - 進行度: ${updatedQuest.progress_percentage}%`
+      )
     } catch (error) {
-      toast.error('進行状況の更新に失敗しました');
+      toast.error('進行状況の更新に失敗しました')
     }
-  };
+  }
 
   if (!character) {
     return (
       <Alert>
-        <AlertDescription>
-          キャラクターを選択してください
-        </AlertDescription>
+        <AlertDescription>キャラクターを選択してください</AlertDescription>
       </Alert>
-    );
+    )
   }
 
   if (isLoading) {
@@ -207,17 +221,15 @@ export const ActiveQuests: React.FC = () => {
         <Skeleton className="h-48" />
         <Skeleton className="h-48" />
       </div>
-    );
+    )
   }
 
   if (error) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>
-          クエスト一覧の取得に失敗しました
-        </AlertDescription>
+        <AlertDescription>クエスト一覧の取得に失敗しました</AlertDescription>
       </Alert>
-    );
+    )
   }
 
   if (activeQuests.length === 0) {
@@ -233,7 +245,7 @@ export const ActiveQuests: React.FC = () => {
           </p>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   return (
@@ -247,9 +259,9 @@ export const ActiveQuests: React.FC = () => {
           更新
         </Button>
       </div>
-      
+
       <div className="grid gap-4 md:grid-cols-2">
-        {activeQuests.map((quest) => (
+        {activeQuests.map(quest => (
           <QuestCard
             key={quest.id}
             quest={quest}
@@ -259,5 +271,5 @@ export const ActiveQuests: React.FC = () => {
         ))}
       </div>
     </div>
-  );
-};
+  )
+}

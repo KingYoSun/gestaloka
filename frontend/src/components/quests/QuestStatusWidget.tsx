@@ -1,22 +1,24 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { Button } from '@/components/ui/button';
-import { Target, ChevronRight } from 'lucide-react';
-import { useActiveQuests } from '@/hooks/useQuests';
-import { useActiveCharacter } from '@/hooks/useActiveCharacter';
-import { Link } from '@tanstack/react-router';
-import type { Quest } from '@/types/quest';
-import { Skeleton } from '@/components/ui/skeleton';
+import React from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Button } from '@/components/ui/button'
+import { Target, ChevronRight } from 'lucide-react'
+import { useActiveQuests } from '@/hooks/useQuests'
+import { useActiveCharacter } from '@/hooks/useActiveCharacter'
+import { Link } from '@tanstack/react-router'
+import type { Quest } from '@/types/quest'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface QuestStatusWidgetProps {
-  compact?: boolean;
+  compact?: boolean
 }
 
-export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = false }) => {
-  const { character } = useActiveCharacter();
-  const { activeQuests, isLoading } = useActiveQuests(character?.id);
+export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({
+  compact = false,
+}) => {
+  const { character } = useActiveCharacter()
+  const { activeQuests, isLoading } = useActiveQuests(character?.id)
 
   if (!character || isLoading) {
     return (
@@ -28,10 +30,10 @@ export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = 
           <Skeleton className="h-16" />
         </CardContent>
       </Card>
-    );
+    )
   }
 
-  const primaryQuest = activeQuests[0]; // 最も進行中のクエストを表示
+  const primaryQuest = activeQuests[0] // 最も進行中のクエストを表示
 
   if (!primaryQuest) {
     return (
@@ -54,7 +56,7 @@ export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = 
           </Link>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   if (compact) {
@@ -73,8 +75,13 @@ export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = 
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <p className="text-sm font-medium line-clamp-1">{primaryQuest.title}</p>
-            <Progress value={primaryQuest.progress_percentage} className="h-1.5" />
+            <p className="text-sm font-medium line-clamp-1">
+              {primaryQuest.title}
+            </p>
+            <Progress
+              value={primaryQuest.progress_percentage}
+              className="h-1.5"
+            />
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
                 進行度: {primaryQuest.progress_percentage}%
@@ -89,7 +96,7 @@ export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = 
           </div>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   return (
@@ -105,18 +112,23 @@ export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = 
       </CardHeader>
       <CardContent className="space-y-3">
         {activeQuests.slice(0, 2).map((quest: Quest) => (
-          <div key={quest.id} className="space-y-2 pb-3 border-b last:border-0 last:pb-0">
+          <div
+            key={quest.id}
+            className="space-y-2 pb-3 border-b last:border-0 last:pb-0"
+          >
             <h4 className="font-medium text-sm">{quest.title}</h4>
             <Progress value={quest.progress_percentage} className="h-2" />
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>進行度: {quest.progress_percentage}%</span>
               {quest.narrative_completeness > 0 && (
-                <span>物語: {Math.round(quest.narrative_completeness * 100)}%</span>
+                <span>
+                  物語: {Math.round(quest.narrative_completeness * 100)}%
+                </span>
               )}
             </div>
           </div>
         ))}
-        
+
         <Link to="/quests" className="block">
           <Button variant="outline" size="sm" className="w-full">
             すべてのクエストを見る
@@ -125,5 +137,5 @@ export const QuestStatusWidget: React.FC<QuestStatusWidgetProps> = ({ compact = 
         </Link>
       </CardContent>
     </Card>
-  );
-};
+  )
+}
