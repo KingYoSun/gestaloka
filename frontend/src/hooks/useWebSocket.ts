@@ -128,8 +128,8 @@ export function useGameWebSocket(gameSessionId?: string) {
   const { user } = useAuthStore()
   const [messages, setMessages] = useState<GameMessage[]>([])
   const [gameState, setGameState] = useState<GameState | null>(null)
-  const [currentNPCEncounter, setCurrentNPCEncounter] =
-    useState<NPCEncounterData | null>(null)
+  const [currentNPCEncounters, setCurrentNPCEncounters] =
+    useState<NPCEncounterData[]>([])
 
   useEffect(() => {
     if (!gameSessionId || !user?.id) return
@@ -194,21 +194,41 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     // NPC遭遇イベントハンドラー
-    const handleNPCEncounter = (data: NPCEncounterData) => {
-      setCurrentNPCEncounter(data)
+    const handleNPCEncounter = (data: NPCEncounterData | NPCEncounterData[]) => {
+      const encounters = Array.isArray(data) ? data : [data]
+      setCurrentNPCEncounters(encounters)
+      
       // メッセージログにも追加
-      setMessages(prev => [
-        ...prev,
-        {
-          type: 'system',
-          content: `${data.npc.name}に遭遇しました！`,
-          timestamp: data.timestamp,
-        },
-      ])
-      // 通知も表示
-      toast.info('NPCに遭遇しました！', {
-        description: `${data.npc.name}${data.npc.title ? ` 「${data.npc.title}」` : ''}が現れました。`,
-      })
+      if (encounters.length === 1) {
+        const npc = encounters[0].npc
+        setMessages(prev => [
+          ...prev,
+          {
+            type: 'system',
+            content: `${npc.name}に遭遇しました！`,
+            timestamp: encounters[0].timestamp,
+          },
+        ])
+        // 通知も表示
+        toast.info('NPCに遭遇しました！', {
+          description: `${npc.name}${npc.title ? ` 「${npc.title}」` : ''}が現れました。`,
+        })
+      } else {
+        // 複数NPC遭遇の場合
+        const npcNames = encounters.map(e => e.npc.name).join('、')
+        setMessages(prev => [
+          ...prev,
+          {
+            type: 'system',
+            content: `複数のNPCに遭遇しました！（${npcNames}）`,
+            timestamp: encounters[0].timestamp,
+          },
+        ])
+        // 通知も表示
+        toast.info(`${encounters.length}体のNPCに遭遇しました！`, {
+          description: npcNames,
+        })
+      }
     }
 
     const handleNPCActionResult = (data: NPCActionResultData) => {
@@ -218,7 +238,10 @@ export function useGameWebSocket(gameSessionId?: string) {
         data.result.includes('終了') ||
         data.result.includes('去って')
       ) {
-        setCurrentNPCEncounter(null)
+        // 該当NPCの遭遇を削除
+        setCurrentNPCEncounters(prev => 
+          prev.filter(encounter => encounter.npc.npc_id !== data.npc_id)
+        )
       }
       // 結果をメッセージログに追加
       setMessages(prev => [
@@ -287,7 +310,7 @@ export function useGameWebSocket(gameSessionId?: string) {
     messages,
     gameState,
     sendAction,
-    currentNPCEncounter,
+    currentNPCEncounters,
     sendNPCAction,
   }
 }
