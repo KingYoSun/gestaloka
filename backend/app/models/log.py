@@ -26,6 +26,8 @@ class LogFragmentRarity(str, Enum):
     RARE = "rare"
     EPIC = "epic"
     LEGENDARY = "legendary"
+    UNIQUE = "unique"  # プレイヤー固有の特別な記憶
+    ARCHITECT = "architect"  # 世界の真実に関する記憶
 
 
 class EmotionalValence(str, Enum):
@@ -69,8 +71,18 @@ class LogFragment(SQLModel, table=True):
         default_factory=dict, sa_column=Column(JSON), description="行動時の文脈情報（場所、関係者、状況など）"
     )
 
+    # 記憶継承システム用フィールド
+    memory_type: Optional[str] = Field(default=None, description="記憶のタイプ（勇気/友情/知恵/犠牲/勝利/真実など）")
+    combination_tags: list[str] = Field(
+        default_factory=list, sa_column=Column(JSON), description="組み合わせ用のタグ"
+    )
+    world_truth: Optional[str] = Field(default=None, description="世界の真実（アーキテクトレアリティ限定）")
+    acquisition_context: Optional[str] = Field(default=None, description="獲得時の詳細な状況")
+    is_consumed: bool = Field(default=False, description="消費されたかどうか（常にFalseで永続性を保証）")
+
     # タイムスタンプ
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    acquisition_date: Optional[datetime] = Field(default=None, description="記憶として獲得された日時")
 
     # リレーションシップ
     character: Optional["Character"] = Relationship(back_populates="log_fragments")

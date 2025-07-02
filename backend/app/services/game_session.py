@@ -393,6 +393,19 @@ class GameSessionService:
             #     additional_context={"action": action_request.action_text, "action_type": action_request.action_type},
             # )
 
+            # クエストの暗黙的推測
+            from app.services.quest_service import QuestService
+            quest_service = QuestService(self.db)
+
+            # 行動パターンから暗黙的クエストを推測
+            implicit_quest = await quest_service.infer_implicit_quest(
+                character_id=character.id,
+                session_id=session.id
+            )
+
+            if implicit_quest:
+                logger.info(f"Implicit quest inferred: {implicit_quest.title}")
+
             # CoordinatorAIでセッションを初期化（必要な場合）
             if not hasattr(self.coordinator, "shared_context") or self.coordinator.shared_context is None:
                 # GameSessionResponseを作成
@@ -529,6 +542,39 @@ class GameSessionService:
             }
 
             actions_history.append(action_record)
+
+            # アクティブなクエストの進行状況を更新
+            from sqlmodel import and_
+
+            from app.models.quest import Quest, QuestStatus
+            active_quests = self.db.exec(
+                select(Quest)
+                .where(
+                    and_(
+                        Quest.character_id == character.id,
+                        Quest.status.in_([QuestStatus.ACTIVE, QuestStatus.PROGRESSING])  # type: ignore
+                    )
+                )
+            ).all()
+
+            # 最新のアクションログを取得（クエスト更新用）
+            from app.models.log import ActionLog
+            latest_action_log = self.db.exec(
+                select(ActionLog)
+                .where(ActionLog.session_id == session.id)
+                .order_by(ActionLog.created_at.desc())  # type: ignore
+                .limit(1)
+            ).first()
+
+            # 各アクティブクエストの進行状況を更新
+            for quest in active_quests:
+                updated_quest = await quest_service.update_quest_progress(
+                    quest_id=quest.id,
+                    character_id=character.id,
+                    recent_action=latest_action_log
+                )
+                if updated_quest and updated_quest.status == QuestStatus.COMPLETED:
+                    logger.info(f"Quest completed: {updated_quest.title}")
 
             # セッションデータの更新
             session_data["turn_count"] = session_data.get("turn_count", 0) + 1 if session_data else 1

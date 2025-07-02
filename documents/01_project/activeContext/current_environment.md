@@ -97,7 +97,18 @@
 - WebSocket (Socket.IO)
 - Celery（Worker/Beat/Flower）
 
-## 最近の変更（2025/07/02）
+## 最近の変更（2025/07/03）
+- 動的クエストシステムの実装
+  - Questモデルの作成とデータベースマイグレーション
+  - QuestServiceの実装（AI駆動のクエスト提案・進行管理）
+  - ゲームセッションとの統合（暗黙的クエスト推測機能）
+  - 6つのRESTful APIエンドポイント実装
+  - クエスト完了時の記憶フラグメント自動生成機能
+  - LogFragmentモデルの拡張（記憶継承システム用フィールド追加）
+  - 新レアリティ追加（UNIQUE、ARCHITECT）
+  - 詳細は`documents/01_project/progressReports/2025-07-03_dynamic_quest_system_implementation.md`参照
+
+### 2025/07/02の変更
 - コード品質の大幅改善
   - バックエンドテスト229個全て成功（ログ遭遇、SP関連の新規テスト含む）
   - リントエラー完全解消（バックエンド）
@@ -272,7 +283,7 @@
 - skill_logs
 - character_sp
 - sp_history
-- log_fragments
+- log_fragments（記憶継承フィールド追加済み）
 - completed_logs
 - log_contracts
 - completed_log_sub_fragments
@@ -284,12 +295,20 @@
 - exploration_areas
 - character_location_history
 - exploration_logs
+- quests（新規追加）
+- sp_subscriptions
+- subscription_transactions
+- sp_purchases
 - alembic_version
 
 ### ENUMタイプ
 - skilllogtype
 - sphistorytype
 - roletype
+- queststatus
+- questorigin
+- subscriptiontype
+- subscriptionstatus
 
 ## 環境設定
 - **Docker Compose**: 全サービスが正常稼働

@@ -1,6 +1,6 @@
-# 記憶フラグメント システム再設計仕様
+# 記憶継承システム仕様
 
-最終更新: 2025-07-02
+最終更新: 2025-07-03
 
 ## 1. 新しい位置づけ：「ゲーム体験の記念碑」
 
@@ -48,7 +48,7 @@
 - **プレイヤー間の交流**: 他プレイヤーのログとの深い関わりから生成
 - **世界イベント**: GM AI評議会が生成する大規模イベントへの参加
 
-## 3. 動的クエストの詳細メカニクス
+## 3. 動的クエストの詳細メカニクス（2025-07-03実装済み）
 
 ### 3.1. クエストの生成
 - **文脈分析**: GM AIが直近の10-20ターンの行動を分析
@@ -57,14 +57,19 @@
 - **暗黙的クエスト**: プレイヤーが明示的に宣言しなくても、行動パターンから推測
 
 ### 3.2. クエスト進行の追跡
-```
-クエスト状態：
-- quest_id: 一意識別子
-- description: クエストの説明（動的に更新）
-- key_events: 関連する重要イベントのリスト
-- progress_indicators: 進行度を示す指標
-- emotional_arc: 物語の感情的な流れ
-- involved_entities: 関わったNPC、場所、アイテム
+```python
+# 実装済みのQuestモデル
+class Quest(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    status: QuestStatus  # PROPOSED, ACTIVE, PROGRESSING, NEAR_COMPLETION, COMPLETED, ABANDONED, FAILED
+    origin: QuestOrigin  # GM_PROPOSED, PLAYER_DECLARED, BEHAVIOR_INFERRED, NPC_GIVEN, WORLD_EVENT
+    description: str
+    objectives: list[str]
+    progress_percentage: float
+    narrative_completeness: float  # 物語的完結度
+    emotional_satisfaction: float  # 感情的満足度
+    key_events: dict[str, Any]
+    involved_entities: dict[str, Any]
 ```
 
 ### 3.3. 完了判定のロジック
@@ -85,20 +90,26 @@
    - レアリティ判定（達成の困難さ、物語の独自性）
    - バックストーリー生成（200-500文字のサマリー）
 
-## 4. フラグメントの新仕様
+## 4. フラグメントの新仕様（2025-07-03実装済み）
 
 ### 4.1. 属性
-```
-- id: 一意識別子
-- name: フラグメント名（例：「始まりの勇気」）
-- keyword: メインキーワード（例：[英雄の誕生]）
-- rarity: レアリティ（コモン/アンコモン/レア/エピック/レジェンダリー/ユニーク/アーキテクト）
-- backstory: 獲得時の物語的コンテキスト
-- acquisition_date: 獲得日時
-- acquisition_context: 獲得時の詳細な状況
-- memory_type: 記憶の種類（勇気/友情/知恵/犠牲/勝利/真実など）
-- combination_tags: 組み合わせ用のタグ
-- world_truth: 世界の真実に関する情報（アーキテクトレアリティ限定）
+```python
+# 実装済みのLogFragmentモデル拡張
+class LogFragment(SQLModel, table=True):
+    # 既存フィールド
+    id: str
+    character_id: str
+    content: str
+    keywords: list[str]
+    emotional_tags: list[str]
+    significance_score: float
+    rarity: LogFragmentRarity  # COMMON ~ ARCHITECT
+    
+    # 記憶継承用の新フィールド
+    memory_type: Optional[str]  # 勇気/友情/知恵/犠牲/勝利/真実など
+    combination_tags: list[str]  # 組み合わせ用のタグ
+    world_truth: Optional[str]  # 世界の真実（ARCHITECTレアリティ限定）
+    is_consumed: bool = False  # 常にFalse（永続性保証）
 ```
 
 ### 4.2. レアリティと決定基準
@@ -258,24 +269,76 @@
 - **設計者の遺産へのアクセス**: 特殊な遺物との共鳴
 - **他のアーキテクト記憶との強力なシナジー**: 複数組み合わせることで世界の全貌に迫る
 
-## 9. 実装優先度
+## 9. 実装状況
 
-1. **Phase 1**: 基本システム
-   - 動的クエストシステムの実装
-   - クエスト完了判定ロジック
-   - 基本的な記憶フラグメント生成
+### 9.1. 完了済み（2025-07-03）
+- **Phase 1**: 基本システム
+  - ✅ 動的クエストシステムの実装
+  - ✅ クエスト完了判定ロジック
+  - ✅ 基本的な記憶フラグメント生成
+  - ✅ AI駆動のクエスト提案機能
+  - ✅ 行動パターンからの暗黙的クエスト推測
+  - ✅ クエスト進捗のAI評価システム
 
-2. **Phase 2**: 記憶活用システム
-   - スキル継承メカニクス
-   - ログ強化システム
-   - SP消費バランス調整
+### 9.2. 実装予定
+- **Phase 2**: 記憶活用システム
+  - スキル継承メカニクス
+  - ログ強化システム
+  - SP消費バランス調整
 
-3. **Phase 3**: 高度な機能
-   - 複雑なコンボシステム
-   - 称号システム
-   - アイテム生成
+- **Phase 3**: 高度な機能
+  - 複雑なコンボシステム
+  - 称号システム
+  - アイテム生成
 
-4. **Phase 4**: UI/UX
-   - 記憶の書庫（コレクション画面）
-   - 継承工房インターフェース
-   - クエスト進行の可視化
+- **Phase 4**: UI/UX
+  - 記憶の書庫（コレクション画面）
+  - 継承工房インターフェース
+  - クエスト進行の可視化
+
+## 10. 技術仕様
+
+### 10.1. APIエンドポイント（実装済み）
+- GET `/quests/{character_id}/quests` - クエスト一覧取得
+- GET `/quests/{character_id}/proposals` - AI駆動のクエスト提案
+- POST `/quests/{character_id}/create` - 新規クエスト作成
+- POST `/quests/{character_id}/quests/infer` - 行動パターンから暗黙的クエスト推測
+- POST `/quests/{character_id}/quests/{quest_id}/accept` - クエスト受諾
+- POST `/quests/{character_id}/quests/{quest_id}/update` - クエスト進捗更新
+- GET `/log-fragments/{character_id}/fragments` - 記憶フラグメント一覧
+- GET `/log-fragments/{character_id}/fragments/{fragment_id}` - 記憶フラグメント詳細
+
+### 10.2. データベース構造
+```sql
+-- questsテーブル（実装済み）
+CREATE TABLE quests (
+    id VARCHAR PRIMARY KEY,
+    character_id VARCHAR NOT NULL,
+    session_id VARCHAR,
+    status VARCHAR NOT NULL,
+    origin VARCHAR NOT NULL,
+    title VARCHAR NOT NULL,
+    description TEXT NOT NULL,
+    objectives JSON,
+    progress_percentage FLOAT DEFAULT 0.0,
+    narrative_completeness FLOAT DEFAULT 0.0,
+    emotional_satisfaction FLOAT DEFAULT 0.0,
+    key_events JSON,
+    involved_entities JSON,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- log_fragmentsテーブル（拡張済み）
+ALTER TABLE log_fragments ADD COLUMN memory_type VARCHAR(50);
+ALTER TABLE log_fragments ADD COLUMN combination_tags TEXT[];
+ALTER TABLE log_fragments ADD COLUMN world_truth TEXT;
+ALTER TABLE log_fragments ADD COLUMN is_consumed BOOLEAN DEFAULT FALSE;
+```
+
+## 関連ドキュメント
+- [ログシステム](log.md) - 基本的なログ記録機能
+- [ログ派遣システム](logDispatchSystem.md) - NPCとしてのログ活用
+- [動的クエストシステム実装ガイド](../../05_implementation/backend/questSystem.md) - 技術的な実装詳細
+- [memory_fragment_redesign.md](memory_fragment_redesign.md) - 初期設計仕様（本ドキュメントに統合済み）

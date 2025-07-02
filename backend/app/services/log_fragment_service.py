@@ -8,6 +8,9 @@
 import random
 from typing import ClassVar, Optional
 
+from sqlmodel import Session
+
+from app.core.logger import get_logger  # type: ignore
 from app.models import (
     Character,
     EmotionalValence,
@@ -16,10 +19,16 @@ from app.models import (
     LogFragment,
     LogFragmentRarity,
 )
+from app.models.quest import Quest
+
+logger = get_logger(__name__)
 
 
 class LogFragmentService:
     """ログフラグメント生成サービス"""
+
+    def __init__(self, db: Session):
+        self.db = db
 
     # 場所タイプ別のキーワードテンプレート
     LOCATION_KEYWORDS: ClassVar[dict] = {
@@ -283,3 +292,232 @@ class LogFragmentService:
             LogFragmentRarity.LEGENDARY: 1.0,
         }
         return scores.get(rarity, 0.2)
+
+    async def generate_quest_memory(
+        self,
+        character_id: str,
+        quest: Quest,
+        theme: str,
+        summary: str,
+        emotional_keywords: list[str],
+        uniqueness_score: float,
+        difficulty_score: float
+    ) -> Optional[LogFragment]:
+        """
+        クエスト完了時に記憶フラグメントを生成
+
+        Args:
+            character_id: キャラクターID
+            quest: 完了したクエスト
+            theme: クエストの中心テーマ
+            summary: 物語のサマリー
+            emotional_keywords: 感情的なキーワード
+            uniqueness_score: 独自性スコア（0-1）
+            difficulty_score: 困難さスコア（0-1）
+
+        Returns:
+            生成された記憶フラグメント
+        """
+        try:
+            character = self.db.get(Character, character_id)
+            if not character:
+                logger.error(f"Character {character_id} not found")
+                return None
+
+            # レアリティの決定
+            rarity = self._determine_quest_rarity(uniqueness_score, difficulty_score)
+
+            # アーキテクトレアリティのチェック
+            world_truth = None
+            if self._is_architect_memory(quest, theme):
+                rarity = LogFragmentRarity.ARCHITECT
+                world_truth = self._extract_world_truth(quest, theme)
+
+            # メインキーワードの決定
+            main_keyword = f"[{theme}]" if theme else f"[{quest.title}]"
+
+            # 感情価の決定
+            valence = self._determine_quest_emotion(quest.emotional_satisfaction, emotional_keywords)
+
+            # バックストーリーの生成
+            backstory = self._generate_quest_backstory(
+                quest=quest,
+                summary=summary,
+                rarity=rarity,
+                character_name=character.name
+            )
+
+            # コンビネーションタグの生成
+            combination_tags = self._generate_combination_tags(theme, emotional_keywords)
+
+            # 記憶フラグメントの作成
+            fragment = LogFragment(
+                character_id=character_id,
+                keyword=main_keyword,
+                keywords=[main_keyword, *emotional_keywords],
+                emotional_valence=valence,
+                rarity=rarity,
+                backstory=backstory,
+                importance_score=max(uniqueness_score, difficulty_score),
+                context_data={
+                    "quest_id": quest.id,
+                    "quest_title": quest.title,
+                    "completion_summary": summary,
+                    "theme": theme,
+                    "uniqueness_score": uniqueness_score,
+                    "difficulty_score": difficulty_score
+                },
+                memory_type=self._classify_memory_type(theme),
+                combination_tags=combination_tags,
+                world_truth=world_truth,
+                acquisition_context=f"クエスト「{quest.title}」の完了により獲得"
+            )
+
+            self.db.add(fragment)
+            self.db.commit()
+            self.db.refresh(fragment)
+
+            logger.info(f"Generated quest memory fragment {fragment.id} for quest {quest.id}")
+            return fragment
+
+        except Exception as e:
+            logger.error(f"Error generating quest memory: {e}")
+            self.db.rollback()
+            return None
+
+    def _determine_quest_rarity(self, uniqueness: float, difficulty: float) -> LogFragmentRarity:
+        """クエストの独自性と困難さからレアリティを決定"""
+        combined_score = (uniqueness + difficulty) / 2
+
+        if combined_score >= 0.9:
+            return LogFragmentRarity.LEGENDARY
+        elif combined_score >= 0.75:
+            return LogFragmentRarity.EPIC
+        elif combined_score >= 0.6:
+            return LogFragmentRarity.RARE
+        elif combined_score >= 0.4:
+            return LogFragmentRarity.UNCOMMON
+        else:
+            return LogFragmentRarity.COMMON
+
+    def _is_architect_memory(self, quest: Quest, theme: str) -> bool:
+        """アーキテクト記憶かどうかを判定"""
+        architect_keywords = [
+            "世界の真実", "階層情報圏", "アストラルネット", "フェイディング",
+            "設計者", "アーキテクト", "スクリプト", "世界のコード",
+            "忘却領域", "来訪者", "世界の終焉", "情報記録庫"
+        ]
+
+        # クエストの説明やイベントにアーキテクトキーワードが含まれるか
+        quest_text = f"{quest.description} {quest.completion_summary or ''}"
+        for keyword in architect_keywords:
+            if keyword in quest_text or keyword in theme:
+                return True
+
+        # 特殊なイベントパターンのチェック
+        for event in quest.key_events:
+            if "world_truth" in event or "architect" in str(event).lower():
+                return True
+
+        return False
+
+    def _extract_world_truth(self, quest: Quest, theme: str) -> str:
+        """世界の真実を抽出"""
+        # クエストの内容から世界の真実に関する情報を抽出
+        truth_patterns = {
+            "階層情報圏": "この世界が巨大な情報の階層構造として存在していることの発見",
+            "アストラルネット": "魔法と呼ばれるものが、実は世界システムへのアクセス権限であることの理解",
+            "フェイディング": "世界が徐々に情報として消失していく現象の真相",
+            "設計者": "この世界を創造した存在についての手がかり",
+            "スクリプト": "スキルや魔法が実行可能なコードであることの発見",
+            "来訪者": "異世界からの来訪者が持つ特別な意味と役割"
+        }
+
+        for pattern, truth in truth_patterns.items():
+            if pattern in theme or pattern in (quest.completion_summary or ""):
+                return truth
+
+        return "世界の根源に関わる、言葉にできない真実"
+
+    def _determine_quest_emotion(self, satisfaction: float, keywords: list[str]) -> EmotionalValence:
+        """クエストの感情価を決定"""
+        if satisfaction >= 0.8:
+            return EmotionalValence.POSITIVE
+        elif satisfaction <= 0.3:
+            return EmotionalValence.NEGATIVE
+
+        # キーワードから判定
+        positive_words = ["勇気", "友情", "希望", "勝利", "成長", "愛", "発見"]
+        negative_words = ["犠牲", "裏切り", "絶望", "敗北", "喪失", "恐怖", "後悔"]
+
+        positive_count = sum(1 for kw in keywords if any(pw in kw for pw in positive_words))
+        negative_count = sum(1 for kw in keywords if any(nw in kw for nw in negative_words))
+
+        if positive_count > negative_count:
+            return EmotionalValence.POSITIVE
+        elif negative_count > positive_count:
+            return EmotionalValence.NEGATIVE
+        elif positive_count > 0 and negative_count > 0:
+            return EmotionalValence.MIXED
+        else:
+            return EmotionalValence.NEUTRAL
+
+    def _generate_quest_backstory(
+        self,
+        quest: Quest,
+        summary: str,
+        rarity: LogFragmentRarity,
+        character_name: str
+    ) -> str:
+        """クエストのバックストーリーを生成"""
+        if rarity == LogFragmentRarity.ARCHITECT:
+            return f"{character_name}が世界の真実に触れた瞬間。{summary}"
+
+        rarity_descriptions = {
+            LogFragmentRarity.COMMON: "ありふれた冒険の中で得た",
+            LogFragmentRarity.UNCOMMON: "創意工夫によって達成した",
+            LogFragmentRarity.RARE: "困難を乗り越えて手に入れた",
+            LogFragmentRarity.EPIC: "偉大な物語の完結として刻まれた",
+            LogFragmentRarity.LEGENDARY: "伝説として語り継がれるべき",
+            LogFragmentRarity.UNIQUE: f"{character_name}だけが達成できた"
+        }
+
+        desc = rarity_descriptions.get(rarity, "特別な")
+        return f"{desc}記憶。{summary}"
+
+    def _generate_combination_tags(self, theme: str, keywords: list[str]) -> list[str]:
+        """組み合わせ用のタグを生成"""
+        tags = [theme.lower()]
+        tags.extend([kw.lower() for kw in keywords[:3]])  # 上位3つのキーワード
+
+        # カテゴリタグの追加
+        category_mappings = {
+            "戦闘": ["combat", "battle"],
+            "探索": ["exploration", "discovery"],
+            "対話": ["dialogue", "social"],
+            "謎解き": ["puzzle", "mystery"],
+            "成長": ["growth", "development"]
+        }
+
+        for category, cat_tags in category_mappings.items():
+            if category in theme or any(category in kw for kw in keywords):
+                tags.extend(cat_tags)
+
+        return list(set(tags))[:10]  # 重複を除いて最大10個
+
+    def _classify_memory_type(self, theme: str) -> str:
+        """記憶のタイプを分類"""
+        type_keywords = {
+            "勇気": ["勇敢", "挑戦", "立ち向かう", "決意"],
+            "友情": ["仲間", "絆", "信頼", "協力"],
+            "知恵": ["知識", "謎", "発見", "理解"],
+            "犠牲": ["代償", "失う", "守る", "捧げる"],
+            "勝利": ["成功", "達成", "克服", "制覇"],
+            "真実": ["秘密", "正体", "本質", "核心"]
+        }
+
+        for memory_type, keywords in type_keywords.items():
+            if any(kw in theme for kw in keywords):
+                return memory_type
+
+        return "経験"  # デフォルト

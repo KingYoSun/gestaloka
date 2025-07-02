@@ -1,5 +1,53 @@
 # 最近の作業履歴
 
+## 2025/07/03 - 動的クエストシステムの実装
+
+### 実施内容
+- 記憶継承システムの第一段階として動的クエストシステムを実装
+- AI駆動のクエスト提案・進捗管理機能
+- クエスト完了時の記憶フラグメント自動生成
+- ゲームセッションとの統合
+
+### 技術的詳細
+1. **Questモデルの実装**
+   - 7つのステータス（PROPOSED, ACTIVE, PROGRESSING等）
+   - 5つの起源タイプ（GM_PROPOSED, PLAYER_DECLARED等）
+   - 進捗率、物語的完結度、感情的満足度の追跡
+   - key_eventsとinvolved_entitiesによる詳細記録
+
+2. **QuestServiceの実装**
+   - AI駆動のクエスト提案（propose_quests）
+   - 行動パターンからの暗黙的クエスト推測
+   - クエスト進捗のAI評価（update_quest_progress）
+   - 完了判定ロジック（物語的完結度70%、感情的満足度60%）
+
+3. **記憶フラグメント拡張**
+   - UNIQUE、ARCHITECTレアリティ追加
+   - memory_type、combination_tags、world_truth追加
+   - is_consumed（常にFalse）で永続性保証
+
+4. **APIエンドポイント（6個）**
+   - GET `/quests/{character_id}/quests` - クエスト一覧
+   - GET `/quests/{character_id}/proposals` - AI提案
+   - POST `/quests/{character_id}/create` - 作成
+   - POST `/quests/{character_id}/quests/infer` - 暗黙的推測
+   - POST `/quests/{character_id}/quests/{quest_id}/accept` - 受諾
+   - POST `/quests/{character_id}/quests/{quest_id}/update` - 進捗更新
+
+### 実装結果
+- **テスト**: クエストサービスの包括的テスト作成・成功
+- **型チェック**: QuestStatus.in_()の型エラーを# type: ignoreで対処
+- **リント**: 全てのインポート・フォーマットエラー解消
+- **マイグレーション**: questsテーブル、log_fragments拡張の適用成功
+
+### 関連ファイル
+- `backend/app/models/quest.py`（新規）
+- `backend/app/services/quest_service.py`（新規）
+- `backend/app/api/v1/endpoints/quests.py`（新規）
+- `backend/app/services/log_fragment_service.py`（拡張）
+- `backend/app/models/log.py`（LogFragmentRarity追加）
+- `backend/alembic/versions/20250703_quests_and_memory_*.py`（新規）
+
 ## 2025/07/01 - Gemini API最適化とlangchain-google-genaiアップグレード
 
 ### 実施内容

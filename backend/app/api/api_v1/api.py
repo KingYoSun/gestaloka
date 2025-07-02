@@ -22,6 +22,7 @@ from app.api.api_v1.endpoints import (
     websocket,
 )
 from app.api.v1.admin.router import router as admin_router
+from app.api.v1.endpoints import quests
 
 api_router = APIRouter()
 
@@ -36,6 +37,7 @@ api_router.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"]
 api_router.include_router(exploration.router, prefix="/exploration", tags=["exploration"])
 api_router.include_router(narrative.router, prefix="/narrative", tags=["narrative"])
 api_router.include_router(npcs.router, prefix="/npcs", tags=["npcs"])
+api_router.include_router(quests.router, prefix="/quests", tags=["quests"])
 api_router.include_router(sp.router, prefix="/sp", tags=["sp"])
 api_router.include_router(sp_subscription.router, prefix="/sp/subscriptions", tags=["sp-subscriptions"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

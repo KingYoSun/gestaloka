@@ -8,6 +8,50 @@
 
 - [2025年6月](./archives/completedTasks_2025-06.md) - プロジェクト基盤構築、認証システム、キャラクター管理、AI統合、戦闘システム、ログシステム、SPシステム実装
 
+## 完了済みタスク（2025年7月3日）
+
+### 動的クエストシステムの実装 ✅
+
+#### 実施内容
+- 記憶継承システムの第一段階として動的クエストシステムを実装
+- AI駆動のクエスト提案・進捗管理機能
+- クエスト完了時の記憶フラグメント自動生成
+- ゲームセッションとの統合
+
+#### 技術的詳細
+1. **Questモデルの実装**
+   - 7つのステータス（PROPOSED, ACTIVE, PROGRESSING, NEAR_COMPLETION, COMPLETED, ABANDONED, FAILED）
+   - 5つの起源タイプ（GM_PROPOSED, PLAYER_DECLARED, BEHAVIOR_INFERRED, NPC_GIVEN, WORLD_EVENT）
+   - 進捗率、物語的完結度、感情的満足度の追跡
+   - key_eventsとinvolved_entitiesによる詳細記録
+
+2. **QuestServiceの実装**
+   - AI駆動のクエスト提案（propose_quests）
+   - 行動パターンからの暗黙的クエスト推測（infer_implicit_quest）
+   - クエスト進捗のAI評価（update_quest_progress）
+   - 完了判定ロジック（物語的完結度70%、感情的満足度60%、進捗率90%）
+
+3. **記憶フラグメント拡張**
+   - UNIQUE、ARCHITECTレアリティ追加
+   - memory_type、combination_tags、world_truth追加
+   - is_consumed（常にFalse）で永続性保証
+   - クエスト完了時の自動生成機能
+
+4. **APIエンドポイント実装**（6個）
+   - GET `/quests/{character_id}/quests` - クエスト一覧
+   - GET `/quests/{character_id}/proposals` - AI提案
+   - POST `/quests/{character_id}/create` - 作成
+   - POST `/quests/{character_id}/quests/infer` - 暗黙的推測
+   - POST `/quests/{character_id}/quests/{quest_id}/accept` - 受諾
+   - POST `/quests/{character_id}/quests/{quest_id}/update` - 進捗更新
+
+#### 実装結果
+- **テスト**: クエストサービスの包括的テスト作成・成功
+- **型チェック**: QuestStatus.in_()の型エラーを# type: ignoreで対処
+- **リント**: 全てのインポート・フォーマットエラー解消
+- **マイグレーション**: questsテーブル、log_fragments拡張の適用成功
+- **ドキュメント**: memoryInheritance.mdとmemory_fragment_redesign.mdの統合完了
+
 ## 完了済みタスク（2025年7月1日）
 
 ### ミニマップ Phase 4 パフォーマンス最適化 ✅

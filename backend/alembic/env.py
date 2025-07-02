@@ -39,6 +39,7 @@ from app.models.log_dispatch import (  # noqa
     DispatchReport,
     LogDispatch,
 )
+from app.models.quest import Quest  # noqa
 from app.models.sp import PlayerSP, SPTransaction  # noqa
 from app.models.sp_purchase import SPPurchase  # noqa
 from app.models.sp_subscription import SPSubscription, SubscriptionTransaction  # noqa
