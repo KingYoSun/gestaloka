@@ -1,5 +1,7 @@
 # アーキテクチャ・技術仕様サマリー
 
+最終更新: 2025-07-02
+
 ## 概要
 このセクションには、ゲスタロカのシステム設計、アーキテクチャパターン、技術的決定、API仕様に関するドキュメントが含まれています。新機能の実装や技術的な意思決定を行う際の指針となります。
 
@@ -10,6 +12,8 @@
 - **リアルタイム通信**: WebSocket (Socket.IO)
 - **非同期処理**: Celery + Redis
 - **データベース**: PostgreSQL（構造化データ）+ Neo4j（関係性データ）
+- **決済システム**: Stripe（SP購入・サブスクリプション）
+- **AIキャッシュ**: Redis（コスト20-30%削減）
 
 ### GM AI評議会
 6つの専門AIがそれぞれの役割を持ち協調動作：
@@ -57,6 +61,15 @@
 ### features/
 - **[minimap_design.md](features/minimap_design.md)**: ミニマップ機能の設計書（UI/UX、実装フェーズ）
 - **[minimap_technical_spec.md](features/minimap_technical_spec.md)**: ミニマップ機能の技術仕様（API、DB、Canvas実装）
+- **[sp_system_spec.md](features/sp_system_spec.md)**: SPシステムの完全仕様（購入、サブスク、管理）
+- **[log_encounter_spec.md](features/log_encounter_spec.md)**: ログ遭遇システム仕様（複数NPC、アイテム交換）
+
+## 最近の更新（2025年7月）
+
+- **SPシステム完全実装**: Stripe統合、サブスクリプション、管理機能
+- **ログ遭遇システム強化**: 複数NPC対応、アイテム交換、確率計算
+- **物語主導型移動**: ミニマップview-only化、GM AIによる自然な移動
+- **AIレスポンスキャッシュ**: コスト20-30%削減
 
 ## クイックリファレンス
 

@@ -1,5 +1,7 @@
 # 脚本家AI (Dramatist) 仕様書
 
+最終更新: 2025-07-02
+
 ## 概要
 
 脚本家AI（Dramatist）は、GM AI評議会の物語進行担当として、プレイヤーの行動に対して世界観に沿った物語的な描写を生成し、次の行動の選択肢を提示する役割を担います。
@@ -254,6 +256,148 @@ metadata = {
 - 正規表現のプリコンパイル
 - 選択肢は最大3つで打ち切り
 - 不要な空行や区切り線は無視
+
+## 物語主導型移動システム
+
+### 概念
+
+物語主導型移動は、ミニマップの直接操作ではなく、物語の流れの中で自然に場所を移動するシステムです。プレイヤーの移動は物語的な必然性を持ち、行動選択肢の一部として統合されます。
+
+### 移動の実装方針
+
+1. **物語への統合**
+   - 移動は単なる場所の変更ではなく、物語の一部として描写
+   - 移動の理由や目的を明確に物語に組み込む
+   - 移動中の出来事や発見を含める可能性
+
+2. **選択肢としての移動**
+   - 通常の行動選択肢に移動オプションを含める
+   - 例：「古い図書館へ向かう」「森の奥深くへ進む」「街の広場に戻る」
+   - 移動にも難易度を設定（道の険しさ、距離、危険度など）
+
+### 選択肢生成時の考慮事項
+
+```python
+def _generate_movement_choices(self, context: PromptContext) -> list[ActionChoice]:
+    """
+    現在地から移動可能な場所への選択肢を生成
+    """
+    current_location = context.character_state.location
+    accessible_locations = 隣接する場所のリスト
+    
+    movement_choices = []
+    for location in accessible_locations:
+        # 物語的な理由付け
+        narrative_reason = self._create_movement_narrative(
+            from_location=current_location,
+            to_location=location,
+            context=context
+        )
+        
+        # SP消費の計算
+        sp_cost = self._calculate_movement_sp(current_location, location)
+        
+        # 難易度の決定（地形、天候、キャラクター状態を考慮）
+        difficulty = self._determine_movement_difficulty(
+            location=location,
+            character_state=context.character_state,
+            world_state=context.world_state
+        )
+        
+        choice_text = f"{narrative_reason} [SP消費: {sp_cost}]"
+        movement_choices.append(
+            ActionChoice(
+                id=f"move_to_{location.id}",
+                text=choice_text,
+                difficulty=difficulty,
+                metadata={"type": "movement", "destination": location.id}
+            )
+        )
+    
+    return movement_choices
+```
+
+### 移動描写の要素
+
+1. **出発の動機**
+   - なぜその場所へ行く必要があるのか
+   - キャラクターの目的や状況との関連性
+   - 緊急性や重要性の表現
+
+2. **経路の描写**
+   - 移動中の風景や雰囲気
+   - 遭遇する可能性のある危険や機会
+   - 時間の経過や天候の変化
+
+3. **到着の描写**
+   - 新しい場所の第一印象
+   - 場所の特徴や雰囲気
+   - 即座に気づく重要な要素
+
+### SP消費の明示
+
+移動選択肢には必ずSP消費を明記：
+
+```python
+movement_sp_rules = {
+    "隣接エリア": 1,
+    "遠距離エリア": 3,
+    "困難な地形": +1,
+    "悪天候": +1,
+    "負傷状態": +1
+}
+```
+
+### 他AIとの連携
+
+1. **状態管理AIとの連携**
+   - 移動可能な場所のリストを取得
+   - 移動に必要なSPの確認
+   - 移動制限（戦闘中、イベント中など）の確認
+
+2. **NPC管理AIとの連携**
+   - 移動先で遭遇する可能性のあるNPCの情報取得
+   - 移動中の遭遇イベントの準備
+   - ログ派生NPCとの遭遇可能性の確認
+
+3. **世界の意識AIとの連携**
+   - 移動時の世界状態（天候、時間帯）の確認
+   - マクロイベントによる移動への影響
+   - 特定の場所への移動制限
+
+### プロンプト例
+
+```
+現在地: 古い森の入口
+アクセス可能な場所:
+- 森の奥深く（隣接、SP1）
+- 近くの村（隣接、SP1）
+- 山道（遠距離、SP3）
+
+キャラクター状態: HP 70%, MP 50%, SP 8/10
+時間帯: 夕暮れ
+天候: 霧が立ち込めている
+
+この状況で、物語の流れに沿った移動選択肢を含む3つの行動を提示してください。
+移動する場合は、その理由と必要なSPを明記してください。
+```
+
+### 実装上の注意点
+
+1. **バランス調整**
+   - 移動選択肢が常に含まれすぎないよう調整
+   - 状況に応じて移動の必要性を判断
+   - 戦闘中や重要なイベント中は移動選択肢を制限
+
+2. **物語の連続性**
+   - 唐突な移動提案を避ける
+   - 前の行動との関連性を保つ
+   - キャラクターの目的に沿った移動を優先
+
+3. **プレイヤー体験**
+   - 移動が退屈な作業にならないよう工夫
+   - 移動自体を小さな冒険として描写
+   - 移動による発見や成長の機会を提供
 
 ## 他のAIとの連携
 
