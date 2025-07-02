@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as QuestsRouteImport } from './routes/quests'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ExplorationRouteImport } from './routes/exploration'
@@ -35,6 +36,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuestsRoute = QuestsRouteImport.update({
+  id: '/quests',
+  path: '/quests',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
   '/admin/performance': typeof AdminPerformanceRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
   '/admin/performance': typeof AdminPerformanceRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/exploration': typeof ExplorationRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
+  '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
   '/admin/performance': typeof AdminPerformanceRoute
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/exploration'
     | '/login'
     | '/logs'
+    | '/quests'
     | '/register'
     | '/settings'
     | '/admin/performance'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/exploration'
     | '/login'
     | '/logs'
+    | '/quests'
     | '/register'
     | '/settings'
     | '/admin/performance'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/exploration'
     | '/login'
     | '/logs'
+    | '/quests'
     | '/register'
     | '/settings'
     | '/admin/performance'
@@ -238,6 +250,7 @@ export interface RootRouteChildren {
   ExplorationRoute: typeof ExplorationRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
+  QuestsRoute: typeof QuestsRoute
   RegisterRoute: typeof RegisterRoute
   SettingsRoute: typeof SettingsRoute
   AdminPerformanceRoute: typeof AdminPerformanceRoute
@@ -265,6 +278,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quests': {
+      id: '/quests'
+      path: '/quests'
+      fullPath: '/quests'
+      preLoaderRoute: typeof QuestsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -382,6 +402,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExplorationRoute: ExplorationRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
+  QuestsRoute: QuestsRoute,
   RegisterRoute: RegisterRoute,
   SettingsRoute: SettingsRoute,
   AdminPerformanceRoute: AdminPerformanceRoute,

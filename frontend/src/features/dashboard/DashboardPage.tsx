@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Users, Plus, Gamepad2, BookOpen } from 'lucide-react'
+import { Users, Plus, Gamepad2, BookOpen, Target } from 'lucide-react'
 
 export function DashboardPage() {
   return (
@@ -13,7 +13,7 @@ export function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -74,6 +74,26 @@ export function DashboardPage() {
               <Button className="w-full justify-start">
                 <BookOpen className="mr-2 h-4 w-4" />
                 ログ管理画面へ
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5 text-orange-600" />
+              クエスト管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              物語の目標を設定し、進行状況を確認します
+            </p>
+            <Link to="/quests" className="block">
+              <Button variant="outline" className="w-full justify-start">
+                <Target className="mr-2 h-4 w-4" />
+                クエスト管理画面へ
               </Button>
             </Link>
           </CardContent>

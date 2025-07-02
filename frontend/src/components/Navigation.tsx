@@ -10,6 +10,7 @@ import {
   MapPin,
   Swords,
   Gem,
+  Target,
 } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -43,6 +44,11 @@ const navigationItems = [
     name: 'フラグメント',
     href: '/log-fragments',
     icon: Gem,
+  },
+  {
+    name: 'クエスト',
+    href: '/quests',
+    icon: Target,
   },
   {
     name: '探索',

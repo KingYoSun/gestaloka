@@ -35,6 +35,7 @@ import {
   type BattleData,
 } from '@/features/game/components/BattleStatus'
 import { NPCEncounterManager } from '@/features/game/components/NPCEncounterManager'
+import { QuestStatusWidget } from '@/components/quests/QuestStatusWidget'
 
 export const Route = createFileRoute('/game/$sessionId')({
   component: GameSessionPage,
@@ -320,6 +321,9 @@ function GameSessionPage() {
 
         {/* サイドバー */}
         <div className="space-y-4">
+          {/* クエスト状態 */}
+          <QuestStatusWidget compact />
+
           {/* 戦闘状態 */}
           {session.sessionData?.battle_data && (
             <BattleStatus
