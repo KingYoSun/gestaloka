@@ -318,18 +318,43 @@ const handleActionExecution = async (action: GameAction) => {
    - すべての取引をSPTransactionテーブルに記録
    - 不正操作の追跡が可能
 
+## 実装済み機能（2025/07/02更新）
+
+### ✅ Celeryタスクによる自動化
+1. **日次SP回復タスク** (`process_daily_sp_recovery`)
+   - 毎日UTC 4時（JST 13時）に自動実行
+   - 基本回復: 10 SP/日
+   - サブスクリプションボーナス: Basic +20 SP、Premium +50 SP
+   - 連続ログインボーナス: 7日（+5）、14日（+10）、30日（+20）
+
+2. **サブスクリプション期限チェック** (`check_subscription_expiry`)
+   - 1時間ごとに自動実行
+   - 期限切れサブスクリプションの自動無効化
+
+3. **Celeryスケジュール設定**（backend/app/celery.py）
+   ```python
+   "daily-sp-recovery": {
+       "task": "app.tasks.sp_tasks.process_daily_sp_recovery",
+       "schedule": crontab(hour=4, minute=0),  # UTC 4時 = JST 13時
+   },
+   "check-subscription-expiry": {
+       "task": "app.tasks.sp_tasks.check_subscription_expiry",
+       "schedule": 3600.0,  # 1時間ごと
+   }
+   ```
+
 ## 今後の実装予定
 
 ### Phase 4: 購入システム統合
-- 決済プロバイダー統合（Stripe/PayPal）
-- 購入フロー実装
+- 決済プロバイダー統合（Stripe連携は一部実装済み）
+- サブスクリプション購入・更新API
 - レシート管理
 - 返金処理
 
-### Phase 5: 定期タスク実装
-- Celeryタスクによる日次回復の自動化
-- サブスクリプション期限管理
-- SP上限値の定期更新
+### Phase 5: 管理機能の強化
+- 管理画面でのSP付与・調整機能
+- サブスクリプション手動管理
+- SP取引履歴の詳細分析ツール
 
 ## 関連ドキュメント
 
