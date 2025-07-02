@@ -3,6 +3,7 @@
 """
 
 import json
+import random
 import uuid
 from datetime import datetime
 from typing import Any, Optional
@@ -814,22 +815,28 @@ class GameSessionService:
             if dispatch.dispatcher_id == character.id:
                 continue
 
-            # 遭遇データを構築
-            encounter_data = {
-                "dispatch_id": dispatch.id,
-                "log_id": completed_log.id,
-                "log_name": completed_log.name,
-                "log_title": completed_log.title,
-                "personality_traits": completed_log.personality_traits,
-                "behavior_patterns": completed_log.behavior_patterns,
-                "objective_type": dispatch.objective_type,
-                "contamination_level": completed_log.contamination_level,
-            }
+            # 遭遇確率の計算
+            encounter_chance = self._calculate_encounter_chance(character, dispatch, completed_log)
 
-            encounters.append(encounter_data)
+            # 確率に基づいて遭遇判定
+            if random.random() <= encounter_chance:
+                # 遭遇データを構築
+                encounter_data = {
+                    "dispatch_id": dispatch.id,
+                    "log_id": completed_log.id,
+                    "log_name": completed_log.name,
+                    "log_title": completed_log.title,
+                    "personality_traits": completed_log.personality_traits,
+                    "behavior_patterns": completed_log.behavior_patterns,
+                    "objective_type": dispatch.objective_type,
+                    "contamination_level": completed_log.contamination_level,
+                    "encounter_chance": encounter_chance,  # デバッグ用
+                }
+                encounters.append(encounter_data)
 
-            # 遭遇確率の計算（将来的な拡張用）
-            # encounter_chance = self._calculate_encounter_chance(character, dispatch, completed_log)
+                # 最大遭遇数の制限（デフォルト: 3体まで）
+                if len(encounters) >= 3:
+                    break
 
         return encounters
 
@@ -890,3 +897,56 @@ class GameSessionService:
             "interaction_type": interaction_type,
             "outcome": outcome,
         }
+
+    def _calculate_encounter_chance(self, character: Character, dispatch: Any, completed_log: Any) -> float:
+        """
+        遭遇確率を計算
+
+        Args:
+            character: プレイヤーキャラクター
+            dispatch: 派遣データ
+            completed_log: 完成ログデータ
+
+        Returns:
+            遭遇確率（0.0～1.0）
+        """
+        from app.models.log_dispatch import DispatchObjectiveType
+
+        # 基本遭遇確率
+        base_chance = 0.3
+
+        # 目的タイプによる確率修正
+        objective_modifiers = {
+            DispatchObjectiveType.INTERACT: 0.5,      # 交流型は高確率
+            DispatchObjectiveType.TRADE: 0.3,         # 商業型は中確率
+            DispatchObjectiveType.EXPLORE: 0.2,       # 探索型は低確率
+            DispatchObjectiveType.GUARD: 0.1,         # 護衛型は極低確率
+            DispatchObjectiveType.FREE: 0.3,          # 自由型は中確率
+            DispatchObjectiveType.RESEARCH: 0.15,     # 研究型は低確率
+            DispatchObjectiveType.MEMORY_PRESERVE: 0.2, # 記憶保存型は低確率
+        }
+
+        objective_modifier = objective_modifiers.get(dispatch.objective_type, 0.2)
+
+        # 性格特性による修正
+        personality_modifier = 0.0
+        if completed_log.personality_traits:
+            if "社交的" in completed_log.personality_traits or "友好的" in completed_log.personality_traits:
+                personality_modifier += 0.1
+            if "人見知り" in completed_log.personality_traits or "慎重" in completed_log.personality_traits:
+                personality_modifier -= 0.1
+            if "好奇心旺盛" in completed_log.personality_traits:
+                personality_modifier += 0.05
+
+        # 汚染度による修正（高汚染度は予測不能な遭遇を増やす）
+        contamination_modifier = completed_log.contamination_level * 0.1
+
+        # 時間帯による修正（将来実装用のプレースホルダー）
+        time_modifier = 0.0
+        # TODO: セッションデータから時間帯を取得して修正を計算
+
+        # 最終確率の計算
+        final_chance = base_chance + objective_modifier + personality_modifier + contamination_modifier + time_modifier
+
+        # 0.0～1.0の範囲に制限
+        return float(max(0.0, min(1.0, final_chance)))

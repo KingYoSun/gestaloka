@@ -397,4 +397,86 @@ async def recall_dispatch(
 
     generate_dispatch_report.delay(dispatch.id)
 
-    return {"message": "Dispatch recalled successfully", "recall_cost": recall_cost}
+    return {"message": "Dispatch recalled successfully", "dispatch_id": dispatch_id}
+
+
+@router.post("/encounters/{encounter_id}/interact")
+async def interact_with_log_npc(
+    *,
+    db: Session = Depends(get_session),
+    encounter_id: str,
+    interaction_type: str,
+    interaction_result: dict,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    派遣ログNPCとの相互作用を記録
+
+    Args:
+        encounter_id: 遭遇ID（game_sessionから取得）
+        interaction_type: 相互作用の種類（talk, trade, help等）
+        interaction_result: 相互作用の結果（アイテム交換、情報共有等）
+    """
+    # 現在のキャラクターを取得
+    character_stmt = select(Character).where(Character.user_id == current_user.id)
+    result = db.exec(character_stmt)
+    character = result.first()
+
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found",
+        )
+
+    # 遭遇データから派遣IDを取得（実装簡略化のため、一旦仮実装）
+    # TODO: 実際の遭遇IDからdispatch_idを取得する仕組みが必要
+    dispatch_id = interaction_result.get("dispatch_id")
+    if not dispatch_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="dispatch_id is required in interaction_result",
+        )
+
+    # 相互作用の結果を解析
+    outcome = "neutral"
+    relationship_change = 0.0
+    items_exchanged = []
+
+    if interaction_type == "trade":
+        # アイテム交換の処理
+        items_exchanged = interaction_result.get("items_exchanged", [])
+        outcome = "friendly"
+        relationship_change = 0.1
+    elif interaction_type == "help":
+        # 協力の処理
+        outcome = "friendly"
+        relationship_change = 0.2
+    elif interaction_type == "talk":
+        # 会話の処理
+        outcome = interaction_result.get("outcome", "neutral")
+        relationship_change = interaction_result.get("relationship_change", 0.0)
+
+    # 遭遇記録を作成
+    encounter = DispatchEncounter(
+        dispatch_id=dispatch_id,
+        encountered_character_id=character.id,
+        location=character.location,
+        interaction_type=interaction_type,
+        interaction_summary=interaction_result.get("summary", f"{interaction_type} interaction"),
+        outcome=outcome,
+        relationship_change=relationship_change,
+        items_exchanged=items_exchanged,
+    )
+
+    db.add(encounter)
+    db.commit()
+    db.refresh(encounter)
+
+    return {
+        "encounter_id": encounter.id,
+        "dispatch_id": dispatch_id,
+        "interaction_type": interaction_type,
+        "outcome": outcome,
+        "relationship_change": relationship_change,
+        "items_exchanged": items_exchanged,
+    }

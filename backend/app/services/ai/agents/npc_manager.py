@@ -616,67 +616,102 @@ class NPCManagerAgent(BaseAgent):
         Returns:
             遭遇処理結果
         """
-        # 最初の遭遇NPCを処理（将来的には複数対応）
-        encounter = npc_encounters[0]
+        encountered_npcs = []
+        narratives = []
 
-        # NPCデータから一時的なNPCCharacterSheetを作成
-        log_npc = NPCCharacterSheet(
-            id=encounter["log_id"],
-            name=encounter["log_name"],
-            title=encounter.get("log_title"),
-            npc_type=NPCType.LOG_NPC,
-            appearance="派遣ログから実体化した存在",
-            personality=NPCPersonality(
-                traits=encounter.get("personality_traits", []),
-                motivations=[f"{encounter['objective_type']}を遂行する"],
-                fears=["目的の失敗", "汚染の進行"],
-                speech_pattern=encounter.get("behavior_patterns", ["標準的"])[0]
-                if encounter.get("behavior_patterns")
-                else "標準的",
-                alignment="中立",
-            ),
-            background="他のプレイヤーから派遣されたログ",
-            occupation=f"派遣ログ（{encounter['objective_type']}）",
-            location=context.location,
-            stats={"汚染度": encounter.get("contamination_level", 0)},
-            skills=[],
-            dialogue_topics=[
-                "派遣の目的",
-                "元の世界の話",
-                encounter["objective_type"],
-            ],
-            quest_potential=encounter["objective_type"] in ["interact", "collect"],
-            created_by="log_dispatch_system",
-            persistence_level=5,
-        )
+        # 各遭遇NPCを処理（最大3体まで）
+        for i, encounter in enumerate(npc_encounters[:3]):
+            # NPCデータから一時的なNPCCharacterSheetを作成
+            log_npc = NPCCharacterSheet(
+                id=encounter["log_id"],
+                name=encounter["log_name"],
+                title=encounter.get("log_title"),
+                npc_type=NPCType.LOG_NPC,
+                appearance="派遣ログから実体化した存在",
+                personality=NPCPersonality(
+                    traits=encounter.get("personality_traits", []),
+                    motivations=[f"{encounter['objective_type']}を遂行する"],
+                    fears=["目的の失敗", "汚染の進行"],
+                    speech_pattern=encounter.get("behavior_patterns", ["標準的"])[0]
+                    if encounter.get("behavior_patterns")
+                    else "標準的",
+                    alignment="中立",
+                ),
+                background="他のプレイヤーから派遣されたログ",
+                occupation=f"派遣ログ（{encounter['objective_type']}）",
+                location=context.location,
+                stats={"汚染度": encounter.get("contamination_level", 0)},
+                skills=[],
+                dialogue_topics=[
+                    "派遣の目的",
+                    "元の世界の話",
+                    encounter["objective_type"],
+                ],
+                quest_potential=encounter["objective_type"] in ["interact", "collect"],
+                created_by="log_dispatch_system",
+                persistence_level=5,
+            )
 
-        # レジストリに一時的に追加
-        self.npc_registry[log_npc.id] = log_npc
+            # レジストリに一時的に追加
+            self.npc_registry[log_npc.id] = log_npc
+            encountered_npcs.append(log_npc)
 
-        # 遭遇ナラティブの生成
-        narrative = f"""
-突然、空気が歪み、一つの姿が現れた。
-それは他の世界から派遣されたログ、「{log_npc.name}」だった。
-{log_npc.title if log_npc.title else ""}
-汚染度{encounter.get('contamination_level', 0)}%のその存在は、{encounter['objective_type']}の目的を持ってこの世界を訪れたようだ。
-        """.strip()
+            # 個別のナラティブを生成
+            if i == 0:
+                narratives.append("突然、空気が歪み、一つの姿が現れた。")
+            else:
+                narratives.append("さらに、別の歪みから新たな姿が現れた。")
+
+            narratives.append(
+                f"それは他の世界から派遣されたログ、「{log_npc.name}」だった。"
+                f"{log_npc.title if log_npc.title else ''}"
+                f"汚染度{encounter.get('contamination_level', 0)}%のその存在は、"
+                f"{encounter['objective_type']}の目的を持ってこの世界を訪れたようだ。"
+            )
+
+        # 複数NPCの場合の追加ナラティブ
+        if len(encountered_npcs) > 1:
+            narratives.append(f"\n{len(encountered_npcs)}体の派遣ログが、互いの存在に気づいたようだ。")
+
+        # 全体のナラティブを結合
+        narrative = "\n".join(narratives)
+
+        # 選択肢の生成（複数NPCの場合は各NPCへの対応を選択）
+        choices = []
+        if len(encountered_npcs) == 1:
+            npc = encountered_npcs[0]
+            choices = [
+                ActionChoice(id="talk", text=f"{npc.name}と話す"),
+                ActionChoice(id="help", text="協力を申し出る"),
+                ActionChoice(id="ignore", text="無視する"),
+            ]
+        else:
+            # 複数NPCの場合
+            choices.append(ActionChoice(id="talk_all", text="全員と話す"))
+            for i, npc in enumerate(encountered_npcs):
+                choices.append(ActionChoice(id=f"talk_{i}", text=f"{npc.name}と話す"))
+            choices.append(ActionChoice(id="help_all", text="全員に協力を申し出る"))
+            choices.append(ActionChoice(id="ignore", text="全員を無視する"))
+
+        # メタデータの準備
+        metadata = {
+            "action": "log_npc_encounter",
+            "encounter_count": len(encountered_npcs),
+            "encountered_npcs": [npc.model_dump() for npc in encountered_npcs],
+            "dispatch_ids": [enc["dispatch_id"] for enc in npc_encounters[:3]],
+            "objectives": [enc["objective_type"] for enc in npc_encounters[:3]],
+        }
+
+        # 状態変化の準備
+        state_changes = {
+            "new_npcs": [npc.model_dump() for npc in encountered_npcs],
+            "encounter_type": "log_npc_multiple" if len(encountered_npcs) > 1 else "log_npc",
+        }
 
         return AgentResponse(
             agent_role=self.role.value,
             narrative=narrative,
-            metadata={
-                "action": "log_npc_encounter",
-                "encountered_npc": log_npc.model_dump(),
-                "dispatch_id": encounter["dispatch_id"],
-                "objective": encounter["objective_type"],
-            },
-            state_changes={
-                "new_npc": log_npc.model_dump(),
-                "encounter_type": "log_npc",
-            },
-            choices=[
-                ActionChoice(id="talk", text=f"{log_npc.name}と話す"),
-                ActionChoice(id="help", text="協力を申し出る"),
-                ActionChoice(id="ignore", text="無視する"),
-            ],
+            metadata=metadata,
+            state_changes=state_changes,
+            choices=choices,
         )
