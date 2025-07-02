@@ -16,8 +16,10 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # 設定をインポート
 from app.core.config import settings
-from app.models.character import Character, CharacterStats, GameSession, Skill  # noqa
+from app.models.character import Character, CharacterStats, GameSession, Skill, CharacterSkill  # noqa
 from app.models.exploration_progress import CharacterExplorationProgress  # noqa
+from app.models.title import CharacterTitle  # noqa
+from app.models.item import Item, CharacterItem  # noqa
 
 # 新しいモデルを追加する場合は、ここにインポートを追加
 from app.models.location import (  # noqa

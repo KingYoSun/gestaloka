@@ -2,7 +2,7 @@
 データベースモデル
 """
 
-from app.models.character import Character, CharacterStats, GameSession, Skill
+from app.models.character import Character, CharacterStats, GameSession, Skill, CharacterSkill
 from app.models.location import (
     CharacterLocationHistory,
     DangerLevel,
@@ -37,12 +37,18 @@ from app.models.sp import (
 )
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
 from app.models.user import User
+from app.models.quest import Quest, QuestStatus, QuestOrigin
+from app.models.title import CharacterTitle
+from app.models.item import Item, CharacterItem, ItemType, ItemRarity
 
 __all__ = [
     "ActionLog",
     "Character",
+    "CharacterItem",
     "CharacterLocationHistory",
+    "CharacterSkill",
     "CharacterStats",
+    "CharacterTitle",
     "CompletedLog",
     "CompletedLogStatus",
     "CompletedLogSubFragment",
@@ -55,6 +61,9 @@ __all__ = [
     "ExplorationArea",
     "ExplorationLog",
     "GameSession",
+    "Item",
+    "ItemRarity",
+    "ItemType",
     "Location",
     "LocationConnection",
     "LocationType",
@@ -64,6 +73,9 @@ __all__ = [
     "PaymentMode",
     "PlayerSP",
     "PurchaseStatus",
+    "Quest",
+    "QuestOrigin",
+    "QuestStatus",
     "SPPurchase",
     "SPPurchasePackage",
     "SPSubscriptionType",

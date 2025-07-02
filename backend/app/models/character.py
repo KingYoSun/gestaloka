@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import JSON
 
 if TYPE_CHECKING:
     from app.models.exploration_progress import CharacterExplorationProgress
@@ -13,6 +14,8 @@ if TYPE_CHECKING:
     from app.models.log import ActionLog, CompletedLog, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.user import User
+    from app.models.title import CharacterTitle
+    from app.models.item import CharacterItem
 
 
 class Character(SQLModel, table=True):
@@ -29,6 +32,7 @@ class Character(SQLModel, table=True):
     location: str = Field(default="starting_village", max_length=100)  # 後方互換性のため残す
     location_id: Optional[int] = Field(default=None, foreign_key="locations.id")
     is_active: bool = Field(default=True)
+    character_metadata: Optional[dict] = Field(default_factory=dict, sa_type=JSON)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -37,8 +41,10 @@ class Character(SQLModel, table=True):
     stats: Optional["CharacterStats"] = Relationship(
         back_populates="character", sa_relationship_kwargs={"uselist": False}
     )
-    skills: list["Skill"] = Relationship(back_populates="character")
+    character_skills: list["CharacterSkill"] = Relationship(back_populates="character")
     game_sessions: list["GameSession"] = Relationship(back_populates="character")
+    titles: list["CharacterTitle"] = Relationship(back_populates="character")
+    items: list["CharacterItem"] = Relationship(back_populates="character")
 
     # ログシステム関連
     log_fragments: list["LogFragment"] = Relationship(back_populates="character")
@@ -88,25 +94,48 @@ class CharacterStats(SQLModel, table=True):
 
 
 class Skill(SQLModel, table=True):
-    """スキルモデル"""
+    """スキルマスタ"""
 
     __tablename__ = "skills"
 
     id: str = Field(primary_key=True, index=True)
+    name: str = Field(max_length=100, index=True, unique=True)
+    description: str = Field(max_length=500)
+    skill_type: str = Field(max_length=50)  # attack, defense, support, special
+    base_power: int = Field(default=10, ge=1)
+    sp_cost: int = Field(default=5, ge=0)
+    cooldown_turns: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # リレーション
+    character_skills: list["CharacterSkill"] = Relationship(back_populates="skill")
+
+    def __repr__(self) -> str:
+        return f"<Skill(id={self.id}, name={self.name})>"
+
+
+class CharacterSkill(SQLModel, table=True):
+    """キャラクターの所持スキル"""
+
+    __tablename__ = "character_skills"
+
+    id: str = Field(primary_key=True, index=True)
     character_id: str = Field(foreign_key="characters.id", index=True)
-    name: str = Field(max_length=100, index=True)
+    skill_id: str = Field(foreign_key="skills.id", index=True)
     level: int = Field(default=1, ge=1, le=100)
     experience: int = Field(default=0, ge=0)
-    description: Optional[str] = Field(default=None, max_length=500)
+    unlocked_at: str = Field(...)  # 取得方法
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # リレーション
-    character: Character = Relationship(back_populates="skills")
+    character: Character = Relationship(back_populates="character_skills")
+    skill: Skill = Relationship(back_populates="character_skills")
 
     def __repr__(self) -> str:
-        return f"<Skill(id={self.id}, name={self.name}, level={self.level})>"
+        return f"<CharacterSkill(character_id={self.character_id}, skill_id={self.skill_id}, level={self.level})>"
 
 
 class GameSession(SQLModel, table=True):

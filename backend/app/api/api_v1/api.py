@@ -13,6 +13,7 @@ from app.api.api_v1.endpoints import (
     game,
     log_fragments,
     logs,
+    memory_inheritance,
     narrative,
     npcs,
     sp,
@@ -33,6 +34,7 @@ api_router.include_router(characters.router, prefix="/characters", tags=["charac
 api_router.include_router(game.router, prefix="/game", tags=["game"])
 api_router.include_router(logs.router, prefix="/logs", tags=["logs"])
 api_router.include_router(log_fragments.router, prefix="/log-fragments", tags=["log-fragments"])
+api_router.include_router(memory_inheritance.router, prefix="/memory-inheritance", tags=["memory-inheritance"])
 api_router.include_router(dispatch.router, prefix="/dispatch", tags=["dispatch"])
 api_router.include_router(exploration.router, prefix="/exploration", tags=["exploration"])
 api_router.include_router(narrative.router, prefix="/narrative", tags=["narrative"])

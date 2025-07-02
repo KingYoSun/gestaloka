@@ -33,6 +33,7 @@ class SPTransactionType(str, Enum):
     FREE_ACTION = "free_action"  # 自由行動宣言
     LOG_DISPATCH = "log_dispatch"  # ログ派遣
     LOG_ENHANCEMENT = "log_enhancement"  # ログ強化
+    MEMORY_INHERITANCE = "memory_inheritance"  # 記憶継承
     SYSTEM_FUNCTION = "system_function"  # システム機能（即時回復など）
     MOVEMENT = "movement"  # 場所移動
     EXPLORATION = "exploration"  # 探索行動
