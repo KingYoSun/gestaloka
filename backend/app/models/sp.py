@@ -40,6 +40,8 @@ class SPTransactionType(str, Enum):
     # システム系
     ADJUSTMENT = "adjustment"  # システム調整
     MIGRATION = "migration"  # データ移行
+    ADMIN_GRANT = "admin_grant"  # 管理者付与
+    ADMIN_DEDUCT = "admin_deduct"  # 管理者減算
 
 
 class SPPurchasePackage(str, Enum):

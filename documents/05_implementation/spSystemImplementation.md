@@ -343,18 +343,52 @@ const handleActionExecution = async (action: GameAction) => {
    }
    ```
 
+### ✅ SPサブスクリプション機能（2025/07/02実装）
+1. **サブスクリプションモデル**
+   - Basic（月額980円）: 20 SP/日の追加回復
+   - Premium（月額2,980円）: 50 SP/日の追加回復
+   - Stripe統合による安全な決済処理
+
+2. **購入・管理API**
+   - `POST /api/v1/sp/subscription/purchase` - サブスクリプション購入
+   - `POST /api/v1/sp/subscription/cancel` - サブスクリプション解約
+   - `GET /api/v1/sp/subscription/current` - 現在の契約状況
+
+3. **Stripe Webhook統合**
+   - 支払い完了、更新、失敗の自動処理
+   - サブスクリプション状態の自動更新
+
+### ✅ 管理画面SPシステム（2025/07/02実装）
+1. **管理者用APIエンドポイント**
+   - `GET /api/v1/admin/sp/players` - 全プレイヤーのSP情報一覧
+   - `GET /api/v1/admin/sp/players/{user_id}` - 特定プレイヤーの詳細
+   - `GET /api/v1/admin/sp/players/{user_id}/transactions` - 取引履歴
+   - `POST /api/v1/admin/sp/adjust` - SP付与・調整
+   - `POST /api/v1/admin/sp/batch-adjust` - 一括調整
+
+2. **管理画面UI**
+   - プレイヤーSP残高の一覧表示
+   - ユーザー名・メールでの検索機能
+   - SP調整ダイアログ（理由付き）
+   - 取引履歴の確認
+
+3. **新しいSP取引タイプ**
+   - `ADMIN_GRANT` - 管理者による付与
+   - `ADMIN_DEDUCT` - 管理者による減算
+
 ## 今後の実装予定
 
-### Phase 4: 購入システム統合
-- 決済プロバイダー統合（Stripe連携は一部実装済み）
-- サブスクリプション購入・更新API
-- レシート管理
-- 返金処理
+### Phase 4: 本番環境向け設定
+- Stripe本番環境設定
+- 本番用価格設定の確認
+- Webhook URLの本番環境設定
+- 返金処理の実装
 
-### Phase 5: 管理機能の強化
-- 管理画面でのSP付与・調整機能
-- サブスクリプション手動管理
-- SP取引履歴の詳細分析ツール
+### Phase 5: 機能拡張
+- バッチ処理UI（CSV一括インポート）
+- SP統計ダッシュボード
+- 詳細な分析ツール
+- サブスクリプション手動管理機能
 
 ## 関連ドキュメント
 

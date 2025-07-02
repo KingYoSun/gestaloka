@@ -2,7 +2,7 @@ import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { Button } from '@/components/ui/button'
-import { Home, Activity, Users, Settings, LogOut } from 'lucide-react'
+import { Home, Activity, Users, Settings, LogOut, Coins } from 'lucide-react'
 
 export function AdminLayout() {
   const { user, logout } = useAuthStore()
@@ -55,6 +55,17 @@ export function AdminLayout() {
             >
               <Activity className="w-5 h-5" />
               パフォーマンス
+            </Link>
+
+            <Link
+              to="/admin/sp"
+              className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
+              activeProps={{
+                className: 'bg-accent',
+              }}
+            >
+              <Coins className="w-5 h-5" />
+              SP管理
             </Link>
 
             {/* 今後実装予定
