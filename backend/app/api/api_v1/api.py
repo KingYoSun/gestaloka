@@ -16,6 +16,7 @@ from app.api.api_v1.endpoints import (
     narrative,
     npcs,
     sp,
+    sp_subscription,
     stripe_webhook,
     users,
     websocket,
@@ -36,6 +37,7 @@ api_router.include_router(exploration.router, prefix="/exploration", tags=["expl
 api_router.include_router(narrative.router, prefix="/narrative", tags=["narrative"])
 api_router.include_router(npcs.router, prefix="/npcs", tags=["npcs"])
 api_router.include_router(sp.router, prefix="/sp", tags=["sp"])
+api_router.include_router(sp_subscription.router, prefix="/sp/subscriptions", tags=["sp-subscriptions"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
 api_router.include_router(websocket.router, prefix="/ws", tags=["websocket"])
 api_router.include_router(config.router, prefix="/config", tags=["config"])

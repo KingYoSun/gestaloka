@@ -13,6 +13,9 @@ import { SPPurchaseDialog } from '@/components/sp/sp-purchase-dialog'
 import { SPPurchaseHistory } from '@/components/sp/sp-purchase-history'
 import { useSPPlans } from '@/hooks/use-sp-purchase'
 import type { SPPlan } from '@/api/sp-purchase'
+import { SubscriptionPlans } from '@/features/sp/components/SubscriptionPlans'
+import { SubscriptionManagement } from '@/features/sp/components/SubscriptionManagement'
+import { useCurrentSubscription } from '@/features/sp/hooks/useSubscription'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -203,6 +206,7 @@ function SPPage() {
           <TabsTrigger value="history">取引履歴</TabsTrigger>
           <TabsTrigger value="shop">SPショップ</TabsTrigger>
           <TabsTrigger value="purchase-history">購入履歴</TabsTrigger>
+          <TabsTrigger value="subscription">月額パス</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -272,6 +276,11 @@ function SPPage() {
 
         <TabsContent value="purchase-history">
           <SPPurchaseHistory />
+        </TabsContent>
+
+        <TabsContent value="subscription" className="space-y-6">
+          <SubscriptionManagement />
+          <SubscriptionPlans />
         </TabsContent>
       </Tabs>
 
