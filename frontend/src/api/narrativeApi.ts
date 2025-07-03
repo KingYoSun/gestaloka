@@ -3,7 +3,7 @@
  */
 
 import { apiClient } from './client'
-import { ActionRequest, ActionChoice, NarrativeResponse } from './generated'
+import { GameActionRequest, ActionChoice, ActionExecuteResponse } from './generated'
 
 export const narrativeApi = {
   /**
@@ -11,8 +11,8 @@ export const narrativeApi = {
    */
   async performAction(
     characterId: string,
-    action: ActionRequest
-  ): Promise<NarrativeResponse> {
+    action: GameActionRequest
+  ): Promise<ActionExecuteResponse> {
     const response = await apiClient.post(
       `/narrative/${characterId}/action`,
       action

@@ -25,7 +25,7 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
 }) => {
   const { performAction, getAvailableActions, isLoading } =
     useNarrativeActions(characterId)
-  const { character } = useCharacter()
+  const { currentCharacter } = useCharacter()
   const [narrativeHistory, setNarrativeHistory] = useState<string[]>([])
   const [currentActions, setCurrentActions] = useState<ActionChoice[]>([])
   const [selectedLocationInfo, setSelectedLocationInfo] = useState<any>(null)

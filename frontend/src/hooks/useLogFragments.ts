@@ -6,10 +6,10 @@ export function useLogFragments(characterId: string) {
   const query = useQuery({
     queryKey: ['log-fragments', characterId],
     queryFn: async () => {
-      const response = await apiClient.get(
+      const response = await apiClient.get<LogFragment[]>(
         `/characters/${characterId}/log-fragments`
       )
-      return response.data as LogFragment[]
+      return response.data
     },
     enabled: !!characterId,
   })

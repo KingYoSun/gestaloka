@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useCharacterStore } from '@/store/characterStore'
+import { useCharacterStore } from '@/stores/characterStore'
 import { NarrativeInterface } from '@/features/narrative/NarrativeInterface'
 import { Card } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'

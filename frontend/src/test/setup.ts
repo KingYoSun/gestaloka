@@ -4,7 +4,8 @@ import { cleanup } from '@testing-library/react'
 import { server } from '@/mocks/server'
 
 // Set VITE_API_URL to avoid connection errors in tests
-import.meta.env.VITE_API_URL = 'http://localhost:8000'
+// Note: import.meta.env is read-only, so we can't directly modify it
+// Instead, we'll need to ensure the test environment has the correct values
 
 // MSWのセットアップ
 beforeAll(() => {

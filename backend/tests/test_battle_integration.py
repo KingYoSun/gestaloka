@@ -26,30 +26,33 @@ def mock_coordinator_ai():
     """モックCoordinatorAI"""
     mock = AsyncMock()
     # 返り値をMockオブジェクトに変更
-    from app.ai.coordination_models import Choice, FinalResponse
-
-    mock.process_action.return_value = FinalResponse(
-        narrative="森を探索していると、突然ゴブリンが襲いかかってきた！",
-        choices=[
-            Choice(id="1", text="戦う"),
-            Choice(id="2", text="逃げる"),
-            Choice(id="3", text="話しかける"),
-        ],
-        state_changes={
-            "battle_trigger": {
-                "enemy": "ゴブリン",
-                "enemy_level": 3,
-            },
-            "enemy_data": {
+    from app.ai.coordination_models import Choice
+    
+    # FinalResponseモックの作成
+    from unittest.mock import Mock
+    final_response = Mock()
+    final_response.narrative = "森を探索していると、突然ゴブリンが襲いかかってきた！"
+    final_response.choices = [
+        Choice(id="1", text="戦う"),
+        Choice(id="2", text="逃げる"),
+        Choice(id="3", text="話しかける"),
+    ]
+    final_response.state_changes = {
+        "battle_trigger": {
+            "enemy": "ゴブリン",
+            "enemy_level": 3,
+        },
+        "enemy_data": {
                 "name": "ゴブリン",
                 "level": 3,
                 "hp": 40,
                 "attack": 10,
                 "defense": 5,
             },
-        },
-        metadata={},
-    )
+        }
+    final_response.metadata = {}
+    
+    mock.process_action.return_value = final_response
     mock.initialize_session = AsyncMock()
     return mock
 
@@ -445,23 +448,26 @@ class TestBattleIntegration:
         )
 
         # 勝利後のAI応答を設定
-        from app.ai.coordination_models import Choice, FinalResponse
+        from app.ai.coordination_models import Choice
 
-        mock_coordinator_ai.process_action.return_value = FinalResponse(
-            narrative="ゴブリンを倒した！経験値30と30ゴールドを獲得した。",
-            choices=[
-                Choice(id="1", text="森を探索する"),
-                Choice(id="2", text="村に戻る"),
-                Choice(id="3", text="休憩する"),
-            ],
-            state_changes={
-                "parameter_changes": {
-                    "experience": 30,
-                    "gold": 30,
-                },
+        # FinalResponseモックの修正
+        from unittest.mock import Mock
+        final_response = Mock()
+        final_response.narrative = "ゴブリンを倒した！経験値30と30ゴールドを獲得した。"
+        final_response.choices = [
+            Choice(id="1", text="森を探索する"),
+            Choice(id="2", text="村に戻る"),
+            Choice(id="3", text="休憩する"),
+        ]
+        final_response.state_changes = {
+            "parameter_changes": {
+                "experience": 30,
+                "gold": 30,
             },
-            metadata={},
-        )
+        }
+        final_response.metadata = {}
+        
+        mock_coordinator_ai.process_action.return_value = final_response
 
         # データベースモックの設定
         setup_db_mocks(mock_db, mock_game_session, mock_character)
@@ -616,18 +622,21 @@ class TestBattleIntegration:
                                         )
 
                                         # 逃走成功後のAI応答を設定
-                                        from app.ai.coordination_models import Choice, FinalResponse
+                                        from app.ai.coordination_models import Choice
 
-                                        mock_coordinator_ai.process_action.return_value = FinalResponse(
-                                            narrative="なんとか逃げ切ることができた！",
-                                            choices=[
-                                                Choice(id="1", text="安全な場所を探す"),
-                                                Choice(id="2", text="村に戻る"),
-                                                Choice(id="3", text="別の道を探す"),
-                                            ],
-                                            state_changes={},
-                                            metadata={},
-                                        )
+                                        # FinalResponseモックの修正
+                                        from unittest.mock import Mock
+                                        final_response = Mock()
+                                        final_response.narrative = "なんとか逃げ切ることができた！"
+                                        final_response.choices = [
+                                            Choice(id="1", text="安全な場所を探す"),
+                                            Choice(id="2", text="村に戻る"),
+                                            Choice(id="3", text="別の道を探す"),
+                                        ]
+                                        final_response.state_changes = {}
+                                        final_response.metadata = {}
+                                        
+                                        mock_coordinator_ai.process_action.return_value = final_response
 
                                         # データベースモックの設定
                                         setup_db_mocks(mock_db, mock_game_session, mock_character)

@@ -126,7 +126,7 @@ export const memoryInheritanceApi = {
     const params = new URLSearchParams()
     fragmentIds.forEach(id => params.append('fragment_ids', id))
 
-    const response = await apiClient.get(
+    const response = await apiClient.get<MemoryCombinationPreview>(
       `/characters/${characterId}/memory-inheritance/preview?${params}`
     )
     return response.data
@@ -137,7 +137,7 @@ export const memoryInheritanceApi = {
     characterId: string,
     request: MemoryInheritanceRequest
   ): Promise<MemoryInheritanceResult> => {
-    const response = await apiClient.post(
+    const response = await apiClient.post<MemoryInheritanceResult>(
       `/characters/${characterId}/memory-inheritance/execute`,
       request
     )
@@ -150,7 +150,7 @@ export const memoryInheritanceApi = {
     limit: number = 50,
     offset: number = 0
   ): Promise<InheritanceHistoryEntry[]> => {
-    const response = await apiClient.get(
+    const response = await apiClient.get<InheritanceHistoryEntry[]>(
       `/characters/${characterId}/memory-inheritance/history`,
       { params: { limit, offset } }
     )
@@ -161,7 +161,7 @@ export const memoryInheritanceApi = {
   getEnhancements: async (
     characterId: string
   ): Promise<LogEnhancementInfo[]> => {
-    const response = await apiClient.get(
+    const response = await apiClient.get<LogEnhancementInfo[]>(
       `/characters/${characterId}/memory-inheritance/enhancements`
     )
     return response.data

@@ -100,17 +100,56 @@ export interface PlayerSP {
   updatedAt: string
 }
 
+// Log Fragment enums
+export enum LogFragmentRarity {
+  COMMON = 'common',
+  UNCOMMON = 'uncommon',
+  RARE = 'rare',
+  EPIC = 'epic',
+  LEGENDARY = 'legendary',
+}
+
+export enum EmotionalValence {
+  POSITIVE = 'positive',
+  NEGATIVE = 'negative',
+  NEUTRAL = 'neutral',
+  MIXED = 'mixed',
+}
+
 // LogFragment type for memory inheritance
 export interface LogFragment {
   id: string
   character_id: string
   title: string
   content: string
-  rarity: string
-  emotional_valence?: string
+  rarity: LogFragmentRarity
+  emotional_valence?: EmotionalValence
   keywords: string[]
   metadata?: Record<string, any>
   created_at: string
+}
+
+// Action types
+export interface ActionChoice {
+  id: string
+  text: string
+  difficulty?: string
+  requirements?: Record<string, any>
+}
+
+export interface ActionExecuteRequest {
+  action_text: string
+  action_type?: string
+  choice_id?: string
+}
+
+export interface ActionExecuteResponse {
+  success: boolean
+  turn_number: number
+  narrative: string
+  choices?: ActionChoice[]
+  character_state: Record<string, any>
+  metadata?: Record<string, any>
 }
 
 // Re-export from other modules if needed

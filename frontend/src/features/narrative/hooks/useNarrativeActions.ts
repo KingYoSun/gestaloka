@@ -4,13 +4,13 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { narrativeApi } from '@/api/narrativeApi'
-import { ActionRequest } from '@/api/generated'
+import { GameActionRequest } from '@/api/generated'
 import { toast } from 'sonner'
 
 export function useNarrativeActions(characterId: string) {
   // 行動実行
   const performActionMutation = useMutation({
-    mutationFn: async (action: ActionRequest) => {
+    mutationFn: async (action: GameActionRequest) => {
       return await narrativeApi.performAction(characterId, action)
     },
     onSuccess: data => {

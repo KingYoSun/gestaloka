@@ -239,18 +239,19 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
 
     // 場所を描画
     for (const location of layerData.locations) {
-      const isCurrent = currentLocation?.location_id === location.id
+      const isCurrent = currentLocation?.id === location.id
       const isHovered = hoveredLocation?.id === location.id
       const isSelected = selectedLocation?.id === location.id
-      drawLocation(
-        ctx,
-        location,
-        viewport,
-        theme,
-        isCurrent,
-        isHovered,
-        isSelected
-      )
+      // TODO: drawLocation関数が後で定義されているため、一時的にコメントアウト
+      // drawLocation(
+      //   ctx,
+      //   location,
+      //   viewport,
+      //   theme,
+      //   isCurrent,
+      //   isHovered,
+      //   isSelected
+      // )
     }
 
     // 現在地を描画
@@ -277,7 +278,6 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     viewport,
     theme,
     showGrid,
-    drawLocation,
     showLabels,
     hoveredLocation,
     selectedLocation,

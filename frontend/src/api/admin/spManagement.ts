@@ -59,7 +59,7 @@ export const adminSPManagementApi = {
     limit?: number
     search?: string
   }): Promise<PlayerSPDetail[]> => {
-    const response = await apiClient.get('/api/v1/admin/sp/players', { params })
+    const response = await apiClient.get<PlayerSPDetail[]>('/api/v1/admin/sp/players', { params })
     return response.data
   },
 
@@ -95,7 +95,7 @@ export const adminSPManagementApi = {
   adjustPlayerSP: async (
     adjustment: AdminSPAdjustment
   ): Promise<AdminSPAdjustmentResponse> => {
-    const response = await apiClient.post('/api/v1/admin/sp/adjust', adjustment)
+    const response = await apiClient.post<AdminSPAdjustmentResponse>('/api/v1/admin/sp/adjust', adjustment)
     return response.data
   },
 
@@ -105,7 +105,7 @@ export const adminSPManagementApi = {
   batchAdjustSP: async (
     adjustments: AdminSPAdjustment[]
   ): Promise<AdminSPAdjustmentResponse[]> => {
-    const response = await apiClient.post(
+    const response = await apiClient.post<AdminSPAdjustmentResponse[]>(
       '/api/v1/admin/sp/batch-adjust',
       adjustments
     )

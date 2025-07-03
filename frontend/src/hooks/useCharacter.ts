@@ -6,8 +6,8 @@ export function useCharacter() {
   const query = useQuery({
     queryKey: ['current-character'],
     queryFn: async () => {
-      const response = await apiClient.get('/users/me/current-character')
-      return response.data as Character
+      const response = await apiClient.get<Character>('/users/me/current-character')
+      return response.data
     },
   })
 
@@ -22,8 +22,8 @@ export function useCharacterById(characterId: string) {
   const query = useQuery({
     queryKey: ['character', characterId],
     queryFn: async () => {
-      const response = await apiClient.get(`/characters/${characterId}`)
-      return response.data as Character
+      const response = await apiClient.get<Character>(`/characters/${characterId}`)
+      return response.data
     },
     enabled: !!characterId,
   })
