@@ -1,23 +1,23 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # 統合PostgreSQL Database
   postgres:
     image: postgres:17-alpine
     container_name: gestaloka-postgres
     environment:
-      POSTGRES_DB: gestaloka
-      POSTGRES_USER: gestaloka_user
-      POSTGRES_PASSWORD: gestaloka_password
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_root_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/init:/docker-entrypoint-initdb.d
+      - ./sql/init/01_unified_init.sql:/docker-entrypoint-initdb.d/01_unified_init.sql
     ports:
       - "5432:5432"
     networks:
       - gestaloka-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gestaloka_user -d gestaloka"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -38,16 +38,13 @@ services:
       - neo4j_logs:/logs
       - neo4j_plugins:/plugins
       - neo4j_import:/var/lib/neo4j/import
-      # Mount schema directory as read-only to temporary location
       - ./neo4j/schema:/tmp/neo4j-schema:ro
-      # Mount init script
       - ./neo4j/init-neo4j.sh:/tmp/init-neo4j.sh:ro
     ports:
       - "7474:7474"  # HTTP
       - "7687:7687"  # Bolt
     networks:
       - gestaloka-network
-    # Copy schema files on startup to avoid permission issues
     entrypoint: >
       bash -c "
         echo 'Copying schema files...' &&
@@ -86,7 +83,7 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin_password
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: keycloak_user
       KC_DB_PASSWORD: keycloak_password
       KC_HOSTNAME: localhost
@@ -96,7 +93,7 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      keycloak-db:
+      postgres:
         condition: service_healthy
     networks:
       - gestaloka-network
@@ -106,25 +103,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-
-  # KeyCloak Database (separate from main app DB)
-  keycloak-db:
-    image: postgres:17-alpine
-    container_name: gestaloka-keycloak-db
-    environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - keycloak_data:/var/lib/postgresql/data
-      - ./sql/init/02_keycloak_init.sql:/docker-entrypoint-initdb.d/02_keycloak_init.sql
-    networks:
-      - gestaloka-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   # FastAPI Backend
   backend:
@@ -279,8 +257,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # Test Databases (for integration tests)
-  # Test Neo4j
+  # Test Neo4j（既存のまま）
   neo4j-test:
     image: neo4j:5.26-community
     container_name: gestaloka-neo4j-test
@@ -308,27 +285,7 @@ services:
     networks:
       - gestaloka-test-network
 
-  # Test PostgreSQL
-  postgres-test:
-    image: postgres:17-alpine
-    container_name: gestaloka-postgres-test
-    environment:
-      - POSTGRES_USER=test_user
-      - POSTGRES_PASSWORD=test_password
-      - POSTGRES_DB=gestaloka_test
-    ports:
-      - "5433:5432"  # Test port
-    volumes:
-      - postgres-test-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U test_user -d gestaloka_test"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - gestaloka-test-network
-
-  # Test Redis
+  # Test Redis（既存のまま）
   redis-test:
     image: redis:8-alpine
     container_name: gestaloka-redis-test
@@ -348,8 +305,6 @@ services:
 volumes:
   postgres_data:
     driver: local
-  keycloak_data:
-    driver: local
   neo4j_data:
     driver: local
   neo4j_logs:
@@ -367,8 +322,6 @@ volumes:
   celery_beat_data:
     driver: local
   # Test volumes
-  postgres-test-data:
-    driver: local
   neo4j-test-data:
     driver: local
   neo4j-test-logs:

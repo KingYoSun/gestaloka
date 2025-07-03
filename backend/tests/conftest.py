@@ -17,9 +17,9 @@ from app.main import app
 # テストデータベースURL（開発用PostgreSQLコンテナを使用）
 # Docker内で実行する場合はpostgres、ローカルで実行する場合はlocalhost
 if os.environ.get("DOCKER_ENV"):
-    TEST_DATABASE_URL = "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka_test"
+    TEST_DATABASE_URL = "postgresql://test_user:test_password@postgres:5432/gestaloka_test"
 else:
-    TEST_DATABASE_URL = "postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka_test"
+    TEST_DATABASE_URL = "postgresql://test_user:test_password@localhost:5432/gestaloka_test"
 
 
 @pytest.fixture(scope="session")
@@ -27,9 +27,9 @@ def test_engine():
     """テスト用データベースエンジン（セッション全体で1回だけ作成）"""
     # まず、メインデータベースに接続してテストデータベースを作成
     if os.environ.get("DOCKER_ENV"):
-        main_db_url = "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka"
+        main_db_url = "postgresql://postgres:postgres_root_password@postgres:5432/postgres"
     else:
-        main_db_url = "postgresql://gestaloka_user:gestaloka_password@localhost:5432/gestaloka"
+        main_db_url = "postgresql://postgres:postgres_root_password@localhost:5432/postgres"
     main_engine = create_engine(main_db_url)
 
     with main_engine.connect() as conn:

@@ -1,17 +1,26 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/02
+## 最終更新: 2025/07/03
 
-## 稼働中のサービス（localhost） - 2025/06/29時点（ヘルスチェック完全修正）
-🟢 **PostgreSQL 17**: ポート5432 - ユーザーデータ、キャラクターデータ（healthy）  
+## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
+🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
 🟢 **Neo4j 5.26 LTS**: ポート7474/7687 - グラフデータベース、関係性データ（healthy）  
 🟢 **Redis 8**: ポート6379 - セッション、キャッシュ、Celeryブローカー（healthy）  
 🟢 **Backend API**: ポート8000 - FastAPI、認証API稼働中（healthy）  
 🟢 **Celery Worker**: Celeryタスクワーカー稼働中（healthy）  
 🟢 **Celery Beat**: 定期タスクスケジューラ稼働中（healthy）  
-🟢 **Frontend**: ポート3000 - React/Vite開発サーバー稼働中（healthy）✅ 修正済み  
-🟢 **Flower**: ポート5555 - Celery監視ツール稼働中（healthy）✅ 修正済み  
-🟢 **Keycloak 26.2**: ポート8080 - 認証サーバー稼働中（healthy）✅ 修正済み
+🟢 **Frontend**: ポート3000 - React/Vite開発サーバー稼働中（healthy）  
+🟢 **Flower**: ポート5555 - Celery監視ツール稼働中（healthy）  
+🟢 **Keycloak 26.2**: ポート8080 - 認証サーバー稼働中（healthy）
+
+## インフラ構成変更（2025/07/03）
+### PostgreSQLコンテナ統合 ✅
+- **変更前**: postgres（メイン）、keycloak-db（認証）の2つのコンテナ
+- **変更後**: 1つの統合postgresコンテナで3つのデータベースを管理
+  - `gestaloka`: メインアプリケーション用
+  - `keycloak`: Keycloak認証用
+  - `gestaloka_test`: テスト用
+- **効果**: メモリ使用量約50%削減、管理簡素化
 
 ## ヘルスチェック問題（2025/06/29 完全解決）
 ### 全て解決済み ✅
@@ -98,6 +107,11 @@
 - Celery（Worker/Beat/Flower）
 
 ## 最近の変更（2025/07/03）
+- PostgreSQLコンテナ統合
+  - 2つのPostgreSQLコンテナを1つに統合（メモリ効率化）
+  - 統合初期化スクリプト（sql/init/01_unified_init.sql）の作成
+  - テスト環境の接続設定更新（backend/tests/conftest.py）
+  - 詳細は`documents/01_project/progressReports/2025-07-03_postgresql_container_consolidation.md`参照
 - 動的クエストシステムの実装
   - Questモデルの作成とデータベースマイグレーション
   - QuestServiceの実装（AI駆動のクエスト提案・進行管理）
