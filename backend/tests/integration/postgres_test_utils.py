@@ -13,7 +13,7 @@ from sqlmodel import Session, SQLModel
 
 def get_test_database_url() -> str:
     """テスト用PostgreSQL URLを取得"""
-    host = os.getenv("POSTGRES_TEST_HOST", "postgres-test")
+    host = os.getenv("POSTGRES_TEST_HOST", "postgres")
     port = os.getenv("POSTGRES_TEST_PORT", "5432")
     user = os.getenv("POSTGRES_TEST_USER", "test_user")
     password = os.getenv("POSTGRES_TEST_PASSWORD", "test_password")
@@ -31,30 +31,65 @@ def cleanup_all_postgres_data(engine):
     """
     try:
         with engine.begin() as conn:  # begin()を使用して自動的にコミット/ロールバック
-            # 外部キー制約を一時的に無効化
-            conn.execute(text("SET session_replication_role = 'replica';"))
-
-            # 全テーブルのデータを削除（システムテーブルを除く）
+            # 依存関係を考慮した削除順序
+            # 1. 最も依存されているテーブルから削除
+            deletion_order = [
+                # セッション関連
+                "action_logs",
+                "game_sessions",
+                # ログ関連
+                "dispatches",
+                "completed_logs",
+                "log_fragments",
+                # キャラクター関連
+                "character_stats",
+                "characters",
+                # SP関連
+                "sp_transactions",
+                "player_sp",
+                # ユーザー関連
+                "users",
+                # その他のテーブル
+            ]
+            
+            # 全テーブルを取得
             result = conn.execute(
                 text("""
                 SELECT tablename
                 FROM pg_tables
                 WHERE schemaname = 'public'
                 AND tablename NOT LIKE 'alembic%'
-            """)
+                """)
             )
-
-            tables = result.fetchall()
-            for table in tables:
+            all_tables = [row[0] for row in result.fetchall()]
+            
+            # 定義された順序でテーブルを削除
+            for table in deletion_order:
+                if table in all_tables:
+                    try:
+                        conn.execute(text(f"DELETE FROM {table}"))
+                        all_tables.remove(table)
+                    except Exception as e:
+                        # CASCADEでの削除を試みる
+                        try:
+                            conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+                        except Exception:
+                            pass
+            
+            # 残りのテーブルを削除
+            for table in all_tables:
                 try:
-                    conn.execute(text(f"TRUNCATE TABLE {table[0]} CASCADE"))
+                    conn.execute(text(f"DELETE FROM {table}"))
                 except Exception:
-                    pass  # エラーを無視
+                    # CASCADEでの削除を試みる
+                    try:
+                        conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
+                    except Exception:
+                        pass
 
-            # 外部キー制約を再度有効化
-            conn.execute(text("SET session_replication_role = 'origin';"))
     except Exception as e:
         print(f"PostgreSQL cleanup error: {e}")
+        # エラーが発生してもテストは続行できるようにする
 
 
 def recreate_schema(engine):

@@ -132,6 +132,8 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["ENVIRONMENT"] = "test"
 
 # Neo4j設定（テスト用）
-os.environ["NEO4J_URI"] = "bolt://neo4j:7687"
+# テスト用Neo4jコンテナを使用（ポート7688）
+os.environ["NEO4J_URI"] = "bolt://neo4j-test:7687"
 os.environ["NEO4J_USER"] = "neo4j"
-os.environ["NEO4J_PASSWORD"] = "gestaloka_neo4j_password"
+os.environ["NEO4J_PASSWORD"] = "test_password"
+os.environ["NEO4J_TEST_URL"] = "bolt://neo4j:test_password@neo4j-test:7687"

@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/03（23:08 JST）
+## 最終更新: 2025/07/04（23:28 JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -105,6 +105,21 @@
 - Docker Compose
 - WebSocket (Socket.IO)
 - Celery（Worker/Beat/Flower）
+
+## 最近の変更（2025/07/04）
+- Neo4jテスト統合の改善
+  - バックエンドテストでのNeo4j接続設定を修正
+    - `tests/conftest.py`でテスト用Neo4jコンテナ（`neo4j-test`）への接続設定を更新
+    - 環境変数`NEO4J_TEST_URL`を追加
+  - PostgreSQLテスト権限エラーの解決
+    - `postgres_test_utils.py`の`session_replication_role`設定を削除
+    - 依存関係順序でのデータクリーンアップ実装
+    - デフォルトホスト名を`postgres`に修正
+  - テストモジュールのインポートエラー修正
+    - `test_battle_integration.py`のQuestServiceとBattleServiceのパッチパスを修正
+  - Neo4j統合テストの正常動作確認
+    - NPCジェネレーター統合テストの成功
+    - Neo4jへのデータ保存・取得が正常動作
 
 ## 最近の変更（2025/07/03）
 - コード品質の包括的改善
@@ -336,11 +351,11 @@
 - **ネットワーク**: gestaloka-network（172.20.0.0/16）
 - **ボリューム**: 全データ永続化設定済み
 
-## 現在の問題点（2025/07/03更新）
+## 現在の問題点（2025/07/04更新）
 ### テスト状況
 - バックエンドテスト: 220/229成功（96%成功率）
-  - Neo4j統合テスト: 3件の環境依存エラー
-  - バトル統合テスト: 1成功、8エラー（モック設定の問題）
+  - Neo4j統合テスト: 正常動作確認済み ✅
+  - バトル統合テスト: 1成功、8エラー（インポートパス修正済み）
   - 通常テストは全て成功
 - フロントエンドテスト: 39/40成功（97.5%成功率）
   - MinimapCanvas: 1失敗（drawLocation初期化順序の問題）

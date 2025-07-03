@@ -112,13 +112,13 @@ def game_session_service(mock_db, mock_coordinator_ai):
                         with patch("app.services.game_session.AnomalyAgent"):
                             with patch("app.services.game_session.CoordinatorAI") as mock_coordinator:
                                 mock_coordinator.return_value = mock_coordinator_ai
-                                with patch("app.services.game_session.QuestService") as mock_quest_service_class:
+                                with patch("app.services.quest_service.QuestService") as mock_quest_service_class:
                                     # QuestServiceのモック設定
                                     mock_quest_service = mock_quest_service_class.return_value
                                     mock_quest_service.infer_implicit_quest = AsyncMock(return_value=None)
                                     mock_quest_service.check_quest_completion = AsyncMock(return_value=[])
 
-                                    with patch("app.services.game_session.BattleService") as mock_battle_service_class:
+                                    with patch("app.services.battle_service.BattleService") as mock_battle_service_class:
                                         # BattleServiceのモック設定
                                         mock_battle_service = mock_battle_service_class.return_value
                                         mock_battle_service.check_battle_trigger.return_value = True
@@ -509,7 +509,7 @@ class TestBattleIntegration:
                             with patch("app.services.game_session.AnomalyAgent"):
                                 with patch("app.services.game_session.CoordinatorAI") as mock_coordinator:
                                     mock_coordinator.return_value = mock_coordinator_ai
-                                    with patch("app.services.game_session.BattleService") as mock_battle_service_class:
+                                    with patch("app.services.battle_service.BattleService") as mock_battle_service_class:
                                         # BattleServiceのモック設定
                                         mock_battle_service = mock_battle_service_class.return_value
 
@@ -731,7 +731,7 @@ class TestBattleIntegration:
                                     with patch("app.services.game_session.CoordinatorAI") as mock_coordinator:
                                         mock_coordinator.return_value = mock_coordinator_ai
                                         with patch(
-                                            "app.services.game_session.BattleService"
+                                            "app.services.battle_service.BattleService"
                                         ) as mock_battle_service_class:
                                             # BattleServiceのモック設定
                                             mock_battle_service = mock_battle_service_class.return_value

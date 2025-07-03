@@ -2,7 +2,24 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/07/03
+## 最終更新: 2025/07/04
+
+### 2025/07/04の主な実装と修正
+- **Neo4jテスト統合の改善** ✅
+  - バックエンドテストでのNeo4j接続設定を修正
+    - `tests/conftest.py`でテスト用Neo4jコンテナ（`neo4j-test`）を使用するよう環境変数を更新
+    - `NEO4J_TEST_URL`環境変数を追加（`bolt://neo4j:test_password@neo4j-test:7687`）
+  - PostgreSQLテスト権限エラーの解決
+    - `postgres_test_utils.py`の`session_replication_role`設定を削除（特権が必要）
+    - 依存関係を考慮した削除順序でデータクリーンアップを実装
+    - デフォルトホストを`postgres-test`から`postgres`に修正
+  - テストモジュールのインポートエラー修正
+    - `test_battle_integration.py`のQuestServiceとBattleServiceのパッチパスを修正
+    - `app.services.game_session.QuestService` → `app.services.quest_service.QuestService`
+    - `app.services.game_session.BattleService` → `app.services.battle_service.BattleService`
+  - Neo4j統合テストの動作確認
+    - NPCジェネレーター統合テストが成功
+    - Neo4jへのデータ保存・取得が正常動作
 
 ### 2025/07/03の主な実装と修正（午後更新）
 - **テスト・型・リントエラーの解消** ✅
@@ -133,7 +150,7 @@
 
 ## 現在の状態
 
-### コード品質の現状（2025/07/03更新）
+### コード品質の現状（2025/07/04更新）
 - **バックエンド**: 
   - テスト: 220/229件成功（96.1%）✅
     - Neo4j統合テスト3件エラー（Neo4j接続が必要）
@@ -187,8 +204,12 @@
   - 現在51箇所で使用（eslint警告）
   - 型安全性の向上のため具体的な型定義が望ましい
 - **test_battle_integration.pyのモックテスト修正**
-  - 現在5件のテストがエラー
+  - 現在5件のテストがエラー → インポートパス修正済み
   - 複雑なモック構造のため、実DBテスト（test_battle_integration_postgres.py）で代替中
+- **PostgreSQLテスト権限の問題**
+  - `session_replication_role`設定は特権が必要
+  - テストユーザーの権限制限により発生
+  - 依存関係順序でのDELETE/TRUNCATEで対応
 
 ## 技術的注意事項
 
@@ -217,8 +238,11 @@
 
 ### Docker環境
 - **TTY問題**: コマンド実行時は`-T`フラグが必要
-- **テスト環境**: 専用のPostgreSQLとNeo4jコンテナを使用
+- **テスト環境**: 
+  - PostgreSQL: `postgres`コンテナを使用（`gestaloka_test`データベース）
+  - Neo4j: `neo4j-test`コンテナを使用（ポート7688）
 - **ヘルスチェック**: 全サービスが正常動作中
+- **テスト実行時の注意**: `DOCKER_ENV=true`環境変数の設定が必要
 
 ### Stripe統合設定
 - **環境変数**: `PAYMENT_MODE=production`で本番モード有効化
