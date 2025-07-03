@@ -111,7 +111,7 @@ export const QuestProposals: React.FC = () => {
       // 作成したクエストを受諾
       await acceptQuest.mutateAsync(newQuest.id)
       toast.success(`「${proposal.title}」を受諾しました`)
-    } catch (error) {
+    } catch {
       toast.error('クエストの受諾に失敗しました')
     }
   }

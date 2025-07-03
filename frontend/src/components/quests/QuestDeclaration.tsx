@@ -46,7 +46,7 @@ export const QuestDeclaration: React.FC = () => {
       setTitle('')
       setDescription('')
       setIsOpen(false)
-    } catch (error) {
+    } catch {
       toast.error('クエストの作成に失敗しました')
     }
   }

@@ -202,7 +202,7 @@ export const ActiveQuests: React.FC = () => {
       toast.success(
         `進行状況を更新しました - 進行度: ${updatedQuest.progress_percentage}%`
       )
-    } catch (error) {
+    } catch {
       toast.error('進行状況の更新に失敗しました')
     }
   }

@@ -227,7 +227,7 @@ class BattleService:
                 "turn": battle_data.turn_count,
                 "actor": actor.name,
                 "action": action.action_type,
-                "result": result.dict(),
+                "result": result.model_dump(),
             }
         )
 

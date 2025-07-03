@@ -277,6 +277,7 @@ export const MinimapCanvas: React.FC<MinimapCanvasProps> = ({
     viewport,
     theme,
     showGrid,
+    drawLocation,
     showLabels,
     hoveredLocation,
     selectedLocation,

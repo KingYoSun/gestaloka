@@ -41,7 +41,7 @@ export const QuestPanel: React.FC = () => {
     const interval = setInterval(inferImplicitQuestPeriodically, 5 * 60 * 1000)
 
     return () => clearInterval(interval)
-  }, [character?.id])
+  }, [character?.id, inferQuest])
 
   if (!character) {
     return (
@@ -123,7 +123,7 @@ export const QuestPanel: React.FC = () => {
                   '現在の行動パターンからは新しいクエストを推測できませんでした'
                 )
               }
-            } catch (error) {
+            } catch {
               toast.error('クエストの推測に失敗しました')
             }
           }}

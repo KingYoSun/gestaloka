@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import desc
 from sqlmodel import Session, and_, select
 
-from app.api.deps import get_current_active_user, get_user_character
+from app.api.deps import get_current_active_user
 from app.core.database import get_session
 from app.models.character import Character, GameSession
 from app.models.log import (
@@ -49,7 +49,18 @@ async def create_log_fragment(
     GMのAIによって自動生成される。
     """
     # キャラクターの所有権確認
-    await get_user_character(fragment_in.character_id, db, current_user)
+    character = db.exec(
+        select(Character).where(
+            Character.id == fragment_in.character_id,
+            Character.user_id == current_user.id
+        )
+    ).first()
+
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found"
+        )
 
     # ゲームセッションの確認
     session_stmt = select(GameSession).where(
@@ -91,7 +102,18 @@ async def get_character_fragments(
     キャラクターのログフラグメント一覧を取得
     """
     # キャラクターの所有権確認
-    await get_user_character(character_id, db, current_user)
+    character = db.exec(
+        select(Character).where(
+            Character.id == character_id,
+            Character.user_id == current_user.id
+        )
+    ).first()
+
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found"
+        )
 
     # フラグメント取得
     fragment_stmt = (
@@ -119,7 +141,18 @@ async def create_completed_log(
     他プレイヤーの世界でNPCとして活動可能な完全な記録を作成。
     """
     # キャラクターの所有権確認
-    await get_user_character(log_in.creator_id, db, current_user)
+    character = db.exec(
+        select(Character).where(
+            Character.id == log_in.creator_id,
+            Character.user_id == current_user.id
+        )
+    ).first()
+
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found"
+        )
 
     # コアフラグメントの確認
     core_stmt = select(LogFragment).where(
@@ -254,7 +287,18 @@ async def get_character_completed_logs(
     キャラクターの完成ログ一覧を取得
     """
     # キャラクターの所有権確認
-    await get_user_character(character_id, db, current_user)
+    character = db.exec(
+        select(Character).where(
+            Character.id == character_id,
+            Character.user_id == current_user.id
+        )
+    ).first()
+
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found"
+        )
 
     # 完成ログ取得
     log_stmt = (

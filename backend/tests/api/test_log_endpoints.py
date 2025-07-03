@@ -64,6 +64,9 @@ class TestLogEndpoints:
             username="testuser",
             email="test@example.com",
             hashed_password="dummy",
+            is_active=True,
+            is_verified=False,
+            is_superuser=False,
         )
         session.add(user)
 
@@ -73,6 +76,7 @@ class TestLogEndpoints:
             user_id=user.id,
             name="Test Character",
             location="starting_village",
+            is_active=True,
         )
         session.add(character)
 
@@ -141,6 +145,9 @@ class TestLogEndpoints:
             username="testuser2",
             email="test2@example.com",
             hashed_password="dummy",
+            is_active=True,
+            is_verified=False,
+            is_superuser=False,
         )
         session.add(user)
 
@@ -148,6 +155,8 @@ class TestLogEndpoints:
             id="test-char-2",
             user_id=user.id,
             name="Test Character 2",
+            location="starting_village",
+            is_active=True,
         )
         session.add(character)
 
@@ -208,6 +217,9 @@ class TestLogEndpoints:
             username="testuser3",
             email="test3@example.com",
             hashed_password="dummy",
+            is_active=True,
+            is_verified=False,
+            is_superuser=False,
         )
         session.add(user)
 
@@ -215,6 +227,8 @@ class TestLogEndpoints:
             id="test-char-3",
             user_id=user.id,
             name="Test Character 3",
+            location="starting_village",
+            is_active=True,
         )
         session.add(character)
 

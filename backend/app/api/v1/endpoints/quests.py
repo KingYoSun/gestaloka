@@ -177,7 +177,7 @@ def get_character_quests(
         クエストのリスト
     """
     if current_character.id != character_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="他のキャラクターのクエストは取得できません")
+        raise HTTPException(status_code=403, detail="他のキャラクターのクエストは取得できません")
 
     quest_service = QuestService(db)
     quests = quest_service.get_character_quests(character_id=character_id, status=status, limit=limit, offset=offset)

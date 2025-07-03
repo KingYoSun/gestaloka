@@ -404,7 +404,7 @@ class AnomalyAgent(BaseAgent):
             強化されたイベント
         """
         # ログ暴走の詳細を生成
-        rampage_context = context.copy()
+        rampage_context = context.model_copy()
         rampage_context.additional_context["log_rampage"] = True
         rampage_context.additional_context["original_event"] = base_event.description
 

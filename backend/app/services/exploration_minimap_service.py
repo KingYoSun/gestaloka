@@ -91,7 +91,7 @@ class ExplorationMinimapService:
             select(LocationConnection).where(
                 and_(
                     LocationConnection.from_location_id.in_(list(discovered_location_ids)),  # type: ignore
-                    ~LocationConnection.is_blocked,
+                    LocationConnection.is_blocked == False,  # noqa: E712
                 )
             )
         ).all()

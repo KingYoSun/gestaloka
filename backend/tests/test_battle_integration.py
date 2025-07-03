@@ -3,6 +3,7 @@
 """
 
 import json
+from datetime import datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -108,15 +109,21 @@ def game_session_service(mock_db, mock_coordinator_ai):
                         with patch("app.services.game_session.AnomalyAgent"):
                             with patch("app.services.game_session.CoordinatorAI") as mock_coordinator:
                                 mock_coordinator.return_value = mock_coordinator_ai
-                                with patch("app.services.game_session.BattleService") as mock_battle_service_class:
-                                    # BattleServiceのモック設定
-                                    mock_battle_service = mock_battle_service_class.return_value
-                                    mock_battle_service.check_battle_trigger.return_value = True
+                                with patch("app.services.game_session.QuestService") as mock_quest_service_class:
+                                    # QuestServiceのモック設定
+                                    mock_quest_service = mock_quest_service_class.return_value
+                                    mock_quest_service.infer_implicit_quest = AsyncMock(return_value=None)
+                                    mock_quest_service.check_quest_completion = AsyncMock(return_value=[])
 
-                                    # 戦闘データのモック
-                                    from app.schemas.battle import BattleData, BattleState, Combatant
+                                    with patch("app.services.game_session.BattleService") as mock_battle_service_class:
+                                        # BattleServiceのモック設定
+                                        mock_battle_service = mock_battle_service_class.return_value
+                                        mock_battle_service.check_battle_trigger.return_value = True
 
-                                    mock_battle_data = BattleData(
+                                        # 戦闘データのモック
+                                        from app.schemas.battle import BattleData, BattleState, Combatant
+
+                                        mock_battle_data = BattleData(
                                         state=BattleState.PLAYER_TURN,
                                         turn_count=0,
                                         combatants=[
@@ -152,17 +159,17 @@ def game_session_service(mock_db, mock_coordinator_ai):
                                         current_turn_index=0,
                                         battle_log=[],
                                     )
-                                    mock_battle_service.initialize_battle.return_value = mock_battle_data
-                                    mock_battle_service.get_battle_choices.return_value = [
+                                        mock_battle_service.initialize_battle.return_value = mock_battle_data
+                                        mock_battle_service.get_battle_choices.return_value = [
                                         ActionChoice(id="battle_attack", text="攻撃する"),
                                         ActionChoice(id="battle_defend", text="防御する"),
                                         ActionChoice(id="battle_escape", text="逃げる"),
                                     ]
 
-                                    # process_battle_actionのモック
-                                    from app.schemas.battle import BattleResult
+                                        # process_battle_actionのモック
+                                        from app.schemas.battle import BattleResult
 
-                                    mock_battle_result = BattleResult(
+                                        mock_battle_result = BattleResult(
                                         success=True,
                                         damage=15,
                                         healing=None,
@@ -170,19 +177,19 @@ def game_session_service(mock_db, mock_coordinator_ai):
                                         narrative="テストヒーローの攻撃！ゴブリンに15のダメージ！",
                                         side_effects=[],
                                     )
-                                    mock_battle_service.process_battle_action.return_value = (
-                                        mock_battle_result,
-                                        mock_battle_data,
-                                    )
+                                        mock_battle_service.process_battle_action.return_value = (
+                                            mock_battle_result,
+                                            mock_battle_data,
+                                        )
 
-                                    # check_battle_endのモック
-                                    mock_battle_service.check_battle_end.return_value = (False, None, None)
+                                        # check_battle_endのモック
+                                        mock_battle_service.check_battle_end.return_value = (False, None, None)
 
-                                    # advance_turnのモック
-                                    mock_battle_service.advance_turn.return_value = ("enemy_1", False)
+                                        # advance_turnのモック
+                                        mock_battle_service.advance_turn.return_value = ("enemy_1", False)
 
-                                    service = GameSessionService(mock_db)
-                                    return service
+                                        service = GameSessionService(mock_db)
+                                        return service
 
 
 # テスト用のデータベースモック設定ヘルパー
@@ -207,15 +214,48 @@ def setup_db_mocks(mock_db, mock_game_session, mock_character):
         elif "dispatch" in stmt_str.lower() and "completed_log" in stmt_str.lower():
             # DispatchとCompletedLogのjoinクエリ（NPC遭遇チェック用）
             result.all.return_value = []  # 空のリストを返す（遭遇なし）
+        elif "player_sp" in stmt_str.lower():
+            # PlayerSPクエリ用のモック
+            from app.models.sp import PlayerSP
+            mock_player_sp = PlayerSP(
+                id="sp_1",
+                user_id="user_1",
+                current_sp=100,
+                max_sp=100,
+                last_recovery_at=datetime.utcnow(),
+            )
+            result.first.return_value = mock_player_sp
+        elif "locations" in stmt_str.lower():
+            # Location query (for SP calculation)
+            from app.models.location import DangerLevel, Location, LocationType
+            mock_location = Location(
+                id=1,
+                name="森の入り口",
+                description="静かな森の入り口",
+                location_type=LocationType.WILD,
+                hierarchy_level=1,
+                danger_level=DangerLevel.LOW,
+                x_coordinate=0,
+                y_coordinate=0,
+            )
+            result.first.return_value = mock_location
         elif "character" in stmt_str.lower() and "character_stats" not in stmt_str.lower():
             # Characterクエリ
             result.first.return_value = mock_character
         elif "character_stats" in stmt_str.lower():
             # CharacterStatsクエリ
             result.first.return_value = mock_character.stats
+        elif "action_log" in stmt_str.lower():
+            # ActionLogクエリ（クエストサービス用）
+            result.all.return_value = []  # 空のリストを返す
+        elif "quest" in stmt_str.lower():
+            # Questクエリ
+            result.all.return_value = []  # 空のリストを返す
+            result.first.return_value = None
         else:
             # デフォルト
             result.first.return_value = None
+            result.all.return_value = []  # デフォルトでall()は空リストを返す
 
         return result
 

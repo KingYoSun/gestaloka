@@ -88,21 +88,21 @@ def upgrade() -> None:
         "character_exploration_progress",
         "areas_explored",
         existing_type=postgresql.ARRAY(sa.VARCHAR()),
-        server_default=None,
+        server_default=sa.text("'{}'"),
         existing_nullable=False,
     )
     op.alter_column(
         "location_connections",
         "path_type",
         existing_type=sa.Enum("DIRECT", "CURVED", "TELEPORT", "STAIRS", "ELEVATOR", name="pathtype", create_type=False),
-        server_default=None,
+        server_default=sa.text("'DIRECT'"),
         existing_nullable=False,
     )
     op.alter_column(
         "location_connections",
         "path_metadata",
         existing_type=postgresql.JSON(astext_type=sa.Text()),
-        server_default=None,
+        server_default=sa.text("'{}'"),
         existing_nullable=True,
     )
     # ### end Alembic commands ###

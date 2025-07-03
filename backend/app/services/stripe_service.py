@@ -5,8 +5,7 @@ Stripe統合サービス
 from typing import Any, Optional, cast
 
 import stripe
-from stripe import Customer, Subscription
-from stripe.error import SignatureVerificationError, StripeError
+from stripe import Customer, SignatureVerificationError, StripeError
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -38,7 +37,7 @@ class StripeService:
                         "quantity": 1,
                     }
                 ],
-                mode=mode,
+                mode=mode,  # type: ignore[arg-type]
                 success_url=success_url,
                 cancel_url=cancel_url,
                 metadata=metadata,
@@ -103,17 +102,12 @@ class StripeService:
                 )
 
             # サブスクリプションを作成
-            subscription_params = {
-                "customer": customer_id,
-                "items": [{"price": price_id}],
-                "metadata": metadata or {},
-            }
-
-            # 試用期間を設定
-            if trial_days:
-                subscription_params["trial_period_days"] = trial_days
-
-            subscription = stripe.Subscription.create(**subscription_params)
+            subscription = stripe.Subscription.create(
+                customer=customer_id,
+                items=[{"price": price_id}],
+                metadata=metadata or {},
+                trial_period_days=trial_days,  # type: ignore[arg-type]
+            )
 
             return {
                 "success": True,
@@ -159,7 +153,7 @@ class StripeService:
         """サブスクリプションの決済方法を更新"""
         try:
             # サブスクリプションを取得
-            subscription = cast(Subscription, stripe.Subscription.retrieve(subscription_id))
+            subscription = stripe.Subscription.retrieve(subscription_id)
             customer_id = (
                 str(subscription.customer) if isinstance(subscription.customer, Customer) else subscription.customer
             )
@@ -194,7 +188,7 @@ class StripeService:
         """Webhookの署名を検証してイベントを返す"""
         try:
             event = stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
-            return event
+            return cast(dict[str, Any], event)
         except ValueError:
             logger.error("Invalid webhook payload")
             return None

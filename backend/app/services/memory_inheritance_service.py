@@ -229,8 +229,6 @@ class MemoryInheritanceService:
             return self._preview_item(fragments)
         elif inheritance_type == MemoryInheritanceType.LOG_ENHANCEMENT:
             return self._preview_log_enhancement(fragments)
-        else:
-            return None
 
     def _preview_skill(self, fragments: list[LogFragment]) -> dict[str, Any]:
         """スキル継承のプレビュー"""
