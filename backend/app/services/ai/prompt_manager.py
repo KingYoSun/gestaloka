@@ -40,6 +40,8 @@ class PromptContext(BaseModel):
     character_id: Optional[str] = None
     session_id: Optional[str] = None
     custom_prompt: Optional[str] = None
+    inventory: list[str] = Field(default_factory=list)  # アイテムリスト
+    available_actions: list[str] = Field(default_factory=list)  # 利用可能なアクション
 
 
 class PromptTemplate(BaseModel):

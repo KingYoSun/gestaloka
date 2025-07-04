@@ -11,10 +11,12 @@ from uuid import uuid4
 
 import structlog
 from pydantic import BaseModel, Field
+from sqlmodel import Session
 
 from app.core.exceptions import AIServiceError
+from app.models import EncounterType
 from app.schemas.game_session import ActionChoice
-from app.services.ai.agents.base import AgentResponse, BaseAgent
+from app.services.ai.agents.base import AgentContext, AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 
 logger = structlog.get_logger(__name__)
@@ -315,6 +317,71 @@ class NPCManagerAgent(BaseAgent):
 
         return npc
 
+    async def handle_encounter_story(
+        self,
+        context: AgentContext,
+        encounter_type: EncounterType,
+        encounter_entity_id: str,
+        db: Session,
+    ) -> dict[str, Any]:
+        """
+        遭遇ストーリーシステムとの統合処理
+        
+        Args:
+            context: エージェントコンテキスト
+            encounter_type: 遭遇タイプ
+            encounter_entity_id: 遭遇エンティティID
+            db: データベースセッション
+            
+        Returns:
+            遭遇処理結果
+        """
+        from app.services.encounter_manager import EncounterManager
+        
+        encounter_manager = EncounterManager(db)
+        
+        # 現在のキャラクター情報を取得
+        from app.models import Character
+        character = db.get(Character, context.character_id)
+        if not character:
+            raise ValueError(f"Character {context.character_id} not found")
+        
+        # 遭遇を処理
+        result = await encounter_manager.process_encounter(
+            character=character,
+            encounter_entity_id=encounter_entity_id,
+            encounter_type=encounter_type,
+            context=context,
+        )
+        
+        # NPCの情報を更新（遭遇タイプがNPCの場合）
+        if encounter_type in [EncounterType.LOG_NPC, EncounterType.PERSISTENT_NPC]:
+            npc = self.get_npc_by_id(encounter_entity_id)
+            if npc:
+                # 関係性を更新
+                existing_relationship = next(
+                    (r for r in npc.relationships if r.target_id == character.id),
+                    None
+                )
+                
+                if existing_relationship:
+                    # 既存の関係性を更新
+                    existing_relationship.history.append(
+                        f"Encounter on {datetime.utcnow().isoformat()}"
+                    )
+                else:
+                    # 新しい関係性を追加
+                    npc.relationships.append(
+                        NPCRelationship(
+                            target_id=character.id,
+                            relationship_type="encounter_initiated",
+                            intensity=0.1,
+                            history=[f"First encounter on {datetime.utcnow().isoformat()}"],
+                        )
+                    )
+        
+        return result
+
     def _enhance_context_for_generation(self, context: PromptContext, request: NPCGenerationRequest) -> PromptContext:
         """
         NPC生成用にコンテキストを拡張
@@ -607,17 +674,19 @@ class NPCManagerAgent(BaseAgent):
 
         return removed_count
 
-    async def _handle_log_npc_encounters(self, context: PromptContext, npc_encounters: list[dict]) -> AgentResponse:
+    async def _handle_log_npc_encounters(self, context: PromptContext, npc_encounters: list[dict], db: Optional[Session] = None) -> AgentResponse:
         """
         派遣ログNPCとの遭遇を処理
         Args:
             context: プロンプトコンテキスト
             npc_encounters: 遭遇したNPCリスト
+            db: データベースセッション（ストーリー管理用）
         Returns:
             遭遇処理結果
         """
         encountered_npcs = []
         narratives = []
+        story_results = []
 
         # 各遭遇NPCを処理（最大3体まで）
         for i, encounter in enumerate(npc_encounters[:3]):
@@ -656,6 +725,25 @@ class NPCManagerAgent(BaseAgent):
             self.npc_registry[log_npc.id] = log_npc
             encountered_npcs.append(log_npc)
 
+            # ストーリーシステムとの統合（DBセッションがある場合）
+            if db and hasattr(context, 'character_id'):
+                agent_context = AgentContext(
+                    session_id=context.session_id if hasattr(context, 'session_id') else None,
+                    character_id=context.character_id if hasattr(context, 'character_id') else None,
+                    character_name=context.character_name if hasattr(context, 'character_name') else None,
+                    location=context.location,
+                    world_state=context.world_state,
+                    recent_actions=context.recent_actions,
+                )
+                
+                story_result = await self.handle_encounter_story(
+                    context=agent_context,
+                    encounter_type=EncounterType.LOG_NPC,
+                    encounter_entity_id=log_npc.id,
+                    db=db,
+                )
+                story_results.append(story_result)
+
             # 個別のナラティブを生成
             if i == 0:
                 narratives.append("突然、空気が歪み、一つの姿が現れた。")
@@ -672,6 +760,12 @@ class NPCManagerAgent(BaseAgent):
         # 複数NPCの場合の追加ナラティブ
         if len(encountered_npcs) > 1:
             narratives.append(f"\n{len(encountered_npcs)}体の派遣ログが、互いの存在に気づいたようだ。")
+
+        # ストーリー情報を含むナラティブ
+        if story_results:
+            for result in story_results:
+                if result.get("quest_generated"):
+                    narratives.append("\n何か重要な出来事が始まろうとしている...")
 
         # 全体のナラティブを結合
         narrative = "\n".join(narratives)
@@ -700,6 +794,8 @@ class NPCManagerAgent(BaseAgent):
             "encountered_npcs": [npc.model_dump() for npc in encountered_npcs],
             "dispatch_ids": [enc["dispatch_id"] for enc in npc_encounters[:3]],
             "objectives": [enc["objective_type"] for enc in npc_encounters[:3]],
+            "story_initiated": len(story_results) > 0,
+            "story_results": story_results,
         }
 
         # 状態変化の準備

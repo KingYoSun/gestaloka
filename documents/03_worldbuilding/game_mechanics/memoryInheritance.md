@@ -1,6 +1,6 @@
 # 記憶継承システム仕様
 
-最終更新: 2025-07-03
+最終更新: 2025-07-04
 
 ## 1. 新しい位置づけ：「ゲーム体験の記念碑」
 
@@ -269,9 +269,40 @@ class LogFragment(SQLModel, table=True):
 - **設計者の遺産へのアクセス**: 特殊な遺物との共鳴
 - **他のアーキテクト記憶との強力なシナジー**: 複数組み合わせることで世界の全貌に迫る
 
-## 9. 実装状況
+## 9. 遭遇ストーリーシステム（2025-07-04実装）
 
-### 9.1. 完了済み（2025-07-03）
+### 9.1. 概要
+ログとの遭遇が一時的なイベントではなく、継続的で意味のある物語として発展するシステムを実装しました。
+
+### 9.2. ストーリーアークタイプ
+- **QUEST_CHAIN**: 連続クエスト - NPCから与えられる一連のタスク
+- **RIVALRY**: ライバル関係 - 競争や対立から生まれる緊張関係
+- **ALLIANCE**: 同盟関係 - 共通の目的に向かう協力関係
+- **MENTORSHIP**: 師弟関係 - 知識や技術の伝承
+- **ROMANCE**: ロマンス - 感情的な繋がりの発展
+- **MYSTERY**: 謎解き - 謎めいた存在との知的な交流
+- **CONFLICT**: 対立 - 価値観の衝突から生まれるドラマ
+- **COLLABORATION**: 協力関係 - 実利的な協力関係
+
+### 9.3. 関係性システム
+- **relationship_depth**: 0.0-1.0の範囲で関係の深さを表現
+- **trust_level**: 信頼度（裏切りや協力で変動）
+- **conflict_level**: 対立度（敵対的な行動で上昇）
+
+### 9.4. ストーリー進行メカニクス
+- **自動進行**: 時間経過により物語が自然に進行
+- **プレイヤー選択**: 重要な場面での選択が関係性と物語の方向を決定
+- **世界への影響**: 重要なストーリーの展開が世界の状態に影響
+
+### 9.5. 共同クエスト
+関係性が深まったNPCと共に挑戦する特別なクエスト：
+- 参加者の貢献度バランスを追跡
+- 協力度によって報酬が変化
+- 成功/失敗が関係性に大きく影響
+
+## 10. 実装状況
+
+### 10.1. 完了済み（2025-07-04）
 - **Phase 1**: 基本システム
   - ✅ 動的クエストシステムの実装
   - ✅ クエスト完了判定ロジック
@@ -279,26 +310,30 @@ class LogFragment(SQLModel, table=True):
   - ✅ AI駆動のクエスト提案機能
   - ✅ 行動パターンからの暗黙的クエスト推測
   - ✅ クエスト進捗のAI評価システム
+  - ✅ 記憶継承メカニクスの実装（スキル/称号/アイテム/ログ強化）
 
-### 9.2. 実装予定
-- **Phase 2**: 記憶活用システム
-  - スキル継承メカニクス
-  - ログ強化システム
-  - SP消費バランス調整
+- **Phase 2**: 遭遇ストーリーシステム
+  - ✅ EncounterStory、EncounterChoice、SharedQuestモデル
+  - ✅ EncounterManagerの実装
+  - ✅ StoryProgressionManagerの実装
+  - ✅ NPC管理AI、世界の意識AIとの統合
+  - ✅ 関係性の永続化と発展システム
 
+### 10.2. 実装予定
 - **Phase 3**: 高度な機能
-  - 複雑なコンボシステム
-  - 称号システム
-  - アイテム生成
+  - ストーリー間の相互作用
+  - 複数キャラクター間の三角関係
+  - コミュニティイベントへの発展
 
 - **Phase 4**: UI/UX
   - 記憶の書庫（コレクション画面）
   - 継承工房インターフェース
-  - クエスト進行の可視化
+  - ストーリー進行の可視化
+  - 関係性マップの表示
 
-## 10. 技術仕様
+## 11. 技術仕様
 
-### 10.1. APIエンドポイント（実装済み）
+### 11.1. APIエンドポイント（実装済み）
 - GET `/quests/{character_id}/quests` - クエスト一覧取得
 - GET `/quests/{character_id}/proposals` - AI駆動のクエスト提案
 - POST `/quests/{character_id}/create` - 新規クエスト作成
@@ -307,8 +342,11 @@ class LogFragment(SQLModel, table=True):
 - POST `/quests/{character_id}/quests/{quest_id}/update` - クエスト進捗更新
 - GET `/log-fragments/{character_id}/fragments` - 記憶フラグメント一覧
 - GET `/log-fragments/{character_id}/fragments/{fragment_id}` - 記憶フラグメント詳細
+- GET `/memory-inheritance/{character_id}/preview` - 継承プレビュー
+- POST `/memory-inheritance/{character_id}/inherit` - 記憶継承実行
+- GET `/memory-inheritance/{character_id}/history` - 継承履歴取得
 
-### 10.2. データベース構造
+### 11.2. データベース構造
 ```sql
 -- questsテーブル（実装済み）
 CREATE TABLE quests (
@@ -335,6 +373,70 @@ ALTER TABLE log_fragments ADD COLUMN memory_type VARCHAR(50);
 ALTER TABLE log_fragments ADD COLUMN combination_tags TEXT[];
 ALTER TABLE log_fragments ADD COLUMN world_truth TEXT;
 ALTER TABLE log_fragments ADD COLUMN is_consumed BOOLEAN DEFAULT FALSE;
+
+-- encounter_storiesテーブル（2025-07-04追加）
+CREATE TABLE encounter_stories (
+    id VARCHAR PRIMARY KEY,
+    character_id VARCHAR NOT NULL REFERENCES characters(id),
+    encounter_entity_id VARCHAR NOT NULL,
+    encounter_type VARCHAR NOT NULL,
+    story_arc_type VARCHAR NOT NULL,
+    title VARCHAR NOT NULL,
+    current_chapter INTEGER DEFAULT 1,
+    total_chapters INTEGER,
+    relationship_status VARCHAR NOT NULL,
+    relationship_depth FLOAT DEFAULT 0.0,
+    trust_level FLOAT DEFAULT 0.5,
+    conflict_level FLOAT DEFAULT 0.0,
+    story_beats JSON,
+    shared_memories JSON,
+    pending_plot_threads JSON,
+    active_quest_ids JSON,
+    completed_quest_ids JSON,
+    world_impact JSON,
+    character_growth JSON,
+    narrative_tension FLOAT DEFAULT 0.5,
+    emotional_resonance FLOAT DEFAULT 0.5,
+    story_momentum FLOAT DEFAULT 0.5,
+    created_at TIMESTAMP,
+    last_interaction_at TIMESTAMP,
+    next_expected_beat TIMESTAMP
+);
+
+-- encounter_choicesテーブル（2025-07-04追加）
+CREATE TABLE encounter_choices (
+    id VARCHAR PRIMARY KEY,
+    story_id VARCHAR NOT NULL REFERENCES encounter_stories(id),
+    session_id VARCHAR NOT NULL REFERENCES game_sessions(id),
+    situation_context TEXT,
+    available_choices JSON,
+    player_choice VARCHAR,
+    choice_reasoning TEXT,
+    immediate_consequence TEXT,
+    long_term_impact JSON,
+    relationship_change JSON,
+    presented_at TIMESTAMP,
+    decided_at TIMESTAMP
+);
+
+-- shared_questsテーブル（2025-07-04追加）
+CREATE TABLE shared_quests (
+    id VARCHAR PRIMARY KEY,
+    quest_id VARCHAR NOT NULL REFERENCES quests(id),
+    story_id VARCHAR NOT NULL REFERENCES encounter_stories(id),
+    participants JSON,
+    leader_id VARCHAR,
+    cooperation_level FLOAT DEFAULT 0.5,
+    sync_level FLOAT DEFAULT 0.5,
+    contribution_balance JSON,
+    shared_objectives JSON,
+    synchronized_actions JSON,
+    conflict_points JSON,
+    reward_distribution JSON,
+    created_at TIMESTAMP,
+    last_sync_at TIMESTAMP,
+    completed_at TIMESTAMP
+);
 ```
 
 ## 関連ドキュメント

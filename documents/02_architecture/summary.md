@@ -63,6 +63,7 @@
 - **[minimap_technical_spec.md](features/minimap_technical_spec.md)**: ミニマップ機能の技術仕様（API、DB、Canvas実装）
 - **[sp_system_spec.md](features/sp_system_spec.md)**: SPシステムの完全仕様（購入、サブスク、管理）
 - **[log_encounter_spec.md](features/log_encounter_spec.md)**: ログ遭遇システム仕様（複数NPC、アイテム交換）
+- **[encounter_story_spec.md](features/encounter_story_spec.md)**: 遭遇ストーリーシステム仕様（記憶継承システムの拡張）
 
 ## 最近の更新（2025年7月）
 
@@ -70,6 +71,7 @@
 - **ログ遭遇システム強化**: 複数NPC対応、アイテム交換、確率計算
 - **物語主導型移動**: ミニマップview-only化、GM AIによる自然な移動
 - **AIレスポンスキャッシュ**: コスト20-30%削減
+- **遭遇ストーリーシステム**: ログとの遭遇を継続的な物語に発展させる機能（2025-07-04）
 
 ## クイックリファレンス
 

@@ -15,6 +15,18 @@ from app.services.ai.prompt_manager import AIAgentRole, PromptContext, PromptMan
 logger = structlog.get_logger(__name__)
 
 
+class AgentContext(BaseModel):
+    """エージェント処理用のコンテキスト"""
+
+    session_id: Optional[str] = Field(default=None, description="ゲームセッションID")
+    character_id: Optional[str] = Field(default=None, description="キャラクターID")
+    character_name: Optional[str] = Field(default=None, description="キャラクター名")
+    location: str = Field(description="現在地")
+    world_state: dict[str, Any] = Field(default_factory=dict, description="世界の状態")
+    recent_actions: list[str] = Field(default_factory=list, description="最近の行動")
+    additional_context: dict[str, Any] = Field(default_factory=dict, description="追加コンテキスト")
+
+
 class AgentResponse(BaseModel):
     """AIエージェントの応答"""
 

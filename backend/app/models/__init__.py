@@ -3,6 +3,14 @@
 """
 
 from app.models.character import Character, CharacterSkill, CharacterStats, GameSession, Skill
+from app.models.encounter_story import (
+    EncounterChoice,
+    EncounterStory,
+    EncounterType,
+    RelationshipStatus,
+    SharedQuest,
+    StoryArcType,
+)
 from app.models.item import CharacterItem, Item, ItemRarity, ItemType
 from app.models.location import (
     CharacterLocationHistory,
@@ -58,6 +66,9 @@ __all__ = [
     "DispatchReport",
     "DispatchStatus",
     "EmotionalValence",
+    "EncounterChoice",
+    "EncounterStory",
+    "EncounterType",
     "ExplorationArea",
     "ExplorationLog",
     "GameSession",
@@ -76,11 +87,14 @@ __all__ = [
     "Quest",
     "QuestOrigin",
     "QuestStatus",
+    "RelationshipStatus",
+    "SharedQuest",
     "SPPurchase",
     "SPPurchasePackage",
     "SPSubscriptionType",
     "SPTransaction",
     "SPTransactionType",
     "Skill",
+    "StoryArcType",
     "User",
 ]

@@ -1,7 +1,7 @@
 # APIエンドポイント一覧
 
 作成日: 2025-07-02
-最終更新: 2025-07-03
+最終更新: 2025-07-04
 
 ## 概要
 
@@ -126,6 +126,18 @@
 
 ### Stripe Webhook (/stripe)
 - POST `/stripe/stripe/webhook` - Stripe Webhookエンドポイント（認証不要）
+
+### 記憶継承 (/memory-inheritance) ※2025-07-03追加
+- GET `/memory-inheritance/{character_id}/preview` - 継承プレビュー取得
+- POST `/memory-inheritance/{character_id}/inherit` - 記憶継承実行
+- GET `/memory-inheritance/{character_id}/history` - 継承履歴取得
+
+### 遭遇ストーリー ※2025-07-04実装（サービスレベル）
+遭遇ストーリーシステムは現在、EncounterManagerサービスとしてバックエンドに実装されていますが、
+専用のAPIエンドポイントはまだ公開されていません。現在は以下のサービスを通じて機能が提供されています：
+- ゲームセッションAPIの中でログNPCとの遭遇時に自動的に処理
+- ナラティブAPIの中でストーリー進行が管理される
+- クエストAPIと連携して共同クエストが生成される
 
 ### 管理者API (/admin)
 
