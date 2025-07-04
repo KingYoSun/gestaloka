@@ -1,6 +1,6 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-04（17:35 JST）
+## 最終更新: 2025-07-04（21:57 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
 1. ログ派遣システムの完全実装（2025-06-22）
@@ -29,7 +29,16 @@
    - 特殊称号管理画面の実装
 
 ### 完了したタスク ✅
-1. **高度な編纂メカニクスの実装（2025-07-04）**
+1. **backendコンテナの起動エラー修正（2025-07-04）**
+   - MemoryType Enumの定義追加
+     - app/models/log.pyにMemoryType列挙型を追加
+     - COURAGE、FRIENDSHIP、WISDOM、SACRIFICE、VICTORY、TRUTH、BETRAYAL、LOVE、FEAR、HOPE、MYSTERYの11タイプ
+   - インポートパスの修正
+     - app.services.character → app.services.sp_service
+     - logs.pyとcontamination_purification.pyで修正
+   - コンテナのヘルスチェックが正常に通過
+
+2. **高度な編纂メカニクスの実装（2025-07-04）**
    - コンボボーナスシステムの実装
      - 記憶タイプとキーワードの組み合わせボーナス
      - SP消費削減、パワーブースト、特殊称号獲得

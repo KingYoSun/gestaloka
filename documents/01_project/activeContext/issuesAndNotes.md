@@ -2,7 +2,19 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/07/04
+## 最終更新: 2025/07/04（21:57 JST）
+
+### 2025/07/04の主な実装と修正（21:57更新）
+- **backendコンテナの起動エラー修正** ✅
+  - MemoryType Enumの未定義エラーを解決
+    - `app/models/log.py`にMemoryType列挙型を新規追加
+    - 11種類のタイプを定義：COURAGE（勇気）、FRIENDSHIP（友情）、WISDOM（知恵）、SACRIFICE（犠牲）、VICTORY（勝利）、TRUTH（真実）、BETRAYAL（裏切り）、LOVE（愛）、FEAR（恐怖）、HOPE（希望）、MYSTERY（謎）
+  - インポートパスエラーの修正
+    - `app.services.character` → `app.services.sp_service`に修正
+    - 修正対象ファイル：
+      - `app/api/api_v1/endpoints/logs.py`
+      - `app/services/contamination_purification.py`
+  - 結果：backendコンテナが正常起動（healthyステータス）
 
 ### 2025/07/04の主な実装と修正（17:04更新）
 - **TanStack Routerの自動生成機能の修正** ✅

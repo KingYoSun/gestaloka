@@ -32,7 +32,7 @@ from app.schemas.log import (
 )
 from app.schemas.user import User
 from app.services.compilation_bonus import CompilationBonusService
-from app.services.character import SPService
+from app.services.sp_service import SPService
 from app.services.contamination_purification import ContaminationPurificationService
 
 router = APIRouter()

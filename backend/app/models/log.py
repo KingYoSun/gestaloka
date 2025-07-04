@@ -39,6 +39,22 @@ class EmotionalValence(str, Enum):
     MIXED = "mixed"
 
 
+class MemoryType(str, Enum):
+    """記憶のタイプ"""
+
+    COURAGE = "courage"  # 勇気
+    FRIENDSHIP = "friendship"  # 友情
+    WISDOM = "wisdom"  # 知恵
+    SACRIFICE = "sacrifice"  # 犠牲
+    VICTORY = "victory"  # 勝利
+    TRUTH = "truth"  # 真実
+    BETRAYAL = "betrayal"  # 裏切り
+    LOVE = "love"  # 愛
+    FEAR = "fear"  # 恐怖
+    HOPE = "hope"  # 希望
+    MYSTERY = "mystery"  # 謎
+
+
 class LogFragment(SQLModel, table=True):
     """
     ログの欠片（LogFragment）

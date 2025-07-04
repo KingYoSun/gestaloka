@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from app.models.log import CompletedLog, LogFragment, EmotionalValence
 from app.models.character import Character
 from app.models.item import Item, CharacterItem
-from app.services.character import SPService
+from app.services.sp_service import SPService
 
 
 @dataclass
