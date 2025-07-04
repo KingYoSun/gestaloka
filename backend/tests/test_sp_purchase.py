@@ -38,8 +38,13 @@ class TestSPPurchaseService:
 
         try:
             # テストユーザー作成
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]
             test_user = User(
-                id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash"
+                id=f"test-user-{unique_id}",
+                username=f"testuser_{unique_id}",
+                email=f"test_{unique_id}@example.com",
+                hashed_password="dummy_hash"
             )
             session.add(test_user)
             session.commit()
@@ -68,8 +73,13 @@ class TestSPPurchaseService:
         """無効なプランIDでの購入申請のテスト"""
         with pytest.raises(ValueError) as exc:
             # テストユーザー作成
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]
             test_user = User(
-                id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash"
+                id=f"test-user-{unique_id}",
+                username=f"testuser_{unique_id}",
+                email=f"test_{unique_id}@example.com",
+                hashed_password="dummy_hash"
             )
             session.add(test_user)
             session.commit()
@@ -99,8 +109,13 @@ class TestSPPurchaseService:
 
         try:
             # テストユーザー作成
+            import uuid
+            unique_id = str(uuid.uuid4())[:8]
             test_user = User(
-                id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash"
+                id=f"test-user-{unique_id}",
+                username=f"testuser_{unique_id}",
+                email=f"test_{unique_id}@example.com",
+                hashed_password="dummy_hash"
             )
             session.add(test_user)
             session.commit()
@@ -130,7 +145,14 @@ class TestSPPurchaseService:
     def test_get_user_purchases(self, session: Session):
         """ユーザー購入履歴取得のテスト"""
         # テストユーザー作成
-        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
+        import uuid
+        unique_id = str(uuid.uuid4())[:8]
+        test_user = User(
+            id=f"test-user-{unique_id}",
+            username=f"testuser_{unique_id}",
+            email=f"test_{unique_id}@example.com",
+            hashed_password="dummy_hash"
+        )
         session.add(test_user)
         session.commit()
 
@@ -165,7 +187,14 @@ class TestSPPurchaseService:
     def test_cancel_purchase(self, session: Session):
         """購入キャンセルのテスト"""
         # テストユーザー作成
-        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
+        import uuid
+        unique_id = str(uuid.uuid4())[:8]
+        test_user = User(
+            id=f"test-user-{unique_id}",
+            username=f"testuser_{unique_id}",
+            email=f"test_{unique_id}@example.com",
+            hashed_password="dummy_hash"
+        )
         session.add(test_user)
         session.commit()
 
@@ -190,7 +219,14 @@ class TestSPPurchaseService:
     def test_cancel_completed_purchase_fails(self, session: Session):
         """完了済み購入のキャンセル失敗テスト"""
         # テストユーザー作成
-        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
+        import uuid
+        unique_id = str(uuid.uuid4())[:8]
+        test_user = User(
+            id=f"test-user-{unique_id}",
+            username=f"testuser_{unique_id}",
+            email=f"test_{unique_id}@example.com",
+            hashed_password="dummy_hash"
+        )
         session.add(test_user)
         session.commit()
 
@@ -215,7 +251,14 @@ class TestSPPurchaseService:
     def test_get_purchase_stats(self, session: Session):
         """購入統計取得のテスト"""
         # テストユーザー作成
-        test_user = User(id="test-user-id", username="testuser", email="test@example.com", hashed_password="dummy_hash")
+        import uuid
+        unique_id = str(uuid.uuid4())[:8]
+        test_user = User(
+            id=f"test-user-{unique_id}",
+            username=f"testuser_{unique_id}",
+            email=f"test_{unique_id}@example.com",
+            hashed_password="dummy_hash"
+        )
         session.add(test_user)
         session.commit()
 

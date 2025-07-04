@@ -77,10 +77,11 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     @pytest.fixture
     def test_user(self, test_db_session: Session) -> User:
         """テスト用ユーザー"""
+        unique_id = str(uuid.uuid4())[:8]
         user = User(
             id=str(uuid.uuid4()),
-            username="test_user",
-            email="test@example.com",
+            username=f"test_user_{unique_id}",
+            email=f"test_{unique_id}@example.com",
             hashed_password="hashed",
             is_active=True,
             created_at=datetime.utcnow(),

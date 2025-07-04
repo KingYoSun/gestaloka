@@ -1,13 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
+import { apiClient } from '@/api/client'
 import { Character } from '@/api/generated'
 
 export function useCharacter() {
   const query = useQuery({
     queryKey: ['current-character'],
     queryFn: async () => {
-      const response = await apiClient.get<Character>('/users/me/current-character')
-      return response.data
+      return await apiClient.get<Character>('/users/me/current-character')
     },
   })
 
@@ -22,8 +21,7 @@ export function useCharacterById(characterId: string) {
   const query = useQuery({
     queryKey: ['character', characterId],
     queryFn: async () => {
-      const response = await apiClient.get<Character>(`/characters/${characterId}`)
-      return response.data
+      return await apiClient.get<Character>(`/characters/${characterId}`)
     },
     enabled: !!characterId,
   })

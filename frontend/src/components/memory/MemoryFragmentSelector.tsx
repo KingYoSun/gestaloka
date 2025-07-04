@@ -19,7 +19,6 @@ const rarityColors: Record<string, string> = {
   EPIC: 'bg-purple-500',
   LEGENDARY: 'bg-orange-500',
   UNIQUE: 'bg-red-500',
-  ARCHITECT: 'bg-gradient-to-r from-purple-600 to-pink-600',
 }
 
 const rarityTextColors: Record<string, string> = {
@@ -29,8 +28,6 @@ const rarityTextColors: Record<string, string> = {
   EPIC: 'text-purple-600',
   LEGENDARY: 'text-orange-600',
   UNIQUE: 'text-red-600',
-  ARCHITECT:
-    'text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600',
 }
 
 export function MemoryFragmentSelector({
@@ -43,7 +40,7 @@ export function MemoryFragmentSelector({
       <div className="space-y-2">
         {fragments.map(fragment => {
           const isSelected = selectedIds.includes(fragment.id)
-          const isArchitect = fragment.rarity === 'ARCHITECT'
+          const isArchitect = false // ARCHITECTレアリティは現在未実装
 
           return (
             <Card

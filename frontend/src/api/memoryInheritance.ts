@@ -126,10 +126,9 @@ export const memoryInheritanceApi = {
     const params = new URLSearchParams()
     fragmentIds.forEach(id => params.append('fragment_ids', id))
 
-    const response = await apiClient.get<MemoryCombinationPreview>(
+    return await apiClient.get<MemoryCombinationPreview>(
       `/characters/${characterId}/memory-inheritance/preview?${params}`
     )
-    return response.data
   },
 
   // 記憶継承を実行
@@ -137,11 +136,10 @@ export const memoryInheritanceApi = {
     characterId: string,
     request: MemoryInheritanceRequest
   ): Promise<MemoryInheritanceResult> => {
-    const response = await apiClient.post<MemoryInheritanceResult>(
+    return await apiClient.post<MemoryInheritanceResult>(
       `/characters/${characterId}/memory-inheritance/execute`,
       request
     )
-    return response.data
   },
 
   // 継承履歴を取得
@@ -150,20 +148,18 @@ export const memoryInheritanceApi = {
     limit: number = 50,
     offset: number = 0
   ): Promise<InheritanceHistoryEntry[]> => {
-    const response = await apiClient.get<InheritanceHistoryEntry[]>(
+    return await apiClient.get<InheritanceHistoryEntry[]>(
       `/characters/${characterId}/memory-inheritance/history`,
       { params: { limit, offset } }
     )
-    return response.data
   },
 
   // ログ強化情報を取得
   getEnhancements: async (
     characterId: string
   ): Promise<LogEnhancementInfo[]> => {
-    const response = await apiClient.get<LogEnhancementInfo[]>(
+    return await apiClient.get<LogEnhancementInfo[]>(
       `/characters/${characterId}/memory-inheritance/enhancements`
     )
-    return response.data
   },
 }

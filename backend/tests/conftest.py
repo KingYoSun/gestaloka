@@ -89,8 +89,10 @@ def session(test_engine) -> Generator[Session, None, None]:
     yield session
 
     # ロールバックしてデータをクリーンアップ
+    session.rollback()     # セッションレベルでロールバック
     session.close()
-    transaction.rollback()
+    if transaction.is_active:  # トランザクションがまだアクティブな場合のみ
+        transaction.rollback()
     connection.close()
 
 

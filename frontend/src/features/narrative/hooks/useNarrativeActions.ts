@@ -14,14 +14,17 @@ export function useNarrativeActions(characterId: string) {
       return await narrativeApi.performAction(characterId, action)
     },
     onSuccess: data => {
-      // 場所が変わった場合の通知
-      if (data.location_changed && data.new_location_name) {
-        toast.success(`${data.new_location_name}へ移動しました`)
-      }
+      // メタデータから追加情報を取得
+      if (data.metadata) {
+        // 場所が変わった場合の通知
+        if (data.metadata.location_changed && data.metadata.new_location_name) {
+          toast.success(`${data.metadata.new_location_name}へ移動しました`)
+        }
 
-      // SP消費の通知
-      if (data.sp_consumed > 0) {
-        toast.info(`SP -${data.sp_consumed}`)
+        // SP消費の通知
+        if (data.metadata.sp_consumed && data.metadata.sp_consumed > 0) {
+          toast.info(`SP -${data.metadata.sp_consumed}`)
+        }
       }
     },
     onError: (error: any) => {

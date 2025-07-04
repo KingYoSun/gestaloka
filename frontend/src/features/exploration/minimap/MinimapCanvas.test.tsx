@@ -168,21 +168,21 @@ describe('MinimapCanvas', () => {
   })
 
   it('場所を正しく描画する', async () => {
-    renderCanvas()
+    renderCanvas({ showLabels: true })
 
     // 描画が完了するまで待機
     await waitFor(() => {
       // 場所の描画（円）
       expect(mockContext.arc).toHaveBeenCalled()
       expect(mockContext.fill).toHaveBeenCalled()
+      
+      // ラベルの描画
+      expect(mockContext.fillText).toHaveBeenCalledWith(
+        'テスト都市',
+        expect.any(Number),
+        expect.any(Number)
+      )
     })
-
-    // ラベルの描画
-    expect(mockContext.fillText).toHaveBeenCalledWith(
-      'テスト都市',
-      expect.any(Number),
-      expect.any(Number)
-    )
   })
 
   it('接続線を描画する', async () => {

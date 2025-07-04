@@ -450,6 +450,16 @@ class GameSessionService:
 
             coordinator_response = await self.coordinator.process_action(player_action, session_response_for_process)
 
+            # coordinator_responseが誤ってlistとして返される場合の対処
+            if isinstance(coordinator_response, list):
+                logger.error("Coordinator returned list instead of FinalResponse", response_type=type(coordinator_response))
+                # リストからFinalResponseを構築する緊急対処
+                from app.ai.coordination_models import FinalResponse
+                coordinator_response = FinalResponse(
+                    narrative="物語は続きます...",
+                    choices=[]
+                )
+
             # WebSocketで物語更新を送信
             await GameEventEmitter.emit_narrative_update(
                 session.id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
@@ -466,17 +476,18 @@ class GameSessionService:
                     session_data, character, character_stats, action_request, coordinator_response
                 )
                 if battle_choices:
-                    coordinator_response.choices = battle_choices
+                    if hasattr(coordinator_response, 'choices'):
+                        coordinator_response.choices = battle_choices
             else:
                 # 通常のアクション処理後、戦闘開始をチェック
                 if self.battle_service.check_battle_trigger(
-                    {"narrative": coordinator_response.narrative, "state_changes": coordinator_response.state_changes},
+                    {"narrative": getattr(coordinator_response, 'narrative', ''), "state_changes": getattr(coordinator_response, 'state_changes', {})},
                     session_data,
                 ):
                     # 戦闘を開始
                     enemy_data = (
-                        coordinator_response.state_changes.get("enemy_data")
-                        if coordinator_response.state_changes
+                        getattr(coordinator_response, 'state_changes', {}).get("enemy_data")
+                        if hasattr(coordinator_response, 'state_changes') and coordinator_response.state_changes
                         else None
                     )
                     environment_data = {
@@ -510,10 +521,12 @@ class GameSessionService:
                                     requirements=action_choice.requirements if action_choice.requirements else None,
                                 )
                             )
-                        coordinator_response.choices = converted_choices
+                        if hasattr(coordinator_response, 'choices'):
+                            coordinator_response.choices = converted_choices
 
                         # 戦闘開始メッセージを追加
-                        coordinator_response.narrative += f"\n\n戦闘開始！{battle_data.combatants[1].name}が現れた！"
+                        if hasattr(coordinator_response, 'narrative'):
+                            coordinator_response.narrative += f"\n\n戦闘開始！{battle_data.combatants[1].name}が現れた！"
 
                         # WebSocketで戦闘開始を通知
                         await GameEventEmitter.emit_custom_event(
@@ -526,17 +539,17 @@ class GameSessionService:
                 "action": action_request.action_text,
                 "action_type": action_request.action_type,
                 "timestamp": datetime.utcnow().isoformat(),
-                "narrative": coordinator_response.narrative,
+                "narrative": getattr(coordinator_response, 'narrative', '物語は続きます...'),
                 "choices": [
                     {"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)}
                     for choice in coordinator_response.choices
                 ]
-                if coordinator_response.choices
+                if hasattr(coordinator_response, 'choices') and coordinator_response.choices
                 else [],
-                "success": coordinator_response.state_changes.get("success", True)
-                if coordinator_response.state_changes
+                "success": getattr(coordinator_response, 'state_changes', {}).get("success", True)
+                if hasattr(coordinator_response, 'state_changes') and coordinator_response.state_changes
                 else True,
-                "state_changes": coordinator_response.state_changes,
+                "state_changes": getattr(coordinator_response, 'state_changes', {}),
             }
 
             actions_history.append(action_record)
@@ -579,15 +592,15 @@ class GameSessionService:
             session_data["last_action_at"] = datetime.utcnow().isoformat()
 
             # 状態変更の適用（もしあれば）
-            if coordinator_response.state_changes and character_stats:
+            if hasattr(coordinator_response, 'state_changes') and coordinator_response.state_changes and character_stats:
                 self._apply_state_changes(character_stats, coordinator_response.state_changes)
 
             # セッションの更新
             session.session_data = json.dumps(session_data)
             session.current_scene = (
-                coordinator_response.narrative[:200] + "..."
-                if coordinator_response.narrative and len(coordinator_response.narrative) > 200
-                else (coordinator_response.narrative or "物語は続きます...")
+                getattr(coordinator_response, 'narrative', '物語は続きます...')[:200] + "..."
+                if hasattr(coordinator_response, 'narrative') and coordinator_response.narrative and len(coordinator_response.narrative) > 200
+                else (getattr(coordinator_response, 'narrative', '物語は続きます...') or "物語は続きます...")
             )
             session.updated_at = datetime.utcnow()
 
@@ -606,15 +619,15 @@ class GameSessionService:
                     "success": coordinator_response.state_changes.get("success", True)
                     if coordinator_response.state_changes
                     else True,
-                    "narrative": coordinator_response.narrative,
+                    "narrative": getattr(coordinator_response, 'narrative', '物語は続きます...'),
                     "choices": [
                         {"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)}
                         for choice in coordinator_response.choices
                     ]
-                    if coordinator_response.choices
+                    if hasattr(coordinator_response, 'choices') and coordinator_response.choices
                     else [],
                     "turn": action_record["turn"],
-                    "state_changes": coordinator_response.state_changes,
+                    "state_changes": getattr(coordinator_response, 'state_changes', {}),
                 },
             )
 
@@ -641,7 +654,7 @@ class GameSessionService:
             from app.schemas.game_session import ActionChoice
 
             action_choices = None
-            if coordinator_response.choices:
+            if hasattr(coordinator_response, 'choices') and coordinator_response.choices:
                 action_choices = [
                     ActionChoice(
                         id=choice.id,
@@ -653,11 +666,11 @@ class GameSessionService:
                 ]
 
             return ActionExecuteResponse(
-                success=coordinator_response.state_changes.get("success", True)
-                if coordinator_response.state_changes
+                success=getattr(coordinator_response, 'state_changes', {}).get("success", True)
+                if hasattr(coordinator_response, 'state_changes') and coordinator_response.state_changes
                 else True,
                 turn_number=int(action_record["turn"]),
-                narrative=coordinator_response.narrative or "物語は続きます...",
+                narrative=getattr(coordinator_response, 'narrative', '物語は続きます...') or "物語は続きます...",
                 choices=action_choices,
                 character_state={
                     "hp": character_stats.health if character_stats else 100,
@@ -665,8 +678,8 @@ class GameSessionService:
                     "location": character.location,
                 },
                 metadata={
-                    **coordinator_response.metadata,
-                    "state_changes": coordinator_response.state_changes,
+                    **getattr(coordinator_response, 'metadata', {}),
+                    "state_changes": getattr(coordinator_response, 'state_changes', {}),
                     "battle_data": session_data.get("battle_data"),
                 },
             )
@@ -715,7 +728,8 @@ class GameSessionService:
             result, updated_battle_data = self.battle_service.process_battle_action(battle_data, battle_action)
 
             # 結果を物語に追加
-            coordinator_response.narrative += f"\n\n{result.narrative}"
+            if hasattr(coordinator_response, 'narrative'):
+                coordinator_response.narrative += f"\n\n{result.narrative}"
 
             # 戦闘終了チェック
             battle_ended, victory, rewards = self.battle_service.check_battle_end(updated_battle_data)
@@ -727,19 +741,24 @@ class GameSessionService:
 
                 if victory is not None:
                     if victory:
-                        coordinator_response.narrative += "\n\n戦闘に勝利した！"
+                        if hasattr(coordinator_response, 'narrative'):
+                            coordinator_response.narrative += "\n\n戦闘に勝利した！"
                         if rewards:
-                            coordinator_response.narrative += f"\n経験値 {rewards['experience']} を獲得！"
+                            if hasattr(coordinator_response, 'narrative'):
+                                coordinator_response.narrative += f"\n経験値 {rewards['experience']} を獲得！"
                             # 報酬を状態変更に追加
-                            if not coordinator_response.state_changes:
-                                coordinator_response.state_changes = {}
-                            coordinator_response.state_changes["parameter_changes"] = {
-                                "experience": rewards["experience"]
-                            }
+                            if hasattr(coordinator_response, 'state_changes'):
+                                if not coordinator_response.state_changes:
+                                    coordinator_response.state_changes = {}
+                                coordinator_response.state_changes["parameter_changes"] = {
+                                    "experience": rewards["experience"]
+                                }
                     else:
-                        coordinator_response.narrative += "\n\n戦闘に敗北した..."
+                        if hasattr(coordinator_response, 'narrative'):
+                            coordinator_response.narrative += "\n\n戦闘に敗北した..."
                 else:
-                    coordinator_response.narrative += "\n\n戦闘から逃走した。"
+                    if hasattr(coordinator_response, 'narrative'):
+                        coordinator_response.narrative += "\n\n戦闘から逃走した。"
 
                 # 通常の選択肢に戻す
                 return None
@@ -775,7 +794,8 @@ class GameSessionService:
                         enemy_result, updated_battle_data = self.battle_service.process_battle_action(
                             updated_battle_data, enemy_action
                         )
-                        coordinator_response.narrative += f"\n\n{enemy_result.narrative}"
+                        if hasattr(coordinator_response, 'narrative'):
+                            coordinator_response.narrative += f"\n\n{enemy_result.narrative}"
 
                         # 再度ターンを進める（プレイヤーに戻す）
                         next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)

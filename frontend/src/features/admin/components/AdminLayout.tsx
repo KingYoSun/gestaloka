@@ -58,7 +58,7 @@ export function AdminLayout() {
             </Link>
 
             <Link
-              to="/admin/sp"
+              to={"/admin/sp" as any}
               className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-accent transition-colors"
               activeProps={{
                 className: 'bg-accent',

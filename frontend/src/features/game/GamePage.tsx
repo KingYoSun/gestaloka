@@ -1,22 +1,24 @@
 import { useState, useEffect } from 'react'
-import { useCharacterStore } from '@/stores/characterStore'
+import { useSelectedCharacter } from '@/stores/characterStore'
+import { useCharacters } from '@/hooks/useCharacters'
 import { NarrativeInterface } from '@/features/narrative/NarrativeInterface'
 import { Card } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 
 export function GamePage() {
-  const { selectedCharacter, fetchCharacters } = useCharacterStore()
+  const { selectedCharacter } = useSelectedCharacter()
+  const { refetch } = useCharacters()
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const loadCharacter = async () => {
       if (!selectedCharacter) {
-        await fetchCharacters()
+        await refetch()
       }
       setIsLoading(false)
     }
     loadCharacter()
-  }, [selectedCharacter, fetchCharacters])
+  }, [selectedCharacter, refetch])
 
   if (isLoading) {
     return (

@@ -13,18 +13,16 @@ export const narrativeApi = {
     characterId: string,
     action: GameActionRequest
   ): Promise<ActionExecuteResponse> {
-    const response = await apiClient.post(
+    return await apiClient.post<ActionExecuteResponse>(
       `/narrative/${characterId}/action`,
       action
     )
-    return response.data
   },
 
   /**
    * 利用可能な行動選択肢を取得
    */
   async getAvailableActions(characterId: string): Promise<ActionChoice[]> {
-    const response = await apiClient.get(`/narrative/${characterId}/actions`)
-    return response.data
+    return await apiClient.get<ActionChoice[]>(`/narrative/${characterId}/actions`)
   },
 }

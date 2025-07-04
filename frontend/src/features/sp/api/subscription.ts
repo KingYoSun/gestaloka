@@ -20,24 +20,21 @@ export const spSubscriptionApi = {
    * 利用可能なサブスクリプションプラン一覧を取得
    */
   getPlans: async (): Promise<SubscriptionPlansResponse> => {
-    const response = await apiClient.get(`${BASE_PATH}/plans`)
-    return response.data
+    return await apiClient.get<SubscriptionPlansResponse>(`${BASE_PATH}/plans`)
   },
 
   /**
    * 現在有効なサブスクリプションを取得
    */
   getCurrent: async (): Promise<SPSubscriptionResponse> => {
-    const response = await apiClient.get(`${BASE_PATH}/current`)
-    return response.data
+    return await apiClient.get<SPSubscriptionResponse>(`${BASE_PATH}/current`)
   },
 
   /**
    * サブスクリプション履歴を取得
    */
   getHistory: async (): Promise<SPSubscriptionListResponse> => {
-    const response = await apiClient.get(`${BASE_PATH}/history`)
-    return response.data
+    return await apiClient.get<SPSubscriptionListResponse>(`${BASE_PATH}/history`)
   },
 
   /**
@@ -46,8 +43,7 @@ export const spSubscriptionApi = {
   purchase: async (
     data: SPSubscriptionCreate
   ): Promise<SPSubscriptionPurchaseResponse> => {
-    const response = await apiClient.post(`${BASE_PATH}/purchase`, data)
-    return response.data
+    return await apiClient.post<SPSubscriptionPurchaseResponse>(`${BASE_PATH}/purchase`, data)
   },
 
   /**
@@ -56,8 +52,7 @@ export const spSubscriptionApi = {
   cancel: async (
     data: SPSubscriptionCancel
   ): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post(`${BASE_PATH}/cancel`, data)
-    return response.data
+    return await apiClient.post<{ success: boolean; message: string }>(`${BASE_PATH}/cancel`, data)
   },
 
   /**
@@ -66,7 +61,6 @@ export const spSubscriptionApi = {
   update: async (
     data: SPSubscriptionUpdate
   ): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.put(`${BASE_PATH}/update`, data)
-    return response.data
+    return await apiClient.patch<{ success: boolean; message: string }>(`${BASE_PATH}/update`, data)
   },
 }

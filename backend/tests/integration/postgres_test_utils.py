@@ -51,7 +51,7 @@ def cleanup_all_postgres_data(engine):
                 "users",
                 # その他のテーブル
             ]
-            
+
             # 全テーブルを取得
             result = conn.execute(
                 text("""
@@ -62,20 +62,20 @@ def cleanup_all_postgres_data(engine):
                 """)
             )
             all_tables = [row[0] for row in result.fetchall()]
-            
+
             # 定義された順序でテーブルを削除
             for table in deletion_order:
                 if table in all_tables:
                     try:
                         conn.execute(text(f"DELETE FROM {table}"))
                         all_tables.remove(table)
-                    except Exception as e:
+                    except Exception:
                         # CASCADEでの削除を試みる
                         try:
                             conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
                         except Exception:
                             pass
-            
+
             # 残りのテーブルを削除
             for table in all_tables:
                 try:

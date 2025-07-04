@@ -10,7 +10,6 @@ import { Separator } from '@/components/ui/separator'
 import { Loader2, MapPin, Sparkles } from 'lucide-react'
 import { useNarrativeActions } from './hooks/useNarrativeActions'
 import { Minimap } from '@/features/exploration/minimap/Minimap'
-import { useCharacter } from '@/hooks/useCharacter'
 import { ActionChoice } from '@/api/generated'
 import { cn } from '@/lib/utils'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -25,7 +24,6 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
 }) => {
   const { performAction, getAvailableActions, isLoading } =
     useNarrativeActions(characterId)
-  const { currentCharacter } = useCharacter()
   const [narrativeHistory, setNarrativeHistory] = useState<string[]>([])
   const [currentActions, setCurrentActions] = useState<ActionChoice[]>([])
   const [selectedLocationInfo, setSelectedLocationInfo] = useState<any>(null)
@@ -35,7 +33,7 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
 
   useEffect(() => {
     // WebSocketイベントの購読
-    const unsubscribe = subscribe('narrative:location_changed', data => {
+    const unsubscribe = subscribe('narrative:location_changed', (data: any) => {
       // 場所変更時のアニメーション通知
       toast.success(`${data.to.name}へ移動しました`, {
         icon: <MapPin className="h-4 w-4" />,
@@ -58,8 +56,8 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
   // 行動を実行
   const handleAction = async (action: ActionChoice) => {
     const response = await performAction({
-      text: action.text,
-      context: action.metadata,
+      actionText: action.text,
+      actionType: 'choice' as const,
     })
 
     if (response) {
@@ -67,11 +65,13 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
       setNarrativeHistory(prev => [...prev, response.narrative])
 
       // 新しい行動選択肢を設定
-      setCurrentActions(response.action_choices)
+      if (response.choices) {
+        setCurrentActions(response.choices)
+      }
 
-      // イベント処理
-      if (response.events && response.events.length > 0) {
-        response.events.forEach(event => {
+      // メタデータからイベント処理
+      if (response.metadata?.events && Array.isArray(response.metadata.events)) {
+        response.metadata.events.forEach((event: any) => {
           toast(event.title, {
             description: event.description,
             icon: <Sparkles className="h-4 w-4" />,
@@ -112,7 +112,7 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
               <div className="text-center py-12">
                 <MapPin className="h-12 w-12 mx-auto mb-4 text-gray-600" />
                 <p className="text-gray-400">
-                  {character?.name}の物語が始まろうとしています...
+                  物語が始まろうとしています...
                 </p>
               </div>
             )}
@@ -144,9 +144,9 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
                 >
                   <div className="space-y-1">
                     <p className="font-medium">{action.text}</p>
-                    {action.description && (
+                    {action.difficulty && (
                       <p className="text-xs text-gray-400">
-                        {action.description}
+                        難易度: {action.difficulty}
                       </p>
                     )}
                   </div>

@@ -20,10 +20,11 @@ def test_user(session: Session):
     """テスト用ユーザー作成"""
     import uuid
 
+    unique_id = str(uuid.uuid4())[:8]
     user = User(
         id=str(uuid.uuid4()),
-        username="testuser",
-        email="test@example.com",
+        username=f"testuser_{unique_id}",
+        email=f"test_{unique_id}@example.com",
         hashed_password="dummy_hash",
         is_active=True,
     )

@@ -23,8 +23,14 @@ class TestLogEndpoints:
     @pytest.fixture
     async def test_user(self, session: Session) -> UserModel:
         """テスト用ユーザー作成"""
+        import uuid
         user_service = UserService(session)
-        user_create = UserCreate(username="testuser", email="test@example.com", password="testpassword123")
+        unique_id = str(uuid.uuid4())[:8]
+        user_create = UserCreate(
+            username=f"testuser_{unique_id}",
+            email=f"test_{unique_id}@example.com",
+            password="testpassword123"
+        )
         user_schema = await user_service.create(user_create)
         # モデルを返す
         statement = select(UserModel).where(UserModel.id == user_schema.id)
@@ -59,10 +65,12 @@ class TestLogEndpoints:
     ):
         """ログフラグメント作成成功のテスト"""
         # テスト用ユーザー作成
+        import uuid
+        unique_id = str(uuid.uuid4())[:8]
         user = UserModel(
-            id="test-user-1",
-            username="testuser",
-            email="test@example.com",
+            id=f"test-user-{unique_id}",
+            username=f"testuser_{unique_id}",
+            email=f"test_{unique_id}@example.com",
             hashed_password="dummy",
             is_active=True,
             is_verified=False,

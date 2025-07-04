@@ -1,15 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/lib/api-client'
+import { apiClient } from '@/api/client'
 import { LogFragment } from '@/api/generated'
 
 export function useLogFragments(characterId: string) {
   const query = useQuery({
     queryKey: ['log-fragments', characterId],
     queryFn: async () => {
-      const response = await apiClient.get<LogFragment[]>(
+      return await apiClient.get<LogFragment[]>(
         `/characters/${characterId}/log-fragments`
       )
-      return response.data
     },
     enabled: !!characterId,
   })

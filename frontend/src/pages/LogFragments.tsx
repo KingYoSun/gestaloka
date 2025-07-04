@@ -19,7 +19,17 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { LogFragmentRarity, EmotionalValence } from '@/api/generated'
+import { LogFragmentRarity, EmotionalValence, LogFragment } from '@/api/generated'
+
+interface LogFragmentResponse {
+  fragments: LogFragment[]
+  total: number
+  statistics?: {
+    total_fragments: number
+    unique_keywords: number
+    by_rarity: Record<string, number>
+  }
+}
 
 // レアリティのカラーマッピング
 const rarityColors = {
@@ -47,24 +57,19 @@ export function LogFragments() {
   const pageSize = 20
 
   // ログフラグメント一覧を取得
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error } = useQuery<LogFragmentResponse>({
     queryKey: ['logFragments', searchKeyword, selectedRarity, currentPage],
     queryFn: async () => {
-      const response = await apiClient.get(
-        `/api/v1/log-fragments/{character_id}/fragments`,
-        {
-          params: {
-            path: { character_id: localStorage.getItem('characterId') || '' },
-            query: {
-              keyword: searchKeyword || undefined,
-              rarity: selectedRarity !== 'all' ? selectedRarity : undefined,
-              limit: pageSize,
-              offset: currentPage * pageSize,
-            },
-          },
-        }
+      const characterId = localStorage.getItem('characterId') || ''
+      const params = new URLSearchParams()
+      if (searchKeyword) params.append('keyword', searchKeyword)
+      if (selectedRarity !== 'all') params.append('rarity', selectedRarity)
+      params.append('limit', pageSize.toString())
+      params.append('offset', (currentPage * pageSize).toString())
+      
+      return await apiClient.get<LogFragmentResponse>(
+        `/api/v1/log-fragments/${characterId}/fragments?${params.toString()}`
       )
-      return response.data
     },
     enabled: !!localStorage.getItem('characterId'),
   })
@@ -204,11 +209,11 @@ export function LogFragments() {
                   <div>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Gem className="w-5 h-5" />
-                      {fragment.keyword}
+                      {fragment.title}
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      {fragment.discovered_at &&
-                        `${fragment.discovered_at}で発見`}
+                      {fragment.created_at &&
+                        `${new Date(fragment.created_at).toLocaleDateString('ja-JP')}に発見`}
                     </CardDescription>
                   </div>
                   <div className="flex flex-col items-end gap-1">
@@ -221,27 +226,24 @@ export function LogFragments() {
                     <Badge
                       variant="outline"
                       className={
-                        emotionalValenceColors[fragment.emotional_valence]
+                        fragment.emotional_valence ? emotionalValenceColors[fragment.emotional_valence] : 'text-gray-600'
                       }
                     >
-                      {getEmotionalValenceLabel(fragment.emotional_valence)}
+                      {fragment.emotional_valence ? getEmotionalValenceLabel(fragment.emotional_valence) : '未設定'}
                     </Badge>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-gray-600 mb-3">
-                  {fragment.backstory}
+                  {fragment.content}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {fragment.keywords.map((keyword, index) => (
+                  {fragment.keywords?.map((keyword: string, index: number) => (
                     <Badge key={index} variant="outline" className="text-xs">
                       {keyword}
                     </Badge>
                   ))}
-                </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  重要度: {Math.round(fragment.importance_score * 100)}%
                 </div>
               </CardContent>
             </Card>
