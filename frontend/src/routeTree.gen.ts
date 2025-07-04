@@ -38,7 +38,7 @@ const MemoryLazyRoute = MemoryLazyRouteImport.update({
   id: '/memory',
   path: '/memory',
   getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/memory.lazy').then(d => d.Route))
+} as any).lazy(() => import('./routes/memory.lazy').then((d) => d.Route))
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',

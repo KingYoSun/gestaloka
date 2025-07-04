@@ -3,11 +3,9 @@
 遭遇から発展したストーリーの進行を管理し、世界に影響を与える
 """
 
-import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.models import (
@@ -51,7 +49,7 @@ class StoryProgressionManager:
 
         stories = self.db.exec(stmt).all()
 
-        stories_to_progress = []
+        stories_to_progress: list[dict[str, Any]] = []
 
         for story in stories:
             # 進行条件をチェック
@@ -151,7 +149,7 @@ class StoryProgressionManager:
         next_development = await self._determine_next_development(story, analysis, player_action, context)
 
         # ストーリーを更新
-        update_result = self._update_story(story, next_development)
+        self._update_story(story, next_development)
 
         # 世界への影響を処理
         if next_development.get("world_impact"):
@@ -175,14 +173,16 @@ class StoryProgressionManager:
     async def _analyze_story_state(self, story: EncounterStory, context: AgentContext) -> dict[str, Any]:
         """ストーリーの現在の状態を分析"""
         # 最近の選択を取得
+        from sqlmodel import desc
+
         from app.models import EncounterChoice
 
         stmt = (
             select(EncounterChoice)
             .where(EncounterChoice.story_id == story.id)
-            .order_by(EncounterChoice.presented_at.desc())
+            .order_by(desc(EncounterChoice.presented_at))
             .limit(5)
-        )  # type: ignore
+        )
 
         recent_choices = self.db.exec(stmt).all()
 
@@ -312,16 +312,16 @@ class StoryProgressionManager:
         """次の展開を決定"""
         prompt = f"""
         ストーリー「{story.title}」の次の展開を決定してください。
-        
+
         現在の状況:
         - 章: {story.current_chapter}/{story.total_chapters or '?'}
         - 関係性: {story.relationship_status} (深さ: {story.relationship_depth})
         - プレイヤーの傾向: {analysis['choice_patterns']['tendency']}
         - 関係性の軌跡: {analysis['relationship_trajectory']}
         - 未解決のプロット: {story.pending_plot_threads}
-        
+
         最新のプレイヤーアクション: {player_action or 'なし'}
-        
+
         以下を決定してください:
         1. 次のストーリービート
         2. 提示する選択肢
@@ -331,7 +331,7 @@ class StoryProgressionManager:
         """
 
         # GM AIサービスを使用してストーリー展開を決定
-        from app.models import Character, Location
+        from app.models import Location
 
         character = self.db.get(Character, context.character_id)
         location = self.db.exec(select(Location).where(Location.name == context.location)).first()

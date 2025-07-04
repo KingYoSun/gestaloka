@@ -240,6 +240,14 @@ class TestLogEndpoints:
         )
         session.add(character)
 
+        # SP残高を設定
+        from app.models.sp import PlayerSP
+        player_sp = PlayerSP(
+            user_id=user.id,
+            current_sp=100,  # 十分なSPを設定
+        )
+        session.add(player_sp)
+
         game_session = GameSession(
             id="test-session-3",
             character_id=character.id,

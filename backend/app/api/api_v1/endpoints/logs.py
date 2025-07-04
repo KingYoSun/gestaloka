@@ -32,8 +32,8 @@ from app.schemas.log import (
 )
 from app.schemas.user import User
 from app.services.compilation_bonus import CompilationBonusService
-from app.services.sp_service import SPService
 from app.services.contamination_purification import ContaminationPurificationService
+from app.services.sp_service import SPService
 
 router = APIRouter()
 
@@ -188,16 +188,20 @@ async def create_completed_log(
     )
 
     # SP残高の確認
-    current_sp = await sp_service.get_current_sp(character.id)
-    if current_sp < compilation_result.final_sp_cost:
+    player_sp = await sp_service.get_balance(character.user_id)
+    if player_sp.current_sp < compilation_result.final_sp_cost:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient SP. Required: {compilation_result.final_sp_cost}, Current: {current_sp}",
+            detail=f"Insufficient SP. Required: {compilation_result.final_sp_cost}, Current: {player_sp.current_sp}",
         )
 
     # SP消費
+    from app.models.sp import SPTransactionType
     await sp_service.consume_sp(
-        character_id=character.id, amount=compilation_result.final_sp_cost, description=f"ログ編纂: {log_in.name}"
+        user_id=character.user_id,
+        amount=compilation_result.final_sp_cost,
+        transaction_type=SPTransactionType.LOG_DISPATCH,
+        description=f"ログ編纂: {log_in.name}"
     )
 
     # 完成ログ作成
@@ -388,7 +392,8 @@ async def preview_compilation_cost(
     )
 
     # 現在のSP残高を取得
-    current_sp = await sp_service.get_current_sp(character.id)
+    player_sp = await sp_service.get_balance(character.user_id)
+    current_sp = player_sp.current_sp
 
     return {
         "base_sp_cost": compilation_result.base_sp_cost,
@@ -449,7 +454,7 @@ async def purify_completed_log(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Character not found",
         )
-        
+
     try:
         purification_result = await purification_service.purify_completed_log(
             log_id=log_id, character=character, purification_items=purification_items
@@ -506,13 +511,13 @@ async def create_purification_item_from_fragments(
 
     # 浄化アイテムの作成
     purification_service = ContaminationPurificationService(db)
-    
+
     if not character:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Character not found",
         )
-        
+
     item = await purification_service.create_purification_item(character=character, fragments=fragments)
 
     if not item:

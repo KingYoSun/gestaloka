@@ -7,16 +7,13 @@ import random
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from app.models import (
     Character,
-    DispatchEncounter,
     EncounterChoice,
     EncounterStory,
     EncounterType,
-    LogDispatch,
     Quest,
     QuestOrigin,
     QuestStatus,
@@ -25,8 +22,8 @@ from app.models import (
     StoryArcType,
 )
 from app.services.ai.agents.base import AgentContext
-from app.services.gm_ai_service import GMAIService
 from app.services.ai.dispatch_interaction import DispatchInteractionManager
+from app.services.gm_ai_service import GMAIService
 
 
 class EncounterManager:
@@ -172,13 +169,13 @@ class EncounterManager:
         # キャラクターの履歴と性格を考慮
         prompt = f"""
         キャラクター「{character.name}」が{encounter_type}との遭遇を開始します。
-        
+
         キャラクター情報:
         - 性格: {character.personality or "未設定"}
         - 最近の行動: {context.recent_actions[-5:] if context.recent_actions else []}
-        
+
         この遭遇から発展するストーリーアークを提案してください。
-        
+
         利用可能なアークタイプ:
         - QUEST_CHAIN: 連続クエスト
         - RIVALRY: ライバル関係
@@ -215,6 +212,10 @@ class EncounterManager:
         arc_types = list(StoryArcType)
         selected_arc = council_result.get("arc_type", random.choice(arc_types))
 
+        # selected_arcがStoryArcTypeでない場合の処理
+        if not isinstance(selected_arc, StoryArcType):
+            selected_arc = random.choice(arc_types)
+
         return {
             "arc_type": selected_arc,
             "title": council_result.get("story_title", f"{selected_arc.value}の物語"),
@@ -224,9 +225,8 @@ class EncounterManager:
 
     def _parse_story_arc_response(self, ai_response: str) -> dict[str, Any]:
         """AIレスポンスからストーリーアーク情報を解析"""
-        import json
 
-        result = {}
+        result: dict[str, Any] = {}
 
         # StoryArcTypeのマッピング
         arc_type_map = {
@@ -276,7 +276,7 @@ class EncounterManager:
         {character.name}が{story.encounter_type}と初めて遭遇します。
         ストーリーアーク: {story.story_arc_type}
         タイトル: {story.title}
-        
+
         印象的で記憶に残る初回の遭遇シーンを生成してください。
         プレイヤーに選択肢を提示し、今後の関係性に影響を与えるようにしてください。
         """
@@ -391,11 +391,11 @@ class EncounterManager:
 
         prompt = f"""
         ストーリー「{story.title}」の次の展開を生成してください。
-        
+
         現在の章: {story.current_chapter}
         関係性の深さ: {story.relationship_depth}
         最近のビート: {recent_beats}
-        
+
         物語を前進させ、関係性を深める展開を作ってください。
         """
 
@@ -429,7 +429,7 @@ class EncounterManager:
         if not story.active_quest_ids:
             return False
 
-        stmt = select(SharedQuest).where(SharedQuest.story_id == story.id, SharedQuest.completed_at == None)
+        stmt = select(SharedQuest).where(SharedQuest.story_id == story.id, SharedQuest.completed_at is None)
         return self.db.exec(stmt).first() is not None
 
     async def _propose_shared_quest(self, story: EncounterStory, context: AgentContext) -> Optional[dict[str, Any]]:
@@ -437,11 +437,11 @@ class EncounterManager:
 
         prompt = f"""
         関係性が深まったキャラクターとの共同クエストを提案してください。
-        
+
         ストーリー: {story.title}
         関係性タイプ: {story.story_arc_type}
         関係性の深さ: {story.relationship_depth}
-        
+
         二人で協力して達成する意味のあるクエストを生成してください。
         """
 
@@ -554,7 +554,7 @@ class EncounterManager:
             プレイヤーが「{valid_choice['text']}」を選択しました。
             ストーリー: {story.title}
             現在の関係性: {story.relationship_status}
-            
+
             この選択の即座の結果と長期的な影響を生成してください。
             """
 
@@ -604,11 +604,11 @@ class EncounterManager:
 
     def _parse_encounter_event_response(self, ai_response: str) -> dict[str, Any]:
         """遭遇イベントレスポンスを解析"""
-        result = {"scene_description": ai_response, "player_choices": [], "atmosphere": "mysterious"}
+        result: dict[str, Any] = {"scene_description": ai_response, "player_choices": [], "atmosphere": "mysterious"}
 
         # 選択肢を抽出
         lines = ai_response.strip().split("\n")
-        choices = []
+        choices: list[dict[str, str]] = []
         for line in lines:
             if line.strip().startswith(("1.", "2.", "3.", "・")):
                 choice_text = line.strip().lstrip("1234567890.・ ")
@@ -621,7 +621,7 @@ class EncounterManager:
 
     def _parse_quest_proposal_response(self, ai_response: str) -> dict[str, Any]:
         """クエスト提案レスポンスを解析"""
-        result = {}
+        result: dict[str, Any] = {}
         lines = ai_response.strip().split("\n")
 
         for line in lines:
@@ -652,7 +652,7 @@ class EncounterManager:
 
     def _parse_shared_quest_proposal_response(self, ai_response: str) -> dict[str, Any]:
         """共同クエスト提案レスポンスを解析"""
-        result = {}
+        result: dict[str, Any] = {}
         lines = ai_response.strip().split("\n")
 
         for line in lines:
@@ -673,7 +673,7 @@ class EncounterManager:
 
     def _parse_choice_consequence_response(self, ai_response: str) -> dict[str, Any]:
         """選択結果レスポンスを解析"""
-        result = {
+        result: dict[str, Any] = {
             "immediate_consequence": ai_response,
             "reasoning": "",
             "long_term_impact": {},
@@ -686,13 +686,27 @@ class EncounterManager:
                 result["reasoning"] = line.split(":", 1)[1].strip()
             elif "信頼度:" in line:
                 try:
-                    trust_value = float(line.split(":", 1)[1].strip().replace("+", "").replace("-", ""))
+                    trust_str = line.split(":", 1)[1].strip()
+                    # 正負の符号を保持
+                    if trust_str.startswith("+"):
+                        trust_value = float(trust_str[1:])
+                    elif trust_str.startswith("-"):
+                        trust_value = -float(trust_str[1:])
+                    else:
+                        trust_value = float(trust_str)
                     result["relationship_change"]["trust"] = trust_value
                 except ValueError:
                     pass
             elif "対立度:" in line:
                 try:
-                    conflict_value = float(line.split(":", 1)[1].strip().replace("+", "").replace("-", ""))
+                    conflict_str = line.split(":", 1)[1].strip()
+                    # 正負の符号を保持
+                    if conflict_str.startswith("+"):
+                        conflict_value = float(conflict_str[1:])
+                    elif conflict_str.startswith("-"):
+                        conflict_value = -float(conflict_str[1:])
+                    else:
+                        conflict_value = float(conflict_str)
                     result["relationship_change"]["conflict"] = conflict_value
                 except ValueError:
                     pass

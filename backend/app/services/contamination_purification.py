@@ -4,16 +4,15 @@
 ログの汚染を浄化し、より純粋な記憶を作り出すシステム
 """
 
-from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
-import json
+from typing import Any, ClassVar, Optional
 
 from sqlmodel import Session, select
 
-from app.models.log import CompletedLog, LogFragment, EmotionalValence
 from app.models.character import Character
-from app.models.item import Item, CharacterItem
+from app.models.item import CharacterItem, Item
+from app.models.log import CompletedLog, EmotionalValence, LogFragment
 from app.services.sp_service import SPService
 
 
@@ -25,16 +24,16 @@ class PurificationResult:
     purified_contamination: float
     purification_rate: float
     sp_cost: int
-    items_consumed: List[str]
-    new_traits: List[str]
-    special_effects: Dict[str, Any]
+    items_consumed: list[str]
+    new_traits: list[str]
+    special_effects: dict[str, Any]
 
 
 class ContaminationPurificationService:
     """汚染浄化サービス"""
 
     # 浄化アイテムと効果
-    PURIFICATION_ITEMS = {
+    PURIFICATION_ITEMS: ClassVar[dict[str, dict[str, Any]]] = {
         "聖水": {"power": 0.1, "sp_cost": 10, "rarity": "common"},
         "光のクリスタル": {"power": 0.2, "sp_cost": 30, "rarity": "uncommon"},
         "浄化の書": {"power": 0.3, "sp_cost": 50, "rarity": "rare"},
@@ -43,7 +42,7 @@ class ContaminationPurificationService:
     }
 
     # 浄化による特性変化
-    PURIFICATION_TRAITS = {
+    PURIFICATION_TRAITS: ClassVar[dict[float, list[str]]] = {
         0.3: ["清らか", "純粋"],  # 30%以上浄化
         0.5: ["聖なる光", "守護者"],  # 50%以上浄化
         0.7: ["浄化の化身", "光の導き手"],  # 70%以上浄化
@@ -55,7 +54,7 @@ class ContaminationPurificationService:
         self.sp_service = SPService(db)
 
     async def purify_completed_log(
-        self, log_id: str, character: Character, purification_items: List[str]
+        self, log_id: str, character: Character, purification_items: list[str]
     ) -> PurificationResult:
         """完成ログの汚染を浄化"""
 
@@ -96,8 +95,8 @@ class ContaminationPurificationService:
             ).first()
 
             if character_item:
-                total_purification_power += float(item_info["power"])
-                total_sp_cost += int(item_info["sp_cost"])
+                total_purification_power += item_info["power"]
+                total_sp_cost += item_info["sp_cost"]
                 items_consumed.append(item_name)
 
                 # アイテムを消費
@@ -106,13 +105,17 @@ class ContaminationPurificationService:
                     self.db.delete(character_item)
 
         # SP残高確認
-        current_sp = await self.sp_service.get_current_sp(character.id)
-        if current_sp < total_sp_cost:
-            raise ValueError(f"Insufficient SP. Required: {total_sp_cost}, Current: {current_sp}")
+        player_sp = await self.sp_service.get_balance(character.user_id)
+        if player_sp.current_sp < total_sp_cost:
+            raise ValueError(f"Insufficient SP. Required: {total_sp_cost}, Current: {player_sp.current_sp}")
 
         # SP消費
+        from app.models.sp import SPTransactionType
         await self.sp_service.consume_sp(
-            character_id=character.id, amount=total_sp_cost, description=f"汚染浄化: {log.name}"
+            user_id=character.user_id,
+            amount=total_sp_cost,
+            transaction_type=SPTransactionType.LOG_ENHANCEMENT,
+            description=f"汚染浄化: {log.name}"
         )
 
         # 浄化計算
@@ -168,7 +171,7 @@ class ContaminationPurificationService:
 
     def _calculate_special_effects(
         self, log: CompletedLog, original_contamination: float, purified_contamination: float, purification_rate: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """浄化による特殊効果を計算"""
 
         effects = {}
@@ -199,7 +202,7 @@ class ContaminationPurificationService:
 
         return effects
 
-    async def create_purification_item(self, character: Character, fragments: List[LogFragment]) -> Optional[Item]:
+    async def create_purification_item(self, character: Character, fragments: list[LogFragment]) -> Optional[Item]:
         """浄化アイテムの作成（特定のフラグメント組み合わせから）"""
 
         # ポジティブなフラグメントの割合を確認

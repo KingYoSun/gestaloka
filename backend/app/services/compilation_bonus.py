@@ -4,15 +4,15 @@
 フラグメントの組み合わせによる追加効果とコンボシステムを管理
 """
 
-from typing import Dict, List, Optional, Tuple, Set
-from enum import Enum
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
+from enum import Enum
+from typing import ClassVar, Optional
 
 from sqlmodel import Session, select
 
-from app.models.log import LogFragment, LogFragmentRarity, MemoryType, CompletedLog
 from app.models.character import Character
+from app.models.log import LogFragment, LogFragmentRarity, MemoryType
 
 
 class BonusType(str, Enum):
@@ -43,10 +43,10 @@ class CompilationResult:
 
     base_sp_cost: int
     final_sp_cost: int
-    combo_bonuses: List[ComboBonus]
+    combo_bonuses: list[ComboBonus]
     contamination_level: float
     final_contamination: float
-    special_titles: List[str]
+    special_titles: list[str]
     power_multiplier: float
 
 
@@ -54,7 +54,7 @@ class CompilationBonusService:
     """編纂ボーナスシステムのサービス"""
 
     # レアリティごとの基本SP消費
-    RARITY_SP_COSTS = {
+    RARITY_SP_COSTS: ClassVar[dict[LogFragmentRarity, int]] = {
         LogFragmentRarity.COMMON: 10,
         LogFragmentRarity.UNCOMMON: 20,
         LogFragmentRarity.RARE: 40,
@@ -65,7 +65,7 @@ class CompilationBonusService:
     }
 
     # 記憶タイプの組み合わせによるボーナス定義
-    MEMORY_COMBOS = {
+    MEMORY_COMBOS: ClassVar[dict[frozenset[MemoryType], ComboBonus]] = {
         # 2つの組み合わせ
         frozenset([MemoryType.COURAGE, MemoryType.SACRIFICE]): ComboBonus(
             BonusType.SPECIAL_TITLE, 1.0, "勇気と犠牲の組み合わせ", "英雄的犠牲者"
@@ -86,7 +86,7 @@ class CompilationBonusService:
     }
 
     # キーワードの組み合わせによるボーナス
-    KEYWORD_COMBOS = {
+    KEYWORD_COMBOS: ClassVar[dict[frozenset[str], ComboBonus]] = {
         frozenset(["光", "闇"]): ComboBonus(BonusType.PURIFICATION, 0.5, "光と闇の調和により汚染が50%浄化"),
         frozenset(["始まり", "終わり"]): ComboBonus(
             BonusType.RARITY_UPGRADE, 1.0, "始まりと終わりの循環によりレアリティが上昇"
@@ -98,11 +98,11 @@ class CompilationBonusService:
         self.db = db
 
     def calculate_compilation_bonuses(
-        self, core_fragment: LogFragment, sub_fragments: List[LogFragment], character: Character
+        self, core_fragment: LogFragment, sub_fragments: list[LogFragment], character: Character
     ) -> CompilationResult:
         """編纂時のボーナスを計算"""
 
-        all_fragments = [core_fragment] + sub_fragments
+        all_fragments = [core_fragment, *sub_fragments]
 
         # 基本SP消費の計算
         base_sp_cost = self._calculate_base_sp_cost(all_fragments)
@@ -132,9 +132,13 @@ class CompilationBonusService:
 
         # キャラクターの特性による追加ボーナス
         if hasattr(character, 'personality') and character.personality:
-            traits = character.personality if isinstance(character.personality, list) else json.loads(character.personality)
-            if "記憶収集者" in traits:
-                final_sp_cost = int(final_sp_cost * 0.9)  # 10%削減
+            # character.personalityはOptional[str]なので、リストではない
+            try:
+                traits = json.loads(character.personality)
+                if isinstance(traits, list) and "記憶収集者" in traits:
+                    final_sp_cost = int(final_sp_cost * 0.9)  # 10%削減
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         return CompilationResult(
             base_sp_cost=base_sp_cost,
@@ -146,12 +150,14 @@ class CompilationBonusService:
             power_multiplier=power_multiplier,
         )
 
-    def _calculate_base_sp_cost(self, fragments: List[LogFragment]) -> int:
+    def _calculate_base_sp_cost(self, fragments: list[LogFragment]) -> int:
         """基本SP消費を計算"""
         total_cost = 0
 
         for fragment in fragments:
+            # rarityはLogFragmentRarity型なので直接使用
             rarity_cost = self.RARITY_SP_COSTS.get(fragment.rarity, 10)
+            
             # UNIQUEとARCHITECTは追加コスト
             if fragment.rarity in [LogFragmentRarity.UNIQUE, LogFragmentRarity.ARCHITECT]:
                 rarity_cost = int(rarity_cost * 1.5)
@@ -163,7 +169,7 @@ class CompilationBonusService:
 
         return int(total_cost)
 
-    def _detect_combo_bonuses(self, fragments: List[LogFragment]) -> List[ComboBonus]:
+    def _detect_combo_bonuses(self, fragments: list[LogFragment]) -> list[ComboBonus]:
         """コンボボーナスを検出"""
         bonuses = []
 
@@ -171,7 +177,12 @@ class CompilationBonusService:
         memory_types = set()
         for fragment in fragments:
             if fragment.memory_type:
-                memory_types.add(fragment.memory_type)
+                # 文字列からMemoryType Enumに変換
+                try:
+                    memory_type_enum = MemoryType(fragment.memory_type)
+                    memory_types.add(memory_type_enum)
+                except ValueError:
+                    pass
 
         for combo_set, bonus in self.MEMORY_COMBOS.items():
             if combo_set.issubset(memory_types):
@@ -197,15 +208,19 @@ class CompilationBonusService:
         # 同一感情価コンボ
         emotional_valences = [f.emotional_valence for f in fragments if f.emotional_valence]
         if len(emotional_valences) >= 3 and len(set(emotional_valences)) == 1:
+            # emotional_valenceはEmotionalValence型なので、valueプロパティで文字列値を取得
+            emotion_value = emotional_valences[0].value
             bonuses.append(
-                ComboBonus(BonusType.POWER_BOOST, 1.3, f"すべて{emotional_valences[0]}の感情で統一され、力が30%強化")
+                ComboBonus(BonusType.POWER_BOOST, 1.3, f"すべて{emotion_value}の感情で統一され、力が30%強化")
             )
 
         return bonuses
 
-    def _calculate_contamination(self, fragments: List[LogFragment]) -> float:
+    def _calculate_contamination(self, fragments: list[LogFragment]) -> float:
         """汚染度を計算"""
-        negative_count = sum(1 for f in fragments if f.emotional_valence == "negative")
+        from app.models.log import EmotionalValence
+
+        negative_count = sum(1 for f in fragments if f.emotional_valence == EmotionalValence.NEGATIVE)
         total_count = len(fragments)
 
         if total_count == 0:
@@ -220,10 +235,11 @@ class CompilationBonusService:
 
         return min(base_contamination, 1.0)  # 最大100%
 
-    def apply_special_titles(self, character: Character, titles: List[str], db: Session) -> None:
+    def apply_special_titles(self, character: Character, titles: list[str], db: Session) -> None:
         """特殊称号をキャラクターに付与"""
-        from app.models.title import CharacterTitle
         from uuid import uuid4
+
+        from app.models.title import CharacterTitle
 
         for title_name in titles:
             # 既存の称号チェック
