@@ -4,6 +4,17 @@
 
 ## 最終更新: 2025/07/04
 
+### 2025/07/04の主な実装と修正（17:04更新）
+- **TanStack Routerの自動生成機能の修正** ✅
+  - @tanstack/router-pluginパッケージのインストール
+  - vite.config.tsにTanStackRouterViteプラグインを追加
+  - PostCSS設定の更新（tailwindcss → @tailwindcss/postcss）
+    - Tailwind CSS v4の新しい設定形式に対応
+  - routeTree.gen.tsの自動生成が正常動作
+    - 開発サーバー起動時に「Generated route tree in 436ms」と表示
+    - /admin/spと/log-fragmentsルートが自動追加
+  - 新規ルート追加時の手動更新が不要に
+
 ### 2025/07/04の主な実装と修正（16:08更新）
 - **テスト・型・リントエラーの完全解消** ✅✅✅✅
   - バックエンドテスト: 223/223件成功（100%達成）
@@ -194,10 +205,10 @@
   - 18件のAPIエラー → 0件に削減
   - MinimapCanvasの移動履歴描画テスト修正完了（2025/07/01）
   - テスト成功率100%を達成（40/40件成功）
-- **TanStack Routerのルート自動生成** 🔧
-  - routeTree.gen.tsの自動生成が機能しない
-  - 現在は手動でルート追加が必要（/quests、/admin/sp、/log-fragments）
-  - ビルドプロセスの調査が必要
+- **TanStack Routerのルート自動生成** ✅（解決済み - 2025/07/04）
+  - @tanstack/router-pluginパッケージの導入で解決
+  - vite.config.tsにプラグイン追加で自動生成が機能
+  - 新規ルート追加時の手動更新が不要に
 
 ### 中優先度
 - **DispatchInteractionServiceの実装**

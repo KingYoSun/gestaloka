@@ -8,13 +8,15 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
+import { createFileRoute } from '@tanstack/react-router'
+
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as QuestsRouteImport } from './routes/quests'
-import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LogFragmentsRouteImport } from './routes/log-fragments'
 import { Route as ExplorationRouteImport } from './routes/exploration'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CharactersRouteImport } from './routes/characters'
@@ -27,8 +29,16 @@ import { Route as GameStartRouteImport } from './routes/game/start'
 import { Route as GameSessionIdRouteImport } from './routes/game/$sessionId'
 import { Route as CharacterCreateRouteImport } from './routes/character.create'
 import { Route as CharacterIdRouteImport } from './routes/character.$id'
+import { Route as AdminSpRouteImport } from './routes/admin/sp'
 import { Route as AdminPerformanceRouteImport } from './routes/admin/performance'
 
+const MemoryLazyRouteImport = createFileRoute('/memory')()
+
+const MemoryLazyRoute = MemoryLazyRouteImport.update({
+  id: '/memory',
+  path: '/memory',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/memory.lazy').then((d) => d.Route))
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -44,11 +54,6 @@ const QuestsRoute = QuestsRouteImport.update({
   path: '/quests',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MemoryRoute = MemoryRouteImport.update({
-  id: '/memory',
-  path: '/memory',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
@@ -57,6 +62,11 @@ const LogsRoute = LogsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogFragmentsRoute = LogFragmentsRouteImport.update({
+  id: '/log-fragments',
+  path: '/log-fragments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExplorationRoute = ExplorationRouteImport.update({
@@ -119,6 +129,11 @@ const CharacterIdRoute = CharacterIdRouteImport.update({
   path: '/character/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminSpRoute = AdminSpRouteImport.update({
+  id: '/admin/sp',
+  path: '/admin/sp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminPerformanceRoute = AdminPerformanceRouteImport.update({
   id: '/admin/performance',
   path: '/admin/performance',
@@ -130,13 +145,15 @@ export interface FileRoutesByFullPath {
   '/characters': typeof CharactersRoute
   '/dashboard': typeof DashboardRoute
   '/exploration': typeof ExplorationRoute
+  '/log-fragments': typeof LogFragmentsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
-  '/memory': typeof MemoryRoute
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/memory': typeof MemoryLazyRoute
   '/admin/performance': typeof AdminPerformanceRoute
+  '/admin/sp': typeof AdminSpRoute
   '/character/$id': typeof CharacterIdRoute
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
@@ -151,13 +168,15 @@ export interface FileRoutesByTo {
   '/characters': typeof CharactersRoute
   '/dashboard': typeof DashboardRoute
   '/exploration': typeof ExplorationRoute
+  '/log-fragments': typeof LogFragmentsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
-  '/memory': typeof MemoryRoute
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/memory': typeof MemoryLazyRoute
   '/admin/performance': typeof AdminPerformanceRoute
+  '/admin/sp': typeof AdminSpRoute
   '/character/$id': typeof CharacterIdRoute
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
@@ -173,13 +192,15 @@ export interface FileRoutesById {
   '/characters': typeof CharactersRoute
   '/dashboard': typeof DashboardRoute
   '/exploration': typeof ExplorationRoute
+  '/log-fragments': typeof LogFragmentsRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
-  '/memory': typeof MemoryRoute
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/memory': typeof MemoryLazyRoute
   '/admin/performance': typeof AdminPerformanceRoute
+  '/admin/sp': typeof AdminSpRoute
   '/character/$id': typeof CharacterIdRoute
   '/character/create': typeof CharacterCreateRoute
   '/game/$sessionId': typeof GameSessionIdRoute
@@ -196,13 +217,15 @@ export interface FileRouteTypes {
     | '/characters'
     | '/dashboard'
     | '/exploration'
+    | '/log-fragments'
     | '/login'
     | '/logs'
-    | '/memory'
     | '/quests'
     | '/register'
     | '/settings'
+    | '/memory'
     | '/admin/performance'
+    | '/admin/sp'
     | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
@@ -217,13 +240,15 @@ export interface FileRouteTypes {
     | '/characters'
     | '/dashboard'
     | '/exploration'
+    | '/log-fragments'
     | '/login'
     | '/logs'
-    | '/memory'
     | '/quests'
     | '/register'
     | '/settings'
+    | '/memory'
     | '/admin/performance'
+    | '/admin/sp'
     | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
@@ -238,13 +263,15 @@ export interface FileRouteTypes {
     | '/characters'
     | '/dashboard'
     | '/exploration'
+    | '/log-fragments'
     | '/login'
     | '/logs'
-    | '/memory'
     | '/quests'
     | '/register'
     | '/settings'
+    | '/memory'
     | '/admin/performance'
+    | '/admin/sp'
     | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
@@ -260,13 +287,15 @@ export interface RootRouteChildren {
   CharactersRoute: typeof CharactersRoute
   DashboardRoute: typeof DashboardRoute
   ExplorationRoute: typeof ExplorationRoute
+  LogFragmentsRoute: typeof LogFragmentsRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
-  MemoryRoute: typeof MemoryRoute
   QuestsRoute: typeof QuestsRoute
   RegisterRoute: typeof RegisterRoute
   SettingsRoute: typeof SettingsRoute
+  MemoryLazyRoute: typeof MemoryLazyRoute
   AdminPerformanceRoute: typeof AdminPerformanceRoute
+  AdminSpRoute: typeof AdminSpRoute
   CharacterIdRoute: typeof CharacterIdRoute
   CharacterCreateRoute: typeof CharacterCreateRoute
   GameSessionIdRoute: typeof GameSessionIdRoute
@@ -279,6 +308,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/memory': {
+      id: '/memory'
+      path: '/memory'
+      fullPath: '/memory'
+      preLoaderRoute: typeof MemoryLazyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -307,18 +343,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/memory': {
-      id: '/memory'
-      path: '/memory'
-      fullPath: '/memory'
-      preLoaderRoute: typeof MemoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/log-fragments': {
+      id: '/log-fragments'
+      path: '/log-fragments'
+      fullPath: '/log-fragments'
+      preLoaderRoute: typeof LogFragmentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/exploration': {
@@ -405,6 +441,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CharacterIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/sp': {
+      id: '/admin/sp'
+      path: '/admin/sp'
+      fullPath: '/admin/sp'
+      preLoaderRoute: typeof AdminSpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/performance': {
       id: '/admin/performance'
       path: '/admin/performance'
@@ -420,13 +463,15 @@ const rootRouteChildren: RootRouteChildren = {
   CharactersRoute: CharactersRoute,
   DashboardRoute: DashboardRoute,
   ExplorationRoute: ExplorationRoute,
+  LogFragmentsRoute: LogFragmentsRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
-  MemoryRoute: MemoryRoute,
   QuestsRoute: QuestsRoute,
   RegisterRoute: RegisterRoute,
   SettingsRoute: SettingsRoute,
+  MemoryLazyRoute: MemoryLazyRoute,
   AdminPerformanceRoute: AdminPerformanceRoute,
+  AdminSpRoute: AdminSpRoute,
   CharacterIdRoute: CharacterIdRoute,
   CharacterCreateRoute: CharacterCreateRoute,
   GameSessionIdRoute: GameSessionIdRoute,

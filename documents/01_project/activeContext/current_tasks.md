@@ -1,6 +1,6 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-04（16:09 JST）
+## 最終更新: 2025-07-04（17:04 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
 1. ログ派遣システムの完全実装（2025-06-22）
@@ -145,6 +145,14 @@
    - ゲーム画面への記憶継承クイックアクセスボタン追加
    - Radix UIコンポーネント追加（radio-group）
 
+11. **TanStack Routerの自動生成機能の修正（2025-07-04）**
+   - @tanstack/router-pluginパッケージのインストール
+   - vite.config.tsにTanStackRouterViteプラグインを追加
+   - PostCSS設定の更新（tailwindcss → @tailwindcss/postcss）
+   - routeTree.gen.tsの自動生成が正常動作
+   - /admin/spと/log-fragmentsルートが自動追加
+   - 新規ルート追加時の手動更新が不要に
+
 ### 優先度：高 🔴
 なし（探索システムと動的クエストシステムの基本実装完了）
 
@@ -188,6 +196,8 @@
 ### 技術的債務 💳
 - TypeScriptのany型改善（59箇所 - フロントエンドのwarning）
 - ~~フロントエンドの型エラー~~ ✅ **解決済み（2025-07-04）**
+- ~~TanStack Routerの自動生成問題~~ ✅ **解決済み（2025-07-04）**
+  - @tanstack/router-pluginの導入で解決
 - Pydantic V1→V2への移行
   - `@validator`→`@field_validator`への移行が必要
   - `from_orm()`→`model_validate()`への移行が必要
