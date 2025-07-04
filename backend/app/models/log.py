@@ -134,6 +134,11 @@ class CompletedLog(SQLModel, table=True):
     # ステータス
     status: CompletedLogStatus = Field(default=CompletedLogStatus.DRAFT)
 
+    # 編纂メタデータ（コンボボーナス情報等）
+    compilation_metadata: Optional[dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSON), description="編纂時のメタデータ"
+    )
+
     # タイムスタンプ
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = Field(default=None)

@@ -51,6 +51,9 @@
 - GET `/logs/completed/{character_id}` - 完成ログ一覧取得
 - POST `/logs/completed` - ログ編纂（完成ログ作成）
 - PATCH `/logs/completed/{log_id}` - 完成ログ更新
+- POST `/logs/completed/preview` - 編纂プレビュー（SP消費とボーナス表示）※2025-07-04追加
+- POST `/logs/completed/{log_id}/purify` - 完成ログの汚染浄化 ※2025-07-04追加
+- POST `/logs/fragments/create-purification-item` - フラグメントから浄化アイテム作成 ※2025-07-04追加
 
 ### ログフラグメント (/log-fragments)
 - GET `/log-fragments/{character_id}/fragments` - フラグメント一覧取得

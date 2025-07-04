@@ -31,6 +31,9 @@ from app.schemas.log import (
     LogFragmentRead,
 )
 from app.schemas.user import User
+from app.services.compilation_bonus import CompilationBonusService
+from app.services.character import SPService
+from app.services.contamination_purification import ContaminationPurificationService
 
 router = APIRouter()
 
@@ -50,17 +53,11 @@ async def create_log_fragment(
     """
     # キャラクターの所有権確認
     character = db.exec(
-        select(Character).where(
-            Character.id == fragment_in.character_id,
-            Character.user_id == current_user.id
-        )
+        select(Character).where(Character.id == fragment_in.character_id, Character.user_id == current_user.id)
     ).first()
 
     if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
     # ゲームセッションの確認
     session_stmt = select(GameSession).where(
@@ -103,17 +100,11 @@ async def get_character_fragments(
     """
     # キャラクターの所有権確認
     character = db.exec(
-        select(Character).where(
-            Character.id == character_id,
-            Character.user_id == current_user.id
-        )
+        select(Character).where(Character.id == character_id, Character.user_id == current_user.id)
     ).first()
 
     if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
     # フラグメント取得
     fragment_stmt = (
@@ -142,17 +133,11 @@ async def create_completed_log(
     """
     # キャラクターの所有権確認
     character = db.exec(
-        select(Character).where(
-            Character.id == log_in.creator_id,
-            Character.user_id == current_user.id
-        )
+        select(Character).where(Character.id == log_in.creator_id, Character.user_id == current_user.id)
     ).first()
 
     if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
     # コアフラグメントの確認
     core_stmt = select(LogFragment).where(
@@ -187,11 +172,33 @@ async def create_completed_log(
             )
         sub_fragments.append(fragment)
 
-    # 汚染度の計算
+    # コンボボーナスサービスの初期化
+    bonus_service = CompilationBonusService(db)
+    sp_service = SPService(db)
+
+    # 汚染度の計算（コンボボーナス適用前）
     all_fragments = [core_fragment, *sub_fragments]
     negative_count = sum(1 for f in all_fragments if f.emotional_valence == EmotionalValence.NEGATIVE)
     total_count = len(all_fragments)
-    contamination_level = negative_count / total_count if total_count > 0 else 0.0
+    base_contamination_level = negative_count / total_count if total_count > 0 else 0.0
+
+    # コンボボーナスの計算
+    compilation_result = bonus_service.calculate_compilation_bonuses(
+        core_fragment=core_fragment, sub_fragments=sub_fragments, character=character
+    )
+
+    # SP残高の確認
+    current_sp = await sp_service.get_current_sp(character.id)
+    if current_sp < compilation_result.final_sp_cost:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Insufficient SP. Required: {compilation_result.final_sp_cost}, Current: {current_sp}",
+        )
+
+    # SP消費
+    await sp_service.consume_sp(
+        character_id=character.id, amount=compilation_result.final_sp_cost, description=f"ログ編纂: {log_in.name}"
+    )
 
     # 完成ログ作成
     db_log = CompletedLog(
@@ -204,9 +211,17 @@ async def create_completed_log(
         skills=log_in.skills,
         personality_traits=log_in.personality_traits,
         behavior_patterns=log_in.behavior_patterns,
-        contamination_level=contamination_level,
+        contamination_level=compilation_result.final_contamination,  # コンボボーナス適用後の汚染度
         status=CompletedLogStatus.DRAFT,
         created_at=datetime.utcnow(),
+        compilation_metadata={
+            "base_contamination": base_contamination_level,
+            "power_multiplier": compilation_result.power_multiplier,
+            "combo_bonuses": [
+                {"type": bonus.bonus_type, "description": bonus.description, "value": bonus.value}
+                for bonus in compilation_result.combo_bonuses
+            ],
+        },
     )
     db.add(db_log)
 
@@ -218,6 +233,10 @@ async def create_completed_log(
             order=i,
         )
         db.add(sub_relation)
+
+    # 特殊称号の付与
+    if compilation_result.special_titles:
+        bonus_service.apply_special_titles(character=character, titles=compilation_result.special_titles, db=db)
 
     db.commit()
     db.refresh(db_log)
@@ -288,17 +307,11 @@ async def get_character_completed_logs(
     """
     # キャラクターの所有権確認
     character = db.exec(
-        select(Character).where(
-            Character.id == character_id,
-            Character.user_id == current_user.id
-        )
+        select(Character).where(Character.id == character_id, Character.user_id == current_user.id)
     ).first()
 
     if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
     # 完成ログ取得
     log_stmt = (
@@ -310,3 +323,202 @@ async def get_character_completed_logs(
     logs = result.all()
 
     return logs
+
+
+@router.post("/completed/preview")
+async def preview_compilation_cost(
+    *,
+    db: Session = Depends(get_session),
+    preview_in: CompletedLogCreate,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    編纂コストとボーナスをプレビュー
+
+    実際にSPを消費せずに、編纂時のコストとボーナスを確認できる
+    """
+    # キャラクターの所有権確認
+    character = db.exec(
+        select(Character).where(Character.id == preview_in.creator_id, Character.user_id == current_user.id)
+    ).first()
+
+    if not character:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    # コアフラグメントの確認
+    core_stmt = select(LogFragment).where(
+        and_(
+            LogFragment.id == preview_in.core_fragment_id,
+            LogFragment.character_id == preview_in.creator_id,
+        )
+    )
+    result = db.exec(core_stmt)
+    core_fragment = result.first()
+    if not core_fragment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Core fragment not found",
+        )
+
+    # サブフラグメントの確認
+    sub_fragments = []
+    for sub_id in preview_in.sub_fragment_ids:
+        sub_stmt = select(LogFragment).where(
+            and_(
+                LogFragment.id == sub_id,
+                LogFragment.character_id == preview_in.creator_id,
+            )
+        )
+        result = db.exec(sub_stmt)
+        fragment = result.first()
+        if not fragment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sub fragment {sub_id} not found",
+            )
+        sub_fragments.append(fragment)
+
+    # コンボボーナスサービスの初期化
+    bonus_service = CompilationBonusService(db)
+    sp_service = SPService(db)
+
+    # コンボボーナスの計算
+    compilation_result = bonus_service.calculate_compilation_bonuses(
+        core_fragment=core_fragment, sub_fragments=sub_fragments, character=character
+    )
+
+    # 現在のSP残高を取得
+    current_sp = await sp_service.get_current_sp(character.id)
+
+    return {
+        "base_sp_cost": compilation_result.base_sp_cost,
+        "final_sp_cost": compilation_result.final_sp_cost,
+        "current_sp": current_sp,
+        "can_afford": current_sp >= compilation_result.final_sp_cost,
+        "contamination_level": compilation_result.contamination_level,
+        "final_contamination": compilation_result.final_contamination,
+        "power_multiplier": compilation_result.power_multiplier,
+        "combo_bonuses": [
+            {"type": bonus.bonus_type, "description": bonus.description, "value": bonus.value, "title": bonus.title}
+            for bonus in compilation_result.combo_bonuses
+        ],
+        "special_titles": compilation_result.special_titles,
+    }
+
+
+@router.post("/completed/{log_id}/purify")
+async def purify_completed_log(
+    *,
+    db: Session = Depends(get_session),
+    log_id: str,
+    purification_items: list[str],
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    完成ログの汚染を浄化
+
+    浄化アイテムとSPを消費して、ログの汚染度を下げる
+    """
+    # ログと所有権の確認
+    stmt = (
+        select(CompletedLog)
+        .join(Character)
+        .where(
+            and_(
+                CompletedLog.id == log_id,
+                Character.user_id == current_user.id,
+            )
+        )
+    )
+    result = db.exec(stmt)
+    db_log = result.first()
+    if not db_log:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Completed log not found",
+        )
+
+    # キャラクターの取得
+    character = db.exec(select(Character).where(Character.id == db_log.creator_id)).first()
+
+    # 浄化サービスの実行
+    purification_service = ContaminationPurificationService(db)
+
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found",
+        )
+        
+    try:
+        purification_result = await purification_service.purify_completed_log(
+            log_id=log_id, character=character, purification_items=purification_items
+        )
+
+        return {
+            "original_contamination": purification_result.original_contamination,
+            "purified_contamination": purification_result.purified_contamination,
+            "purification_rate": purification_result.purification_rate,
+            "sp_cost": purification_result.sp_cost,
+            "items_consumed": purification_result.items_consumed,
+            "new_traits": purification_result.new_traits,
+            "special_effects": purification_result.special_effects,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/fragments/create-purification-item")
+async def create_purification_item_from_fragments(
+    *,
+    db: Session = Depends(get_session),
+    fragment_ids: list[str],
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    フラグメントから浄化アイテムを作成
+
+    ポジティブなフラグメントを組み合わせて浄化アイテムを生成
+    """
+    if len(fragment_ids) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least 3 fragments are required to create a purification item",
+        )
+
+    # フラグメントの取得と所有権確認
+    fragments = []
+    for frag_id in fragment_ids:
+        stmt = (
+            select(LogFragment)
+            .join(Character)
+            .where(and_(LogFragment.id == frag_id, Character.user_id == current_user.id))
+        )
+        fragment = db.exec(stmt).first()
+        if not fragment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Fragment {frag_id} not found or not owned by user"
+            )
+        fragments.append(fragment)
+
+    # キャラクターの取得
+    character = db.exec(select(Character).where(Character.id == fragments[0].character_id)).first()
+
+    # 浄化アイテムの作成
+    purification_service = ContaminationPurificationService(db)
+    
+    if not character:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Character not found",
+        )
+        
+    item = await purification_service.create_purification_item(character=character, fragments=fragments)
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough positive fragments to create a purification item",
+        )
+
+    return {"item_name": item.name, "description": item.description, "rarity": item.rarity, "effects": item.effects}
