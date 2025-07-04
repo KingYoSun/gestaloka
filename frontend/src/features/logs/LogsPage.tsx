@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useCharacters } from '@/hooks/useCharacters'
 import { LogFragmentList } from './components/LogFragmentList'
-import { LogCompilationEditor } from './components/LogCompilationEditor'
+import { AdvancedLogCompilationEditor } from './components/AdvancedLogCompilationEditor'
 import { CompletedLogList } from './components/CompletedLogList'
+import { CreatePurificationItemDialog } from './components/CreatePurificationItemDialog'
 import { useLogFragments } from './hooks/useLogFragments'
 import {
   useCreateCompletedLog,
@@ -11,7 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { BookOpen, Sparkles, User, ScrollText, Compass } from 'lucide-react'
+import { BookOpen, Sparkles, User, ScrollText, Compass, Shield } from 'lucide-react'
 import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
 import { useToast } from '@/hooks/use-toast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
@@ -20,6 +21,7 @@ export function LogsPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [selectedFragmentIds, setSelectedFragmentIds] = useState<string[]>([])
   const [showCompilationEditor, setShowCompilationEditor] = useState(false)
+  const [showPurificationItemDialog, setShowPurificationItemDialog] = useState(false)
   const { data: characters = [], isLoading: isLoadingCharacters } =
     useCharacters()
   const { data: fragments = [], isLoading: isLoadingFragments } =
@@ -105,7 +107,7 @@ export function LogsPage() {
           </p>
         </div>
 
-        <LogCompilationEditor
+        <AdvancedLogCompilationEditor
           fragments={selectedFragments}
           onCompile={handleCompile}
           onCancel={() => {
@@ -193,15 +195,27 @@ export function LogsPage() {
                 <h2 className="text-2xl font-semibold">
                   {selectedCharacter?.name} のログフラグメント
                 </h2>
-                {selectedFragmentIds.length > 0 && (
-                  <Button
-                    onClick={() => setShowCompilationEditor(true)}
-                    className="gap-2"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    ログを編纂する ({selectedFragmentIds.length})
-                  </Button>
-                )}
+                <div className="flex gap-2">
+                  {fragments.some(f => f.emotionalValence === 'positive') && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowPurificationItemDialog(true)}
+                      className="gap-2"
+                    >
+                      <Shield className="h-4 w-4" />
+                      浄化アイテム作成
+                    </Button>
+                  )}
+                  {selectedFragmentIds.length > 0 && (
+                    <Button
+                      onClick={() => setShowCompilationEditor(true)}
+                      className="gap-2"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      ログを編纂する ({selectedFragmentIds.length})
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <Card>
@@ -240,6 +254,14 @@ export function LogsPage() {
           <DispatchList />
         </TabsContent>
       </Tabs>
+
+      {/* 浄化アイテム作成ダイアログ */}
+      {showPurificationItemDialog && (
+        <CreatePurificationItemDialog
+          fragments={fragments}
+          onClose={() => setShowPurificationItemDialog(false)}
+        />
+      )}
     </div>
   )
 }

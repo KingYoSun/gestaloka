@@ -1,7 +1,21 @@
 // ログシステムの型定義（バックエンドのPydanticモデルと一致）
 
 // 感情価
-export type EmotionalValence = 'positive' | 'negative' | 'neutral'
+export type EmotionalValence = 'positive' | 'negative' | 'neutral' | 'mixed'
+
+// 記憶タイプ
+export type MemoryType =
+  | 'COURAGE'
+  | 'FRIENDSHIP'
+  | 'WISDOM'
+  | 'SACRIFICE'
+  | 'VICTORY'
+  | 'TRUTH'
+  | 'BETRAYAL'
+  | 'LOVE'
+  | 'FEAR'
+  | 'HOPE'
+  | 'MYSTERY'
 
 // ログフラグメントのレアリティ
 export type LogFragmentRarity =
@@ -10,6 +24,8 @@ export type LogFragmentRarity =
   | 'rare'
   | 'epic'
   | 'legendary'
+  | 'unique'
+  | 'architect'
 
 // 完成ログのステータス
 export type CompletedLogStatus =
@@ -30,6 +46,7 @@ export interface LogFragment {
   emotionalValence: EmotionalValence
   rarity: LogFragmentRarity
   importanceScore: number
+  memoryType?: MemoryType
   contextData: Record<string, unknown>
   createdAt: string
 }
@@ -94,4 +111,84 @@ export interface LogCompilationPreview {
   extractedSkills: string[]
   extractedPersonalityTraits: string[]
   warningMessages?: string[]
+}
+
+// コンボボーナスタイプ
+export type CompilationBonusType =
+  | 'SP_COST_REDUCTION'
+  | 'POWER_BOOST'
+  | 'SPECIAL_TITLE'
+  | 'PURIFICATION'
+  | 'RARITY_UPGRADE'
+  | 'MEMORY_RESONANCE'
+
+// コンボボーナス
+export interface CompilationBonus {
+  type: CompilationBonusType
+  description: string
+  value?: number
+  title?: string
+}
+
+// 編纂プレビューリクエスト
+export interface CompilationPreviewRequest {
+  core_fragment_id: string
+  sub_fragment_ids: string[]
+}
+
+// 編纂プレビューレスポンス
+export interface CompilationPreviewResponse {
+  base_sp_cost: number
+  final_sp_cost: number
+  contamination_level: number
+  memory_types: MemoryType[]
+  keyword_combinations: string[]
+  bonuses: CompilationBonus[]
+  special_titles: string[]
+  warnings: string[]
+}
+
+// 浄化アイテムタイプ
+export type PurificationItemType =
+  | 'HOLY_WATER'
+  | 'LIGHT_CRYSTAL'
+  | 'PURIFICATION_TOME'
+  | 'ANGEL_TEARS'
+  | 'WORLD_TREE_LEAF'
+
+// 浄化アイテム
+export interface PurificationItem {
+  id: string
+  character_id: string
+  item_type: PurificationItemType
+  purification_power: number
+  created_at: string
+  used_at?: string
+}
+
+// 浄化リクエスト
+export interface PurifyLogRequest {
+  purification_item_id: string
+}
+
+// 浄化レスポンス
+export interface PurifyLogResponse {
+  log: CompletedLog
+  old_contamination: number
+  new_contamination: number
+  purification_amount: number
+  new_traits: string[]
+  special_effects: string[]
+  special_title?: string
+}
+
+// 浄化アイテム作成リクエスト
+export interface CreatePurificationItemRequest {
+  fragment_id: string
+}
+
+// 浄化アイテム作成レスポンス
+export interface CreatePurificationItemResponse {
+  item: PurificationItem
+  consumed_fragment_id: string
 }

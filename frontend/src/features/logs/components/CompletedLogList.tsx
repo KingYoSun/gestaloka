@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DispatchForm } from '@/features/dispatch/components/DispatchForm'
-import { BookOpen, Sparkles, Send, User, AlertTriangle } from 'lucide-react'
+import { CompletedLogDetail } from './CompletedLogDetail'
+import { BookOpen, Sparkles, Send, User, AlertTriangle, Eye, Shield } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -39,6 +40,7 @@ export function CompletedLogList({
 }: CompletedLogListProps) {
   const [selectedLog, setSelectedLog] = useState<CompletedLogRead | null>(null)
   const [showDispatchForm, setShowDispatchForm] = useState(false)
+  const [showDetailView, setShowDetailView] = useState(false)
 
   if (isLoading) {
     return (
@@ -139,20 +141,50 @@ export function CompletedLogList({
                       locale: ja,
                     })}
                   </span>
-                  {isDispatchable && (
+                  <div className="flex gap-2">
                     <Button
                       size="sm"
+                      variant="outline"
                       className="gap-2"
                       onClick={e => {
                         e.stopPropagation()
                         setSelectedLog(log)
-                        setShowDispatchForm(true)
+                        setShowDetailView(true)
                       }}
                     >
-                      <Send className="h-4 w-4" />
-                      派遣する
+                      <Eye className="h-4 w-4" />
+                      詳細
                     </Button>
-                  )}
+                    {log.contaminationLevel > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setSelectedLog(log)
+                          setShowDetailView(true)
+                        }}
+                      >
+                        <Shield className="h-4 w-4" />
+                        浄化
+                      </Button>
+                    )}
+                    {isDispatchable && (
+                      <Button
+                        size="sm"
+                        className="gap-2"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setSelectedLog(log)
+                          setShowDispatchForm(true)
+                        }}
+                      >
+                        <Send className="h-4 w-4" />
+                        派遣
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -171,6 +203,25 @@ export function CompletedLogList({
             }
           }}
         />
+      )}
+
+      {selectedLog && showDetailView && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
+          <div className="fixed inset-4 flex items-center justify-center">
+            <CompletedLogDetail
+              log={selectedLog}
+              onClose={() => {
+                setShowDetailView(false)
+                setSelectedLog(null)
+              }}
+              onPurify={() => {
+                // 浄化後の処理（必要に応じて実装）
+                setShowDetailView(false)
+                setSelectedLog(null)
+              }}
+            />
+          </div>
+        </div>
       )}
     </>
   )

@@ -17,6 +17,8 @@ const rarityColors: Record<LogFragmentRarity, string> = {
   rare: 'bg-blue-500',
   epic: 'bg-purple-500',
   legendary: 'bg-yellow-500',
+  unique: 'bg-orange-500',
+  architect: 'bg-indigo-500',
 }
 
 // 感情価に応じたアイコンと色設定
@@ -27,6 +29,7 @@ const emotionalValenceConfig: Record<
   positive: { label: '肯定的', color: 'text-green-600', icon: '😊' },
   negative: { label: '否定的', color: 'text-red-600', icon: '😔' },
   neutral: { label: '中立', color: 'text-gray-600', icon: '😐' },
+  mixed: { label: '混在', color: 'text-purple-600', icon: '🤔' },
 }
 
 export function LogFragmentCard({
