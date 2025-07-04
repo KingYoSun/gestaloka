@@ -70,7 +70,10 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
       }
 
       // メタデータからイベント処理
-      if (response.metadata?.events && Array.isArray(response.metadata.events)) {
+      if (
+        response.metadata?.events &&
+        Array.isArray(response.metadata.events)
+      ) {
         response.metadata.events.forEach((event: any) => {
           toast(event.title, {
             description: event.description,
@@ -111,9 +114,7 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
             {narrativeHistory.length === 0 && (
               <div className="text-center py-12">
                 <MapPin className="h-12 w-12 mx-auto mb-4 text-gray-600" />
-                <p className="text-gray-400">
-                  物語が始まろうとしています...
-                </p>
+                <p className="text-gray-400">物語が始まろうとしています...</p>
               </div>
             )}
           </div>

@@ -488,7 +488,7 @@ class TheWorldAI(BaseAgent):
     ) -> None:
         """
         ストーリーからの影響を世界の状態に適用
-        
+
         Args:
             story_id: ストーリーID
             impact_data: 影響データ
@@ -496,39 +496,46 @@ class TheWorldAI(BaseAgent):
         """
         # 影響の種類に応じて世界の状態を更新
         if "peace_change" in impact_data:
-            self.world_state.peace_level = max(0.0, min(1.0,
-                self.world_state.peace_level + impact_data["peace_change"]))
-        
+            self.world_state.peace_level = max(
+                0.0, min(1.0, self.world_state.peace_level + impact_data["peace_change"])
+            )
+
         if "corruption_change" in impact_data:
-            self.world_state.corruption_level = max(0.0, min(1.0,
-                self.world_state.corruption_level + impact_data["corruption_change"]))
-        
+            self.world_state.corruption_level = max(
+                0.0, min(1.0, self.world_state.corruption_level + impact_data["corruption_change"])
+            )
+
         if "resource_change" in impact_data:
-            self.world_state.resource_abundance = max(0.0, min(1.0,
-                self.world_state.resource_abundance + impact_data["resource_change"]))
-        
+            self.world_state.resource_abundance = max(
+                0.0, min(1.0, self.world_state.resource_abundance + impact_data["resource_change"])
+            )
+
         if "magical_change" in impact_data:
-            self.world_state.magical_activity = max(0.0, min(1.0,
-                self.world_state.magical_activity + impact_data["magical_change"]))
-        
+            self.world_state.magical_activity = max(
+                0.0, min(1.0, self.world_state.magical_activity + impact_data["magical_change"])
+            )
+
         # 特定の勢力への影響
         if "faction_impact" in impact_data:
             for faction, tension_change in impact_data["faction_impact"].items():
                 if faction not in self.world_state.faction_tensions:
                     self.world_state.faction_tensions[faction] = 0.5
-                
-                self.world_state.faction_tensions[faction] = max(0.0, min(1.0,
-                    self.world_state.faction_tensions[faction] + tension_change))
-        
+
+                self.world_state.faction_tensions[faction] = max(
+                    0.0, min(1.0, self.world_state.faction_tensions[faction] + tension_change)
+                )
+
         # ストーリー影響履歴に記録
-        self.world_state.event_history.append({
-            "type": "story_impact",
-            "story_id": story_id,
-            "impact": impact_data,
-            "timestamp": datetime.now(UTC).isoformat(),
-            "location": context.location,
-        })
-        
+        self.world_state.event_history.append(
+            {
+                "type": "story_impact",
+                "story_id": story_id,
+                "impact": impact_data,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "location": context.location,
+            }
+        )
+
         self.logger.info(
             "Story impact applied",
             story_id=story_id,

@@ -175,9 +175,7 @@ class EncounterChoice(SQLModel, table=True):
     choice_reasoning: Optional[str] = Field(default=None, sa_column=Column(Text), description="選択の理由（AI推測）")
 
     # 結果と影響
-    immediate_consequence: Optional[str] = Field(
-        default=None, sa_column=Column(Text), description="即座の結果"
-    )
+    immediate_consequence: Optional[str] = Field(default=None, sa_column=Column(Text), description="即座の結果")
     long_term_impact: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column(JSON),

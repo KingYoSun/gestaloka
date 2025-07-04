@@ -3,7 +3,11 @@
  */
 
 import { apiClient } from './client'
-import { GameActionRequest, ActionChoice, ActionExecuteResponse } from './generated'
+import {
+  GameActionRequest,
+  ActionChoice,
+  ActionExecuteResponse,
+} from './generated'
 
 export const narrativeApi = {
   /**
@@ -23,6 +27,8 @@ export const narrativeApi = {
    * 利用可能な行動選択肢を取得
    */
   async getAvailableActions(characterId: string): Promise<ActionChoice[]> {
-    return await apiClient.get<ActionChoice[]>(`/narrative/${characterId}/actions`)
+    return await apiClient.get<ActionChoice[]>(
+      `/narrative/${characterId}/actions`
+    )
   },
 }

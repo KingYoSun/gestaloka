@@ -39,12 +39,13 @@ class TestSPPurchaseService:
         try:
             # テストユーザー作成
             import uuid
+
             unique_id = str(uuid.uuid4())[:8]
             test_user = User(
                 id=f"test-user-{unique_id}",
                 username=f"testuser_{unique_id}",
                 email=f"test_{unique_id}@example.com",
-                hashed_password="dummy_hash"
+                hashed_password="dummy_hash",
             )
             session.add(test_user)
             session.commit()
@@ -74,12 +75,13 @@ class TestSPPurchaseService:
         with pytest.raises(ValueError) as exc:
             # テストユーザー作成
             import uuid
+
             unique_id = str(uuid.uuid4())[:8]
             test_user = User(
                 id=f"test-user-{unique_id}",
                 username=f"testuser_{unique_id}",
                 email=f"test_{unique_id}@example.com",
-                hashed_password="dummy_hash"
+                hashed_password="dummy_hash",
             )
             session.add(test_user)
             session.commit()
@@ -110,12 +112,13 @@ class TestSPPurchaseService:
         try:
             # テストユーザー作成
             import uuid
+
             unique_id = str(uuid.uuid4())[:8]
             test_user = User(
                 id=f"test-user-{unique_id}",
                 username=f"testuser_{unique_id}",
                 email=f"test_{unique_id}@example.com",
-                hashed_password="dummy_hash"
+                hashed_password="dummy_hash",
             )
             session.add(test_user)
             session.commit()
@@ -146,12 +149,13 @@ class TestSPPurchaseService:
         """ユーザー購入履歴取得のテスト"""
         # テストユーザー作成
         import uuid
+
         unique_id = str(uuid.uuid4())[:8]
         test_user = User(
             id=f"test-user-{unique_id}",
             username=f"testuser_{unique_id}",
             email=f"test_{unique_id}@example.com",
-            hashed_password="dummy_hash"
+            hashed_password="dummy_hash",
         )
         session.add(test_user)
         session.commit()
@@ -188,12 +192,13 @@ class TestSPPurchaseService:
         """購入キャンセルのテスト"""
         # テストユーザー作成
         import uuid
+
         unique_id = str(uuid.uuid4())[:8]
         test_user = User(
             id=f"test-user-{unique_id}",
             username=f"testuser_{unique_id}",
             email=f"test_{unique_id}@example.com",
-            hashed_password="dummy_hash"
+            hashed_password="dummy_hash",
         )
         session.add(test_user)
         session.commit()
@@ -220,12 +225,13 @@ class TestSPPurchaseService:
         """完了済み購入のキャンセル失敗テスト"""
         # テストユーザー作成
         import uuid
+
         unique_id = str(uuid.uuid4())[:8]
         test_user = User(
             id=f"test-user-{unique_id}",
             username=f"testuser_{unique_id}",
             email=f"test_{unique_id}@example.com",
-            hashed_password="dummy_hash"
+            hashed_password="dummy_hash",
         )
         session.add(test_user)
         session.commit()
@@ -252,12 +258,13 @@ class TestSPPurchaseService:
         """購入統計取得のテスト"""
         # テストユーザー作成
         import uuid
+
         unique_id = str(uuid.uuid4())[:8]
         test_user = User(
             id=f"test-user-{unique_id}",
             username=f"testuser_{unique_id}",
             email=f"test_{unique_id}@example.com",
-            hashed_password="dummy_hash"
+            hashed_password="dummy_hash",
         )
         session.add(test_user)
         session.commit()

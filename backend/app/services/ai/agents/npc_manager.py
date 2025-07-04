@@ -326,26 +326,27 @@ class NPCManagerAgent(BaseAgent):
     ) -> dict[str, Any]:
         """
         遭遇ストーリーシステムとの統合処理
-        
+
         Args:
             context: エージェントコンテキスト
             encounter_type: 遭遇タイプ
             encounter_entity_id: 遭遇エンティティID
             db: データベースセッション
-            
+
         Returns:
             遭遇処理結果
         """
         from app.services.encounter_manager import EncounterManager
-        
+
         encounter_manager = EncounterManager(db)
-        
+
         # 現在のキャラクター情報を取得
         from app.models import Character
+
         character = db.get(Character, context.character_id)
         if not character:
             raise ValueError(f"Character {context.character_id} not found")
-        
+
         # 遭遇を処理
         result = await encounter_manager.process_encounter(
             character=character,
@@ -353,22 +354,17 @@ class NPCManagerAgent(BaseAgent):
             encounter_type=encounter_type,
             context=context,
         )
-        
+
         # NPCの情報を更新（遭遇タイプがNPCの場合）
         if encounter_type in [EncounterType.LOG_NPC, EncounterType.PERSISTENT_NPC]:
             npc = self.get_npc_by_id(encounter_entity_id)
             if npc:
                 # 関係性を更新
-                existing_relationship = next(
-                    (r for r in npc.relationships if r.target_id == character.id),
-                    None
-                )
-                
+                existing_relationship = next((r for r in npc.relationships if r.target_id == character.id), None)
+
                 if existing_relationship:
                     # 既存の関係性を更新
-                    existing_relationship.history.append(
-                        f"Encounter on {datetime.utcnow().isoformat()}"
-                    )
+                    existing_relationship.history.append(f"Encounter on {datetime.utcnow().isoformat()}")
                 else:
                     # 新しい関係性を追加
                     npc.relationships.append(
@@ -379,7 +375,7 @@ class NPCManagerAgent(BaseAgent):
                             history=[f"First encounter on {datetime.utcnow().isoformat()}"],
                         )
                     )
-        
+
         return result
 
     def _enhance_context_for_generation(self, context: PromptContext, request: NPCGenerationRequest) -> PromptContext:
@@ -674,7 +670,9 @@ class NPCManagerAgent(BaseAgent):
 
         return removed_count
 
-    async def _handle_log_npc_encounters(self, context: PromptContext, npc_encounters: list[dict], db: Optional[Session] = None) -> AgentResponse:
+    async def _handle_log_npc_encounters(
+        self, context: PromptContext, npc_encounters: list[dict], db: Optional[Session] = None
+    ) -> AgentResponse:
         """
         派遣ログNPCとの遭遇を処理
         Args:
@@ -726,16 +724,16 @@ class NPCManagerAgent(BaseAgent):
             encountered_npcs.append(log_npc)
 
             # ストーリーシステムとの統合（DBセッションがある場合）
-            if db and hasattr(context, 'character_id'):
+            if db and hasattr(context, "character_id"):
                 agent_context = AgentContext(
-                    session_id=context.session_id if hasattr(context, 'session_id') else None,
-                    character_id=context.character_id if hasattr(context, 'character_id') else None,
-                    character_name=context.character_name if hasattr(context, 'character_name') else None,
+                    session_id=context.session_id if hasattr(context, "session_id") else None,
+                    character_id=context.character_id if hasattr(context, "character_id") else None,
+                    character_name=context.character_name if hasattr(context, "character_name") else None,
                     location=context.location,
                     world_state=context.world_state,
                     recent_actions=context.recent_actions,
                 )
-                
+
                 story_result = await self.handle_encounter_story(
                     context=agent_context,
                     encounter_type=EncounterType.LOG_NPC,

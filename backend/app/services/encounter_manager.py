@@ -54,13 +54,9 @@ class EncounterManager:
             return await self._continue_story(existing_story, context)
         else:
             # 新しいストーリーを開始
-            return await self._start_new_story(
-                character, encounter_entity_id, encounter_type, context
-            )
+            return await self._start_new_story(character, encounter_entity_id, encounter_type, context)
 
-    def _get_existing_story(
-        self, character_id: str, encounter_entity_id: str
-    ) -> Optional[EncounterStory]:
+    def _get_existing_story(self, character_id: str, encounter_entity_id: str) -> Optional[EncounterStory]:
         """既存のストーリーを取得"""
         stmt = select(EncounterStory).where(
             EncounterStory.character_id == character_id,
@@ -92,24 +88,22 @@ class EncounterManager:
         )
 
         # 初回の遭遇イベントを生成
-        first_event = await self._generate_first_encounter(
-            character, story, context
-        )
+        first_event = await self._generate_first_encounter(character, story, context)
 
         # ストーリービートを追加
-        story.story_beats.append({
-            "chapter": 1,
-            "beat": "初めての出会い",
-            "description": first_event["description"],
-            "timestamp": datetime.utcnow().isoformat(),
-            "choices_presented": first_event.get("choices", []),
-        })
+        story.story_beats.append(
+            {
+                "chapter": 1,
+                "beat": "初めての出会い",
+                "description": first_event["description"],
+                "timestamp": datetime.utcnow().isoformat(),
+                "choices_presented": first_event.get("choices", []),
+            }
+        )
 
         # クエストが発生する場合
         if story_arc.get("generates_quest", False):
-            quest = await self._create_quest_from_encounter(
-                character, story, story_arc, context
-            )
+            quest = await self._create_quest_from_encounter(character, story, story_arc, context)
             if quest:
                 story.active_quest_ids.append(quest.id)
 
@@ -124,9 +118,7 @@ class EncounterManager:
             "quest_generated": len(story.active_quest_ids) > 0,
         }
 
-    async def _continue_story(
-        self, story: EncounterStory, context: AgentContext
-    ) -> dict[str, Any]:
+    async def _continue_story(self, story: EncounterStory, context: AgentContext) -> dict[str, Any]:
         """既存のストーリーを継続"""
 
         # 関係性の深化を判定
@@ -141,13 +133,15 @@ class EncounterManager:
         story.relationship_depth = min(1.0, story.relationship_depth + relationship_progression)
 
         # ストーリービートを追加
-        story.story_beats.append({
-            "chapter": story.current_chapter,
-            "beat": next_beat["beat_title"],
-            "description": next_beat["description"],
-            "timestamp": datetime.utcnow().isoformat(),
-            "relationship_change": relationship_progression,
-        })
+        story.story_beats.append(
+            {
+                "chapter": story.current_chapter,
+                "beat": next_beat["beat_title"],
+                "description": next_beat["description"],
+                "timestamp": datetime.utcnow().isoformat(),
+                "relationship_change": relationship_progression,
+            }
+        )
 
         # 共同クエストの可能性を判定
         if story.relationship_depth > 0.5 and not self._has_active_shared_quest(story):
@@ -198,11 +192,9 @@ class EncounterManager:
 
         # GM AIサービスで協議
         from app.models import Location
-        
-        location = self.db.exec(
-            select(Location).where(Location.name == context.location)
-        ).first()
-        
+
+        location = self.db.exec(select(Location).where(Location.name == context.location)).first()
+
         if location:
             ai_response = await self.gm_ai_service.generate_ai_response(
                 prompt,
@@ -211,9 +203,9 @@ class EncounterManager:
                 metadata={
                     "encounter_type": encounter_type.value,
                     "location": location.name,
-                }
+                },
             )
-            
+
             # レスポンスを解析
             council_result = self._parse_story_arc_response(ai_response)
         else:
@@ -222,7 +214,7 @@ class EncounterManager:
         # デフォルト値を設定
         arc_types = list(StoryArcType)
         selected_arc = council_result.get("arc_type", random.choice(arc_types))
-        
+
         return {
             "arc_type": selected_arc,
             "title": council_result.get("story_title", f"{selected_arc.value}の物語"),
@@ -233,9 +225,9 @@ class EncounterManager:
     def _parse_story_arc_response(self, ai_response: str) -> dict[str, Any]:
         """AIレスポンスからストーリーアーク情報を解析"""
         import json
-        
+
         result = {}
-        
+
         # StoryArcTypeのマッピング
         arc_type_map = {
             "連続クエスト": StoryArcType.QUEST_CHAIN,
@@ -247,7 +239,7 @@ class EncounterManager:
             "対立": StoryArcType.CONFLICT,
             "協力関係": StoryArcType.COLLABORATION,
         }
-        
+
         # テキストから情報を抽出
         lines = ai_response.strip().split("\n")
         for line in lines:
@@ -256,22 +248,23 @@ class EncounterManager:
                 if jp_name in line:
                     result["arc_type"] = arc_type
                     break
-            
+
             # タイトルの検出
             if "タイトル:" in line or "物語:" in line:
                 result["story_title"] = line.split(":", 1)[1].strip()
-            
+
             # 章数の検出
             if "章" in line and ("予定" in line or "全" in line):
                 import re
-                numbers = re.findall(r'\d+', line)
+
+                numbers = re.findall(r"\d+", line)
                 if numbers:
                     result["estimated_chapters"] = int(numbers[0])
-            
+
             # クエスト生成の検出
             if "クエスト" in line and ("発生" in line or "生成" in line):
                 result["generates_quest"] = True
-        
+
         return result
 
     async def _generate_first_encounter(
@@ -289,11 +282,9 @@ class EncounterManager:
         """
 
         from app.models import Location
-        
-        location = self.db.exec(
-            select(Location).where(Location.name == context.location)
-        ).first()
-        
+
+        location = self.db.exec(select(Location).where(Location.name == context.location)).first()
+
         if location:
             ai_response = await self.gm_ai_service.generate_ai_response(
                 prompt,
@@ -302,7 +293,7 @@ class EncounterManager:
                 metadata={
                     "story_id": story.id,
                     "encounter_type": story.encounter_type.value,
-                }
+                },
             )
             result = self._parse_encounter_event_response(ai_response)
         else:
@@ -310,11 +301,14 @@ class EncounterManager:
 
         return {
             "description": result.get("scene_description", "神秘的な存在との遭遇"),
-            "choices": result.get("player_choices", [
-                {"id": "approach", "text": "慎重に近づく"},
-                {"id": "greet", "text": "友好的に挨拶する"},
-                {"id": "observe", "text": "距離を置いて観察する"},
-            ]),
+            "choices": result.get(
+                "player_choices",
+                [
+                    {"id": "approach", "text": "慎重に近づく"},
+                    {"id": "greet", "text": "友好的に挨拶する"},
+                    {"id": "observe", "text": "距離を置いて観察する"},
+                ],
+            ),
             "atmosphere": result.get("atmosphere", "mysterious"),
         }
 
@@ -328,17 +322,15 @@ class EncounterManager:
         """遭遇からクエストを生成"""
 
         from app.models import Location
-        
-        location = self.db.exec(
-            select(Location).where(Location.name == context.location)
-        ).first()
-        
+
+        location = self.db.exec(select(Location).where(Location.name == context.location)).first()
+
         quest_prompt = f"""
             ストーリー「{story.title}」から発生するクエストを生成してください。
             ストーリーアーク: {story.story_arc_type}
             キャラクター: {character.name}
             """
-        
+
         if location:
             ai_response = await self.gm_ai_service.generate_ai_response(
                 quest_prompt,
@@ -347,7 +339,7 @@ class EncounterManager:
                 metadata={
                     "story_id": story.id,
                     "story_arc_type": story.story_arc_type.value,
-                }
+                },
             )
             quest_proposal = self._parse_quest_proposal_response(ai_response)
         else:
@@ -382,23 +374,21 @@ class EncounterManager:
             StoryArcType.RIVALRY: 0.8,
             StoryArcType.CONFLICT: 0.5,
         }
-        
+
         modifier = arc_modifiers.get(story.story_arc_type, 1.0)
-        
+
         # 最近の相互作用からの時間経過による減衰
         time_since_last = datetime.utcnow() - story.last_interaction_at
         if time_since_last > timedelta(days=7):
             modifier *= 0.5
-        
+
         return base_progression * modifier
 
-    async def _generate_next_beat(
-        self, story: EncounterStory, context: AgentContext
-    ) -> dict[str, Any]:
+    async def _generate_next_beat(self, story: EncounterStory, context: AgentContext) -> dict[str, Any]:
         """次のストーリービートを生成"""
 
         recent_beats = story.story_beats[-3:] if story.story_beats else []
-        
+
         prompt = f"""
         ストーリー「{story.title}」の次の展開を生成してください。
         
@@ -410,11 +400,9 @@ class EncounterManager:
         """
 
         from app.models import Location
-        
-        location = self.db.exec(
-            select(Location).where(Location.name == context.location)
-        ).first()
-        
+
+        location = self.db.exec(select(Location).where(Location.name == context.location)).first()
+
         if location:
             ai_response = await self.gm_ai_service.generate_ai_response(
                 prompt,
@@ -423,7 +411,7 @@ class EncounterManager:
                 metadata={
                     "story_id": story.id,
                     "chapter": story.current_chapter,
-                }
+                },
             )
             result = self._parse_story_beat_response(ai_response)
         else:
@@ -440,16 +428,11 @@ class EncounterManager:
         """アクティブな共同クエストがあるか確認"""
         if not story.active_quest_ids:
             return False
-            
-        stmt = select(SharedQuest).where(
-            SharedQuest.story_id == story.id,
-            SharedQuest.completed_at == None
-        )
+
+        stmt = select(SharedQuest).where(SharedQuest.story_id == story.id, SharedQuest.completed_at == None)
         return self.db.exec(stmt).first() is not None
 
-    async def _propose_shared_quest(
-        self, story: EncounterStory, context: AgentContext
-    ) -> Optional[dict[str, Any]]:
+    async def _propose_shared_quest(self, story: EncounterStory, context: AgentContext) -> Optional[dict[str, Any]]:
         """共同クエストを提案"""
 
         prompt = f"""
@@ -463,12 +446,10 @@ class EncounterManager:
         """
 
         from app.models import Character, Location
-        
+
         character = self.db.get(Character, story.character_id)
-        location = self.db.exec(
-            select(Location).where(Location.name == context.location)
-        ).first()
-        
+        location = self.db.exec(select(Location).where(Location.name == context.location)).first()
+
         if character and location:
             ai_response = await self.gm_ai_service.generate_ai_response(
                 prompt,
@@ -477,7 +458,7 @@ class EncounterManager:
                 metadata={
                     "story_id": story.id,
                     "relationship_depth": story.relationship_depth,
-                }
+                },
             )
             proposal = self._parse_shared_quest_proposal_response(ai_response)
         else:
@@ -565,12 +546,10 @@ class EncounterManager:
 
         # 選択の結果を生成
         from app.models import Character, Location
-        
+
         character = self.db.get(Character, story.character_id)
-        location = self.db.exec(
-            select(Location).where(Location.name == context.location)
-        ).first()
-        
+        location = self.db.exec(select(Location).where(Location.name == context.location)).first()
+
         choice_prompt = f"""
             プレイヤーが「{valid_choice['text']}」を選択しました。
             ストーリー: {story.title}
@@ -578,7 +557,7 @@ class EncounterManager:
             
             この選択の即座の結果と長期的な影響を生成してください。
             """
-        
+
         if character and location:
             ai_response = await self.gm_ai_service.generate_ai_response(
                 choice_prompt,
@@ -587,7 +566,7 @@ class EncounterManager:
                 metadata={
                     "story_id": story.id,
                     "choice_id": choice_id,
-                }
+                },
             )
             choice_result = self._parse_choice_consequence_response(ai_response)
         else:
@@ -609,10 +588,8 @@ class EncounterManager:
 
         # 関係性への影響を適用
         relationship_delta = choice_result.get("relationship_change", {})
-        story.trust_level = max(0.0, min(1.0, 
-            story.trust_level + relationship_delta.get("trust", 0)))
-        story.conflict_level = max(0.0, min(1.0,
-            story.conflict_level + relationship_delta.get("conflict", 0)))
+        story.trust_level = max(0.0, min(1.0, story.trust_level + relationship_delta.get("trust", 0)))
+        story.conflict_level = max(0.0, min(1.0, story.conflict_level + relationship_delta.get("conflict", 0)))
 
         self.db.add(encounter_choice)
         self.db.add(story)
@@ -627,39 +604,32 @@ class EncounterManager:
 
     def _parse_encounter_event_response(self, ai_response: str) -> dict[str, Any]:
         """遭遇イベントレスポンスを解析"""
-        result = {
-            "scene_description": ai_response,
-            "player_choices": [],
-            "atmosphere": "mysterious"
-        }
-        
+        result = {"scene_description": ai_response, "player_choices": [], "atmosphere": "mysterious"}
+
         # 選択肢を抽出
         lines = ai_response.strip().split("\n")
         choices = []
         for line in lines:
             if line.strip().startswith(("1.", "2.", "3.", "・")):
                 choice_text = line.strip().lstrip("1234567890.・ ")
-                choices.append({
-                    "id": f"choice_{len(choices)+1}",
-                    "text": choice_text
-                })
-        
+                choices.append({"id": f"choice_{len(choices)+1}", "text": choice_text})
+
         if choices:
             result["player_choices"] = choices
-        
+
         return result
 
     def _parse_quest_proposal_response(self, ai_response: str) -> dict[str, Any]:
         """クエスト提案レスポンスを解析"""
         result = {}
         lines = ai_response.strip().split("\n")
-        
+
         for line in lines:
             if "タイトル:" in line or "クエスト名:" in line:
                 result["quest_title"] = line.split(":", 1)[1].strip()
             elif "説明:" in line or "内容:" in line:
                 result["quest_description"] = line.split(":", 1)[1].strip()
-        
+
         return result
 
     def _parse_story_beat_response(self, ai_response: str) -> dict[str, Any]:
@@ -668,23 +638,23 @@ class EncounterManager:
             "beat_title": "次の展開",
             "description": ai_response,
             "emotional_tone": "neutral",
-            "introduces_choice": False
+            "introduces_choice": False,
         }
-        
+
         lines = ai_response.strip().split("\n")
         for line in lines:
             if "タイトル:" in line or "ビート:" in line:
                 result["beat_title"] = line.split(":", 1)[1].strip()
             elif "感情:" in line or "トーン:" in line:
                 result["emotional_tone"] = line.split(":", 1)[1].strip()
-        
+
         return result
 
     def _parse_shared_quest_proposal_response(self, ai_response: str) -> dict[str, Any]:
         """共同クエスト提案レスポンスを解析"""
         result = {}
         lines = ai_response.strip().split("\n")
-        
+
         for line in lines:
             if "タイトル:" in line or "クエスト名:" in line:
                 result["quest_title"] = line.split(":", 1)[1].strip()
@@ -698,7 +668,7 @@ class EncounterManager:
                     objectives.append(lines[i].strip().lstrip("-・* "))
                     i += 1
                 result["objectives"] = objectives
-        
+
         return result
 
     def _parse_choice_consequence_response(self, ai_response: str) -> dict[str, Any]:
@@ -707,9 +677,9 @@ class EncounterManager:
             "immediate_consequence": ai_response,
             "reasoning": "",
             "long_term_impact": {},
-            "relationship_change": {}
+            "relationship_change": {},
         }
-        
+
         lines = ai_response.strip().split("\n")
         for line in lines:
             if "理由:" in line or "判断:" in line:
@@ -726,5 +696,5 @@ class EncounterManager:
                     result["relationship_change"]["conflict"] = conflict_value
                 except ValueError:
                     pass
-        
+
         return result

@@ -69,8 +69,7 @@ async def perform_narrative_action(
         importance += 0.2  # 場所移動は重要
 
     if narrative_result.events and any(
-        event_name in [e.type for e in narrative_result.events]
-        for event_name in ["discovery", "encounter", "choice"]
+        event_name in [e.type for e in narrative_result.events] for event_name in ["discovery", "encounter", "choice"]
     ):
         importance += 0.3  # 特殊イベントは重要
 

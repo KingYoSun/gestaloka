@@ -19,7 +19,11 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { LogFragmentRarity, EmotionalValence, LogFragment } from '@/api/generated'
+import {
+  LogFragmentRarity,
+  EmotionalValence,
+  LogFragment,
+} from '@/api/generated'
 
 interface LogFragmentResponse {
   fragments: LogFragment[]
@@ -66,7 +70,7 @@ export function LogFragments() {
       if (selectedRarity !== 'all') params.append('rarity', selectedRarity)
       params.append('limit', pageSize.toString())
       params.append('offset', (currentPage * pageSize).toString())
-      
+
       return await apiClient.get<LogFragmentResponse>(
         `/api/v1/log-fragments/${characterId}/fragments?${params.toString()}`
       )
@@ -226,18 +230,20 @@ export function LogFragments() {
                     <Badge
                       variant="outline"
                       className={
-                        fragment.emotional_valence ? emotionalValenceColors[fragment.emotional_valence] : 'text-gray-600'
+                        fragment.emotional_valence
+                          ? emotionalValenceColors[fragment.emotional_valence]
+                          : 'text-gray-600'
                       }
                     >
-                      {fragment.emotional_valence ? getEmotionalValenceLabel(fragment.emotional_valence) : '未設定'}
+                      {fragment.emotional_valence
+                        ? getEmotionalValenceLabel(fragment.emotional_valence)
+                        : '未設定'}
                     </Badge>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-600 mb-3">
-                  {fragment.content}
-                </p>
+                <p className="text-sm text-gray-600 mb-3">{fragment.content}</p>
                 <div className="flex flex-wrap gap-1">
                   {fragment.keywords?.map((keyword: string, index: number) => (
                     <Badge key={index} variant="outline" className="text-xs">

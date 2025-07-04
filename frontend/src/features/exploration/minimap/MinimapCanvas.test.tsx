@@ -175,7 +175,7 @@ describe('MinimapCanvas', () => {
       // 場所の描画（円）
       expect(mockContext.arc).toHaveBeenCalled()
       expect(mockContext.fill).toHaveBeenCalled()
-      
+
       // ラベルの描画
       expect(mockContext.fillText).toHaveBeenCalledWith(
         'テスト都市',
