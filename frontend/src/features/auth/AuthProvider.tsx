@@ -38,6 +38,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = async (username: string, password: string) => {
     try {
       const response = await apiClient.login({ username, password })
+      // トークンは apiClient.login 内で自動的に設定される
       setUser(response.user)
     } catch (error) {
       console.error('Login failed:', error)

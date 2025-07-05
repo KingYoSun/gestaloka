@@ -28,7 +28,7 @@ import { Progress } from '@/components/ui/progress'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 
-export const Route = createFileRoute('/sp/')({
+export const Route = createFileRoute('/_authenticated/sp/')({
   component: SPPage,
 })
 

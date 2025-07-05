@@ -6,6 +6,7 @@ import { LoadingButton } from '@/components/ui/LoadingButton'
 import { FormError } from '@/components/ui/FormError'
 import { containerStyles } from '@/lib/styles'
 import { useFormError } from '@/hooks/useFormError'
+import { Route } from '@/routes/login'
 
 export function LoginPage() {
   const [username, setUsername] = useState('')
@@ -14,13 +15,16 @@ export function LoginPage() {
 
   const { login } = useAuth()
   const navigate = useNavigate()
+  const search = Route.useSearch()
+  const redirect = search.redirect || '/dashboard'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     await handleAsync(async () => {
       await login(username, password)
-      navigate({ to: '/dashboard' })
+      // リダイレクト先またはダッシュボードへ遷移
+      navigate({ to: redirect })
     }, 'ログインに失敗しました。ユーザー名とパスワードを確認してください。')
   }
 

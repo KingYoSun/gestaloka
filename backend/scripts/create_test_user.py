@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 """テストユーザーとキャラクターを作成するスクリプト"""
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlmodel import Session, select
-from app.core.database import engine
-from app.models.user import User
-from app.models.character import Character
-from app.utils.security import get_password_hash
-from datetime import datetime
 import uuid
+from datetime import datetime
+
+from sqlmodel import Session, select
+
+from app.core.database import engine
+from app.models.character import Character
+from app.models.user import User
+from app.utils.security import get_password_hash
+
 
 def create_test_data():
     with Session(engine) as db:
         # テストユーザーの確認/作成
         existing_user = db.exec(select(User).where(User.email == "test@example.com")).first()
-        
+
         if not existing_user:
             test_user = User(
                 id=str(uuid.uuid4()),
@@ -34,10 +38,10 @@ def create_test_data():
         else:
             test_user = existing_user
             print(f"Test user already exists: {test_user.email}")
-        
+
         # キャラクターの確認/作成
         existing_char = db.exec(select(Character).where(Character.user_id == test_user.id)).first()
-        
+
         if not existing_char:
             test_character = Character(
                 id=str(uuid.uuid4()),

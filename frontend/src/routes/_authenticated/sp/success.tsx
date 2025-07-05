@@ -12,7 +12,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { useSPPurchaseDetail } from '@/hooks/use-sp-purchase'
 import { useQueryClient } from '@tanstack/react-query'
 
-export const Route = createFileRoute('/sp/success')({
+export const Route = createFileRoute('/_authenticated/sp/success')({
   component: SPPurchaseSuccess,
 })
 

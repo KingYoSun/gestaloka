@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Link } from '@tanstack/react-router'
 
 interface SPDisplayProps {
   className?: string
@@ -88,12 +89,13 @@ export const SPDisplay = memo(function SPDisplay({
 
   if (variant === 'compact') {
     return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <motion.div
+      <Link to="/sp" className="no-underline">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <motion.div
               className={cn(
-                'flex items-center gap-1.5 cursor-default relative',
+                'flex items-center gap-1.5 cursor-pointer relative hover:opacity-80 transition-opacity',
                 isLowBalance && 'text-orange-500',
                 className
               )}
@@ -156,10 +158,14 @@ export const SPDisplay = memo(function SPDisplay({
                   {subscriptionInfo.label} 加入中
                 </p>
               )}
+              <p className="text-xs text-muted-foreground mt-1">
+                クリックして詳細を見る
+              </p>
             </div>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
+    </Link>
     )
   }
 

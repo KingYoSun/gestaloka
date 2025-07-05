@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { XCircle } from 'lucide-react'
 
-export const Route = createFileRoute('/sp/cancel')({
+export const Route = createFileRoute('/_authenticated/sp/cancel')({
   component: SPPurchaseCancel,
 })
 

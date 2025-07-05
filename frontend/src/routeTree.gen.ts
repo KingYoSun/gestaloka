@@ -11,58 +11,37 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TitlesRouteImport } from './routes/titles'
-import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
-import { Route as QuestsRouteImport } from './routes/quests'
-import { Route as LogsRouteImport } from './routes/logs'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as LogFragmentsRouteImport } from './routes/log-fragments'
-import { Route as ExplorationRouteImport } from './routes/exploration'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as CharactersRouteImport } from './routes/characters'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as AdminRouteImport } from './routes/_admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SpIndexRouteImport } from './routes/sp/index'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as SpSuccessRouteImport } from './routes/sp/success'
-import { Route as SpCancelRouteImport } from './routes/sp/cancel'
-import { Route as GameStartRouteImport } from './routes/game/start'
-import { Route as GameSessionIdRouteImport } from './routes/game/$sessionId'
-import { Route as CharacterCreateRouteImport } from './routes/character.create'
 import { Route as CharacterIdRouteImport } from './routes/character.$id'
-import { Route as AdminSpRouteImport } from './routes/admin/sp'
-import { Route as AdminPerformanceRouteImport } from './routes/admin/performance'
+import { Route as AuthenticatedTitlesRouteImport } from './routes/_authenticated/titles'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedQuestsRouteImport } from './routes/_authenticated/quests'
+import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
+import { Route as AuthenticatedLogFragmentsRouteImport } from './routes/_authenticated/log-fragments'
+import { Route as AuthenticatedExplorationRouteImport } from './routes/_authenticated/exploration'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCharactersRouteImport } from './routes/_authenticated/characters'
+import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
+import { Route as AuthenticatedSpIndexRouteImport } from './routes/_authenticated/sp/index'
+import { Route as AuthenticatedSpSuccessRouteImport } from './routes/_authenticated/sp/success'
+import { Route as AuthenticatedSpCancelRouteImport } from './routes/_authenticated/sp/cancel'
+import { Route as AuthenticatedGameStartRouteImport } from './routes/_authenticated/game/start'
+import { Route as AuthenticatedGameSessionIdRouteImport } from './routes/_authenticated/game/$sessionId'
+import { Route as AuthenticatedCharacterCreateRouteImport } from './routes/_authenticated/character.create'
+import { Route as AdminAdminSpRouteImport } from './routes/_admin/admin.sp'
+import { Route as AdminAdminPerformanceRouteImport } from './routes/_admin/admin.performance'
 
-const MemoryLazyRouteImport = createFileRoute('/memory')()
+const AuthenticatedMemoryLazyRouteImport = createFileRoute(
+  '/_authenticated/memory',
+)()
 
-const MemoryLazyRoute = MemoryLazyRouteImport.update({
-  id: '/memory',
-  path: '/memory',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/memory.lazy').then((d) => d.Route))
-const TitlesRoute = TitlesRouteImport.update({
-  id: '/titles',
-  path: '/titles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const QuestsRoute = QuestsRouteImport.update({
-  id: '/quests',
-  path: '/quests',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LogsRoute = LogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -70,24 +49,12 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LogFragmentsRoute = LogFragmentsRouteImport.update({
-  id: '/log-fragments',
-  path: '/log-fragments',
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ExplorationRoute = ExplorationRouteImport.update({
-  id: '/exploration',
-  path: '/exploration',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CharactersRoute = CharactersRouteImport.update({
-  id: '/characters',
-  path: '/characters',
+const AdminRoute = AdminRouteImport.update({
+  id: '/_admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -95,272 +62,276 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SpIndexRoute = SpIndexRouteImport.update({
-  id: '/sp/',
-  path: '/sp/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/admin/',
-  path: '/admin/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SpSuccessRoute = SpSuccessRouteImport.update({
-  id: '/sp/success',
-  path: '/sp/success',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SpCancelRoute = SpCancelRouteImport.update({
-  id: '/sp/cancel',
-  path: '/sp/cancel',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GameStartRoute = GameStartRouteImport.update({
-  id: '/game/start',
-  path: '/game/start',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GameSessionIdRoute = GameSessionIdRouteImport.update({
-  id: '/game/$sessionId',
-  path: '/game/$sessionId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CharacterCreateRoute = CharacterCreateRouteImport.update({
-  id: '/character/create',
-  path: '/character/create',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const AuthenticatedMemoryLazyRoute = AuthenticatedMemoryLazyRouteImport.update({
+  id: '/memory',
+  path: '/memory',
+  getParentRoute: () => AuthenticatedRoute,
+} as any).lazy(() =>
+  import('./routes/_authenticated/memory.lazy').then((d) => d.Route),
+)
 const CharacterIdRoute = CharacterIdRouteImport.update({
   id: '/character/$id',
   path: '/character/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminSpRoute = AdminSpRouteImport.update({
-  id: '/admin/sp',
-  path: '/admin/sp',
-  getParentRoute: () => rootRouteImport,
+const AuthenticatedTitlesRoute = AuthenticatedTitlesRouteImport.update({
+  id: '/titles',
+  path: '/titles',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AdminPerformanceRoute = AdminPerformanceRouteImport.update({
-  id: '/admin/performance',
-  path: '/admin/performance',
-  getParentRoute: () => rootRouteImport,
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedQuestsRoute = AuthenticatedQuestsRouteImport.update({
+  id: '/quests',
+  path: '/quests',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedLogsRoute = AuthenticatedLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedLogFragmentsRoute =
+  AuthenticatedLogFragmentsRouteImport.update({
+    id: '/log-fragments',
+    path: '/log-fragments',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedExplorationRoute =
+  AuthenticatedExplorationRouteImport.update({
+    id: '/exploration',
+    path: '/exploration',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedCharactersRoute = AuthenticatedCharactersRouteImport.update({
+  id: '/characters',
+  path: '/characters',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AdminAdminRoute = AdminAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AuthenticatedSpIndexRoute = AuthenticatedSpIndexRouteImport.update({
+  id: '/sp/',
+  path: '/sp/',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSpSuccessRoute = AuthenticatedSpSuccessRouteImport.update({
+  id: '/sp/success',
+  path: '/sp/success',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSpCancelRoute = AuthenticatedSpCancelRouteImport.update({
+  id: '/sp/cancel',
+  path: '/sp/cancel',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedGameStartRoute = AuthenticatedGameStartRouteImport.update({
+  id: '/game/start',
+  path: '/game/start',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedGameSessionIdRoute =
+  AuthenticatedGameSessionIdRouteImport.update({
+    id: '/game/$sessionId',
+    path: '/game/$sessionId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedCharacterCreateRoute =
+  AuthenticatedCharacterCreateRouteImport.update({
+    id: '/character/create',
+    path: '/character/create',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AdminAdminSpRoute = AdminAdminSpRouteImport.update({
+  id: '/sp',
+  path: '/sp',
+  getParentRoute: () => AdminAdminRoute,
+} as any)
+const AdminAdminPerformanceRoute = AdminAdminPerformanceRouteImport.update({
+  id: '/performance',
+  path: '/performance',
+  getParentRoute: () => AdminAdminRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/characters': typeof CharactersRoute
-  '/dashboard': typeof DashboardRoute
-  '/exploration': typeof ExplorationRoute
-  '/log-fragments': typeof LogFragmentsRoute
   '/login': typeof LoginRoute
-  '/logs': typeof LogsRoute
-  '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
-  '/settings': typeof SettingsRoute
-  '/titles': typeof TitlesRoute
-  '/memory': typeof MemoryLazyRoute
-  '/admin/performance': typeof AdminPerformanceRoute
-  '/admin/sp': typeof AdminSpRoute
+  '/admin': typeof AdminAdminRouteWithChildren
+  '/characters': typeof AuthenticatedCharactersRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/exploration': typeof AuthenticatedExplorationRoute
+  '/log-fragments': typeof AuthenticatedLogFragmentsRoute
+  '/logs': typeof AuthenticatedLogsRoute
+  '/quests': typeof AuthenticatedQuestsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/titles': typeof AuthenticatedTitlesRoute
   '/character/$id': typeof CharacterIdRoute
-  '/character/create': typeof CharacterCreateRoute
-  '/game/$sessionId': typeof GameSessionIdRoute
-  '/game/start': typeof GameStartRoute
-  '/sp/cancel': typeof SpCancelRoute
-  '/sp/success': typeof SpSuccessRoute
-  '/admin': typeof AdminIndexRoute
-  '/sp': typeof SpIndexRoute
+  '/memory': typeof AuthenticatedMemoryLazyRoute
+  '/admin/performance': typeof AdminAdminPerformanceRoute
+  '/admin/sp': typeof AdminAdminSpRoute
+  '/character/create': typeof AuthenticatedCharacterCreateRoute
+  '/game/$sessionId': typeof AuthenticatedGameSessionIdRoute
+  '/game/start': typeof AuthenticatedGameStartRoute
+  '/sp/cancel': typeof AuthenticatedSpCancelRoute
+  '/sp/success': typeof AuthenticatedSpSuccessRoute
+  '/sp': typeof AuthenticatedSpIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/characters': typeof CharactersRoute
-  '/dashboard': typeof DashboardRoute
-  '/exploration': typeof ExplorationRoute
-  '/log-fragments': typeof LogFragmentsRoute
   '/login': typeof LoginRoute
-  '/logs': typeof LogsRoute
-  '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
-  '/settings': typeof SettingsRoute
-  '/titles': typeof TitlesRoute
-  '/memory': typeof MemoryLazyRoute
-  '/admin/performance': typeof AdminPerformanceRoute
-  '/admin/sp': typeof AdminSpRoute
+  '/admin': typeof AdminAdminRouteWithChildren
+  '/characters': typeof AuthenticatedCharactersRoute
+  '/dashboard': typeof AuthenticatedDashboardRoute
+  '/exploration': typeof AuthenticatedExplorationRoute
+  '/log-fragments': typeof AuthenticatedLogFragmentsRoute
+  '/logs': typeof AuthenticatedLogsRoute
+  '/quests': typeof AuthenticatedQuestsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
+  '/titles': typeof AuthenticatedTitlesRoute
   '/character/$id': typeof CharacterIdRoute
-  '/character/create': typeof CharacterCreateRoute
-  '/game/$sessionId': typeof GameSessionIdRoute
-  '/game/start': typeof GameStartRoute
-  '/sp/cancel': typeof SpCancelRoute
-  '/sp/success': typeof SpSuccessRoute
-  '/admin': typeof AdminIndexRoute
-  '/sp': typeof SpIndexRoute
+  '/memory': typeof AuthenticatedMemoryLazyRoute
+  '/admin/performance': typeof AdminAdminPerformanceRoute
+  '/admin/sp': typeof AdminAdminSpRoute
+  '/character/create': typeof AuthenticatedCharacterCreateRoute
+  '/game/$sessionId': typeof AuthenticatedGameSessionIdRoute
+  '/game/start': typeof AuthenticatedGameStartRoute
+  '/sp/cancel': typeof AuthenticatedSpCancelRoute
+  '/sp/success': typeof AuthenticatedSpSuccessRoute
+  '/sp': typeof AuthenticatedSpIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/characters': typeof CharactersRoute
-  '/dashboard': typeof DashboardRoute
-  '/exploration': typeof ExplorationRoute
-  '/log-fragments': typeof LogFragmentsRoute
+  '/_admin': typeof AdminRouteWithChildren
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
-  '/logs': typeof LogsRoute
-  '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
-  '/settings': typeof SettingsRoute
-  '/titles': typeof TitlesRoute
-  '/memory': typeof MemoryLazyRoute
-  '/admin/performance': typeof AdminPerformanceRoute
-  '/admin/sp': typeof AdminSpRoute
+  '/_admin/admin': typeof AdminAdminRouteWithChildren
+  '/_authenticated/characters': typeof AuthenticatedCharactersRoute
+  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/exploration': typeof AuthenticatedExplorationRoute
+  '/_authenticated/log-fragments': typeof AuthenticatedLogFragmentsRoute
+  '/_authenticated/logs': typeof AuthenticatedLogsRoute
+  '/_authenticated/quests': typeof AuthenticatedQuestsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/titles': typeof AuthenticatedTitlesRoute
   '/character/$id': typeof CharacterIdRoute
-  '/character/create': typeof CharacterCreateRoute
-  '/game/$sessionId': typeof GameSessionIdRoute
-  '/game/start': typeof GameStartRoute
-  '/sp/cancel': typeof SpCancelRoute
-  '/sp/success': typeof SpSuccessRoute
-  '/admin/': typeof AdminIndexRoute
-  '/sp/': typeof SpIndexRoute
+  '/_authenticated/memory': typeof AuthenticatedMemoryLazyRoute
+  '/_admin/admin/performance': typeof AdminAdminPerformanceRoute
+  '/_admin/admin/sp': typeof AdminAdminSpRoute
+  '/_authenticated/character/create': typeof AuthenticatedCharacterCreateRoute
+  '/_authenticated/game/$sessionId': typeof AuthenticatedGameSessionIdRoute
+  '/_authenticated/game/start': typeof AuthenticatedGameStartRoute
+  '/_authenticated/sp/cancel': typeof AuthenticatedSpCancelRoute
+  '/_authenticated/sp/success': typeof AuthenticatedSpSuccessRoute
+  '/_authenticated/sp/': typeof AuthenticatedSpIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/login'
+    | '/register'
+    | '/admin'
     | '/characters'
     | '/dashboard'
     | '/exploration'
     | '/log-fragments'
-    | '/login'
     | '/logs'
     | '/quests'
-    | '/register'
     | '/settings'
     | '/titles'
+    | '/character/$id'
     | '/memory'
     | '/admin/performance'
     | '/admin/sp'
-    | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
     | '/sp/cancel'
     | '/sp/success'
-    | '/admin'
     | '/sp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/login'
+    | '/register'
+    | '/admin'
     | '/characters'
     | '/dashboard'
     | '/exploration'
     | '/log-fragments'
-    | '/login'
     | '/logs'
     | '/quests'
-    | '/register'
     | '/settings'
     | '/titles'
+    | '/character/$id'
     | '/memory'
     | '/admin/performance'
     | '/admin/sp'
-    | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
     | '/sp/cancel'
     | '/sp/success'
-    | '/admin'
     | '/sp'
   id:
     | '__root__'
     | '/'
-    | '/characters'
-    | '/dashboard'
-    | '/exploration'
-    | '/log-fragments'
+    | '/_admin'
+    | '/_authenticated'
     | '/login'
-    | '/logs'
-    | '/quests'
     | '/register'
-    | '/settings'
-    | '/titles'
-    | '/memory'
-    | '/admin/performance'
-    | '/admin/sp'
+    | '/_admin/admin'
+    | '/_authenticated/characters'
+    | '/_authenticated/dashboard'
+    | '/_authenticated/exploration'
+    | '/_authenticated/log-fragments'
+    | '/_authenticated/logs'
+    | '/_authenticated/quests'
+    | '/_authenticated/settings'
+    | '/_authenticated/titles'
     | '/character/$id'
-    | '/character/create'
-    | '/game/$sessionId'
-    | '/game/start'
-    | '/sp/cancel'
-    | '/sp/success'
-    | '/admin/'
-    | '/sp/'
+    | '/_authenticated/memory'
+    | '/_admin/admin/performance'
+    | '/_admin/admin/sp'
+    | '/_authenticated/character/create'
+    | '/_authenticated/game/$sessionId'
+    | '/_authenticated/game/start'
+    | '/_authenticated/sp/cancel'
+    | '/_authenticated/sp/success'
+    | '/_authenticated/sp/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  CharactersRoute: typeof CharactersRoute
-  DashboardRoute: typeof DashboardRoute
-  ExplorationRoute: typeof ExplorationRoute
-  LogFragmentsRoute: typeof LogFragmentsRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
-  LogsRoute: typeof LogsRoute
-  QuestsRoute: typeof QuestsRoute
   RegisterRoute: typeof RegisterRoute
-  SettingsRoute: typeof SettingsRoute
-  TitlesRoute: typeof TitlesRoute
-  MemoryLazyRoute: typeof MemoryLazyRoute
-  AdminPerformanceRoute: typeof AdminPerformanceRoute
-  AdminSpRoute: typeof AdminSpRoute
   CharacterIdRoute: typeof CharacterIdRoute
-  CharacterCreateRoute: typeof CharacterCreateRoute
-  GameSessionIdRoute: typeof GameSessionIdRoute
-  GameStartRoute: typeof GameStartRoute
-  SpCancelRoute: typeof SpCancelRoute
-  SpSuccessRoute: typeof SpSuccessRoute
-  AdminIndexRoute: typeof AdminIndexRoute
-  SpIndexRoute: typeof SpIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/memory': {
-      id: '/memory'
-      path: '/memory'
-      fullPath: '/memory'
-      preLoaderRoute: typeof MemoryLazyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/titles': {
-      id: '/titles'
-      path: '/titles'
-      fullPath: '/titles'
-      preLoaderRoute: typeof TitlesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/register': {
       id: '/register'
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/quests': {
-      id: '/quests'
-      path: '/quests'
-      fullPath: '/quests'
-      preLoaderRoute: typeof QuestsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/logs': {
-      id: '/logs'
-      path: '/logs'
-      fullPath: '/logs'
-      preLoaderRoute: typeof LogsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -370,32 +341,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/log-fragments': {
-      id: '/log-fragments'
-      path: '/log-fragments'
-      fullPath: '/log-fragments'
-      preLoaderRoute: typeof LogFragmentsRouteImport
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/exploration': {
-      id: '/exploration'
-      path: '/exploration'
-      fullPath: '/exploration'
-      preLoaderRoute: typeof ExplorationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/characters': {
-      id: '/characters'
-      path: '/characters'
-      fullPath: '/characters'
-      preLoaderRoute: typeof CharactersRouteImport
+    '/_admin': {
+      id: '/_admin'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -405,54 +362,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sp/': {
-      id: '/sp/'
-      path: '/sp'
-      fullPath: '/sp'
-      preLoaderRoute: typeof SpIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/': {
-      id: '/admin/'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sp/success': {
-      id: '/sp/success'
-      path: '/sp/success'
-      fullPath: '/sp/success'
-      preLoaderRoute: typeof SpSuccessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sp/cancel': {
-      id: '/sp/cancel'
-      path: '/sp/cancel'
-      fullPath: '/sp/cancel'
-      preLoaderRoute: typeof SpCancelRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/game/start': {
-      id: '/game/start'
-      path: '/game/start'
-      fullPath: '/game/start'
-      preLoaderRoute: typeof GameStartRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/game/$sessionId': {
-      id: '/game/$sessionId'
-      path: '/game/$sessionId'
-      fullPath: '/game/$sessionId'
-      preLoaderRoute: typeof GameSessionIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/character/create': {
-      id: '/character/create'
-      path: '/character/create'
-      fullPath: '/character/create'
-      preLoaderRoute: typeof CharacterCreateRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/memory': {
+      id: '/_authenticated/memory'
+      path: '/memory'
+      fullPath: '/memory'
+      preLoaderRoute: typeof AuthenticatedMemoryLazyRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/character/$id': {
       id: '/character/$id'
@@ -461,46 +376,199 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CharacterIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/sp': {
-      id: '/admin/sp'
-      path: '/admin/sp'
-      fullPath: '/admin/sp'
-      preLoaderRoute: typeof AdminSpRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/titles': {
+      id: '/_authenticated/titles'
+      path: '/titles'
+      fullPath: '/titles'
+      preLoaderRoute: typeof AuthenticatedTitlesRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
-    '/admin/performance': {
-      id: '/admin/performance'
-      path: '/admin/performance'
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/quests': {
+      id: '/_authenticated/quests'
+      path: '/quests'
+      fullPath: '/quests'
+      preLoaderRoute: typeof AuthenticatedQuestsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/logs': {
+      id: '/_authenticated/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof AuthenticatedLogsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/log-fragments': {
+      id: '/_authenticated/log-fragments'
+      path: '/log-fragments'
+      fullPath: '/log-fragments'
+      preLoaderRoute: typeof AuthenticatedLogFragmentsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/exploration': {
+      id: '/_authenticated/exploration'
+      path: '/exploration'
+      fullPath: '/exploration'
+      preLoaderRoute: typeof AuthenticatedExplorationRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/characters': {
+      id: '/_authenticated/characters'
+      path: '/characters'
+      fullPath: '/characters'
+      preLoaderRoute: typeof AuthenticatedCharactersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_admin/admin': {
+      id: '/_admin/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminAdminRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_authenticated/sp/': {
+      id: '/_authenticated/sp/'
+      path: '/sp'
+      fullPath: '/sp'
+      preLoaderRoute: typeof AuthenticatedSpIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sp/success': {
+      id: '/_authenticated/sp/success'
+      path: '/sp/success'
+      fullPath: '/sp/success'
+      preLoaderRoute: typeof AuthenticatedSpSuccessRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sp/cancel': {
+      id: '/_authenticated/sp/cancel'
+      path: '/sp/cancel'
+      fullPath: '/sp/cancel'
+      preLoaderRoute: typeof AuthenticatedSpCancelRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/game/start': {
+      id: '/_authenticated/game/start'
+      path: '/game/start'
+      fullPath: '/game/start'
+      preLoaderRoute: typeof AuthenticatedGameStartRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/game/$sessionId': {
+      id: '/_authenticated/game/$sessionId'
+      path: '/game/$sessionId'
+      fullPath: '/game/$sessionId'
+      preLoaderRoute: typeof AuthenticatedGameSessionIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/character/create': {
+      id: '/_authenticated/character/create'
+      path: '/character/create'
+      fullPath: '/character/create'
+      preLoaderRoute: typeof AuthenticatedCharacterCreateRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_admin/admin/sp': {
+      id: '/_admin/admin/sp'
+      path: '/sp'
+      fullPath: '/admin/sp'
+      preLoaderRoute: typeof AdminAdminSpRouteImport
+      parentRoute: typeof AdminAdminRoute
+    }
+    '/_admin/admin/performance': {
+      id: '/_admin/admin/performance'
+      path: '/performance'
       fullPath: '/admin/performance'
-      preLoaderRoute: typeof AdminPerformanceRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AdminAdminPerformanceRouteImport
+      parentRoute: typeof AdminAdminRoute
     }
   }
 }
 
+interface AdminAdminRouteChildren {
+  AdminAdminPerformanceRoute: typeof AdminAdminPerformanceRoute
+  AdminAdminSpRoute: typeof AdminAdminSpRoute
+}
+
+const AdminAdminRouteChildren: AdminAdminRouteChildren = {
+  AdminAdminPerformanceRoute: AdminAdminPerformanceRoute,
+  AdminAdminSpRoute: AdminAdminSpRoute,
+}
+
+const AdminAdminRouteWithChildren = AdminAdminRoute._addFileChildren(
+  AdminAdminRouteChildren,
+)
+
+interface AdminRouteChildren {
+  AdminAdminRoute: typeof AdminAdminRouteWithChildren
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminAdminRoute: AdminAdminRouteWithChildren,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
+interface AuthenticatedRouteChildren {
+  AuthenticatedCharactersRoute: typeof AuthenticatedCharactersRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedExplorationRoute: typeof AuthenticatedExplorationRoute
+  AuthenticatedLogFragmentsRoute: typeof AuthenticatedLogFragmentsRoute
+  AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
+  AuthenticatedQuestsRoute: typeof AuthenticatedQuestsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedTitlesRoute: typeof AuthenticatedTitlesRoute
+  AuthenticatedMemoryLazyRoute: typeof AuthenticatedMemoryLazyRoute
+  AuthenticatedCharacterCreateRoute: typeof AuthenticatedCharacterCreateRoute
+  AuthenticatedGameSessionIdRoute: typeof AuthenticatedGameSessionIdRoute
+  AuthenticatedGameStartRoute: typeof AuthenticatedGameStartRoute
+  AuthenticatedSpCancelRoute: typeof AuthenticatedSpCancelRoute
+  AuthenticatedSpSuccessRoute: typeof AuthenticatedSpSuccessRoute
+  AuthenticatedSpIndexRoute: typeof AuthenticatedSpIndexRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedCharactersRoute: AuthenticatedCharactersRoute,
+  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedExplorationRoute: AuthenticatedExplorationRoute,
+  AuthenticatedLogFragmentsRoute: AuthenticatedLogFragmentsRoute,
+  AuthenticatedLogsRoute: AuthenticatedLogsRoute,
+  AuthenticatedQuestsRoute: AuthenticatedQuestsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedTitlesRoute: AuthenticatedTitlesRoute,
+  AuthenticatedMemoryLazyRoute: AuthenticatedMemoryLazyRoute,
+  AuthenticatedCharacterCreateRoute: AuthenticatedCharacterCreateRoute,
+  AuthenticatedGameSessionIdRoute: AuthenticatedGameSessionIdRoute,
+  AuthenticatedGameStartRoute: AuthenticatedGameStartRoute,
+  AuthenticatedSpCancelRoute: AuthenticatedSpCancelRoute,
+  AuthenticatedSpSuccessRoute: AuthenticatedSpSuccessRoute,
+  AuthenticatedSpIndexRoute: AuthenticatedSpIndexRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  CharactersRoute: CharactersRoute,
-  DashboardRoute: DashboardRoute,
-  ExplorationRoute: ExplorationRoute,
-  LogFragmentsRoute: LogFragmentsRoute,
+  AdminRoute: AdminRouteWithChildren,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
-  LogsRoute: LogsRoute,
-  QuestsRoute: QuestsRoute,
   RegisterRoute: RegisterRoute,
-  SettingsRoute: SettingsRoute,
-  TitlesRoute: TitlesRoute,
-  MemoryLazyRoute: MemoryLazyRoute,
-  AdminPerformanceRoute: AdminPerformanceRoute,
-  AdminSpRoute: AdminSpRoute,
   CharacterIdRoute: CharacterIdRoute,
-  CharacterCreateRoute: CharacterCreateRoute,
-  GameSessionIdRoute: GameSessionIdRoute,
-  GameStartRoute: GameStartRoute,
-  SpCancelRoute: SpCancelRoute,
-  SpSuccessRoute: SpSuccessRoute,
-  AdminIndexRoute: AdminIndexRoute,
-  SpIndexRoute: SpIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

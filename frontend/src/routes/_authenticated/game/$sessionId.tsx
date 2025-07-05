@@ -38,7 +38,7 @@ import {
 import { NPCEncounterManager } from '@/features/game/components/NPCEncounterManager'
 import { QuestStatusWidget } from '@/components/quests/QuestStatusWidget'
 
-export const Route = createFileRoute('/game/$sessionId')({
+export const Route = createFileRoute('/_authenticated/game/$sessionId')({
   component: GameSessionPage,
 })
 

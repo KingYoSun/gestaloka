@@ -24,12 +24,12 @@ const navigationItems = [
   },
   {
     name: 'キャラクター',
-    href: '/player/characters',
+    href: '/characters',
     icon: User,
   },
   {
     name: 'セッション',
-    href: '/sessions',
+    href: '/game/start',
     icon: GamepadIcon,
   },
   {

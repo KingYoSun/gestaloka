@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { toast } from 'sonner'
 
-export const Route = createFileRoute('/game/start')({
+export const Route = createFileRoute('/_authenticated/game/start')({
   component: GameStartPage,
 })
 

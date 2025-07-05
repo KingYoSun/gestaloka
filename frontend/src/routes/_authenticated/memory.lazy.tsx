@@ -2,7 +2,7 @@ import { createLazyFileRoute } from '@tanstack/react-router'
 import { MemoryInheritanceScreen } from '@/components/memory/MemoryInheritanceScreen'
 import { useCharacter } from '@/hooks/useCharacter'
 
-export const Route = createLazyFileRoute('/memory')({
+export const Route = createLazyFileRoute('/_authenticated/memory')({
   component: MemoryRoute,
 })
 
