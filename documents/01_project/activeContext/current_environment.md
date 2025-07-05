@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/05（17:30 JST）
+## 最終更新: 2025/07/05（17:40 JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -204,6 +204,12 @@
   - コマンドライン引数でユーザー指定可能
   - エラー時の詳細表示とヘルプ機能
   - `scripts/README.md`でドキュメント化
+- **Pydantic V1→V2への移行完了（本日18:30完了）**
+  - @validator → @field_validatorへの移行（5箇所）
+  - .from_orm() → .model_validate()への移行（6箇所）  
+  - .dict() → .model_dump()への移行（5箇所）
+  - テスト成功率99.6%（229個中228個）
+  - 詳細レポート：`progressReports/2025-07-05_pydantic_v2_migration.md`
 
 ### 2025/07/01の変更
 - SP購入システムのStripe統合実装
@@ -402,10 +408,10 @@
 - ✅ 全13サービスがhealthy状態（100%）
 
 ### 残存する警告（エラーではない）
-1. Pydantic V1スタイルの警告（63件）
-   - `@validator` → `@field_validator`への移行が必要
-   - `from_orm()` → `model_validate()`への移行が必要
-   - `dict()` → `model_dump()`への移行が必要
+1. ~~Pydantic V1スタイルの警告~~ ✅ **解決済み（2025-07-05）**
+   - `@validator` → `@field_validator`への移行完了
+   - `from_orm()` → `model_validate()`への移行完了
+   - `dict()` → `model_dump()`への移行完了
 2. Neo4j/Redisセッション管理の警告
    - 明示的なclose()処理の追加推奨
 3. TypeScriptのany型警告（51箇所）
@@ -415,6 +421,6 @@
 1. ~~フロントエンドの型エラー修正~~ ✅ 完了
 2. ~~バトル統合テストのモック改善~~ ✅ 完了 
 3. ~~MinimapCanvasのdrawLocation初期化順序修正~~ ✅ 完了
-4. パフォーマンス最適化（AI応答時間）
-5. Pydantic V2への移行準備
+4. ~~Pydantic V2への移行~~ ✅ **完了（2025-07-05）**
+5. パフォーマンス最適化（AI応答時間）
 6. TypeScriptのany型改善（51箇所のwarning）

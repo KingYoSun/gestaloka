@@ -3,9 +3,9 @@
 """
 
 from datetime import datetime
-from typing import ClassVar, Optional
+from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.utils.validation import validate_password
 
@@ -22,7 +22,7 @@ class UserCreate(UserBase):
 
     password: str = Field(..., min_length=8, max_length=100, description="パスワード")
 
-    @validator("password")
+    @field_validator("password")
     def validate_password_strength(cls, v):  # noqa: N805
         return validate_password(v)
 
@@ -40,7 +40,7 @@ class UserPasswordUpdate(BaseModel):
     current_password: str = Field(..., description="現在のパスワード")
     new_password: str = Field(..., min_length=8, max_length=100, description="新しいパスワード")
 
-    @validator("new_password")
+    @field_validator("new_password")
     def validate_new_password_strength(cls, v):  # noqa: N805
         return validate_password(v, "new_password")
 
@@ -55,7 +55,7 @@ class User(UserBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config: ClassVar = {"from_attributes": True}
+    model_config = {"from_attributes": True}
 
 
 class UserInDB(User):

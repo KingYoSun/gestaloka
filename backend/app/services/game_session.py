@@ -509,7 +509,7 @@ class GameSessionService:
 
                         # 戦闘を開始（プレイヤーターンに設定）
                         battle_data.state = BattleState.PLAYER_TURN
-                        session_data["battle_data"] = battle_data.dict()
+                        session_data["battle_data"] = battle_data.model_dump()
 
                         # 戦闘開始の選択肢を生成
                         initial_battle_choices = self.battle_service.get_battle_choices(battle_data, True)
@@ -535,7 +535,7 @@ class GameSessionService:
 
                         # WebSocketで戦闘開始を通知
                         await GameEventEmitter.emit_custom_event(
-                            session.id, "battle_start", {"battle_data": battle_data.dict()}
+                            session.id, "battle_start", {"battle_data": battle_data.model_dump()}
                         )
 
             # アクション履歴の更新
@@ -748,7 +748,7 @@ class GameSessionService:
             if battle_ended:
                 # 戦闘終了処理
                 updated_battle_data.state = BattleState.FINISHED
-                session_data["battle_data"] = updated_battle_data.dict()
+                session_data["battle_data"] = updated_battle_data.model_dump()
 
                 if victory is not None:
                     if victory:
@@ -776,7 +776,7 @@ class GameSessionService:
             else:
                 # ターンを進める
                 next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)
-                session_data["battle_data"] = updated_battle_data.dict()
+                session_data["battle_data"] = updated_battle_data.model_dump()
 
                 if is_player_turn:
                     # プレイヤーのターン - 選択肢を返す
@@ -810,7 +810,7 @@ class GameSessionService:
 
                         # 再度ターンを進める（プレイヤーに戻す）
                         next_actor_id, is_player_turn = self.battle_service.advance_turn(updated_battle_data)
-                        session_data["battle_data"] = updated_battle_data.dict()
+                        session_data["battle_data"] = updated_battle_data.model_dump()
 
                         # プレイヤーのターンの選択肢を返す
                         battle_choices = self.battle_service.get_battle_choices(updated_battle_data, True)

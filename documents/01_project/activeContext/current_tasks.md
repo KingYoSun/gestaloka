@@ -1,6 +1,6 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-05（17:15 JST）
+## 最終更新: 2025-07-05（17:40 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
 1. ログ派遣システムの完全実装（2025-06-22）
@@ -22,7 +22,7 @@
    - フロントエンドのフラグメント管理UI
 
 ### 進行中のタスク 🔄
-なし（高度な編纂メカニクスのフロントエンドUI実装が完全に完了）
+なし
 
 ### 完了したタスク ✅
 1. **backendコンテナの起動エラー修正（2025-07-04）**
@@ -126,6 +126,26 @@
    - 詳細レポート：
      - `progressReports/2025-07-05_advanced_compilation_frontend.md`
      - `progressReports/2025-07-05_title_management_ui.md`
+
+5. **Pydantic V1→V2への移行（2025-07-05）✅完全完了！**
+   - **@validator → @field_validatorへの移行**
+     - app/schemas/user.py（2箇所）
+     - app/schemas/auth.py（3箇所）
+     - field_validatorの新しいシグネチャに対応
+     - 他フィールド参照は`info.data`を使用
+   - **.from_orm() → .model_validate()への移行**
+     - app/services/character_service.py（4箇所）
+     - app/services/exploration_minimap_service.py（2箇所）
+     - SQLModelからPydanticスキーマへの変換を更新
+   - **.dict() → .model_dump()への移行**
+     - app/services/game_session.py（5箇所）
+     - 戦闘データのシリアライズ処理を更新
+   - **技術的成果**
+     - Pydantic V2の最新パターンに完全準拠
+     - 非推奨警告の解消
+     - テスト成功率99.6%（229個中228個）
+     - 将来のPydantic V3への準備完了
+   - 詳細レポート：`progressReports/2025-07-05_pydantic_v2_migration.md`
 
 2. **コード品質の包括的改善（2025-07-03）**
    - バックエンドの改善：
@@ -289,10 +309,10 @@
 - ~~フロントエンドの型エラー~~ ✅ **解決済み（2025-07-04）**
 - ~~TanStack Routerの自動生成問題~~ ✅ **解決済み（2025-07-04）**
   - @tanstack/router-pluginの導入で解決
-- Pydantic V1→V2への移行
-  - `@validator`→`@field_validator`への移行が必要
-  - `from_orm()`→`model_validate()`への移行が必要
-  - `dict()`→`model_dump()`への移行（一部完了）
+- ~~Pydantic V1→V2への移行~~ ✅ **解決済み（2025-07-05）**
+  - `@validator`→`@field_validator`への移行完了
+  - `from_orm()`→`model_validate()`への移行完了
+  - `dict()`→`model_dump()`への移行完了
 - Neo4jセッション管理の改善（明示的なclose()が必要）
 - Redis接続管理の改善（`close()`→`aclose()`への移行）
 - WebSocketイベントの型定義強化

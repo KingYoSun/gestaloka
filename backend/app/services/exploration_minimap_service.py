@@ -82,7 +82,7 @@ class ExplorationMinimapService:
 
             if progress:
                 layers_dict[location.hierarchy_level].exploration_progress.append(
-                    ExplorationProgressInDB.from_orm(progress)
+                    ExplorationProgressInDB.model_validate(progress)
                 )
 
         # 接続情報を取得
@@ -168,7 +168,7 @@ class ExplorationMinimapService:
         self.db.commit()
         self.db.refresh(progress)
 
-        return ExplorationProgressInDB.from_orm(progress)
+        return ExplorationProgressInDB.model_validate(progress)
 
     async def _get_character_trail(self, character_id: str, limit: int = 10) -> list[LocationHistory]:
         """キャラクターの移動履歴を取得"""

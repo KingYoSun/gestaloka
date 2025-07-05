@@ -27,7 +27,7 @@ class CharacterService(LoggerMixin):
             statement = select(CharacterModel).where(CharacterModel.id == character_id)
             result = self.db.exec(statement)
             character = result.first()
-            return Character.from_orm(character) if character else None
+            return Character.model_validate(character) if character else None
         except Exception as e:
             self.log_error("Failed to get character by ID", character_id=character_id, error=str(e))
             raise
@@ -40,7 +40,7 @@ class CharacterService(LoggerMixin):
             )
             result = self.db.exec(statement)
             characters = result.all()
-            return [Character.from_orm(char) for char in characters]
+            return [Character.model_validate(char) for char in characters]
         except Exception as e:
             self.log_error("Failed to get characters by user", user_id=user_id, error=str(e))
             raise
@@ -83,7 +83,7 @@ class CharacterService(LoggerMixin):
                 "Character created", user_id=user_id, character_id=character_id, character_name=character_create.name
             )
 
-            return Character.from_orm(character_model)
+            return Character.model_validate(character_model)
 
         except Exception as e:
             self.db.rollback()
@@ -119,7 +119,7 @@ class CharacterService(LoggerMixin):
             self.db.refresh(character)
 
             self.log_info("Character updated", character_id=character_id)
-            return Character.from_orm(character)
+            return Character.model_validate(character)
 
         except Exception as e:
             self.db.rollback()
