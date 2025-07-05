@@ -5,11 +5,11 @@
 import { useEffect, ReactNode } from 'react'
 import { useWebSocket, useNotificationWebSocket } from '@/hooks/useWebSocket'
 import { WebSocketContext } from './webSocketContext'
-import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/features/auth/useAuth'
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const websocket = useWebSocket()
-  const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+  const { isAuthenticated } = useAuth()
 
   // 通知WebSocketを有効化
   useNotificationWebSocket()
@@ -21,7 +21,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     } else if (!isAuthenticated && websocket.isConnected) {
       websocket.disconnect()
     }
-  }, [isAuthenticated, websocket])
+  }, [isAuthenticated, websocket.isConnected, websocket.connect, websocket.disconnect])
 
   return (
     <WebSocketContext.Provider value={websocket}>

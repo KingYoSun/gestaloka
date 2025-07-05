@@ -25,11 +25,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // APIからユーザー情報を取得
         const user = await apiClient.getCurrentUser()
         setUser(user)
+        apiClient.setCurrentUser(user)
       }
     } catch (error) {
       console.error('Auth check failed:', error)
       localStorage.removeItem('authToken')
       apiClient.setToken(null)
+      apiClient.setCurrentUser(null)
     } finally {
       setIsLoading(false)
     }
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const response = await apiClient.login({ username, password })
       // トークンは apiClient.login 内で自動的に設定される
       setUser(response.user)
+      apiClient.setCurrentUser(response.user)
     } catch (error) {
       console.error('Login failed:', error)
       throw error
@@ -53,6 +56,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Logout failed:', error)
     } finally {
       setUser(null)
+      apiClient.setCurrentUser(null)
     }
   }
 

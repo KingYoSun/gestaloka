@@ -3,7 +3,7 @@
  */
 import { useEffect, useCallback, useState } from 'react'
 import { websocketManager } from '@/lib/websocket/socket'
-import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/features/auth/useAuth'
 import { toast } from 'sonner'
 import type {
   GameMessage,
@@ -30,13 +30,22 @@ export function useWebSocket() {
   const [status, setStatus] = useState<WebSocketStatus>({
     connected: false,
   })
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated } = useAuth()
 
   useEffect(() => {
     if (!isAuthenticated) return
 
     // WebSocket接続を開始
     websocketManager.connect()
+
+    // Socket.IOは非同期で接続されるため、少し待ってから初回チェック
+    setTimeout(() => {
+      const initialConnected = websocketManager.isConnected()
+      if (initialConnected) {
+        const socketId = websocketManager.getSocketId()
+        setStatus({ connected: true, socketId })
+      }
+    }, 100)
 
     // 接続状態の監視
     const handleConnected = (data: { socketId: string }) => {
@@ -58,11 +67,23 @@ export function useWebSocket() {
     websocketManager.on('ws:disconnected', handleDisconnected)
     websocketManager.on('ws:error', handleError)
 
+    // 接続状態の定期的な確認
+    const checkConnectionInterval = setInterval(() => {
+      const isConnected = websocketManager.isConnected()
+      setStatus(prev => {
+        if (prev.connected !== isConnected) {
+          return { ...prev, connected: isConnected }
+        }
+        return prev
+      })
+    }, 1000)
+
     // クリーンアップ
     return () => {
       websocketManager.off('ws:connected', handleConnected)
       websocketManager.off('ws:disconnected', handleDisconnected)
       websocketManager.off('ws:error', handleError)
+      clearInterval(checkConnectionInterval)
     }
   }, [isAuthenticated])
 
@@ -125,7 +146,7 @@ export function useWebSocket() {
  * ゲームWebSocketフック
  */
 export function useGameWebSocket(gameSessionId?: string) {
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [messages, setMessages] = useState<GameMessage[]>([])
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [currentNPCEncounters, setCurrentNPCEncounters] = useState<
@@ -322,7 +343,7 @@ export function useGameWebSocket(gameSessionId?: string) {
  * チャットWebSocketフック
  */
 export function useChatWebSocket(gameSessionId?: string) {
-  const { user } = useAuthStore()
+  const { user } = useAuth()
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
 
   useEffect(() => {

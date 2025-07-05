@@ -52,6 +52,7 @@ interface RegisterRequest {
 class ApiClient {
   private baseUrl: string
   private token: string | null = null
+  private currentUser: User | null = null
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl
@@ -65,6 +66,18 @@ class ApiClient {
     } else {
       localStorage.removeItem('authToken')
     }
+  }
+
+  getToken(): string | null {
+    return this.token
+  }
+
+  setCurrentUser(user: User | null) {
+    this.currentUser = user
+  }
+
+  getCurrentUserSync(): User | null {
+    return this.currentUser
   }
 
   private async request<T>(

@@ -13,9 +13,13 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 # Socket.IOサーバーインスタンス作成
+# CORSオリジンの末尾スラッシュを削除
+cors_origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
+
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+    cors_allowed_origins=cors_origins,
+    cors_credentials=True,
     logger=True,
     engineio_logger=True if settings.LOG_LEVEL == "DEBUG" else False,
 )
