@@ -16,9 +16,9 @@ vi.mock('@/lib/websocket/socket', () => ({
   },
 }))
 
-// useAuthStoreのモック
-vi.mock('@/store/authStore', () => ({
-  useAuthStore: vi.fn(() => ({ isAuthenticated: true })),
+// useAuthのモック
+vi.mock('@/features/auth/useAuth', () => ({
+  useAuth: vi.fn(() => ({ isAuthenticated: true })),
 }))
 
 // toastのモック
@@ -209,14 +209,12 @@ describe('useWebSocket', () => {
 
   it('認証されていない場合は接続しない', async () => {
     // 認証されていない状態をモック
-    const { useAuthStore } = await import('@/store/authStore')
-    vi.mocked(useAuthStore).mockReturnValue({
+    const { useAuth } = await import('@/features/auth/useAuth')
+    vi.mocked(useAuth).mockReturnValue({
       isAuthenticated: false,
       user: null,
-      token: null,
-      login: vi.fn(),
-      logout: vi.fn(),
-      updateUser: vi.fn(),
+      isLoading: false,
+      refreshAuth: vi.fn(),
     })
 
     vi.clearAllMocks()
