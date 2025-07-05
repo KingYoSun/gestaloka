@@ -5,7 +5,7 @@
 import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
-import { useToast } from '@/hooks/use-toast'
+import { showSuccessToast, showErrorToast, showInfoToast } from '@/utils/toast'
 import { websocketManager } from '@/lib/websocket/socket'
 import type { PlayerSP, SPConsumeRequest } from '@/types/sp'
 
@@ -25,7 +25,6 @@ export function useSPBalance() {
  */
 export function useSPBalanceSummary() {
   const queryClient = useQueryClient()
-  const { toast } = useToast()
 
   // WebSocketでSP更新イベントを受信したら自動的に再取得
   useEffect(() => {
@@ -52,11 +51,11 @@ export function useSPBalanceSummary() {
       const isSignificant = Math.abs(data.amount_changed) >= 10
 
       if (isSignificant) {
-        toast({
-          title: isIncrease ? 'SPを獲得しました' : 'SPを消費しました',
-          description: `${data.description} (${isIncrease ? '+' : ''}${data.amount_changed} SP)`,
-          variant: isIncrease ? 'default' : undefined,
-        })
+        if (isIncrease) {
+          showSuccessToast('SPを獲得しました', `${data.description} (+${data.amount_changed} SP)`)
+        } else {
+          showInfoToast('SPを消費しました', `${data.description} (${data.amount_changed} SP)`)
+        }
       }
     }
 
@@ -66,11 +65,7 @@ export function useSPBalanceSummary() {
       action: string
       message: string
     }) => {
-      toast({
-        title: 'SP不足',
-        description: data.message,
-        variant: 'destructive',
-      })
+      showErrorToast(new Error(data.message), 'SP不足')
     }
 
     const handleDailyRecovery = (data: {
@@ -80,11 +75,7 @@ export function useSPBalanceSummary() {
     }) => {
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
-        toast({
-          title: '日次回復完了',
-          description: data.message,
-          variant: 'default',
-        })
+        showSuccessToast('日次回復完了', data.message)
       }
     }
 
@@ -97,7 +88,7 @@ export function useSPBalanceSummary() {
       websocketManager.off('sp:insufficient', handleSPInsufficient)
       websocketManager.off('sp:daily_recovery', handleDailyRecovery)
     }
-  }, [queryClient, toast])
+  }, [queryClient])
 
   return useQuery({
     queryKey: ['sp', 'balance', 'summary'],
@@ -112,7 +103,6 @@ export function useSPBalanceSummary() {
  * SPを消費するフック
  */
 export function useConsumeSP() {
-  const { toast } = useToast()
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -122,18 +112,11 @@ export function useConsumeSP() {
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
       queryClient.invalidateQueries({ queryKey: ['sp', 'transactions'] })
 
-      toast({
-        title: 'SP消費完了',
-        description: response.message,
-      })
+      showSuccessToast('SP消費完了', response.message)
     },
     onError: (error: unknown) => {
-      toast({
-        title: 'SP消費エラー',
-        description:
-          (error as any)?.response?.data?.detail || 'SPの消費に失敗しました',
-        variant: 'destructive',
-      })
+      const errorMessage = (error as any)?.response?.data?.detail || 'SPの消費に失敗しました'
+      showErrorToast(new Error(errorMessage), 'SP消費エラー')
     },
   })
 }
@@ -142,7 +125,6 @@ export function useConsumeSP() {
  * 日次SP回復を処理するフック
  */
 export function useDailyRecovery() {
-  const { toast } = useToast()
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -152,11 +134,7 @@ export function useDailyRecovery() {
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
       queryClient.invalidateQueries({ queryKey: ['sp', 'transactions'] })
 
-      toast({
-        title: '日次回復完了',
-        description: response.message,
-        variant: 'default',
-      })
+      showSuccessToast('日次回復完了', response.message)
     },
     onError: (error: unknown) => {
       const errorMessage =
@@ -164,17 +142,9 @@ export function useDailyRecovery() {
 
       // 既に回復済みの場合は警告として表示
       if (errorMessage.includes('既に完了')) {
-        toast({
-          title: '日次回復済み',
-          description: errorMessage,
-          variant: 'default',
-        })
+        showInfoToast('日次回復済み', errorMessage)
       } else {
-        toast({
-          title: '日次回復エラー',
-          description: errorMessage,
-          variant: 'destructive',
-        })
+        showErrorToast(new Error(errorMessage), '日次回復エラー')
       }
     },
   })

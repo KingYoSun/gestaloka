@@ -1,11 +1,16 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, renderHook, waitFor, screen } from '@testing-library/react'
+import { render, waitFor, screen } from '@testing-library/react'
 import { act } from 'react'
 
 import { WebSocketProvider } from './WebSocketProvider'
 import { useWebSocketContext } from './useWebSocketContext'
 import { useWebSocket, useNotificationWebSocket } from '@/hooks/useWebSocket'
 import { useAuth } from '@/features/auth/useAuth'
+
+// useAuthのモック
+vi.mock('@/features/auth/useAuth', () => ({
+  useAuth: vi.fn(() => ({ isAuthenticated: true })),
+}))
 
 // useWebSocketのモック
 const mockWebSocket = {
@@ -22,11 +27,6 @@ const mockWebSocket = {
 vi.mock('@/hooks/useWebSocket', () => ({
   useWebSocket: vi.fn(() => mockWebSocket),
   useNotificationWebSocket: vi.fn(),
-}))
-
-// useAuthのモック
-vi.mock('@/features/auth/useAuth', () => ({
-  useAuth: vi.fn(() => ({ isAuthenticated: true })),
 }))
 
 describe('WebSocketProvider', () => {

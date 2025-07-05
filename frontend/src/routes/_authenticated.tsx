@@ -1,5 +1,5 @@
 import React from 'react'
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { Layout } from '@/components/Layout'
 import { useRouterAuth } from './__root'
 import '@/types/router'

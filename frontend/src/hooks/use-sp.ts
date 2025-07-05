@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
+import type { PlayerSPSummary } from '@/types/sp'
 
+// APIレスポンス用の型（スネークケース）
 interface PlayerSPResponse {
   user_id: string
   current_sp: number
@@ -12,12 +14,6 @@ interface PlayerSPResponse {
   subscription_active: boolean
   created_at: string
   updated_at: string
-}
-
-interface PlayerSPSummary {
-  current_sp: number
-  max_sp: number
-  daily_recovery_available: boolean
 }
 
 export const usePlayerSP = () => {

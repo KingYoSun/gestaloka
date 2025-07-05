@@ -1,5 +1,5 @@
 import React from 'react'
-import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { AdminLayout } from '@/features/admin/components/AdminLayout'
 import { useRouterAuth } from './__root'
 import '@/types/router'

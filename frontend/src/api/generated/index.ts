@@ -90,15 +90,8 @@ export interface ExploreResponse {
   narrative: string
 }
 
-// SP types
-export interface PlayerSP {
-  userId: string
-  currentSp: number
-  maxSp: number
-  lastRecoveryAt: string
-  createdAt: string
-  updatedAt: string
-}
+// SP types are imported from types/sp.ts to avoid duplication
+export type { PlayerSP, PlayerSPSummary, SPTransaction } from '@/types/sp'
 
 // Log Fragment enums
 export enum LogFragmentRarity {
