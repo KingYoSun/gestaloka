@@ -13,9 +13,9 @@ export function HomePage() {
         </h1>
 
         <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-          マルチプレイ・テキストMMO
+          自動更新シェアワールド・テキストRPG
           <br />
-          あなたの行動が物語となり、他のプレイヤーの世界に生きるNPCとなる
+          あなたの選択が世界を変える
         </p>
 
         <div className="flex gap-4 justify-center">
@@ -29,23 +29,23 @@ export function HomePage() {
 
         <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
           <div className="p-6 rounded-lg bg-card border">
-            <h3 className="text-lg font-semibold mb-2">動的な物語生成</h3>
+            <h3 className="text-lg font-semibold mb-2">AIによる物語生成</h3>
             <p className="text-muted-foreground">
-              AIが生成する無限の物語。あなたの選択が世界を変えていきます。
+              AIによって物語が生成され、世界が無限に広がります。
             </p>
           </div>
 
           <div className="p-6 rounded-lg bg-card border">
             <h3 className="text-lg font-semibold mb-2">ログNPCシステム</h3>
             <p className="text-muted-foreground">
-              あなたの行動記録が他のプレイヤーの世界でNPCとして生まれ変わります。
+              あなたの行動記録をもとにNPCを生成し、世界に解き放ちます。
             </p>
           </div>
 
           <div className="p-6 rounded-lg bg-card border">
-            <h3 className="text-lg font-semibold mb-2">協調AI評議会</h3>
+            <h3 className="text-lg font-semibold mb-2">無限に更新される世界</h3>
             <p className="text-muted-foreground">
-              6つの専門AIが協力してリッチなゲーム体験を提供します。
+              あなたの物語が世界に影響し、世界は常に更新されます。他の人の痕跡も見つけるかもしれません。
             </p>
           </div>
         </div>
