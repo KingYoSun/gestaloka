@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/04（22:50 JST）
+## 最終更新: 2025/07/05（17:30 JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -185,6 +185,25 @@
   - 個別SP調整機能（付与・減算）
   - SP取引履歴表示
   - フロントエンド管理画面UI（SPManagement.tsx）
+
+### 2025/07/05の変更
+- 高度な編纂メカニクスのフロントエンドUI実装完了
+  - 編纂画面でのSP消費リアルタイム表示
+  - コンボボーナスの視覚的表示
+  - 浄化インターフェースの実装
+  - 特殊称号管理画面の実装（本日17:30完了）
+    - 称号管理APIエンドポイント4種
+    - TitleManagementScreen、TitleCard、EquippedTitleBadge
+    - ゲーム画面での装備中称号表示
+    - `/titles`ルートの追加
+  - 詳細レポート：
+    - `progressReports/2025-07-05_advanced_compilation_frontend.md`
+    - `progressReports/2025-07-05_title_management_ui.md`
+- テストデータ作成スクリプトの改良
+  - `scripts/create_test_titles.py`の汎用化
+  - コマンドライン引数でユーザー指定可能
+  - エラー時の詳細表示とヘルプ機能
+  - `scripts/README.md`でドキュメント化
 
 ### 2025/07/01の変更
 - SP購入システムのStripe統合実装

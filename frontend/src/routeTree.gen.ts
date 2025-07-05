@@ -11,6 +11,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TitlesRouteImport } from './routes/titles'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as QuestsRouteImport } from './routes/quests'
@@ -39,6 +40,11 @@ const MemoryLazyRoute = MemoryLazyRouteImport.update({
   path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/memory.lazy').then((d) => d.Route))
+const TitlesRoute = TitlesRouteImport.update({
+  id: '/titles',
+  path: '/titles',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/titles': typeof TitlesRoute
   '/memory': typeof MemoryLazyRoute
   '/admin/performance': typeof AdminPerformanceRoute
   '/admin/sp': typeof AdminSpRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/titles': typeof TitlesRoute
   '/memory': typeof MemoryLazyRoute
   '/admin/performance': typeof AdminPerformanceRoute
   '/admin/sp': typeof AdminSpRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/quests': typeof QuestsRoute
   '/register': typeof RegisterRoute
   '/settings': typeof SettingsRoute
+  '/titles': typeof TitlesRoute
   '/memory': typeof MemoryLazyRoute
   '/admin/performance': typeof AdminPerformanceRoute
   '/admin/sp': typeof AdminSpRoute
@@ -223,6 +232,7 @@ export interface FileRouteTypes {
     | '/quests'
     | '/register'
     | '/settings'
+    | '/titles'
     | '/memory'
     | '/admin/performance'
     | '/admin/sp'
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
     | '/quests'
     | '/register'
     | '/settings'
+    | '/titles'
     | '/memory'
     | '/admin/performance'
     | '/admin/sp'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '/quests'
     | '/register'
     | '/settings'
+    | '/titles'
     | '/memory'
     | '/admin/performance'
     | '/admin/sp'
@@ -293,6 +305,7 @@ export interface RootRouteChildren {
   QuestsRoute: typeof QuestsRoute
   RegisterRoute: typeof RegisterRoute
   SettingsRoute: typeof SettingsRoute
+  TitlesRoute: typeof TitlesRoute
   MemoryLazyRoute: typeof MemoryLazyRoute
   AdminPerformanceRoute: typeof AdminPerformanceRoute
   AdminSpRoute: typeof AdminSpRoute
@@ -313,6 +326,13 @@ declare module '@tanstack/react-router' {
       path: '/memory'
       fullPath: '/memory'
       preLoaderRoute: typeof MemoryLazyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/titles': {
+      id: '/titles'
+      path: '/titles'
+      fullPath: '/titles'
+      preLoaderRoute: typeof TitlesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -469,6 +489,7 @@ const rootRouteChildren: RootRouteChildren = {
   QuestsRoute: QuestsRoute,
   RegisterRoute: RegisterRoute,
   SettingsRoute: SettingsRoute,
+  TitlesRoute: TitlesRoute,
   MemoryLazyRoute: MemoryLazyRoute,
   AdminPerformanceRoute: AdminPerformanceRoute,
   AdminSpRoute: AdminSpRoute,

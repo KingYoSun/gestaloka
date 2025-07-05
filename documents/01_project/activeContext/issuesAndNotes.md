@@ -2,10 +2,34 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/07/05（03:20 JST）
+## 最終更新: 2025/07/05（17:30 JST）
+
+### 2025/07/05の主な実装（17:30更新）
+- **特殊称号管理画面の実装** ✅✅✅✅（高度な編纂メカニクスUI完全完了！）
+  - 称号管理APIエンドポイント4種の実装
+    - `GET /api/v1/titles/` - 全称号の取得
+    - `GET /api/v1/titles/equipped` - 装備中称号の取得  
+    - `PUT /api/v1/titles/{title_id}/equip` - 称号の装備
+    - `PUT /api/v1/titles/unequip` - 全称号の解除
+  - フロントエンドUIコンポーネント
+    - TitleManagementScreen（メイン管理画面）
+    - TitleCard（個別称号表示）
+    - EquippedTitleBadge（ゲーム画面表示）
+    - useTitlesカスタムフック
+  - 型定義の整合性確保
+    - CharacterTitle型（ID、effectsフィールド等）
+    - バックエンド・フロントエンドで統一
+  - ナビゲーション統合
+    - `/titles`ルート追加
+    - ゲーム画面での装備中称号表示
+  - テストデータ作成スクリプトの改良
+    - `scripts/create_test_titles.py`を汎用化
+    - コマンドライン引数対応
+    - エラー時の詳細表示
+  - 詳細レポート：`progressReports/2025-07-05_title_management_ui.md`
 
 ### 2025/07/05の主な実装（03:20更新）
-- **高度な編纂メカニクスのフロントエンドUI実装** ✅✅✅
+- **高度な編纂メカニクスのフロントエンドUI実装（SP・コンボ・浄化）** ✅✅✅
   - SP消費リアルタイム表示の実装
     - AdvancedLogCompilationEditorコンポーネント作成
     - 編纂プレビューAPIとの連携でリアルタイム計算
@@ -330,6 +354,15 @@ docker-compose exec frontend npm run lint
 # フォーマット
 make format
 docker-compose exec backend ruff format .
+```
+
+### テストデータ作成スクリプト
+```bash
+# 称号データの作成
+docker-compose exec -T backend python scripts/create_test_titles.py
+docker-compose exec -T backend python scripts/create_test_titles.py user@example.com
+
+# その他のスクリプトはscripts/README.mdを参照
 ```
 
 ### アクセスURL

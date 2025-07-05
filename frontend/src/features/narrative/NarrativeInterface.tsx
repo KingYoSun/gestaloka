@@ -14,6 +14,7 @@ import { ActionChoice } from '@/api/generated'
 import { cn } from '@/lib/utils'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { toast } from 'sonner'
+import { EquippedTitleBadge } from '@/components/titles/EquippedTitleBadge'
 
 interface NarrativeInterfaceProps {
   characterId: string
@@ -160,6 +161,11 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
 
       {/* サイドパネル：ミニマップ */}
       <div className="space-y-4">
+        {/* 装備中の称号 */}
+        <div className="flex justify-center">
+          <EquippedTitleBadge />
+        </div>
+        
         <Card className="p-4 bg-gray-900 border-gray-800">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">現在地</h3>
           <Minimap

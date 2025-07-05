@@ -12,6 +12,7 @@ import {
   Gem,
   Target,
   Sparkles,
+  Crown,
 } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -55,6 +56,11 @@ const navigationItems = [
     name: '記憶継承',
     href: '/memory',
     icon: Sparkles,
+  },
+  {
+    name: '称号',
+    href: '/titles',
+    icon: Crown,
   },
   {
     name: '探索',
