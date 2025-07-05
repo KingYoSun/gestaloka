@@ -49,6 +49,13 @@ class ContaminationPurificationService:
         1.0: ["完全なる純粋", "聖者"],  # 100%浄化
     }
 
+    # コンテキスト修復による特性
+    CONTEXT_RESTORATION_TRAITS: ClassVar[dict[str, list[str]]] = {
+        "memory_coherence": ["記憶の照満者", "意味の守護者"],
+        "emotional_balance": ["感情の調律者", "平静の化身"],
+        "context_clarity": ["真実の語り手", "文脈の編み手"]
+    }
+
     def __init__(self, db: Session):
         self.db = db
         self.sp_service = SPService(db)
@@ -56,7 +63,12 @@ class ContaminationPurificationService:
     async def purify_completed_log(
         self, log_id: str, character: Character, purification_items: list[str]
     ) -> PurificationResult:
-        """完成ログの汚染を浄化"""
+        """
+        完成ログの汚染を浄化
+
+        浄化は単なる数値の減少ではなく、歪んだコンテキストを修正し、
+        記憶が本来持っていた意味を取り戻すプロセス
+        """
 
         # ログの取得と所有権確認
         log = self.db.exec(
@@ -118,9 +130,20 @@ class ContaminationPurificationService:
             description=f"汚染浄化: {log.name}"
         )
 
-        # 浄化計算
+        # 浄化計算（コンテキスト修正プロセス）
         purification_rate = min(total_purification_power, 1.0)
-        purified_contamination = max(0.0, original_contamination * (1 - purification_rate))
+
+        # 汚染度が高いほど浄化が困難（コンテキストの歪みが深い）
+        if original_contamination > 0.75:
+            # 極度の汚染は浄化効果が半減
+            effective_rate = purification_rate * 0.5
+        elif original_contamination > 0.5:
+            # 重度の汚染は浄化効果が低下
+            effective_rate = purification_rate * 0.75
+        else:
+            effective_rate = purification_rate
+
+        purified_contamination = max(0.0, original_contamination * (1 - effective_rate))
 
         # 特性の付与
         new_traits = []
@@ -149,6 +172,11 @@ class ContaminationPurificationService:
                 "purification_rate": purification_rate,
                 "items_used": items_consumed,
                 "sp_cost": total_sp_cost,
+                "context_restoration": {
+                    "process": "歪んだ文脈の修正",
+                    "emotional_balance": "負の感情ループの遮断",
+                    "memory_coherence": "記憶の一貫性回復"
+                }
             }
         )
 
@@ -190,6 +218,14 @@ class ContaminationPurificationService:
                 "bonus_type": "skill_enhancement",
                 "value": 1.2,
                 "description": "大幅な浄化により、スキル効果が20%強化",
+            }
+
+        # コンテキスト修復ボーナス
+        if original_contamination >= 0.5 and purified_contamination <= 0.25:
+            effects["context_restoration"] = {
+                "bonus_type": "memory_clarity",
+                "value": "restored",
+                "description": "歪んだコンテキストが修復され、記憶の本来の意味が明確に",
             }
 
         # 汚染反転

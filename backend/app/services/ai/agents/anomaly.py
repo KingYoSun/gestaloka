@@ -260,7 +260,7 @@ class AnomalyAgent(BaseAgent):
             "reality_glitch": "物理法則が一時的に歪み、予期せぬ現象が発生",
             "time_anomaly": "時間の流れが異常をきたし、過去と現在が交錯",
             "dimensional_rift": "次元の境界が不安定になり、異世界の影響が侵入",
-            "log_corruption": "過去のログデータが汚染され、記録が歪曲",
+            "log_corruption": "記憶のコンテキストが汚染され、本来の意味が歪曲",
             "causality_break": "原因と結果の関係が崩壊し、論理が通用しない",
             "memory_distortion": "記憶と現実の境界が曖昧になり、偽りの記憶が生成",
             "entity_duplication": "存在が複製され、同一人物の複数体が出現",
@@ -276,6 +276,15 @@ class AnomalyAgent(BaseAgent):
                 "player_confusion": "プレイヤーを驚かせ、新たな挑戦を提供",
             }
         )
+
+        # ログ汚染イベントの場合、コンテキスト汚染の詳細を追加
+        if event_type == "log_corruption":
+            context.additional_context["contamination_mechanics"] = {
+                "emotional_corruption": "負の感情が記憶を蝕む",
+                "context_distortion": "文脈が歪み、意味が変質する",
+                "self_reinforcement": "汚染が汚染を呼び、悪循環に陥る",
+                "memory_collapse": "極度の汚染で記憶が崩壊し、歪みへと変貌"
+            }
 
         return context
 
@@ -354,7 +363,12 @@ class AnomalyAgent(BaseAgent):
             },
             "time_anomaly": {"time_dilation": intensity_multiplier, "action_repeat": 0.2 * intensity_multiplier},
             "dimensional_rift": {"dimension_bleed": intensity_multiplier, "alien_entities": 0.4 * intensity_multiplier},
-            "log_corruption": {"data_corruption": intensity_multiplier, "false_memories": 0.5 * intensity_multiplier},
+            "log_corruption": {
+                "context_distortion": intensity_multiplier,  # コンテキストの歪み度
+                "memory_contamination": 0.5 * intensity_multiplier,  # 記憶汚染の伝播率
+                "interpretation_bias": 0.7 * intensity_multiplier,  # 解釈の偏向度
+                "semantic_drift": 0.3 * intensity_multiplier,  # 意味のドリフト
+            },
             "causality_break": {"logic_failure": intensity_multiplier, "paradox_damage": 10 * intensity_multiplier},
             "memory_distortion": {
                 "memory_loss": 0.3 * intensity_multiplier,
@@ -372,6 +386,7 @@ class AnomalyAgent(BaseAgent):
     def _check_log_rampage(self, context: PromptContext) -> bool:
         """
         ログ暴走の可能性をチェック
+        汚染されたコンテキストが自己強化ループに入った場合、ログが暴走する
 
         Args:
             context: プロンプトコンテキスト
@@ -386,9 +401,24 @@ class AnomalyAgent(BaseAgent):
         if not log_npcs:
             return False
 
-        # ログ汚染度による確率
+        # コンテキスト汚染度による確率計算
         corruption_level = context.world_state.get("log_corruption_level", 0.0)
-        rampage_chance = corruption_level * 0.3 * len(log_npcs)
+
+        # 汚染度が高いほど自己強化ループが発生しやすい
+        # 0-25%: ほぼ暴走なし
+        # 26-50%: 低確率で暴走
+        # 51-75%: 中確率で暴走
+        # 76-100%: 高確率で暴走
+        if corruption_level < 0.25:
+            base_chance = 0.05
+        elif corruption_level < 0.5:
+            base_chance = 0.2
+        elif corruption_level < 0.75:
+            base_chance = 0.4
+        else:
+            base_chance = 0.7
+
+        rampage_chance = base_chance * len(log_npcs)
 
         return bool(random.random() < rampage_chance)
 
