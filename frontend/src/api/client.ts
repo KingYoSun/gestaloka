@@ -413,6 +413,18 @@ class ApiClient {
     )
   }
 
+  async put<T>(
+    endpoint: string,
+    data?: unknown,
+    options?: RequestInit
+  ): Promise<T> {
+    return this.requestWithTransform<T>(
+      endpoint,
+      { method: 'PUT', ...options },
+      data
+    )
+  }
+
   async delete<T>(endpoint: string, options?: RequestInit): Promise<T> {
     return this.requestWithTransform<T>(endpoint, {
       method: 'DELETE',

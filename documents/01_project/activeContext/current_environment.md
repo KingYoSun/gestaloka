@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/05（17:40 JST）
+## 最終更新: 2025/07/05（18:25 JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -186,7 +186,22 @@
   - SP取引履歴表示
   - フロントエンド管理画面UI（SPManagement.tsx）
 
-### 2025/07/05の変更
+### 2025/07/05の変更（18:25更新）
+- **フロントエンドエラーの完全解消**
+  - WebSocketエラーの修正
+    - ViteのHMR（Hot Module Replacement）を無効化
+    - docker-compose.ymlのポートマッピング調整
+  - CORSエラーとAPI認証問題の修正
+    - 認証前のAPI呼び出しを防止
+    - HeaderコンポーネントでSPDisplayを認証時のみ表示
+    - WebSocketProviderで認証時のみ接続
+  - 欠落フックの追加
+    - useToast.tsフックを新規作成（sonnerライブラリ使用）
+  - Pydantic V2互換性修正
+    - CharacterTitleReadスキーマのConfigをConfigDictに変更
+  - 詳細レポート：`progressReports/2025-07-05_frontend_errors_fix.md`
+
+### 2025/07/05の変更（17:30）
 - 高度な編纂メカニクスのフロントエンドUI実装完了
   - 編纂画面でのSP消費リアルタイム表示
   - コンボボーナスの視覚的表示

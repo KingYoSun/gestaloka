@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class CharacterTitleBase(BaseModel):
@@ -29,11 +29,10 @@ class CharacterTitleUpdate(BaseModel):
 class CharacterTitleRead(CharacterTitleBase):
     """Schema for reading a character title."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     character_id: str
     acquired_at: str
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

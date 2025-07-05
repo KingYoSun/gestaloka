@@ -2,8 +2,11 @@ import { Bell, Menu } from 'lucide-react'
 import { Button } from './ui/button'
 import { WebSocketStatus } from './WebSocketStatus'
 import { SPDisplay } from './sp/SPDisplay'
+import { useAuthStore } from '@/store/authStore'
 
 export function Header() {
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+  
   return (
     <header className="h-16 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center justify-between px-6">
@@ -20,7 +23,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-4">
-          <SPDisplay variant="compact" />
+          {isAuthenticated && <SPDisplay variant="compact" />}
           <WebSocketStatus />
           <Button variant="ghost" size="icon">
             <Bell className="h-5 w-5" />

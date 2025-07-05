@@ -23,30 +23,35 @@ export interface EquipTitleResponse {
  * Get all titles for the current character
  */
 export const getTitles = async (): Promise<CharacterTitle[]> => {
-  const response = await apiClient.get<CharacterTitle[]>('/api/v1/titles/')
-  return response.data
+  try {
+    const response = await apiClient.get<CharacterTitle[]>('/titles/')
+    return response
+  } catch (error) {
+    console.error('Failed to fetch titles:', error)
+    throw error
+  }
 }
 
 /**
  * Get the currently equipped title
  */
 export const getEquippedTitle = async (): Promise<CharacterTitle | null> => {
-  const response = await apiClient.get<CharacterTitle | null>('/api/v1/titles/equipped')
-  return response.data
+  const response = await apiClient.get<CharacterTitle | null>('/titles/equipped')
+  return response
 }
 
 /**
  * Equip a specific title
  */
 export const equipTitle = async (titleId: string): Promise<CharacterTitle> => {
-  const response = await apiClient.put<CharacterTitle>(`/api/v1/titles/${titleId}/equip`)
-  return response.data
+  const response = await apiClient.put<CharacterTitle>(`/titles/${titleId}/equip`)
+  return response
 }
 
 /**
  * Unequip all titles
  */
 export const unequipAllTitles = async (): Promise<EquipTitleResponse> => {
-  const response = await apiClient.put<EquipTitleResponse>('/api/v1/titles/unequip')
-  return response.data
+  const response = await apiClient.put<EquipTitleResponse>('/titles/unequip')
+  return response
 }
