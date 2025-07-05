@@ -1,4 +1,4 @@
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 import {
   Home,
@@ -15,6 +15,7 @@ import {
   Crown,
 } from 'lucide-react'
 import { Button } from './ui/button'
+import { useAuth } from '@/features/auth/useAuth'
 
 const navigationItems = [
   {
@@ -76,15 +77,26 @@ const navigationItems = [
 
 export function Navigation() {
   const location = useLocation()
+  const router = useRouter()
+  const { logout } = useAuth()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      await router.navigate({ to: '/login' })
+    } catch (error) {
+      console.error('ログアウトエラー:', error)
+    }
+  }
 
   return (
-    <nav className="w-64 bg-muted/50 border-r border-border">
+    <nav className="relative w-64 h-full bg-muted/50 border-r border-border flex flex-col">
       <div className="p-6">
         <h1 className="text-2xl font-bold text-primary">ゲスタロカ</h1>
         <p className="text-sm text-muted-foreground mt-1">GESTALOKA</p>
       </div>
 
-      <div className="px-3">
+      <div className="px-3 flex-1 overflow-y-auto">
         <ul className="space-y-1">
           {navigationItems.map(item => {
             const isActive = location.pathname.startsWith(item.href)
@@ -109,14 +121,11 @@ export function Navigation() {
       </div>
 
       {/* ログアウトボタン */}
-      <div className="absolute bottom-6 left-3 right-3">
+      <div className="p-3 mt-auto">
         <Button
           variant="ghost"
           className="w-full justify-start gap-3"
-          onClick={() => {
-            // TODO: ログアウト処理
-            console.log('ログアウト')
-          }}
+          onClick={handleLogout}
         >
           <LogOut className="h-4 w-4" />
           ログアウト
