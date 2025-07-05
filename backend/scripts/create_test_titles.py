@@ -2,16 +2,18 @@
 
 使用方法:
     docker-compose exec -T backend python scripts/create_test_titles.py [email]
-    
+
 引数:
     email: ユーザーのメールアドレス（省略時は test@example.com）
 """
+import json
 import os
 import sys
 import uuid
 from datetime import datetime
+
 import psycopg2
-import json
+
 
 def create_test_titles(user_email="test@example.com"):
     """テスト用の称号を直接SQLで作成"""
@@ -19,25 +21,25 @@ def create_test_titles(user_email="test@example.com"):
     database_url = os.environ.get("DATABASE_URL", "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka")
     conn = psycopg2.connect(database_url)
     cur = conn.cursor()
-    
+
     try:
         # 指定されたユーザーのキャラクターIDを取得
         cur.execute("""
-            SELECT c.id, c.name 
-            FROM characters c 
-            JOIN users u ON c.user_id = u.id 
+            SELECT c.id, c.name
+            FROM characters c
+            JOIN users u ON c.user_id = u.id
             WHERE u.email = %s
             LIMIT 1
         """, (user_email,))
         result = cur.fetchone()
-        
+
         if not result:
             print(f"ユーザー '{user_email}' のキャラクターが見つかりません。")
             # 利用可能なユーザーを表示
             cur.execute("""
-                SELECT u.email, c.name 
-                FROM users u 
-                LEFT JOIN characters c ON u.id = c.user_id 
+                SELECT u.email, c.name
+                FROM users u
+                LEFT JOIN characters c ON u.id = c.user_id
                 ORDER BY u.email
             """)
             users = cur.fetchall()
@@ -49,13 +51,13 @@ def create_test_titles(user_email="test@example.com"):
                     else:
                         print(f"  - {email} (キャラクターなし)")
             return
-            
+
         character_id, character_name = result
         print(f"キャラクター '{character_name}' (ID: {character_id}) に称号を作成します。")
-        
+
         # 既存の称号を削除
         cur.execute("DELETE FROM character_titles WHERE character_id = %s", (character_id,))
-        
+
         # テスト用の称号を作成
         test_titles = [
             {
@@ -95,11 +97,11 @@ def create_test_titles(user_email="test@example.com"):
                 "is_equipped": False,
             },
         ]
-        
+
         # 称号を挿入
         for title in test_titles:
             cur.execute("""
-                INSERT INTO character_titles 
+                INSERT INTO character_titles
                 (id, character_id, title, description, acquired_at, effects, is_equipped, created_at, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
@@ -113,10 +115,10 @@ def create_test_titles(user_email="test@example.com"):
                 datetime.utcnow(),
                 datetime.utcnow()
             ))
-        
+
         conn.commit()
         print(f"\n✅ {len(test_titles)} 個の称号を作成しました。")
-        
+
         # 作成した称号を表示
         print("\n作成した称号:")
         for title in test_titles:
@@ -127,7 +129,7 @@ def create_test_titles(user_email="test@example.com"):
                 effects = json.loads(title["effects"])
                 print(f"    効果: {', '.join([f'{k}: {v}' for k, v in effects.items()])}")
             print()
-        
+
     except Exception as e:
         print(f"❌ エラーが発生しました: {e}")
         conn.rollback()
@@ -139,3 +141,4 @@ if __name__ == "__main__":
     # コマンドライン引数からメールアドレスを取得
     email = sys.argv[1] if len(sys.argv) > 1 else "test@example.com"
     create_test_titles(email)
+

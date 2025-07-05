@@ -157,7 +157,7 @@ class CompilationBonusService:
         for fragment in fragments:
             # rarityはLogFragmentRarity型なので直接使用
             rarity_cost = self.RARITY_SP_COSTS.get(fragment.rarity, 10)
-            
+
             # UNIQUEとARCHITECTは追加コスト
             if fragment.rarity in [LogFragmentRarity.UNIQUE, LogFragmentRarity.ARCHITECT]:
                 rarity_cost = int(rarity_cost * 1.5)

@@ -2,7 +2,7 @@
 認証関連スキーマ
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
