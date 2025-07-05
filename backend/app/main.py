@@ -64,15 +64,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS設定
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # セキュリティミドルウェア
 if settings.ENVIRONMENT == "production":
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.gestaloka.com"])
@@ -85,6 +76,18 @@ app.add_exception_handler(Exception, generic_exception_handler)
 
 # APIルーター登録
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# CORS設定 - 最後に追加（FastAPIのミドルウェアは逆順実行のため）
+# AnyHttpUrlの末尾スラッシュを削除して文字列に変換
+cors_origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
 
 # Socket.IOアプリケーションをマウント
 app.mount("/socket.io", socket_app)
