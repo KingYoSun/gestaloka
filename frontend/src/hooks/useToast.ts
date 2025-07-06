@@ -7,9 +7,13 @@ interface ToastOptions {
 }
 
 export const useToast = () => {
-  const showToast = ({ title, description, variant = 'default' }: ToastOptions) => {
+  const showToast = ({
+    title,
+    description,
+    variant = 'default',
+  }: ToastOptions) => {
     const message = description ? `${title}: ${description}` : title
-    
+
     switch (variant) {
       case 'destructive':
         toast.error(message)

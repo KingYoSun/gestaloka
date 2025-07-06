@@ -19,8 +19,8 @@ export const EquippedTitleBadge = () => {
 
   return (
     <Link to="/titles">
-      <Badge 
-        variant="secondary" 
+      <Badge
+        variant="secondary"
         className="flex items-center gap-1.5 cursor-pointer hover:bg-secondary/80 transition-colors"
       >
         <Crown className="h-3 w-3" />

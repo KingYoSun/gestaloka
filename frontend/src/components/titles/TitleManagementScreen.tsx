@@ -83,9 +83,12 @@ export const TitleManagementScreen = () => {
           </CardHeader>
           <CardContent>
             <div className="text-sm text-muted-foreground">
-              {equippedTitle?.effects && Object.keys(equippedTitle.effects).length > 0 ? (
+              {equippedTitle?.effects &&
+              Object.keys(equippedTitle.effects).length > 0 ? (
                 Object.entries(equippedTitle.effects).map(([key, value]) => (
-                  <p key={key}>{key}: {value}</p>
+                  <p key={key}>
+                    {key}: {value}
+                  </p>
                 ))
               ) : (
                 <p>称号を装備すると効果が表示されます</p>
@@ -107,7 +110,9 @@ export const TitleManagementScreen = () => {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Trophy className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-lg font-medium">まだ称号を獲得していません</p>
+                <p className="text-lg font-medium">
+                  まだ称号を獲得していません
+                </p>
                 <p className="text-sm text-muted-foreground mt-2">
                   ログ編纂や記憶継承で特殊称号を獲得できます
                 </p>
@@ -182,7 +187,8 @@ export const TitleManagementScreen = () => {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          <strong>称号について:</strong> 称号は編纂コンボや記憶継承で獲得できます。
+          <strong>称号について:</strong>{' '}
+          称号は編纂コンボや記憶継承で獲得できます。
           装備した称号はプロフィールに表示され、特定の効果を発揮します。
         </AlertDescription>
       </Alert>

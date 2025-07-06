@@ -2,7 +2,12 @@
  * Custom hook for character titles management
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { equipTitle, getEquippedTitle, getTitles, unequipAllTitles } from '@/api/titles'
+import {
+  equipTitle,
+  getEquippedTitle,
+  getTitles,
+  unequipAllTitles,
+} from '@/api/titles'
 import { useToast } from '@/hooks/useToast'
 
 export const useTitles = () => {
@@ -32,7 +37,7 @@ export const useTitles = () => {
   // Equip title mutation
   const equipTitleMutation = useMutation({
     mutationFn: equipTitle,
-    onSuccess: (data) => {
+    onSuccess: data => {
       queryClient.invalidateQueries({ queryKey: ['titles'] })
       queryClient.invalidateQueries({ queryKey: ['titles', 'equipped'] })
       toast({

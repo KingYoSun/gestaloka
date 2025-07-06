@@ -52,9 +52,15 @@ export function useSPBalanceSummary() {
 
       if (isSignificant) {
         if (isIncrease) {
-          showSuccessToast('SPを獲得しました', `${data.description} (+${data.amount_changed} SP)`)
+          showSuccessToast(
+            'SPを獲得しました',
+            `${data.description} (+${data.amount_changed} SP)`
+          )
         } else {
-          showInfoToast('SPを消費しました', `${data.description} (${data.amount_changed} SP)`)
+          showInfoToast(
+            'SPを消費しました',
+            `${data.description} (${data.amount_changed} SP)`
+          )
         }
       }
     }
@@ -115,7 +121,8 @@ export function useConsumeSP() {
       showSuccessToast('SP消費完了', response.message)
     },
     onError: (error: unknown) => {
-      const errorMessage = (error as any)?.response?.data?.detail || 'SPの消費に失敗しました'
+      const errorMessage =
+        (error as any)?.response?.data?.detail || 'SPの消費に失敗しました'
       showErrorToast(new Error(errorMessage), 'SP消費エラー')
     },
   })
