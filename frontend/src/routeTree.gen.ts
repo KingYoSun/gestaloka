@@ -8,8 +8,6 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { createFileRoute } from '@tanstack/react-router'
-
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
@@ -21,7 +19,6 @@ import { Route as AuthenticatedTitlesRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedQuestsRouteImport } from './routes/_authenticated/quests'
 import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
-import { Route as AuthenticatedLogFragmentsRouteImport } from './routes/_authenticated/log-fragments'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCharactersRouteImport } from './routes/_authenticated/characters'
 import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
@@ -33,10 +30,6 @@ import { Route as AuthenticatedGameSessionIdRouteImport } from './routes/_authen
 import { Route as AuthenticatedCharacterCreateRouteImport } from './routes/_authenticated/character.create'
 import { Route as AdminAdminSpRouteImport } from './routes/_admin/admin.sp'
 import { Route as AdminAdminPerformanceRouteImport } from './routes/_admin/admin.performance'
-
-const AuthenticatedMemoryLazyRouteImport = createFileRoute(
-  '/_authenticated/memory',
-)()
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -61,13 +54,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedMemoryLazyRoute = AuthenticatedMemoryLazyRouteImport.update({
-  id: '/memory',
-  path: '/memory',
-  getParentRoute: () => AuthenticatedRoute,
-} as any).lazy(() =>
-  import('./routes/_authenticated/memory.lazy').then((d) => d.Route),
-)
 const CharacterIdRoute = CharacterIdRouteImport.update({
   id: '/character/$id',
   path: '/character/$id',
@@ -93,12 +79,6 @@ const AuthenticatedLogsRoute = AuthenticatedLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedLogFragmentsRoute =
-  AuthenticatedLogFragmentsRouteImport.update({
-    id: '/log-fragments',
-    path: '/log-fragments',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -164,13 +144,11 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminAdminRouteWithChildren
   '/characters': typeof AuthenticatedCharactersRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/log-fragments': typeof AuthenticatedLogFragmentsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/quests': typeof AuthenticatedQuestsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/titles': typeof AuthenticatedTitlesRoute
   '/character/$id': typeof CharacterIdRoute
-  '/memory': typeof AuthenticatedMemoryLazyRoute
   '/admin/performance': typeof AdminAdminPerformanceRoute
   '/admin/sp': typeof AdminAdminSpRoute
   '/character/create': typeof AuthenticatedCharacterCreateRoute
@@ -187,13 +165,11 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminAdminRouteWithChildren
   '/characters': typeof AuthenticatedCharactersRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/log-fragments': typeof AuthenticatedLogFragmentsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/quests': typeof AuthenticatedQuestsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/titles': typeof AuthenticatedTitlesRoute
   '/character/$id': typeof CharacterIdRoute
-  '/memory': typeof AuthenticatedMemoryLazyRoute
   '/admin/performance': typeof AdminAdminPerformanceRoute
   '/admin/sp': typeof AdminAdminSpRoute
   '/character/create': typeof AuthenticatedCharacterCreateRoute
@@ -213,13 +189,11 @@ export interface FileRoutesById {
   '/_admin/admin': typeof AdminAdminRouteWithChildren
   '/_authenticated/characters': typeof AuthenticatedCharactersRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/log-fragments': typeof AuthenticatedLogFragmentsRoute
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/quests': typeof AuthenticatedQuestsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/titles': typeof AuthenticatedTitlesRoute
   '/character/$id': typeof CharacterIdRoute
-  '/_authenticated/memory': typeof AuthenticatedMemoryLazyRoute
   '/_admin/admin/performance': typeof AdminAdminPerformanceRoute
   '/_admin/admin/sp': typeof AdminAdminSpRoute
   '/_authenticated/character/create': typeof AuthenticatedCharacterCreateRoute
@@ -238,13 +212,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/characters'
     | '/dashboard'
-    | '/log-fragments'
     | '/logs'
     | '/quests'
     | '/settings'
     | '/titles'
     | '/character/$id'
-    | '/memory'
     | '/admin/performance'
     | '/admin/sp'
     | '/character/create'
@@ -261,13 +233,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/characters'
     | '/dashboard'
-    | '/log-fragments'
     | '/logs'
     | '/quests'
     | '/settings'
     | '/titles'
     | '/character/$id'
-    | '/memory'
     | '/admin/performance'
     | '/admin/sp'
     | '/character/create'
@@ -286,13 +256,11 @@ export interface FileRouteTypes {
     | '/_admin/admin'
     | '/_authenticated/characters'
     | '/_authenticated/dashboard'
-    | '/_authenticated/log-fragments'
     | '/_authenticated/logs'
     | '/_authenticated/quests'
     | '/_authenticated/settings'
     | '/_authenticated/titles'
     | '/character/$id'
-    | '/_authenticated/memory'
     | '/_admin/admin/performance'
     | '/_admin/admin/sp'
     | '/_authenticated/character/create'
@@ -349,13 +317,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/memory': {
-      id: '/_authenticated/memory'
-      path: '/memory'
-      fullPath: '/memory'
-      preLoaderRoute: typeof AuthenticatedMemoryLazyRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/character/$id': {
       id: '/character/$id'
       path: '/character/$id'
@@ -389,13 +350,6 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof AuthenticatedLogsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/log-fragments': {
-      id: '/_authenticated/log-fragments'
-      path: '/log-fragments'
-      fullPath: '/log-fragments'
-      preLoaderRoute: typeof AuthenticatedLogFragmentsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/dashboard': {
@@ -505,12 +459,10 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface AuthenticatedRouteChildren {
   AuthenticatedCharactersRoute: typeof AuthenticatedCharactersRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedLogFragmentsRoute: typeof AuthenticatedLogFragmentsRoute
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedQuestsRoute: typeof AuthenticatedQuestsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTitlesRoute: typeof AuthenticatedTitlesRoute
-  AuthenticatedMemoryLazyRoute: typeof AuthenticatedMemoryLazyRoute
   AuthenticatedCharacterCreateRoute: typeof AuthenticatedCharacterCreateRoute
   AuthenticatedGameSessionIdRoute: typeof AuthenticatedGameSessionIdRoute
   AuthenticatedGameStartRoute: typeof AuthenticatedGameStartRoute
@@ -522,12 +474,10 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCharactersRoute: AuthenticatedCharactersRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedLogFragmentsRoute: AuthenticatedLogFragmentsRoute,
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedQuestsRoute: AuthenticatedQuestsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTitlesRoute: AuthenticatedTitlesRoute,
-  AuthenticatedMemoryLazyRoute: AuthenticatedMemoryLazyRoute,
   AuthenticatedCharacterCreateRoute: AuthenticatedCharacterCreateRoute,
   AuthenticatedGameSessionIdRoute: AuthenticatedGameSessionIdRoute,
   AuthenticatedGameStartRoute: AuthenticatedGameStartRoute,

@@ -12,10 +12,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { BookOpen, Sparkles, User, ScrollText, Compass, Shield } from 'lucide-react'
+import { BookOpen, Sparkles, User, ScrollText, Compass, Shield, Brain } from 'lucide-react'
 import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
 import { useToast } from '@/hooks/use-toast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
+import { MemoryInheritanceScreen } from '@/components/memory/MemoryInheritanceScreen'
 
 export function LogsPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
@@ -132,7 +133,7 @@ export function LogsPage() {
       </div>
 
       <Tabs defaultValue="fragments" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="fragments" className="gap-2">
             <ScrollText className="h-4 w-4" />
             フラグメント
@@ -144,6 +145,10 @@ export function LogsPage() {
           <TabsTrigger value="dispatches" className="gap-2">
             <Compass className="h-4 w-4" />
             派遣状況
+          </TabsTrigger>
+          <TabsTrigger value="memory" className="gap-2">
+            <Brain className="h-4 w-4" />
+            記憶継承
           </TabsTrigger>
         </TabsList>
 
@@ -252,6 +257,20 @@ export function LogsPage() {
 
         <TabsContent value="dispatches" className="space-y-6">
           <DispatchList />
+        </TabsContent>
+
+        <TabsContent value="memory" className="space-y-6">
+          {selectedCharacterId ? (
+            <MemoryInheritanceScreen characterId={selectedCharacterId} />
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground">
+                  キャラクターを選択してください
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 

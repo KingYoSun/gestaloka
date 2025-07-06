@@ -11,6 +11,7 @@ from app.models.encounter_story import (
     SharedQuest,
     StoryArcType,
 )
+from app.models.exploration_progress import CharacterExplorationProgress
 from app.models.item import CharacterItem, Item, ItemRarity, ItemType
 from app.models.location import (
     CharacterLocationHistory,
@@ -48,11 +49,11 @@ from app.models.sp import (
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
 from app.models.title import CharacterTitle
 from app.models.user import User
-from app.models.exploration_progress import CharacterExplorationProgress
 
 __all__ = [
     "ActionLog",
     "Character",
+    "CharacterExplorationProgress",
     "CharacterItem",
     "CharacterLocationHistory",
     "CharacterSkill",
@@ -98,5 +99,4 @@ __all__ = [
     "Skill",
     "StoryArcType",
     "User",
-    "CharacterExplorationProgress",
 ]

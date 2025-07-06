@@ -7,9 +7,7 @@ import {
   ScrollText,
   Settings,
   LogOut,
-  Gem,
   Target,
-  Sparkles,
   Crown,
 } from 'lucide-react'
 import { Button } from './ui/button'
@@ -37,19 +35,9 @@ const navigationItems = [
     icon: ScrollText,
   },
   {
-    name: 'フラグメント',
-    href: '/log-fragments',
-    icon: Gem,
-  },
-  {
     name: 'クエスト',
     href: '/quests',
     icon: Target,
-  },
-  {
-    name: '記憶継承',
-    href: '/memory',
-    icon: Sparkles,
   },
   {
     name: '称号',
