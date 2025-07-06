@@ -5,12 +5,12 @@
 // 基本ロケーションの作成
 // ===========================================
 
-// 開始村
-CREATE (starting_village:Location {
-  id: 'starting_village',
-  name: '始まりの村',
+// 基点都市ネクサス
+CREATE (nexus:Location {
+  id: 'nexus',
+  name: '基点都市ネクサス',
   type: 'settlement',
-  description: 'ゲスタロカの最上層にある小さな村。多くの冒険者がここから旅立つ。',
+  description: '来訪者が最初に降り立つ特殊な保護プログラムによって守られた唯一の安全都市。',
   atmosphere: 'peaceful',
   max_capacity: 100,
   current_population: 0,
@@ -85,8 +85,8 @@ CREATE (abyss_cave:Location {
 // ロケーション間の接続関係
 // ===========================================
 
-// 始まりの村から森の入り口へ
-CREATE (starting_village)-[:CONNECTS_TO {
+// ネクサスから森の入り口へ
+CREATE (nexus)-[:CONNECTS_TO {
   direction: 'south',
   distance: 5,
   travel_time: 30,
@@ -101,7 +101,7 @@ CREATE (forest_entrance)-[:CONNECTS_TO {
   travel_time: 30,
   difficulty: 1,
   description: '平坦な道のり'
-}]->(starting_village);
+}]->(nexus);
 
 // 森の入り口から古の遺跡へ
 CREATE (forest_entrance)-[:CONNECTS_TO {
@@ -134,8 +134,8 @@ CREATE (guide_npc:NPC {
   personality: 'friendly and helpful',
   appearance: '中年の女性、親しみやすい笑顔',
   backstory: '村で生まれ育ち、多くの冒険者を見送ってきた',
-  dialogue_patterns: ['冒険の準備はできましたか？', 'この村のことなら何でも聞いてください', '安全な旅を！'],
-  location_id: 'starting_village',
+  dialogue_patterns: ['冒険の準備はできましたか？', 'ネクサスのことなら何でも聞いてください', '安全な旅を！'],
+  location_id: 'nexus',
   is_active: true,
   created_at: datetime(),
   metadata: {
@@ -169,11 +169,11 @@ CREATE (forest_guardian:NPC {
 // NPCとロケーションの関係
 // ===========================================
 
-CREATE (guide_npc)-[:LOCATED_IN]->(starting_village);
+CREATE (guide_npc)-[:LOCATED_IN]->(nexus);
 CREATE (forest_guardian)-[:LOCATED_IN]->(forest_entrance);
 
 // NPCがロケーションを守護する関係
-CREATE (guide_npc)-[:PROTECTS]->(starting_village);
+CREATE (guide_npc)-[:PROTECTS]->(nexus);
 CREATE (forest_guardian)-[:PROTECTS]->(forest_entrance);
 
 // ===========================================
@@ -200,7 +200,7 @@ CREATE (world_state:World {
 });
 
 // 世界とロケーションの関係
-CREATE (world_state)-[:CONTAINS]->(starting_village);
+CREATE (world_state)-[:CONTAINS]->(nexus);
 CREATE (world_state)-[:CONTAINS]->(forest_entrance);
 CREATE (world_state)-[:CONTAINS]->(ancient_ruins);
 CREATE (world_state)-[:CONTAINS]->(abyss_cave);

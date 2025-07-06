@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     # ゲーム設定
     MAX_CHARACTERS_PER_USER: int = Field(default=5, validation_alias="MAX_CHARACTERS_PER_USER")
     MAX_ACTIVE_SESSIONS_PER_USER: int = Field(default=1, validation_alias="MAX_ACTIVE_SESSIONS_PER_USER")
-    DEFAULT_STARTING_LOCATION: str = Field(default="starting_village", validation_alias="DEFAULT_STARTING_LOCATION")
+    DEFAULT_STARTING_LOCATION: str = Field(default="nexus", validation_alias="DEFAULT_STARTING_LOCATION")
     DEFAULT_CHARACTER_HP: int = Field(default=100, validation_alias="DEFAULT_CHARACTER_HP")
     DEFAULT_CHARACTER_ENERGY: int = Field(default=100, validation_alias="DEFAULT_CHARACTER_ENERGY")
     DEFAULT_CHARACTER_ATTACK: int = Field(default=10, validation_alias="DEFAULT_CHARACTER_ATTACK")

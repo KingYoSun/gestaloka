@@ -35,7 +35,7 @@ class CharacterBase(BaseModel):
     description: Optional[str] = Field(None, max_length=1000, description="キャラクター説明")
     appearance: Optional[str] = Field(None, max_length=1000, description="外見")
     personality: Optional[str] = Field(None, max_length=1000, description="性格")
-    location: str = Field(default="starting_village", max_length=100, description="現在地")
+    location: str = Field(default="nexus", max_length=100, description="現在地")
 
 
 class CharacterCreate(CharacterBase):
