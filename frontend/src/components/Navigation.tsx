@@ -8,7 +8,6 @@ import {
   Settings,
   LogOut,
   MapPin,
-  Swords,
   Gem,
   Target,
   Sparkles,
@@ -32,11 +31,6 @@ const navigationItems = [
     name: 'セッション',
     href: '/game/start',
     icon: GamepadIcon,
-  },
-  {
-    name: '戦闘',
-    href: '/battles',
-    icon: Swords,
   },
   {
     name: 'ログ',
