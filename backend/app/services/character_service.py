@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.logging import LoggerMixin

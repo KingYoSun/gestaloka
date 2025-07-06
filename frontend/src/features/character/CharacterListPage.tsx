@@ -18,6 +18,7 @@ import {
   useCharacters,
   useDeleteCharacter,
   useActivateCharacter,
+  useDeactivateCharacter,
 } from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { Character } from '@/types'
@@ -31,6 +32,7 @@ export function CharacterListPage() {
   const { activeCharacter } = useActiveCharacter()
   const deleteCharacterMutation = useDeleteCharacter()
   const activateCharacterMutation = useActivateCharacter()
+  const deactivateCharacterMutation = useDeactivateCharacter()
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleDeleteCharacter = async (characterId: string) => {
@@ -46,6 +48,10 @@ export function CharacterListPage() {
 
   const handleActivateCharacter = async (characterId: string) => {
     await activateCharacterMutation.mutateAsync(characterId)
+  }
+
+  const handleDeactivateCharacter = async () => {
+    await deactivateCharacterMutation.mutateAsync()
   }
 
   if (isLoading) {
@@ -130,8 +136,10 @@ export function CharacterListPage() {
                 character={character}
                 onDelete={() => handleDeleteCharacter(character.id)}
                 onActivate={() => handleActivateCharacter(character.id)}
+                onDeactivate={handleDeactivateCharacter}
                 isDeleting={deletingId === character.id}
                 isActivating={activateCharacterMutation.isPending}
+                isDeactivating={deactivateCharacterMutation.isPending}
                 isActive={activeCharacter?.id === character.id}
               />
             ))}
@@ -155,8 +163,10 @@ interface CharacterCardProps {
   character: Character
   onDelete: () => void
   onActivate: () => void
+  onDeactivate: () => void
   isDeleting: boolean
   isActivating: boolean
+  isDeactivating: boolean
   isActive: boolean
 }
 
@@ -164,8 +174,10 @@ function CharacterCard({
   character,
   onDelete,
   onActivate,
+  onDeactivate,
   isDeleting,
   isActivating,
+  isDeactivating,
   isActive,
 }: CharacterCardProps) {
   return (
@@ -241,12 +253,11 @@ function CharacterCard({
             variant={isActive ? 'default' : 'outline'}
             size="sm"
             className="flex-1"
-            onClick={onActivate}
-            isLoading={isActivating && !isActive}
-            disabled={isActive}
-            icon={Star}
+            onClick={isActive ? onDeactivate : onActivate}
+            isLoading={isActive ? isDeactivating : isActivating}
           >
-            {isActive ? 'アクティブ' : '選択'}
+            <Star className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`} />
+            {isActive ? '選択中' : '選択'}
           </LoadingButton>
 
           <Button variant="outline" size="sm" disabled>

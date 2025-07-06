@@ -21,10 +21,13 @@ import {
   Sparkles,
 } from 'lucide-react'
 import {
+  useCharacters,
   useCharacter,
   useDeleteCharacter,
   useActivateCharacter,
+  useDeactivateCharacter,
 } from '@/hooks/useCharacters'
+import { useActiveCharacter } from '@/stores/characterStore'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { LoadingButton } from '@/components/ui/LoadingButton'
@@ -33,9 +36,13 @@ import { containerStyles } from '@/lib/styles'
 export function CharacterDetailPage() {
   const { id } = useParams({ from: '/character/$id' })
   const navigate = useNavigate()
+  // キャラクター一覧をストアに読み込む（activeCharacterの取得に必要）
+  useCharacters()
   const { data: character, isLoading, error } = useCharacter(id)
+  const { activeCharacter } = useActiveCharacter()
   const deleteCharacterMutation = useDeleteCharacter()
   const activateCharacterMutation = useActivateCharacter()
+  const deactivateCharacterMutation = useDeactivateCharacter()
   const [isDeleting, setIsDeleting] = useState(false)
 
   const handleDeleteCharacter = async () => {
@@ -59,6 +66,10 @@ export function CharacterDetailPage() {
   const handleActivateCharacter = async () => {
     if (!character) return
     await activateCharacterMutation.mutateAsync(character.id)
+  }
+
+  const handleDeactivateCharacter = async () => {
+    await deactivateCharacterMutation.mutateAsync()
   }
 
   if (isLoading) {
@@ -96,6 +107,9 @@ export function CharacterDetailPage() {
     )
   }
 
+  // キャラクターデータが確実に存在する時点でisActiveを判定
+  const isActive = activeCharacter?.id === character.id
+
   return (
     <div className={`${containerStyles.page} p-6`}>
       <div className={containerStyles.maxWidth}>
@@ -125,12 +139,16 @@ export function CharacterDetailPage() {
 
           <div className="flex gap-2">
             <LoadingButton
-              onClick={handleActivateCharacter}
-              isLoading={activateCharacterMutation.isPending}
-              icon={Star}
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              onClick={isActive ? handleDeactivateCharacter : handleActivateCharacter}
+              isLoading={isActive ? deactivateCharacterMutation.isPending : activateCharacterMutation.isPending}
+              className={
+                isActive
+                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+                  : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+              }
             >
-              選択
+              <Star className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`} />
+              {isActive ? '選択中' : '選択'}
             </LoadingButton>
             <Button variant="outline" disabled>
               <Edit3 className="mr-2 h-4 w-4" />

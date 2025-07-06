@@ -177,3 +177,29 @@ export function useActivateCharacter() {
     },
   })
 }
+
+/**
+ * キャラクターの選択を解除する（Zustandストア統合）
+ */
+export function useDeactivateCharacter() {
+  const queryClient = useQueryClient()
+  const setActiveCharacter = useCharacterStore(
+    state => state.setActiveCharacter
+  )
+
+  return useMutation({
+    mutationFn: () => {
+      // 選択解除はローカルのみで処理（APIコールなし）
+      return Promise.resolve()
+    },
+    onSuccess: () => {
+      // ストアでアクティブキャラクターをクリア
+      setActiveCharacter(null)
+
+      // キャラクター一覧のキャッシュを更新
+      queryClient.invalidateQueries({ queryKey: ['characters'] })
+
+      showSuccessToast('選択解除', 'キャラクターの選択を解除しました')
+    },
+  })
+}
