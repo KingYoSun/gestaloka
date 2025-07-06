@@ -2,7 +2,24 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/07/06（18:20 JST）
+## 最終更新: 2025/07/06（23:49 JST）
+
+### 2025/07/06の主な実装
+- **キャラクター作成機能の修正** ✅NEW！
+  - 問題の内容
+    - キャラクター作成後、ダッシュボードに遷移するがキャラクターが作成されていない
+    - `CharacterService.get_by_user`で`WHERE false`というSQLが生成される
+  - 原因
+    - SQLModel/SQLAlchemyのクエリで`is_active is True`を使用していた
+    - SQLModelでは`==`演算子を使用する必要がある（Pythonの`is`は使えない）
+  - 修正内容
+    - `CharacterModel.is_active is True` → `CharacterModel.is_active == True  # noqa: E712`
+    - 同様の問題を`GameSessionService`でも修正
+    - APIエンドポイントに末尾スラッシュを追加（307リダイレクト回避）
+  - 技術的注意点
+    - SQLModelでのブーリアン比較は`==`を使用（E712リントエラーは無視）
+    - これはSQLへの変換時の制約によるもの
+  - 詳細レポート：`06_reports/2025-07-06_character_creation_fix.md`
 
 ### 2025/07/06の主な実装
 - **CharacterExplorationProgressモデルのインポートエラー修正** ✅

@@ -175,7 +175,7 @@ class ApiClient {
 
   // キャラクター関連
   async getCharacters(): Promise<Character[]> {
-    return this.requestWithTransform<Character[]>('/characters')
+    return this.requestWithTransform<Character[]>('/characters/')
   }
 
   async getCharacter(characterId: string): Promise<Character> {
@@ -186,7 +186,7 @@ class ApiClient {
     characterData: CharacterCreationForm
   ): Promise<Character> {
     return this.requestWithTransform<Character>(
-      '/characters',
+      '/characters/',
       { method: 'POST' },
       characterData
     )

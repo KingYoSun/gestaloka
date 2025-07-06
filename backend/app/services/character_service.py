@@ -36,7 +36,7 @@ class CharacterService(LoggerMixin):
         """ユーザーのキャラクター一覧を取得"""
         try:
             statement = select(CharacterModel).where(
-                CharacterModel.user_id == user_id, CharacterModel.is_active is True
+                CharacterModel.user_id == user_id, CharacterModel.is_active == True  # noqa: E712
             )
             result = self.db.exec(statement)
             characters = result.all()

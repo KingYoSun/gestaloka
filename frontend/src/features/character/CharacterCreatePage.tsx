@@ -49,8 +49,8 @@ export function CharacterCreatePage() {
     setIsSubmitting(true)
     try {
       await createCharacterMutation.mutateAsync(data)
-      // 成功後はダッシュボードに遷移
-      navigate({ to: '/dashboard' })
+      // 成功後はキャラクター一覧ページに遷移
+      navigate({ to: '/characters' })
     } catch (error) {
       console.error('Character creation failed:', error)
     } finally {

@@ -85,7 +85,7 @@ class GameSessionService:
         """新しいゲームセッションを作成"""
         try:
             # 既存のアクティブなセッションを非アクティブ化
-            stmt = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active is True)
+            stmt = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active == True)  # noqa: E712
             existing_sessions = self.db.exec(stmt).all()
 
             for session in existing_sessions:
