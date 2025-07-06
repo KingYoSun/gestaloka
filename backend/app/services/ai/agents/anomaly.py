@@ -283,7 +283,7 @@ class AnomalyAgent(BaseAgent):
                 "emotional_corruption": "負の感情が記憶を蝕む",
                 "context_distortion": "文脈が歪み、意味が変質する",
                 "self_reinforcement": "汚染が汚染を呼び、悪循環に陥る",
-                "memory_collapse": "極度の汚染で記憶が崩壊し、歪みへと変貌"
+                "memory_collapse": "極度の汚染で記憶が崩壊し、歪みへと変貌",
             }
 
         return context

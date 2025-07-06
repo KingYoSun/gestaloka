@@ -53,7 +53,7 @@ class ContaminationPurificationService:
     CONTEXT_RESTORATION_TRAITS: ClassVar[dict[str, list[str]]] = {
         "memory_coherence": ["記憶の照満者", "意味の守護者"],
         "emotional_balance": ["感情の調律者", "平静の化身"],
-        "context_clarity": ["真実の語り手", "文脈の編み手"]
+        "context_clarity": ["真実の語り手", "文脈の編み手"],
     }
 
     def __init__(self, db: Session):
@@ -72,10 +72,7 @@ class ContaminationPurificationService:
 
         # ログの取得と所有権確認
         log = self.db.exec(
-            select(CompletedLog).where(
-                CompletedLog.id == log_id,
-                CompletedLog.creator_id == character.id
-            )
+            select(CompletedLog).where(CompletedLog.id == log_id, CompletedLog.creator_id == character.id)
         ).first()
 
         if not log:
@@ -99,11 +96,7 @@ class ContaminationPurificationService:
             character_item = self.db.exec(
                 select(CharacterItem)
                 .join(Item)
-                .where(
-                    CharacterItem.character_id == character.id,
-                    Item.name == item_name,
-                    CharacterItem.quantity > 0
-                )
+                .where(CharacterItem.character_id == character.id, Item.name == item_name, CharacterItem.quantity > 0)
             ).first()
 
             if character_item:
@@ -123,11 +116,12 @@ class ContaminationPurificationService:
 
         # SP消費
         from app.models.sp import SPTransactionType
+
         await self.sp_service.consume_sp(
             user_id=character.user_id,
             amount=total_sp_cost,
             transaction_type=SPTransactionType.LOG_ENHANCEMENT,
-            description=f"汚染浄化: {log.name}"
+            description=f"汚染浄化: {log.name}",
         )
 
         # 浄化計算（コンテキスト修正プロセス）
@@ -175,8 +169,8 @@ class ContaminationPurificationService:
                 "context_restoration": {
                     "process": "歪んだ文脈の修正",
                     "emotional_balance": "負の感情ループの遮断",
-                    "memory_coherence": "記憶の一貫性回復"
-                }
+                    "memory_coherence": "記憶の一貫性回復",
+                },
             }
         )
 
@@ -284,8 +278,7 @@ class ContaminationPurificationService:
         # キャラクターのインベントリに追加
         char_item = self.db.exec(
             select(CharacterItem).where(
-                CharacterItem.character_id == character.id,
-                CharacterItem.item_id == existing_item.id
+                CharacterItem.character_id == character.id, CharacterItem.item_id == existing_item.id
             )
         ).first()
 

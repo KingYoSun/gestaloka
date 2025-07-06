@@ -464,7 +464,9 @@ class GameSessionService:
                 )
             else:
                 # 通常のアクションを処理
-                coordinator_response = await self.coordinator.process_action(player_action, session_response_for_process)
+                coordinator_response = await self.coordinator.process_action(
+                    player_action, session_response_for_process
+                )
 
             # coordinator_responseが誤ってlistとして返される場合の対処
             if isinstance(coordinator_response, list):
@@ -854,9 +856,7 @@ class GameSessionService:
             )
 
         if "mp" in parameter_changes:
-            character_stats.mp = max(
-                0, min(character_stats.max_mp, character_stats.mp + parameter_changes["mp"])
-            )
+            character_stats.mp = max(0, min(character_stats.max_mp, character_stats.mp + parameter_changes["mp"]))
 
         if "experience" in parameter_changes:
             character_stats.experience += parameter_changes["experience"]
@@ -1052,7 +1052,7 @@ class GameSessionService:
         session: GameSession,
         action_request: ActionExecuteRequest,
         player_action: PlayerAction,
-        session_response: GameSessionResponse
+        session_response: GameSessionResponse,
     ) -> Any:
         """探索アクションを物語として処理"""
 
@@ -1088,7 +1088,7 @@ class GameSessionService:
         # 場所による確率修正
         if character.location_id:
             location = self.db.exec(select(Location).where(Location.id == character.location_id)).first()
-            if location and hasattr(location, 'fragment_discovery_rate'):
+            if location and hasattr(location, "fragment_discovery_rate"):
                 discovery_chance = location.fragment_discovery_rate
 
         # フラグメント発見判定
@@ -1112,7 +1112,7 @@ class GameSessionService:
                 location=character.location,
                 emotional_valence=random.choice([0.2, 0.5, 0.8]),  # ポジティブ寄り
                 rarity=rarity,
-                keywords=["探索", "発見", character.location]
+                keywords=["探索", "発見", character.location],
             )
 
             self.db.add(fragment)
@@ -1125,8 +1125,8 @@ class GameSessionService:
                     "id": fragment.id,
                     "rarity": rarity.value,
                     "description": fragment.action_description,
-                    "emotional_valence": fragment.emotional_valence
-                }
+                    "emotional_valence": fragment.emotional_valence,
+                },
             }
 
         return {"found_fragment": False}

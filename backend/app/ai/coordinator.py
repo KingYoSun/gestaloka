@@ -465,26 +465,22 @@ class CoordinatorAI:
 
         # 物語の内容に基づいて適切な探索選択肢を提案
         if any(word in narrative for word in ["街", "町", "都市", "村"]):
-            choices.append(Choice(
-                id="explore_town",
-                text="街を探索する",
-                description="街の中を探索してみます（SP消費: 5）"
-            ))
+            choices.append(
+                Choice(id="explore_town", text="街を探索する", description="街の中を探索してみます（SP消費: 5）")
+            )
 
         if any(word in narrative for word in ["森", "山", "野", "洞窟"]):
-            choices.append(Choice(
-                id="search_area",
-                text="周囲を詳しく調べる",
-                description="周囲を注意深く調査します（SP消費: 5）"
-            ))
+            choices.append(
+                Choice(id="search_area", text="周囲を詳しく調べる", description="周囲を注意深く調査します（SP消費: 5）")
+            )
 
         # 移動の選択肢（常に1つは含める）
         if not choices or len(choices) < 1:
-            choices.append(Choice(
-                id="explore_surroundings",
-                text="周囲を探索する",
-                description="周辺地域を探索します（SP消費: 5）"
-            ))
+            choices.append(
+                Choice(
+                    id="explore_surroundings", text="周囲を探索する", description="周辺地域を探索します（SP消費: 5）"
+                )
+            )
 
         return choices
 

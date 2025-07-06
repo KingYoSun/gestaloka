@@ -131,7 +131,7 @@ class CompilationBonusService:
                 final_contamination *= bonus.value
 
         # キャラクターの特性による追加ボーナス
-        if hasattr(character, 'personality') and character.personality:
+        if hasattr(character, "personality") and character.personality:
             # character.personalityはOptional[str]なので、リストではない
             try:
                 traits = json.loads(character.personality)

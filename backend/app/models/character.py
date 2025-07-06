@@ -62,8 +62,7 @@ class Character(SQLModel, table=True):
 
     # 探索進捗関連
     exploration_progress: list["CharacterExplorationProgress"] = Relationship(
-        back_populates="character",
-        sa_relationship_kwargs={"lazy": "selectin"}
+        back_populates="character", sa_relationship_kwargs={"lazy": "selectin"}
     )
 
     def __repr__(self) -> str:
