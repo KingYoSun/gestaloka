@@ -160,22 +160,24 @@ class TestGameSessionCoordinatorIntegration:
         with patch.object(
             game_session_service.coordinator, "process_action", return_value=mock_response
         ) as mock_process:
-            # アクション実行
-            action_request = ActionExecuteRequest(action_text="北へ移動する", action_type="movement")
+            # 探索アクションの発見をモック（何も見つからない）
+            with patch.object(game_session_service, "_perform_exploration", return_value={"found_fragment": False}):
+                # アクション実行
+                action_request = ActionExecuteRequest(action_text="北へ移動する", action_type="movement")
 
-            response = await game_session_service.execute_action(mock_session, action_request)
+                response = await game_session_service.execute_action(mock_session, action_request)
 
-            # 検証
-            assert response.narrative == "北へ向かって歩き始めました。"
-            assert len(response.choices) == 2
-            assert response.success is True
-            assert response.turn_number == 6  # turn_countが増加
+                # 検証
+                assert response.narrative == "北へ向かって歩き始めました。"
+                assert len(response.choices) == 2
+                assert response.success is True
+                assert response.turn_number == 6  # turn_countが増加
 
-            # CoordinatorAIが呼ばれたことを確認
-            assert mock_process.called
-            call_args = mock_process.call_args[0]
-            assert call_args[0].action_text == "北へ移動する"
-            assert call_args[0].action_type == "movement"
+                # CoordinatorAIが呼ばれたことを確認
+                assert mock_process.called
+                call_args = mock_process.call_args[0]
+                assert call_args[0].action_text == "北へ移動する"
+                assert call_args[0].action_type == "movement"
 
     @pytest.mark.asyncio
     async def test_coordinator_error_handling(

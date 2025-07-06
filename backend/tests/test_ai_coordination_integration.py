@@ -322,6 +322,7 @@ class TestAICoordinationIntegration:
         assert "クエスト完了" in response.narrative
         assert "歴史に刻まれる" in response.narrative
         assert "新たな冒険" in response.narrative
-        assert len(response.choices) == 3
+        # 探索選択肢が追加される可能性があるため、最低3つの選択肢があることを確認
+        assert len(response.choices) >= 3
         assert response.state_changes["gold"] == 1000
         assert response.state_changes["experience"] == 500
