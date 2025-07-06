@@ -37,13 +37,14 @@ class CharacterService(LoggerMixin):
         try:
             # 各キャラクターの最終セッション時間を取得するサブクエリ
             from app.models.character import GameSession
-            
+
             statement = select(CharacterModel).where(
-                CharacterModel.user_id == user_id, CharacterModel.is_active == True  # noqa: E712
+                CharacterModel.user_id == user_id,
+                CharacterModel.is_active == True,  # noqa: E712
             )
             result = self.db.exec(statement)
             characters = result.all()
-            
+
             # 各キャラクターに最終プレイ時間を設定
             character_list = []
             for char in characters:
@@ -51,17 +52,17 @@ class CharacterService(LoggerMixin):
                 last_session_stmt = (
                     select(GameSession.updated_at)
                     .where(GameSession.character_id == char.id)
-                    .order_by(GameSession.updated_at.desc())
+                    .order_by(GameSession.updated_at.desc())  # type: ignore
                     .limit(1)
                 )
                 last_session_result = self.db.exec(last_session_stmt)
                 last_played_at = last_session_result.first()
-                
+
                 char_dict = Character.model_validate(char)
                 if last_played_at:
                     char_dict.last_played_at = last_played_at
                 character_list.append(char_dict)
-                
+
             return character_list
         except Exception as e:
             self.log_error("Failed to get characters by user", user_id=user_id, error=str(e))
@@ -169,4 +170,14 @@ class CharacterService(LoggerMixin):
         except Exception as e:
             self.db.rollback()
             self.log_error("Failed to delete character", character_id=character_id, error=str(e))
+            raise
+
+    async def clear_active_character(self, user_id: str) -> None:
+        """ユーザーのアクティブキャラクターをクリア"""
+        try:
+            # 現在実装では何もしない（将来的にアクティブキャラクター管理を実装する場合はここに処理を追加）
+            # 例: ユーザーテーブルにactive_character_idフィールドを追加して管理する
+            pass
+        except Exception as e:
+            self.log_error("Failed to clear active character", user_id=user_id, error=str(e))
             raise

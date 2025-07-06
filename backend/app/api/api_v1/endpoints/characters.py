@@ -103,3 +103,42 @@ async def delete_character(
     except Exception as e:
         logger.error("Character deletion failed", user_id=character.user_id, character_id=character.id, error=str(e))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="キャラクター削除に失敗しました")
+
+
+@router.post("/{character_id}/activate", response_model=Character)
+async def activate_character(
+    character: Character = Depends(get_user_character),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> Any:
+    """キャラクターをアクティブにする"""
+    try:
+        # 同じユーザーのキャラクターかチェック（get_user_characterで既にチェック済みだが念のため）
+        if character.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="このキャラクターを選択する権限がありません"
+            )
+
+        # 現在のアクティブキャラクターをクリア
+        character_service = CharacterService(db)
+        await character_service.clear_active_character(current_user.id)
+
+        # キャラクターが削除されていないことを確認
+        if not character.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="削除されたキャラクターは選択できません"
+            )
+
+        logger.info(
+            "Character activated", user_id=current_user.id, character_id=character.id, character_name=character.name
+        )
+
+        # 現在の実装では、フロントエンドでアクティブキャラクターを管理
+        # 将来的にはユーザーテーブルやセッションでサーバー側管理を実装
+        return character
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Character activation failed", user_id=current_user.id, character_id=character.id, error=str(e))
+        raise DatabaseError("キャラクターの選択に失敗しました", operation="activate_character")
