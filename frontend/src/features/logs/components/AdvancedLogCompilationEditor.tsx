@@ -73,8 +73,11 @@ export function AdvancedLogCompilationEditor({
   const [logTitle, setLogTitle] = useState('')
   const [logDescription, setLogDescription] = useState('')
 
-  const { mutate: previewCompilation, data: previewData, isPending: isPreviewLoading } =
-    useCompilationPreview()
+  const {
+    mutate: previewCompilation,
+    data: previewData,
+    isPending: isPreviewLoading,
+  } = useCompilationPreview()
   const { data: playerSP } = usePlayerSP()
 
   // フラグメントIDのリストから実際のフラグメントオブジェクトを取得
@@ -98,7 +101,9 @@ export function AdvancedLogCompilationEditor({
   // 編纂プレビューの取得
   useEffect(() => {
     if (coreFragmentId && selectedFragmentIds.length > 0) {
-      const subFragmentIds = selectedFragmentIds.filter(id => id !== coreFragmentId)
+      const subFragmentIds = selectedFragmentIds.filter(
+        id => id !== coreFragmentId
+      )
       previewCompilation({
         core_fragment_id: coreFragmentId,
         sub_fragment_ids: subFragmentIds,
@@ -141,7 +146,14 @@ export function AdvancedLogCompilationEditor({
         `${allKeywords}に関わる${selectedFragments.length}つの記憶から編纂されたログ。`
       )
     }
-  }, [coreFragment, selectedFragments, previewData, logName, logTitle, logDescription])
+  }, [
+    coreFragment,
+    selectedFragments,
+    previewData,
+    logName,
+    logTitle,
+    logDescription,
+  ])
 
   const handleFragmentToggle = (fragmentId: string) => {
     if (fragmentId === coreFragmentId) return // コアフラグメントは削除不可
@@ -157,7 +169,11 @@ export function AdvancedLogCompilationEditor({
     if (!coreFragmentId || selectedFragmentIds.length === 0) return
 
     // SP残高の確認
-    if (playerSP && previewData && playerSP.currentSp < previewData.final_sp_cost) {
+    if (
+      playerSP &&
+      previewData &&
+      playerSP.currentSp < previewData.final_sp_cost
+    ) {
       alert('SPが不足しています')
       return
     }
@@ -182,9 +198,10 @@ export function AdvancedLogCompilationEditor({
     logDescription
 
   // SPコストの計算
-  const canAfford = playerSP && previewData
-    ? playerSP.currentSp >= previewData.final_sp_cost
-    : true
+  const canAfford =
+    playerSP && previewData
+      ? playerSP.currentSp >= previewData.final_sp_cost
+      : true
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -301,21 +318,22 @@ export function AdvancedLogCompilationEditor({
                 onChange={e => setLogTitle(e.target.value)}
                 placeholder="例：不屈の探求者"
               />
-              {previewData?.special_titles && previewData.special_titles.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {previewData?.special_titles?.map((title, i) => (
-                    <Badge
-                      key={i}
-                      variant="secondary"
-                      className="cursor-pointer"
-                      onClick={() => setLogTitle(title)}
-                    >
-                      <Award className="h-3 w-3 mr-1" />
-                      {title}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+              {previewData?.special_titles &&
+                previewData.special_titles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {previewData?.special_titles?.map((title, i) => (
+                      <Badge
+                        key={i}
+                        variant="secondary"
+                        className="cursor-pointer"
+                        onClick={() => setLogTitle(title)}
+                      >
+                        <Award className="h-3 w-3 mr-1" />
+                        {title}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
             </div>
 
             <div className="space-y-2">
@@ -356,7 +374,9 @@ export function AdvancedLogCompilationEditor({
                       <div className="flex justify-between text-sm text-green-600">
                         <span>ボーナス削減</span>
                         <span>
-                          -{previewData.base_sp_cost - previewData.final_sp_cost} SP
+                          -
+                          {previewData.base_sp_cost - previewData.final_sp_cost}{' '}
+                          SP
                         </span>
                       </div>
                       <Separator />

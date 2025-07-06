@@ -13,12 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  Sparkles,
-  Info,
-  Heart,
-  Star,
-} from 'lucide-react'
+import { Sparkles, Info, Heart, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreatePurificationItem } from '../hooks/usePurificationItems'
 import { useToast } from '@/hooks/use-toast'
@@ -42,10 +37,22 @@ const RARITY_TO_ITEM_TYPE = {
 // 浄化アイテムの説明
 const ITEM_TYPE_INFO = {
   HOLY_WATER: { name: '聖水', power: 10, description: '基本的な浄化アイテム' },
-  LIGHT_CRYSTAL: { name: '光のクリスタル', power: 20, description: '中程度の浄化力' },
-  PURIFICATION_TOME: { name: '浄化の書', power: 30, description: '強力な浄化効果' },
+  LIGHT_CRYSTAL: {
+    name: '光のクリスタル',
+    power: 20,
+    description: '中程度の浄化力',
+  },
+  PURIFICATION_TOME: {
+    name: '浄化の書',
+    power: 30,
+    description: '強力な浄化効果',
+  },
   ANGEL_TEARS: { name: '天使の涙', power: 50, description: '高度な浄化が可能' },
-  WORLD_TREE_LEAF: { name: '世界樹の葉', power: 70, description: '最強の浄化力' },
+  WORLD_TREE_LEAF: {
+    name: '世界樹の葉',
+    power: 70,
+    description: '最強の浄化力',
+  },
 }
 
 export function CreatePurificationItemDialog({
@@ -57,11 +64,17 @@ export function CreatePurificationItemDialog({
   const { toast } = useToast()
 
   // ポジティブなフラグメントのみフィルタリング
-  const positiveFragments = fragments.filter(f => f.emotionalValence === 'positive')
+  const positiveFragments = fragments.filter(
+    f => f.emotionalValence === 'positive'
+  )
 
-  const selectedFragment = positiveFragments.find(f => f.id === selectedFragmentId)
+  const selectedFragment = positiveFragments.find(
+    f => f.id === selectedFragmentId
+  )
   const expectedItemType = selectedFragment
-    ? RARITY_TO_ITEM_TYPE[selectedFragment.rarity as keyof typeof RARITY_TO_ITEM_TYPE]
+    ? RARITY_TO_ITEM_TYPE[
+        selectedFragment.rarity as keyof typeof RARITY_TO_ITEM_TYPE
+      ]
     : null
   const expectedItemInfo = expectedItemType
     ? ITEM_TYPE_INFO[expectedItemType as keyof typeof ITEM_TYPE_INFO]
@@ -73,8 +86,11 @@ export function CreatePurificationItemDialog({
     createItem(
       { fragment_id: selectedFragmentId },
       {
-        onSuccess: (response) => {
-          const itemInfo = ITEM_TYPE_INFO[response.item.item_type as keyof typeof ITEM_TYPE_INFO]
+        onSuccess: response => {
+          const itemInfo =
+            ITEM_TYPE_INFO[
+              response.item.item_type as keyof typeof ITEM_TYPE_INFO
+            ]
           toast({
             title: '浄化アイテム作成完了',
             description: `${itemInfo.name}を作成しました。`,
@@ -82,7 +98,7 @@ export function CreatePurificationItemDialog({
           })
           onClose()
         },
-        onError: (error) => {
+        onError: error => {
           console.error('Failed to create purification item:', error)
           toast({
             title: 'エラー',
@@ -95,7 +111,7 @@ export function CreatePurificationItemDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -119,7 +135,10 @@ export function CreatePurificationItemDialog({
                 </AlertDescription>
               </Alert>
             ) : (
-              <RadioGroup value={selectedFragmentId} onValueChange={setSelectedFragmentId}>
+              <RadioGroup
+                value={selectedFragmentId}
+                onValueChange={setSelectedFragmentId}
+              >
                 <div className="space-y-3">
                   {positiveFragments.map(fragment => (
                     <Label
@@ -147,7 +166,11 @@ export function CreatePurificationItemDialog({
                         <p className="text-sm">{fragment.actionDescription}</p>
                         <div className="flex gap-1 mt-2">
                           {fragment.keywords.slice(0, 3).map((keyword, i) => (
-                            <Badge key={i} variant="outline" className="text-xs">
+                            <Badge
+                              key={i}
+                              variant="outline"
+                              className="text-xs"
+                            >
                               {keyword}
                             </Badge>
                           ))}
@@ -168,10 +191,12 @@ export function CreatePurificationItemDialog({
                 <p className="font-semibold mb-1">作成されるアイテム:</p>
                 <div className="space-y-1 text-sm">
                   <p>
-                    <span className="font-medium">{expectedItemInfo.name}</span> - 
-                    浄化力 {expectedItemInfo.power}%
+                    <span className="font-medium">{expectedItemInfo.name}</span>{' '}
+                    - 浄化力 {expectedItemInfo.power}%
                   </p>
-                  <p className="text-muted-foreground">{expectedItemInfo.description}</p>
+                  <p className="text-muted-foreground">
+                    {expectedItemInfo.description}
+                  </p>
                 </div>
               </AlertDescription>
             </Alert>

@@ -176,8 +176,8 @@ function CharacterCard({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-lg">
-              <Link 
-                to="/character/$id" 
+              <Link
+                to="/character/$id"
                 params={{ id: character.id }}
                 className="flex items-center gap-2 hover:text-purple-600 transition-colors"
               >
@@ -230,10 +230,9 @@ function CharacterCard({
         {/* 最終プレイ時間または作成日時 */}
         <div className="flex items-center text-xs text-slate-500 mb-4">
           <Clock className="h-3 w-3 mr-1" />
-          {character.lastPlayedAt 
+          {character.lastPlayedAt
             ? `最終プレイ: ${formatRelativeTime(character.lastPlayedAt)}`
-            : `作成: ${formatRelativeTime(character.createdAt)}`
-          }
+            : `作成: ${formatRelativeTime(character.createdAt)}`}
         </div>
 
         {/* アクションボタン */}
@@ -249,7 +248,6 @@ function CharacterCard({
           >
             {isActive ? 'アクティブ' : '選択'}
           </LoadingButton>
-
 
           <Button variant="outline" size="sm" disabled>
             <Edit3 className="h-3 w-3" />

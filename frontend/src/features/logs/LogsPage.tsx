@@ -12,7 +12,15 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { BookOpen, Sparkles, User, ScrollText, Compass, Shield, Brain } from 'lucide-react'
+import {
+  BookOpen,
+  Sparkles,
+  User,
+  ScrollText,
+  Compass,
+  Shield,
+  Brain,
+} from 'lucide-react'
 import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
 import { useToast } from '@/hooks/use-toast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
@@ -22,7 +30,8 @@ export function LogsPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
   const [selectedFragmentIds, setSelectedFragmentIds] = useState<string[]>([])
   const [showCompilationEditor, setShowCompilationEditor] = useState(false)
-  const [showPurificationItemDialog, setShowPurificationItemDialog] = useState(false)
+  const [showPurificationItemDialog, setShowPurificationItemDialog] =
+    useState(false)
   const { data: characters = [], isLoading: isLoadingCharacters } =
     useCharacters()
   const { data: fragments = [], isLoading: isLoadingFragments } =

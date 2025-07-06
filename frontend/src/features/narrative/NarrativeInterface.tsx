@@ -84,7 +84,6 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
     }
   }
 
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 h-full">
       {/* メイン物語エリア */}
@@ -157,7 +156,7 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
         <div className="flex justify-center">
           <EquippedTitleBadge />
         </div>
-        
+
         {/* 現在地情報はセッションの物語内で表現されるため削除 */}
       </div>
     </div>

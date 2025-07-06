@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { CompletedLog, PurificationItem, PurificationItemType } from '@/types/log'
+import {
+  CompletedLog,
+  PurificationItem,
+  PurificationItemType,
+} from '@/types/log'
 import {
   Dialog,
   DialogContent,
@@ -39,13 +43,14 @@ interface PurificationDialogProps {
 }
 
 // 浄化アイテムのアイコン
-const PURIFICATION_ITEM_ICONS: Record<PurificationItemType, React.ElementType> = {
-  HOLY_WATER: Droplet,
-  LIGHT_CRYSTAL: Gem,
-  PURIFICATION_TOME: Book,
-  ANGEL_TEARS: Feather,
-  WORLD_TREE_LEAF: Leaf,
-}
+const PURIFICATION_ITEM_ICONS: Record<PurificationItemType, React.ElementType> =
+  {
+    HOLY_WATER: Droplet,
+    LIGHT_CRYSTAL: Gem,
+    PURIFICATION_TOME: Book,
+    ANGEL_TEARS: Feather,
+    WORLD_TREE_LEAF: Leaf,
+  }
 
 // 浄化アイテムの表示名
 const PURIFICATION_ITEM_LABELS: Record<PurificationItemType, string> = {
@@ -76,7 +81,9 @@ export function PurificationDialog({
   const { toast } = useToast()
   const queryClient = useQueryClient()
 
-  const selectedItem = purificationItems.find(item => item.id === selectedItemId)
+  const selectedItem = purificationItems.find(
+    item => item.id === selectedItemId
+  )
 
   // 浄化後の汚染度を計算
   const calculatePurifiedLevel = () => {
@@ -138,7 +145,7 @@ export function PurificationDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={open => !open && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -161,7 +168,9 @@ export function PurificationDialog({
                   className={cn(
                     'h-3',
                     log.contaminationLevel > 0.7 && '[&>div]:bg-red-500',
-                    log.contaminationLevel > 0.5 && log.contaminationLevel <= 0.7 && '[&>div]:bg-yellow-500',
+                    log.contaminationLevel > 0.5 &&
+                      log.contaminationLevel <= 0.7 &&
+                      '[&>div]:bg-yellow-500',
                     log.contaminationLevel <= 0.5 && '[&>div]:bg-green-500'
                   )}
                 />
@@ -178,7 +187,9 @@ export function PurificationDialog({
                       className={cn(
                         'h-3',
                         purifiedLevel > 0.7 && '[&>div]:bg-red-500',
-                        purifiedLevel > 0.5 && purifiedLevel <= 0.7 && '[&>div]:bg-yellow-500',
+                        purifiedLevel > 0.5 &&
+                          purifiedLevel <= 0.7 &&
+                          '[&>div]:bg-yellow-500',
                         purifiedLevel <= 0.5 && '[&>div]:bg-green-500'
                       )}
                     />
@@ -202,7 +213,10 @@ export function PurificationDialog({
                 </AlertDescription>
               </Alert>
             ) : (
-              <RadioGroup value={selectedItemId} onValueChange={setSelectedItemId}>
+              <RadioGroup
+                value={selectedItemId}
+                onValueChange={setSelectedItemId}
+              >
                 <div className="space-y-3">
                   {purificationItems.map(item => {
                     const Icon = PURIFICATION_ITEM_ICONS[item.item_type]
@@ -247,12 +261,20 @@ export function PurificationDialog({
               <AlertDescription>
                 <p className="font-semibold mb-1">浄化効果:</p>
                 <ul className="list-disc list-inside space-y-1 text-sm">
-                  <li>汚染度が{Math.round((log.contaminationLevel - purifiedLevel) * 100)}%減少します</li>
+                  <li>
+                    汚染度が
+                    {Math.round((log.contaminationLevel - purifiedLevel) * 100)}
+                    %減少します
+                  </li>
                   {purifiedLevel === 0 && (
-                    <li className="text-green-600">完全浄化ボーナス: ログの力が50%強化されます</li>
+                    <li className="text-green-600">
+                      完全浄化ボーナス: ログの力が50%強化されます
+                    </li>
                   )}
                   {purifiedLevel <= 0.2 && log.contaminationLevel > 0.8 && (
-                    <li className="text-purple-600">汚染反転ボーナス: 「闇から光へ」の特殊称号を獲得</li>
+                    <li className="text-purple-600">
+                      汚染反転ボーナス: 「闇から光へ」の特殊称号を獲得
+                    </li>
                   )}
                   {purifiedLevel <= 0.3 && (
                     <li>新たな特性: 「清らか」「純粋」が付与されます</li>

@@ -6,7 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DispatchForm } from '@/features/dispatch/components/DispatchForm'
 import { CompletedLogDetail } from './CompletedLogDetail'
-import { BookOpen, Sparkles, Send, User, AlertTriangle, Eye, Shield } from 'lucide-react'
+import {
+  BookOpen,
+  Sparkles,
+  Send,
+  User,
+  AlertTriangle,
+  Eye,
+  Shield,
+} from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 

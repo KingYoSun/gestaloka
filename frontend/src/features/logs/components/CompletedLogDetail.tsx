@@ -6,11 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import {
-  Shield,
-  Sparkles,
-  AlertTriangle,
-} from 'lucide-react'
+import { Shield, Sparkles, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PurificationDialog } from './PurificationDialog'
 import { usePurificationItems } from '../hooks/usePurificationItems'
@@ -20,7 +16,6 @@ interface CompletedLogDetailProps {
   onClose: () => void
   onPurify?: (logId: string) => void
 }
-
 
 export function CompletedLogDetail({
   log,
@@ -39,10 +34,29 @@ export function CompletedLogDetail({
 
   // 汚染度による状態の判定
   const getContaminationStatus = (level: number) => {
-    if (level > 0.7) return { label: '高度汚染', color: 'text-red-600', variant: 'destructive' as const }
-    if (level > 0.5) return { label: '中度汚染', color: 'text-yellow-600', variant: 'outline' as const }
-    if (level > 0.3) return { label: '軽度汚染', color: 'text-orange-600', variant: 'default' as const }
-    return { label: '清浄', color: 'text-green-600', variant: 'default' as const }
+    if (level > 0.7)
+      return {
+        label: '高度汚染',
+        color: 'text-red-600',
+        variant: 'destructive' as const,
+      }
+    if (level > 0.5)
+      return {
+        label: '中度汚染',
+        color: 'text-yellow-600',
+        variant: 'outline' as const,
+      }
+    if (level > 0.3)
+      return {
+        label: '軽度汚染',
+        color: 'text-orange-600',
+        variant: 'default' as const,
+      }
+    return {
+      label: '清浄',
+      color: 'text-green-600',
+      variant: 'default' as const,
+    }
   }
 
   const contaminationStatus = getContaminationStatus(log.contaminationLevel)
@@ -55,7 +69,9 @@ export function CompletedLogDetail({
             <div>
               <CardTitle className="text-2xl">{log.name}</CardTitle>
               {log.title && (
-                <p className="text-lg text-muted-foreground mt-1">{log.title}</p>
+                <p className="text-lg text-muted-foreground mt-1">
+                  {log.title}
+                </p>
               )}
             </div>
             <Button variant="ghost" onClick={onClose}>
@@ -90,7 +106,9 @@ export function CompletedLogDetail({
               className={cn(
                 'h-3',
                 log.contaminationLevel > 0.7 && '[&>div]:bg-red-500',
-                log.contaminationLevel > 0.5 && log.contaminationLevel <= 0.7 && '[&>div]:bg-yellow-500',
+                log.contaminationLevel > 0.5 &&
+                  log.contaminationLevel <= 0.7 &&
+                  '[&>div]:bg-yellow-500',
                 log.contaminationLevel <= 0.5 && '[&>div]:bg-green-500'
               )}
             />
@@ -105,7 +123,9 @@ export function CompletedLogDetail({
               <Shield className="h-4 w-4" />
               <AlertTitle>浄化可能</AlertTitle>
               <AlertDescription className="space-y-2">
-                <p>浄化アイテムを使用してこのログの汚染を取り除くことができます。</p>
+                <p>
+                  浄化アイテムを使用してこのログの汚染を取り除くことができます。
+                </p>
                 <Button
                   size="sm"
                   variant="outline"

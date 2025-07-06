@@ -64,7 +64,13 @@ export function LogFragments() {
 
   // ログフラグメント一覧を取得
   const { data, isLoading, error } = useQuery<LogFragmentResponse>({
-    queryKey: ['logFragments', searchKeyword, selectedRarity, currentPage, characterId],
+    queryKey: [
+      'logFragments',
+      searchKeyword,
+      selectedRarity,
+      currentPage,
+      characterId,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (searchKeyword) params.append('keyword', searchKeyword)

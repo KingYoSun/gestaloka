@@ -36,7 +36,9 @@ export const getTitles = async (): Promise<CharacterTitle[]> => {
  * Get the currently equipped title
  */
 export const getEquippedTitle = async (): Promise<CharacterTitle | null> => {
-  const response = await apiClient.get<CharacterTitle | null>('/titles/equipped')
+  const response = await apiClient.get<CharacterTitle | null>(
+    '/titles/equipped'
+  )
   return response
 }
 
@@ -44,7 +46,9 @@ export const getEquippedTitle = async (): Promise<CharacterTitle | null> => {
  * Equip a specific title
  */
 export const equipTitle = async (titleId: string): Promise<CharacterTitle> => {
-  const response = await apiClient.put<CharacterTitle>(`/titles/${titleId}/equip`)
+  const response = await apiClient.put<CharacterTitle>(
+    `/titles/${titleId}/equip`
+  )
   return response
 }
 

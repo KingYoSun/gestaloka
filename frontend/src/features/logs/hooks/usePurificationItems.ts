@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { logsApi } from '@/api/logs'
-import type { PurificationItem, CreatePurificationItemRequest } from '@/types/log'
+import type {
+  PurificationItem,
+  CreatePurificationItemRequest,
+} from '@/types/log'
 
 export function usePurificationItems(characterId: string) {
   return useQuery<PurificationItem[]>({

@@ -110,7 +110,8 @@ export function CharacterCreatePage() {
                 )}
                 {formValues.name && (
                   <p className="text-sm text-green-600">
-                    素晴らしい名前ですね！ {formValues.name} の物語が始まります。
+                    素晴らしい名前ですね！ {formValues.name}{' '}
+                    の物語が始まります。
                   </p>
                 )}
               </div>

@@ -161,11 +161,9 @@ export function DispatchDetail({
                     <div className="pt-3 border-t space-y-1 text-sm">
                       <p>
                         派遣開始:{' '}
-                        {format(
-                          dispatch.dispatched_at,
-                          'yyyy/MM/dd HH:mm',
-                          { locale: ja }
-                        )}
+                        {format(dispatch.dispatched_at, 'yyyy/MM/dd HH:mm', {
+                          locale: ja,
+                        })}
                       </p>
                       {dispatch.expected_return_at && (
                         <p>
@@ -240,11 +238,9 @@ export function DispatchDetail({
                             <div className="flex items-center gap-4 text-xs text-muted-foreground">
                               <span>{log.location}</span>
                               <span>
-                                {format(
-                                  log.timestamp,
-                                  'MM/dd HH:mm',
-                                  { locale: ja }
-                                )}
+                                {format(log.timestamp, 'MM/dd HH:mm', {
+                                  locale: ja,
+                                })}
                               </span>
                             </div>
                           </div>

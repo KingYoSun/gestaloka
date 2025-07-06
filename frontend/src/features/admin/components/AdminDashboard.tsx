@@ -47,9 +47,7 @@ export function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">-</div>
-            <p className="text-xs text-muted-foreground">
-              アクティブな接続数
-            </p>
+            <p className="text-xs text-muted-foreground">アクティブな接続数</p>
           </CardContent>
         </Card>
 
