@@ -5,14 +5,15 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
 from sqlalchemy import ARRAY, TIMESTAMP, Column, ForeignKey, Integer, String, text
 from sqlmodel import Field, Relationship, SQLModel
 
-from app.models.character import Character
-from app.models.location import Location
+if TYPE_CHECKING:
+    from app.models.character import Character
+    from app.models.location import Location
 
 
 class CharacterExplorationProgress(SQLModel, table=True):
@@ -88,8 +89,8 @@ class CharacterExplorationProgress(SQLModel, table=True):
     )
 
     # Relationships
-    character: Character = Relationship(back_populates="exploration_progress")
-    location: Location = Relationship(back_populates="exploration_progress")
+    character: "Character" = Relationship(back_populates="exploration_progress")
+    location: "Location" = Relationship(back_populates="exploration_progress")
 
     class Config:
         arbitrary_types_allowed = True

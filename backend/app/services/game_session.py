@@ -16,7 +16,7 @@ from app.ai.coordinator import CoordinatorAI
 from app.ai.shared_context import PlayerAction
 from app.core.logging import get_logger
 from app.models.character import Character, GameSession
-from app.models.location import Location, LocationConnection
+from app.models.location import Location
 from app.schemas.battle import (
     BattleAction,
     BattleActionType,
@@ -305,7 +305,7 @@ class GameSessionService:
             location = self.db.exec(select(Location).where(Location.id == character.location_id)).first()
             if location:
                 return f"{character.name}は{location.name}にいます。{location.description}"
-        
+
         location_scenes = {
             "starting_village": f"{character.name}は静かな始まりの村にいます。新たな冒険が始まろうとしています。",
             "tavern": f"{character.name}は賑やかな酒場にいます。旅人たちの話し声が聞こえてきます。",
@@ -1040,12 +1040,12 @@ class GameSessionService:
 
         # 0.0～1.0の範囲に制限
         return float(max(0.0, min(1.0, final_chance)))
-    
+
     def _is_exploration_action(self, action_request: ActionExecuteRequest) -> bool:
         """アクションが探索関連かどうかを判定"""
         exploration_keywords = ["探索", "調べる", "探す", "捜索", "移動", "向かう", "行く"]
         return any(keyword in action_request.action_text for keyword in exploration_keywords)
-    
+
     async def _process_exploration_action(
         self,
         character: Character,
@@ -1055,43 +1055,42 @@ class GameSessionService:
         session_response: GameSessionResponse
     ) -> Any:
         """探索アクションを物語として処理"""
-        from app.ai.coordination_models import FinalResponse
-        from app.models.log import LogFragment, LogFragmentRarity
-        
+
         # 探索結果の判定
         exploration_result = await self._perform_exploration(character)
-        
+
         # 探索結果を物語のコンテキストに追加
         player_action.metadata = player_action.metadata or {}
         player_action.metadata["exploration_result"] = exploration_result
-        
+
         # CoordinatorAIで物語を生成
         coordinator_response = await self.coordinator.process_action(player_action, session_response)
-        
+
         # 探索で何か見つかった場合、それを物語に組み込む
         if exploration_result.get("found_fragment"):
             fragment_data = exploration_result["fragment"]
             additional_narrative = f"\n\n探索中に、{fragment_data['rarity']}な記憶の欠片を発見しました。それは「{fragment_data['description'][:50]}...」という記憶でした。"
-            
+
             if hasattr(coordinator_response, "narrative"):
                 coordinator_response.narrative += additional_narrative
-        
+
         return coordinator_response
-    
+
     async def _perform_exploration(self, character: Character) -> dict:
         """探索を実行してフラグメントを発見する可能性がある"""
         import random
+
         from app.models.log import LogFragment, LogFragmentRarity
-        
+
         # 基本発見確率
         discovery_chance = 0.3
-        
+
         # 場所による確率修正
         if character.location_id:
             location = self.db.exec(select(Location).where(Location.id == character.location_id)).first()
             if location and hasattr(location, 'fragment_discovery_rate'):
                 discovery_chance = location.fragment_discovery_rate
-        
+
         # フラグメント発見判定
         if random.random() <= discovery_chance:
             # レアリティ判定
@@ -1104,7 +1103,7 @@ class GameSessionService:
                 rarity = LogFragmentRarity.RARE
             else:
                 rarity = LogFragmentRarity.EPIC
-            
+
             # フラグメントを生成
             fragment = LogFragment(
                 character_id=character.id,
@@ -1115,11 +1114,11 @@ class GameSessionService:
                 rarity=rarity,
                 keywords=["探索", "発見", character.location]
             )
-            
+
             self.db.add(fragment)
             self.db.commit()
             self.db.refresh(fragment)
-            
+
             return {
                 "found_fragment": True,
                 "fragment": {
@@ -1129,5 +1128,5 @@ class GameSessionService:
                     "emotional_valence": fragment.emotional_valence
                 }
             }
-        
+
         return {"found_fragment": False}

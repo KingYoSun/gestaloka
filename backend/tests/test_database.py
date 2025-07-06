@@ -4,6 +4,8 @@
 
 from sqlmodel import Session, select
 
+# 循環インポートを回避するため、必要なモデルを先にインポート
+from app.models.exploration_progress import CharacterExplorationProgress  # noqa
 from app.models.user import User
 
 

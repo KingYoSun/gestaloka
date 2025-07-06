@@ -214,7 +214,8 @@ describe('useWebSocket', () => {
       isAuthenticated: false,
       user: null,
       isLoading: false,
-      refreshAuth: vi.fn(),
+      login: vi.fn(),
+      logout: vi.fn(),
     })
 
     vi.clearAllMocks()
