@@ -1,8 +1,22 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-06（19:15 JST）
+## 最終更新: 2025-07-06（19:16 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
+1. **LocalStorageからZustandへの移行（2025-07-06）✅NEW！**
+   - **実装内容**
+     - LogFragments.tsxでLocalStorage直接アクセスをZustandフックに移行
+     - `localStorage.getItem('characterId')`を`useActiveCharacter`フックに置き換え
+   - **技術的変更**
+     - characterIdの取得元を統一化
+     - queryKeyにcharacterIdを追加し、キャラクター変更時の再フェッチに対応
+   - **成果**
+     - データの不整合リスクを解消
+     - 状態管理の一元化を達成
+     - 全テスト成功、型チェック・リント完全合格
+   - **補足**
+     - characterStoreは既にZustandでLocalStorage永続化を実装済み
+     - 追加の実装は不要であることを確認
 1. **Cookie認証への移行実装（2025-07-06）✅NEW！**
    - **実装内容**
      - LocalStorageからセキュアなCookie認証への移行

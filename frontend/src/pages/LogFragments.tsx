@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Search, Gem } from 'lucide-react'
 import { apiClient } from '@/api/client'
+import { useActiveCharacter } from '@/hooks/useActiveCharacter'
 import {
   Card,
   CardContent,
@@ -59,12 +60,12 @@ export function LogFragments() {
   >('all')
   const [currentPage, setCurrentPage] = useState(0)
   const pageSize = 20
+  const { characterId } = useActiveCharacter()
 
   // ログフラグメント一覧を取得
   const { data, isLoading, error } = useQuery<LogFragmentResponse>({
-    queryKey: ['logFragments', searchKeyword, selectedRarity, currentPage],
+    queryKey: ['logFragments', searchKeyword, selectedRarity, currentPage, characterId],
     queryFn: async () => {
-      const characterId = localStorage.getItem('characterId') || ''
       const params = new URLSearchParams()
       if (searchKeyword) params.append('keyword', searchKeyword)
       if (selectedRarity !== 'all') params.append('rarity', selectedRarity)
@@ -75,7 +76,7 @@ export function LogFragments() {
         `/api/v1/log-fragments/${characterId}/fragments?${params.toString()}`
       )
     },
-    enabled: !!localStorage.getItem('characterId'),
+    enabled: !!characterId,
   })
 
   const getRarityLabel = (rarity: LogFragmentRarity) => {
