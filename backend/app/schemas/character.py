@@ -24,8 +24,8 @@ class CharacterStatsBase(BaseModel):
     experience: int = Field(default=0, ge=0, description="経験値")
     health: int = Field(default=100, ge=0, description="現在HP")
     max_health: int = Field(default=100, ge=1, description="最大HP")
-    energy: int = Field(default=100, ge=0, description="現在エネルギー")
-    max_energy: int = Field(default=100, ge=1, description="最大エネルギー")
+    mp: int = Field(default=100, ge=0, description="現在MP")
+    max_mp: int = Field(default=100, ge=1, description="最大MP")
 
 
 class CharacterBase(BaseModel):

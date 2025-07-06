@@ -162,7 +162,7 @@ export function DispatchDetail({
                       <p>
                         派遣開始:{' '}
                         {format(
-                          new Date(dispatch.dispatched_at),
+                          dispatch.dispatched_at,
                           'yyyy/MM/dd HH:mm',
                           { locale: ja }
                         )}
@@ -171,7 +171,7 @@ export function DispatchDetail({
                         <p>
                           帰還予定:{' '}
                           {format(
-                            new Date(dispatch.expected_return_at),
+                            dispatch.expected_return_at,
                             'yyyy/MM/dd HH:mm',
                             { locale: ja }
                           )}
@@ -181,7 +181,7 @@ export function DispatchDetail({
                         <p>
                           実際の帰還:{' '}
                           {format(
-                            new Date(dispatch.actual_return_at),
+                            dispatch.actual_return_at,
                             'yyyy/MM/dd HH:mm',
                             { locale: ja }
                           )}
@@ -241,7 +241,7 @@ export function DispatchDetail({
                               <span>{log.location}</span>
                               <span>
                                 {format(
-                                  new Date(log.timestamp),
+                                  log.timestamp,
                                   'MM/dd HH:mm',
                                   { locale: ja }
                                 )}

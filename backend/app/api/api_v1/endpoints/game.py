@@ -101,7 +101,7 @@ async def execute_game_action(
         action_result=f"あなたは「{action.action_text}」を実行しました。（AI統合後に本格実装予定）",
         new_scene="物語が続いています...",
         choices=["選択肢1", "選択肢2", "選択肢3"],
-        character_status={"health": 100, "energy": 90},
+        character_status={"health": 100, "mp": 90},
     )
 
 

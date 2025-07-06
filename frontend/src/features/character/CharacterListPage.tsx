@@ -8,7 +8,6 @@ import {
   Plus,
   Users,
   Sparkles,
-  Eye,
   Edit3,
   Trash2,
   Star,
@@ -176,12 +175,18 @@ function CharacterCard({
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              {character.name}
-              {/* アクティブキャラクターの場合は星アイコン */}
-              {isActive && (
-                <Star className="h-4 w-4 text-yellow-500 fill-current" />
-              )}
+            <CardTitle className="text-lg">
+              <Link 
+                to="/character/$id" 
+                params={{ id: character.id }}
+                className="flex items-center gap-2 hover:text-purple-600 transition-colors"
+              >
+                {character.name}
+                {/* アクティブキャラクターの場合は星アイコン */}
+                {isActive && (
+                  <Star className="h-4 w-4 text-yellow-500 fill-current" />
+                )}
+              </Link>
             </CardTitle>
             <div className="flex items-center gap-2 mt-1">
               <Badge variant="secondary" className="text-xs">
@@ -214,9 +219,9 @@ function CharacterCard({
               </div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-slate-500">Energy</div>
+              <div className="text-xs text-slate-500">MP</div>
               <div className="font-semibold text-sm">
-                {character.stats.energy}/{character.stats.maxEnergy}
+                {character.stats.mp}/{character.stats.maxMp}
               </div>
             </div>
           </div>
@@ -225,7 +230,7 @@ function CharacterCard({
         {/* 作成日時 */}
         <div className="flex items-center text-xs text-slate-500 mb-4">
           <Clock className="h-3 w-3 mr-1" />
-          作成: {formatRelativeTime(new Date(character.createdAt))}
+          作成: {formatRelativeTime(character.createdAt)}
         </div>
 
         {/* アクションボタン */}
@@ -242,11 +247,6 @@ function CharacterCard({
             {isActive ? 'アクティブ' : '選択'}
           </LoadingButton>
 
-          <Link to="/character/$id" params={{ id: character.id }}>
-            <Button variant="outline" size="sm">
-              <Eye className="h-3 w-3" />
-            </Button>
-          </Link>
 
           <Button variant="outline" size="sm" disabled>
             <Edit3 className="h-3 w-3" />

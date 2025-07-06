@@ -8,8 +8,7 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { performanceApi } from '../api/performanceApi'
-import { formatDistanceToNow } from 'date-fns'
-import { ja } from 'date-fns/locale'
+import { formatRelativeTime } from '@/lib/utils'
 
 export function RealtimeMonitor() {
   const { data, isLoading } = useQuery({
@@ -69,10 +68,7 @@ export function RealtimeMonitor() {
                 <div className="flex items-center gap-3">
                   <Badge variant="outline">{metric.action_type}</Badge>
                   <span className="text-sm text-muted-foreground">
-                    {formatDistanceToNow(new Date(metric.timestamp), {
-                      addSuffix: true,
-                      locale: ja,
-                    })}
+                    {formatRelativeTime(metric.timestamp)}
                   </span>
                 </div>
                 <div className="text-lg font-medium">

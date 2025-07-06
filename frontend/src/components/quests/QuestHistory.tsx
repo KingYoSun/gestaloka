@@ -24,8 +24,9 @@ import type { Quest } from '@/types/quest'
 import { QuestStatus, QuestOriginDisplay } from '@/types/quest'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { format, formatDistanceToNow } from 'date-fns'
+import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
+import { formatRelativeTime } from '@/lib/utils'
 
 interface QuestHistoryItemProps {
   quest: Quest
@@ -39,10 +40,7 @@ const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
     if (!quest.started_at || !quest.completed_at) return null
     const start = new Date(quest.started_at)
     // const end = new Date(quest.completed_at);
-    return formatDistanceToNow(start, {
-      locale: ja,
-      addSuffix: false,
-    })
+    return formatRelativeTime(start).replace(/前$/, '')
   }
 
   return (
@@ -69,7 +67,7 @@ const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
             {quest.completed_at && (
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Calendar className="h-3 w-3" />
-                {format(new Date(quest.completed_at), 'yyyy/MM/dd', {
+                {format(quest.completed_at, 'yyyy/MM/dd', {
                   locale: ja,
                 })}
               </span>

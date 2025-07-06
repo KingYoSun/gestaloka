@@ -201,7 +201,7 @@ export function CharacterDetailPage() {
                     <div>
                       <div className="font-medium">作成日</div>
                       <div className="text-slate-600">
-                        {formatDate(new Date(character.createdAt))}
+                        {formatDate(character.createdAt)}
                       </div>
                     </div>
                   </div>
@@ -210,7 +210,7 @@ export function CharacterDetailPage() {
                     <div>
                       <div className="font-medium">最終更新</div>
                       <div className="text-slate-600">
-                        {formatRelativeTime(new Date(character.updatedAt))}
+                        {formatRelativeTime(character.updatedAt)}
                       </div>
                     </div>
                   </div>
@@ -305,17 +305,17 @@ export function CharacterDetailPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-blue-500" />
-                        <span className="font-medium">Energy</span>
+                        <span className="font-medium">MP</span>
                       </div>
                       <div className="text-right">
                         <div className="font-bold">
-                          {character.stats.energy} / {character.stats.maxEnergy}
+                          {character.stats.mp} / {character.stats.maxMp}
                         </div>
                         <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-blue-500 transition-all duration-300"
                             style={{
-                              width: `${(character.stats.energy / character.stats.maxEnergy) * 100}%`,
+                              width: `${(character.stats.mp / character.stats.maxMp) * 100}%`,
                             }}
                           />
                         </div>

@@ -71,8 +71,8 @@ class CharacterService(LoggerMixin):
                 experience=0,
                 health=settings.DEFAULT_CHARACTER_HP,
                 max_health=settings.DEFAULT_CHARACTER_HP,
-                energy=settings.DEFAULT_CHARACTER_ENERGY,
-                max_energy=settings.DEFAULT_CHARACTER_ENERGY,
+                mp=settings.DEFAULT_CHARACTER_ENERGY,
+                max_mp=settings.DEFAULT_CHARACTER_ENERGY,
             )
 
             self.db.add(stats_model)

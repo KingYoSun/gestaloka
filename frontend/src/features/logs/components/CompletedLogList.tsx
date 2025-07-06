@@ -7,8 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { DispatchForm } from '@/features/dispatch/components/DispatchForm'
 import { CompletedLogDetail } from './CompletedLogDetail'
 import { BookOpen, Sparkles, Send, User, AlertTriangle, Eye, Shield } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
-import { ja } from 'date-fns/locale'
+import { formatRelativeTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
 interface CompletedLogListProps {
@@ -136,10 +135,7 @@ export function CompletedLogList({
 
                 <div className="flex items-center justify-between pt-2 border-t">
                   <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(log.created_at), {
-                      addSuffix: true,
-                      locale: ja,
-                    })}
+                    {formatRelativeTime(log.created_at)}
                   </span>
                   <div className="flex gap-2">
                     <Button

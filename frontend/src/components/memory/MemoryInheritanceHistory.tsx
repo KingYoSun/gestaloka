@@ -63,7 +63,7 @@ export function MemoryInheritanceHistory({
                     </p>
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {format(new Date(entry.created_at), 'PPP HH:mm', {
+                      {format(entry.created_at, 'PPP HH:mm', {
                         locale: ja,
                       })}
                     </p>

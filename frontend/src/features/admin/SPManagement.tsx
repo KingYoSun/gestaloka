@@ -352,7 +352,7 @@ function TransactionHistoryDialog({
                 {data?.transactions.map(tx => (
                   <TableRow key={tx.id}>
                     <TableCell>
-                      {format(new Date(tx.created_at), 'M/d HH:mm', {
+                      {format(tx.created_at, 'M/d HH:mm', {
                         locale: ja,
                       })}
                     </TableCell>

@@ -385,8 +385,8 @@ class GameSessionService:
             #     character_stats={
             #         "hp": character_stats.health if character_stats else 100,
             #         "max_hp": character_stats.max_health if character_stats else 100,
-            #         "mp": character_stats.energy if character_stats else 100,
-            #         "max_mp": character_stats.max_energy if character_stats else 100,
+            #         "mp": character_stats.mp if character_stats else 100,
+            #         "max_mp": character_stats.max_mp if character_stats else 100,
             #         "level": character_stats.level if character_stats else 1,
             #         "experience": character_stats.experience if character_stats else 0,
             #     },
@@ -664,7 +664,7 @@ class GameSessionService:
                 character.user_id,
                 {
                     "hp": character_stats.health if character_stats else 100,
-                    "mp": character_stats.energy if character_stats else 100,
+                    "mp": character_stats.mp if character_stats else 100,
                     "location": character.location,
                     "level": character_stats.level if character_stats else 1,
                 },
@@ -701,7 +701,7 @@ class GameSessionService:
                 choices=action_choices,
                 character_state={
                     "hp": character_stats.health if character_stats else 100,
-                    "mp": character_stats.energy if character_stats else 100,
+                    "mp": character_stats.mp if character_stats else 100,
                     "location": character.location,
                 },
                 metadata={
@@ -854,8 +854,8 @@ class GameSessionService:
             )
 
         if "mp" in parameter_changes:
-            character_stats.energy = max(
-                0, min(character_stats.max_energy, character_stats.energy + parameter_changes["mp"])
+            character_stats.mp = max(
+                0, min(character_stats.max_mp, character_stats.mp + parameter_changes["mp"])
             )
 
         if "experience" in parameter_changes:
@@ -865,9 +865,9 @@ class GameSessionService:
                 character_stats.experience -= character_stats.level * 100
                 character_stats.level += 1
                 character_stats.max_health += 10
-                character_stats.max_energy += 5
+                character_stats.max_mp += 5
                 character_stats.health = character_stats.max_health
-                character_stats.energy = character_stats.max_energy
+                character_stats.mp = character_stats.max_mp
 
         # イベントのトリガー処理（今後の拡張用）
         triggered_events = state_changes.get("triggered_events", [])

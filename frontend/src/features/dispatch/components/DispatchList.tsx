@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { formatDistanceToNow } from 'date-fns'
-import { ja } from 'date-fns/locale'
+import { formatRelativeTime } from '@/lib/utils'
 import { dispatchApi, DispatchStatus } from '@/api/dispatch'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -189,10 +188,7 @@ export function DispatchList() {
                 <div className="flex items-center justify-between pt-2">
                   <span className="text-xs text-muted-foreground">
                     {dispatch.dispatched_at
-                      ? formatDistanceToNow(new Date(dispatch.dispatched_at), {
-                          addSuffix: true,
-                          locale: ja,
-                        })
+                      ? formatRelativeTime(dispatch.dispatched_at)
                       : '未派遣'}
                   </span>
                   <Button

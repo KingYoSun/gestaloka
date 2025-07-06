@@ -120,7 +120,7 @@ export function SPPurchaseHistory() {
                 {data.purchases.map(purchase => (
                   <TableRow key={purchase.id}>
                     <TableCell>
-                      {format(new Date(purchase.created_at), 'MM/dd HH:mm', {
+                      {format(purchase.created_at, 'MM/dd HH:mm', {
                         locale: ja,
                       })}
                     </TableCell>

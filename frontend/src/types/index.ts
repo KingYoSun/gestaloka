@@ -30,8 +30,8 @@ export interface CharacterStats {
   experience: number
   health: number
   maxHealth: number
-  energy: number
-  maxEnergy: number
+  mp: number
+  maxMp: number
 }
 
 export interface Skill {
@@ -76,8 +76,8 @@ export interface GameActionRequest {
 export interface CharacterStatusUpdate {
   health?: number
   maxHealth?: number
-  energy?: number
-  maxEnergy?: number
+  mp?: number
+  maxMp?: number
   experience?: number
   level?: number
   location?: string

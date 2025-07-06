@@ -29,8 +29,7 @@ import {
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatDistanceToNow } from 'date-fns'
-import { ja } from 'date-fns/locale'
+import { formatRelativeTime } from '@/lib/utils'
 
 interface QuestCardProps {
   quest: Quest
@@ -99,10 +98,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
               {quest.last_progress_at && (
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {formatDistanceToNow(new Date(quest.last_progress_at), {
-                    addSuffix: true,
-                    locale: ja,
-                  })}
+                  {formatRelativeTime(quest.last_progress_at)}
                 </span>
               )}
             </div>

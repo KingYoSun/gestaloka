@@ -150,8 +150,8 @@ function GameStartPage() {
                             {character.stats.maxHealth}
                           </span>
                           <span>
-                            MP: {character.stats.energy}/
-                            {character.stats.maxEnergy}
+                            MP: {character.stats.mp}/
+                            {character.stats.maxMp}
                           </span>
                         </div>
                       )}

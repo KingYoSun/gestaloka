@@ -3,8 +3,7 @@
  */
 
 import { useState } from 'react'
-import { formatDistanceToNow } from 'date-fns'
-import { ja } from 'date-fns/locale'
+import { formatRelativeTime } from '@/lib/utils'
 import {
   ArrowUpCircle,
   ArrowDownCircle,
@@ -176,10 +175,7 @@ export function SPTransactionHistory({
                   <TableCell>{getTransactionIcon(transaction)}</TableCell>
                   <TableCell>
                     <span className="text-sm text-muted-foreground">
-                      {formatDistanceToNow(new Date(transaction.createdAt), {
-                        addSuffix: true,
-                        locale: ja,
-                      })}
+                      {formatRelativeTime(transaction.createdAt)}
                     </span>
                   </TableCell>
                   <TableCell>
