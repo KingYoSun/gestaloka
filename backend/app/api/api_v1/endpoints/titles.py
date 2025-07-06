@@ -1,4 +1,5 @@
 """Character titles API endpoints."""
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,9 +25,7 @@ async def get_character_titles(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> list[CharacterTitleRead]:
     """Get all titles for the current user's character."""
-    character = db.exec(
-        select(Character).where(Character.user_id == current_user.id)
-    ).first()
+    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
 
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
@@ -47,17 +46,13 @@ async def get_equipped_title(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Optional[CharacterTitleRead]:
     """Get the currently equipped title."""
-    character = db.exec(
-        select(Character).where(Character.user_id == current_user.id)
-    ).first()
+    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
 
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
     equipped_title = db.exec(
-        select(CharacterTitle)
-        .where(CharacterTitle.character_id == character.id)
-        .where(CharacterTitle.is_equipped)
+        select(CharacterTitle).where(CharacterTitle.character_id == character.id).where(CharacterTitle.is_equipped)
     ).first()
 
     return CharacterTitleRead.model_validate(equipped_title) if equipped_title else None
@@ -71,18 +66,14 @@ async def equip_title(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> CharacterTitleRead:
     """Equip a specific title."""
-    character = db.exec(
-        select(Character).where(Character.user_id == current_user.id)
-    ).first()
+    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
 
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
     # Get the title to equip
     title = db.exec(
-        select(CharacterTitle)
-        .where(CharacterTitle.id == title_id)
-        .where(CharacterTitle.character_id == character.id)
+        select(CharacterTitle).where(CharacterTitle.id == title_id).where(CharacterTitle.character_id == character.id)
     ).first()
 
     if not title:
@@ -90,9 +81,7 @@ async def equip_title(
 
     # Unequip all current titles
     current_titles = db.exec(
-        select(CharacterTitle)
-        .where(CharacterTitle.character_id == character.id)
-        .where(CharacterTitle.is_equipped)
+        select(CharacterTitle).where(CharacterTitle.character_id == character.id).where(CharacterTitle.is_equipped)
     ).all()
 
     for current_title in current_titles:
@@ -117,18 +106,14 @@ async def unequip_all_titles(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> dict:
     """Unequip all titles."""
-    character = db.exec(
-        select(Character).where(Character.user_id == current_user.id)
-    ).first()
+    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
 
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
 
     # Unequip all titles
     equipped_titles = db.exec(
-        select(CharacterTitle)
-        .where(CharacterTitle.character_id == character.id)
-        .where(CharacterTitle.is_equipped)
+        select(CharacterTitle).where(CharacterTitle.character_id == character.id).where(CharacterTitle.is_equipped)
     ).all()
 
     for title in equipped_titles:

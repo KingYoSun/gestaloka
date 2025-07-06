@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """テストユーザーとキャラクターを作成するスクリプト"""
+
 import os
 import sys
 
@@ -30,7 +31,7 @@ def create_test_data():
                 is_active=True,
                 is_verified=True,
                 created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                updated_at=datetime.utcnow(),
             )
             db.add(test_user)
             db.commit()
@@ -57,13 +58,14 @@ def create_test_data():
                 max_health=100,
                 is_active=True,
                 created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
+                updated_at=datetime.utcnow(),
             )
             db.add(test_character)
             db.commit()
             print(f"Created test character: {test_character.name}")
         else:
             print(f"Character already exists: {existing_char.name}")
+
 
 if __name__ == "__main__":
     create_test_data()

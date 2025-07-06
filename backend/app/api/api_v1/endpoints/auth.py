@@ -23,8 +23,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 
 
 async def get_token(
-    bearer_token: Optional[str] = Depends(oauth2_scheme),
-    cookie_token: Optional[str] = Cookie(None, alias="authToken")
+    bearer_token: Optional[str] = Depends(oauth2_scheme), cookie_token: Optional[str] = Cookie(None, alias="authToken")
 ) -> str:
     """トークンを取得（CookieまたはAuthorizationヘッダーから）"""
     # Bearerトークンを優先
@@ -128,12 +127,7 @@ async def logout(response: Response, token: str = Depends(get_token), db: Sessio
 
         # Cookieを削除
         settings = get_settings()
-        response.delete_cookie(
-            key="authToken",
-            path="/",
-            secure=settings.ENVIRONMENT != "development",
-            samesite="lax"
-        )
+        response.delete_cookie(key="authToken", path="/", secure=settings.ENVIRONMENT != "development", samesite="lax")
 
         # TODO: トークン無効化の実装
         return {"message": "ログアウトしました"}

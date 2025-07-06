@@ -197,11 +197,12 @@ async def create_completed_log(
 
     # SP消費
     from app.models.sp import SPTransactionType
+
     await sp_service.consume_sp(
         user_id=character.user_id,
         amount=compilation_result.final_sp_cost,
         transaction_type=SPTransactionType.LOG_DISPATCH,
-        description=f"ログ編纂: {log_in.name}"
+        description=f"ログ編纂: {log_in.name}",
     )
 
     # 完成ログ作成

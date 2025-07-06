@@ -242,6 +242,7 @@ class TestLogEndpoints:
 
         # SP残高を設定
         from app.models.sp import PlayerSP
+
         player_sp = PlayerSP(
             user_id=user.id,
             current_sp=100,  # 十分なSPを設定

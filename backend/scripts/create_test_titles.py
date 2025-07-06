@@ -6,6 +6,7 @@
 引数:
     email: ユーザーのメールアドレス（省略時は test@example.com）
 """
+
 import json
 import os
 import sys
@@ -18,19 +19,24 @@ import psycopg2
 def create_test_titles(user_email="test@example.com"):
     """テスト用の称号を直接SQLで作成"""
     # 環境変数からデータベースURLを取得、なければデフォルト値を使用
-    database_url = os.environ.get("DATABASE_URL", "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka")
+    database_url = os.environ.get(
+        "DATABASE_URL", "postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka"
+    )
     conn = psycopg2.connect(database_url)
     cur = conn.cursor()
 
     try:
         # 指定されたユーザーのキャラクターIDを取得
-        cur.execute("""
+        cur.execute(
+            """
             SELECT c.id, c.name
             FROM characters c
             JOIN users u ON c.user_id = u.id
             WHERE u.email = %s
             LIMIT 1
-        """, (user_email,))
+        """,
+            (user_email,),
+        )
         result = cur.fetchone()
 
         if not result:
@@ -100,21 +106,24 @@ def create_test_titles(user_email="test@example.com"):
 
         # 称号を挿入
         for title in test_titles:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO character_titles
                 (id, character_id, title, description, acquired_at, effects, is_equipped, created_at, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                title["id"],
-                title["character_id"],
-                title["title"],
-                title["description"],
-                title["acquired_at"],
-                title["effects"],
-                title["is_equipped"],
-                datetime.utcnow(),
-                datetime.utcnow()
-            ))
+            """,
+                (
+                    title["id"],
+                    title["character_id"],
+                    title["title"],
+                    title["description"],
+                    title["acquired_at"],
+                    title["effects"],
+                    title["is_equipped"],
+                    datetime.utcnow(),
+                    datetime.utcnow(),
+                ),
+            )
 
         conn.commit()
         print(f"\n✅ {len(test_titles)} 個の称号を作成しました。")
@@ -137,8 +146,8 @@ def create_test_titles(user_email="test@example.com"):
         cur.close()
         conn.close()
 
+
 if __name__ == "__main__":
     # コマンドライン引数からメールアドレスを取得
     email = sys.argv[1] if len(sys.argv) > 1 else "test@example.com"
     create_test_titles(email)
-
