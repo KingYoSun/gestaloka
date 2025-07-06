@@ -14,7 +14,11 @@ vi.mock('@/features/auth/useAuth', () => ({
 // useWebSocketのモック
 const mockWebSocket = {
   isConnected: false,
-  status: { connected: false, socketId: null as string | null, error: null as string | null },
+  status: {
+    connected: false,
+    socketId: null as string | null,
+    error: null as string | null,
+  },
   connect: vi.fn(),
   disconnect: vi.fn(),
   emit: vi.fn(),
@@ -33,7 +37,11 @@ describe('WebSocketProvider', () => {
     vi.clearAllMocks()
     // モックの初期状態をリセット
     mockWebSocket.isConnected = false
-    mockWebSocket.status = { connected: false, socketId: null as string | null, error: null as string | null }
+    mockWebSocket.status = {
+      connected: false,
+      socketId: null as string | null,
+      error: null as string | null,
+    }
   })
 
   afterEach(() => {
@@ -103,14 +111,20 @@ describe('WebSocketProvider', () => {
           <span data-testid="connected">
             {context.isConnected ? 'Connected' : 'Disconnected'}
           </span>
-          <span data-testid="socketId">{context.status.socketId || 'No ID'}</span>
+          <span data-testid="socketId">
+            {context.status.socketId || 'No ID'}
+          </span>
         </div>
       )
     }
 
     // 接続状態をシミュレート
     mockWebSocket.isConnected = true
-    mockWebSocket.status = { connected: true, socketId: 'test-socket-id', error: null as string | null }
+    mockWebSocket.status = {
+      connected: true,
+      socketId: 'test-socket-id',
+      error: null as string | null,
+    }
 
     render(
       <WebSocketProvider>
@@ -194,7 +208,11 @@ describe('WebSocketProvider', () => {
     }
 
     // エラー状態をシミュレート
-    mockWebSocket.status = { connected: false, socketId: null, error: 'Connection failed' as string | null }
+    mockWebSocket.status = {
+      connected: false,
+      socketId: null,
+      error: 'Connection failed' as string | null,
+    }
 
     render(
       <WebSocketProvider>

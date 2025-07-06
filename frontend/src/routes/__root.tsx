@@ -51,7 +51,7 @@ export function useRouterAuth() {
 
 function InnerRoot() {
   const auth = useAuth()
-  
+
   return (
     <AuthContext.Provider value={auth}>
       <WebSocketProvider>

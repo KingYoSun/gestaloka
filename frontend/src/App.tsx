@@ -5,7 +5,7 @@ import '@/types/router' // 型定義をインポート
 import { routeTree } from './routeTree.gen'
 
 // Create a new router instance
-const router = createRouter({ 
+const router = createRouter({
   routeTree,
   defaultPendingComponent: () => <div>Loading...</div>,
   context: {

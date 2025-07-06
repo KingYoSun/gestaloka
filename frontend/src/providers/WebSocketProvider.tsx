@@ -21,7 +21,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     } else if (!isAuthenticated && websocket.isConnected) {
       websocket.disconnect()
     }
-  }, [isAuthenticated, websocket.isConnected, websocket.connect, websocket.disconnect])
+  }, [
+    isAuthenticated,
+    websocket.isConnected,
+    websocket.connect,
+    websocket.disconnect,
+  ])
 
   return (
     <WebSocketContext.Provider value={websocket}>

@@ -16,13 +16,13 @@ export function formatDate(date: string | Date): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Asia/Tokyo'
+    timeZone: 'Asia/Tokyo',
   })
 }
 
 export function formatRelativeTime(date: string | Date): string {
   let d: Date
-  
+
   if (typeof date === 'string') {
     // サーバーがUTC時刻を返すが、'Z'がついていない場合の対処
     // '2025-07-06T15:00:00' のような形式の場合、UTCとして扱う
@@ -36,7 +36,7 @@ export function formatRelativeTime(date: string | Date): string {
   } else {
     d = date
   }
-  
+
   return formatDistanceToNow(d, { addSuffix: true, locale: ja })
 }
 

@@ -11,10 +11,10 @@ export const Route = createFileRoute('/_authenticated')({
 function AuthenticatedComponent() {
   const auth = useRouterAuth()
   const navigate = Route.useNavigate()
-  
+
   React.useEffect(() => {
     if (!auth.isLoading && !auth.isAuthenticated) {
-      navigate({ 
+      navigate({
         to: '/login',
         search: {
           redirect: Route.path,
@@ -22,17 +22,25 @@ function AuthenticatedComponent() {
       })
     }
   }, [auth.isLoading, auth.isAuthenticated, navigate])
-  
+
   // ローディング中の場合
   if (auth.isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Loading...
+      </div>
+    )
   }
-  
+
   // 認証されていない場合
   if (!auth.isAuthenticated) {
-    return <div className="flex items-center justify-center min-h-screen">Redirecting...</div>
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Redirecting...
+      </div>
+    )
   }
-  
+
   return (
     <Layout>
       <Outlet />
