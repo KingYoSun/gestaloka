@@ -2,9 +2,25 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/07/06（17:27 JST）
+## 最終更新: 2025/07/06（18:20 JST）
 
 ### 2025/07/06の主な実装
+- **CharacterExplorationProgressモデルのインポートエラー修正** ✅
+  - 問題の内容
+    - ログイン時にSQLAlchemyのマッパー初期化エラーが発生
+    - `One or more mappers failed to initialize - can't proceed with initialization of other mappers. Triggering mapper: 'Mapper[Character(characters)]'. Original exception was: When initializing mapper Mapper[Character(characters)], expression 'CharacterExplorationProgress' failed to locate a name`
+    - CharacterモデルがCharacterExplorationProgressを解決できない循環インポート問題
+  - 原因
+    - Characterモデルでは`TYPE_CHECKING`ブロック内でインポートしているが、実行時に利用不可
+    - SQLAlchemyが文字列で指定されたクラス名を実際のクラスに解決できない
+  - 修正内容
+    - `app/models/__init__.py`にCharacterExplorationProgressをインポート追加
+    - `__all__`リストにCharacterExplorationProgressを追加
+  - 技術的成果
+    - ログイン機能の正常動作を確認
+    - バックエンドテスト: 223/223成功（100%）
+    - 他の機能への影響なし
+
 - **テスト・型・リントエラーの全解消** ✅
   - リントエラー46件を自動修正
     - 空白行、末尾空白、未使用インポート等

@@ -48,6 +48,7 @@ from app.models.sp import (
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
 from app.models.title import CharacterTitle
 from app.models.user import User
+from app.models.exploration_progress import CharacterExplorationProgress
 
 __all__ = [
     "ActionLog",
@@ -97,4 +98,5 @@ __all__ = [
     "Skill",
     "StoryArcType",
     "User",
+    "CharacterExplorationProgress",
 ]

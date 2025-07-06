@@ -1,8 +1,20 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-06（17:45 JST）
+## 最終更新: 2025-07-06（18:20 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
+1. **CharacterExplorationProgressモデルのインポートエラー修正（2025-07-06）✅NEW！**
+   - **問題の内容**
+     - ログイン時にSQLAlchemyのマッパー初期化エラーが発生
+     - CharacterモデルがCharacterExplorationProgressを解決できない循環インポート問題
+   - **修正内容**
+     - app/models/__init__.pyにCharacterExplorationProgressをインポート追加
+     - __all__リストにCharacterExplorationProgressを追加
+   - **技術的成果**
+     - ログイン機能の正常動作を確認
+     - バックエンドテスト: 223/223成功（100%）
+     - 他の機能への影響なし
+
 1. **テスト・型・リントエラーの全解消（2025-07-06）✅UPDATED！**
    - **探索機能統合に伴うテストエラーの修正**
      - 「移動」アクションが探索として処理される問題を発見
