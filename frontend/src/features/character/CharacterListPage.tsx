@@ -227,10 +227,13 @@ function CharacterCard({
           </div>
         )}
 
-        {/* 作成日時 */}
+        {/* 最終プレイ時間または作成日時 */}
         <div className="flex items-center text-xs text-slate-500 mb-4">
           <Clock className="h-3 w-3 mr-1" />
-          作成: {formatRelativeTime(character.createdAt)}
+          {character.lastPlayedAt 
+            ? `最終プレイ: ${formatRelativeTime(character.lastPlayedAt)}`
+            : `作成: ${formatRelativeTime(character.createdAt)}`
+          }
         </div>
 
         {/* アクションボタン */}

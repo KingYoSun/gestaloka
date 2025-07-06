@@ -23,6 +23,7 @@ export interface Character {
   isActive: boolean
   createdAt: string
   updatedAt: string
+  lastPlayedAt?: string
 }
 
 export interface CharacterStats {

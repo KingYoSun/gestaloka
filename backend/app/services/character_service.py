@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 
 from app.core.config import settings
 from app.core.logging import LoggerMixin
@@ -35,12 +35,34 @@ class CharacterService(LoggerMixin):
     async def get_by_user(self, user_id: str) -> list[Character]:
         """ユーザーのキャラクター一覧を取得"""
         try:
+            # 各キャラクターの最終セッション時間を取得するサブクエリ
+            from app.models.character import GameSession
+            
             statement = select(CharacterModel).where(
                 CharacterModel.user_id == user_id, CharacterModel.is_active == True  # noqa: E712
             )
             result = self.db.exec(statement)
             characters = result.all()
-            return [Character.model_validate(char) for char in characters]
+            
+            # 各キャラクターに最終プレイ時間を設定
+            character_list = []
+            for char in characters:
+                # 最終セッションを取得
+                last_session_stmt = (
+                    select(GameSession.updated_at)
+                    .where(GameSession.character_id == char.id)
+                    .order_by(GameSession.updated_at.desc())
+                    .limit(1)
+                )
+                last_session_result = self.db.exec(last_session_stmt)
+                last_played_at = last_session_result.first()
+                
+                char_dict = Character.model_validate(char)
+                if last_played_at:
+                    char_dict.last_played_at = last_played_at
+                character_list.append(char_dict)
+                
+            return character_list
         except Exception as e:
             self.log_error("Failed to get characters by user", user_id=user_id, error=str(e))
             raise
