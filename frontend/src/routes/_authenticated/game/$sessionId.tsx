@@ -14,7 +14,7 @@ import { SPConsumeDialog } from '@/components/sp/SPConsumeDialog'
 import { SPTransactionType } from '@/types/sp'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
+import { TextareaWithCounter } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
@@ -372,12 +372,13 @@ function GameSessionPage() {
               <CardTitle className="text-lg">行動入力</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Textarea
+              <TextareaWithCounter
                 placeholder="あなたの行動を入力してください..."
                 value={actionText}
                 onChange={e => setActionText(e.target.value)}
                 className="min-h-[100px]"
                 disabled={!session.isActive || isExecutingAction}
+                maxLength={500}
               />
               {actionText.trim() && (
                 <Alert>

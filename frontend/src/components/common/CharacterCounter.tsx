@@ -14,7 +14,7 @@ export const CharacterCounter: React.FC<CharacterCounterProps> = ({ current, max
   const getColorClass = () => {
     if (isAtLimit) return 'text-red-600';
     if (isNearLimit) return 'text-yellow-600';
-    return 'text-gray-500';
+    return 'text-muted-foreground';
   };
 
   return (

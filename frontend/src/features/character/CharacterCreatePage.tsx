@@ -41,7 +41,7 @@ export function CharacterCreatePage() {
     },
   })
 
-  const watchedName = watch('name')
+  const formValues = watch()
 
   const onSubmit = async (data: CharacterCreationFormData) => {
     if (isSubmitting) return
@@ -101,15 +101,16 @@ export function CharacterCreatePage() {
                   placeholder="例: アリア・シルバーウィンド"
                   className="h-12"
                   maxLength={50}
+                  value={formValues.name || ''}
                 />
                 {errors.name && (
                   <Alert variant="destructive">
                     <AlertDescription>{errors.name.message}</AlertDescription>
                   </Alert>
                 )}
-                {watchedName && (
+                {formValues.name && (
                   <p className="text-sm text-green-600">
-                    素晴らしい名前ですね！ {watchedName} の物語が始まります。
+                    素晴らしい名前ですね！ {formValues.name} の物語が始まります。
                   </p>
                 )}
               </div>
@@ -129,6 +130,7 @@ export function CharacterCreatePage() {
                   placeholder="このキャラクターの背景や設定を自由に書いてください。どんな人物で、どのような過去を持っているのか..."
                   className="min-h-[100px]"
                   maxLength={1000}
+                  value={formValues.description || ''}
                 />
                 {errors.description && (
                   <Alert variant="destructive">
@@ -154,6 +156,7 @@ export function CharacterCreatePage() {
                   placeholder="髪の色、瞳の色、身長、服装など、キャラクターの外見的特徴を描写してください..."
                   className="min-h-[100px]"
                   maxLength={1000}
+                  value={formValues.appearance || ''}
                 />
                 {errors.appearance && (
                   <Alert variant="destructive">
@@ -179,6 +182,7 @@ export function CharacterCreatePage() {
                   placeholder="勇敢、慎重、好奇心旺盛、内向的など、キャラクターの性格や特性を書いてください..."
                   className="min-h-[100px]"
                   maxLength={1000}
+                  value={formValues.personality || ''}
                 />
                 {errors.personality && (
                   <Alert variant="destructive">
