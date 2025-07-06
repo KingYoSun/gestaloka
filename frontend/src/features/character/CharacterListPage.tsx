@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -28,6 +28,7 @@ import { LoadingButton } from '@/components/ui/LoadingButton'
 import { containerStyles, cardStyles } from '@/lib/styles'
 
 export function CharacterListPage() {
+  const navigate = useNavigate()
   const { data: characters, isLoading, error } = useCharacters()
   const { activeCharacter } = useActiveCharacter()
   const deleteCharacterMutation = useDeleteCharacter()
@@ -137,6 +138,7 @@ export function CharacterListPage() {
                 onDelete={() => handleDeleteCharacter(character.id)}
                 onActivate={() => handleActivateCharacter(character.id)}
                 onDeactivate={handleDeactivateCharacter}
+                onNavigateToEdit={() => navigate({ to: `/character/${character.id}/edit` })}
                 isDeleting={deletingId === character.id}
                 isActivating={activateCharacterMutation.isPending}
                 isDeactivating={deactivateCharacterMutation.isPending}
@@ -164,6 +166,7 @@ interface CharacterCardProps {
   onDelete: () => void
   onActivate: () => void
   onDeactivate: () => void
+  onNavigateToEdit: () => void
   isDeleting: boolean
   isActivating: boolean
   isDeactivating: boolean
@@ -175,6 +178,7 @@ function CharacterCard({
   onDelete,
   onActivate,
   onDeactivate,
+  onNavigateToEdit,
   isDeleting,
   isActivating,
   isDeactivating,
@@ -260,7 +264,11 @@ function CharacterCard({
             {isActive ? '選択中' : '選択'}
           </LoadingButton>
 
-          <Button variant="outline" size="sm" disabled>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onNavigateToEdit}
+          >
             <Edit3 className="h-3 w-3" />
           </Button>
 

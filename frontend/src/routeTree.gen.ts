@@ -14,7 +14,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AdminRouteImport } from './routes/_admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as CharacterIdRouteImport } from './routes/character.$id'
 import { Route as AuthenticatedTitlesRouteImport } from './routes/_authenticated/titles'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedQuestsRouteImport } from './routes/_authenticated/quests'
@@ -28,8 +27,11 @@ import { Route as AuthenticatedSpCancelRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedGameStartRouteImport } from './routes/_authenticated/game/start'
 import { Route as AuthenticatedGameSessionIdRouteImport } from './routes/_authenticated/game/$sessionId'
 import { Route as AuthenticatedCharacterCreateRouteImport } from './routes/_authenticated/character.create'
+import { Route as AuthenticatedCharacterIdRouteImport } from './routes/_authenticated/character/$id'
 import { Route as AdminAdminSpRouteImport } from './routes/_admin/admin.sp'
 import { Route as AdminAdminPerformanceRouteImport } from './routes/_admin/admin.performance'
+import { Route as AuthenticatedCharacterIdIndexRouteImport } from './routes/_authenticated/character/$id/index'
+import { Route as AuthenticatedCharacterIdEditRouteImport } from './routes/_authenticated/character/$id/edit'
 
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
@@ -52,11 +54,6 @@ const AdminRoute = AdminRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CharacterIdRoute = CharacterIdRouteImport.update({
-  id: '/character/$id',
-  path: '/character/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedTitlesRoute = AuthenticatedTitlesRouteImport.update({
@@ -126,6 +123,12 @@ const AuthenticatedCharacterCreateRoute =
     path: '/character/create',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedCharacterIdRoute =
+  AuthenticatedCharacterIdRouteImport.update({
+    id: '/character/$id',
+    path: '/character/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AdminAdminSpRoute = AdminAdminSpRouteImport.update({
   id: '/sp',
   path: '/sp',
@@ -136,6 +139,18 @@ const AdminAdminPerformanceRoute = AdminAdminPerformanceRouteImport.update({
   path: '/performance',
   getParentRoute: () => AdminAdminRoute,
 } as any)
+const AuthenticatedCharacterIdIndexRoute =
+  AuthenticatedCharacterIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedCharacterIdRoute,
+  } as any)
+const AuthenticatedCharacterIdEditRoute =
+  AuthenticatedCharacterIdEditRouteImport.update({
+    id: '/edit',
+    path: '/edit',
+    getParentRoute: () => AuthenticatedCharacterIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -148,15 +163,17 @@ export interface FileRoutesByFullPath {
   '/quests': typeof AuthenticatedQuestsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/titles': typeof AuthenticatedTitlesRoute
-  '/character/$id': typeof CharacterIdRoute
   '/admin/performance': typeof AdminAdminPerformanceRoute
   '/admin/sp': typeof AdminAdminSpRoute
+  '/character/$id': typeof AuthenticatedCharacterIdRouteWithChildren
   '/character/create': typeof AuthenticatedCharacterCreateRoute
   '/game/$sessionId': typeof AuthenticatedGameSessionIdRoute
   '/game/start': typeof AuthenticatedGameStartRoute
   '/sp/cancel': typeof AuthenticatedSpCancelRoute
   '/sp/success': typeof AuthenticatedSpSuccessRoute
   '/sp': typeof AuthenticatedSpIndexRoute
+  '/character/$id/edit': typeof AuthenticatedCharacterIdEditRoute
+  '/character/$id/': typeof AuthenticatedCharacterIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -169,7 +186,6 @@ export interface FileRoutesByTo {
   '/quests': typeof AuthenticatedQuestsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/titles': typeof AuthenticatedTitlesRoute
-  '/character/$id': typeof CharacterIdRoute
   '/admin/performance': typeof AdminAdminPerformanceRoute
   '/admin/sp': typeof AdminAdminSpRoute
   '/character/create': typeof AuthenticatedCharacterCreateRoute
@@ -178,6 +194,8 @@ export interface FileRoutesByTo {
   '/sp/cancel': typeof AuthenticatedSpCancelRoute
   '/sp/success': typeof AuthenticatedSpSuccessRoute
   '/sp': typeof AuthenticatedSpIndexRoute
+  '/character/$id/edit': typeof AuthenticatedCharacterIdEditRoute
+  '/character/$id': typeof AuthenticatedCharacterIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -193,15 +211,17 @@ export interface FileRoutesById {
   '/_authenticated/quests': typeof AuthenticatedQuestsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/titles': typeof AuthenticatedTitlesRoute
-  '/character/$id': typeof CharacterIdRoute
   '/_admin/admin/performance': typeof AdminAdminPerformanceRoute
   '/_admin/admin/sp': typeof AdminAdminSpRoute
+  '/_authenticated/character/$id': typeof AuthenticatedCharacterIdRouteWithChildren
   '/_authenticated/character/create': typeof AuthenticatedCharacterCreateRoute
   '/_authenticated/game/$sessionId': typeof AuthenticatedGameSessionIdRoute
   '/_authenticated/game/start': typeof AuthenticatedGameStartRoute
   '/_authenticated/sp/cancel': typeof AuthenticatedSpCancelRoute
   '/_authenticated/sp/success': typeof AuthenticatedSpSuccessRoute
   '/_authenticated/sp/': typeof AuthenticatedSpIndexRoute
+  '/_authenticated/character/$id/edit': typeof AuthenticatedCharacterIdEditRoute
+  '/_authenticated/character/$id/': typeof AuthenticatedCharacterIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -216,15 +236,17 @@ export interface FileRouteTypes {
     | '/quests'
     | '/settings'
     | '/titles'
-    | '/character/$id'
     | '/admin/performance'
     | '/admin/sp'
+    | '/character/$id'
     | '/character/create'
     | '/game/$sessionId'
     | '/game/start'
     | '/sp/cancel'
     | '/sp/success'
     | '/sp'
+    | '/character/$id/edit'
+    | '/character/$id/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -237,7 +259,6 @@ export interface FileRouteTypes {
     | '/quests'
     | '/settings'
     | '/titles'
-    | '/character/$id'
     | '/admin/performance'
     | '/admin/sp'
     | '/character/create'
@@ -246,6 +267,8 @@ export interface FileRouteTypes {
     | '/sp/cancel'
     | '/sp/success'
     | '/sp'
+    | '/character/$id/edit'
+    | '/character/$id'
   id:
     | '__root__'
     | '/'
@@ -260,15 +283,17 @@ export interface FileRouteTypes {
     | '/_authenticated/quests'
     | '/_authenticated/settings'
     | '/_authenticated/titles'
-    | '/character/$id'
     | '/_admin/admin/performance'
     | '/_admin/admin/sp'
+    | '/_authenticated/character/$id'
     | '/_authenticated/character/create'
     | '/_authenticated/game/$sessionId'
     | '/_authenticated/game/start'
     | '/_authenticated/sp/cancel'
     | '/_authenticated/sp/success'
     | '/_authenticated/sp/'
+    | '/_authenticated/character/$id/edit'
+    | '/_authenticated/character/$id/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -277,7 +302,6 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
-  CharacterIdRoute: typeof CharacterIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -315,13 +339,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/character/$id': {
-      id: '/character/$id'
-      path: '/character/$id'
-      fullPath: '/character/$id'
-      preLoaderRoute: typeof CharacterIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/titles': {
@@ -415,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCharacterCreateRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/character/$id': {
+      id: '/_authenticated/character/$id'
+      path: '/character/$id'
+      fullPath: '/character/$id'
+      preLoaderRoute: typeof AuthenticatedCharacterIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_admin/admin/sp': {
       id: '/_admin/admin/sp'
       path: '/sp'
@@ -428,6 +452,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/performance'
       preLoaderRoute: typeof AdminAdminPerformanceRouteImport
       parentRoute: typeof AdminAdminRoute
+    }
+    '/_authenticated/character/$id/': {
+      id: '/_authenticated/character/$id/'
+      path: '/'
+      fullPath: '/character/$id/'
+      preLoaderRoute: typeof AuthenticatedCharacterIdIndexRouteImport
+      parentRoute: typeof AuthenticatedCharacterIdRoute
+    }
+    '/_authenticated/character/$id/edit': {
+      id: '/_authenticated/character/$id/edit'
+      path: '/edit'
+      fullPath: '/character/$id/edit'
+      preLoaderRoute: typeof AuthenticatedCharacterIdEditRouteImport
+      parentRoute: typeof AuthenticatedCharacterIdRoute
     }
   }
 }
@@ -443,7 +481,7 @@ const AdminAdminRouteChildren: AdminAdminRouteChildren = {
 }
 
 const AdminAdminRouteWithChildren = AdminAdminRoute._addFileChildren(
-  AdminAdminRouteChildren
+  AdminAdminRouteChildren,
 )
 
 interface AdminRouteChildren {
@@ -456,6 +494,22 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface AuthenticatedCharacterIdRouteChildren {
+  AuthenticatedCharacterIdEditRoute: typeof AuthenticatedCharacterIdEditRoute
+  AuthenticatedCharacterIdIndexRoute: typeof AuthenticatedCharacterIdIndexRoute
+}
+
+const AuthenticatedCharacterIdRouteChildren: AuthenticatedCharacterIdRouteChildren =
+  {
+    AuthenticatedCharacterIdEditRoute: AuthenticatedCharacterIdEditRoute,
+    AuthenticatedCharacterIdIndexRoute: AuthenticatedCharacterIdIndexRoute,
+  }
+
+const AuthenticatedCharacterIdRouteWithChildren =
+  AuthenticatedCharacterIdRoute._addFileChildren(
+    AuthenticatedCharacterIdRouteChildren,
+  )
+
 interface AuthenticatedRouteChildren {
   AuthenticatedCharactersRoute: typeof AuthenticatedCharactersRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
@@ -463,6 +517,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedQuestsRoute: typeof AuthenticatedQuestsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTitlesRoute: typeof AuthenticatedTitlesRoute
+  AuthenticatedCharacterIdRoute: typeof AuthenticatedCharacterIdRouteWithChildren
   AuthenticatedCharacterCreateRoute: typeof AuthenticatedCharacterCreateRoute
   AuthenticatedGameSessionIdRoute: typeof AuthenticatedGameSessionIdRoute
   AuthenticatedGameStartRoute: typeof AuthenticatedGameStartRoute
@@ -478,6 +533,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedQuestsRoute: AuthenticatedQuestsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTitlesRoute: AuthenticatedTitlesRoute,
+  AuthenticatedCharacterIdRoute: AuthenticatedCharacterIdRouteWithChildren,
   AuthenticatedCharacterCreateRoute: AuthenticatedCharacterCreateRoute,
   AuthenticatedGameSessionIdRoute: AuthenticatedGameSessionIdRoute,
   AuthenticatedGameStartRoute: AuthenticatedGameStartRoute,
@@ -487,7 +543,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
-  AuthenticatedRouteChildren
+  AuthenticatedRouteChildren,
 )
 
 const rootRouteChildren: RootRouteChildren = {
@@ -496,7 +552,6 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
-  CharacterIdRoute: CharacterIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

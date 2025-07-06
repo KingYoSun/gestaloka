@@ -34,7 +34,7 @@ import { LoadingButton } from '@/components/ui/LoadingButton'
 import { containerStyles } from '@/lib/styles'
 
 export function CharacterDetailPage() {
-  const { id } = useParams({ from: '/character/$id' })
+  const { id } = useParams({ from: '/_authenticated/character/$id' })
   const navigate = useNavigate()
   // キャラクター一覧をストアに読み込む（activeCharacterの取得に必要）
   useCharacters()
@@ -150,7 +150,10 @@ export function CharacterDetailPage() {
               <Star className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`} />
               {isActive ? '選択中' : '選択'}
             </LoadingButton>
-            <Button variant="outline" disabled>
+            <Button
+              variant="outline"
+              onClick={() => navigate({ to: `/character/${id}/edit` })}
+            >
               <Edit3 className="mr-2 h-4 w-4" />
               編集
             </Button>
