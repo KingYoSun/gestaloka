@@ -51,25 +51,22 @@ interface RegisterRequest {
 
 class ApiClient {
   private baseUrl: string
-  private token: string | null = null
   private currentUser: User | null = null
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl
-    this.token = localStorage.getItem('authToken')
   }
 
-  setToken(token: string | null) {
-    this.token = token
-    if (token) {
-      localStorage.setItem('authToken', token)
-    } else {
-      localStorage.removeItem('authToken')
-    }
+  // Cookieベースの認証に移行したため、トークン管理は不要
+  setToken(_token: string | null) {
+    // 互換性のため残すが、実際には何もしない
+    // Cookieはバックエンドが管理
   }
 
   getToken(): string | null {
-    return this.token
+    // Cookieから直接取得することはできない（httpOnly）
+    // 互換性のためnullを返す
+    return null
   }
 
   setCurrentUser(user: User | null) {
@@ -91,14 +88,11 @@ class ApiClient {
       ...((options.headers as Record<string, string>) || {}),
     }
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`
-    }
-
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        credentials: 'include', // Cookieを送信
       })
 
       if (!response.ok) {
@@ -139,6 +133,7 @@ class ApiClient {
     const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
       method: 'POST',
       body: formData,
+      credentials: 'include', // Cookieを受信・送信
     })
 
     if (!response.ok) {

@@ -140,9 +140,37 @@ class MyService(LoggerMixin):
 ## セキュリティ
 
 ### 認証・認可
-- Keycloakによる統一認証
+- JWTトークンベースの認証システム
 - `app/api/deps.py`の共通関数を使用
-- JWTトークンの適切な検証
+- Cookie認証（2025-07-06実装）
+  - httpOnlyフラグでXSS対策
+  - secureフラグでHTTPS通信のみ（本番環境）
+  - samesiteフラグでCSRF対策
+
+#### Cookie認証の実装詳細
+```python
+# バックエンド: Cookie設定
+response.set_cookie(
+    key="authToken",
+    value=access_token,
+    httponly=True,  # JavaScriptからアクセス不可
+    secure=settings.ENVIRONMENT != "development",  # 本番環境でHTTPS必須
+    samesite="lax",  # CSRF対策
+    max_age=60 * 60 * 24 * 8,  # 8日間
+    path="/"
+)
+
+# フロントエンド: Cookie送信設定
+fetch(url, {
+    credentials: 'include',  // Cookieを自動送信
+    // その他のオプション
+})
+```
+
+#### 認証方式の互換性
+- BearerトークンとCookieの両方をサポート
+- 既存のAPIクライアントとの後方互換性を維持
+- 新規実装ではCookie認証を推奨
 
 ### 秘密情報の管理
 - 環境変数で管理
@@ -186,3 +214,4 @@ docker-compose exec backend pytest tests/test_validation.py
 
 ## 更新履歴
 - 2025-06-19: DRY原則に基づく重複コード修正後のベストプラクティスを文書化
+- 2025-07-06: Cookie認証の実装とセキュリティベストプラクティスを追加

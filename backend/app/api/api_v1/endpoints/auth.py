@@ -2,12 +2,13 @@
 認証エンドポイント
 """
 
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlmodel import Session
 
+from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.logging import get_logger
 from app.schemas.auth import Token, UserRegister
@@ -18,7 +19,28 @@ from app.services.user_service import UserService
 router = APIRouter()
 logger = get_logger(__name__)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+async def get_token(
+    bearer_token: Optional[str] = Depends(oauth2_scheme),
+    cookie_token: Optional[str] = Cookie(None, alias="authToken")
+) -> str:
+    """トークンを取得（CookieまたはAuthorizationヘッダーから）"""
+    # Bearerトークンを優先
+    if bearer_token:
+        return bearer_token
+
+    # Cookieからトークンを取得
+    if cookie_token:
+        return cookie_token
+
+    # どちらもない場合はエラー
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="認証が必要です",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
@@ -52,7 +74,9 @@ async def register(user_data: UserRegister, db: Session = Depends(get_session)) 
 
 
 @router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)) -> Any:
+async def login(
+    response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)
+) -> Any:
     """ユーザーログイン"""
     try:
         auth_service = AuthService(db)
@@ -70,6 +94,18 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
         # トークン生成
         access_token = auth_service.create_access_token(user.id)
 
+        # Cookieにトークンを設定（セキュアな設定）
+        settings = get_settings()
+        response.set_cookie(
+            key="authToken",
+            value=access_token,
+            httponly=True,  # JavaScriptからアクセス不可（XSS対策）
+            secure=settings.ENVIRONMENT != "development",  # 開発環境以外ではHTTPS必須
+            samesite="lax",  # CSRF対策
+            max_age=60 * 60 * 24 * 8,  # 8日間（ACCESS_TOKEN_EXPIRE_MINUTESと同じ）
+            path="/",  # 全パスで有効
+        )
+
         logger.info("User logged in", user_id=user.id, username=user.username)
 
         return Token(access_token=access_token, token_type="bearer", user=user)
@@ -82,13 +118,23 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 
 
 @router.post("/logout")
-async def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_session)) -> Any:
+async def logout(response: Response, token: str = Depends(get_token), db: Session = Depends(get_session)) -> Any:
     """ユーザーログアウト"""
     try:
         auth_service = AuthService(db)
         user = await auth_service.get_current_user(token)
         if user:
             logger.info("User logged out", user_id=user.id)
+
+        # Cookieを削除
+        settings = get_settings()
+        response.delete_cookie(
+            key="authToken",
+            path="/",
+            secure=settings.ENVIRONMENT != "development",
+            samesite="lax"
+        )
+
         # TODO: トークン無効化の実装
         return {"message": "ログアウトしました"}
 
@@ -97,7 +143,7 @@ async def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ログアウトに失敗しました")
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_session)) -> User:
+async def get_current_user(token: str = Depends(get_token), db: Session = Depends(get_session)) -> User:
     """現在のユーザーを取得（依存関数）"""
     try:
         auth_service = AuthService(db)

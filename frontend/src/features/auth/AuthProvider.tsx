@@ -20,17 +20,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const checkAuthStatus = async () => {
     try {
-      const token = localStorage.getItem('authToken')
-      if (token) {
-        // APIからユーザー情報を取得
-        const user = await apiClient.getCurrentUser()
-        setUser(user)
-        apiClient.setCurrentUser(user)
-      }
+      // Cookie認証のため、直接APIを呼び出してユーザー情報を取得
+      const user = await apiClient.getCurrentUser()
+      setUser(user)
+      apiClient.setCurrentUser(user)
     } catch (error) {
-      console.error('Auth check failed:', error)
-      localStorage.removeItem('authToken')
-      apiClient.setToken(null)
+      // 401エラーの場合は未認証状態（正常な状態）
+      if (error instanceof Error && error.message.includes('401')) {
+        // 未認証は正常な状態なのでログ出力しない
+      } else {
+        console.error('Auth check failed:', error)
+      }
       apiClient.setCurrentUser(null)
     } finally {
       setIsLoading(false)
