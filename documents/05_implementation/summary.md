@@ -107,6 +107,9 @@ SPシステムの実装詳細。モデル設計、API実装、フロントエン
 ### [spPurchaseSystem.md](spPurchaseSystem.md)
 SP購入システムの設計書。テストモードと本番モードの切り替え、価格プラン、セキュリティ対策。
 
+### [form_validation.md](form_validation.md)
+フォームバリデーションと文字数制限の実装ガイド。AI送信フォームの制限一覧、文字数カウンターUI実装。
+
 ## クイックリファレンス
 
 - 新機能実装：既存の実装パターンを`characterManagementSummary.md`で確認

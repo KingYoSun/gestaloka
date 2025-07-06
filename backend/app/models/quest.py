@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Optional
 
-from sqlalchemy import Text
+from sqlalchemy import String, Text
 from sqlmodel import JSON, Column, Field, SQLModel
 
 
@@ -49,8 +49,12 @@ class Quest(SQLModel, table=True):
     )
 
     # クエスト内容
-    title: str = Field(description="クエストのタイトル（動的に更新可能）")
-    description: str = Field(sa_column=Column(Text), description="クエストの説明（動的に更新される）")
+    title: str = Field(
+        sa_column=Column(String(100)), max_length=100, description="クエストのタイトル（動的に更新可能、最大100文字）"
+    )
+    description: str = Field(
+        sa_column=Column(String(2500)), max_length=2500, description="クエストの説明（動的に更新される、最大2500文字）"
+    )
 
     # 状態管理
     status: QuestStatus = Field(default=QuestStatus.PROPOSED, description="クエストの現在の状態")
@@ -114,8 +118,8 @@ class Quest(SQLModel, table=True):
 class QuestProposal(SQLModel):
     """GM AIからのクエスト提案"""
 
-    title: str = Field(description="提案するクエストのタイトル")
-    description: str = Field(description="クエストの説明")
+    title: str = Field(max_length=100, description="提案するクエストのタイトル（最大100文字）")
+    description: str = Field(max_length=2500, description="クエストの説明（最大2500文字）")
     reasoning: str = Field(description="なぜこのクエストを提案するか")
     difficulty_estimate: float = Field(ge=0.0, le=1.0, description="推定難易度（0-1）")
     relevance_score: float = Field(ge=0.0, le=1.0, description="現在の文脈との関連性スコア")
@@ -125,7 +129,7 @@ class QuestProposal(SQLModel):
 class QuestUpdate(SQLModel):
     """クエスト更新データ"""
 
-    description: Optional[str] = Field(default=None, description="更新された説明")
+    description: Optional[str] = Field(default=None, max_length=2500, description="更新された説明（最大2500文字）")
     progress_percentage: Optional[float] = Field(default=None, ge=0.0, le=100.0, description="進行度")
     narrative_completeness: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="物語的完結度")
     emotional_satisfaction: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="感情的満足度")

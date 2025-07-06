@@ -7,8 +7,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { InputWithCounter, TextareaWithCounter } from '@/components/common'
 import { Label } from '@/components/ui/label'
 import { PlusCircle, Target, AlertCircle } from 'lucide-react'
 import { useCreateQuest } from '@/hooks/useQuests'
@@ -89,7 +88,7 @@ export const QuestDeclaration: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="quest-title">クエストタイトル</Label>
-            <Input
+            <InputWithCounter
               id="quest-title"
               placeholder="例: 伝説の剣を見つける"
               value={title}
@@ -97,25 +96,19 @@ export const QuestDeclaration: React.FC = () => {
               maxLength={100}
               disabled={createQuest.isPending}
             />
-            <p className="text-xs text-muted-foreground text-right">
-              {title.length}/100
-            </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="quest-description">詳細な説明</Label>
-            <Textarea
+            <TextareaWithCounter
               id="quest-description"
               placeholder="このクエストで何を達成したいか、どんな冒険をしたいか詳しく書いてください"
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={4}
-              maxLength={500}
+              maxLength={2500}
               disabled={createQuest.isPending}
             />
-            <p className="text-xs text-muted-foreground text-right">
-              {description.length}/500
-            </p>
           </div>
 
           <Alert>

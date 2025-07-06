@@ -5,7 +5,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class GameSessionCreate(BaseModel):
@@ -48,9 +48,18 @@ class GameSessionListResponse(BaseModel):
 class GameActionRequest(BaseModel):
     """ゲーム行動リクエスト"""
 
-    action_text: str
+    action_text: str = Field(max_length=500, description="アクションテキスト（最大500文字）")
     action_type: str = "custom"  # "choice" or "custom"
     choice_index: Optional[int] = None
+
+    @field_validator("action_text")
+    @classmethod
+    def validate_action_text(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("アクションテキストは必須です")
+        if len(v) > 500:
+            raise ValueError("アクションテキストは500文字以内で入力してください")
+        return v.strip()
 
 
 class GameActionResponse(BaseModel):
@@ -75,9 +84,18 @@ class ActionChoice(BaseModel):
 class ActionExecuteRequest(BaseModel):
     """アクション実行リクエスト"""
 
-    action_text: str = Field(description="実行するアクションのテキスト")
+    action_text: str = Field(max_length=500, description="実行するアクションのテキスト（最大500文字）")
     action_type: str = Field(default="custom", description="アクションタイプ（choice/custom）")
     choice_id: Optional[str] = Field(default=None, description="選択した選択肢のID")
+
+    @field_validator("action_text")
+    @classmethod
+    def validate_action_text(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("アクションテキストは必須です")
+        if len(v) > 500:
+            raise ValueError("アクションテキストは500文字以内で入力してください")
+        return v.strip()
 
 
 class ActionExecuteResponse(BaseModel):

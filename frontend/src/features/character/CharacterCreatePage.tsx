@@ -3,8 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { InputWithCounter, TextareaWithCounter } from '@/components/common'
 import {
   Card,
   CardContent,
@@ -96,11 +95,12 @@ export function CharacterCreatePage() {
                   <User className="h-4 w-4" />
                   キャラクター名 <span className="text-red-500">*</span>
                 </Label>
-                <Input
+                <InputWithCounter
                   id="name"
                   {...register('name')}
                   placeholder="例: アリア・シルバーウィンド"
                   className="h-12"
+                  maxLength={50}
                 />
                 {errors.name && (
                   <Alert variant="destructive">
@@ -123,11 +123,12 @@ export function CharacterCreatePage() {
                   <Heart className="h-4 w-4" />
                   キャラクター説明
                 </Label>
-                <Textarea
+                <TextareaWithCounter
                   id="description"
                   {...register('description')}
                   placeholder="このキャラクターの背景や設定を自由に書いてください。どんな人物で、どのような過去を持っているのか..."
                   className="min-h-[100px]"
+                  maxLength={1000}
                 />
                 {errors.description && (
                   <Alert variant="destructive">
@@ -147,11 +148,12 @@ export function CharacterCreatePage() {
                   <Eye className="h-4 w-4" />
                   外見
                 </Label>
-                <Textarea
+                <TextareaWithCounter
                   id="appearance"
                   {...register('appearance')}
                   placeholder="髪の色、瞳の色、身長、服装など、キャラクターの外見的特徴を描写してください..."
                   className="min-h-[100px]"
+                  maxLength={1000}
                 />
                 {errors.appearance && (
                   <Alert variant="destructive">
@@ -171,11 +173,12 @@ export function CharacterCreatePage() {
                   <Sparkles className="h-4 w-4" />
                   性格
                 </Label>
-                <Textarea
+                <TextareaWithCounter
                   id="personality"
                   {...register('personality')}
                   placeholder="勇敢、慎重、好奇心旺盛、内向的など、キャラクターの性格や特性を書いてください..."
                   className="min-h-[100px]"
+                  maxLength={1000}
                 />
                 {errors.personality && (
                   <Alert variant="destructive">

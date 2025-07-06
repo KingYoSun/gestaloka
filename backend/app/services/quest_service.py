@@ -96,8 +96,8 @@ class QuestService:
 
 1-3個の自然なクエストを提案してください。
 各クエストには以下を含めてください：
-- title: 簡潔なタイトル
-- description: 詳細な説明
+- title: 簡潔なタイトル（最大100文字）
+- description: 詳細な説明（最大2500文字）
 - reasoning: なぜこのクエストが自然に生まれるか
 - difficulty_estimate: 0-1の難易度
 - relevance_score: 現在の文脈との関連性（0-1）
@@ -255,6 +255,7 @@ JSON形式で回答してください。
 3. emotional_satisfaction: 感情的満足度（0-1）
 4. status: 現在の状態（active/progressing/near_completion/completed）
 5. summary: 現在の状況サマリー
+6. updated_description: 更新された説明（オプション、最大2500文字）
 
 JSON形式で回答してください。
 """
@@ -280,6 +281,11 @@ JSON形式で回答してください。
             new_status = progress_data.get("status")
             if new_status and new_status in [s.value for s in QuestStatus]:
                 quest.status = QuestStatus(new_status)
+
+            # 説明の更新（オプション）
+            updated_description = progress_data.get("updated_description")
+            if updated_description and len(updated_description) <= 2500:
+                quest.description = updated_description
 
             # 完了判定
             if quest.status == QuestStatus.COMPLETED:
@@ -420,8 +426,8 @@ JSON形式で回答してください。
 プレイヤーが明示的に宣言していないが、行動から読み取れる目標を1つ提案してください。
 
 以下の形式で回答してください：
-- title: 推測される目標
-- description: 詳細な説明
+- title: 推測される目標（最大100文字）
+- description: 詳細な説明（最大2500文字）
 - confidence: 推測の確信度（0-1）
 
 JSON形式で回答してください。
