@@ -7,7 +7,6 @@ import {
   ScrollText,
   Settings,
   LogOut,
-  MapPin,
   Gem,
   Target,
   Sparkles,
@@ -56,11 +55,6 @@ const navigationItems = [
     name: '称号',
     href: '/titles',
     icon: Crown,
-  },
-  {
-    name: '探索',
-    href: '/exploration',
-    icon: MapPin,
   },
   {
     name: '設定',

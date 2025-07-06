@@ -22,7 +22,6 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedQuestsRouteImport } from './routes/_authenticated/quests'
 import { Route as AuthenticatedLogsRouteImport } from './routes/_authenticated/logs'
 import { Route as AuthenticatedLogFragmentsRouteImport } from './routes/_authenticated/log-fragments'
-import { Route as AuthenticatedExplorationRouteImport } from './routes/_authenticated/exploration'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCharactersRouteImport } from './routes/_authenticated/characters'
 import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
@@ -100,12 +99,6 @@ const AuthenticatedLogFragmentsRoute =
     path: '/log-fragments',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedExplorationRoute =
-  AuthenticatedExplorationRouteImport.update({
-    id: '/exploration',
-    path: '/exploration',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -171,7 +164,6 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminAdminRouteWithChildren
   '/characters': typeof AuthenticatedCharactersRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/exploration': typeof AuthenticatedExplorationRoute
   '/log-fragments': typeof AuthenticatedLogFragmentsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/quests': typeof AuthenticatedQuestsRoute
@@ -195,7 +187,6 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminAdminRouteWithChildren
   '/characters': typeof AuthenticatedCharactersRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/exploration': typeof AuthenticatedExplorationRoute
   '/log-fragments': typeof AuthenticatedLogFragmentsRoute
   '/logs': typeof AuthenticatedLogsRoute
   '/quests': typeof AuthenticatedQuestsRoute
@@ -222,7 +213,6 @@ export interface FileRoutesById {
   '/_admin/admin': typeof AdminAdminRouteWithChildren
   '/_authenticated/characters': typeof AuthenticatedCharactersRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/exploration': typeof AuthenticatedExplorationRoute
   '/_authenticated/log-fragments': typeof AuthenticatedLogFragmentsRoute
   '/_authenticated/logs': typeof AuthenticatedLogsRoute
   '/_authenticated/quests': typeof AuthenticatedQuestsRoute
@@ -248,7 +238,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/characters'
     | '/dashboard'
-    | '/exploration'
     | '/log-fragments'
     | '/logs'
     | '/quests'
@@ -272,7 +261,6 @@ export interface FileRouteTypes {
     | '/admin'
     | '/characters'
     | '/dashboard'
-    | '/exploration'
     | '/log-fragments'
     | '/logs'
     | '/quests'
@@ -298,7 +286,6 @@ export interface FileRouteTypes {
     | '/_admin/admin'
     | '/_authenticated/characters'
     | '/_authenticated/dashboard'
-    | '/_authenticated/exploration'
     | '/_authenticated/log-fragments'
     | '/_authenticated/logs'
     | '/_authenticated/quests'
@@ -411,13 +398,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLogFragmentsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/exploration': {
-      id: '/_authenticated/exploration'
-      path: '/exploration'
-      fullPath: '/exploration'
-      preLoaderRoute: typeof AuthenticatedExplorationRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -525,7 +505,6 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface AuthenticatedRouteChildren {
   AuthenticatedCharactersRoute: typeof AuthenticatedCharactersRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedExplorationRoute: typeof AuthenticatedExplorationRoute
   AuthenticatedLogFragmentsRoute: typeof AuthenticatedLogFragmentsRoute
   AuthenticatedLogsRoute: typeof AuthenticatedLogsRoute
   AuthenticatedQuestsRoute: typeof AuthenticatedQuestsRoute
@@ -543,7 +522,6 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCharactersRoute: AuthenticatedCharactersRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedExplorationRoute: AuthenticatedExplorationRoute,
   AuthenticatedLogFragmentsRoute: AuthenticatedLogFragmentsRoute,
   AuthenticatedLogsRoute: AuthenticatedLogsRoute,
   AuthenticatedQuestsRoute: AuthenticatedQuestsRoute,

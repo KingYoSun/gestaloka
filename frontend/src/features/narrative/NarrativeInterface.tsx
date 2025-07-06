@@ -9,7 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Loader2, MapPin, Sparkles } from 'lucide-react'
 import { useNarrativeActions } from './hooks/useNarrativeActions'
-import { Minimap } from '@/features/exploration/minimap/Minimap'
+// Minimap import removed - exploration feature integrated into session
 import { ActionChoice } from '@/api/generated'
 import { cn } from '@/lib/utils'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -27,7 +27,6 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
     useNarrativeActions(characterId)
   const [narrativeHistory, setNarrativeHistory] = useState<string[]>([])
   const [currentActions, setCurrentActions] = useState<ActionChoice[]>([])
-  const [selectedLocationInfo, setSelectedLocationInfo] = useState<any>(null)
 
   // WebSocket接続
   const { subscribe } = useWebSocket()
@@ -85,13 +84,6 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
     }
   }
 
-  // 場所情報の表示
-  const handleLocationInfo = (location: any) => {
-    setSelectedLocationInfo(location)
-    toast.info(`${location.name}の情報`, {
-      description: `危険度: ${location.danger_level} / 階層: 第${location.layer}層`,
-    })
-  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 h-full">
@@ -159,56 +151,14 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
         </div>
       </Card>
 
-      {/* サイドパネル：ミニマップ */}
+      {/* サイドパネル */}
       <div className="space-y-4">
         {/* 装備中の称号 */}
         <div className="flex justify-center">
           <EquippedTitleBadge />
         </div>
         
-        <Card className="p-4 bg-gray-900 border-gray-800">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">現在地</h3>
-          <Minimap
-            characterId={characterId}
-            interactionMode="view-only"
-            onLocationInfo={handleLocationInfo}
-            className="relative position-static bottom-auto right-auto w-full h-[250px]"
-          />
-        </Card>
-
-        {/* 場所情報 */}
-        {selectedLocationInfo && (
-          <Card className="p-4 bg-gray-900 border-gray-800">
-            <h3 className="text-sm font-semibold text-gray-400 mb-2">
-              {selectedLocationInfo.name}
-            </h3>
-            <div className="space-y-1 text-sm">
-              <p className="text-gray-300">
-                {selectedLocationInfo.description}
-              </p>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">危険度</span>
-                <span
-                  className={cn(
-                    'font-medium',
-                    selectedLocationInfo.danger_level === 'safe' &&
-                      'text-green-400',
-                    selectedLocationInfo.danger_level === 'low' &&
-                      'text-yellow-400',
-                    selectedLocationInfo.danger_level === 'medium' &&
-                      'text-orange-400',
-                    selectedLocationInfo.danger_level === 'high' &&
-                      'text-red-400',
-                    selectedLocationInfo.danger_level === 'extreme' &&
-                      'text-purple-400'
-                  )}
-                >
-                  {selectedLocationInfo.danger_level}
-                </span>
-              </div>
-            </div>
-          </Card>
-        )}
+        {/* 現在地情報はセッションの物語内で表現されるため削除 */}
       </div>
     </div>
   )

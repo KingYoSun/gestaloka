@@ -97,73 +97,7 @@ export const handlers = [
     })
   }),
 
-  // 探索マップデータ
-  http.get('*/api/v1/exploration/:characterId/map-data', ({ params }) => {
-    return HttpResponse.json({
-      character_id: params.characterId,
-      layers: [
-        {
-          layer: 1,
-          locations: [
-            {
-              id: '1',
-              name: '始まりの街',
-              coordinates: { x: 0, y: 0 },
-              type: 'city',
-              danger_level: 'safe',
-              is_discovered: true,
-              exploration_percentage: 100,
-              last_visited: '2025-01-01T00:00:00Z',
-            },
-            {
-              id: '2',
-              name: '森の入口',
-              coordinates: { x: 100, y: 50 },
-              type: 'wild',
-              danger_level: 'low',
-              is_discovered: true,
-              exploration_percentage: 50,
-            },
-          ],
-          connections: [
-            {
-              id: 1,
-              from_location_id: '1',
-              to_location_id: '2',
-              path_type: 'direct',
-              is_one_way: false,
-              is_discovered: true,
-              sp_cost: 10,
-            },
-          ],
-          exploration_progress: [
-            {
-              id: '1',
-              character_id: params.characterId,
-              location_id: '1',
-              exploration_percentage: 100,
-              areas_explored: ['area1', 'area2'],
-              created_at: '2025-01-01T00:00:00Z',
-              updated_at: '2025-01-01T00:00:00Z',
-            },
-          ],
-        },
-      ],
-      character_trail: [
-        {
-          location_id: '1',
-          timestamp: '2025-01-01T00:00:00Z',
-          layer: 1,
-          coordinates: { x: 0, y: 0 },
-        },
-      ],
-      current_location: {
-        id: '1',
-        layer: 1,
-        coordinates: { x: 0, y: 0 },
-      },
-    })
-  }),
+  // 探索関連のAPIは削除（セッション進行に統合）
 
   // 汎用的なフォールバック
   http.get('*', ({ request }) => {

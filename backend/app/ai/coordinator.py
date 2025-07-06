@@ -433,13 +433,18 @@ class CoordinatorAI:
             if response.success and response.choices:
                 all_choices.extend(response.choices)
 
-        # 重複を除去して最大3つに制限
+        # 探索関連の選択肢を追加（物語の文脈に基づいて）
+        exploration_choices = self._generate_exploration_choices_from_context(final_response.narrative)
+        if exploration_choices:
+            all_choices.extend(exploration_choices)
+
+        # 重複を除去して最大4つに制限（探索選択肢を含めるため1つ増やす）
         seen_texts = set()
         for choice in all_choices:
             if choice.text not in seen_texts:
                 final_response.choices.append(choice)
                 seen_texts.add(choice.text)
-                if len(final_response.choices) >= 3:
+                if len(final_response.choices) >= 4:
                     break
 
         # 状態変更の統合
@@ -453,6 +458,35 @@ class CoordinatorAI:
                 final_response.events.extend(response.events)
 
         return final_response
+    
+    def _generate_exploration_choices_from_context(self, narrative: str) -> list[Choice]:
+        """物語の文脈から探索関連の選択肢を生成"""
+        choices = []
+        
+        # 物語の内容に基づいて適切な探索選択肢を提案
+        if any(word in narrative for word in ["街", "町", "都市", "村"]):
+            choices.append(Choice(
+                id="explore_town",
+                text="街を探索する",
+                metadata={"action_type": "exploration", "sp_cost": 5}
+            ))
+        
+        if any(word in narrative for word in ["森", "山", "野", "洞窟"]):
+            choices.append(Choice(
+                id="search_area", 
+                text="周囲を詳しく調べる",
+                metadata={"action_type": "exploration", "sp_cost": 5}
+            ))
+        
+        # 移動の選択肢（常に1つは含める）
+        if not choices or len(choices) < 1:
+            choices.append(Choice(
+                id="explore_surroundings",
+                text="周囲を探索する",
+                metadata={"action_type": "exploration", "sp_cost": 5}
+            ))
+        
+        return choices
 
     def _generate_final_response(self, integrated: FinalResponse) -> FinalResponse:
         """最終レスポンスを生成"""
