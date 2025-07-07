@@ -25,9 +25,9 @@ SENDER_TYPE_SYSTEM = "system"
 
 class GameMessage(SQLModel, table=True):
     """ゲームメッセージモデル"""
-    
+
     __tablename__ = "game_messages"
-    
+
     id: str = Field(primary_key=True, index=True)
     session_id: str = Field(foreign_key="game_sessions.id", index=True)
     message_type: str = Field(...)  # "player_action", "gm_narrative", "system_event"
@@ -35,12 +35,12 @@ class GameMessage(SQLModel, table=True):
     content: str = Field(...)
     message_metadata: Optional[dict] = Field(default=None, sa_type=JSON)  # choices, character_status等
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     # インデックス
     turn_number: int = Field(..., index=True)  # セッション内のターン番号
-    
+
     # リレーション
     session: "GameSession" = Relationship(back_populates="messages")
-    
+
     def __repr__(self) -> str:
         return f"<GameMessage(id={self.id}, session_id={self.session_id}, turn={self.turn_number})>"

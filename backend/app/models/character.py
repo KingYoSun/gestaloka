@@ -10,14 +10,14 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.exploration_progress import CharacterExplorationProgress
+    from app.models.game_message import GameMessage
     from app.models.item import CharacterItem
     from app.models.location import Location
     from app.models.log import ActionLog, CompletedLog, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
+    from app.models.session_result import SessionResult
     from app.models.title import CharacterTitle
     from app.models.user import User
-    from app.models.game_message import GameMessage
-    from app.models.session_result import SessionResult
 
 
 class Character(SQLModel, table=True):
@@ -160,26 +160,26 @@ class GameSession(SQLModel, table=True):
     session_data: Optional[str] = Field(default=None)  # JSON文字列
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
+
     # 新規フィールド
     session_status: str = Field(default="active")  # "active", "ending_proposed", "completed"
     session_number: int = Field(default=1)  # キャラクターの何回目のセッションか
     previous_session_id: Optional[str] = Field(default=None, foreign_key="game_sessions.id")
     story_arc_id: Optional[str] = Field(default=None)  # ストーリーアークID（複数セッション跨ぎ）
-    
+
     # リザルト関連
     result_summary: Optional[str] = Field(default=None)  # セッションのサマリー
     result_processed_at: Optional[datetime] = Field(default=None)
-    
+
     # メトリクス
     turn_count: int = Field(default=0)
     word_count: int = Field(default=0)
     play_duration_minutes: int = Field(default=0)
-    
+
     # 終了提案追跡
     ending_proposal_count: int = Field(default=0)  # 終了提案された回数（0-3）
     last_proposal_at: Optional[datetime] = Field(default=None)  # 最後に提案した時刻
-    
+
     # 初回セッション特別フラグ
     is_first_session: bool = Field(default=False)
 

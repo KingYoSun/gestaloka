@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import Session
 
 from app.models.character import Character
-from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity, MemoryType
+from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
 from app.models.user import User
 from app.services.compilation_bonus import BonusType, CompilationBonusService
 
@@ -63,7 +63,8 @@ def test_fragments(session: Session, test_character):
             keywords=["勇気", "決意"],
             emotional_valence=EmotionalValence.POSITIVE,
             rarity=LogFragmentRarity.RARE,
-            memory_type=MemoryType.COURAGE.value,
+            memory_type="courage",
+            is_consumed=False,
             created_at=datetime.utcnow(),
         ),
         LogFragment(
@@ -74,7 +75,8 @@ def test_fragments(session: Session, test_character):
             keywords=["犠牲", "献身"],
             emotional_valence=EmotionalValence.MIXED,
             rarity=LogFragmentRarity.EPIC,
-            memory_type=MemoryType.SACRIFICE.value,
+            memory_type="sacrifice",
+            is_consumed=False,
             created_at=datetime.utcnow(),
         ),
         LogFragment(
@@ -85,7 +87,8 @@ def test_fragments(session: Session, test_character):
             keywords=["光", "希望"],
             emotional_valence=EmotionalValence.POSITIVE,
             rarity=LogFragmentRarity.LEGENDARY,
-            memory_type=MemoryType.VICTORY.value,
+            memory_type="victory",
+            is_consumed=False,
             created_at=datetime.utcnow(),
         ),
         LogFragment(
@@ -96,7 +99,8 @@ def test_fragments(session: Session, test_character):
             keywords=["闇", "絶望"],
             emotional_valence=EmotionalValence.NEGATIVE,
             rarity=LogFragmentRarity.LEGENDARY,
-            memory_type=MemoryType.TRUTH.value,
+            memory_type="truth",
+            is_consumed=False,
             created_at=datetime.utcnow(),
         ),
     ]

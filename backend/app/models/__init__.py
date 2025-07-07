@@ -14,7 +14,6 @@ from app.models.encounter_story import (
 from app.models.exploration_progress import CharacterExplorationProgress
 from app.models.game_message import GameMessage
 from app.models.item import CharacterItem, Item, ItemRarity, ItemType
-from app.models.session_result import SessionResult
 from app.models.location import (
     CharacterLocationHistory,
     DangerLevel,
@@ -41,6 +40,7 @@ from app.models.log_dispatch import (
     LogDispatch,
 )
 from app.models.quest import Quest, QuestOrigin, QuestStatus
+from app.models.session_result import SessionResult
 from app.models.sp import (
     PlayerSP,
     SPPurchasePackage,

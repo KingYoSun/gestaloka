@@ -21,7 +21,6 @@ from app.models.encounter_story import EncounterChoice, EncounterStory, SharedQu
 from app.models.exploration_progress import CharacterExplorationProgress  # noqa
 from app.models.game_message import GameMessage  # noqa
 from app.models.item import CharacterItem, Item  # noqa
-from app.models.session_result import SessionResult  # noqa
 
 # 新しいモデルを追加する場合は、ここにインポートを追加
 from app.models.location import (  # noqa
@@ -44,6 +43,7 @@ from app.models.log_dispatch import (  # noqa
     LogDispatch,
 )
 from app.models.quest import Quest  # noqa
+from app.models.session_result import SessionResult  # noqa
 from app.models.sp import PlayerSP, SPTransaction  # noqa
 from app.models.sp_purchase import SPPurchase  # noqa
 from app.models.sp_subscription import SPSubscription, SubscriptionTransaction  # noqa
