@@ -2,10 +2,55 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/01/07（01:35 JST）
+## 最終更新: 2025/07/08（02:45 JST）
 
-### 2025/01/07の主な実装
-- **キャラクター作成制限のバグ修正** ✅NEW！
+### 2025/07/08の主な実装
+- **ドキュメント整理とクリーンアップ** ✅NEW！
+  - 対象: documents/01_project以下のファイル
+  - 削除基準:
+    - 1日以上更新されていない頻繁更新想定ファイル
+    - 重要内容だが他ファイルで説明済み/古い仕様のファイル
+  - 削除されたファイル:
+    - projectbrief_archived.md（2025/06/18のアーカイブ版）
+    - implementationRoadmap.md（2025/06/22の古い実装計画）
+    - recentWork.md（issuesAndNotesと機能重複）
+    - progressReports/index.md（2025/06/18から更新なし）
+    - progressReports/milestones.md（2025/06で更新停止）
+    - progressReports/retrospective.md（古いメトリクス）
+    - progressReports/weeklyReports.md（実質的な役割なし）
+  - 更新されたファイル:
+    - current_tasks.md（日付を7月8日に更新、セッション復帰機能を追加）
+    - issuesAndNotes.md（日付誤記修正：1月→7月）
+    - completedTasks.md（7月8日のセッションシステム実装を追加）
+    - current_environment.md（「最近の変更」「以前の変更」セクション削除）
+    - index.md（削除ファイルへの参照を更新）
+  - 成果:
+    - ドキュメント構造の簡素化
+    - 冗長な情報の削除
+    - 最新情報への集約
+
+- **セッションシステムの再設計と基盤実装** ✅
+  - 問題の背景
+    - ゲームセッションのメッセージ履歴がメモリのみで管理されていた
+    - 長時間プレイでコンテキストが肥大化し、AI処理が遅延
+    - セッション終了後に会話履歴を参照できない
+  - 実装内容
+    - GameMessageテーブルの作成（永続化）
+    - SessionResultテーブルの作成（セッション結果保存）
+    - GameSessionモデルの拡張（context_summary、metadata、status_data追加）
+    - save_messageメソッドの実装
+  - 技術的対処
+    - PostgreSQL ENUM型問題を回避（「type already exists」エラー）
+    - Alembicマイグレーションで`CREATE TYPE IF NOT EXISTS`が使えない制約への対処
+    - テストDBへのマイグレーション適用と包括的テスト実装
+  - 今後の発展
+    - コンテキスト要約機能の実装
+    - セッション復帰機能の追加
+    - 過去セッション参照UI
+  - 詳細レポート：`progressReports/2025-07-08_session_system_implementation.md`
+
+### 2025/07/07の主な実装
+- **キャラクター作成制限のバグ修正** ✅
   - 問題の内容
     - キャラクター作成時に400エラー「Maximum character limit (5) reached」が発生
     - 実際にはアクティブなキャラクターは1体のみ（他4体は削除済み）
@@ -19,9 +64,9 @@
   - 今後の検討事項
     - 削除済みキャラクターの物理削除（ハードデリート）の検討
     - キャラクター削除時の関連データ処理方針の明確化
-  - 詳細レポート：`progressReports/2025-01-07_character_limit_fix.md`
+  - 詳細レポート：`progressReports/2025-07-07_character_limit_fix.md`
 
-### 2025/01/07の主な実装
+### 2025/07/07の主な実装（続き）
 - **UI改善とEnergyからMPへの変更** ✅
   - 時刻表示の問題
     - サーバーがUTC時刻で保存・返却（例：`2025-07-06T15:00:00`）
