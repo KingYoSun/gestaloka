@@ -75,6 +75,7 @@ strict_equality = true
 # テストディレクトリの除外
 exclude = [
     "tests/integration/conftest.py",
+    "alembic/versions/*",
 ]
 
 # サードパーティライブラリの型チェックを無視

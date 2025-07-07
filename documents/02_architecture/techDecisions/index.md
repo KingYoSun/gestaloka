@@ -1,6 +1,6 @@
 # 技術コンテキスト - ゲスタロカ (Gestaloka)
 
-**最終更新日:** 2025/06/17
+**最終更新日:** 2025/07/08
 
 ## 概要
 
@@ -39,6 +39,9 @@
 
 ### [Alembic統合ガイド](./alembicIntegration.md)
 Alembic + SQLModelの統合設定、マイグレーション管理、トラブルシューティング。
+
+### [PostgreSQL ENUM型とマイグレーション問題](./postgresql_enum_migration_issues.md)
+PostgreSQL ENUM型の制約、マイグレーション戦略、ベストプラクティス。🔴重要
 
 ## 開発の流れ
 
