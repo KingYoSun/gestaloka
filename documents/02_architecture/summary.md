@@ -1,6 +1,6 @@
 # アーキテクチャ・技術仕様サマリー
 
-最終更新: 2025-07-06
+最終更新: 2025-07-08
 
 ## 概要
 このセクションには、ゲスタロカのシステム設計、アーキテクチャパターン、技術的決定、API仕様に関するドキュメントが含まれています。新機能の実装や技術的な意思決定を行う際の指針となります。
@@ -8,12 +8,13 @@
 ## 主要ポイント
 
 ### システム構成
-- **認証フロー**: Keycloak → JWT → API
+- **認証フロー**: Keycloak → JWT → Cookie認証（2025-07-06移行）
 - **リアルタイム通信**: WebSocket (Socket.IO)
 - **非同期処理**: Celery + Redis
 - **データベース**: PostgreSQL（構造化データ）+ Neo4j（関係性データ）
 - **決済システム**: Stripe（SP購入・サブスクリプション）
 - **AIキャッシュ**: Redis（コスト20-30%削減）
+- **セッション管理**: GameMessage/SessionResultテーブル（2025-07-08追加）
 
 ### GM AI評議会
 6つの専門AIがそれぞれの役割を持ち協調動作：
@@ -60,22 +61,27 @@
 - **[componentArchitecture.md](frontend/componentArchitecture.md)**: フロントエンドコンポーネントアーキテクチャとDRY原則
 
 ### features/
-- **[minimap_design.md](features/minimap_design.md)**: ミニマップ機能の設計書（UI/UX、実装フェーズ）
-- **[minimap_technical_spec.md](features/minimap_technical_spec.md)**: ミニマップ機能の技術仕様（API、DB、Canvas実装）
 - **[sp_system_spec.md](features/sp_system_spec.md)**: SPシステムの完全仕様（購入、サブスク、管理）
 - **[log_encounter_spec.md](features/log_encounter_spec.md)**: ログ遭遇システム仕様（複数NPC、アイテム交換）
 - **[encounter_story_spec.md](features/encounter_story_spec.md)**: 遭遇ストーリーシステム仕様（記憶継承システムの拡張）
 
 ## 最近の更新（2025年7月）
 
+- **セッションシステム再設計（2025-07-08）**: 長時間プレイ対策とコンテキスト管理
+  - GameMessageテーブルで全メッセージを永続化
+  - SessionResultテーブルでセッション結果を保存
+  - GameSessionモデルの拡張（session_status、turn_count等）
+  - [session_system_redesign.md](session_system_redesign.md)参照
+- **キャラクター編集機能（2025-07-07）**: 名前、説明、外見、性格の編集
 - **探索機能の統合（2025-07-06）**: 独立した探索システムをセッション進行に完全統合
   - 探索専用ページ・APIを削除
   - GameSessionServiceで探索処理を実装
   - CoordinatorAIが文脈に応じた探索選択肢を生成
-  - [exploration_session_integration_mvp.md](exploration_session_integration_mvp.md)参照
+- **Cookie認証への移行（2025-07-06）**: LocalStorageからセキュアなCookie認証へ
+- **Energy→MPへの名称変更（2025-07-07）**: キャラクターの魔力ポイント
 - **SPシステム完全実装**: Stripe統合、サブスクリプション、管理機能
 - **ログ遭遇システム強化**: 複数NPC対応、アイテム交換、確率計算
-- **物語主導型移動**: ~~ミニマップview-only化~~、GM AIによる自然な移動
+- **物語主導型移動**: ミニマップ削除、GM AIによる自然な移動（2025-07-06）
 - **AIレスポンスキャッシュ**: コスト20-30%削減
 - **遭遇ストーリーシステム**: ログとの遭遇を継続的な物語に発展させる機能（2025-07-04）
 
