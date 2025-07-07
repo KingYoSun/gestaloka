@@ -347,31 +347,6 @@ export function CharacterDetailPage() {
               </Card>
             )}
 
-            {/* アクションパネル */}
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-blue-50 border-purple-200">
-              <CardHeader>
-                <CardTitle className="text-center text-purple-800">
-                  アクション
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                  disabled
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  冒険を開始
-                </Button>
-                <Button variant="outline" className="w-full" disabled>
-                  <MapPin className="mr-2 h-4 w-4" />
-                  場所を移動
-                </Button>
-                <Button variant="outline" className="w-full" disabled>
-                  <Eye className="mr-2 h-4 w-4" />
-                  状況を確認
-                </Button>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </div>

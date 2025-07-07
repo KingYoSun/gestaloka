@@ -25,11 +25,6 @@ const navigationItems = [
     icon: User,
   },
   {
-    name: 'セッション',
-    href: '/game/start',
-    icon: GamepadIcon,
-  },
-  {
     name: 'ログ',
     href: '/logs',
     icon: ScrollText,

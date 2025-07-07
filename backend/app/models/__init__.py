@@ -12,7 +12,9 @@ from app.models.encounter_story import (
     StoryArcType,
 )
 from app.models.exploration_progress import CharacterExplorationProgress
+from app.models.game_message import GameMessage
 from app.models.item import CharacterItem, Item, ItemRarity, ItemType
+from app.models.session_result import SessionResult
 from app.models.location import (
     CharacterLocationHistory,
     DangerLevel,
@@ -73,6 +75,7 @@ __all__ = [
     "EncounterType",
     "ExplorationArea",
     "ExplorationLog",
+    "GameMessage",
     "GameSession",
     "Item",
     "ItemRarity",
@@ -95,6 +98,7 @@ __all__ = [
     "SPSubscriptionType",
     "SPTransaction",
     "SPTransactionType",
+    "SessionResult",
     "SharedQuest",
     "Skill",
     "StoryArcType",

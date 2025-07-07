@@ -15,7 +15,16 @@ from app.ai.coordination_models import Choice
 from app.ai.coordinator import CoordinatorAI
 from app.ai.shared_context import PlayerAction
 from app.core.logging import get_logger
-from app.models.character import Character, GameSession
+from app.models.character import Character, GameSession, SESSION_STATUS_ACTIVE, SESSION_STATUS_COMPLETED
+from app.models.game_message import (
+    GameMessage,
+    MESSAGE_TYPE_PLAYER_ACTION,
+    MESSAGE_TYPE_GM_NARRATIVE,
+    MESSAGE_TYPE_SYSTEM_EVENT,
+    SENDER_TYPE_PLAYER,
+    SENDER_TYPE_GM,
+    SENDER_TYPE_SYSTEM,
+)
 from app.models.location import Location
 from app.schemas.battle import (
     BattleAction,
@@ -93,6 +102,13 @@ class GameSessionService:
                 session.updated_at = datetime.utcnow()
                 self.db.add(session)
 
+            # キャラクターのセッション数を取得
+            from sqlalchemy import func
+            session_count_stmt = select(func.count(GameSession.id)).where(
+                GameSession.character_id == character.id
+            )
+            session_count = self.db.exec(session_count_stmt).one()
+            
             # 新しいセッションを作成
             new_session = GameSession(
                 id=str(uuid.uuid4()),
@@ -100,11 +116,35 @@ class GameSessionService:
                 is_active=True,
                 current_scene=self._get_initial_scene(character),
                 session_data=json.dumps({"turn_count": 0, "actions_history": [], "game_state": "started"}),
+                session_status=SESSION_STATUS_ACTIVE,
+                session_number=session_count + 1,
+                is_first_session=(session_count == 0),
+                turn_count=0,
+                word_count=0,
+                play_duration_minutes=0,
+                ending_proposal_count=0,
             )
 
             self.db.add(new_session)
             self.db.commit()
             self.db.refresh(new_session)
+            
+            # セッション開始のシステムメッセージを保存
+            system_message_metadata = {
+                "session_number": new_session.session_number,
+                "is_first_session": new_session.is_first_session,
+                "character_id": character.id,
+                "character_name": character.name,
+            }
+            self.save_message(
+                session_id=new_session.id,
+                message_type=MESSAGE_TYPE_SYSTEM_EVENT,
+                sender_type=SENDER_TYPE_SYSTEM,
+                content=f"セッション #{new_session.session_number} を開始しました。{'（初回セッション）' if new_session.is_first_session else ''}",
+                turn_number=0,
+                metadata=system_message_metadata
+            )
+            self.db.commit()  # メッセージも一緒にコミット
 
             logger.info(
                 "Game session created",
@@ -257,6 +297,7 @@ class GameSessionService:
 
             # セッションを非アクティブ化
             session.is_active = False
+            session.session_status = SESSION_STATUS_COMPLETED
             session.updated_at = datetime.utcnow()
 
             # セッションデータに終了情報を追加
@@ -268,6 +309,22 @@ class GameSessionService:
             session_data["game_state"] = "ended"
             session_data["ended_at"] = datetime.utcnow().isoformat()
             session.session_data = json.dumps(session_data)
+            
+            # セッション終了のシステムメッセージを保存
+            end_message_metadata = {
+                "session_number": session.session_number,
+                "total_turns": session.turn_count,
+                "total_words": session.word_count,
+                "play_duration_minutes": session.play_duration_minutes,
+            }
+            self.save_message(
+                session_id=session.id,
+                message_type=MESSAGE_TYPE_SYSTEM_EVENT,
+                sender_type=SENDER_TYPE_SYSTEM,
+                content=f"セッション #{session.session_number} を終了しました。（総ターン数: {session.turn_count}）",
+                turn_number=session.turn_count,
+                metadata=end_message_metadata
+            )
 
             self.db.add(session)
             self.db.commit()
@@ -378,6 +435,24 @@ class GameSessionService:
             # セッションデータの取得
             session_data = json.loads(session.session_data) if session.session_data else {}
             actions_history = session_data.get("actions_history", []) if session_data else []
+            
+            # 現在のターン番号を取得
+            current_turn = session_data.get("turn_count", 0) + 1 if session_data else 1
+            
+            # プレイヤーのアクションをメッセージとして保存
+            player_message_metadata = {
+                "action_type": action_request.action_type,
+                "choice_id": action_request.choice_id,
+                "sp_cost": sp_cost,
+            }
+            self.save_message(
+                session_id=session.id,
+                message_type=MESSAGE_TYPE_PLAYER_ACTION,
+                sender_type=SENDER_TYPE_PLAYER,
+                content=action_request.action_text,
+                turn_number=current_turn,
+                metadata=player_message_metadata
+            )
 
             # プロンプトコンテキストの構築（現在未使用）
             # context = PromptContext(
@@ -481,6 +556,24 @@ class GameSessionService:
             # WebSocketで物語更新を送信
             await GameEventEmitter.emit_narrative_update(
                 session.id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
+            )
+            
+            # GMの物語をメッセージとして保存
+            gm_message_metadata = {
+                "choices": [
+                    {"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)}
+                    for choice in coordinator_response.choices
+                ] if hasattr(coordinator_response, "choices") and coordinator_response.choices else [],
+                "state_changes": getattr(coordinator_response, "state_changes", {}),
+                "battle_data": session_data.get("battle_data"),
+            }
+            self.save_message(
+                session_id=session.id,
+                message_type=MESSAGE_TYPE_GM_NARRATIVE,
+                sender_type=SENDER_TYPE_GM,
+                content=getattr(coordinator_response, "narrative", "物語は続きます...") or "物語は続きます...",
+                turn_number=current_turn,
+                metadata=gm_message_metadata
             )
 
             # 戦闘システムの処理
@@ -610,9 +703,13 @@ class GameSessionService:
                     logger.info(f"Quest completed: {updated_quest.title}")
 
             # セッションデータの更新
-            session_data["turn_count"] = session_data.get("turn_count", 0) + 1 if session_data else 1
+            session_data["turn_count"] = current_turn
             session_data["actions_history"] = actions_history
             session_data["last_action_at"] = datetime.utcnow().isoformat()
+            
+            # セッションのメトリクスを更新
+            session.turn_count = current_turn
+            session.word_count = session.word_count + len(action_request.action_text) + len(getattr(coordinator_response, "narrative", ""))
 
             # 状態変更の適用（もしあれば）
             if (
@@ -1130,3 +1227,28 @@ class GameSessionService:
             }
 
         return {"found_fragment": False}
+    
+    def save_message(
+        self,
+        session_id: str,
+        message_type: str,
+        sender_type: str,
+        content: str,
+        turn_number: int,
+        metadata: Optional[dict] = None
+    ) -> GameMessage:
+        """ゲームメッセージをデータベースに保存"""
+        message = GameMessage(
+            id=str(uuid.uuid4()),
+            session_id=session_id,
+            message_type=message_type,
+            sender_type=sender_type,
+            content=content,
+            turn_number=turn_number,
+            message_metadata=metadata,
+        )
+        
+        self.db.add(message)
+        # コミットはexecute_actionメソッドで一括で行う
+        
+        return message

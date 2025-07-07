@@ -19,7 +19,9 @@ from app.core.config import settings
 from app.models.character import Character, CharacterSkill, CharacterStats, GameSession, Skill  # noqa
 from app.models.encounter_story import EncounterChoice, EncounterStory, SharedQuest  # noqa
 from app.models.exploration_progress import CharacterExplorationProgress  # noqa
+from app.models.game_message import GameMessage  # noqa
 from app.models.item import CharacterItem, Item  # noqa
+from app.models.session_result import SessionResult  # noqa
 
 # 新しいモデルを追加する場合は、ここにインポートを追加
 from app.models.location import (  # noqa

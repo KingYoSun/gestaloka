@@ -13,6 +13,7 @@ import {
   Star,
   Clock,
   MapPin,
+  Play,
 } from 'lucide-react'
 import {
   useCharacters,
@@ -21,11 +22,13 @@ import {
   useDeactivateCharacter,
 } from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
+import { useCreateGameSession } from '@/hooks/useGameSessions'
 import { Character } from '@/types'
 import { formatRelativeTime } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { LoadingButton } from '@/components/ui/LoadingButton'
 import { containerStyles, cardStyles } from '@/lib/styles'
+import { toast } from 'sonner'
 
 export function CharacterListPage() {
   const navigate = useNavigate()
@@ -34,6 +37,7 @@ export function CharacterListPage() {
   const deleteCharacterMutation = useDeleteCharacter()
   const activateCharacterMutation = useActivateCharacter()
   const deactivateCharacterMutation = useDeactivateCharacter()
+  const createSessionMutation = useCreateGameSession()
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const handleDeleteCharacter = async (characterId: string) => {
@@ -53,6 +57,25 @@ export function CharacterListPage() {
 
   const handleDeactivateCharacter = async () => {
     await deactivateCharacterMutation.mutateAsync()
+  }
+
+  const handleStartSession = async () => {
+    if (!activeCharacter) {
+      toast.error('キャラクターを選択してください')
+      return
+    }
+
+    try {
+      const session = await createSessionMutation.mutateAsync({
+        characterId: activeCharacter.id,
+      })
+
+      toast.success('ゲームセッションを開始しました')
+      navigate({ to: `/game/${session.id}` })
+    } catch (error) {
+      console.error('Failed to start game session:', error)
+      toast.error('ゲームセッションの開始に失敗しました')
+    }
   }
 
   if (isLoading) {
@@ -96,12 +119,24 @@ export function CharacterListPage() {
               </p>
             </div>
           </div>
-          <Link to="/character/create">
-            <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
-              <Plus className="mr-2 h-4 w-4" />
-              新しいキャラクターを作成
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            {activeCharacter && (
+              <LoadingButton
+                onClick={handleStartSession}
+                isLoading={createSessionMutation.isPending}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+              >
+                <Play className="mr-2 h-4 w-4" />
+                冒険を始める
+              </LoadingButton>
+            )}
+            <Link to="/character/create">
+              <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
+                <Plus className="mr-2 h-4 w-4" />
+                新しいキャラクターを作成
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* キャラクター一覧 */}
@@ -146,6 +181,46 @@ export function CharacterListPage() {
               />
             ))}
           </div>
+        )}
+
+        {/* 選択中のキャラクター情報と冒険開始ボタン */}
+        {activeCharacter && (
+          <Card className="mt-6 border-green-200 bg-green-50/50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-green-800">
+                <Star className="h-5 w-5 fill-current" />
+                選択中のキャラクター
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-lg">{activeCharacter.name}</h3>
+                  <p className="text-slate-600">
+                    {activeCharacter.description || 'キャラクターの説明がありません'}
+                  </p>
+                  <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-3 w-3" />
+                      {activeCharacter.location || '開始の村'}
+                    </span>
+                    <Badge variant="secondary">
+                      Lv.{activeCharacter.stats?.level || 1}
+                    </Badge>
+                  </div>
+                </div>
+                <LoadingButton
+                  onClick={handleStartSession}
+                  isLoading={createSessionMutation.isPending}
+                  size="lg"
+                  className="ml-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  冒険を始める
+                </LoadingButton>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* キャラクター作成制限の案内 */}
