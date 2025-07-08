@@ -186,7 +186,9 @@ class GameSession(SQLModel, table=True):
     # リレーション
     character: Character = Relationship(back_populates="game_sessions")
     messages: list["GameMessage"] = Relationship(back_populates="session")
-    result: Optional["SessionResult"] = Relationship(back_populates="session", sa_relationship_kwargs={"uselist": False})
+    result: Optional["SessionResult"] = Relationship(
+        back_populates="session", sa_relationship_kwargs={"uselist": False}
+    )
 
     # ログシステム関連
     log_fragments: list["LogFragment"] = Relationship(back_populates="session")

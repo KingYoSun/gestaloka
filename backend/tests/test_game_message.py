@@ -82,7 +82,7 @@ class TestGameMessage:
             sender_type=SENDER_TYPE_PLAYER,
             content="テストアクション",
             turn_number=1,
-            metadata={"test": True, "action_type": "free_action"}
+            metadata={"test": True, "action_type": "free_action"},
         )
 
         # メッセージが正しく作成されたか確認
@@ -112,7 +112,7 @@ class TestGameMessage:
             sender_type=SENDER_TYPE_PLAYER,
             content="北へ向かう",
             turn_number=1,
-            metadata={"action_type": "choice_action", "choice_id": "go_north"}
+            metadata={"action_type": "choice_action", "choice_id": "go_north"},
         )
 
         # GMナラティブメッセージ
@@ -122,7 +122,7 @@ class TestGameMessage:
             sender_type=SENDER_TYPE_GM,
             content="あなたは北の森へと足を踏み入れた。",
             turn_number=1,
-            metadata={"choices": [{"id": "explore", "text": "探索する"}]}
+            metadata={"choices": [{"id": "explore", "text": "探索する"}]},
         )
 
         # システムイベントメッセージ
@@ -132,7 +132,7 @@ class TestGameMessage:
             sender_type=SENDER_TYPE_SYSTEM,
             content="セッション #1 を開始しました。",
             turn_number=0,
-            metadata={"session_number": 1, "is_first_session": True}
+            metadata={"session_number": 1, "is_first_session": True},
         )
 
         # メッセージが正しく保存されたか確認
@@ -141,9 +141,7 @@ class TestGameMessage:
 
         # データベースから取得して確認
         messages = session.exec(
-            select(GameMessage)
-            .where(GameMessage.session_id == mock_session.id)
-            .order_by(GameMessage.created_at)
+            select(GameMessage).where(GameMessage.session_id == mock_session.id).order_by(GameMessage.created_at)
         ).all()
 
         assert len(messages) == 3
@@ -197,24 +195,24 @@ class TestGameMessage:
         mock_coordinator_response.choices = []
         mock_coordinator_response.state_changes = {"success": True}
 
-        with patch.object(service.coordinator, 'initialize_session', new_callable=AsyncMock):
-            with patch.object(service.coordinator, 'process_action', new_callable=AsyncMock) as mock_process:
+        with patch.object(service.coordinator, "initialize_session", new_callable=AsyncMock):
+            with patch.object(service.coordinator, "process_action", new_callable=AsyncMock) as mock_process:
                 mock_process.return_value = mock_coordinator_response
 
                 # SP消費のモック
-                with patch('app.services.sp_service.SPService') as mock_sp_service:
+                with patch("app.services.sp_service.SPService") as mock_sp_service:
                     mock_sp_instance = MagicMock()
                     mock_sp_service.return_value = mock_sp_instance
                     mock_sp_instance.consume_sp = AsyncMock()
 
                     # WebSocketイベントのモック
-                    with patch('app.services.game_session.GameEventEmitter') as mock_emitter:
+                    with patch("app.services.game_session.GameEventEmitter") as mock_emitter:
                         mock_emitter.emit_narrative_update = AsyncMock()
                         mock_emitter.emit_action_result = AsyncMock()
                         mock_emitter.emit_player_status_update = AsyncMock()
 
                         # クエストサービスのモック
-                        with patch('app.services.quest_service.QuestService') as mock_quest_service:
+                        with patch("app.services.quest_service.QuestService") as mock_quest_service:
                             mock_quest_instance = MagicMock()
                             mock_quest_service.return_value = mock_quest_instance
                             mock_quest_instance.infer_implicit_quest = AsyncMock(return_value=None)
@@ -222,8 +220,7 @@ class TestGameMessage:
 
                             # アクションを実行
                             action_request = ActionExecuteRequest(
-                                action_type="free_action",
-                                action_text="テストアクション"
+                                action_type="free_action", action_text="テストアクション"
                             )
 
                             await service.execute_action(mock_session, action_request)
@@ -293,18 +290,10 @@ class TestGameMessage:
         complex_metadata = {
             "choices": [
                 {"id": "choice1", "text": "選択肢1", "description": "説明1"},
-                {"id": "choice2", "text": "選択肢2", "description": "説明2"}
+                {"id": "choice2", "text": "選択肢2", "description": "説明2"},
             ],
-            "state_changes": {
-                "hp": -10,
-                "location": "forest",
-                "items": ["sword", "potion"]
-            },
-            "battle_data": {
-                "enemy": "ゴブリン",
-                "damage_dealt": 15,
-                "damage_received": 10
-            }
+            "state_changes": {"hp": -10, "location": "forest", "items": ["sword", "potion"]},
+            "battle_data": {"enemy": "ゴブリン", "damage_dealt": 15, "damage_received": 10},
         }
 
         message = service.save_message(
@@ -313,7 +302,7 @@ class TestGameMessage:
             sender_type=SENDER_TYPE_GM,
             content="戦闘が発生した！",
             turn_number=5,
-            metadata=complex_metadata
+            metadata=complex_metadata,
         )
 
         # データベースに保存
@@ -345,8 +334,8 @@ class TestGameMessage:
                 message_type=MESSAGE_TYPE_PLAYER_ACTION,
                 sender_type=SENDER_TYPE_PLAYER,
                 content=f"アクション {i+1}",
-                turn_number=i+1,
-                metadata={"action_number": i+1}
+                turn_number=i + 1,
+                metadata={"action_number": i + 1},
             )
 
             # GMレスポンス
@@ -355,8 +344,8 @@ class TestGameMessage:
                 message_type=MESSAGE_TYPE_GM_NARRATIVE,
                 sender_type=SENDER_TYPE_GM,
                 content=f"ナラティブ {i+1}",
-                turn_number=i+1,
-                metadata={"narrative_number": i+1}
+                turn_number=i + 1,
+                metadata={"narrative_number": i + 1},
             )
 
         session.commit()
@@ -373,7 +362,7 @@ class TestGameMessage:
 
         # ターン番号順に並んでいるか確認
         for i in range(5):
-            assert messages[i*2].turn_number == i+1
-            assert messages[i*2].message_type == MESSAGE_TYPE_PLAYER_ACTION
-            assert messages[i*2+1].turn_number == i+1
-            assert messages[i*2+1].message_type == MESSAGE_TYPE_GM_NARRATIVE
+            assert messages[i * 2].turn_number == i + 1
+            assert messages[i * 2].message_type == MESSAGE_TYPE_PLAYER_ACTION
+            assert messages[i * 2 + 1].turn_number == i + 1
+            assert messages[i * 2 + 1].message_type == MESSAGE_TYPE_GM_NARRATIVE

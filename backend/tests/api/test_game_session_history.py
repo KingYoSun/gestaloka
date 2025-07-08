@@ -41,6 +41,7 @@ class TestSessionHistoryAPI:
     @pytest.fixture
     def auth_headers(self, client: TestClient, test_user: User) -> dict[str, str]:
         """認証ヘッダー"""
+
         # テスト用に依存性を上書き
         def override_get_current_user():
             return test_user
@@ -95,7 +96,9 @@ class TestSessionHistoryAPI:
                 result_summary=f"セッション{i+1}の結果" if status == SESSION_STATUS_COMPLETED else None,
                 created_at=base_time + timedelta(days=i),
                 updated_at=base_time + timedelta(days=i, hours=2),
-                result_processed_at=base_time + timedelta(days=i, hours=3) if status == SESSION_STATUS_COMPLETED else None,
+                result_processed_at=base_time + timedelta(days=i, hours=3)
+                if status == SESSION_STATUS_COMPLETED
+                else None,
             )
             sessions.append(game_session)
             session.add(game_session)

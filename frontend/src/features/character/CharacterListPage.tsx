@@ -173,7 +173,9 @@ export function CharacterListPage() {
                 onDelete={() => handleDeleteCharacter(character.id)}
                 onActivate={() => handleActivateCharacter(character.id)}
                 onDeactivate={handleDeactivateCharacter}
-                onNavigateToEdit={() => navigate({ to: `/character/${character.id}/edit` })}
+                onNavigateToEdit={() =>
+                  navigate({ to: `/character/${character.id}/edit` })
+                }
                 isDeleting={deletingId === character.id}
                 isActivating={activateCharacterMutation.isPending}
                 isDeactivating={deactivateCharacterMutation.isPending}
@@ -195,9 +197,12 @@ export function CharacterListPage() {
             <CardContent>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-lg">{activeCharacter.name}</h3>
+                  <h3 className="font-semibold text-lg">
+                    {activeCharacter.name}
+                  </h3>
                   <p className="text-slate-600">
-                    {activeCharacter.description || 'キャラクターの説明がありません'}
+                    {activeCharacter.description ||
+                      'キャラクターの説明がありません'}
                   </p>
                   <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
                     <span className="flex items-center gap-1">
@@ -335,15 +340,13 @@ function CharacterCard({
             onClick={isActive ? onDeactivate : onActivate}
             isLoading={isActive ? isDeactivating : isActivating}
           >
-            <Star className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`} />
+            <Star
+              className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`}
+            />
             {isActive ? '選択中' : '選択'}
           </LoadingButton>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onNavigateToEdit}
-          >
+          <Button variant="outline" size="sm" onClick={onNavigateToEdit}>
             <Edit3 className="h-3 w-3" />
           </Button>
 

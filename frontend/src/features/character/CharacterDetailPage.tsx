@@ -139,15 +139,23 @@ export function CharacterDetailPage() {
 
           <div className="flex gap-2">
             <LoadingButton
-              onClick={isActive ? handleDeactivateCharacter : handleActivateCharacter}
-              isLoading={isActive ? deactivateCharacterMutation.isPending : activateCharacterMutation.isPending}
+              onClick={
+                isActive ? handleDeactivateCharacter : handleActivateCharacter
+              }
+              isLoading={
+                isActive
+                  ? deactivateCharacterMutation.isPending
+                  : activateCharacterMutation.isPending
+              }
               className={
                 isActive
                   ? 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
                   : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
               }
             >
-              <Star className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`} />
+              <Star
+                className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`}
+              />
               {isActive ? '選択中' : '選択'}
             </LoadingButton>
             <Button
@@ -346,7 +354,6 @@ export function CharacterDetailPage() {
                 </CardContent>
               </Card>
             )}
-
           </div>
         </div>
       </div>

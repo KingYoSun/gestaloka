@@ -83,9 +83,7 @@ async def check_character_limit(
     """
     from app.core.config import settings
 
-    character_count = db.exec(
-        select(Character).where(Character.user_id == current_user.id, Character.is_active)
-    ).all()
+    character_count = db.exec(select(Character).where(Character.user_id == current_user.id, Character.is_active)).all()
 
     if len(character_count) >= settings.MAX_CHARACTERS_PER_USER:
         raise HTTPException(
