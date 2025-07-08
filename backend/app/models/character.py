@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.log import ActionLog, CompletedLog, LogFragment
     from app.models.log_dispatch import DispatchEncounter, LogDispatch
     from app.models.session_result import SessionResult
+    from app.models.story_arc import StoryArc
     from app.models.title import CharacterTitle
     from app.models.user import User
 
@@ -66,6 +67,9 @@ class Character(SQLModel, table=True):
     exploration_progress: list["CharacterExplorationProgress"] = Relationship(
         back_populates="character", sa_relationship_kwargs={"lazy": "selectin"}
     )
+
+    # ストーリーアーク関連
+    story_arcs: list["StoryArc"] = Relationship(back_populates="character")
 
     def __repr__(self) -> str:
         return f"<Character(id={self.id}, name={self.name})>"
@@ -193,6 +197,9 @@ class GameSession(SQLModel, table=True):
     # ログシステム関連
     log_fragments: list["LogFragment"] = Relationship(back_populates="session")
     action_logs: list["ActionLog"] = Relationship(back_populates="session")
+
+    # ストーリーアーク関連
+    story_arc: Optional["StoryArc"] = Relationship(back_populates="sessions")
 
     def __repr__(self) -> str:
         return f"<GameSession(id={self.id}, character_id={self.character_id}, status={self.session_status})>"

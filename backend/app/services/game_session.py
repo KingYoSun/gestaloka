@@ -57,6 +57,8 @@ from app.services.ai.model_types import AIAgentType
 
 # from app.services.ai.prompt_manager import PromptContext  # 現在未使用
 from app.services.battle import BattleService
+from app.services.first_session_initializer import FirstSessionInitializer
+from app.services.story_arc_service import StoryArcService
 from app.websocket.events import GameEventEmitter
 
 logger = get_logger(__name__)
@@ -93,6 +95,9 @@ class GameSessionService:
 
         # 戦闘サービスを初期化
         self.battle_service = BattleService(db)
+        
+        # ストーリーアークサービスを初期化
+        self.story_arc_service = StoryArcService(db)
 
     async def create_session(self, character: Character, session_data: GameSessionCreate) -> GameSessionResponse:
         """新しいゲームセッションを作成"""
@@ -114,25 +119,69 @@ class GameSessionService:
             )
             session_count = self.db.exec(session_count_stmt).one()
 
-            # 新しいセッションを作成
-            new_session = GameSession(
-                id=str(uuid.uuid4()),
-                character_id=character.id,
-                is_active=True,
-                current_scene=self._get_initial_scene(character),
-                session_data=json.dumps({"turn_count": 0, "actions_history": [], "game_state": "started"}),
-                session_status=SESSION_STATUS_ACTIVE,
-                session_number=session_count + 1,
-                is_first_session=(session_count == 0),
-                turn_count=0,
-                word_count=0,
-                play_duration_minutes=0,
-                ending_proposal_count=0,
-            )
+            # 初回セッションの場合は特別な初期化を行う
+            if session_count == 0:
+                first_session_initializer = FirstSessionInitializer(self.db)
+                new_session = first_session_initializer.create_first_session(character)
+                self.db.commit()
+                self.db.refresh(new_session)
+                
+                # 初回セッションの導入メッセージを生成
+                intro_narrative = first_session_initializer.generate_introduction(character)
+                initial_choices = first_session_initializer.generate_initial_choices()
+                
+                # GMナラティブとして保存
+                self.save_message(
+                    session_id=new_session.id,
+                    message_type=MESSAGE_TYPE_GM_NARRATIVE,
+                    sender_type=SENDER_TYPE_GM,
+                    content=intro_narrative,
+                    turn_number=1,
+                    metadata={
+                        "is_introduction": True,
+                        "choices": initial_choices,
+                    },
+                )
+                self.db.commit()
+            else:
+                # 通常のセッション作成
+                new_session = GameSession(
+                    id=str(uuid.uuid4()),
+                    character_id=character.id,
+                    is_active=True,
+                    current_scene=self._get_initial_scene(character),
+                    session_data=json.dumps({"turn_count": 0, "actions_history": [], "game_state": "started"}),
+                    session_status=SESSION_STATUS_ACTIVE,
+                    session_number=session_count + 1,
+                    is_first_session=False,
+                    turn_count=0,
+                    word_count=0,
+                    play_duration_minutes=0,
+                    ending_proposal_count=0,
+                )
 
-            self.db.add(new_session)
-            self.db.commit()
-            self.db.refresh(new_session)
+                self.db.add(new_session)
+                self.db.commit()
+                self.db.refresh(new_session)
+
+            # ストーリーアークの処理
+            # アクティブなストーリーアークがない場合は新規作成を検討
+            active_arc = self.story_arc_service.get_active_story_arc(character)
+            if not active_arc and not new_session.is_first_session:
+                # 初回セッション以外でアークがない場合、基本的な個人の物語アークを作成
+                from app.models.story_arc import StoryArcType
+                active_arc = self.story_arc_service.create_story_arc(
+                    character=character,
+                    title="新たなる旅立ち",
+                    description="あなたの新しい物語が始まる。どのような冒険が待っているのだろうか。",
+                    arc_type=StoryArcType.PERSONAL_STORY,
+                    total_phases=3,
+                    themes=["成長", "発見", "冒険"],
+                )
+            
+            # セッションをアークに関連付け
+            if active_arc:
+                self.story_arc_service.associate_session_with_arc(new_session, active_arc)
 
             # セッション開始のシステムメッセージを保存
             system_message_metadata = {
@@ -1361,6 +1410,18 @@ class GameSessionService:
         self.db.add(new_session)
         self.db.commit()
         self.db.refresh(new_session)
+        
+        # ストーリーアークの処理
+        # 既存のアクティブなアークがあればそれを引き継ぐ
+        active_arc = self.story_arc_service.get_active_story_arc(character)
+        if active_arc:
+            # アークが完了に近い場合は新しいアークの提案を検討
+            if active_arc.progress_percentage >= 80.0:
+                # TODO: AIを使用して次のアークを提案
+                pass
+            
+            # セッションをアークに関連付け
+            self.story_arc_service.associate_session_with_arc(new_session, active_arc)
 
         # セッション開始のシステムメッセージを保存
         continuation_info = {
@@ -1383,33 +1444,23 @@ class GameSessionService:
 
         # 継続コンテキストがある場合、GMナラティブとして最初のメッセージを生成
         if session_result and session_result.continuation_context:
-            # TODO: AI実装後に以下のコメントを解除して実際のナラティブ生成を行う
-            # from app.ai.coordinator import CoordinatorAI
-            # ai_coordinator = CoordinatorAI(agents={...})  # 適切なエージェントを設定
-            #
-            # # 前回のあらすじと継続コンテキストを含むプロンプト
-            # continuation_prompt = f"""
-            # 前回のあらすじ：
-            # {session_result.story_summary}
-            #
-            # 継続コンテキスト：
-            # {session_result.continuation_context}
-            #
-            # 未解決のプロット：
-            # {chr(10).join(session_result.unresolved_plots) if session_result.unresolved_plots else "なし"}
-            #
-            # この情報を元に、前回からの物語の続きを自然に開始してください。
-            # """
-            #
-            # narrative = await ai_coordinator.generate_continuation_narrative(
-            #     character=character,
-            #     prompt=continuation_prompt
-            # )
+            # AIによる継続ナラティブ生成
+            try:
+                narrative = await self.coordinator.generate_continuation_narrative(
+                    character=character,
+                    story_summary=session_result.story_summary or "",
+                    continuation_context=session_result.continuation_context,
+                    unresolved_plots=session_result.unresolved_plots or []
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate continuation narrative: {e}")
+                # フォールバックナラティブ
+                narrative = f"前回の冒険から時間が経ち、あなたは再び動き出す準備ができた。{session_result.continuation_context}"
+        else:
+            # 継続コンテキストがない場合のデフォルトナラティブ
+            narrative = "新たな冒険の幕開けです。あなたの前には無限の可能性が広がっています。"
 
-            # 一時的なナラティブ（AI実装後に置き換え）
-            narrative = f"前回の冒険から時間が経ち、あなたは再び動き出す準備ができた。{session_result.continuation_context if session_result.continuation_context else '新たな冒険が待っている。'}"
-
-            self.save_message(
+        self.save_message(
                 session_id=new_session.id,
                 message_type=MESSAGE_TYPE_GM_NARRATIVE,
                 sender_type=SENDER_TYPE_GM,

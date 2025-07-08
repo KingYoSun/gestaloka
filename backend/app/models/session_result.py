@@ -36,6 +36,9 @@ class SessionResult(SQLModel, table=True):
     continuation_context: str = Field(...)  # 次セッションへ渡すコンテキスト
     unresolved_plots: list[str] = Field(default_factory=list, sa_type=JSON)  # 未解決のプロット
 
+    # ストーリーアーク進行
+    story_arc_progress: dict = Field(default_factory=dict, sa_type=JSON)  # アークの進行状況
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # リレーション

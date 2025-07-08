@@ -47,6 +47,7 @@ from app.models.session_result import SessionResult  # noqa
 from app.models.sp import PlayerSP, SPTransaction  # noqa
 from app.models.sp_purchase import SPPurchase  # noqa
 from app.models.sp_subscription import SPSubscription, SubscriptionTransaction  # noqa
+from app.models.story_arc import StoryArc, StoryArcMilestone  # noqa
 from app.models.title import CharacterTitle  # noqa
 
 # 全てのモデルをインポート（自動生成のため必須）

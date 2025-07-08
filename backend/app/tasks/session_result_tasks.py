@@ -6,7 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from app.ai.coordinator import CoordinatorAI
-from app.core.celery_app import celery_app
+from app.celery import celery_app
 from app.core.database import AsyncSessionLocal
 from app.core.deps import get_gemini_client, get_neo4j_session, get_redis_client
 from app.services.ai.agents.historian import HistorianAgent

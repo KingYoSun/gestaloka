@@ -2,6 +2,7 @@
 セッションリザルト処理サービス
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -20,7 +21,11 @@ from app.services.ai.prompt_manager import PromptContext
 from app.services.ai.agents.historian import HistorianAgent
 from app.services.ai.agents.npc_manager import NPCManagerAgent
 from app.services.ai.agents.state_manager import StateManagerAgent
-from app.services.skill_service import SkillService
+# from app.services.skill_service import SkillService  # TODO: スキルサービス実装後に有効化
+from app.core.database import get_neo4j_session
+from app.db.neo4j_models import NPC, Location, InteractedWith, Player
+from neomodel import db as neo4j_db
+from app.services.story_arc_service import StoryArcService
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,10 @@ class SessionResultService:
         self.state_manager = state_manager
         self.npc_manager = npc_manager
         self.coordinator = coordinator
-        self.skill_service = SkillService(db_session)
+        # self.skill_service = SkillService(db_session)  # TODO: スキルサービス実装後に有効化
+        from sqlmodel import Session as SyncSession
+        # SessionResultServiceは非同期セッションを使用しているが、StoryArcServiceは同期セッション用
+        # ここでは一時的な対応として、呼び出し時に同期セッションを作成する
 
     async def process_session_result(self, session_id: str) -> SessionResult:
         """セッションリザルトを処理する"""
@@ -68,6 +76,9 @@ class SessionResultService:
         experience, skills = await self._calculate_growth(context, messages)
         neo4j_updates = await self._update_knowledge_graph(context, messages)
         continuation_context, unresolved_plots = await self._generate_continuation(context, messages)
+        
+        # ストーリーアークの進行を評価
+        story_arc_progress = await self._evaluate_story_arc_progress(session, character, messages)
 
         # リザルトを作成
         result = SessionResult(
@@ -81,6 +92,7 @@ class SessionResultService:
             neo4j_updates=neo4j_updates,
             continuation_context=continuation_context,
             unresolved_plots=unresolved_plots,
+            story_arc_progress=story_arc_progress,
             created_at=datetime.utcnow(),
         )
 
@@ -202,14 +214,119 @@ class SessionResultService:
         """知識グラフを更新"""
         updates = {}
 
-        # NPC管理AIによるNPC関係性の更新
+        # NPC管理AIによるNPC関係性の抽出
         npc_updates = await self.npc_manager.update_npc_relationships(context, messages)
         updates["npc_relationships"] = npc_updates
+
+        # Neo4jに実際に書き込み
+        try:
+            await self._write_to_neo4j(context, npc_updates)
+            updates["neo4j_write_status"] = "success"
+        except Exception as e:
+            logger.error(f"Neo4j書き込みエラー: {e}")
+            updates["neo4j_write_status"] = "failed"
+            updates["neo4j_error"] = str(e)
 
         # TODO: 世界の意識AIによる世界状態の更新（WorldConsciousnessAI実装後）
         updates["world_state"] = {}
 
         return updates
+    
+    async def _write_to_neo4j(self, context: PromptContext, npc_updates: dict) -> None:
+        """Neo4jに関係性を書き込む"""
+        
+        # 同期的なNeo4j操作を非同期で実行
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._write_to_neo4j_sync, context, npc_updates)
+    
+    def _write_to_neo4j_sync(self, context: PromptContext, npc_updates: dict) -> None:
+        """Neo4jに関係性を書き込む（同期版）"""
+        
+        # プレイヤーノードを取得または作成
+        player_node = Player.nodes.get_or_none(user_id=context.character.user_id)
+        if not player_node:
+            player_node = Player(
+                user_id=context.character.user_id,
+                character_name=context.character.name,
+                current_session_id=str(context.character.id),  # セッション固有のキャラクターID
+            ).save()
+        
+        # NPC遭遇情報を処理
+        for npc_met in npc_updates.get("npcs_met", []):
+            npc_name = npc_met.get("name")
+            location = npc_met.get("location")
+            interaction_type = npc_met.get("interaction_type", "dialogue")
+            
+            # 関係性情報から感情的影響を推定
+            emotional_impact = 0
+            for rel in npc_updates.get("relationships", []):
+                if rel.get("type") == "friendly":
+                    emotional_impact = 1
+                elif rel.get("type") == "hostile":
+                    emotional_impact = -1
+                elif rel.get("type") == "intimate":
+                    emotional_impact = 2
+                break
+            
+            # NPCのIDを生成（名前ベース）
+            npc_id = f"npc_{npc_name.replace(' ', '_').lower()}"
+            
+            # NPCノードを取得または作成
+            npc_node = NPC.nodes.get_or_none(npc_id=npc_id)
+            if not npc_node and npc_name:
+                # 基本的なNPCノードを作成
+                npc_node = NPC(
+                    npc_id=npc_id,
+                    name=npc_name,
+                    title="",
+                    npc_type="TEMPORARY_NPC",  # セッション中に出会った一時的なNPC
+                    description=f"{npc_name}との遭遇",
+                    personality_traits=[],
+                    behavior_patterns=[],
+                    skills=[],
+                    contamination_level=0,
+                ).save()
+            
+            if npc_node:
+                # 既存の関係を確認
+                existing_relations = player_node.interactions.all()
+                existing_npc_ids = [rel.npc_id for rel in existing_relations]
+                
+                if npc_node.npc_id not in existing_npc_ids:
+                    # 新しい相互作用関係を作成
+                    player_node.interactions.connect(
+                        npc_node,
+                        {
+                            'interaction_type': interaction_type,
+                            'emotional_impact': emotional_impact,
+                            'last_interaction': datetime.utcnow(),
+                            'interaction_count': 1,
+                        }
+                    )
+                else:
+                    # 既存の関係を更新
+                    rel = player_node.interactions.relationship(npc_node)
+                    if rel:
+                        rel.interaction_count = (rel.interaction_count or 0) + 1
+                        rel.last_interaction = datetime.utcnow()
+                        rel.save()
+        
+        # 場所情報の更新
+        current_location = context.location
+        if current_location:
+            location_node = Location.nodes.get_or_none(name=current_location)
+            if not location_node:
+                location_node = Location(
+                    name=current_location,
+                    layer=0,
+                    description=f"{current_location}エリア",
+                ).save()
+            
+            # プレイヤーの現在位置を更新
+            player_node.current_location.disconnect_all()
+            player_node.current_location.connect(location_node)
+        
+        logger.info(f"Neo4j更新完了: player={context.character.name}, npcs_met={len(npc_updates.get('npcs_met', []))}, relationships={len(npc_updates.get('relationships', []))}")
 
     async def _generate_continuation(
         self, context: PromptContext, messages: list[GameMessage]
@@ -222,3 +339,73 @@ class SessionResultService:
         unresolved = await self.coordinator.extract_unresolved_plots(context, messages)
 
         return continuation, unresolved
+    
+    async def _evaluate_story_arc_progress(
+        self, session: GameSession, character: Character, messages: list[GameMessage]
+    ) -> dict:
+        """ストーリーアークの進行を評価"""
+        # 同期的なDBアクセスのため、別スレッドで実行
+        from app.core.database import get_db
+        from sqlmodel import Session as SyncSession
+        
+        progress_info = {}
+        
+        # 同期セッションを使用してストーリーアーク処理を実行
+        def _update_arc_sync():
+            db_gen = get_db()
+            db: SyncSession = next(db_gen)
+            try:
+                arc_service = StoryArcService(db)
+                active_arc = arc_service.get_active_story_arc(character)
+                
+                if active_arc:
+                    # キャラクターアクションを抽出
+                    character_actions = [
+                        msg.content 
+                        for msg in messages 
+                        if msg.message_type == "PLAYER_ACTION"
+                    ][:10]  # 最新10個まで
+                    
+                    # アーク情報を辞書形式に変換
+                    arc_dict = {
+                        "id": active_arc.id,
+                        "title": active_arc.title,
+                        "progress_percentage": active_arc.progress_percentage,
+                        "current_phase": active_arc.current_phase,
+                        "total_phases": active_arc.total_phases,
+                    }
+                    
+                    # CoordinatorAIで評価
+                    loop = asyncio.new_event_loop()
+                    evaluation = loop.run_until_complete(
+                        self.coordinator.evaluate_story_arc_progress(
+                            messages, arc_dict, character_actions
+                        )
+                    )
+                    
+                    # 進行状況を更新
+                    updated_arc = arc_service.update_arc_progress(
+                        active_arc,
+                        progress_delta=evaluation["progress_delta"],
+                        phase_completed=evaluation["phase_completed"],
+                    )
+                    
+                    return {
+                        "arc_id": updated_arc.id,
+                        "arc_title": updated_arc.title,
+                        "new_progress": updated_arc.progress_percentage,
+                        "phase": f"{updated_arc.current_phase}/{updated_arc.total_phases}",
+                        "status": updated_arc.status,
+                        "evaluation": evaluation,
+                    }
+                    
+                return {"status": "no_active_arc"}
+                    
+            finally:
+                db_gen.close()
+        
+        # 非同期で同期処理を実行
+        loop = asyncio.get_event_loop()
+        progress_info = await loop.run_in_executor(None, _update_arc_sync)
+        
+        return progress_info
