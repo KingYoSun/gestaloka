@@ -107,3 +107,32 @@ class ActionExecuteResponse(BaseModel):
     choices: Optional[list[ActionChoice]] = Field(default=None, description="次の行動選択肢")
     character_state: dict[str, Any] = Field(description="キャラクターの現在状態")
     metadata: Optional[dict[str, Any]] = Field(default_factory=lambda: {}, description="追加メタデータ")
+
+
+class SessionHistoryItem(BaseModel):
+    """セッション履歴アイテム"""
+
+    id: str
+    session_number: int
+    session_status: str  # active, ending_proposed, completed
+    play_duration_minutes: int
+    turn_count: int
+    word_count: int
+    result_summary: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    result_processed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SessionHistoryResponse(BaseModel):
+    """セッション履歴レスポンス"""
+
+    sessions: list[SessionHistoryItem]
+    total: int
+    page: int = Field(ge=1, description="現在のページ番号")
+    per_page: int = Field(ge=1, le=100, description="1ページあたりのアイテム数")
+    has_next: bool = Field(description="次のページが存在するか")
+    has_prev: bool = Field(description="前のページが存在するか")

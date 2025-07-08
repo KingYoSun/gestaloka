@@ -2,6 +2,8 @@
 ゲームエンドポイント
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
@@ -17,6 +19,7 @@ from app.schemas.game_session import (
     GameSessionListResponse,
     GameSessionResponse,
     GameSessionUpdate,
+    SessionHistoryResponse,
 )
 from app.schemas.user import User
 from app.services.game_session import GameSessionService
@@ -32,6 +35,30 @@ async def get_game_sessions(
     """ゲームセッション一覧取得"""
     service = GameSessionService(db)
     return service.get_user_sessions(current_user.id)
+
+
+@router.get("/sessions/history", response_model=SessionHistoryResponse)
+async def get_session_history(
+    character_id: str,
+    page: int = 1,
+    per_page: int = 20,
+    status: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> SessionHistoryResponse:
+    """キャラクターのセッション履歴を取得"""
+    # キャラクターの所有権確認
+    character = await get_user_character(character_id, db, current_user)
+
+    service = GameSessionService(db)
+    result = service.get_session_history(
+        character_id=character.id,
+        page=page,
+        per_page=per_page,
+        status_filter=status
+    )
+
+    return SessionHistoryResponse(**result)
 
 
 @router.post("/sessions", response_model=GameSessionResponse)

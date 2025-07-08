@@ -1252,3 +1252,45 @@ class GameSessionService:
         # コミットはexecute_actionメソッドで一括で行う
 
         return message
+
+    def get_session_history(
+        self,
+        character_id: str,
+        page: int = 1,
+        per_page: int = 20,
+        status_filter: Optional[str] = None
+    ) -> dict[str, Any]:
+        """キャラクターのセッション履歴を取得（ページネーション付き）"""
+        # ベースクエリ
+        query = select(GameSession).where(GameSession.character_id == character_id)
+
+        # ステータスフィルタ
+        if status_filter:
+            query = query.where(GameSession.session_status == status_filter)
+
+        # 合計件数を取得
+        from sqlalchemy import func
+        count_query = select(func.count()).where(GameSession.character_id == character_id)
+        if status_filter:
+            count_query = count_query.where(GameSession.session_status == status_filter)
+        total = self.db.scalar(count_query) or 0
+
+        # ページネーション
+        offset = (page - 1) * per_page
+        query = query.order_by(desc(GameSession.created_at)).offset(offset).limit(per_page)
+
+        sessions = self.db.exec(query).all()
+
+        # ページ情報計算
+        total_pages = (total + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_prev = page > 1
+
+        return {
+            "sessions": sessions,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
