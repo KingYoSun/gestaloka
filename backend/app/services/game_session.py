@@ -57,7 +57,7 @@ from app.services.ai.model_types import AIAgentType
 
 # from app.services.ai.prompt_manager import PromptContext  # 現在未使用
 from app.services.battle import BattleService
-from app.services.first_session_initializer import FirstSessionInitializer
+# from app.services.first_session_initializer import FirstSessionInitializer  # join_gameイベントで使用
 from app.services.story_arc_service import StoryArcService
 from app.websocket.events import GameEventEmitter
 
@@ -123,50 +123,25 @@ class GameSessionService:
             # Ensure session_count is an integer
             session_count = int(session_count) if session_count is not None else 0
 
-            # 初回セッションの場合は特別な初期化を行う
-            if session_count == 0:
-                first_session_initializer = FirstSessionInitializer(self.db)
-                new_session = first_session_initializer.create_first_session(character)
-                self.db.commit()
-                self.db.refresh(new_session)
+            # セッション作成（初回かどうかに関わらず同じ処理）
+            new_session = GameSession(
+                id=str(uuid.uuid4()),
+                character_id=character.id,
+                is_active=True,
+                current_scene=self._get_initial_scene(character),
+                session_data=json.dumps({"turn_count": 0, "actions_history": [], "game_state": "started"}),
+                session_status=SESSION_STATUS_ACTIVE,
+                session_number=session_count + 1,
+                is_first_session=(session_count == 0),  # 初回セッションフラグを設定
+                turn_count=0,
+                word_count=0,
+                play_duration_minutes=0,
+                ending_proposal_count=0,
+            )
 
-                # 初回セッションの導入メッセージを生成
-                intro_narrative = first_session_initializer.generate_introduction(character)
-                initial_choices = first_session_initializer.generate_initial_choices()
-
-                # GMナラティブとして保存
-                self.save_message(
-                    session_id=new_session.id,
-                    message_type=MESSAGE_TYPE_GM_NARRATIVE,
-                    sender_type=SENDER_TYPE_GM,
-                    content=intro_narrative,
-                    turn_number=1,
-                    metadata={
-                        "is_introduction": True,
-                        "choices": initial_choices,
-                    },
-                )
-                self.db.commit()
-            else:
-                # 通常のセッション作成
-                new_session = GameSession(
-                    id=str(uuid.uuid4()),
-                    character_id=character.id,
-                    is_active=True,
-                    current_scene=self._get_initial_scene(character),
-                    session_data=json.dumps({"turn_count": 0, "actions_history": [], "game_state": "started"}),
-                    session_status=SESSION_STATUS_ACTIVE,
-                    session_number=session_count + 1,
-                    is_first_session=False,
-                    turn_count=0,
-                    word_count=0,
-                    play_duration_minutes=0,
-                    ending_proposal_count=0,
-                )
-
-                self.db.add(new_session)
-                self.db.commit()
-                self.db.refresh(new_session)
+            self.db.add(new_session)
+            self.db.commit()
+            self.db.refresh(new_session)
 
             # ストーリーアークの処理
             # アクティブなストーリーアークがない場合は新規作成を検討
@@ -187,8 +162,8 @@ class GameSessionService:
                 self.story_arc_service.associate_session_with_arc(new_session, active_arc)
 
             # 初回セッション以外の場合のみシステムメッセージを保存
-            # （初回セッションはFirstSessionInitializerで既にメッセージが作成されている）
-            if session_count > 0:
+            # （初回セッションはjoin_game時にFirstSessionInitializerで処理される）
+            if not new_session.is_first_session:
                 system_message_metadata = {
                     "session_number": new_session.session_number,
                     "is_first_session": new_session.is_first_session,

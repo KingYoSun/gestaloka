@@ -89,7 +89,7 @@ export interface GameActionResponse {
   sessionId: string
   actionResult: string
   newScene?: string
-  choices?: string[]
+  choices?: ActionChoice[]
   characterStatus?: CharacterStatusUpdate
 }
 
@@ -132,7 +132,7 @@ export interface SessionResultResponse {
 
 export interface GameMessageMetadata {
   newScene?: string
-  choices?: string[]
+  choices?: ActionChoice[]
   characterStatus?: CharacterStatusUpdate
   [key: string]:
     | string
@@ -140,6 +140,7 @@ export interface GameMessageMetadata {
     | boolean
     | undefined
     | string[]
+    | ActionChoice[]
     | CharacterStatusUpdate
 }
 
@@ -163,6 +164,7 @@ export interface ActionChoice {
   id: string
   text: string
   description?: string
+  difficulty?: string
 }
 
 // ログ関連の型定義

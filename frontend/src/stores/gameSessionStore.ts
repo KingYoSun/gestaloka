@@ -3,7 +3,7 @@
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { GameSession, GameMessage } from '@/types'
+import { GameSession, GameMessage, ActionChoice } from '@/types'
 
 interface GameSessionState {
   // アクティブセッション
@@ -13,7 +13,7 @@ interface GameSessionState {
   messageHistory: Record<string, GameMessage[]>
 
   // 現在の選択肢
-  currentChoices: string[] | null
+  currentChoices: ActionChoice[] | null
 
   // アクション実行中フラグ
   isExecutingAction: boolean
@@ -33,7 +33,7 @@ interface GameSessionActions {
   getSessionMessages: (sessionId: string) => GameMessage[]
 
   // 選択肢管理
-  setCurrentChoices: (choices: string[] | null) => void
+  setCurrentChoices: (choices: ActionChoice[] | null) => void
 
   // フラグ管理
   setExecutingAction: (isExecuting: boolean) => void

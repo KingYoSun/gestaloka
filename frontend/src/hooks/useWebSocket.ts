@@ -4,6 +4,7 @@
 import { useEffect, useCallback, useState } from 'react'
 import { websocketManager } from '@/lib/websocket/socket'
 import { useAuth } from '@/features/auth/useAuth'
+import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { toast } from 'sonner'
 import type {
   GameMessage,
@@ -158,7 +159,7 @@ export function useGameWebSocket(gameSessionId?: string) {
   useEffect(() => {
     if (!gameSessionId || !user?.id) return
 
-    // ゲームセッションに参加
+    // ゲームセッションに参加（WebSocketManager側で重複チェック）
     websocketManager.joinGame(gameSessionId, user.id)
 
     // イベントハンドラー
@@ -171,6 +172,7 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     const handleNarrativeUpdate = (data: NarrativeUpdateData) => {
+      // ローカルステートに追加
       setMessages(prev => [
         ...prev,
         {
@@ -179,6 +181,19 @@ export function useGameWebSocket(gameSessionId?: string) {
           timestamp: data.timestamp,
         },
       ])
+      
+      // ゲームセッションストアにも追加
+      if (gameSessionId) {
+        const gameStore = useGameSessionStore.getState()
+        gameStore.addGameMessage({
+          id: `msg-${Date.now()}`,
+          sessionId: gameSessionId,
+          type: 'gm',
+          content: data.narrative,
+          timestamp: data.timestamp,
+          metadata: data.narrative_type === 'introduction' ? { is_introduction: true } : undefined,
+        })
+      }
     }
 
     const handleActionResult = (data: ActionResultData) => {
@@ -299,6 +314,41 @@ export function useGameWebSocket(gameSessionId?: string) {
       }, 1500)
     }
 
+    // 選択肢更新イベントハンドラー
+    const handleChoicesUpdate = (data: any) => {
+      // ストアに選択肢を設定
+      if (data.choices) {
+        // useGameSessionStoreをフック外で使うためにimport
+        const gameStore = useGameSessionStore.getState()
+        gameStore.setCurrentChoices(data.choices)
+      }
+    }
+
+    // システムメッセージイベントハンドラー
+    const handleSystemMessage = (data: any) => {
+      setMessages(prev => [
+        ...prev,
+        {
+          type: 'system',
+          content: data.content,
+          timestamp: data.timestamp,
+        },
+      ])
+      
+      // ゲームセッションストアにも追加
+      if (gameSessionId) {
+        const gameStore = useGameSessionStore.getState()
+        gameStore.addGameMessage({
+          id: `msg-${Date.now()}`,
+          sessionId: gameSessionId,
+          type: 'system',
+          content: data.content,
+          timestamp: data.timestamp,
+          metadata: data.metadata,
+        })
+      }
+    }
+
     // イベントリスナー登録
     websocketManager.on('game:joined', handleGameJoined)
     websocketManager.on('game:started', handleGameStarted)
@@ -312,12 +362,13 @@ export function useGameWebSocket(gameSessionId?: string) {
     websocketManager.on('game:npc_action_result', handleNPCActionResult)
     websocketManager.on('session:ending_proposal', handleSessionEndingProposal)
     websocketManager.on('session:result_ready', handleSessionResultReady)
+    websocketManager.on('game:choices_update', handleChoicesUpdate)
+    websocketManager.on('game:system_message', handleSystemMessage)
 
     // クリーンアップ
     return () => {
-      if (gameSessionId && user?.id) {
-        websocketManager.leaveGame(gameSessionId, user.id)
-      }
+      // leave_gameは明示的な終了時のみ実行するため、ここでは呼ばない
+      // これにより、ページリロードや不意の遷移でもセッションに戻れる
 
       websocketManager.off('game:joined', handleGameJoined)
       websocketManager.off('game:started', handleGameStarted)
@@ -334,6 +385,8 @@ export function useGameWebSocket(gameSessionId?: string) {
         handleSessionEndingProposal
       )
       websocketManager.off('session:result_ready', handleSessionResultReady)
+      websocketManager.off('game:choices_update', handleChoicesUpdate)
+      websocketManager.off('game:system_message', handleSystemMessage)
     }
   }, [gameSessionId, user?.id])
 

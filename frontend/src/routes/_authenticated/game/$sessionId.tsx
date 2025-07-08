@@ -13,6 +13,8 @@ import {
 } from '@/hooks/useGameSessions'
 import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { useGameWebSocket } from '@/hooks/useWebSocket'
+import { websocketManager } from '@/lib/websocket/socket'
+import { useAuth } from '@/features/auth/useAuth'
 import { SPConsumeDialog } from '@/components/sp/SPConsumeDialog'
 import { SPTransactionType } from '@/types/sp'
 import { SessionEndingDialog } from '@/components/SessionEndingDialog'
@@ -48,6 +50,7 @@ export const Route = createFileRoute('/_authenticated/game/$sessionId')({
 
 function GameSessionPage() {
   const { sessionId } = Route.useParams()
+  const { user } = useAuth()
   const [actionText, setActionText] = useState('')
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
   const [showSPDialog, setShowSPDialog] = useState(false)
@@ -97,7 +100,7 @@ function GameSessionPage() {
   const handleChoiceSelect = (choiceIndex: number) => {
     setSelectedChoice(choiceIndex)
     if (currentChoices && currentChoices[choiceIndex]) {
-      setActionText(currentChoices[choiceIndex])
+      setActionText(currentChoices[choiceIndex].text)
     }
   }
 
@@ -197,6 +200,11 @@ function GameSessionPage() {
     }
 
     try {
+      // WebSocketセッションから明示的に退出
+      if (user?.id) {
+        websocketManager.leaveGame(sessionId, user.id)
+      }
+      
       await endSessionMutation.mutateAsync(sessionId)
       toast.success('セッションを終了しました')
       // ホームページに戻る
@@ -402,13 +410,20 @@ function GameSessionPage() {
               <CardContent className="space-y-2">
                 {currentChoices.map((choice, index) => (
                   <Button
-                    key={index}
+                    key={choice.id || index}
                     variant={selectedChoice === index ? 'default' : 'outline'}
                     className="w-full text-left justify-start h-auto p-3"
                     onClick={() => handleChoiceSelect(index)}
                   >
-                    <span className="whitespace-normal">{choice}</span>
-                    <Badge variant="secondary" className="ml-auto shrink-0">
+                    <div className="flex-1">
+                      <span className="whitespace-normal">{choice.text}</span>
+                      {choice.difficulty && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          難易度: {choice.difficulty}
+                        </div>
+                      )}
+                    </div>
+                    <Badge variant="secondary" className="ml-2 shrink-0">
                       <Coins className="h-3 w-3 mr-1" />2 SP
                     </Badge>
                   </Button>
