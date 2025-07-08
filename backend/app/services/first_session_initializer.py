@@ -5,19 +5,16 @@
 """
 
 from datetime import datetime
-from typing import Optional
 
 from sqlmodel import Session
 
 from app.core.logging import get_logger
 from app.models.character import Character, GameSession
 from app.models.game_message import (
-    MESSAGE_TYPE_GM_NARRATIVE,
     MESSAGE_TYPE_SYSTEM_EVENT,
-    SENDER_TYPE_GM,
     SENDER_TYPE_SYSTEM,
 )
-from app.models.quest import Quest, QuestStatus, QuestOrigin
+from app.models.quest import Quest, QuestOrigin, QuestStatus
 
 logger = get_logger(__name__)
 
@@ -39,26 +36,26 @@ GESTALOKA_INTRO_TEMPLATE = """ようこそ、{character_name}。
 
 class FirstSessionInitializer:
     """初回セッション初期化サービス"""
-    
+
     def __init__(self, db: Session):
         self.db = db
-        
+
     def create_first_session(self, character: Character) -> GameSession:
         """
         キャラクターの最初のセッションを作成
-        
+
         Args:
             character: 対象キャラクター
-            
+
         Returns:
             作成されたゲームセッション
         """
         logger.info(f"Creating first session for character: {character.name}")
-        
+
         # セッションを作成
         import json
         import uuid
-        
+
         session = GameSession(
             id=str(uuid.uuid4()),
             character_id=character.id,
@@ -81,17 +78,18 @@ class FirstSessionInitializer:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        
+
         self.db.add(session)
         self.db.flush()  # IDを取得するため
-        
+
         # 初期クエストを付与
         self._assign_initial_quests(character)
-        
+
         # システムメッセージを保存（GameMessageモデルを直接使用）
         from app.models.game_message import GameMessage
-        
+
         system_message = GameMessage(
+            id=str(uuid.uuid4()),
             session_id=session.id,
             message_type=MESSAGE_TYPE_SYSTEM_EVENT,
             sender_type=SENDER_TYPE_SYSTEM,
@@ -101,25 +99,25 @@ class FirstSessionInitializer:
             created_at=datetime.utcnow(),
         )
         self.db.add(system_message)
-        
+
         return session
-    
+
     def generate_introduction(self, character: Character) -> str:
         """
         世界観の導入テキストを生成
-        
+
         Args:
             character: 対象キャラクター
-            
+
         Returns:
             導入テキスト
         """
         return GESTALOKA_INTRO_TEMPLATE.format(character_name=character.name)
-    
+
     def generate_initial_choices(self) -> list[dict]:
         """
         最初の選択肢を生成
-        
+
         Returns:
             選択肢のリスト
         """
@@ -140,11 +138,11 @@ class FirstSessionInitializer:
                 "description": "慎重に周りの様子を確認します",
             },
         ]
-    
+
     def _assign_initial_quests(self, character: Character) -> None:
         """
         初期クエストを一括で付与
-        
+
         Args:
             character: 対象キャラクター
         """
@@ -156,12 +154,12 @@ class FirstSessionInitializer:
             self._create_log_fragments_quest(character.id),
             self._create_beyond_walls_quest(character.id),
         ]
-        
+
         for quest in initial_quests:
             self.db.add(quest)
-        
+
         logger.info(f"Assigned {len(initial_quests)} initial quests to character: {character.name}")
-    
+
     def _create_exploration_quest(self, character_id: str) -> Quest:
         """「探求」クエストを作成"""
         quest = Quest(
@@ -192,7 +190,7 @@ class FirstSessionInitializer:
             started_at=datetime.utcnow(),
         )
         return quest
-    
+
     def _create_first_steps_quest(self, character_id: str) -> Quest:
         """「最初の一歩」クエストを作成"""
         quest = Quest(
@@ -229,7 +227,7 @@ class FirstSessionInitializer:
             started_at=datetime.utcnow(),
         )
         return quest
-    
+
     def _create_city_social_quest(self, character_id: str) -> Quest:
         """「シティボーイ/シティガール」クエストを作成"""
         quest = Quest(
@@ -260,7 +258,7 @@ class FirstSessionInitializer:
             started_at=datetime.utcnow(),
         )
         return quest
-    
+
     def _create_small_errands_quest(self, character_id: str) -> Quest:
         """「小さな依頼」クエストを作成"""
         quest = Quest(
@@ -291,7 +289,7 @@ class FirstSessionInitializer:
             started_at=datetime.utcnow(),
         )
         return quest
-    
+
     def _create_log_fragments_quest(self, character_id: str) -> Quest:
         """「ログの欠片」クエストを作成"""
         quest = Quest(
@@ -322,7 +320,7 @@ class FirstSessionInitializer:
             started_at=datetime.utcnow(),
         )
         return quest
-    
+
     def _create_beyond_walls_quest(self, character_id: str) -> Quest:
         """「街の外へ」クエストを作成"""
         quest = Quest(

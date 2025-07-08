@@ -95,7 +95,7 @@ class GameSessionService:
 
         # 戦闘サービスを初期化
         self.battle_service = BattleService(db)
-        
+
         # ストーリーアークサービスを初期化
         self.story_arc_service = StoryArcService(db)
 
@@ -125,11 +125,11 @@ class GameSessionService:
                 new_session = first_session_initializer.create_first_session(character)
                 self.db.commit()
                 self.db.refresh(new_session)
-                
+
                 # 初回セッションの導入メッセージを生成
                 intro_narrative = first_session_initializer.generate_introduction(character)
                 initial_choices = first_session_initializer.generate_initial_choices()
-                
+
                 # GMナラティブとして保存
                 self.save_message(
                     session_id=new_session.id,
@@ -178,26 +178,28 @@ class GameSessionService:
                     total_phases=3,
                     themes=["成長", "発見", "冒険"],
                 )
-            
+
             # セッションをアークに関連付け
             if active_arc:
                 self.story_arc_service.associate_session_with_arc(new_session, active_arc)
 
-            # セッション開始のシステムメッセージを保存
-            system_message_metadata = {
-                "session_number": new_session.session_number,
-                "is_first_session": new_session.is_first_session,
-                "character_id": character.id,
-                "character_name": character.name,
-            }
-            self.save_message(
-                session_id=new_session.id,
-                message_type=MESSAGE_TYPE_SYSTEM_EVENT,
-                sender_type=SENDER_TYPE_SYSTEM,
-                content=f"セッション #{new_session.session_number} を開始しました。{'（初回セッション）' if new_session.is_first_session else ''}",
-                turn_number=0,
-                metadata=system_message_metadata,
-            )
+            # 初回セッション以外の場合のみシステムメッセージを保存
+            # （初回セッションはFirstSessionInitializerで既にメッセージが作成されている）
+            if session_count > 0:
+                system_message_metadata = {
+                    "session_number": new_session.session_number,
+                    "is_first_session": new_session.is_first_session,
+                    "character_id": character.id,
+                    "character_name": character.name,
+                }
+                self.save_message(
+                    session_id=new_session.id,
+                    message_type=MESSAGE_TYPE_SYSTEM_EVENT,
+                    sender_type=SENDER_TYPE_SYSTEM,
+                    content=f"セッション #{new_session.session_number} を開始しました。",
+                    turn_number=0,
+                    metadata=system_message_metadata,
+                )
             self.db.commit()  # メッセージも一緒にコミット
 
             logger.info(
@@ -1410,7 +1412,7 @@ class GameSessionService:
         self.db.add(new_session)
         self.db.commit()
         self.db.refresh(new_session)
-        
+
         # ストーリーアークの処理
         # 既存のアクティブなアークがあればそれを引き継ぐ
         active_arc = self.story_arc_service.get_active_story_arc(character)
@@ -1419,7 +1421,7 @@ class GameSessionService:
             if active_arc.progress_percentage >= 80.0:
                 # TODO: AIを使用して次のアークを提案
                 pass
-            
+
             # セッションをアークに関連付け
             self.story_arc_service.associate_session_with_arc(new_session, active_arc)
 

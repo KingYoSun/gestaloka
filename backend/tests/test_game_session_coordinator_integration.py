@@ -85,6 +85,12 @@ class TestGameSessionCoordinatorIntegration:
             if exec_call_count == 1:
                 result_mock.first.return_value = mock_character
             # 2番目の呼び出しは既存セッションの検索
+            elif exec_call_count == 2:
+                result_mock.all.return_value = []
+                result_mock.first.return_value = None
+            # 3番目の呼び出しはセッション数のカウント
+            elif exec_call_count == 3:
+                result_mock.one.return_value = 0  # 初回セッション
             else:
                 result_mock.all.return_value = []
                 result_mock.first.return_value = None

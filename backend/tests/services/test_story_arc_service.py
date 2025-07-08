@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import Session
 
 from app.models.character import Character
-from app.models.story_arc import StoryArcStatus, StoryArcType
+from app.models.user import User
 from app.services.story_arc_service import StoryArcService
 
 
@@ -17,14 +17,27 @@ def story_arc_service(session: Session):
 
 
 @pytest.fixture
-def test_character(session: Session):
+def test_user(session: Session):
+    """テスト用ユーザー"""
+    user = User(
+        id="test-user-1",
+        username="testuser",
+        email="test@example.com",
+        hashed_password="hashed_password",
+    )
+    session.add(user)
+    session.commit()
+    return user
+
+
+@pytest.fixture
+def test_character(session: Session, test_user: User):
     """テスト用キャラクター"""
     character = Character(
         id="test-character-1",
-        user_id="test-user-1",
+        user_id=test_user.id,
         name="テスト冒険者",
-        level=5,
-        experience=1000,
+        location="nexus",
     )
     session.add(character)
     session.commit()
@@ -37,16 +50,16 @@ def test_create_story_arc(story_arc_service: StoryArcService, test_character: Ch
         character=test_character,
         title="テストアーク",
         description="これはテスト用のストーリーアークです",
-        arc_type=StoryArcType.PERSONAL_STORY,
+        arc_type="personal_story",
         total_phases=3,
         themes=["冒険", "成長"],
         central_conflict="内なる葛藤との対峙",
     )
-    
+
     assert arc.id is not None
     assert arc.title == "テストアーク"
-    assert arc.arc_type == StoryArcType.PERSONAL_STORY
-    assert arc.status == StoryArcStatus.ACTIVE
+    assert arc.arc_type == "personal_story"
+    assert arc.status == "active"
     assert arc.total_phases == 3
     assert arc.current_phase == 1
     assert arc.progress_percentage == 0.0
@@ -59,20 +72,20 @@ def test_get_active_story_arc(story_arc_service: StoryArcService, test_character
     # アークがない場合
     arc = story_arc_service.get_active_story_arc(test_character)
     assert arc is None
-    
+
     # アークを作成
     created_arc = story_arc_service.create_story_arc(
         character=test_character,
         title="アクティブアーク",
         description="アクティブなアーク",
-        arc_type=StoryArcType.MAIN_QUEST,
+        arc_type="main_quest",
     )
-    
+
     # 取得できることを確認
     arc = story_arc_service.get_active_story_arc(test_character)
     assert arc is not None
     assert arc.id == created_arc.id
-    assert arc.status == StoryArcStatus.ACTIVE
+    assert arc.status == "active"
 
 
 def test_update_arc_progress(story_arc_service: StoryArcService, test_character: Character):
@@ -81,24 +94,24 @@ def test_update_arc_progress(story_arc_service: StoryArcService, test_character:
         character=test_character,
         title="進行テストアーク",
         description="進行状況のテスト",
-        arc_type=StoryArcType.SIDE_QUEST,
+        arc_type="side_quest",
         total_phases=3,
     )
-    
+
     # 進行率を更新
     updated_arc = story_arc_service.update_arc_progress(arc, progress_delta=25.0)
     assert updated_arc.progress_percentage == 25.0
     assert updated_arc.current_phase == 1
-    
+
     # フェーズ完了
     updated_arc = story_arc_service.update_arc_progress(arc, phase_completed=True)
     assert updated_arc.current_phase == 2
-    
+
     # 100%到達で自動完了
     arc.progress_percentage = 95.0
     arc.current_phase = 3
     updated_arc = story_arc_service.update_arc_progress(arc, progress_delta=10.0)
-    assert updated_arc.status == StoryArcStatus.COMPLETED
+    assert updated_arc.status == "completed"
     assert updated_arc.completed_at is not None
 
 
@@ -108,9 +121,9 @@ def test_create_milestone(story_arc_service: StoryArcService, test_character: Ch
         character=test_character,
         title="マイルストーンテスト",
         description="マイルストーンのテスト",
-        arc_type=StoryArcType.CHARACTER_ARC,
+        arc_type="character_arc",
     )
-    
+
     milestone = story_arc_service.create_milestone(
         story_arc=arc,
         title="最初の試練",
@@ -120,7 +133,7 @@ def test_create_milestone(story_arc_service: StoryArcService, test_character: Ch
         triggers_next_phase=True,
         rewards={"experience": 500, "item": "勇者の証"},
     )
-    
+
     assert milestone.id is not None
     assert milestone.story_arc_id == arc.id
     assert milestone.title == "最初の試練"
@@ -135,10 +148,10 @@ def test_check_milestone_completion(story_arc_service: StoryArcService, test_cha
         character=test_character,
         title="達成テスト",
         description="マイルストーン達成のテスト",
-        arc_type=StoryArcType.MAIN_QUEST,
+        arc_type="main_quest",
         total_phases=2,
     )
-    
+
     milestone = story_arc_service.create_milestone(
         story_arc=arc,
         title="クエスト完了",
@@ -150,7 +163,7 @@ def test_check_milestone_completion(story_arc_service: StoryArcService, test_cha
         },
         triggers_next_phase=True,
     )
-    
+
     # 条件不足
     context = {
         "completed_quests": ["quest1"],
@@ -159,14 +172,14 @@ def test_check_milestone_completion(story_arc_service: StoryArcService, test_cha
     completed = story_arc_service.check_milestone_completion(milestone, context)
     assert not completed
     assert not milestone.is_completed
-    
+
     # 条件達成
     context["completed_quests"] = ["quest1", "quest2", "quest3"]
     completed = story_arc_service.check_milestone_completion(milestone, context)
     assert completed
     assert milestone.is_completed
     assert milestone.completed_at is not None
-    
+
     # フェーズも進行
     arc = story_arc_service.db.get(arc.__class__, arc.id)
     assert arc.current_phase == 2

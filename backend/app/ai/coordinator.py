@@ -79,7 +79,7 @@ class CoordinatorAI:
 
         # タスク実行統計
         self.task_execution_times: dict[str, list[float]] = defaultdict(list)
-        
+
         # Geminiクライアント
         self.gemini = gemini_client or GeminiClient()
 
@@ -648,14 +648,14 @@ class CoordinatorAI:
 - 100文字程度で簡潔に"""
 
         from langchain_core.messages import HumanMessage
-        
+
         messages = [HumanMessage(content=prompt)]
         response = await self.gemini.generate(messages)
-        
+
         return response.content.strip()
-    
+
     async def generate_continuation_narrative(
-        self, 
+        self,
         character: Any,
         story_summary: str,
         continuation_context: str,
@@ -663,17 +663,17 @@ class CoordinatorAI:
     ) -> str:
         """
         前回セッションから継続するナラティブを生成
-        
+
         Args:
             character: キャラクター情報
             story_summary: 前回のストーリーサマリー
             continuation_context: 継続コンテキスト
             unresolved_plots: 未解決のプロット
-            
+
         Returns:
             str: 新セッション開始時のナラティブ
         """
-        
+
         prompt = f"""あなたはゲスタロカ世界のGM AI（脚本家）です。
 前回のセッションから時間が経過し、キャラクターが再び冒険を始める場面を描写してください。
 
@@ -701,10 +701,10 @@ class CoordinatorAI:
 プレイヤーを物語に引き込む魅力的な導入を作成してください。"""
 
         from langchain_core.messages import HumanMessage
-        
+
         messages = [HumanMessage(content=prompt)]
         response = await self.gemini.generate(messages)
-        
+
         return response.content.strip()
 
     async def extract_unresolved_plots(
@@ -722,7 +722,7 @@ class CoordinatorAI:
         """
         # contextは将来的な拡張のために保持
         _ = context
-        
+
         unresolved = []
 
         # メッセージから未解決要素を検出
@@ -746,7 +746,7 @@ class CoordinatorAI:
 
         # 最大5つまで
         return unresolved[:5]
-    
+
     async def evaluate_story_arc_progress(
         self,
         session_messages: list["GameMessage"],
@@ -755,12 +755,12 @@ class CoordinatorAI:
     ) -> dict:
         """
         ストーリーアークの進行状況を評価
-        
+
         Args:
             session_messages: セッションのメッセージ履歴
             current_arc: 現在のストーリーアーク情報
             character_actions: キャラクターの行動リスト
-            
+
         Returns:
             dict: 進行状況評価（progress_delta, phase_completed, milestone_progress）
         """
@@ -771,11 +771,11 @@ class CoordinatorAI:
             "milestone_progress": {},
             "narrative_summary": "",
         }
-        
+
         # メッセージ数による基本進行率
         narrative_messages = [m for m in session_messages if m.message_type == "GM_NARRATIVE"]
         base_progress = min(5.0, len(narrative_messages) * 0.5)  # 最大5%
-        
+
         # 重要な行動による追加進行率
         important_actions = ["戦闘", "クエスト", "発見", "決断", "対話"]
         action_progress = 0.0
@@ -784,21 +784,21 @@ class CoordinatorAI:
                 if keyword in action:
                     action_progress += 1.0
                     break
-        
+
         evaluation["progress_delta"] = base_progress + min(5.0, action_progress)
-        
+
         # フェーズ完了判定（現在進行率 + 今回の進行率が次フェーズ閾値を超えるか）
         if current_arc:
             current_progress = current_arc.get("progress_percentage", 0.0)
             new_progress = current_progress + evaluation["progress_delta"]
             phase_threshold = (100.0 / current_arc.get("total_phases", 1)) * current_arc.get("current_phase", 1)
-            
+
             if new_progress >= phase_threshold:
                 evaluation["phase_completed"] = True
-        
+
         # 簡潔なナラティブサマリー
         if narrative_messages:
             key_events = [msg.content[:50] for msg in narrative_messages[-3:]]
             evaluation["narrative_summary"] = "、".join(key_events)
-        
+
         return evaluation

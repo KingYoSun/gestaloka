@@ -681,13 +681,103 @@ Response: GameSession
 
 ### 12.4 ストーリーアーク管理
 
-#### 実装済み機能
+#### 実装済み機能（2025-07-08更新）
 - **story_arc_idフィールド**
   - GameSessionモデルに追加
   - continue_sessionで前回のIDを引き継ぎ
+  - **外部キー制約追加（2025-07-08）**
+    - Alembicマイグレーション実装（860dcd753031）
+    - story_arcsテーブルへの参照整合性確保
+
+- **StoryArcモデル実装（2025-07-08）**
+  - StoryArcテーブル定義
+  - StoryArcMilestoneテーブル定義
+  - **ENUMタイプから文字列型への変更**
+    - StoryArcType、StoryArcStatusをVARCHAR型で実装
+    - PostgreSQL ENUM型の問題を回避
+
+- **StoryArcService実装（2025-07-08）**
+  - `create_story_arc`: ストーリーアーク作成
+  - `get_active_story_arc`: アクティブなアーク取得
+  - `update_arc_progress`: 進行状況更新
+  - `complete_story_arc`: アーク完了処理
+  - `create_milestone`: マイルストーン作成
+  - `check_milestone_completion`: 達成チェック
+  - `associate_session_with_arc`: セッション関連付け
+  - `suggest_next_arc`: 次アーク提案
+
+- **GameSessionService統合（2025-07-08）**
+  - `create_session`でストーリーアーク自動作成
+  - 初回セッション以外でアークがない場合の処理
+  - セッションとアークの関連付け
 
 #### 未実装機能
-- **ストーリーアーク管理システム**
-  - ストーリーアークの作成・管理機能
-  - 複数セッションに跨るストーリー追跡
-  - アークの完了判定と新規アーク生成
+- **複数セッションに跨るストーリー追跡の詳細実装**
+- **アークの自動進行判定**
+- **複雑な達成条件の評価ロジック**
+
+## 13. 技術的修正履歴（2025-07-08）
+
+### 13.1 主要な修正内容
+
+#### データベース関連
+1. **GameSessionモデル外部キー制約**
+   - `story_arc_id`に対する外部キー制約の追加
+   - マイグレーションファイル: `860dcd753031_add_foreign_key_constraint_to_story_arc_.py`
+
+2. **ENUM型の回避**
+   - `StoryArcType`、`StoryArcStatus`をENUMから文字列型に変更
+   - 理由: PostgreSQL ENUM型のマイグレーション問題を回避
+   - 影響範囲: モデル定義、サービス、テストコード全体
+
+#### コード修正
+1. **インポートエラー修正**
+   - `AsyncSessionLocal` → `SessionLocal`への変更
+   - `neo4j_db`のインポートパス修正
+   - `GeminiFactory`クラスから`get_gemini_client`関数への変更
+
+2. **FirstSessionInitializer修正**
+   - GameMessageにIDフィールド追加（UUID生成）
+   - システムメッセージの重複防止ロジック追加
+
+3. **session_result_tasks.py修正**
+   - 同期的なデータベースアクセスに変更
+   - WebSocketManager依存の一時的な無効化
+
+#### リント・型エラー修正
+1. **空白行の不要なスペース削除**（26箇所）
+2. **未使用変数の処理**（session_result_service.py）
+3. **order_by句の修正**（StoryArcService）
+
+### 13.2 テスト結果（2025-07-08 19:40時点）
+
+#### バックエンド
+- **総テスト数**: 242
+- **成功**: 235（97.1%）
+- **失敗**: 7
+  - story_arc_service.py: 5テスト（データベース接続エラー）
+  - test_game_message.py: 1テスト（データベース接続エラー）
+  - test_game_session_coordinator_integration.py: 1テスト（モックエラー）
+
+#### フロントエンド
+- **総テスト数**: 28
+- **成功**: 28（100%）
+
+#### 品質チェック
+- **リント（バックエンド）**: エラーなし
+- **リント（フロントエンド）**: 45警告（主にany型使用）
+- **型チェック**: 51エラー（主に古いモデル定義との不一致）
+
+### 13.3 今後の対応事項
+
+1. **テスト環境の改善**
+   - データベース接続の問題解決
+   - モック設定の見直し
+
+2. **型定義の整合性**
+   - PromptContextとCharacterモデルの整合性
+   - CharacterStatsアクセス方法の統一
+
+3. **WebSocketManager実装**
+   - 現在コメントアウトされている機能の復活
+   - リアルタイム通知機能の実装
