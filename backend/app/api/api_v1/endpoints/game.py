@@ -19,12 +19,12 @@ from app.schemas.game_session import (
     GameSessionCreate,
     GameSessionListResponse,
     GameSessionResponse,
-    SessionContinueRequest,
     GameSessionUpdate,
-    SessionHistoryResponse,
-    SessionEndingProposal,
+    SessionContinueRequest,
     SessionEndingAcceptResponse,
+    SessionEndingProposal,
     SessionEndingRejectResponse,
+    SessionHistoryResponse,
     SessionResultResponse,
 )
 from app.schemas.user import User

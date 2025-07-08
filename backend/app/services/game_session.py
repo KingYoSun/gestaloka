@@ -39,8 +39,8 @@ from app.schemas.game_session import (
     GameSessionListResponse,
     GameSessionResponse,
     GameSessionUpdate,
-    SessionEndingProposal,
     SessionEndingAcceptResponse,
+    SessionEndingProposal,
     SessionEndingRejectResponse,
     SessionResultResponse,
 )
@@ -1324,7 +1324,7 @@ class GameSessionService:
         session_result = self.db.exec(stmt_result).first()
 
         # 既存のアクティブセッションを終了
-        stmt_active = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active == True)
+        stmt_active = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active)
         existing_sessions = self.db.exec(stmt_active).all()
         for session in existing_sessions:
             session.is_active = False
