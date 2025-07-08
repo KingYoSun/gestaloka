@@ -31,12 +31,12 @@ socket_app = socketio.ASGIApp(sio)
 class ConnectionManager:
     """接続管理クラス"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: dict[str, dict[str, Any]] = {}
         self.user_sessions: dict[str, list[str]] = {}
         self.game_sessions: dict[str, list[str]] = {}
 
-    def add_connection(self, sid: str, user_id: Optional[str] = None, game_session_id: Optional[str] = None):
+    def add_connection(self, sid: str, user_id: Optional[str] = None, game_session_id: Optional[str] = None) -> None:
         """接続を追加"""
         self.active_connections[sid] = {
             "user_id": user_id,

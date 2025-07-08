@@ -211,9 +211,10 @@ function GameSessionPage() {
     try {
       await acceptEndingMutation.mutateAsync(sessionId)
       toast.success('セッションを終了しています...', {
-        description: 'リザルトを処理中です。完了後、自動的に画面が切り替わります。',
+        description:
+          'リザルトを処理中です。完了後、自動的に画面が切り替わります。',
       })
-      
+
       // リザルト画面へ遷移
       setTimeout(() => {
         window.location.href = `/game/${sessionId}/result`
@@ -228,7 +229,7 @@ function GameSessionPage() {
     try {
       const response = await rejectEndingMutation.mutateAsync(sessionId)
       setShowEndingDialog(false)
-      
+
       if (!response.canRejectNext) {
         toast.warning('次回の終了提案は拒否できません', {
           description: '物語が長くなってきたため、次回は必ず終了となります。',

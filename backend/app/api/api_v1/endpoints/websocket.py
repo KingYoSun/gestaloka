@@ -14,11 +14,11 @@ logger = get_logger(__name__)
 
 # アクティブな接続を管理
 class ConnectionManager:
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: dict[str, WebSocket] = {}
         self.user_connections: dict[str, list[str]] = {}
 
-    async def connect(self, websocket: WebSocket, connection_id: str, user_id: str | None = None):
+    async def connect(self, websocket: WebSocket, connection_id: str, user_id: str | None = None) -> None:
         await websocket.accept()
         self.active_connections[connection_id] = websocket
 

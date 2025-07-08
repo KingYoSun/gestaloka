@@ -9,8 +9,8 @@ Create Date: 2025-07-08 10:55:49.043490
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = 'b9b93fc3808e'
-down_revision = '860dcd753031'
+revision = "b9b93fc3808e"
+down_revision = "860dcd753031"
 branch_labels = None
 depends_on = None
 
@@ -34,4 +34,3 @@ def downgrade() -> None:
     # No downgrade needed as we're removing ENUMs
     pass
     # ### end Alembic commands ###
-

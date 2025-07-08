@@ -435,9 +435,7 @@ class StateManagerAgent(BaseAgent):
             "failure_chance": max(0, self.rules["critical_failure_threshold"] - success_rate),
         }
 
-    async def calculate_experience(
-        self, context: PromptContext, messages: list["GameMessage"]
-    ) -> int:
+    async def calculate_experience(self, context: PromptContext, messages: list["GameMessage"]) -> int:
         """
         セッションから獲得経験値を計算
 
@@ -458,19 +456,19 @@ class StateManagerAgent(BaseAgent):
         # 重要イベントによるボーナス
         event_keywords = ["戦闘", "勝利", "クエスト完了", "レベルアップ", "発見"]
         event_count = sum(
-            1 for msg in messages
-            if msg.message_type == "GM_NARRATIVE" and
-            any(keyword in msg.content for keyword in event_keywords)
+            1
+            for msg in messages
+            if msg.message_type == "GM_NARRATIVE" and any(keyword in msg.content for keyword in event_keywords)
         )
         event_exp = event_count * 50
 
         # セッション時間によるボーナス（最大200）
-        session_duration = context.current_session.get("play_duration_minutes", 0)
+        session_duration = context.additional_context.get("play_duration_minutes", 0)
         time_exp = min(200, session_duration * 2)
 
         total_exp = base_exp + action_exp + event_exp + time_exp
 
-        return total_exp
+        return int(total_exp)
 
     async def calculate_skill_improvements(
         self, context: PromptContext, messages: list["GameMessage"]
@@ -486,7 +484,7 @@ class StateManagerAgent(BaseAgent):
             dict[str, int]: スキル名と獲得経験値のマッピング
         """
 
-        skill_exp = {}
+        skill_exp: dict[str, int] = {}
 
         # メッセージからスキル使用を検出
         skill_keywords = {

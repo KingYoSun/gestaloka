@@ -80,10 +80,11 @@ class StoryArcService:
         Returns:
             アクティブなストーリーアーク（なければNone）
         """
-        stmt = select(StoryArc).where(
-            StoryArc.character_id == character.id,
-            StoryArc.status == "active"
-        ).order_by(desc(StoryArc.created_at))
+        stmt = (
+            select(StoryArc)
+            .where(StoryArc.character_id == character.id, StoryArc.status == "active")
+            .order_by(desc(StoryArc.created_at))
+        )
 
         result = self.db.execute(stmt)
         return result.scalars().first()
@@ -296,9 +297,6 @@ class StoryArcService:
         }
 
         # 完了したアークのタイプに基づいて次を提案
-        suggestion = suggestions.get(
-            completed_arc.arc_type,
-            suggestions["side_quest"]
-        )
+        suggestion = suggestions.get(completed_arc.arc_type, suggestions["side_quest"])
 
         return suggestion

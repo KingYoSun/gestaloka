@@ -70,28 +70,40 @@ export function SessionEndingDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm">経験値:</span>
-                <Badge variant="secondary">+{proposal.rewardsPreview.experience} EXP</Badge>
+                <Badge variant="secondary">
+                  +{proposal.rewardsPreview.experience} EXP
+                </Badge>
               </div>
-              
+
               {Object.keys(proposal.rewardsPreview.skills).length > 0 && (
                 <div>
                   <span className="text-sm">スキル向上:</span>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {Object.entries(proposal.rewardsPreview.skills).map(([skill, value]) => (
-                      <Badge key={skill} variant="outline" className="text-xs">
-                        {skill} +{value}
-                      </Badge>
-                    ))}
+                    {Object.entries(proposal.rewardsPreview.skills).map(
+                      ([skill, value]) => (
+                        <Badge
+                          key={skill}
+                          variant="outline"
+                          className="text-xs"
+                        >
+                          {skill} +{value}
+                        </Badge>
+                      )
+                    )}
                   </div>
                 </div>
               )}
-              
+
               {proposal.rewardsPreview.items.length > 0 && (
                 <div>
                   <span className="text-sm">アイテム:</span>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {proposal.rewardsPreview.items.map((item, index) => (
-                      <Badge key={index} variant="secondary" className="text-xs">
+                      <Badge
+                        key={index}
+                        variant="secondary"
+                        className="text-xs"
+                      >
                         {item}
                       </Badge>
                     ))}
@@ -133,11 +145,7 @@ export function SessionEndingDialog({
 
         <DialogFooter className="flex gap-2">
           {!proposal.isMandatory && (
-            <Button
-              variant="outline"
-              onClick={onContinue}
-              disabled={isLoading}
-            >
+            <Button variant="outline" onClick={onContinue} disabled={isLoading}>
               {isRejecting ? '処理中...' : 'もう少し続ける'}
             </Button>
           )}

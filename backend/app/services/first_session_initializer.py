@@ -67,14 +67,16 @@ class FirstSessionInitializer:
             word_count=0,
             play_duration_minutes=0,
             current_scene="基点都市ネクサス・入口",
-            session_data=json.dumps({
-                "intro_completed": False,
-                "tutorial_stage": "world_introduction",
-                "initial_location": "nexus_entrance",
-                "turn_count": 0,
-                "actions_history": [],
-                "game_state": "started",
-            }),
+            session_data=json.dumps(
+                {
+                    "intro_completed": False,
+                    "tutorial_stage": "world_introduction",
+                    "initial_location": "nexus_entrance",
+                    "turn_count": 0,
+                    "actions_history": [],
+                    "game_state": "started",
+                }
+            ),
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )

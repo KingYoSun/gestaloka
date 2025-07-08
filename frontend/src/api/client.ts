@@ -269,14 +269,18 @@ class ApiClient {
   }
 
   // セッション終了提案を取得
-  async getSessionEndingProposal(sessionId: string): Promise<SessionEndingProposal> {
+  async getSessionEndingProposal(
+    sessionId: string
+  ): Promise<SessionEndingProposal> {
     return this.requestWithTransform<SessionEndingProposal>(
       `/game/sessions/${sessionId}/ending-proposal`
     )
   }
 
   // セッション終了を承認
-  async acceptSessionEnding(sessionId: string): Promise<SessionEndingAcceptResponse> {
+  async acceptSessionEnding(
+    sessionId: string
+  ): Promise<SessionEndingAcceptResponse> {
     return this.requestWithTransform<SessionEndingAcceptResponse>(
       `/game/sessions/${sessionId}/accept-ending`,
       { method: 'POST' }
@@ -284,7 +288,9 @@ class ApiClient {
   }
 
   // セッション終了を拒否
-  async rejectSessionEnding(sessionId: string): Promise<SessionEndingRejectResponse> {
+  async rejectSessionEnding(
+    sessionId: string
+  ): Promise<SessionEndingRejectResponse> {
     return this.requestWithTransform<SessionEndingRejectResponse>(
       `/game/sessions/${sessionId}/reject-ending`,
       { method: 'POST' }

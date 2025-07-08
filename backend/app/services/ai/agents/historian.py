@@ -335,9 +335,7 @@ WARNINGS: [一貫性の問題があれば記載]"""
 
         return warnings
 
-    async def generate_session_summary(
-        self, context: PromptContext, messages: list["GameMessage"]
-    ) -> str:
+    async def generate_session_summary(self, context: PromptContext, messages: list["GameMessage"]) -> str:
         """
         セッションのサマリーを生成
 
@@ -363,7 +361,7 @@ WARNINGS: [一貫性の問題があれば記載]"""
 以下のセッションの出来事を要約し、歴史的な記録として残してください。
 
 【キャラクター情報】
-- 名前: {context.character.name}
+- 名前: {context.character_name}
 - 場所: {context.location}
 
 【セッションの記録】
@@ -384,9 +382,7 @@ WARNINGS: [一貫性の問題があれば記載]"""
 
         return response.strip()
 
-    async def extract_key_events(
-        self, context: PromptContext, messages: list["GameMessage"]
-    ) -> list[str]:
+    async def extract_key_events(self, context: PromptContext, messages: list["GameMessage"]) -> list[str]:
         """
         セッションから重要イベントを抽出
 
@@ -408,8 +404,8 @@ WARNINGS: [一貫性の問題があれば記載]"""
                 if any(keyword in msg.content for keyword in keywords):
                     # 前後のコンテキストを含めて簡潔にまとめる
                     event_context = []
-                    if i > 0 and messages[i-1].message_type == "PLAYER_ACTION":
-                        event_context.append(messages[i-1].content)
+                    if i > 0 and messages[i - 1].message_type == "PLAYER_ACTION":
+                        event_context.append(messages[i - 1].content)
                     event_context.append(msg.content)
 
                     # 50文字以内に要約

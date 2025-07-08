@@ -42,7 +42,7 @@ class AnomalyAgent(BaseAgent):
     プレイヤーに驚きと挑戦を提供します。
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         """混沌AIの初期化"""
         super().__init__(role=AIAgentRole.ANOMALY, **kwargs)
         self.event_probability = 0.15  # 基本発生確率

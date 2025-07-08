@@ -169,7 +169,7 @@ export const useAcceptSessionEnding = () => {
       // セッション情報を無効化
       queryClient.invalidateQueries({ queryKey: ['gameSession', sessionId] })
       queryClient.invalidateQueries({ queryKey: ['gameSessions'] })
-      
+
       // アクティブセッションをクリア
       clearActiveSession()
     },
@@ -184,7 +184,9 @@ export const useRejectSessionEnding = () => {
     mutationFn: (sessionId: string) => apiClient.rejectSessionEnding(sessionId),
     onSuccess: (_response, sessionId) => {
       // 終了提案を再取得
-      queryClient.invalidateQueries({ queryKey: ['sessionEndingProposal', sessionId] })
+      queryClient.invalidateQueries({
+        queryKey: ['sessionEndingProposal', sessionId],
+      })
     },
   })
 }

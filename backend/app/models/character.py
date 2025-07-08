@@ -169,7 +169,9 @@ class GameSession(SQLModel, table=True):
     session_status: str = Field(default="active")  # "active", "ending_proposed", "completed"
     session_number: int = Field(default=1)  # キャラクターの何回目のセッションか
     previous_session_id: Optional[str] = Field(default=None, foreign_key="game_sessions.id")
-    story_arc_id: Optional[str] = Field(default=None, foreign_key="story_arcs.id")  # ストーリーアークID（複数セッション跨ぎ）
+    story_arc_id: Optional[str] = Field(
+        default=None, foreign_key="story_arcs.id"
+    )  # ストーリーアークID（複数セッション跨ぎ）
 
     # リザルト関連
     result_summary: Optional[str] = Field(default=None)  # セッションのサマリー

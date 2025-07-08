@@ -5,7 +5,13 @@ import { useNavigate } from '@tanstack/react-router'
 import { Trophy, Sparkles, ScrollText, Target } from 'lucide-react'
 import { SessionResultResponse } from '@/types'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
@@ -22,10 +28,10 @@ export function SessionResult({ result, characterId }: SessionResultProps) {
   const handleNewSession = () => {
     navigate({
       to: '/dashboard',
-      search: { 
+      search: {
         action: 'continue',
         characterId,
-        previousSessionId: result.sessionId 
+        previousSessionId: result.sessionId,
       },
     })
   }
@@ -46,7 +52,8 @@ export function SessionResult({ result, characterId }: SessionResultProps) {
             {formatDistanceToNow(new Date(result.createdAt), {
               addSuffix: true,
               locale: ja,
-            })}に完了
+            })}
+            に完了
           </CardDescription>
         </CardHeader>
       </Card>
@@ -114,11 +121,16 @@ export function SessionResult({ result, characterId }: SessionResultProps) {
               <div>
                 <h4 className="font-semibold mb-2">スキルの向上</h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {Object.entries(result.skillsImproved).map(([skill, improvement]) => (
-                    <Badge key={skill} variant="outline">
-                      {skill} <span className="text-primary ml-1">+{improvement}</span>
-                    </Badge>
-                  ))}
+                  {Object.entries(result.skillsImproved).map(
+                    ([skill, improvement]) => (
+                      <Badge key={skill} variant="outline">
+                        {skill}{' '}
+                        <span className="text-primary ml-1">
+                          +{improvement}
+                        </span>
+                      </Badge>
+                    )
+                  )}
                 </div>
               </div>
             </>
@@ -155,7 +167,7 @@ export function SessionResult({ result, characterId }: SessionResultProps) {
           <p className="text-muted-foreground text-sm">
             {result.continuationContext}
           </p>
-          
+
           {result.unresolvedPlots.length > 0 && (
             <>
               <Separator />
@@ -176,18 +188,10 @@ export function SessionResult({ result, characterId }: SessionResultProps) {
 
       {/* アクションボタン */}
       <div className="flex justify-center gap-4 pt-4">
-        <Button
-          size="lg"
-          onClick={handleNewSession}
-          className="min-w-[200px]"
-        >
+        <Button size="lg" onClick={handleNewSession} className="min-w-[200px]">
           冒険を続ける
         </Button>
-        <Button
-          size="lg"
-          variant="outline"
-          onClick={handleReturnToDashboard}
-        >
+        <Button size="lg" variant="outline" onClick={handleReturnToDashboard}>
           ダッシュボードへ
         </Button>
       </div>

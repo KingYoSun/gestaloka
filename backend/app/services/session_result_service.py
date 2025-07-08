@@ -5,7 +5,7 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ from app.models.character import Character, CharacterStats, GameSession
 from app.models.game_message import GameMessage
 from app.models.session_result import SessionResult
 from app.schemas.character import Character as CharacterSchema
+from app.schemas.character import CharacterStats as CharacterStatsSchema
 from app.services.ai.agents.historian import HistorianAgent
 from app.services.ai.agents.npc_manager import NPCManagerAgent
 from app.services.ai.agents.state_manager import StateManagerAgent
@@ -104,29 +105,23 @@ class SessionResultService:
     async def _get_session_with_messages(self, session_id: str) -> Optional[GameSession]:
         """セッション情報を取得"""
         result = await self.db.execute(
-            select(GameSession)
-            .where(GameSession.id == session_id)
-            .options(selectinload(GameSession.messages))
+            select(GameSession).where(GameSession.id == session_id).options(selectinload(GameSession.messages))  # type: ignore
         )
         return result.scalar_one_or_none()
 
     async def _get_character_with_stats(self, character_id: str) -> Optional[Character]:
         """キャラクター情報を取得"""
         result = await self.db.execute(
-            select(Character)
-            .where(Character.id == character_id)
-            .options(selectinload(Character.stats))
+            select(Character).where(Character.id == character_id).options(selectinload(Character.stats))  # type: ignore
         )
         return result.scalar_one_or_none()
 
     async def _get_session_messages(self, session_id: str) -> list[GameMessage]:
         """セッションのメッセージ履歴を取得"""
         result = await self.db.execute(
-            select(GameMessage)
-            .where(GameMessage.session_id == session_id)
-            .order_by(GameMessage.turn_number)
+            select(GameMessage).where(GameMessage.session_id == session_id).order_by(GameMessage.turn_number)  # type: ignore
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     def _build_prompt_context(
         self, session: GameSession, character: Character, messages: list[GameMessage]
@@ -135,33 +130,29 @@ class SessionResultService:
         # CharacterStatsから統計情報を取得
         stats = character.stats if character.stats else CharacterStats(character_id=character.id)
 
+        # CharacterStatsスキーマを構築
+        stats_schema = CharacterStatsSchema(
+            id=stats.id if stats.id else "",
+            character_id=stats.character_id,
+            level=stats.level,
+            experience=stats.experience,
+            health=stats.health,
+            max_health=stats.max_health,
+            mp=stats.mp,
+            max_mp=stats.max_mp,
+        )
+
         # CharacterSchemaスキーマを構築
         character_schema = CharacterSchema(
             id=character.id,
             user_id=character.user_id,
             name=character.name,
-            origin=character.origin,
+            description=character.description,
             appearance=character.appearance,
             personality=character.personality,
-            stats={
-                "hp": stats.hp,
-                "mp": stats.mp,
-                "strength": stats.strength,
-                "intelligence": stats.intelligence,
-                "agility": stats.agility,
-                "defense": stats.defense,
-                "wisdom": stats.wisdom,
-                "magic_power": stats.magic_power,
-                "charisma": stats.charisma,
-                "luck": stats.luck,
-            },
-            skills={},  # TODO: スキル情報の追加
-            level=character.level,
-            experience=character.experience,
-            game_money=character.game_money,
-            premium_currency=character.premium_currency,
-            creation_finished=character.creation_finished,
-            current_location=character.current_location,
+            location=character.location,
+            stats=stats_schema,
+            skills=[],  # TODO: スキル情報の追加
             is_active=character.is_active,
             created_at=character.created_at,
             updated_at=character.updated_at,
@@ -176,10 +167,25 @@ class SessionResultService:
                 history.append(f"GM: {msg.content}")
 
         return PromptContext(
-            character=character_schema,
-            current_session=session.session_data or {},
-            conversation_history=history,
-            location=character.current_location,
+            character_name=character_schema.name,
+            character_id=character_schema.id,
+            character_stats={
+                "level": stats.level,
+                "experience": stats.experience,
+                "health": stats.health,
+                "max_health": stats.max_health,
+                "mp": stats.mp,
+                "max_mp": stats.max_mp,
+                "attack": stats.attack,
+                "defense": stats.defense,
+                "agility": stats.agility,
+            },
+            location=character.location,
+            recent_actions=history,
+            session_id=session.id,
+            additional_context={
+                "play_duration_minutes": session.play_duration_minutes,
+            },
         )
 
     async def _generate_story_summary(
@@ -206,11 +212,9 @@ class SessionResultService:
 
         return experience, skill_improvements
 
-    async def _update_knowledge_graph(
-        self, context: PromptContext, messages: list[GameMessage]
-    ) -> dict:
+    async def _update_knowledge_graph(self, context: PromptContext, messages: list[GameMessage]) -> dict:
         """知識グラフを更新"""
-        updates = {}
+        updates: dict[str, Any] = {}
 
         # NPC管理AIによるNPC関係性の抽出
         npc_updates = await self.npc_manager.update_npc_relationships(context, messages)
@@ -226,7 +230,8 @@ class SessionResultService:
             updates["neo4j_error"] = str(e)
 
         # TODO: 世界の意識AIによる世界状態の更新（WorldConsciousnessAI実装後）
-        updates["world_state"] = {}
+        world_state: dict[str, Any] = {}
+        updates["world_state"] = world_state
 
         return updates
 
@@ -241,12 +246,12 @@ class SessionResultService:
         """Neo4jに関係性を書き込む（同期版）"""
 
         # プレイヤーノードを取得または作成
-        player_node = Player.nodes.get_or_none(user_id=context.character.user_id)
+        player_node = Player.nodes.get_or_none(user_id=context.character_id)
         if not player_node:
             player_node = Player(
-                user_id=context.character.user_id,
-                character_name=context.character.name,
-                current_session_id=str(context.character.id),  # セッション固有のキャラクターID
+                user_id=context.character_id,
+                character_name=context.character_name,
+                current_session_id=str(context.character_id),  # セッション固有のキャラクターID
             ).save()
 
         # NPC遭遇情報を処理
@@ -295,11 +300,11 @@ class SessionResultService:
                     player_node.interactions.connect(
                         npc_node,
                         {
-                            'interaction_type': interaction_type,
-                            'emotional_impact': emotional_impact,
-                            'last_interaction': datetime.utcnow(),
-                            'interaction_count': 1,
-                        }
+                            "interaction_type": interaction_type,
+                            "emotional_impact": emotional_impact,
+                            "last_interaction": datetime.utcnow(),
+                            "interaction_count": 1,
+                        },
                     )
                 else:
                     # 既存の関係を更新
@@ -324,7 +329,9 @@ class SessionResultService:
             player_node.current_location.disconnect_all()
             player_node.current_location.connect(location_node)
 
-        logger.info(f"Neo4j更新完了: player={context.character.name}, npcs_met={len(npc_updates.get('npcs_met', []))}, relationships={len(npc_updates.get('relationships', []))}")
+        logger.info(
+            f"Neo4j更新完了: player={context.character_name}, npcs_met={len(npc_updates.get('npcs_met', []))}, relationships={len(npc_updates.get('relationships', []))}"
+        )
 
     async def _generate_continuation(
         self, context: PromptContext, messages: list[GameMessage]
@@ -345,13 +352,13 @@ class SessionResultService:
         # 同期的なDBアクセスのため、別スレッドで実行
         from sqlmodel import Session as SyncSession
 
-        from app.core.database import get_db
+        from app.core.database import get_session
 
         progress_info = {}
 
         # 同期セッションを使用してストーリーアーク処理を実行
-        def _update_arc_sync():
-            db_gen = get_db()
+        def _update_arc_sync() -> dict[str, Any]:
+            db_gen = get_session()
             db: SyncSession = next(db_gen)
             try:
                 arc_service = StoryArcService(db)
@@ -359,11 +366,9 @@ class SessionResultService:
 
                 if active_arc:
                     # キャラクターアクションを抽出
-                    character_actions = [
-                        msg.content
-                        for msg in messages
-                        if msg.message_type == "PLAYER_ACTION"
-                    ][:10]  # 最新10個まで
+                    character_actions = [msg.content for msg in messages if msg.message_type == "PLAYER_ACTION"][
+                        :10
+                    ]  # 最新10個まで
 
                     # アーク情報を辞書形式に変換
                     arc_dict = {
@@ -377,9 +382,7 @@ class SessionResultService:
                     # CoordinatorAIで評価
                     loop = asyncio.new_event_loop()
                     evaluation = loop.run_until_complete(
-                        self.coordinator.evaluate_story_arc_progress(
-                            messages, arc_dict, character_actions
-                        )
+                        self.coordinator.evaluate_story_arc_progress(messages, arc_dict, character_actions)
                     )
 
                     # 進行状況を更新

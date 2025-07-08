@@ -608,9 +608,7 @@ class CoordinatorAI:
         recent_times = times[-10:]
         return sum(recent_times) / len(recent_times)
 
-    async def generate_continuation_context(
-        self, context: "PromptContext", messages: list["GameMessage"]
-    ) -> str:
+    async def generate_continuation_context(self, context: "PromptContext", messages: list["GameMessage"]) -> str:
         """
         次セッションへの継続コンテキストを生成
 
@@ -635,7 +633,7 @@ class CoordinatorAI:
 以下のセッションの終了時点での状況を踏まえ、次回セッション開始時の導入文を作成してください。
 
 【キャラクター情報】
-- 名前: {context.character.name}
+- 名前: {context.character_name}
 - 場所: {context.location}
 
 【現在の状況】
@@ -647,19 +645,18 @@ class CoordinatorAI:
 - 次の行動への期待感を持たせる
 - 100文字程度で簡潔に"""
 
-        from langchain_core.messages import HumanMessage
+        from langchain_core.messages import BaseMessage, HumanMessage
 
-        messages = [HumanMessage(content=prompt)]
-        response = await self.gemini.generate(messages)
+        llm_messages: list[BaseMessage] = [HumanMessage(content=prompt)]
+        response = await self.gemini.generate(llm_messages)
 
-        return response.content.strip()
+        if isinstance(response.content, str):
+            return response.content.strip()
+        else:
+            return str(response.content).strip()
 
     async def generate_continuation_narrative(
-        self,
-        character: Any,
-        story_summary: str,
-        continuation_context: str,
-        unresolved_plots: list[str]
+        self, character: Any, story_summary: str, continuation_context: str, unresolved_plots: list[str]
     ) -> str:
         """
         前回セッションから継続するナラティブを生成
@@ -700,16 +697,17 @@ class CoordinatorAI:
 
 プレイヤーを物語に引き込む魅力的な導入を作成してください。"""
 
-        from langchain_core.messages import HumanMessage
+        from langchain_core.messages import BaseMessage, HumanMessage
 
-        messages = [HumanMessage(content=prompt)]
-        response = await self.gemini.generate(messages)
+        llm_messages: list[BaseMessage] = [HumanMessage(content=prompt)]
+        response = await self.gemini.generate(llm_messages)
 
-        return response.content.strip()
+        if isinstance(response.content, str):
+            return response.content.strip()
+        else:
+            return str(response.content).strip()
 
-    async def extract_unresolved_plots(
-        self, context: "PromptContext", messages: list["GameMessage"]
-    ) -> list[str]:
+    async def extract_unresolved_plots(self, context: "PromptContext", messages: list["GameMessage"]) -> list[str]:
         """
         未解決のプロットを抽出
 

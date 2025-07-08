@@ -292,7 +292,7 @@ export function useGameWebSocket(gameSessionId?: string) {
       toast.success('リザルトの準備が完了しました！', {
         description: 'リザルト画面へ移動します...',
       })
-      
+
       // リザルト画面へ遷移
       setTimeout(() => {
         window.location.href = `/game/${data.data.sessionId}/result`
@@ -329,7 +329,10 @@ export function useGameWebSocket(gameSessionId?: string) {
       websocketManager.off('game:battle_update', handleBattleUpdate)
       websocketManager.off('game:npc_encounter', handleNPCEncounter)
       websocketManager.off('game:npc_action_result', handleNPCActionResult)
-      websocketManager.off('session:ending_proposal', handleSessionEndingProposal)
+      websocketManager.off(
+        'session:ending_proposal',
+        handleSessionEndingProposal
+      )
       websocketManager.off('session:result_ready', handleSessionResultReady)
     }
   }, [gameSessionId, user?.id])

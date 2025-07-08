@@ -1455,24 +1455,26 @@ class GameSessionService:
                     character=character,
                     story_summary=session_result.story_summary or "",
                     continuation_context=session_result.continuation_context,
-                    unresolved_plots=session_result.unresolved_plots or []
+                    unresolved_plots=session_result.unresolved_plots or [],
                 )
             except Exception as e:
                 logger.error(f"Failed to generate continuation narrative: {e}")
                 # フォールバックナラティブ
-                narrative = f"前回の冒険から時間が経ち、あなたは再び動き出す準備ができた。{session_result.continuation_context}"
+                narrative = (
+                    f"前回の冒険から時間が経ち、あなたは再び動き出す準備ができた。{session_result.continuation_context}"
+                )
         else:
             # 継続コンテキストがない場合のデフォルトナラティブ
             narrative = "新たな冒険の幕開けです。あなたの前には無限の可能性が広がっています。"
 
         self.save_message(
-                session_id=new_session.id,
-                message_type=MESSAGE_TYPE_GM_NARRATIVE,
-                sender_type=SENDER_TYPE_GM,
-                content=narrative,
-                turn_number=1,
-                metadata={"is_continuation": True},
-            )
+            session_id=new_session.id,
+            message_type=MESSAGE_TYPE_GM_NARRATIVE,
+            sender_type=SENDER_TYPE_GM,
+            content=narrative,
+            turn_number=1,
+            metadata={"is_continuation": True},
+        )
 
         self.db.commit()
 
@@ -1615,6 +1617,7 @@ class GameSessionService:
 
         # Celeryタスクでリザルト処理を開始
         from app.tasks.session_result_tasks import process_session_result
+
         process_session_result.delay(session_id)
 
         logger.info("Session ending accepted", session_id=session_id, character_id=character.id, result_id=result_id)

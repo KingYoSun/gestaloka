@@ -62,7 +62,7 @@ class PromptManager:
     コンテキストに基づいた動的なプロンプト生成を行います。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """プロンプトマネージャーの初期化"""
         self.logger = logger.bind(service="prompt_manager")
         self.templates: dict[AIAgentRole, PromptTemplate] = {}

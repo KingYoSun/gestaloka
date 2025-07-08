@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 class StoryArcStatus(str, Enum):
     """ストーリーアークの状態"""
+
     ACTIVE = "active"  # 進行中
     COMPLETED = "completed"  # 完了
     ABANDONED = "abandoned"  # 放棄
@@ -25,6 +26,7 @@ class StoryArcStatus(str, Enum):
 
 class StoryArcType(str, Enum):
     """ストーリーアークのタイプ"""
+
     MAIN_QUEST = "main_quest"  # メインクエスト
     SIDE_QUEST = "side_quest"  # サイドクエスト
     CHARACTER_ARC = "character_arc"  # キャラクターアーク

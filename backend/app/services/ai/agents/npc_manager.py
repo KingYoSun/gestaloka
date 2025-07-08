@@ -813,9 +813,7 @@ class NPCManagerAgent(BaseAgent):
             choices=choices,
         )
 
-    async def update_npc_relationships(
-        self, context: PromptContext, messages: list["GameMessage"]
-    ) -> dict:
+    async def update_npc_relationships(self, context: PromptContext, messages: list["GameMessage"]) -> dict:
         """
         セッションからNPC関係性の更新情報を生成
 
@@ -827,7 +825,7 @@ class NPCManagerAgent(BaseAgent):
             dict: Neo4jに反映する更新情報
         """
 
-        updates = {
+        updates: dict[str, Any] = {
             "relationships": [],
             "npcs_met": [],
             "locations_visited": [],
@@ -841,11 +839,13 @@ class NPCManagerAgent(BaseAgent):
                     # 会話があった場合
                     npc_name = msg.content.split("「")[0].strip()
                     if npc_name and len(npc_name) < 20:  # 妥当な長さのNPC名
-                        updates["npcs_met"].append({
-                            "name": npc_name,
-                            "location": context.location,
-                            "interaction_type": "dialogue",
-                        })
+                        updates["npcs_met"].append(
+                            {
+                                "name": npc_name,
+                                "location": context.location,
+                                "interaction_type": "dialogue",
+                            }
+                        )
 
                 # 関係性の変化を検出
                 relationship_keywords = {
@@ -858,10 +858,12 @@ class NPCManagerAgent(BaseAgent):
 
                 for keyword, relation_type in relationship_keywords.items():
                     if keyword in msg.content:
-                        updates["relationships"].append({
-                            "type": relation_type,
-                            "context": msg.content[:100],
-                        })
+                        updates["relationships"].append(
+                            {
+                                "type": relation_type,
+                                "context": msg.content[:100],
+                            }
+                        )
 
         # 重複を削除
         unique_npcs = []
