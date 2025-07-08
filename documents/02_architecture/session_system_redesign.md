@@ -392,10 +392,11 @@ Response: GameSession
 6. セッション履歴一覧API ✅ 完了（2025-07-08）
 7. 次セッション開始API ✅ 完了（2025-07-08）
 
-### フェーズ2: 終了判定
-1. GM AIの終了判定ロジック実装
-2. 終了提案UI実装
-3. セッション終了フロー
+### フェーズ2: 終了判定 ✅ 完了（2025-07-08）
+1. GM AIの終了判定ロジック実装 ✅ 完了（2025-07-08）
+2. 終了提案APIエンドポイント実装 ✅ 完了（2025-07-08）
+3. セッション終了承認/拒否API実装 ✅ 完了（2025-07-08）
+4. リザルト取得API実装 ✅ 完了（2025-07-08）
 
 ### フェーズ3: リザルト処理
 1. SessionResultモデル実装
@@ -410,6 +411,44 @@ Response: GameSession
 ## 10. 実装詳細
 
 ### 10.1 実装済みコンポーネント（2025-07-08）
+
+#### フェーズ2実装詳細（2025-07-08）
+
+##### DramatistAgent拡張
+- `evaluate_session_ending`メソッドの実装
+  - 終了判定ロジック（ストーリー的/システム的/プレイヤー状態）
+  - 強制終了条件のチェック（3回目提案、100ターン、3時間、50000文字）
+  - 終了提案内容の生成（要約、報酬、次回への引き）
+
+##### GameSessionService拡張
+- `get_ending_proposal`: 終了提案の取得
+  - セッション統計の収集（turn_count、play_duration_minutes、word_count）
+  - PromptContext構築（CharacterStats統合）
+  - DramatistAgentへの判定依頼
+- `accept_ending`: 終了承認
+  - セッション状態をCOMPLETEDに更新
+  - リザルトID生成（非同期処理用）
+  - システムメッセージ保存
+- `reject_ending`: 終了拒否
+  - 提案回数のインクリメント
+  - 次回拒否可能性の判定
+  - 継続メッセージの生成
+- `get_session_result`: リザルト取得
+  - SessionResultからの結果取得
+  - JSON形式フィールドの適切な処理
+
+##### スキーマ定義
+- `SessionEndingProposal`: 終了提案情報
+- `SessionEndingAcceptResponse`: 承認レスポンス
+- `SessionEndingRejectResponse`: 拒否レスポンス
+- `SessionResultResponse`: リザルト情報（既存）
+
+##### 技術的修正
+- Character.hp等の属性をCharacterStatsから取得するよう修正
+- PromptContextのlocationパラメータを必須に対応
+- SessionResultのJSON型フィールドの適切な処理（json.loads不要）
+
+### 10.1 既存実装コンポーネント（2025-07-08）
 
 #### GameMessageモデル
 - メッセージタイプの文字列定数として実装（ENUM回避）

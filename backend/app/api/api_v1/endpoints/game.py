@@ -22,6 +22,10 @@ from app.schemas.game_session import (
     SessionContinueRequest,
     GameSessionUpdate,
     SessionHistoryResponse,
+    SessionEndingProposal,
+    SessionEndingAcceptResponse,
+    SessionEndingRejectResponse,
+    SessionResultResponse,
 )
 from app.schemas.user import User
 from app.services.game_session import GameSessionService
@@ -163,3 +167,76 @@ async def execute_action(
     session = await get_character_session(session_id, db, current_user)
     service = GameSessionService(db)
     return await service.execute_action(session, action_request)
+
+
+@router.get("/sessions/{session_id}/ending-proposal", response_model=Optional[SessionEndingProposal])
+async def get_ending_proposal(
+    session_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> Optional[SessionEndingProposal]:
+    """セッション終了提案を取得"""
+    # セッションのアクセス権確認
+    session = await get_character_session(session_id, db, current_user)
+
+    # キャラクター取得
+    character = await get_user_character(session.character_id, db, current_user)
+
+    service = GameSessionService(db)
+    return await service.get_ending_proposal(session_id, character)
+
+
+@router.post("/sessions/{session_id}/accept-ending", response_model=SessionEndingAcceptResponse)
+async def accept_ending(
+    session_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> SessionEndingAcceptResponse:
+    """セッション終了を承認"""
+    # セッションのアクセス権確認
+    session = await get_character_session(session_id, db, current_user)
+
+    # キャラクター取得
+    character = await get_user_character(session.character_id, db, current_user)
+
+    service = GameSessionService(db)
+    return await service.accept_ending(session_id, character)
+
+
+@router.post("/sessions/{session_id}/reject-ending", response_model=SessionEndingRejectResponse)
+async def reject_ending(
+    session_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> SessionEndingRejectResponse:
+    """セッション終了を拒否（継続）"""
+    # セッションのアクセス権確認
+    session = await get_character_session(session_id, db, current_user)
+
+    # キャラクター取得
+    character = await get_user_character(session.character_id, db, current_user)
+
+    service = GameSessionService(db)
+    return await service.reject_ending(session_id, character)
+
+
+@router.get("/sessions/{session_id}/result", response_model=Optional[SessionResultResponse])
+async def get_session_result(
+    session_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> Optional[SessionResultResponse]:
+    """セッション結果を取得"""
+    # セッションのアクセス権確認
+    session = await get_character_session(session_id, db, current_user)
+
+    # キャラクター取得
+    character = await get_user_character(session.character_id, db, current_user)
+
+    service = GameSessionService(db)
+    result = await service.get_session_result(session_id, character)
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Session result not found or not processed yet")
+
+    return result

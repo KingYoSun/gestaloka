@@ -1,10 +1,32 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-08（10:15 JST）
+## 最終更新: 2025-07-08（14:58 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
 
-1. **セッションシステム再設計フェーズ1完了（2025-07-08）✅NEW！**
+1. **セッションシステム再設計フェーズ2完了（2025-07-08）✅NEW！**
+   - **実装内容**
+     - GM AIの終了判定ロジック実装（DramatistAgent.evaluate_session_ending）
+     - 終了提案関連の4つのAPIエンドポイント実装
+     - GameSessionServiceに終了管理メソッド4つを追加
+     - 終了提案スキーマ3種の定義
+   - **技術的実装**
+     - ストーリー的区切り・システム的区切り・プレイヤー状態での判定
+     - 3回目の提案は強制終了（proposal_count管理）
+     - CharacterStatsからのHP/MP取得実装
+     - PromptContextへのlocationパラメータ追加
+   - **APIエンドポイント**
+     - GET /api/v1/game/sessions/{session_id}/ending-proposal
+     - POST /api/v1/game/sessions/{session_id}/accept-ending
+     - POST /api/v1/game/sessions/{session_id}/reject-ending
+     - GET /api/v1/game/sessions/{session_id}/result
+   - **成果**
+     - フェーズ2の全項目が完了（4/4）
+     - 全237テスト中236件成功（99.6%）、型・リントエラー0件
+     - 既存テスト1件のみ失敗（dispatch_ai_simulation）
+   - **詳細レポート**: `progressReports/20250708_session_system_phase2_complete.md`
+
+1. **セッションシステム再設計フェーズ1完了（2025-07-08）✅**
    - **実装内容**
      - SessionResultモデルの作成と統合
      - POST /api/v1/game/sessions/continue エンドポイントの実装

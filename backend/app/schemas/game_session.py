@@ -143,3 +143,48 @@ class SessionContinueRequest(BaseModel):
 
     character_id: str = Field(description="キャラクターID")
     previous_session_id: str = Field(description="前回のセッションID")
+
+
+class SessionEndingProposal(BaseModel):
+    """セッション終了提案"""
+
+    reason: str = Field(description="終了を提案する理由")
+    summary_preview: str = Field(description="これまでの冒険の簡単なまとめ")
+    continuation_hint: str = Field(description="次回への引き")
+    rewards_preview: dict[str, Any] = Field(description="獲得予定の報酬")
+    proposal_count: int = Field(ge=1, le=3, description="提案回数（1-3）")
+    is_mandatory: bool = Field(description="強制終了かどうか（3回目はTrue）")
+    can_continue: bool = Field(description="継続可能かどうか")
+
+
+class SessionEndingAcceptResponse(BaseModel):
+    """セッション終了承認レスポンス"""
+
+    result_id: str = Field(description="セッション結果ID")
+    processing_status: str = Field(description="処理状態（processing/completed）")
+
+
+class SessionEndingRejectResponse(BaseModel):
+    """セッション終了拒否レスポンス"""
+
+    proposal_count: int = Field(ge=1, le=3, description="現在の提案回数")
+    can_reject_next: bool = Field(description="次回も拒否可能か")
+    message: str = Field(description="ユーザーへのメッセージ")
+
+
+class SessionResultResponse(BaseModel):
+    """セッション結果レスポンス"""
+
+    id: str
+    session_id: str
+    story_summary: str = Field(description="GM AIが生成する物語の要約")
+    key_events: list[str] = Field(description="重要イベントのリスト")
+    experience_gained: int = Field(description="獲得経験値")
+    skills_improved: dict[str, int] = Field(description="向上したスキル（スキル名: 上昇値）")
+    items_acquired: list[str] = Field(description="獲得アイテム")
+    continuation_context: str = Field(description="次セッションへ渡すコンテキスト")
+    unresolved_plots: list[str] = Field(description="未解決のプロット")
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

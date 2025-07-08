@@ -4,12 +4,12 @@
 
 import json
 import re
-from typing import Any
+from typing import Any, Optional
 
 import structlog
 
 from app.core.exceptions import AIServiceError
-from app.schemas.game_session import ActionChoice
+from app.schemas.game_session import ActionChoice, SessionEndingProposal
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 
@@ -265,3 +265,192 @@ class DramatistAgent(BaseAgent):
             ActionChoice(id="choice_2", text="先に進む", difficulty="medium"),
             ActionChoice(id="choice_3", text="別の道を探す", difficulty="medium"),
         ]
+
+    async def evaluate_session_ending(
+        self, context: PromptContext, session_stats: dict[str, Any], proposal_count: int = 0
+    ) -> Optional[SessionEndingProposal]:
+        """
+        セッション終了の判定と提案を生成
+
+        Args:
+            context: プロンプトコンテキスト
+            session_stats: セッション統計（turn_count, play_duration_minutes, word_count）
+            proposal_count: 現在の提案回数（0-2）
+
+        Returns:
+            終了提案（終了すべきでない場合はNone）
+        """
+        try:
+            # 終了判定用の追加コンテキスト
+            ending_context = {
+                "turn_count": session_stats.get("turn_count", 0),
+                "play_duration_minutes": session_stats.get("play_duration_minutes", 0),
+                "word_count": session_stats.get("word_count", 0),
+                "proposal_count": proposal_count,
+                "recent_events": context.world_state.get("recent_events", []),
+                "character_hp_ratio": context.character_stats.get("hp", 100)
+                / context.character_stats.get("max_hp", 100),
+                "character_mp_ratio": context.character_stats.get("mp", 100)
+                / context.character_stats.get("max_mp", 100),
+                "sp_remaining": context.character_stats.get("sp", 0),
+            }
+
+            # 強制終了条件のチェック
+            is_mandatory = self._check_mandatory_ending(ending_context, proposal_count)
+
+            # 終了提案が必要かチェック
+            should_propose, reason = self._should_propose_ending(ending_context)
+
+            if not should_propose and not is_mandatory:
+                return None
+
+            # 終了提案用のプロンプト生成
+            enhanced_context = self._create_ending_evaluation_context(context, ending_context, reason)
+
+            # AIに終了提案を生成させる
+            prompt = self._build_ending_proposal_prompt(enhanced_context)
+            response = await self.generate_response(
+                enhanced_context, temperature=0.7, max_tokens=800, custom_prompt=prompt
+            )
+
+            # レスポンスを解析して提案を構築
+            proposal = self._parse_ending_proposal(response, proposal_count, is_mandatory, reason)
+
+            return proposal
+
+        except Exception as e:
+            self.logger.error("Failed to evaluate session ending", error=str(e), character=context.character_name)
+            # エラー時はNoneを返して終了提案しない
+            return None
+
+    def _check_mandatory_ending(self, ending_context: dict[str, Any], proposal_count: int) -> bool:
+        """
+        強制終了条件をチェック
+
+        Args:
+            ending_context: 終了判定用コンテキスト
+            proposal_count: 現在の提案回数
+
+        Returns:
+            強制終了が必要かどうか
+        """
+        # 3回目の提案は必ず強制終了
+        if proposal_count >= 2:
+            return True
+
+        # システム的な限界値
+        if ending_context["turn_count"] >= 100:
+            return True
+        if ending_context["play_duration_minutes"] >= 180:  # 3時間
+            return True
+        if ending_context["word_count"] >= 50000:
+            return True
+
+        return False
+
+    def _should_propose_ending(self, ending_context: dict[str, Any]) -> tuple[bool, str]:
+        """
+        終了提案をすべきか判定
+
+        Args:
+            ending_context: 終了判定用コンテキスト
+
+        Returns:
+            (提案すべきか, 理由)のタプル
+        """
+        # ストーリー的区切りの判定
+        recent_events = ending_context.get("recent_events", [])
+        for event in recent_events:
+            if any(keyword in event for keyword in ["クエスト完了", "ボス撃破", "章の終わり", "重要な選択"]):
+                return True, "物語が大きな区切りを迎えました"
+
+        # システム的区切り
+        if ending_context["turn_count"] >= 50:
+            return True, "冒険が長時間に及んでいます"
+        if ending_context["play_duration_minutes"] >= 120:  # 2時間
+            return True, "プレイ時間が2時間を超えました"
+
+        # プレイヤー状態
+        if ending_context["character_hp_ratio"] < 0.2:
+            return True, "キャラクターが危険な状態です"
+        if ending_context["sp_remaining"] <= 0:
+            return True, "SPが不足しています"
+
+        return False, ""
+
+    def _create_ending_evaluation_context(
+        self, context: PromptContext, ending_context: dict[str, Any], reason: str
+    ) -> PromptContext:
+        """
+        終了評価用のコンテキストを作成
+        """
+        # 既存のコンテキストをコピー
+        enhanced_context = context
+        enhanced_context.additional_context.update(
+            {
+                "ending_evaluation": True,
+                "ending_reason": reason,
+                "session_stats": ending_context,
+            }
+        )
+        return enhanced_context
+
+    def _build_ending_proposal_prompt(self, context: PromptContext) -> str:
+        """
+        終了提案生成用のプロンプトを構築
+        """
+        return f"""
+現在のセッションは区切りの良いところまで来ています。
+理由: {context.additional_context.get('ending_reason', '')}
+
+これまでの冒険を簡潔にまとめ、次回への引きを作成してください。
+
+以下の形式で回答してください：
+
+【これまでの冒険】
+（2-3文で今回のセッションの要点をまとめる）
+
+【獲得予定の報酬】
+- 経験値: （適切な値）
+- アイテム: （獲得したアイテムがあれば）
+- その他: （重要な成果があれば）
+
+【次回への引き】
+（1-2文で次回のセッションへの期待を高める文章）
+"""
+
+    def _parse_ending_proposal(
+        self, response: str, proposal_count: int, is_mandatory: bool, reason: str
+    ) -> SessionEndingProposal:
+        """
+        AIレスポンスから終了提案を解析
+        """
+        # デフォルト値
+        summary_preview = "今回の冒険はここまでとなります。"
+        continuation_hint = "次回の冒険でお会いしましょう。"
+        rewards_preview = {"experience": 100, "skills": {}, "items": []}
+
+        # レスポンスを解析
+        sections = response.split("【")
+        for section in sections:
+            if section.startswith("これまでの冒険】"):
+                summary_preview = section.split("】", 1)[1].strip()
+            elif section.startswith("獲得予定の報酬】"):
+                rewards_text = section.split("】", 1)[1].strip()
+                # 簡易的な報酬解析
+                if "経験値:" in rewards_text:
+                    exp_match = re.search(r"経験値:\s*(\d+)", rewards_text)
+                    if exp_match:
+                        rewards_preview["experience"] = int(exp_match.group(1))
+            elif section.startswith("次回への引き】"):
+                continuation_hint = section.split("】", 1)[1].strip()
+
+        return SessionEndingProposal(
+            reason=reason,
+            summary_preview=summary_preview,
+            continuation_hint=continuation_hint,
+            rewards_preview=rewards_preview,
+            proposal_count=proposal_count + 1,
+            is_mandatory=is_mandatory,
+            can_continue=not is_mandatory,
+        )

@@ -39,6 +39,10 @@ from app.schemas.game_session import (
     GameSessionListResponse,
     GameSessionResponse,
     GameSessionUpdate,
+    SessionEndingProposal,
+    SessionEndingAcceptResponse,
+    SessionEndingRejectResponse,
+    SessionResultResponse,
 )
 from app.services.ai.agents import (
     AnomalyAgent,
@@ -1425,3 +1429,242 @@ class GameSessionService:
         )
 
         return self.get_session_response(new_session)
+
+    async def get_ending_proposal(self, session_id: str, character: Character) -> Optional[SessionEndingProposal]:
+        """
+        セッション終了提案を取得
+
+        Args:
+            session_id: セッションID
+            character: キャラクター
+
+        Returns:
+            終了提案（提案がない場合はNone）
+        """
+        # セッション取得
+        session = self.db.get(GameSession, session_id)
+        if not session or session.character_id != character.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+        if not session.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session is not active")
+
+        # セッション統計を収集
+        session_stats = {
+            "turn_count": session.turn_count,
+            "play_duration_minutes": int((datetime.utcnow() - session.created_at).total_seconds() / 60),
+            "word_count": session.word_count,
+        }
+
+        # プロンプトコンテキストを構築
+        from app.services.ai.prompt_manager import PromptContext
+
+        # 最近のメッセージを取得
+        recent_messages = self.db.exec(
+            select(GameMessage)
+            .where(GameMessage.session_id == session_id)
+            .order_by(desc(GameMessage.turn_number))
+            .limit(10)
+        ).all()
+
+        recent_actions = []
+        for msg in reversed(recent_messages):
+            if msg.message_type == MESSAGE_TYPE_PLAYER_ACTION:
+                recent_actions.append(msg.content)
+
+        # キャラクターステータス
+        # CharacterからCharacterStatsを取得
+        if character.stats:
+            character_stats = {
+                "hp": character.stats.health,
+                "max_hp": character.stats.max_health,
+                "mp": character.stats.mp,
+                "max_mp": character.stats.max_mp,
+                "sp": 100,  # SPはCharacterStatsに含まれていないのでデフォルト値
+                "level": character.stats.level,
+            }
+        else:
+            # statsがない場合のデフォルト値
+            character_stats = {
+                "hp": 100,
+                "max_hp": 100,
+                "mp": 100,
+                "max_mp": 100,
+                "sp": 100,
+                "level": 1,
+            }
+
+        # セッションデータから世界の状態を取得
+        session_data = json.loads(session.session_data) if session.session_data else {}
+        world_state = session_data.get("world_state", {})
+
+        context = PromptContext(
+            character_name=character.name,
+            character_stats=character_stats,
+            location=character.location,
+            recent_actions=recent_actions,
+            world_state=world_state,
+            additional_context={},
+        )
+
+        # 脚本家AIに終了判定を依頼
+        proposal = await self.dramatist_agent.evaluate_session_ending(
+            context=context, session_stats=session_stats, proposal_count=session.ending_proposal_count
+        )
+
+        return proposal
+
+    async def accept_ending(self, session_id: str, character: Character) -> SessionEndingAcceptResponse:
+        """
+        セッション終了を承認
+
+        Args:
+            session_id: セッションID
+            character: キャラクター
+
+        Returns:
+            終了承認レスポンス
+        """
+        # セッション取得
+        session = self.db.get(GameSession, session_id)
+        if not session or session.character_id != character.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+        if not session.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session is not active")
+
+        # セッションを終了状態に更新
+        session.is_active = False
+        session.session_status = SESSION_STATUS_COMPLETED
+        session.updated_at = datetime.utcnow()
+
+        # リザルトIDを生成（実際のリザルト処理は非同期で実行）
+        result_id = str(uuid.uuid4())
+
+        # セッション終了のシステムメッセージを保存
+        self.save_message(
+            session_id=session.id,
+            message_type=MESSAGE_TYPE_SYSTEM_EVENT,
+            sender_type=SENDER_TYPE_SYSTEM,
+            content=f"セッション #{session.session_number} が終了しました。",
+            turn_number=session.turn_count + 1,
+            metadata={
+                "event_type": "session_ended",
+                "result_id": result_id,
+                "ending_accepted": True,
+            },
+        )
+
+        self.db.commit()
+
+        # TODO: Celeryタスクでリザルト処理を開始
+        # from app.tasks.session_result import process_session_result
+        # process_session_result.delay(session_id, result_id)
+
+        logger.info("Session ending accepted", session_id=session_id, character_id=character.id, result_id=result_id)
+
+        return SessionEndingAcceptResponse(result_id=result_id, processing_status="processing")
+
+    async def reject_ending(self, session_id: str, character: Character) -> SessionEndingRejectResponse:
+        """
+        セッション終了を拒否
+
+        Args:
+            session_id: セッションID
+            character: キャラクター
+
+        Returns:
+            終了拒否レスポンス
+        """
+        # セッション取得
+        session = self.db.get(GameSession, session_id)
+        if not session or session.character_id != character.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+        if not session.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session is not active")
+
+        # 提案回数をインクリメント
+        session.ending_proposal_count += 1
+        session.last_proposal_at = datetime.utcnow()
+        session.updated_at = datetime.utcnow()
+
+        # 次回も拒否可能かチェック
+        can_reject_next = session.ending_proposal_count < 3
+
+        # 拒否のシステムメッセージを保存
+        self.save_message(
+            session_id=session.id,
+            message_type=MESSAGE_TYPE_SYSTEM_EVENT,
+            sender_type=SENDER_TYPE_SYSTEM,
+            content="セッション終了提案を拒否しました。冒険を続けます。",
+            turn_number=session.turn_count + 1,
+            metadata={
+                "event_type": "ending_rejected",
+                "proposal_count": session.ending_proposal_count,
+                "can_reject_next": can_reject_next,
+            },
+        )
+
+        self.db.commit()
+
+        # メッセージを構築
+        if can_reject_next:
+            message = "冒険を続けます。次回の区切りで再度終了を提案させていただきます。"
+        else:
+            message = "冒険を続けます。次回の区切りでは必ず終了となりますのでご了承ください。"
+
+        logger.info(
+            "Session ending rejected",
+            session_id=session_id,
+            character_id=character.id,
+            proposal_count=session.ending_proposal_count,
+        )
+
+        return SessionEndingRejectResponse(
+            proposal_count=session.ending_proposal_count, can_reject_next=can_reject_next, message=message
+        )
+
+    async def get_session_result(self, session_id: str, character: Character) -> Optional[SessionResultResponse]:
+        """
+        セッション結果を取得
+
+        Args:
+            session_id: セッションID
+            character: キャラクター
+
+        Returns:
+            セッション結果（まだ処理されていない場合はNone）
+        """
+        # セッション取得
+        session = self.db.get(GameSession, session_id)
+        if not session or session.character_id != character.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+        # 結果が処理されているかチェック
+        if session.session_status != SESSION_STATUS_COMPLETED:
+            return None
+
+        # SessionResultを取得
+        from app.models.game.session_result import SessionResult
+
+        stmt = select(SessionResult).where(SessionResult.session_id == session_id)
+        result = self.db.exec(stmt).first()
+
+        if not result:
+            # リザルトがまだ生成されていない場合
+            return None
+
+        # レスポンスを構築
+        return SessionResultResponse(
+            id=result.id,
+            session_id=result.session_id,
+            story_summary=result.story_summary,
+            key_events=result.key_events if result.key_events else [],
+            experience_gained=result.experience_gained,
+            skills_improved=result.skills_improved if result.skills_improved else {},
+            items_acquired=result.items_acquired if result.items_acquired else [],
+            continuation_context=result.continuation_context,
+            unresolved_plots=result.unresolved_plots if result.unresolved_plots else [],
+            created_at=result.created_at,
+        )
