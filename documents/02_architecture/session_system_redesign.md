@@ -398,10 +398,10 @@ Response: GameSession
 3. セッション終了承認/拒否API実装 ✅ 完了（2025-07-08）
 4. リザルト取得API実装 ✅ 完了（2025-07-08）
 
-### フェーズ3: リザルト処理 🚧 部分実装（2025-07-08）
+### フェーズ3: リザルト処理 ✅ 完了（2025-07-08）
 1. SessionResultモデル実装 ✅ 完了（フェーズ1で実装済み）
 2. リザルト生成Celeryタスク ✅ 完了（2025-07-08）
-3. リザルト画面UI 🔄 未実装
+3. リザルト画面UI ✅ 完了（2025-07-08）
 
 ### フェーズ4: 継続性
 1. セッション間の引き継ぎ実装
@@ -546,6 +546,54 @@ Response: GameSession
 - PromptContextとAIエージェントメソッドの整合性（型エラー38件）
 - CharacterモデルとCharacterStatsの属性アクセス
 - 一部のインポートパスとクラス名の不一致
+
+### 10.3 フロントエンドUI実装（2025-07-08）
+
+#### 型定義の追加
+- `SessionEndingProposal`: セッション終了提案情報
+- `SessionEndingAcceptResponse`: 終了承認レスポンス
+- `SessionEndingRejectResponse`: 終了拒否レスポンス  
+- `SessionResultResponse`: セッションリザルト情報
+
+#### APIクライアント拡張
+- `getSessionEndingProposal`: 終了提案取得
+- `acceptSessionEnding`: 終了承認
+- `rejectSessionEnding`: 終了拒否
+- `getSessionResult`: リザルト取得
+
+#### React Queryフック
+- `useSessionEndingProposal`: 終了提案の取得
+- `useAcceptSessionEnding`: 終了承認処理
+- `useRejectSessionEnding`: 終了拒否処理
+- `useSessionResult`: リザルト取得
+
+#### UIコンポーネント
+1. **SessionResult.tsx**
+   - リザルト表示画面のメインコンポーネント
+   - ストーリーサマリー、重要イベント、獲得報酬、次回への引き継ぎ情報を表示
+   - 「冒険を続ける」「ダッシュボードへ」のアクションボタン
+
+2. **SessionEndingDialog.tsx**
+   - セッション終了提案ダイアログ
+   - 終了理由、報酬プレビュー、次回への引きを表示
+   - 強制終了（3回目）の場合は拒否ボタンを非表示
+
+3. **補助コンポーネント**
+   - LoadingScreen.tsx: ローディング画面
+   - ErrorMessage.tsx: エラー表示
+
+#### ルーティング
+- `/game/$sessionId/result`: セッションリザルト画面のルート追加
+
+#### WebSocket統合
+- `session:ending_proposal`: 終了提案イベント（将来実装用）
+- `session:result_ready`: リザルト準備完了イベント
+- リザルト準備完了時の自動画面遷移
+
+#### 既存画面への統合
+- セッション画面（`$sessionId.tsx`）に終了提案機能を統合
+- 終了提案ダイアログの表示・制御
+- 承認時のリザルト画面への遷移
 
 ## 11. 技術的考慮事項
 

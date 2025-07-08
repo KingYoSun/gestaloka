@@ -11,6 +11,10 @@ import {
   GameActionRequest,
   GameActionResponse,
   SessionData,
+  SessionEndingProposal,
+  SessionEndingAcceptResponse,
+  SessionEndingRejectResponse,
+  SessionResultResponse,
 } from '@/types'
 
 // ゲームセッション一覧取得
@@ -141,5 +145,56 @@ export const useExecuteGameAction = () => {
         timestamp: new Date().toISOString(),
       })
     },
+  })
+}
+
+// セッション終了提案を取得
+export const useSessionEndingProposal = (sessionId: string | undefined) => {
+  return useQuery<SessionEndingProposal>({
+    queryKey: ['sessionEndingProposal', sessionId],
+    queryFn: () => apiClient.getSessionEndingProposal(sessionId!),
+    enabled: !!sessionId,
+    staleTime: 30 * 1000, // 30秒間キャッシュ
+  })
+}
+
+// セッション終了を承認
+export const useAcceptSessionEnding = () => {
+  const queryClient = useQueryClient()
+  const { clearActiveSession } = useGameSessionStore()
+
+  return useMutation<SessionEndingAcceptResponse, Error, string>({
+    mutationFn: (sessionId: string) => apiClient.acceptSessionEnding(sessionId),
+    onSuccess: (_response, sessionId) => {
+      // セッション情報を無効化
+      queryClient.invalidateQueries({ queryKey: ['gameSession', sessionId] })
+      queryClient.invalidateQueries({ queryKey: ['gameSessions'] })
+      
+      // アクティブセッションをクリア
+      clearActiveSession()
+    },
+  })
+}
+
+// セッション終了を拒否
+export const useRejectSessionEnding = () => {
+  const queryClient = useQueryClient()
+
+  return useMutation<SessionEndingRejectResponse, Error, string>({
+    mutationFn: (sessionId: string) => apiClient.rejectSessionEnding(sessionId),
+    onSuccess: (_response, sessionId) => {
+      // 終了提案を再取得
+      queryClient.invalidateQueries({ queryKey: ['sessionEndingProposal', sessionId] })
+    },
+  })
+}
+
+// セッションリザルトを取得
+export const useSessionResult = (sessionId: string | undefined) => {
+  return useQuery<SessionResultResponse>({
+    queryKey: ['sessionResult', sessionId],
+    queryFn: () => apiClient.getSessionResult(sessionId!),
+    enabled: !!sessionId,
+    staleTime: Infinity, // リザルトは不変なので永久キャッシュ
   })
 }

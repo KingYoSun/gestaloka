@@ -93,6 +93,43 @@ export interface GameActionResponse {
   characterStatus?: CharacterStatusUpdate
 }
 
+// セッション終了関連の型定義
+export interface SessionEndingProposal {
+  reason: string
+  summaryPreview: string
+  continuationHint: string
+  rewardsPreview: {
+    experience: number
+    skills: Record<string, number>
+    items: string[]
+  }
+  proposalCount: number
+  isMandatory: boolean
+}
+
+export interface SessionEndingAcceptResponse {
+  resultId: string
+  processingStatus: 'processing'
+}
+
+export interface SessionEndingRejectResponse {
+  proposalCount: number
+  canRejectNext: boolean
+}
+
+export interface SessionResultResponse {
+  id: string
+  sessionId: string
+  storySummary: string
+  keyEvents: string[]
+  experienceGained: number
+  skillsImproved: Record<string, number>
+  itemsAcquired: string[]
+  continuationContext: string
+  unresolvedPlots: string[]
+  createdAt: string
+}
+
 export interface GameMessageMetadata {
   newScene?: string
   choices?: string[]

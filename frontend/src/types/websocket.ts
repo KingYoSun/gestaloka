@@ -125,3 +125,27 @@ export interface NPCActionResultData {
   }>
   timestamp: string
 }
+
+export interface SessionEndingProposalData {
+  type: 'session:ending_proposal'
+  data: {
+    reason: string
+    summaryPreview: string
+    continuationHint: string
+    rewardsPreview: {
+      experience: number
+      skills: Record<string, number>
+      items: string[]
+    }
+    proposalCount: number
+    isMandatory: boolean
+  }
+}
+
+export interface SessionResultReadyData {
+  type: 'session:result_ready'
+  data: {
+    sessionId: string
+    resultId: string
+  }
+}

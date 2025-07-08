@@ -7,11 +7,15 @@ import {
   useGameSession,
   useExecuteGameAction,
   useEndGameSession,
+  useSessionEndingProposal,
+  useAcceptSessionEnding,
+  useRejectSessionEnding,
 } from '@/hooks/useGameSessions'
 import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { useGameWebSocket } from '@/hooks/useWebSocket'
 import { SPConsumeDialog } from '@/components/sp/SPConsumeDialog'
 import { SPTransactionType } from '@/types/sp'
+import { SessionEndingDialog } from '@/components/SessionEndingDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TextareaWithCounter } from '@/components/common'
@@ -52,10 +56,14 @@ function GameSessionPage() {
     isChoice: boolean
     choiceIndex?: number
   } | null>(null)
+  const [showEndingDialog, setShowEndingDialog] = useState(false)
 
   const { data: session, isLoading } = useGameSession(sessionId)
   const executeActionMutation = useExecuteGameAction()
   const endSessionMutation = useEndGameSession()
+  const { data: endingProposal } = useSessionEndingProposal(sessionId)
+  const acceptEndingMutation = useAcceptSessionEnding()
+  const rejectEndingMutation = useRejectSessionEnding()
 
   const {
     setActiveSession,
@@ -78,6 +86,13 @@ function GameSessionPage() {
       setActiveSession(session)
     }
   }, [session, setActiveSession])
+
+  // 終了提案がある場合はダイアログを表示
+  useEffect(() => {
+    if (endingProposal && session?.isActive) {
+      setShowEndingDialog(true)
+    }
+  }, [endingProposal, session?.isActive])
 
   const handleChoiceSelect = (choiceIndex: number) => {
     setSelectedChoice(choiceIndex)
@@ -189,6 +204,41 @@ function GameSessionPage() {
     } catch (error) {
       console.error('Failed to end session:', error)
       toast.error('セッションの終了に失敗しました')
+    }
+  }
+
+  const handleAcceptEnding = async () => {
+    try {
+      await acceptEndingMutation.mutateAsync(sessionId)
+      toast.success('セッションを終了しています...', {
+        description: 'リザルトを処理中です。完了後、自動的に画面が切り替わります。',
+      })
+      
+      // リザルト画面へ遷移
+      setTimeout(() => {
+        window.location.href = `/game/${sessionId}/result`
+      }, 2000)
+    } catch (error) {
+      console.error('Failed to accept ending:', error)
+      toast.error('終了処理に失敗しました')
+    }
+  }
+
+  const handleRejectEnding = async () => {
+    try {
+      const response = await rejectEndingMutation.mutateAsync(sessionId)
+      setShowEndingDialog(false)
+      
+      if (!response.canRejectNext) {
+        toast.warning('次回の終了提案は拒否できません', {
+          description: '物語が長くなってきたため、次回は必ず終了となります。',
+        })
+      } else {
+        toast.info('冒険を続けます')
+      }
+    } catch (error) {
+      console.error('Failed to reject ending:', error)
+      toast.error('処理に失敗しました')
     }
   }
 
@@ -474,6 +524,18 @@ function GameSessionPage() {
         onAction={sendNPCAction}
         isLoading={isExecutingAction}
       />
+
+      {/* セッション終了提案ダイアログ */}
+      {endingProposal && (
+        <SessionEndingDialog
+          proposal={endingProposal}
+          isOpen={showEndingDialog}
+          onAccept={handleAcceptEnding}
+          onContinue={handleRejectEnding}
+          isAccepting={acceptEndingMutation.isPending}
+          isRejecting={rejectEndingMutation.isPending}
+        />
+      )}
     </div>
   )
 }

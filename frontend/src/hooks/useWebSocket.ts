@@ -18,6 +18,8 @@ import type {
   NotificationData,
   NPCEncounterData,
   NPCActionResultData,
+  SessionEndingProposalData,
+  SessionResultReadyData,
 } from '@/types/websocket'
 
 export interface WebSocketStatus {
@@ -279,6 +281,24 @@ export function useGameWebSocket(gameSessionId?: string) {
       ])
     }
 
+    // セッション終了提案イベントハンドラー
+    const handleSessionEndingProposal = (data: SessionEndingProposalData) => {
+      // セッション画面で処理されるため、ここでは何もしない
+      console.log('Session ending proposal received:', data)
+    }
+
+    // セッションリザルト準備完了イベントハンドラー
+    const handleSessionResultReady = (data: SessionResultReadyData) => {
+      toast.success('リザルトの準備が完了しました！', {
+        description: 'リザルト画面へ移動します...',
+      })
+      
+      // リザルト画面へ遷移
+      setTimeout(() => {
+        window.location.href = `/game/${data.data.sessionId}/result`
+      }, 1500)
+    }
+
     // イベントリスナー登録
     websocketManager.on('game:joined', handleGameJoined)
     websocketManager.on('game:started', handleGameStarted)
@@ -290,6 +310,8 @@ export function useGameWebSocket(gameSessionId?: string) {
     websocketManager.on('game:battle_update', handleBattleUpdate)
     websocketManager.on('game:npc_encounter', handleNPCEncounter)
     websocketManager.on('game:npc_action_result', handleNPCActionResult)
+    websocketManager.on('session:ending_proposal', handleSessionEndingProposal)
+    websocketManager.on('session:result_ready', handleSessionResultReady)
 
     // クリーンアップ
     return () => {
@@ -307,6 +329,8 @@ export function useGameWebSocket(gameSessionId?: string) {
       websocketManager.off('game:battle_update', handleBattleUpdate)
       websocketManager.off('game:npc_encounter', handleNPCEncounter)
       websocketManager.off('game:npc_action_result', handleNPCActionResult)
+      websocketManager.off('session:ending_proposal', handleSessionEndingProposal)
+      websocketManager.off('session:result_ready', handleSessionResultReady)
     }
   }, [gameSessionId, user?.id])
 
