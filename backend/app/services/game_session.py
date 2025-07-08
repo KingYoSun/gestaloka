@@ -104,8 +104,9 @@ class GameSessionService:
 
             # キャラクターのセッション数を取得
             from sqlalchemy import func
-            session_count_stmt = select(func.count()).select_from(GameSession).where(
-                GameSession.character_id == character.id
+
+            session_count_stmt = (
+                select(func.count()).select_from(GameSession).where(GameSession.character_id == character.id)
             )
             session_count = self.db.exec(session_count_stmt).one()
 
@@ -142,7 +143,7 @@ class GameSessionService:
                 sender_type=SENDER_TYPE_SYSTEM,
                 content=f"セッション #{new_session.session_number} を開始しました。{'（初回セッション）' if new_session.is_first_session else ''}",
                 turn_number=0,
-                metadata=system_message_metadata
+                metadata=system_message_metadata,
             )
             self.db.commit()  # メッセージも一緒にコミット
 
@@ -323,7 +324,7 @@ class GameSessionService:
                 sender_type=SENDER_TYPE_SYSTEM,
                 content=f"セッション #{session.session_number} を終了しました。（総ターン数: {session.turn_count}）",
                 turn_number=session.turn_count,
-                metadata=end_message_metadata
+                metadata=end_message_metadata,
             )
 
             self.db.add(session)
@@ -451,7 +452,7 @@ class GameSessionService:
                 sender_type=SENDER_TYPE_PLAYER,
                 content=action_request.action_text,
                 turn_number=current_turn,
-                metadata=player_message_metadata
+                metadata=player_message_metadata,
             )
 
             # プロンプトコンテキストの構築（現在未使用）
@@ -563,7 +564,9 @@ class GameSessionService:
                 "choices": [
                     {"id": choice.id, "text": choice.text, "description": getattr(choice, "description", None)}
                     for choice in coordinator_response.choices
-                ] if hasattr(coordinator_response, "choices") and coordinator_response.choices else [],
+                ]
+                if hasattr(coordinator_response, "choices") and coordinator_response.choices
+                else [],
                 "state_changes": getattr(coordinator_response, "state_changes", {}),
                 "battle_data": session_data.get("battle_data"),
             }
@@ -573,7 +576,7 @@ class GameSessionService:
                 sender_type=SENDER_TYPE_GM,
                 content=getattr(coordinator_response, "narrative", "物語は続きます...") or "物語は続きます...",
                 turn_number=current_turn,
-                metadata=gm_message_metadata
+                metadata=gm_message_metadata,
             )
 
             # 戦闘システムの処理
@@ -709,7 +712,11 @@ class GameSessionService:
 
             # セッションのメトリクスを更新
             session.turn_count = current_turn
-            session.word_count = session.word_count + len(action_request.action_text) + len(getattr(coordinator_response, "narrative", ""))
+            session.word_count = (
+                session.word_count
+                + len(action_request.action_text)
+                + len(getattr(coordinator_response, "narrative", ""))
+            )
 
             # 状態変更の適用（もしあれば）
             if (
@@ -1235,7 +1242,7 @@ class GameSessionService:
         sender_type: str,
         content: str,
         turn_number: int,
-        metadata: Optional[dict] = None
+        metadata: Optional[dict] = None,
     ) -> GameMessage:
         """ゲームメッセージをデータベースに保存"""
         message = GameMessage(
@@ -1254,11 +1261,7 @@ class GameSessionService:
         return message
 
     def get_session_history(
-        self,
-        character_id: str,
-        page: int = 1,
-        per_page: int = 20,
-        status_filter: Optional[str] = None
+        self, character_id: str, page: int = 1, per_page: int = 20, status_filter: Optional[str] = None
     ) -> dict[str, Any]:
         """キャラクターのセッション履歴を取得（ページネーション付き）"""
         # ベースクエリ
@@ -1270,6 +1273,7 @@ class GameSessionService:
 
         # 合計件数を取得
         from sqlalchemy import func
+
         count_query = select(func.count()).where(GameSession.character_id == character_id)
         if status_filter:
             count_query = count_query.where(GameSession.session_status == status_filter)
@@ -1294,3 +1298,130 @@ class GameSessionService:
             "has_next": has_next,
             "has_prev": has_prev,
         }
+
+    async def continue_session(self, character: Character, previous_session_id: str) -> GameSessionResponse:
+        """前回のセッション結果を引き継いで新しいセッションを開始"""
+        # 前回のセッションを取得
+        stmt = select(GameSession).where(
+            GameSession.id == previous_session_id, GameSession.character_id == character.id
+        )
+        previous_session = self.db.exec(stmt).first()
+
+        if not previous_session:
+            raise ValueError("指定されたセッションが見つかりません")
+
+        if previous_session.session_status != "completed":
+            raise ValueError("前回のセッションが完了していません")
+
+        # セッション結果を取得
+        from app.models.game.session_result import SessionResult
+
+        stmt_result = select(SessionResult).where(SessionResult.session_id == previous_session_id)
+        session_result = self.db.exec(stmt_result).first()
+
+        # 既存のアクティブセッションを終了
+        stmt_active = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active == True)
+        existing_sessions = self.db.exec(stmt_active).all()
+        for session in existing_sessions:
+            session.is_active = False
+            session.updated_at = datetime.utcnow()
+            self.db.add(session)
+
+        # 新しいセッションを作成
+        new_session = GameSession(
+            id=str(uuid.uuid4()),
+            character_id=character.id,
+            is_active=True,
+            current_scene=self._get_initial_scene(character),
+            session_data=json.dumps(
+                {
+                    "turn_count": 0,
+                    "actions_history": [],
+                    "game_state": "started",
+                    "previous_session_summary": session_result.story_summary if session_result else None,
+                    "continuation_context": session_result.continuation_context if session_result else None,
+                    "unresolved_plots": session_result.unresolved_plots if session_result else [],
+                }
+            ),
+            session_status=SESSION_STATUS_ACTIVE,
+            session_number=previous_session.session_number + 1,
+            previous_session_id=previous_session_id,
+            story_arc_id=previous_session.story_arc_id,  # ストーリーアークを引き継ぐ
+            is_first_session=False,
+            turn_count=0,
+            word_count=0,
+            play_duration_minutes=0,
+            ending_proposal_count=0,
+        )
+
+        self.db.add(new_session)
+        self.db.commit()
+        self.db.refresh(new_session)
+
+        # セッション開始のシステムメッセージを保存
+        continuation_info = {
+            "session_number": new_session.session_number,
+            "previous_session_id": previous_session_id,
+            "character_id": character.id,
+            "character_name": character.name,
+            "has_continuation_context": bool(session_result and session_result.continuation_context),
+            "unresolved_plots_count": len(session_result.unresolved_plots) if session_result else 0,
+        }
+
+        self.save_message(
+            session_id=new_session.id,
+            message_type=MESSAGE_TYPE_SYSTEM_EVENT,
+            sender_type=SENDER_TYPE_SYSTEM,
+            content=f"セッション #{new_session.session_number} を開始しました。前回のセッションから物語を継続します。",
+            turn_number=0,
+            metadata=continuation_info,
+        )
+
+        # 継続コンテキストがある場合、GMナラティブとして最初のメッセージを生成
+        if session_result and session_result.continuation_context:
+            # TODO: AI実装後に以下のコメントを解除して実際のナラティブ生成を行う
+            # from app.ai.coordinator import CoordinatorAI
+            # ai_coordinator = CoordinatorAI(agents={...})  # 適切なエージェントを設定
+            #
+            # # 前回のあらすじと継続コンテキストを含むプロンプト
+            # continuation_prompt = f"""
+            # 前回のあらすじ：
+            # {session_result.story_summary}
+            #
+            # 継続コンテキスト：
+            # {session_result.continuation_context}
+            #
+            # 未解決のプロット：
+            # {chr(10).join(session_result.unresolved_plots) if session_result.unresolved_plots else "なし"}
+            #
+            # この情報を元に、前回からの物語の続きを自然に開始してください。
+            # """
+            #
+            # narrative = await ai_coordinator.generate_continuation_narrative(
+            #     character=character,
+            #     prompt=continuation_prompt
+            # )
+
+            # 一時的なナラティブ（AI実装後に置き換え）
+            narrative = f"前回の冒険から時間が経ち、あなたは再び動き出す準備ができた。{session_result.continuation_context if session_result.continuation_context else '新たな冒険が待っている。'}"
+
+            self.save_message(
+                session_id=new_session.id,
+                message_type=MESSAGE_TYPE_GM_NARRATIVE,
+                sender_type=SENDER_TYPE_GM,
+                content=narrative,
+                turn_number=1,
+                metadata={"is_continuation": True},
+            )
+
+        self.db.commit()
+
+        logger.info(
+            "Session continued",
+            new_session_id=new_session.id,
+            previous_session_id=previous_session_id,
+            character_id=character.id,
+            session_number=new_session.session_number,
+        )
+
+        return self.get_session_response(new_session)

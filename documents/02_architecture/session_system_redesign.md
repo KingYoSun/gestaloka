@@ -383,13 +383,14 @@ Response: GameSession
 
 ## 9. 実装優先順位
 
-### フェーズ1: 基盤整備
+### フェーズ1: 基盤整備 ✅ 完了（2025-07-08）
 1. GameMessageテーブルの作成とマイグレーション ✅ 完了（2025-07-08）
 2. SessionResultテーブルの作成とマイグレーション ✅ 完了（2025-07-08）
 3. GameSessionモデルの拡張（新フィールド追加） ✅ 完了（2025-07-08）
 4. メッセージ履歴のDB保存実装 ✅ 完了（2025-07-08）
 5. メッセージ履歴DB保存のテスト実装 ✅ 完了（2025-07-08）
-6. セッション履歴一覧API ⏳ 実装予定
+6. セッション履歴一覧API ✅ 完了（2025-07-08）
+7. 次セッション開始API ✅ 完了（2025-07-08）
 
 ### フェーズ2: 終了判定
 1. GM AIの終了判定ロジック実装
@@ -418,20 +419,34 @@ Response: GameSession
 #### SessionResultモデル  
 - セッション結果を保存するための独立したテーブル
 - 知識グラフ更新内容、キー事象、継続コンテキストを保存
+- `app/models/game/session_result.py`として実装
 
 #### GameSessionモデル拡張
 - `session_status`, `session_number`, `turn_count`, `word_count`等の新フィールド追加
 - 終了提案追跡用のフィールド実装
+- SessionResultとのリレーション定義
 
 #### メッセージ保存機能
 - `GameSessionService.save_message()`メソッド実装
 - `execute_action()`, `create_session()`, `end_session()`に統合
 - プレイヤーアクション、GMナラティブ、システムイベントの3種類のメッセージ保存
 
+#### セッション履歴一覧API
+- `GET /api/v1/game/sessions/history`エンドポイント実装
+- ページネーション、ステータスフィルター対応
+- `GameSessionService.get_session_history()`メソッド実装
+
+#### 次セッション開始API
+- `POST /api/v1/game/sessions/continue`エンドポイント実装
+- `SessionContinueRequest`スキーマ追加
+- `GameSessionService.continue_session()`メソッド実装
+- 前回セッションの結果を引き継ぐ機能
+
 #### テストカバレッジ
 - 7つの包括的なテストケース実装
 - 基本的なメッセージ保存、複数メッセージタイプ、メタデータ保存
 - セッション作成/アクション実行/終了時のメッセージ保存検証
+- セッション履歴取得のテスト実装済み
 
 ### 10.2 実装上の重要な判断
 
@@ -443,6 +458,13 @@ Response: GameSession
 #### テストデータベースの管理
 - 本番と同様のマイグレーションをテストDBにも適用
 - `conftest.py`でのテストDB自動セットアップ
+
+#### continue_sessionメソッドの設計
+- 前回セッションの検証（存在確認、完了状態確認、所有権確認）
+- SessionResultからの継続情報取得（任意）
+- 新規セッションの作成時にセッション番号を自動インクリメント
+- 前回の結果を`session_data`のJSONに格納
+- AI統合は将来的に実装（TODOコメントとして配置）
 
 ## 11. 技術的考慮事項
 

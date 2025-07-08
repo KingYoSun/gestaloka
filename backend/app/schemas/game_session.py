@@ -136,3 +136,10 @@ class SessionHistoryResponse(BaseModel):
     per_page: int = Field(ge=1, le=100, description="1ページあたりのアイテム数")
     has_next: bool = Field(description="次のページが存在するか")
     has_prev: bool = Field(description="前のページが存在するか")
+
+
+class SessionContinueRequest(BaseModel):
+    """セッション継続リクエスト"""
+
+    character_id: str = Field(description="キャラクターID")
+    previous_session_id: str = Field(description="前回のセッションID")

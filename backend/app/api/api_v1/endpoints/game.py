@@ -4,12 +4,13 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
 
 from app.api.deps import get_character_session, get_current_active_user, get_user_character
 from app.core.database import get_session
 from app.core.logging import get_logger
+from app.models.character import GameSession
 from app.schemas.game_session import (
     ActionExecuteRequest,
     ActionExecuteResponse,
@@ -18,6 +19,7 @@ from app.schemas.game_session import (
     GameSessionCreate,
     GameSessionListResponse,
     GameSessionResponse,
+    SessionContinueRequest,
     GameSessionUpdate,
     SessionHistoryResponse,
 )
@@ -51,14 +53,31 @@ async def get_session_history(
     character = await get_user_character(character_id, db, current_user)
 
     service = GameSessionService(db)
-    result = service.get_session_history(
-        character_id=character.id,
-        page=page,
-        per_page=per_page,
-        status_filter=status
-    )
+    result = service.get_session_history(character_id=character.id, page=page, per_page=per_page, status_filter=status)
 
     return SessionHistoryResponse(**result)
+
+
+@router.post("/sessions/continue", response_model=GameSessionResponse)
+async def continue_game_session(
+    request: SessionContinueRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_session),
+) -> GameSessionResponse:
+    """前回のセッション結果を引き継いで新しいセッションを開始"""
+    # キャラクターの所有権確認
+    character = await get_user_character(request.character_id, db, current_user)
+
+    # 前回のセッションの所有権も確認
+    session_stmt = select(GameSession).where(
+        GameSession.id == request.previous_session_id, GameSession.character_id == character.id
+    )
+    previous_session = db.exec(session_stmt).first()
+    if not previous_session:
+        raise HTTPException(status_code=403, detail="指定されたセッションへのアクセス権限がありません")
+
+    service = GameSessionService(db)
+    return await service.continue_session(character, request.previous_session_id)
 
 
 @router.post("/sessions", response_model=GameSessionResponse)
