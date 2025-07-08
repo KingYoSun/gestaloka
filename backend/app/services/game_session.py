@@ -1557,9 +1557,9 @@ class GameSessionService:
 
         self.db.commit()
 
-        # TODO: Celeryタスクでリザルト処理を開始
-        # from app.tasks.session_result import process_session_result
-        # process_session_result.delay(session_id, result_id)
+        # Celeryタスクでリザルト処理を開始
+        from app.tasks.session_result_tasks import process_session_result
+        process_session_result.delay(session_id)
 
         logger.info("Session ending accepted", session_id=session_id, character_id=character.id, result_id=result_id)
 

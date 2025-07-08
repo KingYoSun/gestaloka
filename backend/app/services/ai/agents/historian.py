@@ -7,7 +7,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
 import structlog
@@ -16,6 +16,9 @@ from pydantic import BaseModel, Field
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.gemini_client import GeminiClient
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext, PromptManager
+
+if TYPE_CHECKING:
+    from app.models.game_message import GameMessage
 
 logger = structlog.get_logger(__name__)
 
@@ -331,3 +334,87 @@ WARNINGS: [一貫性の問題があれば記載]"""
                 warnings.append("場所の一貫性: 瞬間移動のような移動が検出されました")
 
         return warnings
+
+    async def generate_session_summary(
+        self, context: PromptContext, messages: list["GameMessage"]
+    ) -> str:
+        """
+        セッションのサマリーを生成
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            str: セッションサマリー
+        """
+
+        # メッセージを物語形式に整形
+        narrative_parts = []
+        for msg in messages:
+            if msg.message_type == "PLAYER_ACTION":
+                narrative_parts.append(f"【行動】{msg.content}")
+            elif msg.message_type == "GM_NARRATIVE":
+                narrative_parts.append(f"【展開】{msg.content}")
+
+        narrative = "\n".join(narrative_parts[-30:])  # 最新30件
+
+        prompt = f"""あなたはゲスタロカ世界の歴史家AIです。
+以下のセッションの出来事を要約し、歴史的な記録として残してください。
+
+【キャラクター情報】
+- 名前: {context.character.name}
+- 場所: {context.location}
+
+【セッションの記録】
+{narrative}
+
+【要約の指針】
+- 物語の主要な流れを200文字程度で要約
+- キャラクターの成長や変化に注目
+- 重要な出来事や転換点を強調
+- 客観的かつ詩的な文体で記述"""
+
+        response = await self.generate_response(
+            context=context,
+            system_message=prompt,
+            temperature=0.7,
+            max_output_tokens=300,
+        )
+
+        return response.strip()
+
+    async def extract_key_events(
+        self, context: PromptContext, messages: list["GameMessage"]
+    ) -> list[str]:
+        """
+        セッションから重要イベントを抽出
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            list[str]: 重要イベントのリスト
+        """
+
+        # メッセージから重要な出来事を特定
+        events = []
+
+        for i, msg in enumerate(messages):
+            if msg.message_type == "GM_NARRATIVE":
+                # 戦闘、発見、重要な選択などのキーワードを含むメッセージを抽出
+                keywords = ["戦闘", "発見", "決断", "出会い", "勝利", "敗北", "獲得", "完了"]
+                if any(keyword in msg.content for keyword in keywords):
+                    # 前後のコンテキストを含めて簡潔にまとめる
+                    event_context = []
+                    if i > 0 and messages[i-1].message_type == "PLAYER_ACTION":
+                        event_context.append(messages[i-1].content)
+                    event_context.append(msg.content)
+
+                    # 50文字以内に要約
+                    event_summary = "".join(event_context)[:50] + "..."
+                    events.append(event_summary)
+
+        # 最大5つまでの重要イベントを返す
+        return events[:5]

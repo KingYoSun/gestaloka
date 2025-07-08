@@ -398,10 +398,10 @@ Response: GameSession
 3. セッション終了承認/拒否API実装 ✅ 完了（2025-07-08）
 4. リザルト取得API実装 ✅ 完了（2025-07-08）
 
-### フェーズ3: リザルト処理
-1. SessionResultモデル実装
-2. リザルト生成Celeryタスク
-3. リザルト画面UI
+### フェーズ3: リザルト処理 🚧 部分実装（2025-07-08）
+1. SessionResultモデル実装 ✅ 完了（フェーズ1で実装済み）
+2. リザルト生成Celeryタスク ✅ 完了（2025-07-08）
+3. リザルト画面UI 🔄 未実装
 
 ### フェーズ4: 継続性
 1. セッション間の引き継ぎ実装
@@ -504,6 +504,48 @@ Response: GameSession
 - 新規セッションの作成時にセッション番号を自動インクリメント
 - 前回の結果を`session_data`のJSONに格納
 - AI統合は将来的に実装（TODOコメントとして配置）
+
+#### フェーズ3実装詳細（2025-07-08）
+
+##### SessionResultService
+- セッションリザルト処理のビジネスロジックを一元管理
+- AIエージェントを協調させてリザルトを生成
+  - HistorianAgent: ストーリーサマリーと重要イベント抽出
+  - StateManagerAgent: 経験値とスキル成長の計算
+  - NPCManagerAgent: NPC関係性の更新情報生成
+  - CoordinatorAI: 継続コンテキストと未解決プロット抽出
+- `process_session_result`メソッドで全体の処理フローを制御
+
+##### Celeryタスク実装
+- `app/tasks/session_result_tasks.py`に`process_session_result`タスクを作成
+- 非同期でセッションリザルトを処理
+- 処理完了時にWebSocketで`session:result_ready`イベントを送信
+- エラーハンドリングとログ記録
+
+##### AIエージェント拡張
+1. **HistorianAgent**
+   - `generate_session_summary`: セッションの物語的要約を生成（200文字程度）
+   - `extract_key_events`: 重要イベントを最大5つ抽出
+
+2. **StateManagerAgent**
+   - `calculate_experience`: 基本経験値＋アクション数＋イベント＋時間ボーナス
+   - `calculate_skill_improvements`: メッセージ内容からスキル使用を検出し経験値を付与
+
+3. **NPCManagerAgent**
+   - `update_npc_relationships`: 会話や関係性の変化を検出してNeo4j更新情報を生成
+
+4. **CoordinatorAI**
+   - `generate_continuation_context`: 次回セッション開始時の導入文を生成
+   - `extract_unresolved_plots`: 未解決のプロットを最大5つ抽出
+
+##### GameSessionService更新
+- `accept_ending`メソッドでCeleryタスクを呼び出すように修正
+- コメントアウトされていたタスク呼び出しを有効化
+
+##### 技術的課題
+- PromptContextとAIエージェントメソッドの整合性（型エラー38件）
+- CharacterモデルとCharacterStatsの属性アクセス
+- 一部のインポートパスとクラス名の不一致
 
 ## 11. 技術的考慮事項
 

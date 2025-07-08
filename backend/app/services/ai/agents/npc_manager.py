@@ -6,7 +6,7 @@ import json
 import re
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
 import structlog
@@ -18,6 +18,9 @@ from app.models import EncounterType
 from app.schemas.game_session import ActionChoice
 from app.services.ai.agents.base import AgentContext, AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
+
+if TYPE_CHECKING:
+    from app.models.game_message import GameMessage
 
 logger = structlog.get_logger(__name__)
 
@@ -809,3 +812,64 @@ class NPCManagerAgent(BaseAgent):
             state_changes=state_changes,
             choices=choices,
         )
+
+    async def update_npc_relationships(
+        self, context: PromptContext, messages: list["GameMessage"]
+    ) -> dict:
+        """
+        セッションからNPC関係性の更新情報を生成
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            dict: Neo4jに反映する更新情報
+        """
+
+        updates = {
+            "relationships": [],
+            "npcs_met": [],
+            "locations_visited": [],
+        }
+
+        # メッセージからNPCとの交流を抽出
+        for msg in messages:
+            if msg.message_type == "GM_NARRATIVE":
+                # NPCの名前パターンを探す（簡易的な実装）
+                if "「" in msg.content and "」" in msg.content:
+                    # 会話があった場合
+                    npc_name = msg.content.split("「")[0].strip()
+                    if npc_name and len(npc_name) < 20:  # 妥当な長さのNPC名
+                        updates["npcs_met"].append({
+                            "name": npc_name,
+                            "location": context.location,
+                            "interaction_type": "dialogue",
+                        })
+
+                # 関係性の変化を検出
+                relationship_keywords = {
+                    "友好的": "friendly",
+                    "敵対的": "hostile",
+                    "中立的": "neutral",
+                    "親密": "intimate",
+                    "警戒": "wary",
+                }
+
+                for keyword, relation_type in relationship_keywords.items():
+                    if keyword in msg.content:
+                        updates["relationships"].append({
+                            "type": relation_type,
+                            "context": msg.content[:100],
+                        })
+
+        # 重複を削除
+        unique_npcs = []
+        seen_names = set()
+        for npc in updates["npcs_met"]:
+            if npc["name"] not in seen_names:
+                unique_npcs.append(npc)
+                seen_names.add(npc["name"])
+        updates["npcs_met"] = unique_npcs
+
+        return updates

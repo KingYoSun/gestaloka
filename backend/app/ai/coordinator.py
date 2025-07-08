@@ -8,7 +8,7 @@ AI協調動作の中核となるCoordinatorAIクラス
 import asyncio
 import time
 from collections import defaultdict
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import structlog
 
@@ -37,6 +37,10 @@ from app.ai.task_generator import (
     TaskListGenerator,
 )
 from app.schemas.game_session import GameSessionResponse as GameSession
+
+if TYPE_CHECKING:
+    from app.models.game_message import GameMessage
+    from app.services.ai.prompt_manager import PromptContext
 
 logger = structlog.get_logger()
 
@@ -598,3 +602,88 @@ class CoordinatorAI:
         # 最新10件の平均を計算
         recent_times = times[-10:]
         return sum(recent_times) / len(recent_times)
+
+    async def generate_continuation_context(
+        self, context: "PromptContext", messages: list["GameMessage"]
+    ) -> str:
+        """
+        次セッションへの継続コンテキストを生成
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            str: 継続コンテキスト
+        """
+
+        # 最新のメッセージから状況を把握
+        recent_messages = messages[-10:]
+        current_situation = ""
+
+        for msg in reversed(recent_messages):
+            if msg.message_type == "GM_NARRATIVE":
+                current_situation = msg.content
+                break
+
+        prompt = f"""あなたはゲスタロカ世界のGM AIです。
+以下のセッションの終了時点での状況を踏まえ、次回セッション開始時の導入文を作成してください。
+
+【キャラクター情報】
+- 名前: {context.character.name}
+- 場所: {context.location}
+
+【現在の状況】
+{current_situation}
+
+【導入文の指針】
+- 前回の出来事を簡潔に振り返る
+- 現在の状況を明確にする
+- 次の行動への期待感を持たせる
+- 100文字程度で簡潔に"""
+
+        response = await self.gemini.generate_response(
+            prompt=prompt,
+            temperature=0.7,
+            max_output_tokens=200,
+        )
+
+        return response.strip()
+
+    async def extract_unresolved_plots(
+        self, context: "PromptContext", messages: list["GameMessage"]
+    ) -> list[str]:
+        """
+        未解決のプロットを抽出
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            list[str]: 未解決プロットのリスト
+        """
+
+        unresolved = []
+
+        # メッセージから未解決要素を検出
+        plot_keywords = {
+            "謎": "未解明の謎",
+            "約束": "果たされていない約束",
+            "依頼": "未完了の依頼",
+            "敵": "未決着の敵対関係",
+            "探索": "未探索のエリア",
+            "調査": "未完了の調査",
+        }
+
+        for msg in messages:
+            if msg.message_type == "GM_NARRATIVE":
+                for keyword, plot_type in plot_keywords.items():
+                    if keyword in msg.content and "完了" not in msg.content and "解決" not in msg.content:
+                        # 簡潔にまとめる
+                        plot_summary = f"{plot_type}: {msg.content[:30]}..."
+                        if plot_summary not in unresolved:
+                            unresolved.append(plot_summary)
+
+        # 最大5つまで
+        return unresolved[:5]

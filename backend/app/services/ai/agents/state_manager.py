@@ -4,13 +4,16 @@
 
 import json
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import structlog
 
 from app.core.exceptions import AIServiceError
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
+
+if TYPE_CHECKING:
+    from app.models.game_message import GameMessage
 
 logger = structlog.get_logger(__name__)
 
@@ -431,3 +434,78 @@ class StateManagerAgent(BaseAgent):
             "critical_chance": max(0, success_rate - self.rules["critical_threshold"]),
             "failure_chance": max(0, self.rules["critical_failure_threshold"] - success_rate),
         }
+
+    async def calculate_experience(
+        self, context: PromptContext, messages: list["GameMessage"]
+    ) -> int:
+        """
+        セッションから獲得経験値を計算
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            int: 獲得経験値
+        """
+
+        base_exp = 100  # 基本経験値
+
+        # アクション数による経験値
+        action_count = sum(1 for msg in messages if msg.message_type == "PLAYER_ACTION")
+        action_exp = action_count * 10
+
+        # 重要イベントによるボーナス
+        event_keywords = ["戦闘", "勝利", "クエスト完了", "レベルアップ", "発見"]
+        event_count = sum(
+            1 for msg in messages
+            if msg.message_type == "GM_NARRATIVE" and
+            any(keyword in msg.content for keyword in event_keywords)
+        )
+        event_exp = event_count * 50
+
+        # セッション時間によるボーナス（最大200）
+        session_duration = context.current_session.get("play_duration_minutes", 0)
+        time_exp = min(200, session_duration * 2)
+
+        total_exp = base_exp + action_exp + event_exp + time_exp
+
+        return total_exp
+
+    async def calculate_skill_improvements(
+        self, context: PromptContext, messages: list["GameMessage"]
+    ) -> dict[str, int]:
+        """
+        セッションから獲得スキル経験値を計算
+
+        Args:
+            context: プロンプトコンテキスト
+            messages: セッションのメッセージ履歴
+
+        Returns:
+            dict[str, int]: スキル名と獲得経験値のマッピング
+        """
+
+        skill_exp = {}
+
+        # メッセージからスキル使用を検出
+        skill_keywords = {
+            "剣術": ["剣", "斬る", "切る", "刺す"],
+            "魔法": ["呪文", "詠唱", "魔法", "魔力"],
+            "探索": ["調査", "探索", "発見", "捜索"],
+            "交渉": ["説得", "交渉", "会話", "対話"],
+            "隠密": ["忍び", "隠れ", "潜伏", "密か"],
+        }
+
+        for msg in messages:
+            if msg.message_type == "PLAYER_ACTION":
+                content_lower = msg.content.lower()
+                for skill, keywords in skill_keywords.items():
+                    if any(keyword in content_lower for keyword in keywords):
+                        skill_exp[skill] = skill_exp.get(skill, 0) + 10
+
+        # 最大値を100に制限
+        for skill in skill_exp:
+            skill_exp[skill] = min(100, skill_exp[skill])
+
+        return skill_exp
