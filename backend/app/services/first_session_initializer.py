@@ -4,7 +4,7 @@
 キャラクターの最初のセッションに特別な初期化処理を提供
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlmodel import Session
 
@@ -75,8 +75,8 @@ class FirstSessionInitializer:
                 "actions_history": [],
                 "game_state": "started",
             }),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
         self.db.add(session)
@@ -96,7 +96,7 @@ class FirstSessionInitializer:
             content="初回セッションが開始されました",
             turn_number=0,
             message_metadata={"event_type": "first_session_start"},
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
         self.db.add(system_message)
 
@@ -187,7 +187,7 @@ class FirstSessionInitializer:
                 },
             },
             context_summary="初回セッション開始時に付与される基本クエスト",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
         return quest
 
@@ -224,7 +224,7 @@ class FirstSessionInitializer:
                 },
             },
             context_summary="基本操作を学ぶチュートリアルクエスト",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
         return quest
 
@@ -255,7 +255,7 @@ class FirstSessionInitializer:
                 },
             },
             context_summary="社交システムを学ぶクエスト",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
         return quest
 
@@ -286,7 +286,7 @@ class FirstSessionInitializer:
                 },
             },
             context_summary="サブクエストシステムを学ぶクエスト",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
         return quest
 
@@ -317,7 +317,7 @@ class FirstSessionInitializer:
                 },
             },
             context_summary="ゲスタロカのコアメカニクスを学ぶ重要クエスト",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
         return quest
 
@@ -348,6 +348,6 @@ class FirstSessionInitializer:
                 },
             },
             context_summary="次の冒険への導入クエスト",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
         return quest

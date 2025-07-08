@@ -3,7 +3,7 @@
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -74,35 +74,40 @@ class TestGameSessionCoordinatorIntegration:
         mock_db.get.return_value = mock_character
 
         # check_character_ownershipとSessionクエリのためのモック設定
-        exec_call_count = 0
+        execute_call_count = 0
 
-        def exec_side_effect(query):
-            nonlocal exec_call_count
-            exec_call_count += 1
+        def execute_side_effect(query):
+            nonlocal execute_call_count
+            execute_call_count += 1
             result_mock = MagicMock()
+            scalars_mock = MagicMock()
 
             # 最初の呼び出しはcheck_character_ownership
-            if exec_call_count == 1:
-                result_mock.first.return_value = mock_character
+            if execute_call_count == 1:
+                result_mock.scalars.return_value = scalars_mock
+                scalars_mock.first.return_value = mock_character
             # 2番目の呼び出しは既存セッションの検索
-            elif exec_call_count == 2:
-                result_mock.all.return_value = []
-                result_mock.first.return_value = None
+            elif execute_call_count == 2:
+                result_mock.scalars.return_value = scalars_mock
+                scalars_mock.all.return_value = []
             # 3番目の呼び出しはセッション数のカウント
-            elif exec_call_count == 3:
-                result_mock.one.return_value = 0  # 初回セッション
+            elif execute_call_count == 3:
+                result_mock.scalar_one.return_value = 0  # 初回セッション
             else:
-                result_mock.all.return_value = []
-                result_mock.first.return_value = None
+                result_mock.scalars.return_value = scalars_mock
+                scalars_mock.all.return_value = []
             return result_mock
 
-        mock_db.exec.side_effect = exec_side_effect
+        mock_db.execute.side_effect = execute_side_effect
+
+        # execメソッドのモック（互換性のため）
+        mock_db.exec = MagicMock()
 
         # セッション作成用のモック
         def add_side_effect(obj):
             if isinstance(obj, GameSession):
-                obj.created_at = datetime.utcnow()
-                obj.updated_at = datetime.utcnow()
+                obj.created_at = datetime.now(UTC)
+                obj.updated_at = datetime.now(UTC)
 
         mock_db.add.side_effect = add_side_effect
 
@@ -132,8 +137,8 @@ class TestGameSessionCoordinatorIntegration:
             is_active=True,
             current_scene="村の中心にいます",
             session_data=json.dumps({"turn_count": 5, "actions_history": []}),
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
         # モックの設定

@@ -5,7 +5,7 @@
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from sqlmodel import Session, desc, select
@@ -61,7 +61,7 @@ class StoryArcService:
             total_phases=total_phases,
             themes=themes or [],
             central_conflict=central_conflict,
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
         )
 
         self.db.add(story_arc)
@@ -85,7 +85,8 @@ class StoryArcService:
             StoryArc.status == "active"
         ).order_by(desc(StoryArc.created_at))
 
-        return self.db.exec(stmt).first()
+        result = self.db.execute(stmt)
+        return result.scalars().first()
 
     def update_arc_progress(
         self,
@@ -114,7 +115,7 @@ class StoryArcService:
         if story_arc.current_phase >= story_arc.total_phases and story_arc.progress_percentage >= 100.0:
             self.complete_story_arc(story_arc)
 
-        story_arc.updated_at = datetime.utcnow()
+        story_arc.updated_at = datetime.now(UTC)
         self.db.add(story_arc)
         self.db.commit()
 
@@ -131,7 +132,7 @@ class StoryArcService:
             完了したストーリーアーク
         """
         story_arc.status = "completed"
-        story_arc.completed_at = datetime.utcnow()
+        story_arc.completed_at = datetime.now(UTC)
         story_arc.progress_percentage = 100.0
 
         self.db.add(story_arc)
@@ -221,15 +222,16 @@ class StoryArcService:
 
         # 全条件を満たした場合
         milestone.is_completed = True
-        milestone.completed_at = datetime.utcnow()
+        milestone.completed_at = datetime.now(UTC)
         self.db.add(milestone)
 
         logger.info(f"Milestone completed: {milestone.id}")
 
         # 次フェーズへの移行トリガーの場合
         if milestone.triggers_next_phase:
-            story_arc = milestone.story_arc
-            self.update_arc_progress(story_arc, phase_completed=True)
+            story_arc = self.db.get(StoryArc, milestone.story_arc_id)
+            if story_arc:
+                self.update_arc_progress(story_arc, phase_completed=True)
 
         self.db.commit()
         return True

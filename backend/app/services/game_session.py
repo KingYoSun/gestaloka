@@ -5,7 +5,7 @@
 import json
 import random
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -104,11 +104,12 @@ class GameSessionService:
         try:
             # 既存のアクティブなセッションを非アクティブ化
             stmt = select(GameSession).where(GameSession.character_id == character.id, GameSession.is_active == True)  # noqa: E712
-            existing_sessions = self.db.exec(stmt).all()
+            result = self.db.execute(stmt)
+            existing_sessions = result.scalars().all()
 
             for session in existing_sessions:
                 session.is_active = False
-                session.updated_at = datetime.utcnow()
+                session.updated_at = datetime.now(UTC)
                 self.db.add(session)
 
             # キャラクターのセッション数を取得
@@ -117,7 +118,10 @@ class GameSessionService:
             session_count_stmt = (
                 select(func.count()).select_from(GameSession).where(GameSession.character_id == character.id)
             )
-            session_count = self.db.exec(session_count_stmt).one()
+            result = self.db.execute(session_count_stmt)
+            session_count = result.scalar_one()
+            # Ensure session_count is an integer
+            session_count = int(session_count) if session_count is not None else 0
 
             # 初回セッションの場合は特別な初期化を行う
             if session_count == 0:
@@ -169,12 +173,11 @@ class GameSessionService:
             active_arc = self.story_arc_service.get_active_story_arc(character)
             if not active_arc and not new_session.is_first_session:
                 # 初回セッション以外でアークがない場合、基本的な個人の物語アークを作成
-                from app.models.story_arc import StoryArcType
                 active_arc = self.story_arc_service.create_story_arc(
                     character=character,
                     title="新たなる旅立ち",
                     description="あなたの新しい物語が始まる。どのような冒険が待っているのだろうか。",
-                    arc_type=StoryArcType.PERSONAL_STORY,
+                    arc_type="personal_story",
                     total_phases=3,
                     themes=["成長", "発見", "冒険"],
                 )

@@ -1,27 +1,28 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-08（19:45 JST）
+## 最終更新: 2025-07-08（20:10 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
 
-1. **テスト・型・リントエラー修正（2025-07-08 19:45）✅NEW！**
+1. **テスト・型・リントエラー修正（2025-07-08 20:10）✅UPDATED！**
    - **主要な修正内容**
-     - GameSessionモデルのstory_arc_id外部キー制約追加
-     - StoryArcType/StatusをENUMから文字列型に変更
-     - AsyncSessionLocal → SessionLocalへの統一
-     - FirstSessionInitializerのGameMessage ID追加
-     - システムメッセージ重複防止ロジック実装
-   - **型・インポート修正**
-     - neo4j_dbのインポートパス修正
-     - GeminiFactoryクラスから関数への変更
-     - WebSocketManager依存の一時無効化
-     - order_by句の修正（desc使用）
+     - PostgreSQL ENUM型問題の根本解決（VARCHAR型への変更）
+     - `datetime.utcnow()` → `datetime.now(UTC)`への全面移行
+     - SQLModelの`session.exec()` → `session.execute()`への更新
+     - テストのMagicMock設定を修正（session_count比較エラー解消）
+     - 初回セッションのシステムメッセージ内容の柔軟な検証
+   - **データベース修正**
+     - storyarctype、storyarcstatusのENUM型をDROP
+     - story_arcs.arc_type、statusカラムをVARCHAR(50)に再作成
+     - テストDBでも同様の修正を実施
    - **成果**
-     - バックエンドテスト: 235/242成功（97.1%）
-     - フロントエンドテスト: 28/28成功（100%）
+     - バックエンドテスト: 242/242成功（100%）✅
+     - フロントエンドテスト: 28/28成功（100%）✅
      - バックエンドリント: エラー0件
-     - フロントエンドリント: 警告のみ
-   - **詳細レポート**: `progressReports/2025-07-08_phase4_completion.md`
+     - フロントエンドリント: エラー0件（警告45件）
+     - バックエンド型チェック: エラー50件（既存コードの問題）
+     - フロントエンド型チェック: エラー0件
+   - **詳細レポート**: `progressReports/2025-07-08_test_error_fixes_complete.md`
 
 1. **セッションシステム再設計フェーズ4完了（2025-07-08）✅COMPLETE！**
    - **AIによる継続ナラティブ生成（完了）**
@@ -933,15 +934,11 @@
 
 ### 優先度：高 🔴
 
-1. **残存テストエラーの解決**
-   - story_arc_service.pyのテスト5個（データベース接続問題）
-   - test_game_message.py 1個（データベース接続問題）
-   - test_game_session_coordinator_integration.py 1個（モック設定）
-
-2. **型エラーの解消**
-   - バックエンド51個の型エラー
+1. **型エラーの解消**
+   - バックエンド50個の型エラー（session_result_service.py等）
    - PromptContextとCharacterモデルの整合性
    - CharacterStatsアクセス方法の統一
+   - 既存コードの型定義の問題（今回の変更とは無関係）
 
 ### 優先度：中 🟡
 1. **記憶継承システム**

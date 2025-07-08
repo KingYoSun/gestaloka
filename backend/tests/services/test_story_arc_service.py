@@ -6,6 +6,7 @@ import pytest
 from sqlmodel import Session
 
 from app.models.character import Character
+from app.models.story_arc import StoryArc
 from app.models.user import User
 from app.services.story_arc_service import StoryArcService
 
@@ -181,5 +182,5 @@ def test_check_milestone_completion(story_arc_service: StoryArcService, test_cha
     assert milestone.completed_at is not None
 
     # フェーズも進行
-    arc = story_arc_service.db.get(arc.__class__, arc.id)
+    arc = story_arc_service.db.get(StoryArc, arc.id)
     assert arc.current_phase == 2
