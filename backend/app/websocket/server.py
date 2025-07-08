@@ -164,7 +164,6 @@ async def join_game(sid, data):
             MESSAGE_TYPE_GM_NARRATIVE,
             MESSAGE_TYPE_SYSTEM_EVENT,
             SENDER_TYPE_GM,
-            SENDER_TYPE_SYSTEM,
             GameMessage,
         )
         from app.services.first_session_initializer import FirstSessionInitializer
@@ -194,17 +193,17 @@ async def join_game(sid, data):
                     character = db.exec(select(Character).where(Character.id == session.character_id)).first()
                     if character:
                         initializer = FirstSessionInitializer(db)
-                        
+
                         # 初期クエストを付与
                         initializer._assign_initial_quests(character)
-                        
+
                         # 導入テキストと選択肢を生成
                         intro_narrative = initializer.generate_introduction(character)
                         initial_choices = initializer.generate_initial_choices()
-                        
+
                         # GMナラティブとして保存
                         from app.services.game_session import GameSessionService
-                        
+
                         game_service = GameSessionService(db)
                         game_service.save_message(
                             session_id=session.id,
@@ -218,7 +217,7 @@ async def join_game(sid, data):
                             },
                         )
                         db.commit()
-                        
+
                         # メッセージは既にDBに保存されているので、
                         # 後続の既存メッセージ送信処理で一括送信される
 

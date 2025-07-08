@@ -151,7 +151,7 @@ class TestGameMessage:
 
     @pytest.mark.asyncio
     async def test_create_session_saves_system_message(self, session: Session, mock_user, mock_character):
-        """セッション作成時にシステムメッセージが保存されるかテスト"""
+        """セッション作成時にシステムメッセージが保存されるかテスト（2回目のセッション）"""
         # データベースにキャラクターを追加
         session.add(mock_user)
         session.add(mock_character)
@@ -160,14 +160,24 @@ class TestGameMessage:
         # GameSessionServiceのインスタンスを作成
         service = GameSessionService(session)
 
-        # セッションを作成
-        session_data = GameSessionCreate(character_id=mock_character.id)
-        session_response = await service.create_session(mock_character, session_data)
+        # 初回セッションを作成（システムメッセージは保存されない）
+        first_session_data = GameSessionCreate(character_id=mock_character.id)
+        first_session_response = await service.create_session(mock_character, first_session_data)
+
+        # 初回セッションを終了
+        first_session = session.get(GameSession, first_session_response.id)
+        first_session.is_active = False
+        session.add(first_session)
+        session.commit()
+
+        # 2回目のセッションを作成
+        second_session_data = GameSessionCreate(character_id=mock_character.id)
+        second_session_response = await service.create_session(mock_character, second_session_data)
 
         # システムメッセージが保存されたか確認
         stmt = (
             select(GameMessage)
-            .where(GameMessage.session_id == session_response.id)
+            .where(GameMessage.session_id == second_session_response.id)
             .where(GameMessage.message_type == MESSAGE_TYPE_SYSTEM_EVENT)
         )
         result = session.execute(stmt)
@@ -175,15 +185,10 @@ class TestGameMessage:
 
         assert len(messages) == 1
         assert messages[0].sender_type == SENDER_TYPE_SYSTEM
-        # 初回セッションの場合は別のメッセージが保存される
-        assert messages[0].content in ["初回セッションが開始されました", "セッション #1 を開始しました。"]
+        assert messages[0].content == "セッション #2 を開始しました。"
         assert messages[0].turn_number == 0
-        # 初回セッションのメタデータは異なる構造の可能性がある
-        if "is_first_session" in messages[0].message_metadata:
-            assert messages[0].message_metadata["is_first_session"] is True
-        else:
-            # FirstSessionInitializerが作成するメッセージの場合
-            assert messages[0].message_metadata.get("event_type") == "first_session_start"
+        assert messages[0].message_metadata["session_number"] == 2
+        assert messages[0].message_metadata["is_first_session"] is False
 
     @pytest.mark.asyncio
     async def test_execute_action_saves_messages(self, session: Session, mock_user, mock_character, mock_session):
