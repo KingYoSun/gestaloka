@@ -403,10 +403,22 @@ Response: GameSession
 2. リザルト生成Celeryタスク ✅ 完了（2025-07-08）
 3. リザルト画面UI ✅ 完了（2025-07-08）
 
-### フェーズ4: 継続性
-1. セッション間の引き継ぎ実装
-2. Neo4j知識グラフ連携
-3. ストーリーアーク管理
+### フェーズ4: 継続性 🔄 進行中（2025-07-08）
+1. セッション間の引き継ぎ実装 ⚠️ 部分的に完了
+   - ✅ `continue_session`メソッド実装済み
+   - ✅ SessionResultからの継続情報取得
+   - ✅ セッション番号の自動インクリメント
+   - ✅ ストーリーアークIDの引き継ぎ
+   - ❌ AIによる継続ナラティブ生成（TODO）
+2. Neo4j知識グラフ連携 ⚠️ 基盤のみ実装
+   - ✅ Neo4jモデル定義（NPC、Location等）
+   - ✅ NPCGeneratorサービス
+   - ✅ NPCManagerAgentの関係性抽出
+   - ❌ SessionResultServiceからの実際の書き込み（TODO）
+3. ストーリーアーク管理 ❌ 未実装
+   - ✅ `story_arc_id`フィールドは存在
+   - ❌ ストーリーアークの作成・管理機能
+   - ❌ 複数セッションに跨るストーリー追跡
 
 ## 10. 実装詳細
 
@@ -611,3 +623,70 @@ Response: GameSession
 - プラグイン可能なリザルト処理
 - カスタマイズ可能な終了条件
 - 将来的なマルチプレイヤー対応
+
+## 12. フェーズ4実装状況詳細（2025-07-08）
+
+### 12.1 セッション間の引き継ぎ実装
+
+#### 実装済み機能
+- **GameSessionService.continue_session()**
+  - 前回セッションの検証（存在確認、完了状態確認、所有権確認）
+  - SessionResultからの継続情報取得（story_summary、continuation_context、unresolved_plots）
+  - 新規セッションの作成（session_number自動インクリメント）
+  - session_dataへの前回結果格納
+  - システムメッセージの自動保存
+
+#### 未実装機能
+- **AIによる継続ナラティブ生成**
+  - コメントアウトされたTODOセクション（1386-1412行目）
+  - CoordinatorAIへの`generate_continuation_narrative`メソッド追加が必要
+  - 前回のあらすじと未解決プロットを考慮した物語開始
+
+### 12.2 Neo4j知識グラフ連携
+
+#### 実装済み機能
+- **Neo4jモデル定義（neo4j_models.py）**
+  - Location、NPC、CompletedLogNodeノード
+  - InteractedWith、LocatedIn、OriginatedFrom関係
+  - `create_npc_from_log`関数
+
+- **NPCGeneratorサービス**
+  - CompletedLogからNPCエンティティへの変換
+  - Neo4jへの保存機能
+
+- **NPCManagerAgent**
+  - `update_npc_relationships`メソッド
+  - メッセージ履歴からNPC遭遇と関係性変化を抽出
+
+#### 未実装機能
+- **SessionResultServiceの統合**
+  - `_update_knowledge_graph`メソッドでの実際のNeo4j書き込み
+  - WorldConsciousnessAIによる世界状態の更新（TODO）
+  - NPCManagerの抽出結果をNeo4jに反映する処理
+
+### 12.3 初回セッション特別仕様
+
+#### 実装済み機能
+- **is_first_sessionフラグ**
+  - GameSessionモデルにフィールド追加
+  - create_sessionメソッドで自動設定（session_count == 0）
+
+#### 未実装機能
+- **FirstSessionInitializer（設計仕様のみ存在）**
+  - 世界観の導入テキスト生成
+  - 基点都市ネクサスへの初期配置
+  - 6つの初期クエストの自動付与
+  - 最初の3つの選択肢生成
+
+### 12.4 ストーリーアーク管理
+
+#### 実装済み機能
+- **story_arc_idフィールド**
+  - GameSessionモデルに追加
+  - continue_sessionで前回のIDを引き継ぎ
+
+#### 未実装機能
+- **ストーリーアーク管理システム**
+  - ストーリーアークの作成・管理機能
+  - 複数セッションに跨るストーリー追跡
+  - アークの完了判定と新規アーク生成
