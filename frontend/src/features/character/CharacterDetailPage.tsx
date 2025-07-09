@@ -27,11 +27,14 @@ import {
   useActivateCharacter,
   useDeactivateCharacter,
 } from '@/hooks/useCharacters'
+import { useCreateGameSession, useSessionHistory } from '@/hooks/useGameSessions'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { LoadingButton } from '@/components/ui/LoadingButton'
 import { containerStyles } from '@/lib/styles'
+import { toast } from 'sonner'
+import { Play } from 'lucide-react'
 
 export function CharacterDetailPage() {
   const { id } = useParams({ from: '/_authenticated/character/$id' })
@@ -43,7 +46,11 @@ export function CharacterDetailPage() {
   const deleteCharacterMutation = useDeleteCharacter()
   const activateCharacterMutation = useActivateCharacter()
   const deactivateCharacterMutation = useDeactivateCharacter()
+  const createSessionMutation = useCreateGameSession()
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // セッション履歴を取得
+  const { data: sessionHistory } = useSessionHistory(id, 1, 1, 'active')
 
   const handleDeleteCharacter = async () => {
     if (!character) return
@@ -70,6 +77,29 @@ export function CharacterDetailPage() {
 
   const handleDeactivateCharacter = async () => {
     await deactivateCharacterMutation.mutateAsync()
+  }
+  
+  const handleStartSession = async () => {
+    if (!character) return
+
+    // アクティブセッションがある場合はそのセッションへ遷移
+    const activeSession = sessionHistory?.items?.[0]
+    if (activeSession) {
+      navigate({ to: `/game/${activeSession.id}` })
+      return
+    }
+
+    try {
+      const session = await createSessionMutation.mutateAsync({
+        characterId: character.id,
+      })
+
+      toast.success('ゲームセッションを開始しました')
+      navigate({ to: `/game/${session.id}` })
+    } catch (error) {
+      console.error('Failed to start game session:', error)
+      toast.error('ゲームセッションの開始に失敗しました')
+    }
   }
 
   if (isLoading) {
@@ -138,6 +168,16 @@ export function CharacterDetailPage() {
           </div>
 
           <div className="flex gap-2">
+            {isActive && (
+              <LoadingButton
+                onClick={handleStartSession}
+                isLoading={createSessionMutation.isPending}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+              >
+                <Play className="mr-2 h-4 w-4" />
+                {sessionHistory?.items?.[0] ? '冒険を再開' : '冒険を始める'}
+              </LoadingButton>
+            )}
             <LoadingButton
               onClick={
                 isActive ? handleDeactivateCharacter : handleActivateCharacter

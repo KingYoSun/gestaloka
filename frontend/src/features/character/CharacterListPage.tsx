@@ -22,7 +22,7 @@ import {
   useDeactivateCharacter,
 } from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
-import { useCreateGameSession } from '@/hooks/useGameSessions'
+import { useCreateGameSession, useSessionHistory } from '@/hooks/useGameSessions'
 import { Character } from '@/types'
 import { formatRelativeTime } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -39,6 +39,9 @@ export function CharacterListPage() {
   const deactivateCharacterMutation = useDeactivateCharacter()
   const createSessionMutation = useCreateGameSession()
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  
+  // アクティブキャラクターのセッション履歴を取得
+  const { data: sessionHistory } = useSessionHistory(activeCharacter?.id, 1, 1, 'active')
 
   const handleDeleteCharacter = async (characterId: string) => {
     if (window.confirm('このキャラクターを削除してもよろしいですか？')) {
@@ -62,6 +65,13 @@ export function CharacterListPage() {
   const handleStartSession = async () => {
     if (!activeCharacter) {
       toast.error('キャラクターを選択してください')
+      return
+    }
+
+    // アクティブセッションがある場合はそのセッションへ遷移
+    const activeSession = sessionHistory?.items?.[0]
+    if (activeSession) {
+      navigate({ to: `/game/${activeSession.id}` })
       return
     }
 
@@ -127,7 +137,7 @@ export function CharacterListPage() {
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
               >
                 <Play className="mr-2 h-4 w-4" />
-                冒険を始める
+                {sessionHistory?.items?.[0] ? '冒険を再開' : '冒険を始める'}
               </LoadingButton>
             )}
             <Link to="/character/create">

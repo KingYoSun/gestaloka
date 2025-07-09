@@ -121,9 +121,20 @@ export function useConsumeSP() {
       showSuccessToast('SP消費完了', response.message)
     },
     onError: (error: unknown) => {
+      const errorResponse = (error as any)?.response
       const errorMessage =
-        (error as any)?.response?.data?.detail || 'SPの消費に失敗しました'
-      showErrorToast(new Error(errorMessage), 'SP消費エラー')
+        errorResponse?.data?.detail || 'SPの消費に失敗しました'
+      
+      // SP不足エラーの特別処理
+      if (errorResponse?.status === 400 && errorMessage.includes('SP不足')) {
+        // SP不足の場合は特別なメッセージ
+        showErrorToast(
+          new Error(errorMessage + '\nSPを回復するか、より簡単な行動を選択してください。'),
+          'SP不足'
+        )
+      } else {
+        showErrorToast(new Error(errorMessage), 'SP消費エラー')
+      }
     },
   })
 }

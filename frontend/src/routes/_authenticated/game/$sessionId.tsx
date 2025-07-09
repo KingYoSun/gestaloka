@@ -15,8 +15,8 @@ import { useGameSessionStore } from '@/stores/gameSessionStore'
 import { useGameWebSocket } from '@/hooks/useWebSocket'
 import { websocketManager } from '@/lib/websocket/socket'
 import { useAuth } from '@/features/auth/useAuth'
-import { SPConsumeDialog } from '@/components/sp/SPConsumeDialog'
 import { SPTransactionType } from '@/types/sp'
+import { useConsumeSP } from '@/hooks/useSP'
 import { SessionEndingDialog } from '@/components/SessionEndingDialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -53,12 +53,6 @@ function GameSessionPage() {
   const { user } = useAuth()
   const [actionText, setActionText] = useState('')
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null)
-  const [showSPDialog, setShowSPDialog] = useState(false)
-  const [pendingAction, setPendingAction] = useState<{
-    text: string
-    isChoice: boolean
-    choiceIndex?: number
-  } | null>(null)
   const [showEndingDialog, setShowEndingDialog] = useState(false)
 
   const { data: session, isLoading } = useGameSession(sessionId)
@@ -67,6 +61,7 @@ function GameSessionPage() {
   const { data: endingProposal } = useSessionEndingProposal(sessionId)
   const acceptEndingMutation = useAcceptSessionEnding()
   const rejectEndingMutation = useRejectSessionEnding()
+  const consumeSPMutation = useConsumeSP()
 
   const {
     setActiveSession,
@@ -123,14 +118,29 @@ function GameSessionPage() {
     }
 
     const isChoice = selectedChoice !== null
+    const spCost = calculateSPCost(actionText.trim(), isChoice)
 
-    // SP消費確認ダイアログを表示
-    setPendingAction({
-      text: actionText.trim(),
-      isChoice,
-      choiceIndex: selectedChoice ?? undefined,
-    })
-    setShowSPDialog(true)
+    // SP消費処理を実行
+    try {
+      await consumeSPMutation.mutateAsync({
+        amount: spCost,
+        transactionType: SPTransactionType.FREE_ACTION,
+        description: `自由行動: ${actionText.trim().substring(0, 50)}${actionText.trim().length > 50 ? '...' : ''}`,
+        relatedEntityType: 'game_session',
+        relatedEntityId: sessionId,
+        metadata: {
+          actionText: actionText.trim(),
+          sessionId,
+          characterId: session?.characterId,
+        },
+      })
+
+      // SP消費成功したらアクションを実行
+      await executeAction(actionText.trim(), isChoice, selectedChoice ?? undefined)
+    } catch (error: any) {
+      console.error('Failed to consume SP:', error)
+      // SP不足エラーはuseConsumeSPフックのonErrorで処理されるため、ここでは何もしない
+    }
   }
 
   const executeAction = async (
@@ -158,41 +168,15 @@ function GameSessionPage() {
       setSelectedChoice(null)
     } catch (error: any) {
       console.error('Failed to execute action:', error)
-
-      // SP不足エラーの特別処理
-      if (
-        error?.response?.status === 400 &&
-        error?.response?.data?.detail?.includes('SP不足')
-      ) {
-        toast.error(error.response.data.detail, {
-          description: 'SPを回復するか、より簡単な行動を選択してください。',
-          duration: 5000,
-        })
-      } else {
-        toast.error('行動の実行に失敗しました', {
-          description:
-            error?.response?.data?.detail || 'もう一度お試しください。',
-        })
-      }
+      toast.error('行動の実行に失敗しました', {
+        description:
+          error?.response?.data?.detail || 'もう一度お試しください。',
+      })
     } finally {
       setExecutingAction(false)
     }
   }
 
-  const handleSPConsumeSuccess = async () => {
-    if (!pendingAction) return
-
-    await executeAction(
-      pendingAction.text,
-      pendingAction.isChoice,
-      pendingAction.choiceIndex
-    )
-    setPendingAction(null)
-  }
-
-  const handleSPConsumeCancel = () => {
-    setPendingAction(null)
-  }
 
   const handleEndSession = async () => {
     if (!confirm('本当にセッションを終了しますか？')) {
@@ -469,11 +453,11 @@ function GameSessionPage() {
               <Button
                 onClick={handleSubmitAction}
                 disabled={
-                  !session.isActive || isExecutingAction || !actionText.trim()
+                  !session.isActive || isExecutingAction || !actionText.trim() || consumeSPMutation.isPending
                 }
                 className="w-full"
               >
-                {isExecutingAction ? (
+                {isExecutingAction || consumeSPMutation.isPending ? (
                   <>
                     <LoadingSpinner size="sm" className="mr-2" />
                     実行中...
@@ -514,25 +498,6 @@ function GameSessionPage() {
         </div>
       </div>
 
-      {/* SP消費確認ダイアログ */}
-      {pendingAction && (
-        <SPConsumeDialog
-          open={showSPDialog}
-          onOpenChange={setShowSPDialog}
-          amount={calculateSPCost(pendingAction.text, pendingAction.isChoice)}
-          transactionType={SPTransactionType.FREE_ACTION}
-          description={`自由行動: ${pendingAction.text.substring(0, 50)}${pendingAction.text.length > 50 ? '...' : ''}`}
-          relatedEntityType="game_session"
-          relatedEntityId={sessionId}
-          metadata={{
-            actionText: pendingAction.text,
-            sessionId,
-            characterId: session.characterId,
-          }}
-          onSuccess={handleSPConsumeSuccess}
-          onCancel={handleSPConsumeCancel}
-        />
-      )}
 
       {/* NPC遭遇マネージャー */}
       <NPCEncounterManager

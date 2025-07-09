@@ -200,3 +200,18 @@ export const useSessionResult = (sessionId: string | undefined) => {
     staleTime: Infinity, // リザルトは不変なので永久キャッシュ
   })
 }
+
+// セッション履歴を取得
+export const useSessionHistory = (
+  characterId: string | undefined,
+  page: number = 1,
+  perPage: number = 20,
+  status?: 'active' | 'ending_proposed' | 'completed'
+) => {
+  return useQuery<any>({
+    queryKey: ['sessionHistory', characterId, page, perPage, status],
+    queryFn: () => apiClient.getSessionHistory(characterId!, page, perPage, status),
+    enabled: !!characterId,
+    staleTime: 30 * 1000, // 30秒間キャッシュ
+  })
+}

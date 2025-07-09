@@ -225,6 +225,23 @@ class ApiClient {
     return this.requestWithTransform<GameSessionListResponse>('/game/sessions')
   }
 
+  async getSessionHistory(
+    characterId: string,
+    page: number = 1,
+    perPage: number = 20,
+    status?: 'active' | 'ending_proposed' | 'completed'
+  ): Promise<any> {
+    const params = new URLSearchParams({
+      character_id: characterId,
+      page: page.toString(),
+      per_page: perPage.toString(),
+    })
+    if (status) {
+      params.append('status', status)
+    }
+    return this.requestWithTransform<any>(`/game/sessions/history?${params}`)
+  }
+
   async getGameSession(sessionId: string): Promise<GameSession> {
     return this.requestWithTransform<GameSession>(`/game/sessions/${sessionId}`)
   }
