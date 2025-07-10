@@ -1,7 +1,7 @@
 /**
- * ゲームセッションページ
+ * ゲームセッションページ - ノベルゲーム風UI
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   useGameSession,
@@ -18,6 +18,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { SPTransactionType } from '@/types/sp'
 import { useConsumeSP } from '@/hooks/useSP'
 import { SessionEndingDialog } from '@/components/SessionEndingDialog'
+import { NovelGameInterface } from '@/components/game/NovelGameInterface'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TextareaWithCounter } from '@/components/common'
@@ -34,6 +35,8 @@ import {
   MessageSquare,
   Coins,
   Sparkles,
+  BookOpen,
+  PenTool,
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
@@ -77,6 +80,7 @@ function GameSessionPage() {
   // const { chatMessages, sendChatMessage } = useChatWebSocket(sessionId)
 
   const messages = getSessionMessages(sessionId)
+  const [viewMode, setViewMode] = useState<'novel' | 'chat'>('novel')
 
   // セッションがロードされたらストアに設定
   useEffect(() => {
@@ -235,6 +239,17 @@ function GameSessionPage() {
     }
   }
 
+  // ノベルゲーム用のメッセージ変換
+  const novelMessages = useMemo(() => {
+    return messages.map((msg) => ({
+      id: msg.id,
+      content: msg.content,
+      type: (msg.type === 'user' ? 'dialogue' : 'narration') as 'dialogue' | 'narration',
+      speaker: msg.type === 'user' ? session?.characterName || undefined : undefined,
+      timestamp: new Date(msg.timestamp),
+    }))
+  }, [messages, session?.characterName])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -268,6 +283,17 @@ function GameSessionPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setViewMode(viewMode === 'novel' ? 'chat' : 'novel')}
+          >
+            {viewMode === 'novel' ? (
+              <><MessageSquare className="h-4 w-4 mr-2" />チャット</>  
+            ) : (
+              <><BookOpen className="h-4 w-4 mr-2" />ノベル</>  
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => (window.location.href = '/memory')}
           >
             <Sparkles className="h-4 w-4 mr-2" />
@@ -293,209 +319,316 @@ function GameSessionPage() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
-        {/* ゲーム画面 */}
-        <div className="lg:col-span-3 flex flex-col">
-          {/* 現在のシーン */}
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                現在のシーン
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-foreground whitespace-pre-wrap">
-                {session.currentScene || '物語が始まろうとしています...'}
-              </p>
-            </CardContent>
-          </Card>
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {viewMode === 'novel' ? (
+          // ノベルゲーム風表示
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
+            <div className="lg:col-span-3 h-full">
+              <NovelGameInterface
+                messages={novelMessages}
+                choices={currentChoices || []}
+                currentScene={session.currentScene || undefined}
+                onChoiceSelect={handleChoiceSelect}
+                showChoices={!isExecutingAction && session.isActive}
+              />
+            </div>
+            {/* サイドバー */}
+            <div className="space-y-4">
+              {/* クエスト状態 */}
+              <QuestStatusWidget compact />
 
-          {/* メッセージ履歴 */}
-          <Card className="flex-1 flex flex-col">
-            <CardHeader>
-              <CardTitle>会話履歴</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 p-0">
-              <ScrollArea className="h-full px-6 pb-6">
-                <div className="space-y-4">
-                  {messages.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">
-                      まだメッセージがありません。行動を入力して冒険を始めましょう！
-                    </p>
-                  ) : (
-                    messages.map(message => (
-                      <div
-                        key={message.id}
-                        className={`flex gap-3 ${
-                          message.type === 'user' ? 'flex-row-reverse' : ''
-                        }`}
-                      >
-                        <div
-                          className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-md border ${
-                            message.type === 'user'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
-                          }`}
-                        >
-                          {message.type === 'user' ? (
-                            <User className="h-4 w-4" />
-                          ) : (
-                            <Bot className="h-4 w-4" />
-                          )}
-                        </div>
-                        <div
-                          className={`flex flex-col space-y-2 text-sm max-w-[80%] ${
-                            message.type === 'user' ? 'items-end' : ''
-                          }`}
-                        >
+              {/* 戦闘状態 */}
+              {session.sessionData?.battle_data && (
+                <BattleStatus
+                  battleData={
+                    session.sessionData.battle_data as unknown as BattleData
+                  }
+                />
+              )}
+
+              {/* 自由行動入力 */}
+              {!currentChoices || currentChoices.length === 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <PenTool className="h-5 w-5" />
+                      自由行動
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <TextareaWithCounter
+                      placeholder="あなたの行動を入力してください..."
+                      value={actionText}
+                      onChange={e => setActionText(e.target.value)}
+                      className="min-h-[100px]"
+                      disabled={!session.isActive || isExecutingAction}
+                      maxLength={500}
+                    />
+                    {actionText.trim() && (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          自由行動には{' '}
+                          <strong>
+                            {calculateSPCost(actionText.trim(), false)} SP
+                          </strong>{' '}
+                          が必要です
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <Button
+                      onClick={handleSubmitAction}
+                      disabled={
+                        !session.isActive || isExecutingAction || !actionText.trim() || consumeSPMutation.isPending
+                      }
+                      className="w-full"
+                    >
+                      {isExecutingAction || consumeSPMutation.isPending ? (
+                        <>
+                          <LoadingSpinner size="sm" className="mr-2" />
+                          実行中...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          {actionText.trim()
+                            ? `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
+                            : '行動実行'}
+                        </>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {/* キャラクター情報 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">キャラクター情報</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="font-medium">名前:</span>{' '}
+                      {session.characterName}
+                    </div>
+                    <div>
+                      <span className="font-medium">セッション開始:</span>
+                      <br />
+                      {new Date(session.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          // 従来のチャット表示
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
+            {/* ゲーム画面 */}
+            <div className="lg:col-span-3 flex flex-col">
+              {/* 現在のシーン */}
+              <Card className="mb-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" />
+                    現在のシーン
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-foreground whitespace-pre-wrap">
+                    {session.currentScene || '物語が始まろうとしています...'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* メッセージ履歴 */}
+              <Card className="flex-1 flex flex-col">
+                <CardHeader>
+                  <CardTitle>会話履歴</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 p-0">
+                  <ScrollArea className="h-full px-6 pb-6">
+                    <div className="space-y-4">
+                      {messages.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">
+                          まだメッセージがありません。行動を入力して冒険を始めましょう！
+                        </p>
+                      ) : (
+                        messages.map(message => (
                           <div
-                            className={`rounded-lg px-3 py-2 ${
-                              message.type === 'user'
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted'
+                            key={message.id}
+                            className={`flex gap-3 ${
+                              message.type === 'user' ? 'flex-row-reverse' : ''
                             }`}
                           >
-                            {message.content}
+                            <div
+                              className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-md border ${
+                                message.type === 'user'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-muted'
+                              }`}
+                            >
+                              {message.type === 'user' ? (
+                                <User className="h-4 w-4" />
+                              ) : (
+                                <Bot className="h-4 w-4" />
+                              )}
+                            </div>
+                            <div
+                              className={`flex flex-col space-y-2 text-sm max-w-[80%] ${
+                                message.type === 'user' ? 'items-end' : ''
+                              }`}
+                            >
+                              <div
+                                className={`rounded-lg px-3 py-2 ${
+                                  message.type === 'user'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-muted'
+                                }`}
+                              >
+                                {message.content}
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(message.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
                           </div>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(message.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* サイドバー */}
-        <div className="space-y-4">
-          {/* クエスト状態 */}
-          <QuestStatusWidget compact />
-
-          {/* 戦闘状態 */}
-          {session.sessionData?.battle_data && (
-            <BattleStatus
-              battleData={
-                session.sessionData.battle_data as unknown as BattleData
-              }
-            />
-          )}
-
-          {/* 選択肢 */}
-          {currentChoices && currentChoices.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">選択肢</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {currentChoices.map((choice, index) => (
-                  <Button
-                    key={choice.id || index}
-                    variant={selectedChoice === index ? 'default' : 'outline'}
-                    className="w-full text-left justify-start h-auto p-3"
-                    onClick={() => handleChoiceSelect(index)}
-                  >
-                    <div className="flex-1">
-                      <span className="whitespace-normal">{choice.text}</span>
-                      {choice.difficulty && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          難易度: {choice.difficulty}
-                        </div>
+                        ))
                       )}
                     </div>
-                    <Badge variant="secondary" className="ml-2 shrink-0">
-                      <Coins className="h-3 w-3 mr-1" />2 SP
-                    </Badge>
-                  </Button>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
 
-          {/* 行動入力 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">行動入力</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <TextareaWithCounter
-                placeholder="あなたの行動を入力してください..."
-                value={actionText}
-                onChange={e => setActionText(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!session.isActive || isExecutingAction}
-                maxLength={500}
-              />
-              {actionText.trim() && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    {selectedChoice !== null ? (
+            {/* サイドバー */}
+            <div className="space-y-4">
+              {/* クエスト状態 */}
+              <QuestStatusWidget compact />
+
+              {/* 戦闘状態 */}
+              {session.sessionData?.battle_data && (
+                <BattleStatus
+                  battleData={
+                    session.sessionData.battle_data as unknown as BattleData
+                  }
+                />
+              )}
+
+              {/* 選択肢 */}
+              {currentChoices && currentChoices.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">選択肢</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {currentChoices.map((choice, index) => (
+                      <Button
+                        key={choice.id || index}
+                        variant={selectedChoice === index ? 'default' : 'outline'}
+                        className="w-full text-left justify-start h-auto p-3"
+                        onClick={() => handleChoiceSelect(index)}
+                      >
+                        <div className="flex-1">
+                          <span className="whitespace-normal">{choice.text}</span>
+                          {choice.difficulty && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              難易度: {choice.difficulty}
+                            </div>
+                          )}
+                        </div>
+                        <Badge variant="secondary" className="ml-2 shrink-0">
+                          <Coins className="h-3 w-3 mr-1" />2 SP
+                        </Badge>
+                      </Button>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* 行動入力 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">行動入力</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <TextareaWithCounter
+                    placeholder="あなたの行動を入力してください..."
+                    value={actionText}
+                    onChange={e => setActionText(e.target.value)}
+                    className="min-h-[100px]"
+                    disabled={!session.isActive || isExecutingAction}
+                    maxLength={500}
+                  />
+                  {actionText.trim() && (
+                    <Alert>
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        {selectedChoice !== null ? (
+                          <>
+                            選択肢の実行には <strong>2 SP</strong> が必要です
+                          </>
+                        ) : (
+                          <>
+                            自由行動には{' '}
+                            <strong>
+                              {calculateSPCost(actionText.trim(), false)} SP
+                            </strong>{' '}
+                            が必要です
+                          </>
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <Button
+                    onClick={handleSubmitAction}
+                    disabled={
+                      !session.isActive || isExecutingAction || !actionText.trim() || consumeSPMutation.isPending
+                    }
+                    className="w-full"
+                  >
+                    {isExecutingAction || consumeSPMutation.isPending ? (
                       <>
-                        選択肢の実行には <strong>2 SP</strong> が必要です
+                        <LoadingSpinner size="sm" className="mr-2" />
+                        実行中...
                       </>
                     ) : (
                       <>
-                        自由行動には{' '}
-                        <strong>
-                          {calculateSPCost(actionText.trim(), false)} SP
-                        </strong>{' '}
-                        が必要です
+                        <Send className="mr-2 h-4 w-4" />
+                        {selectedChoice !== null
+                          ? '選択肢を実行 (2 SP)'
+                          : actionText.trim()
+                            ? `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
+                            : '行動実行'}
                       </>
                     )}
-                  </AlertDescription>
-                </Alert>
-              )}
-              <Button
-                onClick={handleSubmitAction}
-                disabled={
-                  !session.isActive || isExecutingAction || !actionText.trim() || consumeSPMutation.isPending
-                }
-                className="w-full"
-              >
-                {isExecutingAction || consumeSPMutation.isPending ? (
-                  <>
-                    <LoadingSpinner size="sm" className="mr-2" />
-                    実行中...
-                  </>
-                ) : (
-                  <>
-                    <Send className="mr-2 h-4 w-4" />
-                    {selectedChoice !== null
-                      ? '選択肢を実行 (2 SP)'
-                      : actionText.trim()
-                        ? `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
-                        : '行動実行'}
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
+                  </Button>
+                </CardContent>
+              </Card>
 
-          {/* キャラクター情報 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">キャラクター情報</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="font-medium">名前:</span>{' '}
-                  {session.characterName}
-                </div>
-                <div>
-                  <span className="font-medium">セッション開始:</span>
-                  <br />
-                  {new Date(session.createdAt).toLocaleString()}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              {/* キャラクター情報 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">キャラクター情報</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="font-medium">名前:</span>{' '}
+                      {session.characterName}
+                    </div>
+                    <div>
+                      <span className="font-medium">セッション開始:</span>
+                      <br />
+                      {new Date(session.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
       </div>
 
 

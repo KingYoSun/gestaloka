@@ -109,14 +109,15 @@ make format            # フォーマット
 - `04_ai_agents/`: AI仕様
 - `05_implementation/`: 実装ガイド
 
-## 現在の環境（2025/07/08）
+## 現在の環境（2025/07/10）
 - langchain-google-genai 2.1.6
 - AIレスポンスキャッシュ実装（コスト20-30%削減）
-- バックエンドテスト100%成功（230/230）
+- バックエンドテスト100%成功（242/242）
 - フロントエンドテスト100%成功（28/28、MSW導入）
 - 全コード品質チェック通過（型・リント）
 - **SP日次回復の自動化実装済み**（Celeryタスク、毎日UTC 4時実行）
 - **PostgreSQL ENUM型問題を解決**（MIXEDマイグレーション修正）
+- **ノベルゲーム風UI実装済み**（Framer Motion導入、表示モード切り替え対応）
 
 ## 詳細参照先
 - 環境情報: `documents/01_project/activeContext/current_environment.md`

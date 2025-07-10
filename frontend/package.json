@@ -42,7 +42,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
-    "framer-motion": "^12.20.1",
+    "framer-motion": "^12.23.1",
     "keycloak-js": "^26.2.0",
     "lucide-react": "^0.515.0",
     "react": "^19.1.0",
