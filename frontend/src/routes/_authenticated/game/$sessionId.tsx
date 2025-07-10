@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import {
   BattleStatus,
   type BattleData,
@@ -100,6 +101,34 @@ function GameSessionPage() {
     setSelectedChoice(choiceIndex)
     if (currentChoices && currentChoices[choiceIndex]) {
       setActionText(currentChoices[choiceIndex].text)
+    }
+  }
+
+  // ノベル風UIから選択肢を直接実行する場合
+  const handleNovelChoiceExecute = async (choiceIndex: number, choiceText: string) => {
+    if (!session?.isActive || isExecutingAction) return
+
+    const spCost = 2 // 選択肢は一律2SP
+
+    try {
+      // SP消費処理を実行
+      await consumeSPMutation.mutateAsync({
+        amount: spCost,
+        transactionType: SPTransactionType.FREE_ACTION,
+        description: `選択肢: ${choiceText.substring(0, 50)}${choiceText.length > 50 ? '...' : ''}`,
+        relatedEntityType: 'game_session',
+        relatedEntityId: sessionId,
+        metadata: {
+          actionText: choiceText,
+          sessionId,
+          characterId: session?.characterId,
+        },
+      })
+
+      // SP消費成功したらアクションを実行
+      await executeAction(choiceText, true, choiceIndex)
+    } catch (error: any) {
+      console.error('Failed to consume SP:', error)
     }
   }
 
@@ -320,15 +349,19 @@ function GameSessionPage() {
       </div>
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {viewMode === 'novel' ? (
-          // ノベルゲーム風表示
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
+        {/* 両方のUIを同時にレンダリングして表示/非表示を切り替える */}
+        <div className="relative h-full">
+          {/* ノベルゲーム風表示 */}
+          <div className={cn(
+            "absolute inset-0 grid grid-cols-1 lg:grid-cols-4 gap-4 h-full transition-opacity duration-300",
+            viewMode === 'novel' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          )}>
             <div className="lg:col-span-3 h-full">
               <NovelGameInterface
                 messages={novelMessages}
                 choices={currentChoices || []}
                 currentScene={session.currentScene || undefined}
-                onChoiceSelect={handleChoiceSelect}
+                onChoiceSelect={handleNovelChoiceExecute}
                 showChoices={!isExecutingAction && session.isActive}
               />
             </div>
@@ -422,9 +455,12 @@ function GameSessionPage() {
               </Card>
             </div>
           </div>
-        ) : (
-          // 従来のチャット表示
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 h-full">
+
+          {/* 従来のチャット表示 */}
+          <div className={cn(
+            "absolute inset-0 grid grid-cols-1 lg:grid-cols-4 gap-4 h-full transition-opacity duration-300",
+            viewMode === 'chat' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          )}>
             {/* ゲーム画面 */}
             <div className="lg:col-span-3 flex flex-col">
               {/* 現在のシーン */}
@@ -628,7 +664,7 @@ function GameSessionPage() {
               </Card>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
 

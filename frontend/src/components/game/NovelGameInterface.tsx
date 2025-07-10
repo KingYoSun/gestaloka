@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Coins, ChevronRight, SkipForward } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { Coins, SkipForward } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 interface NovelMessage {
   id: string
@@ -38,39 +38,65 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
   choices = [],
   currentScene,
   onChoiceSelect,
-  isTyping = false,
   showChoices = true,
 }) => {
-  const [displayedText, setDisplayedText] = useState('')
-  const [currentMessageIndex, setCurrentMessageIndex] = useState(0)
+  const [displayedMessages, setDisplayedMessages] = useState<Array<{message: NovelMessage, displayedText: string}>>([])  
+  const [currentTypingIndex, setCurrentTypingIndex] = useState(0)
   const [isAutoPlay, setIsAutoPlay] = useState(false)
   const typewriterSpeed = 30
-  const textContainerRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  const currentMessage = messages[currentMessageIndex]
+  // 新しいメッセージが追加されたときの処理
+  useEffect(() => {
+    if (messages.length > displayedMessages.length) {
+      const newMessages = messages.slice(displayedMessages.length)
+      newMessages.forEach((msg) => {
+        setDisplayedMessages(prev => [...prev, { message: msg, displayedText: '' }])
+      })
+      setCurrentTypingIndex(displayedMessages.length)
+    }
+  }, [messages, displayedMessages.length])
 
   // タイプライター効果
   useEffect(() => {
-    if (!currentMessage) return
-
-    setDisplayedText('')
-    let charIndex = 0
-    const text = currentMessage.content
+    if (currentTypingIndex >= displayedMessages.length) return
+    
+    const currentItem = displayedMessages[currentTypingIndex]
+    if (!currentItem) return
+    
+    let charIndex = currentItem.displayedText.length
+    const fullText = currentItem.message.content
+    
+    if (charIndex >= fullText.length) {
+      // 現在のメッセージが完了したら次へ
+      if (currentTypingIndex < displayedMessages.length - 1) {
+        setCurrentTypingIndex(prev => prev + 1)
+      }
+      return
+    }
 
     intervalRef.current = setInterval(() => {
-      if (charIndex < text.length) {
-        setDisplayedText(text.slice(0, charIndex + 1))
+      if (charIndex < fullText.length) {
+        setDisplayedMessages(prev => {
+          const newMessages = [...prev]
+          newMessages[currentTypingIndex] = {
+            ...newMessages[currentTypingIndex],
+            displayedText: fullText.slice(0, charIndex + 1)
+          }
+          return newMessages
+        })
         charIndex++
       } else {
         if (intervalRef.current) {
           clearInterval(intervalRef.current)
         }
         // 自動再生モードの場合、次のメッセージへ
-        if (isAutoPlay && currentMessageIndex < messages.length - 1) {
+        if (isAutoPlay && currentTypingIndex < displayedMessages.length - 1) {
           setTimeout(() => {
-            setCurrentMessageIndex(prev => prev + 1)
-          }, 2000)
+            setCurrentTypingIndex(prev => prev + 1)
+          }, 1000)
         }
       }
     }, typewriterSpeed)
@@ -80,34 +106,30 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
         clearInterval(intervalRef.current)
       }
     }
-  }, [currentMessage, typewriterSpeed, isAutoPlay, currentMessageIndex, messages.length])
+  }, [currentTypingIndex, displayedMessages, typewriterSpeed, isAutoPlay])
 
   // テキストスキップ
   const handleSkip = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
     }
-    setDisplayedText(currentMessage?.content || '')
-  }, [currentMessage])
-
-  // 次のメッセージへ
-  const handleNext = useCallback(() => {
-    if (currentMessageIndex < messages.length - 1) {
-      setCurrentMessageIndex(prev => prev + 1)
-    }
-  }, [currentMessageIndex, messages.length])
+    // すべてのメッセージを完全に表示
+    setDisplayedMessages(prev => prev.map((item) => ({
+      ...item,
+      displayedText: item.message.content
+    })))
+    setCurrentTypingIndex(displayedMessages.length)
+  }, [displayedMessages.length])
 
   // メッセージ領域のスクロール調整
   useEffect(() => {
-    if (textContainerRef.current) {
-      textContainerRef.current.scrollTop = textContainerRef.current.scrollHeight
-    }
-  }, [displayedText])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [displayedMessages])
 
   return (
-    <div className="relative w-full h-full bg-gradient-to-b from-gray-900 to-black rounded-lg overflow-hidden">
+    <div className="relative w-full h-full bg-background rounded-lg overflow-hidden">
       {/* 背景オーバーレイ */}
-      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/50 to-background/90" />
 
       {/* シーン情報 */}
       {currentScene && (
@@ -116,8 +138,8 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
           animate={{ opacity: 1, y: 0 }}
           className="absolute top-4 left-4 z-10"
         >
-          <Card className="bg-black/60 backdrop-blur-sm border-gray-800 px-4 py-2">
-            <p className="text-sm text-gray-300">{currentScene}</p>
+          <Card className="bg-card/90 backdrop-blur-sm border-border px-4 py-2">
+            <p className="text-sm text-muted-foreground">{currentScene}</p>
           </Card>
         </motion.div>
       )}
@@ -128,7 +150,7 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
           size="sm"
           variant={isAutoPlay ? 'default' : 'outline'}
           onClick={() => setIsAutoPlay(!isAutoPlay)}
-          className="bg-black/60 backdrop-blur-sm border-gray-700"
+          className="bg-card/90 backdrop-blur-sm border-border"
         >
           {isAutoPlay ? 'Auto ON' : 'Auto OFF'}
         </Button>
@@ -136,7 +158,7 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
           size="sm"
           variant="outline"
           onClick={handleSkip}
-          className="bg-black/60 backdrop-blur-sm border-gray-700"
+          className="bg-card/90 backdrop-blur-sm border-border"
         >
           <SkipForward className="h-4 w-4" />
         </Button>
@@ -145,71 +167,46 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
       {/* メインコンテンツエリア */}
       <div className="relative h-full flex flex-col">
         {/* 物語表示エリア */}
-        <div className="flex-1 flex items-end p-8 pb-4">
-          <div className="w-full max-w-4xl mx-auto">
-            <AnimatePresence mode="wait">
-              {currentMessage && (
+        <div className="flex-1 overflow-hidden">
+          <div 
+            ref={scrollAreaRef}
+            className="h-full overflow-y-auto gestaloka-scrollbar p-8"
+          >
+            <div className="max-w-4xl mx-auto space-y-4">
+              {displayedMessages.map((item, index) => (
                 <motion.div
-                  key={currentMessage.id}
+                  key={item.message.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3 }}
                 >
-                  {/* テキストボックス */}
-                  <Card className="bg-black/80 backdrop-blur-md border-gray-700 p-6">
+                  <Card className="bg-card/95 backdrop-blur-md border-border p-6">
                     {/* スピーカー名 */}
-                    {currentMessage.speaker && (
+                    {item.message.speaker && (
                       <div className="mb-2">
                         <span className="text-primary font-semibold">
-                          {currentMessage.speaker}
+                          {item.message.speaker}
                         </span>
                       </div>
                     )}
 
                     {/* テキスト内容 */}
-                    <div
-                      ref={textContainerRef}
-                      className="text-lg leading-relaxed text-gray-100 min-h-[100px] max-h-[200px] overflow-y-auto"
-                    >
-                      <p className="whitespace-pre-wrap">{displayedText}</p>
-                      {isTyping && displayedText.length < (currentMessage?.content.length || 0) && (
+                    <div className="text-lg leading-relaxed text-foreground">
+                      <p className="whitespace-pre-wrap">{item.displayedText}</p>
+                      {index === currentTypingIndex && item.displayedText.length < item.message.content.length && (
                         <span className="inline-block w-2 h-5 bg-gray-400 ml-1 animate-pulse" />
                       )}
                     </div>
-
-                    {/* 次へボタン */}
-                    {displayedText === currentMessage.content && (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="absolute bottom-4 right-4"
-                      >
-                        {currentMessageIndex < messages.length - 1 ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={handleNext}
-                            className="text-gray-400 hover:text-gray-100"
-                          >
-                            <ChevronRight className="h-5 w-5" />
-                          </Button>
-                        ) : (
-                          showChoices && choices.length === 0 && (
-                            <span className="text-sm text-gray-500">続く...</span>
-                          )
-                        )}
-                      </motion.div>
-                    )}
                   </Card>
                 </motion.div>
-              )}
-            </AnimatePresence>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
         </div>
 
         {/* 選択肢エリア */}
-        {showChoices && choices.length > 0 && currentMessageIndex === messages.length - 1 && (
+        {showChoices && choices.length > 0 && displayedMessages.length === messages.length && (
           <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
@@ -228,7 +225,7 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
                     variant="outline"
                     className={cn(
                       'w-full justify-between h-auto p-4',
-                      'bg-black/60 backdrop-blur-sm border-gray-700',
+                      'bg-card/90 backdrop-blur-sm border-border',
                       'hover:bg-white/10 hover:border-primary',
                       'transition-all duration-200'
                     )}
