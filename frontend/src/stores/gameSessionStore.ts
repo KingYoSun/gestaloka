@@ -81,15 +81,27 @@ export const useGameSessionStore = create<
 
       // メッセージ管理
       addGameMessage: message => {
-        set(state => ({
-          messageHistory: {
-            ...state.messageHistory,
-            [message.sessionId]: [
-              ...(state.messageHistory[message.sessionId] || []),
-              message,
-            ],
-          },
-        }))
+        set(state => {
+          const existingMessages = state.messageHistory[message.sessionId] || []
+          
+          // 重複チェック（同じ内容のメッセージが直近1秒以内に存在する場合はスキップ）
+          const isDuplicate = existingMessages.some(msg => 
+            msg.content === message.content && 
+            msg.type === message.type &&
+            Math.abs(new Date(msg.timestamp).getTime() - new Date(message.timestamp).getTime()) < 1000
+          )
+          
+          if (isDuplicate) {
+            return state
+          }
+          
+          return {
+            messageHistory: {
+              ...state.messageHistory,
+              [message.sessionId]: [...existingMessages, message],
+            },
+          }
+        })
 
         // メッセージにchoicesが含まれている場合は現在の選択肢として設定
         if (message.metadata?.choices) {

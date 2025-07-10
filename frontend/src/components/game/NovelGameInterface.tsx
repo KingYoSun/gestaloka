@@ -167,10 +167,10 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
       {/* メインコンテンツエリア */}
       <div className="relative h-full flex flex-col">
         {/* 物語表示エリア */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden relative">
           <div 
             ref={scrollAreaRef}
-            className="h-full overflow-y-auto gestaloka-scrollbar p-8"
+            className="absolute inset-0 overflow-y-auto gestaloka-scrollbar p-8"
           >
             <div className="max-w-4xl mx-auto space-y-4">
               {displayedMessages.map((item, index) => (

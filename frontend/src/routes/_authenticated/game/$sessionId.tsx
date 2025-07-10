@@ -5,7 +5,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   useGameSession,
-  useExecuteGameAction,
+  // useExecuteGameAction, // WebSocketのみ使用するため無効化
   useEndGameSession,
   useSessionEndingProposal,
   useAcceptSessionEnding,
@@ -60,7 +60,7 @@ function GameSessionPage() {
   const [showEndingDialog, setShowEndingDialog] = useState(false)
 
   const { data: session, isLoading } = useGameSession(sessionId)
-  const executeActionMutation = useExecuteGameAction()
+  // const executeActionMutation = useExecuteGameAction() // WebSocketのみ使用するため無効化
   const endSessionMutation = useEndGameSession()
   const { data: endingProposal } = useSessionEndingProposal(sessionId)
   const acceptEndingMutation = useAcceptSessionEnding()
@@ -87,6 +87,7 @@ function GameSessionPage() {
   useEffect(() => {
     if (session) {
       setActiveSession(session)
+      // WebSocketから選択肢が送信されるため、ここでの復元は不要
     }
   }, [session, setActiveSession])
 
@@ -105,7 +106,7 @@ function GameSessionPage() {
   }
 
   // ノベル風UIから選択肢を直接実行する場合
-  const handleNovelChoiceExecute = async (choiceIndex: number, choiceText: string) => {
+  const handleNovelChoiceExecute = async (_choiceIndex: number, choiceText: string) => {
     if (!session?.isActive || isExecutingAction) return
 
     const spCost = 2 // 選択肢は一律2SP
@@ -126,7 +127,7 @@ function GameSessionPage() {
       })
 
       // SP消費成功したらアクションを実行
-      await executeAction(choiceText, true, choiceIndex)
+      await executeAction(choiceText)
     } catch (error: any) {
       console.error('Failed to consume SP:', error)
     }
@@ -169,7 +170,7 @@ function GameSessionPage() {
       })
 
       // SP消費成功したらアクションを実行
-      await executeAction(actionText.trim(), isChoice, selectedChoice ?? undefined)
+      await executeAction(actionText.trim())
     } catch (error: any) {
       console.error('Failed to consume SP:', error)
       // SP不足エラーはuseConsumeSPフックのonErrorで処理されるため、ここでは何もしない
@@ -177,9 +178,7 @@ function GameSessionPage() {
   }
 
   const executeAction = async (
-    text: string,
-    isChoice: boolean,
-    choiceIndex?: number
+    text: string
   ) => {
     setExecutingAction(true)
 
@@ -187,15 +186,15 @@ function GameSessionPage() {
       // WebSocket経由でアクションを送信
       sendAction(text)
 
-      // 従来のAPI呼び出しも並行して実行（フォールバック）
-      await executeActionMutation.mutateAsync({
-        sessionId,
-        action: {
-          actionText: text,
-          actionType: isChoice ? 'choice' : 'custom',
-          choiceIndex: choiceIndex,
-        },
-      })
+      // 従来のAPI呼び出しは無効化（WebSocketのみ使用）
+      // await executeActionMutation.mutateAsync({
+      //   sessionId,
+      //   action: {
+      //     actionText: text,
+      //     actionType: isChoice ? 'choice' : 'custom',
+      //     choiceIndex: choiceIndex,
+      //   },
+      // })
 
       setActionText('')
       setSelectedChoice(null)
@@ -274,10 +273,10 @@ function GameSessionPage() {
       id: msg.id,
       content: msg.content,
       type: (msg.type === 'user' ? 'dialogue' : 'narration') as 'dialogue' | 'narration',
-      speaker: msg.type === 'user' ? session?.characterName || undefined : undefined,
+      speaker: undefined, // ノベルゲーム風UIではスピーカー名を表示しない
       timestamp: new Date(msg.timestamp),
     }))
-  }, [messages, session?.characterName])
+  }, [messages])
 
   if (isLoading) {
     return (
@@ -299,9 +298,9 @@ function GameSessionPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-4 h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* ヘッダー */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="container mx-auto px-4 py-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold">{session.characterName}の冒険</h1>
           <Badge variant={session.isActive ? 'default' : 'secondary'}>
@@ -348,15 +347,15 @@ function GameSessionPage() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex-1 overflow-hidden container mx-auto px-4">
         {/* 両方のUIを同時にレンダリングして表示/非表示を切り替える */}
         <div className="relative h-full">
           {/* ノベルゲーム風表示 */}
           <div className={cn(
-            "absolute inset-0 grid grid-cols-1 lg:grid-cols-4 gap-4 h-full transition-opacity duration-300",
+            "absolute inset-0 grid grid-cols-1 lg:grid-cols-4 gap-4 transition-opacity duration-300",
             viewMode === 'novel' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
           )}>
-            <div className="lg:col-span-3 h-full">
+            <div className="lg:col-span-3 h-full overflow-hidden">
               <NovelGameInterface
                 messages={novelMessages}
                 choices={currentChoices || []}
@@ -366,7 +365,7 @@ function GameSessionPage() {
               />
             </div>
             {/* サイドバー */}
-            <div className="space-y-4">
+            <div className="space-y-4 h-full overflow-y-auto pr-2">
               {/* クエスト状態 */}
               <QuestStatusWidget compact />
 
@@ -458,11 +457,11 @@ function GameSessionPage() {
 
           {/* 従来のチャット表示 */}
           <div className={cn(
-            "absolute inset-0 grid grid-cols-1 lg:grid-cols-4 gap-4 h-full transition-opacity duration-300",
+            "absolute inset-0 grid grid-cols-1 lg:grid-cols-4 gap-4 transition-opacity duration-300",
             viewMode === 'chat' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
           )}>
             {/* ゲーム画面 */}
-            <div className="lg:col-span-3 flex flex-col">
+            <div className="lg:col-span-3 flex flex-col h-full overflow-hidden">
               {/* 現在のシーン */}
               <Card className="mb-4">
                 <CardHeader>
@@ -539,7 +538,7 @@ function GameSessionPage() {
             </div>
 
             {/* サイドバー */}
-            <div className="space-y-4">
+            <div className="space-y-4 h-full overflow-y-auto pr-2">
               {/* クエスト状態 */}
               <QuestStatusWidget compact />
 

@@ -72,7 +72,9 @@ class ProgressNotifier:
             }
 
             try:
-                await self.websocket_manager.emit_to_session(self.session_id, "game_progress", progress_data)
+                # WebSocket経由でゲームセッションに通知
+                from app.websocket.server import broadcast_to_game
+                await broadcast_to_game(self.session_id, "game_progress", progress_data)
             except Exception as e:
                 logger.error("Failed to send progress notification", error=str(e), session_id=self.session_id)
 

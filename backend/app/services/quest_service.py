@@ -107,8 +107,11 @@ JSON形式で回答してください。
 """
 
             # AI応答を取得
-            response = await self.gm_ai_service.generate_narrative(  # type: ignore
-                prompt=prompt, context_type="quest_proposal"
+            response = await self.gm_ai_service.generate_ai_response(
+                prompt=prompt, 
+                agent_type="quest_proposal",
+                character_name=character.name,
+                metadata={"context_type": "quest_proposal"}
             )
 
             # レスポンスをパース
@@ -260,8 +263,15 @@ JSON形式で回答してください。
 JSON形式で回答してください。
 """
 
-        response = await self.gm_ai_service.generate_narrative(  # type: ignore
-            prompt=prompt, context_type="quest_progress"
+        # キャラクター情報を取得
+        from app.models.character import Character
+        character = self.db.get(Character, character_id)
+        
+        response = await self.gm_ai_service.generate_ai_response(
+            prompt=prompt,
+            agent_type="quest_progress",
+            character_name=character.name if character else "Unknown",
+            metadata={"context_type": "quest_progress"}
         )
 
         try:
@@ -330,8 +340,15 @@ JSON形式で回答してください。
 JSON形式で回答してください。
 """
 
-        response = await self.gm_ai_service.generate_narrative(  # type: ignore
-            prompt=prompt, context_type="quest_completion"
+        # キャラクター情報を取得
+        from app.models.character import Character
+        character = self.db.get(Character, quest.character_id)
+        
+        response = await self.gm_ai_service.generate_ai_response(
+            prompt=prompt,
+            agent_type="quest_completion",
+            character_name=character.name if character else "Unknown",
+            metadata={"context_type": "quest_completion"}
         )
 
         try:
@@ -433,8 +450,11 @@ JSON形式で回答してください。
 JSON形式で回答してください。
 """
 
-            response = await self.gm_ai_service.generate_narrative(  # type: ignore
-                prompt=prompt, context_type="implicit_quest"
+            response = await self.gm_ai_service.generate_ai_response(
+                prompt=prompt,
+                agent_type="implicit_quest",
+                character_name=character.name,
+                metadata={"context_type": "implicit_quest"}
             )
 
             try:

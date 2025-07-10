@@ -159,8 +159,13 @@ export function useGameWebSocket(gameSessionId?: string) {
   useEffect(() => {
     if (!gameSessionId || !user?.id) return
 
+    // StrictModeでの重複実行を防ぐためのフラグ
+    let isMounted = true
+
     // ゲームセッションに参加（WebSocketManager側で重複チェック）
-    websocketManager.joinGame(gameSessionId, user.id)
+    if (isMounted) {
+      websocketManager.joinGame(gameSessionId, user.id)
+    }
 
     // イベントハンドラー
     const handleGameJoined = (data: GameJoinedData) => {
@@ -172,21 +177,37 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     const handleNarrativeUpdate = (data: NarrativeUpdateData) => {
-      // ローカルステートに追加
-      setMessages(prev => [
-        ...prev,
-        {
-          type: 'narrative',
-          content: data.narrative,
-          timestamp: data.timestamp,
-        },
-      ])
+      // ローカルステートに追加（重複チェック付き）
+      setMessages(prev => {
+        // 最近のメッセージと同じ内容の場合はスキップ
+        const lastMessage = prev[prev.length - 1]
+        if (lastMessage && lastMessage.content === data.narrative && 
+            new Date(lastMessage.timestamp).getTime() > Date.now() - 1000) {
+          return prev
+        }
+        
+        return [
+          ...prev,
+          {
+            type: 'narrative',
+            content: data.narrative,
+            timestamp: data.timestamp,
+          },
+        ]
+      })
       
-      // ゲームセッションストアにも追加
+      // current_sceneタイプの場合は最新状態の表示のみで、ストアへの追加はしない
+      if (data.narrative_type === 'current_scene') {
+        return
+      }
+      
+      // 新規メッセージをゲームセッションストアに追加
       if (gameSessionId) {
         const gameStore = useGameSessionStore.getState()
+        // タイムスタンプとランダム値を組み合わせてユニークなIDを生成
+        const uniqueId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         gameStore.addGameMessage({
-          id: `msg-${Date.now()}`,
+          id: uniqueId,
           sessionId: gameSessionId,
           type: 'gm',
           content: data.narrative,
@@ -387,6 +408,9 @@ export function useGameWebSocket(gameSessionId?: string) {
       websocketManager.off('session:result_ready', handleSessionResultReady)
       websocketManager.off('game:choices_update', handleChoicesUpdate)
       websocketManager.off('game:system_message', handleSystemMessage)
+      
+      // クリーンアップ時にフラグをfalseに
+      isMounted = false
     }
   }, [gameSessionId, user?.id])
 

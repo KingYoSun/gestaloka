@@ -11,7 +11,7 @@ export const questsApi = {
   // クエスト提案を取得
   getProposals: async (characterId: string): Promise<QuestProposal[]> => {
     const response = await apiClient.get<QuestProposal[]>(
-      `/api/v1/quests/${characterId}/proposals`
+      `/quests/${characterId}/proposals`
     )
     return response
   },
@@ -22,7 +22,7 @@ export const questsApi = {
     request: CreateQuestRequest
   ): Promise<Quest> => {
     const response = await apiClient.post<Quest>(
-      `/api/v1/quests/${characterId}/create`,
+      `/quests/${characterId}/create`,
       request
     )
     return response
@@ -31,7 +31,7 @@ export const questsApi = {
   // クエスト受諾
   acceptQuest: async (characterId: string, questId: string): Promise<Quest> => {
     const response = await apiClient.post<Quest>(
-      `/api/v1/quests/${characterId}/quests/${questId}/accept`
+      `/quests/${characterId}/quests/${questId}/accept`
     )
     return response
   },
@@ -42,7 +42,7 @@ export const questsApi = {
     questId: string
   ): Promise<Quest> => {
     const response = await apiClient.post<Quest>(
-      `/api/v1/quests/${characterId}/quests/${questId}/update`
+      `/quests/${characterId}/quests/${questId}/update`
     )
     return response
   },
@@ -57,7 +57,7 @@ export const questsApi = {
     }
   ): Promise<QuestListResponse> => {
     const response = await apiClient.get<QuestListResponse>(
-      `/api/v1/quests/${characterId}/quests`,
+      `/quests/${characterId}/quests`,
       { params }
     )
     return response
@@ -66,7 +66,7 @@ export const questsApi = {
   // 暗黙的クエスト推測
   inferImplicitQuest: async (characterId: string): Promise<Quest | null> => {
     const response = await apiClient.post<Quest | null>(
-      `/api/v1/quests/${characterId}/quests/infer`
+      `/quests/${characterId}/quests/infer`
     )
     return response || null
   },

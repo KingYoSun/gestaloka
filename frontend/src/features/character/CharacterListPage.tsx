@@ -22,7 +22,7 @@ import {
   useDeactivateCharacter,
 } from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
-import { useCreateGameSession, useSessionHistory } from '@/hooks/useGameSessions'
+import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
 import { Character } from '@/types'
 import { formatRelativeTime } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -40,8 +40,8 @@ export function CharacterListPage() {
   const createSessionMutation = useCreateGameSession()
   const [deletingId, setDeletingId] = useState<string | null>(null)
   
-  // アクティブキャラクターのセッション履歴を取得
-  const { data: sessionHistory } = useSessionHistory(activeCharacter?.id, 1, 1, 'active')
+  // セッション一覧を取得
+  const { data: sessions } = useGameSessions()
 
   const handleDeleteCharacter = async (characterId: string) => {
     if (window.confirm('このキャラクターを削除してもよろしいですか？')) {
@@ -69,7 +69,9 @@ export function CharacterListPage() {
     }
 
     // アクティブセッションがある場合はそのセッションへ遷移
-    const activeSession = sessionHistory?.items?.[0]
+    const activeSession = sessions?.sessions?.find(
+      s => s.characterId === activeCharacter.id && s.isActive
+    )
     if (activeSession) {
       navigate({ to: `/game/${activeSession.id}` })
       return
@@ -137,7 +139,7 @@ export function CharacterListPage() {
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
               >
                 <Play className="mr-2 h-4 w-4" />
-                {sessionHistory?.items?.[0] ? '冒険を再開' : '冒険を始める'}
+                {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
               </LoadingButton>
             )}
             <Link to="/character/create">
@@ -231,7 +233,7 @@ export function CharacterListPage() {
                   className="ml-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
                 >
                   <Play className="mr-2 h-4 w-4" />
-                  冒険を始める
+                  {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
                 </LoadingButton>
               </div>
             </CardContent>

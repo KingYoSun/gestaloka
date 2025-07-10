@@ -143,7 +143,23 @@ class CoordinatorAI:
 
             # 6. レスポンス統合
             await self.progress_notifier.notify_progress("応答生成中", 90)
+            
+            # デバッグ: レスポンスの内容を確認
+            logger.info(
+                "AI responses before integration",
+                response_count=len(responses),
+                has_narratives=any(r.narrative for r in responses if hasattr(r, 'narrative'))
+            )
+            
             integrated = self._integrate_responses(responses)
+            
+            # デバッグ: 統合後のレスポンスを確認
+            logger.info(
+                "Integrated response",
+                has_narrative=bool(integrated.narrative),
+                narrative_length=len(integrated.narrative) if integrated.narrative else 0,
+                choice_count=len(integrated.choices) if integrated.choices else 0
+            )
 
             # 7. レスポンスからイベントを生成
             generated_events = await self._generate_events_from_responses(responses)

@@ -27,7 +27,7 @@ import {
   useActivateCharacter,
   useDeactivateCharacter,
 } from '@/hooks/useCharacters'
-import { useCreateGameSession, useSessionHistory } from '@/hooks/useGameSessions'
+import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -50,7 +50,7 @@ export function CharacterDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   
   // セッション履歴を取得
-  const { data: sessionHistory } = useSessionHistory(id, 1, 1, 'active')
+  const { data: sessions } = useGameSessions()
 
   const handleDeleteCharacter = async () => {
     if (!character) return
@@ -83,7 +83,9 @@ export function CharacterDetailPage() {
     if (!character) return
 
     // アクティブセッションがある場合はそのセッションへ遷移
-    const activeSession = sessionHistory?.items?.[0]
+    const activeSession = sessions?.sessions?.find(
+      s => s.characterId === character.id && s.isActive
+    )
     if (activeSession) {
       navigate({ to: `/game/${activeSession.id}` })
       return
@@ -175,7 +177,7 @@ export function CharacterDetailPage() {
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
               >
                 <Play className="mr-2 h-4 w-4" />
-                {sessionHistory?.items?.[0] ? '冒険を再開' : '冒険を始める'}
+                {sessions?.sessions?.find(s => s.characterId === character.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
               </LoadingButton>
             )}
             <LoadingButton
