@@ -91,6 +91,12 @@ export const useGameSessionStore = create<
             return state
           }
           
+          console.log('[GameSessionStore] Adding message:', {
+            id: message.id,
+            sessionId: message.sessionId,
+            content: message.content.substring(0, 50) + '...'
+          })
+          
           return {
             messageHistory: {
               ...state.messageHistory,
@@ -124,6 +130,7 @@ export const useGameSessionStore = create<
 
       // 選択肢管理
       setCurrentChoices: choices => {
+        console.log('[GameSessionStore] Setting current choices:', choices)
         set({ currentChoices: choices })
       },
 

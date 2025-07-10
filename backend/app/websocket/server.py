@@ -144,40 +144,11 @@ async def join_game(sid, data):
             await sio.emit("error", {"message": "ゲームセッションIDとユーザーIDが必要です"}, to=sid)
             return
 
-        # 既に同じセッションに参加している場合はスキップ
+        # 既に同じセッションに参加している場合でも処理を継続（選択肢送信のため）
         existing_conn = connection_manager.active_connections.get(sid, {})
-        if existing_conn.get("game_session_id") == game_session_id:
+        is_already_joined = existing_conn.get("game_session_id") == game_session_id
+        if is_already_joined:
             logger.info("Already joined game session", sid=sid, game_session_id=game_session_id)
-            # 選択肢のみ再送信
-            from sqlmodel import Session as SQLSession
-            from sqlmodel import select
-            from app.core.database import SessionLocal
-            from app.models.game_message import GameMessage
-            from app.websocket.events import GameEventEmitter
-            
-            db: SQLSession = SessionLocal()
-            try:
-                messages = db.exec(
-                    select(GameMessage)
-                    .where(GameMessage.session_id == game_session_id)
-                    .order_by(GameMessage.turn_number.desc())
-                ).all()
-                
-                # 最新の選択肢を探す
-                for message in messages:
-                    if message.message_metadata and "choices" in message.message_metadata:
-                        await GameEventEmitter.emit_custom_event(
-                            game_session_id,
-                            "choices_update",
-                            {
-                                "choices": message.message_metadata["choices"],
-                                "turn_number": message.turn_number
-                            }
-                        )
-                        break
-            finally:
-                db.close()
-            return
 
         # 接続情報を更新
         connection_manager.add_connection(sid, user_id, game_session_id)
@@ -226,8 +197,8 @@ async def join_game(sid, data):
                 .order_by(GameMessage.turn_number)
             ).all()
 
-            # 初回セッションでメッセージがまだない場合のみ初期化を実行
-            if session.is_first_session and not existing_messages:
+            # 初回セッションでメッセージがまだない場合のみ初期化を実行（既に参加済みの場合はスキップ）
+            if session.is_first_session and not existing_messages and not is_already_joined:
                 from app.models.character import Character
 
                 character = db.exec(select(Character).where(Character.id == session.character_id)).first()
@@ -298,13 +269,14 @@ async def join_game(sid, data):
         finally:
             db.close()
 
-        # 同じゲームセッションの他のユーザーに通知
-        await sio.emit(
-            "player_joined",
-            {"user_id": user_id, "timestamp": datetime.utcnow().isoformat()},
-            room=f"game_{game_session_id}",
-            skip_sid=sid,
-        )
+        # 同じゲームセッションの他のユーザーに通知（既に参加済みの場合はスキップ）
+        if not is_already_joined:
+            await sio.emit(
+                "player_joined",
+                {"user_id": user_id, "timestamp": datetime.utcnow().isoformat()},
+                room=f"game_{game_session_id}",
+                skip_sid=sid,
+            )
 
     except Exception as e:
         logger.error("Error joining game", error=str(e), sid=sid)

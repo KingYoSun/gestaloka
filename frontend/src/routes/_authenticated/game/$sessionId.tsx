@@ -19,34 +19,27 @@ import { SPTransactionType } from '@/types/sp'
 import { useConsumeSP } from '@/hooks/useSP'
 import { SessionEndingDialog } from '@/components/SessionEndingDialog'
 import { NovelGameInterface } from '@/components/game/NovelGameInterface'
+import { GameSessionSidebar } from '@/components/game/GameSessionSidebar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { TextareaWithCounter } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  Send,
   Home,
   StopCircle,
   User,
   Bot,
-  AlertCircle,
   MessageSquare,
-  Coins,
   Sparkles,
   BookOpen,
-  PenTool,
+  AlertCircle,
 } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import {
-  BattleStatus,
-  type BattleData,
-} from '@/features/game/components/BattleStatus'
+import { type BattleData } from '@/features/game/components/BattleStatus'
 import { NPCEncounterManager } from '@/features/game/components/NPCEncounterManager'
-import { QuestStatusWidget } from '@/components/quests/QuestStatusWidget'
 
 export const Route = createFileRoute('/_authenticated/game/$sessionId')({
   component: GameSessionPage,
@@ -78,7 +71,6 @@ function GameSessionPage() {
   // WebSocket接続
   const { sendAction, currentNPCEncounters, sendNPCAction } =
     useGameWebSocket(sessionId)
-  // const { chatMessages, sendChatMessage } = useChatWebSocket(sessionId)
 
   const messages = getSessionMessages(sessionId)
   const [viewMode, setViewMode] = useState<'novel' | 'chat'>('novel')
@@ -87,7 +79,14 @@ function GameSessionPage() {
   useEffect(() => {
     if (session) {
       setActiveSession(session)
-      // WebSocketから選択肢が送信されるため、ここでの復元は不要
+      // デバッグ: WebSocket参加状態をリセット（開発用）
+      if (process.env.NODE_ENV === 'development') {
+        // @ts-ignore
+        window.resetWebSocketSession = () => {
+          websocketManager.clearJoinedSessions()
+          console.log('WebSocket session cleared. You can rejoin now.')
+        }
+      }
     }
   }, [session, setActiveSession])
 
@@ -105,32 +104,9 @@ function GameSessionPage() {
     }
   }
 
-  // ノベル風UIから選択肢を直接実行する場合
-  const handleNovelChoiceExecute = async (_choiceIndex: number, choiceText: string) => {
-    if (!session?.isActive || isExecutingAction) return
-
-    const spCost = 2 // 選択肢は一律2SP
-
-    try {
-      // SP消費処理を実行
-      await consumeSPMutation.mutateAsync({
-        amount: spCost,
-        transactionType: SPTransactionType.FREE_ACTION,
-        description: `選択肢: ${choiceText.substring(0, 50)}${choiceText.length > 50 ? '...' : ''}`,
-        relatedEntityType: 'game_session',
-        relatedEntityId: sessionId,
-        metadata: {
-          actionText: choiceText,
-          sessionId,
-          characterId: session?.characterId,
-        },
-      })
-
-      // SP消費成功したらアクションを実行
-      await executeAction(choiceText)
-    } catch (error: any) {
-      console.error('Failed to consume SP:', error)
-    }
+  // ノベル風UIから選択肢を直接実行する場合（未使用）
+  const handleNovelChoiceExecute = (_index: number, _text: string) => {
+    // 現在は使用していない（サイドバーから実行）
   }
 
   // SP消費量を計算
@@ -358,101 +334,26 @@ function GameSessionPage() {
             <div className="lg:col-span-3 h-full overflow-hidden">
               <NovelGameInterface
                 messages={novelMessages}
-                choices={currentChoices || []}
+                choices={[]}
                 currentScene={session.currentScene || undefined}
                 onChoiceSelect={handleNovelChoiceExecute}
-                showChoices={!isExecutingAction && session.isActive}
+                showChoices={false}
               />
             </div>
             {/* サイドバー */}
-            <div className="space-y-4 h-full overflow-y-auto pr-2">
-              {/* クエスト状態 */}
-              <QuestStatusWidget compact />
-
-              {/* 戦闘状態 */}
-              {session.sessionData?.battle_data && (
-                <BattleStatus
-                  battleData={
-                    session.sessionData.battle_data as unknown as BattleData
-                  }
-                />
-              )}
-
-              {/* 自由行動入力 */}
-              {!currentChoices || currentChoices.length === 0 ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <PenTool className="h-5 w-5" />
-                      自由行動
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <TextareaWithCounter
-                      placeholder="あなたの行動を入力してください..."
-                      value={actionText}
-                      onChange={e => setActionText(e.target.value)}
-                      className="min-h-[100px]"
-                      disabled={!session.isActive || isExecutingAction}
-                      maxLength={500}
-                    />
-                    {actionText.trim() && (
-                      <Alert>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>
-                          自由行動には{' '}
-                          <strong>
-                            {calculateSPCost(actionText.trim(), false)} SP
-                          </strong>{' '}
-                          が必要です
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    <Button
-                      onClick={handleSubmitAction}
-                      disabled={
-                        !session.isActive || isExecutingAction || !actionText.trim() || consumeSPMutation.isPending
-                      }
-                      className="w-full"
-                    >
-                      {isExecutingAction || consumeSPMutation.isPending ? (
-                        <>
-                          <LoadingSpinner size="sm" className="mr-2" />
-                          実行中...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="mr-2 h-4 w-4" />
-                          {actionText.trim()
-                            ? `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
-                            : '行動実行'}
-                        </>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {/* キャラクター情報 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">キャラクター情報</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <span className="font-medium">名前:</span>{' '}
-                      {session.characterName}
-                    </div>
-                    <div>
-                      <span className="font-medium">セッション開始:</span>
-                      <br />
-                      {new Date(session.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <GameSessionSidebar
+              session={session}
+              currentChoices={currentChoices}
+              isExecutingAction={isExecutingAction}
+              consumeSPPending={consumeSPMutation.isPending}
+              battleData={session.sessionData?.battle_data as unknown as BattleData | undefined}
+              actionText={actionText}
+              selectedChoice={selectedChoice}
+              onActionTextChange={setActionText}
+              onChoiceSelect={handleChoiceSelect}
+              onSubmitAction={handleSubmitAction}
+              calculateSPCost={calculateSPCost}
+            />
           </div>
 
           {/* 従来のチャット表示 */}
@@ -538,130 +439,19 @@ function GameSessionPage() {
             </div>
 
             {/* サイドバー */}
-            <div className="space-y-4 h-full overflow-y-auto pr-2">
-              {/* クエスト状態 */}
-              <QuestStatusWidget compact />
-
-              {/* 戦闘状態 */}
-              {session.sessionData?.battle_data && (
-                <BattleStatus
-                  battleData={
-                    session.sessionData.battle_data as unknown as BattleData
-                  }
-                />
-              )}
-
-              {/* 選択肢 */}
-              {currentChoices && currentChoices.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">選択肢</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {currentChoices.map((choice, index) => (
-                      <Button
-                        key={choice.id || index}
-                        variant={selectedChoice === index ? 'default' : 'outline'}
-                        className="w-full text-left justify-start h-auto p-3"
-                        onClick={() => handleChoiceSelect(index)}
-                      >
-                        <div className="flex-1">
-                          <span className="whitespace-normal">{choice.text}</span>
-                          {choice.difficulty && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              難易度: {choice.difficulty}
-                            </div>
-                          )}
-                        </div>
-                        <Badge variant="secondary" className="ml-2 shrink-0">
-                          <Coins className="h-3 w-3 mr-1" />2 SP
-                        </Badge>
-                      </Button>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* 行動入力 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">行動入力</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <TextareaWithCounter
-                    placeholder="あなたの行動を入力してください..."
-                    value={actionText}
-                    onChange={e => setActionText(e.target.value)}
-                    className="min-h-[100px]"
-                    disabled={!session.isActive || isExecutingAction}
-                    maxLength={500}
-                  />
-                  {actionText.trim() && (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        {selectedChoice !== null ? (
-                          <>
-                            選択肢の実行には <strong>2 SP</strong> が必要です
-                          </>
-                        ) : (
-                          <>
-                            自由行動には{' '}
-                            <strong>
-                              {calculateSPCost(actionText.trim(), false)} SP
-                            </strong>{' '}
-                            が必要です
-                          </>
-                        )}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  <Button
-                    onClick={handleSubmitAction}
-                    disabled={
-                      !session.isActive || isExecutingAction || !actionText.trim() || consumeSPMutation.isPending
-                    }
-                    className="w-full"
-                  >
-                    {isExecutingAction || consumeSPMutation.isPending ? (
-                      <>
-                        <LoadingSpinner size="sm" className="mr-2" />
-                        実行中...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        {selectedChoice !== null
-                          ? '選択肢を実行 (2 SP)'
-                          : actionText.trim()
-                            ? `行動実行 (${calculateSPCost(actionText.trim(), false)} SP)`
-                            : '行動実行'}
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* キャラクター情報 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">キャラクター情報</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <span className="font-medium">名前:</span>{' '}
-                      {session.characterName}
-                    </div>
-                    <div>
-                      <span className="font-medium">セッション開始:</span>
-                      <br />
-                      {new Date(session.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            <GameSessionSidebar
+              session={session}
+              currentChoices={currentChoices}
+              isExecutingAction={isExecutingAction}
+              consumeSPPending={consumeSPMutation.isPending}
+              battleData={session.sessionData?.battle_data as unknown as BattleData | undefined}
+              actionText={actionText}
+              selectedChoice={selectedChoice}
+              onActionTextChange={setActionText}
+              onChoiceSelect={handleChoiceSelect}
+              onSubmitAction={handleSubmitAction}
+              calculateSPCost={calculateSPCost}
+            />
           </div>
         </div>
       </div>

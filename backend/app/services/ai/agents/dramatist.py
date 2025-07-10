@@ -178,8 +178,20 @@ class DramatistAgent(BaseAgent):
         self.logger.debug("Parsing AI response", response_length=len(raw_response), response_preview=raw_response[:500])
 
         try:
+            # Markdownコードブロックを除去
+            cleaned_response = raw_response.strip()
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]  # ```json を除去
+            elif cleaned_response.startswith('```'):
+                cleaned_response = cleaned_response[3:]  # ``` を除去
+            
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]  # 終端の ``` を除去
+            
+            cleaned_response = cleaned_response.strip()
+            
             # JSON形式でパース
-            response_data = json.loads(raw_response)
+            response_data = json.loads(cleaned_response)
             
             # narrativeフィールドを取得
             narrative = response_data.get("narrative", "")

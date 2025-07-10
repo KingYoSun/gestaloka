@@ -50,14 +50,17 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
 
   // 新しいメッセージが追加されたときの処理
   useEffect(() => {
-    if (messages.length > displayedMessages.length) {
-      const newMessages = messages.slice(displayedMessages.length)
-      newMessages.forEach((msg) => {
-        setDisplayedMessages(prev => [...prev, { message: msg, displayedText: '' }])
-      })
+    // メッセージIDのセットを作成して重複チェック
+    const displayedMessageIds = new Set(displayedMessages.map(item => item.message.id))
+    const newMessages = messages.filter(msg => !displayedMessageIds.has(msg.id))
+    
+    if (newMessages.length > 0) {
+      const newDisplayItems = newMessages.map(msg => ({ message: msg, displayedText: '' }))
+      setDisplayedMessages(prev => [...prev, ...newDisplayItems])
+      // 最初の新しいメッセージからタイピングを開始
       setCurrentTypingIndex(displayedMessages.length)
     }
-  }, [messages, displayedMessages.length])
+  }, [messages, displayedMessages])
 
   // タイプライター効果
   useEffect(() => {
@@ -206,7 +209,7 @@ export const NovelGameInterface: React.FC<NovelGameInterfaceProps> = ({
         </div>
 
         {/* 選択肢エリア */}
-        {showChoices && choices.length > 0 && displayedMessages.length === messages.length && (
+        {showChoices && choices.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}

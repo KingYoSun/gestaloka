@@ -546,6 +546,16 @@ class GameSessionService:
                 action_text=action_request.action_text,
             )
 
+            # AI処理開始の通知
+            await GameEventEmitter.emit_custom_event(
+                session.id,
+                "processing_started",
+                {
+                    "action": action_request.action_text,
+                    "status": "AI処理を開始しています..."
+                }
+            )
+
             # 協調動作システムでアクションを処理
             # セッションレスポンスを更新（ターン数が増える可能性があるため）
             session_response_for_process = GameSessionResponse(
@@ -590,10 +600,7 @@ class GameSessionService:
 
                 coordinator_response = FinalResponse(narrative="物語は続きます...", choices=[])
 
-            # WebSocketで物語更新を送信
-            await GameEventEmitter.emit_narrative_update(
-                session.id, coordinator_response.narrative or "物語は続きます...", narrative_type="action_result"
-            )
+            # WebSocketで物語更新を送信（この時点では送信しない。メッセージ保存後に送信）
 
             # GMの物語をメッセージとして保存
             gm_message_metadata = {
@@ -613,6 +620,24 @@ class GameSessionService:
                 content=getattr(coordinator_response, "narrative", "物語は続きます...") or "物語は続きます...",
                 turn_number=current_turn,
                 metadata=gm_message_metadata,
+            )
+            
+            # WebSocketでメッセージ更新を送信（ID付き）
+            await GameEventEmitter.emit_custom_event(
+                session.id,
+                "message_added",
+                {
+                    "message": {
+                        "id": gm_message.id,
+                        "content": gm_message.content,
+                        "message_type": gm_message.message_type,
+                        "sender_type": gm_message.sender_type,
+                        "turn_number": gm_message.turn_number,
+                        "metadata": gm_message.message_metadata,
+                        "created_at": gm_message.created_at.isoformat(),
+                    },
+                    "choices": gm_message_metadata["choices"],
+                }
             )
 
             # 戦闘システムの処理
@@ -778,6 +803,15 @@ class GameSessionService:
             if character_stats:
                 self.db.add(character_stats)
             self.db.commit()
+
+            # AI処理完了の通知
+            await GameEventEmitter.emit_custom_event(
+                session.id,
+                "processing_completed",
+                {
+                    "status": "AI処理が完了しました"
+                }
+            )
 
             # アクション結果をWebSocketで送信
             await GameEventEmitter.emit_action_result(
@@ -1221,7 +1255,7 @@ class GameSessionService:
         """探索を実行してフラグメントを発見する可能性がある"""
         import random
 
-        from app.models.log import LogFragment, LogFragmentRarity
+        from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
 
         # 基本発見確率
         discovery_chance = 0.3
@@ -1251,7 +1285,7 @@ class GameSessionService:
                 action_description=f"{character.name}が探索中に発見した記憶",
                 response_description="古い記憶の断片が見つかった",
                 location=character.location,
-                emotional_valence=random.choice([0.2, 0.5, 0.8]),  # ポジティブ寄り
+                emotional_valence=random.choice([EmotionalValence.NEUTRAL, EmotionalValence.POSITIVE, EmotionalValence.POSITIVE]),  # ポジティブ寄り
                 rarity=rarity,
                 keywords=["探索", "発見", character.location],
             )

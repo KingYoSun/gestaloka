@@ -201,34 +201,9 @@ export function useGameWebSocket(gameSessionId?: string) {
         return
       }
       
-      // 新規メッセージをゲームセッションストアに追加
-      if (gameSessionId) {
-        const gameStore = useGameSessionStore.getState()
-        const existingMessages = gameStore.getSessionMessages(gameSessionId)
-        
-        // 重複チェック：同じ内容とタイムスタンプのメッセージがないか確認
-        const isDuplicate = existingMessages.some(
-          msg => msg.content === data.narrative && 
-                 Math.abs(new Date(msg.timestamp).getTime() - new Date(data.timestamp).getTime()) < 1000 // 1秒以内
-        )
-        
-        if (isDuplicate) {
-          console.log('[DEBUG] Duplicate narrative in store detected, skipping:', data.narrative.substring(0, 50))
-          return
-        }
-        
-        // バックエンドからのメッセージにはすでにUUIDが含まれているはずだが、
-        // 念のためクライアント側でも一意のIDを生成
-        const uniqueId = `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-        gameStore.addGameMessage({
-          id: uniqueId,
-          sessionId: gameSessionId,
-          type: 'gm',
-          content: data.narrative,
-          timestamp: data.timestamp,
-          metadata: data.narrative_type === 'introduction' ? { is_introduction: true } : undefined,
-        })
-      }
+      // narrative_updateではストアに追加しない
+      // message_addedイベントでストアに追加されるため、ここでは何もしない
+      console.log('[DEBUG] narrative_update handled (local state only, not adding to store)')
     }
 
     const handleActionResult = (data: ActionResultData) => {
@@ -424,6 +399,58 @@ export function useGameWebSocket(gameSessionId?: string) {
       }
     }
 
+    // メッセージ追加イベントハンドラー
+    const handleMessageAdded = (data: any) => {
+      console.log('[DEBUG] message_added received:', data)
+      
+      // ゲームセッションストアに追加
+      if (gameSessionId && data.message) {
+        const gameStore = useGameSessionStore.getState()
+        gameStore.addGameMessage({
+          id: data.message.id,
+          sessionId: gameSessionId,
+          type: data.message.sender_type === 'gm' ? 'gm' : 'user',
+          content: data.message.content,
+          timestamp: data.message.created_at,
+          metadata: data.message.metadata,
+        })
+        
+        // 選択肢も更新
+        if (data.choices) {
+          gameStore.setCurrentChoices(data.choices)
+        }
+      }
+    }
+
+    // AI処理開始イベントハンドラー
+    const handleProcessingStarted = (data: any) => {
+      console.log('[DEBUG] processing_started received:', data)
+      const gameStore = useGameSessionStore.getState()
+      gameStore.setExecutingAction(true)
+      
+      // 処理中メッセージを表示
+      if (data.status) {
+        toast.loading(data.status, { id: 'ai-processing' })
+      }
+    }
+
+    // AI処理完了イベントハンドラー
+    const handleProcessingCompleted = () => {
+      console.log('[DEBUG] processing_completed received')
+      const gameStore = useGameSessionStore.getState()
+      gameStore.setExecutingAction(false)
+      toast.dismiss('ai-processing')
+    }
+
+    // ゲーム進捗イベントハンドラー
+    const handleGameProgress = (data: any) => {
+      console.log('[DEBUG] game_progress received:', data)
+      // 処理中の進捗を表示
+      if (data.progress_type === 'agent_processing' && data.message) {
+        toast.loading(data.message, { id: 'ai-progress', duration: 3000 })
+      }
+    }
+
     // イベントリスナー登録
     websocketManager.on('game:joined', handleGameJoined)
     websocketManager.on('game:started', handleGameStarted)
@@ -439,6 +466,10 @@ export function useGameWebSocket(gameSessionId?: string) {
     websocketManager.on('session:result_ready', handleSessionResultReady)
     websocketManager.on('game:choices_update', handleChoicesUpdate)
     websocketManager.on('game:system_message', handleSystemMessage)
+    websocketManager.on('game:message_added', handleMessageAdded)
+    websocketManager.on('game:processing_started', handleProcessingStarted)
+    websocketManager.on('game:processing_completed', handleProcessingCompleted)
+    websocketManager.on('game:progress', handleGameProgress)
 
     // クリーンアップ
     return () => {
@@ -462,6 +493,10 @@ export function useGameWebSocket(gameSessionId?: string) {
       websocketManager.off('session:result_ready', handleSessionResultReady)
       websocketManager.off('game:choices_update', handleChoicesUpdate)
       websocketManager.off('game:system_message', handleSystemMessage)
+      websocketManager.off('game:message_added', handleMessageAdded)
+      websocketManager.off('game:processing_started', handleProcessingStarted)
+      websocketManager.off('game:processing_completed', handleProcessingCompleted)
+      websocketManager.off('game:progress', handleGameProgress)
       
       // クリーンアップ時にフラグをfalseに
       isMounted = false
