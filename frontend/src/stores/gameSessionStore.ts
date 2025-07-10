@@ -84,14 +84,10 @@ export const useGameSessionStore = create<
         set(state => {
           const existingMessages = state.messageHistory[message.sessionId] || []
           
-          // 重複チェック（同じ内容のメッセージが直近1秒以内に存在する場合はスキップ）
-          const isDuplicate = existingMessages.some(msg => 
-            msg.content === message.content && 
-            msg.type === message.type &&
-            Math.abs(new Date(msg.timestamp).getTime() - new Date(message.timestamp).getTime()) < 1000
-          )
-          
-          if (isDuplicate) {
+          // バックエンドでUUIDが生成されるため、ID重複チェックのみで十分
+          const hasIdDuplicate = existingMessages.some(msg => msg.id === message.id)
+          if (hasIdDuplicate) {
+            console.warn('[GameSessionStore] Duplicate message ID detected:', message.id)
             return state
           }
           

@@ -204,8 +204,22 @@ export function useGameWebSocket(gameSessionId?: string) {
       // 新規メッセージをゲームセッションストアに追加
       if (gameSessionId) {
         const gameStore = useGameSessionStore.getState()
-        // タイムスタンプとランダム値を組み合わせてユニークなIDを生成
-        const uniqueId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const existingMessages = gameStore.getSessionMessages(gameSessionId)
+        
+        // 重複チェック：同じ内容とタイムスタンプのメッセージがないか確認
+        const isDuplicate = existingMessages.some(
+          msg => msg.content === data.narrative && 
+                 Math.abs(new Date(msg.timestamp).getTime() - new Date(data.timestamp).getTime()) < 1000 // 1秒以内
+        )
+        
+        if (isDuplicate) {
+          console.log('[DEBUG] Duplicate narrative in store detected, skipping:', data.narrative.substring(0, 50))
+          return
+        }
+        
+        // バックエンドからのメッセージにはすでにUUIDが含まれているはずだが、
+        // 念のためクライアント側でも一意のIDを生成
+        const uniqueId = `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         gameStore.addGameMessage({
           id: uniqueId,
           sessionId: gameSessionId,
@@ -218,6 +232,45 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     const handleActionResult = (data: ActionResultData) => {
+      console.log('[DEBUG] action_result received:', data)
+      
+      // resultオブジェクトから物語と選択肢を抽出
+      const result = data.result as any
+      if (result && typeof result === 'object') {
+        // 物語をゲームセッションストアに追加
+        if (result.narrative && gameSessionId) {
+          const gameStore = useGameSessionStore.getState()
+          const existingMessages = gameStore.getSessionMessages(gameSessionId)
+          
+          // 重複チェック
+          const isDuplicate = existingMessages.some(
+            msg => msg.content === result.narrative && 
+                   Math.abs(new Date(msg.timestamp).getTime() - new Date(data.timestamp).getTime()) < 1000
+          )
+          
+          if (!isDuplicate) {
+            // バックエンドからのメッセージIDを使用、なければクライアント側で生成
+            const messageId = result.message_id || `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            gameStore.addGameMessage({
+              id: messageId,
+              sessionId: gameSessionId,
+              type: 'gm',
+              content: result.narrative,
+              timestamp: data.timestamp,
+              metadata: { action_taken: data.action },
+            })
+          }
+        }
+        
+        // 選択肢を更新
+        if (result.choices && Array.isArray(result.choices)) {
+          const gameStore = useGameSessionStore.getState()
+          gameStore.setCurrentChoices(result.choices)
+          console.log('[DEBUG] Updated choices from action_result:', result.choices)
+        }
+      }
+      
+      // ローカルステートにも追加（後方互換性のため）
       setMessages(prev => [
         ...prev,
         {
@@ -236,6 +289,7 @@ export function useGameWebSocket(gameSessionId?: string) {
     }
 
     const handleGameError = (data: GameErrorData) => {
+      console.error('[DEBUG] Game error received:', data)
       toast.error(data.message)
     }
 

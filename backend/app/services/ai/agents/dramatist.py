@@ -175,82 +175,59 @@ class DramatistAgent(BaseAgent):
             (物語描写, 選択肢リスト)のタプル
         """
         # デバッグ用ログ
-        self.logger.debug("Parsing AI response", response_preview=raw_response[:200])
+        self.logger.debug("Parsing AI response", response_length=len(raw_response), response_preview=raw_response[:500])
 
-        # レスポンスを行で分割
+        try:
+            # JSON形式でパース
+            response_data = json.loads(raw_response)
+            
+            # narrativeフィールドを取得
+            narrative = response_data.get("narrative", "")
+            
+            # choicesフィールドから選択肢を構築
+            choices = []
+            choices_data = response_data.get("choices", [])
+            
+            for idx, choice_data in enumerate(choices_data[:3]):  # 最大3つまで
+                choice_id = choice_data.get("id", f"choice_{idx + 1}")
+                choice_text = choice_data.get("text", "")
+                difficulty = choice_data.get("difficulty")
+                
+                if choice_text:
+                    choices.append(ActionChoice(
+                        id=choice_id,
+                        text=choice_text,
+                        difficulty=difficulty
+                    ))
+            
+            # 追加情報があれば物語に追加
+            additional_info = response_data.get("additional_info")
+            if additional_info:
+                narrative = f"{narrative}\n\n{additional_info}"
+            
+            # パース結果をログ出力
+            self.logger.info("Parsed JSON response successfully", 
+                           narrative_length=len(narrative), 
+                           choice_count=len(choices))
+            
+            return narrative, choices
+            
+        except json.JSONDecodeError as e:
+            self.logger.warning("Failed to parse as JSON, falling back to text parsing", error=str(e))
+            # JSON解析に失敗した場合は、従来のテキストパース処理にフォールバック
+            return self._parse_response_as_text(raw_response)
+    
+    def _parse_response_as_text(self, raw_response: str) -> tuple[str, list[ActionChoice]]:
+        """
+        テキスト形式のレスポンスをパース（フォールバック用）
+        """
         lines = raw_response.strip().split("\n")
-
-        # 物語部分と選択肢部分を分離
-        narrative_lines = []
-        choices: list[ActionChoice] = []
-        in_choices_section = False
-
-        for line in lines:
-            # 選択肢セクションの開始を検出（より広いパターンマッチング）
-            if re.match(r"^(選択肢|行動選択|次の行動|##\s*選択肢|###\s*次の行動|【選択肢】|\*\*【選択肢】\*\*)", line):
-                in_choices_section = True
-                self.logger.debug("Found choices section marker", line=line)
-                continue
-
-            if in_choices_section:
-                # 空行や区切り線は無視
-                if not line.strip() or line.strip().startswith("---"):
-                    continue
-
-                # 選択肢のパターン: "1. " or "- " or "* " or "A) "など
-                # AIが**太字**で返すことがあるので、それも考慮
-                choice_match = re.match(r"^(?:[1-9]\.|[-•*]|[A-Z]\))\s*\*?\*?(.+)", line.strip())
-                if choice_match:
-                    choice_text = choice_match.group(1).strip()
-                    # **太字**記号を除去（末尾の**も含む）
-                    choice_text = re.sub(r"\*\*(.+?)\*\*", r"\1", choice_text)
-                    choice_text = re.sub(r"\*\*$", "", choice_text).strip()
-
-                    # 【タグ】形式のプレフィックスを除去
-                    choice_text = re.sub(r"^【[^】]+】\s*", "", choice_text).strip()
-
-                    # 選択肢本文と難易度情報を分離
-                    # 難易度は行の最後に [難易度: xxx] の形式で来ることがある
-                    full_line = line.strip()
-                    difficulty_match = re.search(r"\[難易度:\s*(簡単|普通|困難|通常|easy|medium|hard)\]", full_line)
-                    difficulty = None
-                    if difficulty_match:
-                        difficulty_map = {
-                            "簡単": "easy",
-                            "easy": "easy",
-                            "普通": "medium",
-                            "medium": "medium",
-                            "通常": "medium",
-                            "困難": "hard",
-                            "hard": "hard",
-                        }
-                        difficulty = difficulty_map.get(difficulty_match.group(1), None)
-                        # 難易度情報を除去
-                        choice_text = re.sub(r"\s*\[難易度:.*?\]", "", choice_text).strip()
-
-                    # 追加情報セクションのパターンをチェック（例：視覚:、聴覚:、感覚:など）
-                    # これらは選択肢ではなく情報なので除外
-                    if re.match(r"^(視覚|聴覚|感覚|情報|ヒント|注意|追加情報)[:：]", choice_text):
-                        continue
-
-                    # 有効な選択肢として追加（最大3つまで）
-                    if len(choices) < 3:
-                        choices.append(
-                            ActionChoice(id=f"choice_{len(choices) + 1}", text=choice_text, difficulty=difficulty)
-                        )
-            else:
-                # 物語部分
-                if line.strip():
-                    narrative_lines.append(line)
-
-        # 物語テキストを結合
-        narrative = "\n".join(narrative_lines).strip()
-
-        # 選択肢が見つからない場合はデフォルトを生成
-        if not choices:
-            self.logger.warning("No choices found in response, generating defaults")
-            choices = self._generate_default_choices()
-
+        narrative = raw_response  # デフォルトは全体を物語として扱う
+        choices = self._generate_default_choices()
+        
+        # 簡易的なパース処理
+        # JSONに失敗した場合はデフォルト選択肢を返す
+        
         return narrative, choices
 
     def _generate_default_choices(self) -> list[ActionChoice]:

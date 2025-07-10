@@ -412,6 +412,8 @@ class GameSessionService:
     async def execute_action(self, session: GameSession, action_request: ActionExecuteRequest) -> ActionExecuteResponse:
         """プレイヤーのアクションを実行しAIレスポンスを生成"""
         try:
+            logger.debug(f"[DEBUG] execute_action called - session_id: {session.id}, action_request: {action_request}")
+            
             # キャラクター情報を取得
             character = self.db.exec(select(Character).where(Character.id == session.character_id)).first()
             if not character:
@@ -480,7 +482,7 @@ class GameSessionService:
                 "choice_id": action_request.choice_id,
                 "sp_cost": sp_cost,
             }
-            self.save_message(
+            player_message = self.save_message(
                 session_id=session.id,
                 message_type=MESSAGE_TYPE_PLAYER_ACTION,
                 sender_type=SENDER_TYPE_PLAYER,
@@ -604,7 +606,7 @@ class GameSessionService:
                 "state_changes": getattr(coordinator_response, "state_changes", {}),
                 "battle_data": session_data.get("battle_data"),
             }
-            self.save_message(
+            gm_message = self.save_message(
                 session_id=session.id,
                 message_type=MESSAGE_TYPE_GM_NARRATIVE,
                 sender_type=SENDER_TYPE_GM,
@@ -783,6 +785,7 @@ class GameSessionService:
                 character.user_id,
                 action_request.action_text,
                 {
+                    "message_id": gm_message.id,  # 保存されたメッセージのID
                     "success": coordinator_response.state_changes.get("success", True)
                     if coordinator_response.state_changes
                     else True,

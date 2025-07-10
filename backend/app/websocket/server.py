@@ -93,6 +93,13 @@ class ConnectionManager:
 connection_manager = ConnectionManager()
 
 
+# 全イベントをキャッチするハンドラー（デバッグ用）
+@sio.on("*")
+async def catch_all(event, sid, data):
+    """全イベントをログに記録（デバッグ用）"""
+    logger.debug(f"[DEBUG] Received event '{event}' from {sid} with data: {data}")
+
+
 @sio.event
 async def connect(sid, environ, auth):
     """クライアント接続時の処理"""
@@ -347,7 +354,10 @@ async def game_action(sid, data):
         user_id = data.get("user_id")
         action = data.get("action")
 
+        logger.debug(f"[DEBUG] game_action event received - sid: {sid}, data: {data}")
+
         if not all([game_session_id, user_id, action]):
+            logger.error(f"[ERROR] Missing parameters - game_session_id: {game_session_id}, user_id: {user_id}, action: {action}")
             await sio.emit("error", {"message": "必要なパラメータが不足しています"}, to=sid)
             return
 
@@ -405,7 +415,9 @@ async def game_action(sid, data):
             )
             
             # アクションを実行
+            logger.debug(f"[DEBUG] Executing action - session_id: {session.id}, action_request: {action_request}")
             result = await game_service.execute_action(session, action_request)
+            logger.debug(f"[DEBUG] Action executed successfully - result: {result}")
             
             # 成功レスポンスは GameSessionService 内部で WebSocket 経由で送信される
             # ここでは追加の処理は不要
@@ -414,11 +426,13 @@ async def game_action(sid, data):
             
         except Exception as service_error:
             logger.error("Error executing game action", error=str(service_error), game_session_id=game_session_id)
+            logger.exception("Full traceback for game action error:")  # スタックトレースも出力
             await sio.emit(
                 "error", 
                 {
                     "message": "アクション実行中にエラーが発生しました", 
-                    "error": str(service_error)
+                    "error": str(service_error),
+                    "details": str(service_error.__class__.__name__)
                 }, 
                 to=sid
             )

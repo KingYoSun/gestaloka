@@ -82,10 +82,33 @@ class PromptManager:
 - プレイヤーの行動は「ログ」として記録され、他の世界に影響を与える
 - 物語は常に動的で、プレイヤーの選択により分岐する
 
-応答形式:
-1. 現在の状況の物語的描写（1-2段落）
-2. プレイヤーが取りうる3つの行動選択肢
-3. 環境や状況から推測される追加情報""",
+出力形式（必ずJSON形式で出力すること）:
+{
+  "narrative": "現在の状況の物語的描写（1-2段落）",
+  "choices": [
+    {
+      "id": "choice_1",
+      "text": "選択肢1のテキスト",
+      "difficulty": "easy|medium|hard（省略可）"
+    },
+    {
+      "id": "choice_2",
+      "text": "選択肢2のテキスト",
+      "difficulty": "easy|medium|hard（省略可）"
+    },
+    {
+      "id": "choice_3",
+      "text": "選択肢3のテキスト",
+      "difficulty": "easy|medium|hard（省略可）"
+    }
+  ],
+  "additional_info": "環境や状況から推測される追加情報（省略可）"
+}
+
+重要な指示:
+- 必ず有効なJSON形式で出力すること
+- 「承知しました」「わかりました」などの前置きは絶対に書かない
+- narrativeフィールドにはすぐに物語の描写を書く""",
             user_prompt_template="""キャラクター: {character_name}
 現在地: {location}
 直前の行動: {last_action}
