@@ -24,7 +24,7 @@ def upgrade() -> None:
         "user_roles",
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("user_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("role", sa.Enum("ADMIN", "PLAYER", "MODERATOR", name="roletype"), nullable=False),
+        sa.Column("role", sa.VARCHAR(20), nullable=False),
         sa.Column("granted_at", sa.DateTime(), nullable=False),
         sa.Column("granted_by", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
         sa.ForeignKeyConstraint(
@@ -39,6 +39,13 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_user_roles_id"), "user_roles", ["id"], unique=False)
     op.create_index(op.f("ix_user_roles_user_id"), "user_roles", ["user_id"], unique=False)
+    
+    # Add CHECK constraint for role
+    op.create_check_constraint(
+        'ck_user_roles_role',
+        'user_roles',
+        "role IN ('ADMIN', 'PLAYER', 'MODERATOR')"
+    )
     # ### end Alembic commands ###
 
 

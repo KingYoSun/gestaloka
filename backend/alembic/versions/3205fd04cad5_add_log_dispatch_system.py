@@ -25,20 +25,12 @@ def upgrade() -> None:
         sa.Column("id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("completed_log_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("dispatcher_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column(
-            "objective_type",
-            sa.Enum("EXPLORE", "INTERACT", "COLLECT", "GUARD", "FREE", name="dispatchobjectivetype"),
-            nullable=False,
-        ),
+        sa.Column("objective_type", sa.VARCHAR(20), nullable=False),
         sa.Column("objective_detail", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("initial_location", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("dispatch_duration_days", sa.Integer(), nullable=False),
         sa.Column("sp_cost", sa.Integer(), nullable=False),
-        sa.Column(
-            "status",
-            sa.Enum("PREPARING", "DISPATCHED", "RETURNING", "COMPLETED", "RECALLED", name="dispatchstatus"),
-            nullable=False,
-        ),
+        sa.Column("status", sa.VARCHAR(20), nullable=False),
         sa.Column("travel_log", sa.JSON(), nullable=True),
         sa.Column("collected_items", sa.JSON(), nullable=True),
         sa.Column("discovered_locations", sa.JSON(), nullable=True),
@@ -106,6 +98,18 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_dispatch_reports_dispatch_id"), "dispatch_reports", ["dispatch_id"], unique=True)
+    
+    # Add CHECK constraints for VARCHAR ENUMs
+    op.create_check_constraint(
+        'ck_log_dispatches_objective_type',
+        'log_dispatches',
+        "objective_type IN ('EXPLORE', 'INTERACT', 'COLLECT', 'GUARD', 'FREE')"
+    )
+    op.create_check_constraint(
+        'ck_log_dispatches_status',
+        'log_dispatches',
+        "status IN ('PREPARING', 'DISPATCHED', 'RETURNING', 'COMPLETED', 'RECALLED')"
+    )
     # ### end Alembic commands ###
 
 

@@ -124,14 +124,8 @@ def upgrade() -> None:
         sa.Column("session_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("action_description", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
         sa.Column("keywords", sa.JSON(), nullable=True),
-        sa.Column(
-            "emotional_valence", sa.Enum("POSITIVE", "NEGATIVE", "NEUTRAL", name="emotionalvalence"), nullable=False
-        ),
-        sa.Column(
-            "rarity",
-            sa.Enum("COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", name="logfragmentrarity"),
-            nullable=False,
-        ),
+        sa.Column("emotional_valence", sa.VARCHAR(20), nullable=False),
+        sa.Column("rarity", sa.VARCHAR(20), nullable=False),
         sa.Column("importance_score", sa.Float(), nullable=False),
         sa.Column("context_data", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
@@ -159,11 +153,7 @@ def upgrade() -> None:
         sa.Column("personality_traits", sa.JSON(), nullable=True),
         sa.Column("behavior_patterns", sa.JSON(), nullable=True),
         sa.Column("contamination_level", sa.Float(), nullable=False),
-        sa.Column(
-            "status",
-            sa.Enum("DRAFT", "COMPLETED", "CONTRACTED", "ACTIVE", "EXPIRED", "RECALLED", name="completedlogstatus"),
-            nullable=False,
-        ),
+        sa.Column("status", sa.VARCHAR(20), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(
@@ -241,6 +231,23 @@ def upgrade() -> None:
     op.create_index(op.f("ix_log_contracts_completed_log_id"), "log_contracts", ["completed_log_id"], unique=False)
     op.create_index(op.f("ix_log_contracts_creator_id"), "log_contracts", ["creator_id"], unique=False)
     op.create_index(op.f("ix_log_contracts_host_character_id"), "log_contracts", ["host_character_id"], unique=False)
+    
+    # Add CHECK constraints for VARCHAR ENUMs
+    op.create_check_constraint(
+        'ck_log_fragments_emotional_valence',
+        'log_fragments',
+        "emotional_valence IN ('POSITIVE', 'NEGATIVE', 'NEUTRAL')"
+    )
+    op.create_check_constraint(
+        'ck_log_fragments_rarity',
+        'log_fragments',
+        "rarity IN ('COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY')"
+    )
+    op.create_check_constraint(
+        'ck_completed_logs_status',
+        'completed_logs',
+        "status IN ('DRAFT', 'COMPLETED', 'CONTRACTED', 'ACTIVE', 'EXPIRED', 'RECALLED')"
+    )
     # ### end Alembic commands ###
 
 
