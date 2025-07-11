@@ -22,7 +22,7 @@ from app.core.error_handler import (
 )
 from app.core.exceptions import LogverseError
 from app.core.logging import get_logger, setup_logging
-from app.websocket.server import socket_app
+# from app.websocket.server import socket_app  # 再実装まで無効化
 
 
 @asynccontextmanager
@@ -90,7 +90,7 @@ app.add_middleware(
 )
 
 # Socket.IOアプリケーションをマウント
-app.mount("/socket.io", socket_app)
+# app.mount("/socket.io", socket_app)  # 再実装まで無効化
 
 
 @app.get("/")

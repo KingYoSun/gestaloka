@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from app.ai.coordinator import CoordinatorAI
+# from app.ai.coordinator import CoordinatorAI  # 再実装まで無効化
 
 # from app.services.skill_service import SkillService  # TODO: スキルサービス実装後に有効化
 from app.db.neo4j_models import NPC, Location, Player

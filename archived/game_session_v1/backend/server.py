@@ -190,6 +190,14 @@ async def join_game(sid, data):
                 await sio.emit("error", {"message": "セッションが見つかりません"}, to=sid)
                 return
 
+            logger.info(
+                "[FirstSession] Session info",
+                session_id=session.id,
+                is_first_session=session.is_first_session,
+                session_number=session.session_number,
+                is_already_joined=is_already_joined
+            )
+
             # 既存メッセージをチェック
             existing_messages = db.exec(
                 select(GameMessage)
@@ -197,12 +205,20 @@ async def join_game(sid, data):
                 .order_by(GameMessage.turn_number)
             ).all()
 
+            logger.info(
+                "[FirstSession] Existing messages check",
+                message_count=len(existing_messages),
+                has_messages=bool(existing_messages)
+            )
+
             # 初回セッションでメッセージがまだない場合のみ初期化を実行（既に参加済みの場合はスキップ）
             if session.is_first_session and not existing_messages and not is_already_joined:
                 from app.models.character import Character
 
                 character = db.exec(select(Character).where(Character.id == session.character_id)).first()
                 if character:
+                    logger.info("[FirstSession] Initializing first session", character_name=character.name)
+                    
                     initializer = FirstSessionInitializer(db)
 
                     # 初期クエストを付与
@@ -211,12 +227,18 @@ async def join_game(sid, data):
                     # 導入テキストと選択肢を生成
                     intro_narrative = initializer.generate_introduction(character)
                     initial_choices = initializer.generate_initial_choices()
+                    
+                    logger.info(
+                        "[FirstSession] Generated content",
+                        narrative_length=len(intro_narrative),
+                        choices_count=len(initial_choices)
+                    )
 
                     # GMナラティブとして保存
                     from app.services.game_session import GameSessionService
 
                     game_service = GameSessionService(db)
-                    game_service.save_message(
+                    saved_message = game_service.save_message(
                         session_id=session.id,
                         message_type=MESSAGE_TYPE_GM_NARRATIVE,
                         sender_type=SENDER_TYPE_GM,
@@ -228,23 +250,37 @@ async def join_game(sid, data):
                         },
                     )
                     db.commit()
+                    
+                    logger.info("[FirstSession] Message saved", message_id=saved_message.id)
 
-                    # 初回メッセージを新規として送信
+                    # message_addedイベントを送信（IDを含む）
+                    await GameEventEmitter.emit_custom_event(
+                        game_session_id,
+                        "message_added",
+                        {
+                            "message": {
+                                "id": saved_message.id,
+                                "content": saved_message.content,
+                                "message_type": saved_message.message_type,
+                                "sender_type": saved_message.sender_type,
+                                "turn_number": saved_message.turn_number,
+                                "metadata": saved_message.message_metadata,
+                                "created_at": saved_message.created_at.isoformat(),
+                            },
+                            "choices": initial_choices,
+                        }
+                    )
+                    
+                    logger.info("[FirstSession] Emitted message_added event")
+                    
+                    # 初回メッセージを新規として送信（narrative_updateも送る）
                     await GameEventEmitter.emit_narrative_update(
                         game_session_id,
                         intro_narrative,
                         "introduction"
                     )
                     
-                    # 選択肢も送信
-                    await GameEventEmitter.emit_custom_event(
-                        game_session_id,
-                        "choices_update",
-                        {
-                            "choices": initial_choices,
-                            "turn_number": 1
-                        }
-                    )
+                    logger.info("[FirstSession] First session initialization completed")
             # 既存メッセージがある場合（初回セッションの新規生成後でない場合）のみ選択肢を送信
             elif existing_messages:
                 # 最新の選択肢のみを探す（ナラティブは送信しない）

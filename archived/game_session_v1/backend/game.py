@@ -11,6 +11,7 @@ from app.api.deps import get_character_session, get_current_active_user, get_use
 from app.core.database import get_session
 from app.core.logging import get_logger
 from app.models.character import GameSession
+from app.models.game_message import GameMessage
 from app.schemas.game_session import (
     ActionExecuteRequest,
     ActionExecuteResponse,

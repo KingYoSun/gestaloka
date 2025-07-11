@@ -150,6 +150,7 @@ export function useWebSocket() {
  */
 export function useGameWebSocket(gameSessionId?: string) {
   const { user } = useAuth()
+  const { status: wsStatus } = useWebSocket()
   const [messages, setMessages] = useState<GameMessage[]>([])
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [currentNPCEncounters, setCurrentNPCEncounters] = useState<
@@ -162,9 +163,28 @@ export function useGameWebSocket(gameSessionId?: string) {
     // StrictModeでの重複実行を防ぐためのフラグ
     let isMounted = true
 
-    // ゲームセッションに参加（WebSocketManager側で重複チェック）
-    if (isMounted) {
-      websocketManager.joinGame(gameSessionId, user.id)
+    // WebSocket接続が確立されてからjoin_gameを送信
+    const joinGameWhenReady = () => {
+      if (isMounted && wsStatus.connected) {
+        console.log('[useGameWebSocket] WebSocket connected, joining game session', { gameSessionId, userId: user.id })
+        websocketManager.joinGame(gameSessionId, user.id)
+      }
+    }
+
+    let checkInterval: NodeJS.Timeout | undefined
+
+    // 既に接続済みの場合はすぐに参加
+    if (wsStatus.connected) {
+      joinGameWhenReady()
+    } else {
+      // 接続を待つ
+      console.log('[useGameWebSocket] Waiting for WebSocket connection...')
+      checkInterval = setInterval(() => {
+        if (websocketManager.isConnected()) {
+          clearInterval(checkInterval)
+          joinGameWhenReady()
+        }
+      }, 100)
     }
 
     // イベントハンドラー
@@ -402,23 +422,30 @@ export function useGameWebSocket(gameSessionId?: string) {
     // メッセージ追加イベントハンドラー
     const handleMessageAdded = (data: any) => {
       console.log('[DEBUG] message_added received:', data)
+      console.log('[DEBUG] Current gameSessionId:', gameSessionId)
+      console.log('[DEBUG] Data has message:', !!data.message)
       
       // ゲームセッションストアに追加
       if (gameSessionId && data.message) {
         const gameStore = useGameSessionStore.getState()
-        gameStore.addGameMessage({
+        const newMessage = {
           id: data.message.id,
           sessionId: gameSessionId,
           type: data.message.sender_type === 'gm' ? 'gm' : 'user',
           content: data.message.content,
           timestamp: data.message.created_at,
           metadata: data.message.metadata,
-        })
+        }
+        console.log('[DEBUG] Adding message to store:', newMessage)
+        gameStore.addGameMessage(newMessage)
         
         // 選択肢も更新
         if (data.choices) {
+          console.log('[DEBUG] Updating choices:', data.choices)
           gameStore.setCurrentChoices(data.choices)
         }
+      } else {
+        console.warn('[DEBUG] Message not added - missing gameSessionId or data.message')
       }
     }
 
@@ -476,6 +503,11 @@ export function useGameWebSocket(gameSessionId?: string) {
       // leave_gameは明示的な終了時のみ実行するため、ここでは呼ばない
       // これにより、ページリロードや不意の遷移でもセッションに戻れる
 
+      // インターバルのクリア
+      if (checkInterval) {
+        clearInterval(checkInterval)
+      }
+      
       websocketManager.off('game:joined', handleGameJoined)
       websocketManager.off('game:started', handleGameStarted)
       websocketManager.off('game:narrative_update', handleNarrativeUpdate)

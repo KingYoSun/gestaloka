@@ -24,14 +24,11 @@ import { Route as AdminAdminRouteImport } from './routes/_admin/admin'
 import { Route as AuthenticatedSpIndexRouteImport } from './routes/_authenticated/sp/index'
 import { Route as AuthenticatedSpSuccessRouteImport } from './routes/_authenticated/sp/success'
 import { Route as AuthenticatedSpCancelRouteImport } from './routes/_authenticated/sp/cancel'
-import { Route as AuthenticatedGameStartRouteImport } from './routes/_authenticated/game/start'
-import { Route as AuthenticatedGameSessionIdRouteImport } from './routes/_authenticated/game/$sessionId'
 import { Route as AuthenticatedCharacterCreateRouteImport } from './routes/_authenticated/character.create'
 import { Route as AuthenticatedCharacterIdRouteImport } from './routes/_authenticated/character/$id'
 import { Route as AdminAdminSpRouteImport } from './routes/_admin/admin.sp'
 import { Route as AdminAdminPerformanceRouteImport } from './routes/_admin/admin.performance'
 import { Route as AuthenticatedCharacterIdIndexRouteImport } from './routes/_authenticated/character/$id/index'
-import { Route as AuthenticatedGameSessionIdResultRouteImport } from './routes/_authenticated/game/$sessionId/result'
 import { Route as AuthenticatedCharacterIdEditRouteImport } from './routes/_authenticated/character/$id/edit'
 
 const RegisterRoute = RegisterRouteImport.update({
@@ -107,17 +104,6 @@ const AuthenticatedSpCancelRoute = AuthenticatedSpCancelRouteImport.update({
   path: '/sp/cancel',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedGameStartRoute = AuthenticatedGameStartRouteImport.update({
-  id: '/game/start',
-  path: '/game/start',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedGameSessionIdRoute =
-  AuthenticatedGameSessionIdRouteImport.update({
-    id: '/game/$sessionId',
-    path: '/game/$sessionId',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedCharacterCreateRoute =
   AuthenticatedCharacterCreateRouteImport.update({
     id: '/character/create',
@@ -146,12 +132,6 @@ const AuthenticatedCharacterIdIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedCharacterIdRoute,
   } as any)
-const AuthenticatedGameSessionIdResultRoute =
-  AuthenticatedGameSessionIdResultRouteImport.update({
-    id: '/result',
-    path: '/result',
-    getParentRoute: () => AuthenticatedGameSessionIdRoute,
-  } as any)
 const AuthenticatedCharacterIdEditRoute =
   AuthenticatedCharacterIdEditRouteImport.update({
     id: '/edit',
@@ -174,13 +154,10 @@ export interface FileRoutesByFullPath {
   '/admin/sp': typeof AdminAdminSpRoute
   '/character/$id': typeof AuthenticatedCharacterIdRouteWithChildren
   '/character/create': typeof AuthenticatedCharacterCreateRoute
-  '/game/$sessionId': typeof AuthenticatedGameSessionIdRouteWithChildren
-  '/game/start': typeof AuthenticatedGameStartRoute
   '/sp/cancel': typeof AuthenticatedSpCancelRoute
   '/sp/success': typeof AuthenticatedSpSuccessRoute
   '/sp': typeof AuthenticatedSpIndexRoute
   '/character/$id/edit': typeof AuthenticatedCharacterIdEditRoute
-  '/game/$sessionId/result': typeof AuthenticatedGameSessionIdResultRoute
   '/character/$id/': typeof AuthenticatedCharacterIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -197,13 +174,10 @@ export interface FileRoutesByTo {
   '/admin/performance': typeof AdminAdminPerformanceRoute
   '/admin/sp': typeof AdminAdminSpRoute
   '/character/create': typeof AuthenticatedCharacterCreateRoute
-  '/game/$sessionId': typeof AuthenticatedGameSessionIdRouteWithChildren
-  '/game/start': typeof AuthenticatedGameStartRoute
   '/sp/cancel': typeof AuthenticatedSpCancelRoute
   '/sp/success': typeof AuthenticatedSpSuccessRoute
   '/sp': typeof AuthenticatedSpIndexRoute
   '/character/$id/edit': typeof AuthenticatedCharacterIdEditRoute
-  '/game/$sessionId/result': typeof AuthenticatedGameSessionIdResultRoute
   '/character/$id': typeof AuthenticatedCharacterIdIndexRoute
 }
 export interface FileRoutesById {
@@ -224,13 +198,10 @@ export interface FileRoutesById {
   '/_admin/admin/sp': typeof AdminAdminSpRoute
   '/_authenticated/character/$id': typeof AuthenticatedCharacterIdRouteWithChildren
   '/_authenticated/character/create': typeof AuthenticatedCharacterCreateRoute
-  '/_authenticated/game/$sessionId': typeof AuthenticatedGameSessionIdRouteWithChildren
-  '/_authenticated/game/start': typeof AuthenticatedGameStartRoute
   '/_authenticated/sp/cancel': typeof AuthenticatedSpCancelRoute
   '/_authenticated/sp/success': typeof AuthenticatedSpSuccessRoute
   '/_authenticated/sp/': typeof AuthenticatedSpIndexRoute
   '/_authenticated/character/$id/edit': typeof AuthenticatedCharacterIdEditRoute
-  '/_authenticated/game/$sessionId/result': typeof AuthenticatedGameSessionIdResultRoute
   '/_authenticated/character/$id/': typeof AuthenticatedCharacterIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -250,13 +221,10 @@ export interface FileRouteTypes {
     | '/admin/sp'
     | '/character/$id'
     | '/character/create'
-    | '/game/$sessionId'
-    | '/game/start'
     | '/sp/cancel'
     | '/sp/success'
     | '/sp'
     | '/character/$id/edit'
-    | '/game/$sessionId/result'
     | '/character/$id/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -273,13 +241,10 @@ export interface FileRouteTypes {
     | '/admin/performance'
     | '/admin/sp'
     | '/character/create'
-    | '/game/$sessionId'
-    | '/game/start'
     | '/sp/cancel'
     | '/sp/success'
     | '/sp'
     | '/character/$id/edit'
-    | '/game/$sessionId/result'
     | '/character/$id'
   id:
     | '__root__'
@@ -299,13 +264,10 @@ export interface FileRouteTypes {
     | '/_admin/admin/sp'
     | '/_authenticated/character/$id'
     | '/_authenticated/character/create'
-    | '/_authenticated/game/$sessionId'
-    | '/_authenticated/game/start'
     | '/_authenticated/sp/cancel'
     | '/_authenticated/sp/success'
     | '/_authenticated/sp/'
     | '/_authenticated/character/$id/edit'
-    | '/_authenticated/game/$sessionId/result'
     | '/_authenticated/character/$id/'
   fileRoutesById: FileRoutesById
 }
@@ -424,20 +386,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSpCancelRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/game/start': {
-      id: '/_authenticated/game/start'
-      path: '/game/start'
-      fullPath: '/game/start'
-      preLoaderRoute: typeof AuthenticatedGameStartRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/game/$sessionId': {
-      id: '/_authenticated/game/$sessionId'
-      path: '/game/$sessionId'
-      fullPath: '/game/$sessionId'
-      preLoaderRoute: typeof AuthenticatedGameSessionIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/character/create': {
       id: '/_authenticated/character/create'
       path: '/character/create'
@@ -472,13 +420,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/character/$id/'
       preLoaderRoute: typeof AuthenticatedCharacterIdIndexRouteImport
       parentRoute: typeof AuthenticatedCharacterIdRoute
-    }
-    '/_authenticated/game/$sessionId/result': {
-      id: '/_authenticated/game/$sessionId/result'
-      path: '/result'
-      fullPath: '/game/$sessionId/result'
-      preLoaderRoute: typeof AuthenticatedGameSessionIdResultRouteImport
-      parentRoute: typeof AuthenticatedGameSessionIdRoute
     }
     '/_authenticated/character/$id/edit': {
       id: '/_authenticated/character/$id/edit'
@@ -530,21 +471,6 @@ const AuthenticatedCharacterIdRouteWithChildren =
     AuthenticatedCharacterIdRouteChildren,
   )
 
-interface AuthenticatedGameSessionIdRouteChildren {
-  AuthenticatedGameSessionIdResultRoute: typeof AuthenticatedGameSessionIdResultRoute
-}
-
-const AuthenticatedGameSessionIdRouteChildren: AuthenticatedGameSessionIdRouteChildren =
-  {
-    AuthenticatedGameSessionIdResultRoute:
-      AuthenticatedGameSessionIdResultRoute,
-  }
-
-const AuthenticatedGameSessionIdRouteWithChildren =
-  AuthenticatedGameSessionIdRoute._addFileChildren(
-    AuthenticatedGameSessionIdRouteChildren,
-  )
-
 interface AuthenticatedRouteChildren {
   AuthenticatedCharactersRoute: typeof AuthenticatedCharactersRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
@@ -554,8 +480,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTitlesRoute: typeof AuthenticatedTitlesRoute
   AuthenticatedCharacterIdRoute: typeof AuthenticatedCharacterIdRouteWithChildren
   AuthenticatedCharacterCreateRoute: typeof AuthenticatedCharacterCreateRoute
-  AuthenticatedGameSessionIdRoute: typeof AuthenticatedGameSessionIdRouteWithChildren
-  AuthenticatedGameStartRoute: typeof AuthenticatedGameStartRoute
   AuthenticatedSpCancelRoute: typeof AuthenticatedSpCancelRoute
   AuthenticatedSpSuccessRoute: typeof AuthenticatedSpSuccessRoute
   AuthenticatedSpIndexRoute: typeof AuthenticatedSpIndexRoute
@@ -570,8 +494,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTitlesRoute: AuthenticatedTitlesRoute,
   AuthenticatedCharacterIdRoute: AuthenticatedCharacterIdRouteWithChildren,
   AuthenticatedCharacterCreateRoute: AuthenticatedCharacterCreateRoute,
-  AuthenticatedGameSessionIdRoute: AuthenticatedGameSessionIdRouteWithChildren,
-  AuthenticatedGameStartRoute: AuthenticatedGameStartRoute,
   AuthenticatedSpCancelRoute: AuthenticatedSpCancelRoute,
   AuthenticatedSpSuccessRoute: AuthenticatedSpSuccessRoute,
   AuthenticatedSpIndexRoute: AuthenticatedSpIndexRoute,

@@ -9,7 +9,7 @@ from sqlmodel import Session, col, select
 from app.api.deps import get_db
 from app.models.log import ActionLog
 from app.models.user import User
-from app.services.game_session import GameSessionService
+# from app.services.game_session import GameSessionService  # 再実装まで無効化
 
 # from app.services.ai.dispatch_interaction import DispatchInteractionService  # TODO: 実装待ち
 from .deps import get_current_admin_user
@@ -136,8 +136,9 @@ async def get_performance_stats(
     )
 
 
-@router.post("/test", response_model=PerformanceTestResult)
-async def run_performance_test(
+# 再実装まで無効化
+# @router.post("/test", response_model=PerformanceTestResult)
+# async def run_performance_test(
     request: PerformanceTestRequest, current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)
 ):
     """

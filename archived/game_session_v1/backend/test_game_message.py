@@ -223,6 +223,7 @@ class TestGameMessage:
                         mock_emitter.emit_narrative_update = AsyncMock()
                         mock_emitter.emit_action_result = AsyncMock()
                         mock_emitter.emit_player_status_update = AsyncMock()
+                        mock_emitter.emit_custom_event = AsyncMock()
 
                         # クエストサービスのモック
                         with patch("app.services.quest_service.QuestService") as mock_quest_service:
