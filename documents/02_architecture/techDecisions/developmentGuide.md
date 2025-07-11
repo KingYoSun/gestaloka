@@ -8,10 +8,14 @@
 
 ```bash
 # .env.example
-# 認証
+# 認証（KeyCloak - 設計上は使用予定だが現在未実装）
 KEYCLOAK_SERVER_URL=http://localhost:8080
 KEYCLOAK_CLIENT_ID=gestaloka
 KEYCLOAK_CLIENT_SECRET=your-secret
+
+# 現在の認証（独自JWT）
+SECRET_KEY=your-secret-key  # JWT署名用
+ACCESS_TOKEN_EXPIRE_MINUTES=11520  # 8日間
 
 # データベース
 DATABASE_URL=postgresql://user:pass@localhost/gestaloka

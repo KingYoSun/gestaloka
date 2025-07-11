@@ -10,7 +10,7 @@
 - **バックエンド**: Python 3.11, FastAPI, LangChain, SQLModel, neomodel, Celery
 - **データベース**: PostgreSQL 17, Neo4j 5.26 LTS, Redis 8
 - **AI/LLM**: Gemini 2.5 Pro（gemini-2.5-pro）, GM AI評議会（6つの専門AI）
-- **認証**: Keycloak 26.2
+- **認証**: 独自JWT認証（KeyCloak 26.2へ移行予定）
 - **決済**: Stripe（SPサブスクリプション）
 - **インフラ**: Docker Compose, WebSocket
 
@@ -41,6 +41,8 @@
 - パフォーマンス最適化とシステム監視体制構築
 
 ## 開発環境（2025/07/11時点）
+- アーキテクチャドキュメントのリファクタリング完了（2025/07/11）
+- KeyCloak認証への移行タスクを高優先度で追加
 - langchain-google-genai 2.1.6
 - Pydantic V2完全移行済み
 - AIレスポンスキャッシュ実装済み（コスト20-30%削減）

@@ -4,6 +4,8 @@
 
 ## 認証フロー
 
+### 設計上の認証フロー（KeyCloak使用 - 未実装）
+
 ```mermaid
 sequenceDiagram
     participant U as User
@@ -23,6 +25,29 @@ sequenceDiagram
     B->>B: JWT検証
     B->>F: レスポンス
 ```
+
+### 現在の認証フロー（独自JWT実装）
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant B as Backend
+    
+    U->>F: アクセス
+    F->>F: CookieのJWT確認
+    alt JWTなし/期限切れ
+        F->>B: /api/v1/auth/login
+        U->>B: 認証情報入力
+        B->>B: 独自JWT生成
+        B->>F: JWTをhttponly Cookieに設定
+    end
+    F->>B: API呼び出し(Cookie自動送信)
+    B->>B: CookieからJWT取得・検証
+    B->>F: レスポンス
+```
+
+**注**: KeyCloakへの移行が必要（`documents/01_project/activeContext/current_tasks.md`参照）
 
 ## WebSocket通信
 

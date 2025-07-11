@@ -8,7 +8,8 @@
 ## 主要ポイント
 
 ### システム構成
-- **認証フロー**: Keycloak → JWT → Cookie認証（2025-07-06移行）
+- **認証フロー**: KeyCloak → JWT → Cookie認証（設計）
+  - ※現在の実装は独自JWT認証であり、KeyCloakへの移行が必要
 - **リアルタイム通信**: WebSocket (Socket.IO)
 - **非同期処理**: Celery + Redis
 - **データベース**: PostgreSQL（構造化データ）+ Neo4j（関係性データ）
@@ -61,8 +62,6 @@
 - **[componentArchitecture.md](frontend/componentArchitecture.md)**: フロントエンドコンポーネントアーキテクチャとDRY原則
 
 ### features/
-- **[sp_system_spec.md](features/sp_system_spec.md)**: SPシステムの完全仕様（購入、サブスク、管理）
-- **[log_encounter_spec.md](features/log_encounter_spec.md)**: ログ遭遇システム仕様（複数NPC、アイテム交換）
 - **[encounter_story_spec.md](features/encounter_story_spec.md)**: 遭遇ストーリーシステム仕様（記憶継承システムの拡張）
 
 ## 最近の更新（2025年7月）
@@ -71,13 +70,14 @@
   - GameMessageテーブルで全メッセージを永続化
   - SessionResultテーブルでセッション結果を保存
   - GameSessionモデルの拡張（session_status、turn_count等）
-  - [session_system_redesign.md](session_system_redesign.md)参照
+  - GameMessage/SessionResultテーブルの詳細は実装コード参照
 - **キャラクター編集機能（2025-07-07）**: 名前、説明、外見、性格の編集
 - **探索機能の統合（2025-07-06）**: 独立した探索システムをセッション進行に完全統合
   - 探索専用ページ・APIを削除
   - GameSessionServiceで探索処理を実装
   - CoordinatorAIが文脈に応じた探索選択肢を生成
-- **Cookie認証への移行（2025-07-06）**: LocalStorageからセキュアなCookie認証へ
+- **Cookie認証への移行（2025-07-06）**: LocalStorageからセキュアなhttponly Cookieへ（JWT保存先の変更、独自JWT認証のまま）
+- **KeyCloak認証への移行**: 未実装、移行作業が必要
 - **Energy→MPへの名称変更（2025-07-07）**: キャラクターの魔力ポイント
 - **SPシステム完全実装**: Stripe統合、サブスクリプション、管理機能
 - **ログ遭遇システム強化**: 複数NPC対応、アイテム交換、確率計算
