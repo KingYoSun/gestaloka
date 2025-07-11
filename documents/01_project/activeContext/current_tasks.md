@@ -1,8 +1,26 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-11（21:00 JST）
+## 最終更新: 2025-07-11（21:30 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
+
+1. **ドキュメント整理とアーカイブ作業（2025-07-11 21:30）✅**
+   - **実施内容**
+     - 古いゲームセッション仕様ドキュメントを特定
+     - アーカイブディレクトリ（`/documents/archived/game_session_old_design/`）を作成
+     - 旧仕様ファイル4個とレポート5個をアーカイブ移動
+     - アーカイブREADME.mdを作成（アーカイブ理由と内容を記載）
+   - **最新仕様の整理**
+     - `new_game_session_design.md` → `game_session_design_v2.md`にリネーム
+     - `game_session_overview.md`を新規作成（最新のドキュメント構成をまとめ）
+     - SUMMARY.mdを更新（新しい構造を反映）
+   - **成果**
+     - ドキュメントの可読性と一貫性が向上
+     - 最新仕様へのアクセスが容易に
+     - 歴史的記録の保存と整理の両立
+   - **詳細**
+     - アーカイブディレクトリ: `/documents/archived/game_session_old_design/`
+     - 最新仕様概要: `/documents/05_implementation/game_session_overview.md`
 
 1. **ゲームセッション実装の全面的なやり直し決定（2025-07-11）✅CRITICAL**
    - **問題の経緯**
