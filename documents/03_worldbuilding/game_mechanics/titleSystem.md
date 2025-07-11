@@ -274,5 +274,4 @@
 
 - [高度な編纂メカニクス](advancedCompilation.md) - 編纂系称号の詳細
 - [記憶継承システム](memoryInheritance.md) - 称号と記憶の関係
-- [キャラクター成長](characterGrowth.md) - 称号とステータス
-- [社会システム](socialSystem.md) - 称号の社会的影響
+- [ログシステム](log.md) - 称号獲得の基本

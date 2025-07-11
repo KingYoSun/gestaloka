@@ -1,6 +1,6 @@
 # 世界観・ゲーム設定サマリー
 
-最終更新: 2025-07-05
+最終更新: 2025-07-11
 
 ## 概要
 このセクションには、階層世界『ゲスタロカ』の世界観設定とゲームメカニクスに関するドキュメントが含まれています。新機能やコンテンツを追加する際は、これらの設定との整合性を確認してください。
@@ -33,7 +33,8 @@
 ### game_mechanics/
 - **[basic.md](game_mechanics/basic.md)**: 基本ゲームメカニクス（行動、成長、戦闘、経済）
 - **[log.md](game_mechanics/log.md)**: ログ生成メカニクス（欠片収集、編纂、NPC化）
-- **[memoryInheritance.md](game_mechanics/memoryInheritance.md)**: 記憶継承システム（動的クエスト、SP消費、継承メカニクス）
+- **[memoryFragmentAcquisition.md](game_mechanics/memoryFragmentAcquisition.md)**: 記憶フラグメント獲得システム（動的クエスト、アチーブメント）
+- **[memoryInheritance.md](game_mechanics/memoryInheritance.md)**: 記憶継承システム（フラグメント活用、SP消費、継承メカニクス）
 - **[advancedCompilation.md](game_mechanics/advancedCompilation.md)**: 高度な編纂メカニクス（コンボボーナス、SP消費計算）
 - **[purificationSystem.md](game_mechanics/purificationSystem.md)**: 汚染浄化システム（汚染の影響、浄化方法）
 - **[titleSystem.md](game_mechanics/titleSystem.md)**: 特殊称号システム（称号の種類、効果、獲得条件）
@@ -42,6 +43,13 @@
 ゲームメカニクスの概要。各システムの相互作用と設計思想を解説。
 
 ## 最近の更新（2025年7月）
+
+### 2025-07-11 ドキュメントリファクタリング
+- **用語統一**: SP表記、ログフラグメントと記憶フラグメントの使い分け
+- **ファイル分割**: memoryInheritance.mdをmemoryFragmentAcquisition.mdと分割
+- **物語性強化**: 数値的な確率計算を物語的表現に変更（logDispatchSystem.md）
+- **重複削除**: 各ファイル間の重複内容を整理し、相互参照に変更
+- **プロジェクトコンセプトとの整合**: 物語主導型の体験を重視した表現に統一
 
 ### 2025-07-05 高度な編纂メカニクス完全実装
 - **コンボボーナスシステム**: 記憶タイプ、キーワードの組み合わせ効果

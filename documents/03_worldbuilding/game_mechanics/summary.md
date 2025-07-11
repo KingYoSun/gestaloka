@@ -1,6 +1,6 @@
 # ゲームメカニクス概要
 
-最終更新: 2025-07-03
+最終更新: 2025-07-11
 
 ## 基本設計思想
 ゲスタロカのゲームメカニクスは「プレイヤーの自由度」と「物語の動的生成」を最優先に設計されています。制限より可能性を、固定シナリオより創発的な物語を重視します。
@@ -14,18 +14,18 @@
 
 ### ログシステム
 プレイヤーの行動履歴が世界に永続的な影響を与える独自システム：
-- **ログの欠片（記憶フラグメント）**: 重要な行動や経験が自動的に記録
+- **ログフラグメント**: 重要な行動や経験が自動的に記録
   - 探索での発見
   - クエスト完了時の生成（2025-07-03実装）
   - 永続的なコレクションアイテムとして機能
-- **ログ編纂**: 欠片を組み合わせて完成ログ（NPC）を創造
+- **ログ編纂**: フラグメントを組み合わせて完成ログ（NPC）を創造
 - **ログ派遣**: 完成ログを独立NPCとして世界へ送り出す
 - **ログ汚染**: 負の感情による変質とその浄化
 
-### SP（Story Points）システム
+### SPシステム
 世界への干渉力を表すリソース：
 - **用途**: 自由行動宣言、ログ派遣、探索、場所移動
-- **回復**: 1日10SP自然回復、購入可能
+- **回復**: 毎日UTC 4時（日本時間午後1時）に10SP自然回復、購入可能
 - **マネタイズ**: 課金による追加SP獲得
 
 ### 探索システム
@@ -60,6 +60,11 @@
 詳細は各ドキュメントを参照：
 - [basic.md](basic.md) - 基本メカニクスの詳細
 - [log.md](log.md) - ログシステムの詳細
-- [logDispatchSystem.md](logDispatchSystem.md) - ログ派遣システムの詳細（拡張済み）
+- [memoryFragmentAcquisition.md](memoryFragmentAcquisition.md) - 記憶フラグメント獲得システム
+- [memoryInheritance.md](memoryInheritance.md) - 記憶継承システム
+- [logDispatchSystem.md](logDispatchSystem.md) - ログ派遣システムの詳細
+- [advancedCompilation.md](advancedCompilation.md) - 高度な編纂メカニクス
+- [purificationSystem.md](purificationSystem.md) - 汚染浄化システム
 - [spSystem.md](spSystem.md) - SPシステムの詳細
-- [explorationSystem.md](explorationSystem.md) - 探索システムの詳細
+- [explorationSystem.md](explorationSystem.md) - 物語内探索システム
+- [titleSystem.md](titleSystem.md) - 称号システム
