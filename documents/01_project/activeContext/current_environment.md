@@ -31,7 +31,7 @@
 - **結果**: 全13サービスがhealthy状態（100%）  
 
 ## 実装済み機能
-- ✅ ユーザー登録・ログイン（JWT認証）
+- ✅ ユーザー登録・ログイン（Cookie認証）
 - ✅ 認証保護エンドポイント
 - ✅ データベースマイグレーション（Alembic + SQLModel統合）
 - ✅ 型安全なAPIクライアント統合
@@ -105,8 +105,8 @@
 - Keycloak 26.2
 
 ### LLM
-- Gemini 2.5 Pro (安定版: gemini-2.5-pro)
-- Gemini 2.5 Flash (高速版: gemini-2.5-flash)
+- Gemini 2.5 Pro（gemini-2.5-pro）
+- Gemini 2.5 Flash（高速版: gemini-2.5-flash、一部のAIエージェントで使用）
 
 ### インフラ
 - Docker Compose
@@ -233,7 +233,7 @@
 
 ### 2025/06/22の変更
 - SPシステムの完全実装
-  - SPシステムのデータモデル実装（CharacterSP、SPHistory）
+  - SPシステムのデータモデル実装（PlayerSP、SPTransaction）
   - SP管理API実装完了（SP消費、回復、履歴取得）
   - SPシステムのフロントエンド統合完了
   - 全てのテスト・型・リントエラーを完全解消
@@ -279,8 +279,8 @@
 - game_sessions
 - action_logs
 - skill_logs
-- character_sp
-- sp_history
+- player_sp
+- sp_transactions
 - log_fragments（記憶継承フィールド追加済み）
 - completed_logs
 - log_contracts
@@ -304,12 +304,14 @@
 
 ### ENUMタイプ
 - skilllogtype
-- sphistorytype
+- sptransactiontype
 - roletype
 - queststatus
 - questorigin
 - subscriptiontype
 - subscriptionstatus
+- spsubscriptiontype
+- sppurchasepackage
 
 ## 環境設定
 - **Docker Compose**: 全サービスが正常稼働

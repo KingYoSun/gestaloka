@@ -6,7 +6,7 @@ SPシステムは「世界への干渉力」として、プレイヤーがゲー
 
 ## データモデル設計
 
-### PlayerSPモデル
+### PlayerSPモデル（実際のテーブル名: player_sp）
 
 プレイヤーのSP残高と統計情報を管理するモデルです。
 
@@ -15,33 +15,41 @@ class PlayerSP(SQLModel, table=True):
     """プレイヤーのSP（Story Points）残高と統計情報"""
     __tablename__ = "player_sp"
     
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    player_id: UUID = Field(foreign_key="players.id", unique=True, index=True)
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    user_id: str = Field(foreign_key="users.id", unique=True, index=True)
     
     # SP残高
-    current_sp: int = Field(default=100, ge=0)  # 現在のSP残高（0以上）
-    max_sp: int = Field(default=100, ge=0)  # SP上限値
-    
-    # 時間管理
-    last_refill_at: datetime | None = Field(default=None)  # 最終回復時刻
+    current_sp: int = Field(default=0, ge=0)  # 現在のSP残高（0以上）
     
     # 統計情報
-    total_earned: int = Field(default=0, ge=0)  # 累積獲得SP
-    total_spent: int = Field(default=0, ge=0)  # 累積消費SP
+    total_earned_sp: int = Field(default=0, ge=0)  # 累積獲得SP
+    total_consumed_sp: int = Field(default=0, ge=0)  # 累積消費SP
+    total_purchased_sp: int = Field(default=0, ge=0)  # 購入による総SP
+    total_purchase_amount: int = Field(default=0, ge=0)  # 総購入金額（円）
+    
+    # 日次情報
+    last_daily_recovery_at: datetime | None = Field(default=None)  # 最終日次回復時刻
+    consecutive_login_days: int = Field(default=0, ge=0)  # 連続ログイン日数
+    last_login_date: datetime | None = Field(default=None)  # 最終ログイン日
+    
+    # サブスクリプション情報
+    active_subscription: SPSubscriptionType | None = Field(default=None)
+    subscription_expires_at: datetime | None = Field(default=None)
     
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 ```
 
 #### 主要フィールド
 
 - **current_sp**: 現在のSP残高（0以上の整数）
-- **max_sp**: SP上限値（デフォルト100、課金により拡張可能）
-- **last_refill_at**: 最終回復時刻（定期回復の計算に使用）
-- **total_earned/spent**: 累積統計（プレイヤーの活動履歴）
+- **total_earned_sp/total_consumed_sp**: 累積統計（プレイヤーの活動履歴）
+- **total_purchased_sp**: 購入によって獲得した総SP
+- **last_daily_recovery_at**: 最終日次回復時刻（定期回復の計算に使用）
+- **active_subscription**: 有効な月額パスの種類（Basic/Premium）
 
-### SPTransactionモデル
+### SPTransactionモデル（実際のテーブル名: sp_transactions）
 
 SP変動の詳細な履歴を記録するモデルです。
 
@@ -50,73 +58,79 @@ class SPTransaction(SQLModel, table=True):
     """SP取引履歴"""
     __tablename__ = "sp_transactions"
     
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    player_id: UUID = Field(foreign_key="players.id", index=True)
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    player_sp_id: str = Field(foreign_key="player_sp.id", index=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
     
     # 取引情報
-    transaction_type: SPTransactionType = Field(sa_column=Column(Enum(SPTransactionType)))
-    subtype: SPEventSubtype | None = Field(
-        default=None, 
-        sa_column=Column(Enum(SPEventSubtype))
-    )
+    transaction_type: SPTransactionType = Field(index=True)
     amount: int = Field()  # 正の値は獲得、負の値は消費
     
     # 残高追跡
     balance_before: int = Field(ge=0)  # 変動前のSP残高
     balance_after: int = Field(ge=0)  # 変動後のSP残高
     
-    # 説明
-    description: str | None = Field(default=None, max_length=500)
+    # 詳細情報
+    description: str = Field()  # 取引の説明
+    metadata: dict = Field(default_factory=dict, sa_column=Column(JSON))
     
     # 関連エンティティ（オプション）
-    character_id: UUID | None = Field(default=None, foreign_key="characters.id")
-    session_id: UUID | None = Field(default=None, foreign_key="game_sessions.id")
-    completed_log_id: UUID | None = Field(default=None, foreign_key="completed_logs.id")
+    related_entity_type: str | None = Field(default=None)
+    related_entity_id: str | None = Field(default=None)
     
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 ```
 
 #### 主要フィールド
 
-- **transaction_type**: 取引種別（EARNED/CONSUMED/REFILL/ADMIN）
-- **subtype**: 詳細イベントタイプ（ACTION/EXPLORATION等）
+- **transaction_type**: 取引種別（DAILY_RECOVERY/PURCHASE/FREE_ACTION/LOG_DISPATCH等）
 - **amount**: 変動量（正の値は獲得、負の値は消費）
 - **balance_before/after**: 変動前後のSP残高（監査証跡）
-- **関連ID**: キャラクター、セッション、ログへの参照
+- **metadata**: 追加情報をJSON形式で保存
+- **related_entity_type/id**: 関連エンティティへの汎用的な参照
 
 ### 列挙型定義
 
 ```python
 class SPTransactionType(str, Enum):
     """SP取引タイプ"""
-    EARNED = "earned"      # 獲得（活動報酬）
-    CONSUMED = "consumed"  # 消費（行動実行）
-    REFILL = "refill"      # 回復（時間経過/課金）
-    ADMIN = "admin"        # 管理者操作
+    # 取得系
+    DAILY_RECOVERY = "daily_recovery"  # 毎日の自然回復
+    PURCHASE = "purchase"  # 購入
+    ACHIEVEMENT = "achievement"  # 実績報酬
+    EVENT_REWARD = "event_reward"  # イベント報酬
+    LOG_RESULT = "log_result"  # ログ成果報酬
+    LOGIN_BONUS = "login_bonus"  # ログインボーナス
+    REFUND = "refund"  # 返金・補填
+    
+    # 消費系
+    FREE_ACTION = "free_action"  # 自由行動宣言
+    LOG_DISPATCH = "log_dispatch"  # ログ派遣
+    LOG_ENHANCEMENT = "log_enhancement"  # ログ強化
+    MEMORY_INHERITANCE = "memory_inheritance"  # 記憶継承
+    SYSTEM_FUNCTION = "system_function"  # システム機能
+    MOVEMENT = "movement"  # 場所移動
+    EXPLORATION = "exploration"  # 探索行動
+    
+    # システム系
+    ADJUSTMENT = "adjustment"  # システム調整
+    MIGRATION = "migration"  # データ移行
+    ADMIN_GRANT = "admin_grant"  # 管理者付与
+    ADMIN_DEDUCT = "admin_deduct"  # 管理者減算
 
-class SPEventSubtype(str, Enum):
-    """SP変動の詳細イベントタイプ"""
-    # 消費イベント
-    ACTION = "action"                    # 自由行動
-    EXPLORATION = "exploration"          # 探索
-    LOG_COMPILE = "log_compile"          # ログ編纂
-    LOG_DISPATCH = "log_dispatch"        # ログ派遣
-    
-    # 獲得イベント  
-    DAILY_LOGIN = "daily_login"          # デイリーログイン
-    ACHIEVEMENT = "achievement"          # 実績達成
-    QUEST_COMPLETE = "quest_complete"    # クエスト完了
-    LOG_CONTRACT = "log_contract"        # ログ契約報酬
-    
-    # 回復イベント
-    TIME_REFILL = "time_refill"          # 時間回復
-    ITEM_REFILL = "item_refill"          # アイテム使用
-    PURCHASE_REFILL = "purchase_refill"  # 課金回復
-    
-    # 管理イベント
-    ADMIN_GRANT = "admin_grant"          # 管理者付与
-    ADMIN_DEDUCT = "admin_deduct"        # 管理者減算
+class SPPurchasePackage(str, Enum):
+    """SP購入パッケージ"""
+    SMALL = "small"  # 100 SP (¥500)
+    MEDIUM = "medium"  # 300 SP (¥1,200)
+    LARGE = "large"  # 500 SP (¥2,000)
+    EXTRA_LARGE = "extra_large"  # 1,000 SP (¥3,500)
+    MEGA = "mega"  # 3,000 SP (¥8,000)
+
+class SPSubscriptionType(str, Enum):
+    """SP月額パスの種類"""
+    BASIC = "basic"  # ベーシックパス (¥1,000/月)
+    PREMIUM = "premium"  # プレミアムパス (¥2,500/月)
 ```
 
 ## データベース設計
@@ -133,44 +147,21 @@ class SPEventSubtype(str, Enum):
    - player_idと created_atで複合インデックス
    - 関連エンティティIDで検索可能
 
-### マイグレーション
+### マイグレーション（Alembic）
 
-```sql
--- player_spテーブル
-CREATE TABLE player_sp (
-    id UUID PRIMARY KEY,
-    player_id UUID NOT NULL UNIQUE REFERENCES players(id),
-    current_sp INTEGER NOT NULL CHECK (current_sp >= 0),
-    max_sp INTEGER NOT NULL CHECK (max_sp >= 0),
-    last_refill_at TIMESTAMP WITH TIME ZONE,
-    total_earned INTEGER NOT NULL DEFAULT 0 CHECK (total_earned >= 0),
-    total_spent INTEGER NOT NULL DEFAULT 0 CHECK (total_spent >= 0),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
+実際のマイグレーションファイル: `alembic/versions/30f5fb512c38_add_sp_system_models.py`
 
--- sp_transactionsテーブル
-CREATE TABLE sp_transactions (
-    id UUID PRIMARY KEY,
-    player_id UUID NOT NULL REFERENCES players(id),
-    transaction_type sp_transaction_type NOT NULL,
-    subtype sp_event_subtype,
-    amount INTEGER NOT NULL,
-    balance_before INTEGER NOT NULL CHECK (balance_before >= 0),
-    balance_after INTEGER NOT NULL CHECK (balance_after >= 0),
-    description VARCHAR(500),
-    character_id UUID REFERENCES characters(id),
-    session_id UUID REFERENCES game_sessions(id),
-    completed_log_id UUID REFERENCES completed_logs(id),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
+主要なテーブル構造:
 
--- インデックス
-CREATE INDEX idx_player_sp_player_id ON player_sp(player_id);
-CREATE INDEX idx_sp_transactions_player_id ON sp_transactions(player_id);
-CREATE INDEX idx_sp_transactions_created_at ON sp_transactions(created_at);
-CREATE INDEX idx_sp_transactions_player_created ON sp_transactions(player_id, created_at);
-```
+1. **player_spテーブル**
+   - プレイヤーごとに1レコード
+   - user_idにユニーク制約
+   - 高頻度でアクセスされるため適切なインデックス設定
+
+2. **sp_transactionsテーブル**
+   - 全てのSP変動を記録
+   - user_idとcreated_atで複合インデックス
+   - metadataフィールドでJSON形式の追加情報を保存
 
 ## 実装の特徴
 
@@ -322,7 +313,7 @@ const handleActionExecution = async (action: GameAction) => {
 
 ### ✅ Celeryタスクによる自動化
 1. **日次SP回復タスク** (`process_daily_sp_recovery`)
-   - 毎日UTC 4時（JST 13時）に自動実行
+   - 毎日UTC 4時に自動実行
    - 基本回復: 10 SP/日
    - サブスクリプションボーナス: Basic +20 SP、Premium +50 SP
    - 連続ログインボーナス: 7日（+5）、14日（+10）、30日（+20）
@@ -335,7 +326,7 @@ const handleActionExecution = async (action: GameAction) => {
    ```python
    "daily-sp-recovery": {
        "task": "app.tasks.sp_tasks.process_daily_sp_recovery",
-       "schedule": crontab(hour=4, minute=0),  # UTC 4時 = JST 13時
+       "schedule": crontab(hour=4, minute=0),  # UTC 4時
    },
    "check-subscription-expiry": {
        "task": "app.tasks.sp_tasks.check_subscription_expiry",
