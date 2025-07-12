@@ -23,11 +23,10 @@
 # 2. alembic/env.pyに新しいモデルをインポート（重要！）
 # 3. 自動生成（手動作成は禁止）
 docker-compose exec -T backend alembic revision --autogenerate -m "message"
-# 4. ⚠️ 生成されたマイグレーションを必ず確認（特にENUM型）
+# 4. ⚠️ 生成されたマイグレーションを必ず確認
 # 5. マイグレーション適用
 docker-compose exec -T backend alembic upgrade head
 ```
-**注意**: PostgreSQL ENUM型は使用禁止。VARCHAR + CHECK制約を使用。
 
 ### 作業完了時のチェック
 - [ ] current_tasks.mdの更新（完了タスクを反映）
@@ -109,14 +108,14 @@ make format            # フォーマット
 - `04_ai_agents/`: AI仕様
 - `05_implementation/`: 実装ガイド
 
-## 現在の環境（2025/07/10）
+## 現在の環境（2025/07/12）
 - langchain-google-genai 2.1.6
 - AIレスポンスキャッシュ実装（コスト20-30%削減）
-- バックエンドテスト100%成功（242/242）
+- バックエンドテスト99.5%成功（202/203）
 - フロントエンドテスト100%成功（28/28、MSW導入）
 - 全コード品質チェック通過（型・リント）
 - **SP日次回復の自動化実装済み**（Celeryタスク、毎日UTC 4時実行）
-- **PostgreSQL ENUM型問題を解決**（MIXEDマイグレーション修正）
+- **データベース再構築完了**（2025/07/12 - PostgreSQL ENUM型が正常に使用可能）
 - **ノベルゲーム風UI実装済み**（Framer Motion導入、表示モード切り替え対応）
 
 ## 詳細参照先
