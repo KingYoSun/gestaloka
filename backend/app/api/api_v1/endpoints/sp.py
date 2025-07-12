@@ -12,8 +12,8 @@ from sqlmodel import Session, col, select
 
 from app.api.deps import get_current_active_user, get_db
 from app.core.config import settings
-from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
+from app.utils.exceptions import get_by_condition_or_404, handle_sp_errors
 from app.core.stripe_config import stripe_service
 from app.models.sp import SPTransaction, SPTransactionType
 from app.models.sp_purchase import PurchaseStatus
@@ -44,6 +44,7 @@ logger = get_logger(__name__)
 
 
 @router.get("/balance", response_model=PlayerSPRead)
+@handle_sp_errors
 async def get_sp_balance(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -54,20 +55,13 @@ async def get_sp_balance(
     Returns:
         PlayerSPRead: SP残高の詳細情報
     """
-    try:
-        service = SPService(db)
-        player_sp = await service.get_balance(current_user.id)
-        return player_sp
-    except SPSystemError as e:
-        logger.error(
-            "Failed to get SP balance",
-            user_id=current_user.id,
-            error=str(e),
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    service = SPService(db)
+    player_sp = await service.get_balance(current_user.id)
+    return player_sp
 
 
 @router.get("/balance/summary", response_model=PlayerSPSummary)
+@handle_sp_errors
 async def get_sp_balance_summary(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -78,20 +72,13 @@ async def get_sp_balance_summary(
     Returns:
         PlayerSPSummary: SP残高の概要
     """
-    try:
-        service = SPService(db)
-        player_sp = await service.get_balance(current_user.id)
-        return PlayerSPSummary.model_validate(player_sp)
-    except SPSystemError as e:
-        logger.error(
-            "Failed to get SP balance summary",
-            user_id=current_user.id,
-            error=str(e),
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    service = SPService(db)
+    player_sp = await service.get_balance(current_user.id)
+    return PlayerSPSummary.model_validate(player_sp)
 
 
 @router.post("/consume", response_model=SPConsumeResponse)
+@handle_sp_errors
 async def consume_sp(
     request: SPConsumeRequest,
     current_user: User = Depends(get_current_active_user),
@@ -109,44 +96,28 @@ async def consume_sp(
     Raises:
         HTTPException: SP不足または処理エラー
     """
-    try:
-        service = SPService(db)
-        transaction = await service.consume_sp(
-            user_id=current_user.id,
-            amount=request.amount,
-            transaction_type=request.transaction_type,
-            description=request.description,
-            related_entity_type=request.related_entity_type,
-            related_entity_id=request.related_entity_id,
-            metadata=request.metadata,
-        )
+    service = SPService(db)
+    transaction = await service.consume_sp(
+        user_id=current_user.id,
+        amount=request.amount,
+        transaction_type=request.transaction_type,
+        description=request.description,
+        related_entity_type=request.related_entity_type,
+        related_entity_id=request.related_entity_id,
+        metadata=request.metadata,
+    )
 
-        return SPConsumeResponse(
-            success=True,
-            transaction_id=transaction.id,
-            balance_before=transaction.balance_before,
-            balance_after=transaction.balance_after,
-            message=f"SP {abs(transaction.amount)} を消費しました",
-        )
-
-    except InsufficientSPError as e:
-        logger.warning(
-            "Insufficient SP",
-            user_id=current_user.id,
-            requested_amount=request.amount,
-            error=str(e),
-        )
-        raise HTTPException(status_code=400, detail=str(e))
-    except SPSystemError as e:
-        logger.error(
-            "Failed to consume SP",
-            user_id=current_user.id,
-            error=str(e),
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    return SPConsumeResponse(
+        success=True,
+        transaction_id=transaction.id,
+        balance_before=transaction.balance_before,
+        balance_after=transaction.balance_after,
+        message=f"SP {abs(transaction.amount)} を消費しました",
+    )
 
 
 @router.post("/daily-recovery", response_model=SPDailyRecoveryResponse)
+@handle_sp_errors
 async def process_daily_recovery(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -162,25 +133,17 @@ async def process_daily_recovery(
         - 連続ログインボーナスも同時に処理
         - サブスクリプションボーナスも適用
     """
-    try:
-        service = SPService(db)
-        result = await service.process_daily_recovery(current_user.id)
+    service = SPService(db)
+    result = await service.process_daily_recovery(current_user.id)
 
-        if not result["success"]:
-            raise HTTPException(status_code=400, detail=result["message"])
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
 
-        return SPDailyRecoveryResponse(**result)
-
-    except SPSystemError as e:
-        logger.error(
-            "Failed to process daily recovery",
-            user_id=current_user.id,
-            error=str(e),
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    return SPDailyRecoveryResponse(**result)
 
 
 @router.get("/transactions", response_model=list[SPTransactionRead])
+@handle_sp_errors
 async def get_transaction_history(
     transaction_type: SPTransactionType | None = Query(None),
     start_date: datetime | None = Query(None),
@@ -207,29 +170,20 @@ async def get_transaction_history(
     Returns:
         list[SPTransactionRead]: 取引履歴のリスト
     """
-    try:
-        service = SPService(db)
-        transactions = []
-        async for transaction in service.get_transaction_history(
-            user_id=current_user.id,
-            transaction_type=transaction_type,
-            start_date=start_date,
-            end_date=end_date,
-            related_entity_type=related_entity_type,
-            related_entity_id=related_entity_id,
-            limit=limit,
-            offset=offset,
-        ):
-            transactions.append(transaction)
-        return transactions
-
-    except SPSystemError as e:
-        logger.error(
-            "Failed to get transaction history",
-            user_id=current_user.id,
-            error=str(e),
-        )
-        raise HTTPException(status_code=500, detail=str(e))
+    service = SPService(db)
+    transactions = []
+    async for transaction in service.get_transaction_history(
+        user_id=current_user.id,
+        transaction_type=transaction_type,
+        start_date=start_date,
+        end_date=end_date,
+        related_entity_type=related_entity_type,
+        related_entity_id=related_entity_id,
+        limit=limit,
+        offset=offset,
+    ):
+        transactions.append(transaction)
+    return transactions
 
 
 @router.get("/transactions/{transaction_id}", response_model=SPTransactionRead)
@@ -250,36 +204,18 @@ async def get_transaction_detail(
     Raises:
         HTTPException: 取引が見つからない場合
     """
-    try:
-        stmt = select(SPTransaction).where(
+    transaction = get_by_condition_or_404(
+        db,
+        select(SPTransaction).where(
             and_(
                 col(SPTransaction.id) == transaction_id,
                 col(SPTransaction.user_id) == current_user.id,
             )
-        )
-        transaction = db.exec(stmt).first()
-
-        if not transaction:
-            raise HTTPException(
-                status_code=404,
-                detail="指定された取引が見つかりません",
-            )
-
-        return transaction
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            "Failed to get transaction detail",
-            user_id=current_user.id,
-            transaction_id=transaction_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="取引詳細の取得に失敗しました",
-        )
+        ),
+        "指定された取引が見つかりません"
+    )
+    
+    return transaction
 
 
 # SP購入エンドポイント

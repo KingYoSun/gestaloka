@@ -2,10 +2,11 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, desc, select
 
 from app.api import deps
+from app.utils.exceptions import get_by_condition_or_404
 from app.core.logging import get_logger
 from app.models.character import Character
 from app.models.title import CharacterTitle
@@ -25,10 +26,11 @@ async def get_character_titles(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> list[CharacterTitleRead]:
     """Get all titles for the current user's character."""
-    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
-
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     titles = db.exec(
         select(CharacterTitle)
@@ -46,10 +48,11 @@ async def get_equipped_title(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Optional[CharacterTitleRead]:
     """Get the currently equipped title."""
-    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
-
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     equipped_title = db.exec(
         select(CharacterTitle).where(CharacterTitle.character_id == character.id).where(CharacterTitle.is_equipped)
@@ -66,18 +69,18 @@ async def equip_title(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> CharacterTitleRead:
     """Equip a specific title."""
-    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
-
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # Get the title to equip
-    title = db.exec(
-        select(CharacterTitle).where(CharacterTitle.id == title_id).where(CharacterTitle.character_id == character.id)
-    ).first()
-
-    if not title:
-        raise HTTPException(status_code=404, detail="Title not found")
+    title = get_by_condition_or_404(
+        db,
+        select(CharacterTitle).where(CharacterTitle.id == title_id).where(CharacterTitle.character_id == character.id),
+        "Title not found"
+    )
 
     # Unequip all current titles
     current_titles = db.exec(
@@ -106,10 +109,11 @@ async def unequip_all_titles(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> dict:
     """Unequip all titles."""
-    character = db.exec(select(Character).where(Character.user_id == current_user.id)).first()
-
-    if not character:
-        raise HTTPException(status_code=404, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # Unequip all titles
     equipped_titles = db.exec(

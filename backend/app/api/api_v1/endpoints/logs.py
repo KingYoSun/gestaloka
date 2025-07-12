@@ -5,16 +5,17 @@
 完成ログの編纂・契約管理を行うエンドポイント群
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import desc
 from sqlmodel import Session, and_, select
 
 from app.api.deps import get_current_active_user
 from app.core.database import get_session
+from app.utils.exceptions import get_by_condition_or_404, raise_not_found
 from app.models.character import Character, GameSession
 from app.models.log import (
     CompletedLog,
@@ -52,34 +53,30 @@ async def create_log_fragment(
     GMのAIによって自動生成される。
     """
     # キャラクターの所有権確認
-    character = db.exec(
-        select(Character).where(Character.id == fragment_in.character_id, Character.user_id == current_user.id)
-    ).first()
-
-    if not character:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.id == fragment_in.character_id, Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # ゲームセッションの確認
-    session_stmt = select(GameSession).where(
-        and_(
-            GameSession.id == fragment_in.session_id,
-            GameSession.character_id == fragment_in.character_id,
-            GameSession.is_active == True,  # noqa: E712
-        )
+    session = get_by_condition_or_404(
+        db,
+        select(GameSession).where(
+            and_(
+                GameSession.id == fragment_in.session_id,
+                GameSession.character_id == fragment_in.character_id,
+                GameSession.is_active == True,  # noqa: E712
+            )
+        ),
+        "Active game session not found"
     )
-    result = db.exec(session_stmt)
-    session = result.first()
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Active game session not found",
-        )
 
     # ログフラグメント作成
     db_fragment = LogFragment(
         id=str(uuid4()),
         **fragment_in.model_dump(),
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     db.add(db_fragment)
     db.commit()
@@ -218,7 +215,7 @@ async def create_completed_log(
         behavior_patterns=log_in.behavior_patterns,
         contamination_level=compilation_result.final_contamination,  # コンボボーナス適用後の汚染度
         status=CompletedLogStatus.DRAFT,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
         compilation_metadata={
             "base_contamination": base_contamination_level,
             "power_multiplier": compilation_result.power_multiplier,
