@@ -2,14 +2,16 @@
 場所（Location）関連のモデル定義
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
+from uuid import uuid4
 
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
+    from app.models.character import Character
     from app.models.exploration_progress import CharacterExplorationProgress
 
 
@@ -38,7 +40,7 @@ class Location(SQLModel, table=True):
 
     __tablename__ = "locations"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True, index=True)
     name: str = Field(index=True, description="場所名")
     description: str = Field(description="場所の説明")
     location_type: LocationType = Field(default=LocationType.TOWN, description="場所の種類")
@@ -49,22 +51,28 @@ class Location(SQLModel, table=True):
     x_coordinate: int = Field(default=0, description="X座標")
     y_coordinate: int = Field(default=0, description="Y座標")
 
-    # 施設・サービス
-    has_inn: bool = Field(default=False, description="宿屋の有無")
-    has_shop: bool = Field(default=False, description="商店の有無")
-    has_guild: bool = Field(default=False, description="ギルドの有無")
+    # 親場所（階層構造を作る場合）
+    parent_location_id: Optional[str] = Field(default=None, foreign_key="locations.id")
 
-    # フラグメント発見率（0-100%）
-    fragment_discovery_rate: int = Field(default=10, ge=0, le=100, description="ログフラグメント発見率")
+    # 環境設定
+    weather_conditions: Optional[str] = Field(default=None, description="天候条件")
+    time_flow_rate: float = Field(default=1.0, ge=0.1, le=10.0, description="時間の流れる速度（通常の倍率）")
 
-    # 特別な属性
-    is_starting_location: bool = Field(default=False, description="開始地点かどうか")
-    is_discovered: bool = Field(default=True, description="発見済みかどうか")
+    # メタデータ
+    location_metadata: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column("location_metadata", JSON, default={}), description="追加のメタデータ"
+    )
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    # タイムスタンプ
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
+    parent_location: Optional["Location"] = Relationship(
+        back_populates="child_locations",
+        sa_relationship_kwargs={"remote_side": "Location.id", "foreign_keys": "[Location.parent_location_id]"},
+    )
+    child_locations: list["Location"] = Relationship(back_populates="parent_location")
     connections_from: list["LocationConnection"] = Relationship(
         back_populates="from_location", sa_relationship_kwargs={"foreign_keys": "[LocationConnection.from_location_id]"}
     )
@@ -72,7 +80,6 @@ class Location(SQLModel, table=True):
         back_populates="to_location", sa_relationship_kwargs={"foreign_keys": "[LocationConnection.to_location_id]"}
     )
     exploration_areas: list["ExplorationArea"] = Relationship(back_populates="location")
-    characters: list["Character"] = Relationship(back_populates="current_location")
     exploration_progress: list["CharacterExplorationProgress"] = Relationship(back_populates="location")
 
 
@@ -91,9 +98,9 @@ class LocationConnection(SQLModel, table=True):
 
     __tablename__ = "location_connections"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    from_location_id: int = Field(foreign_key="locations.id")
-    to_location_id: int = Field(foreign_key="locations.id")
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True, index=True)
+    from_location_id: str = Field(foreign_key="locations.id")
+    to_location_id: str = Field(foreign_key="locations.id")
 
     # 移動コスト
     base_sp_cost: int = Field(default=0, ge=0, description="基本SP消費")
@@ -113,7 +120,7 @@ class LocationConnection(SQLModel, table=True):
     # 説明
     travel_description: Optional[str] = Field(default=None, description="移動時の説明文")
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     from_location: Location = Relationship(
@@ -130,8 +137,8 @@ class ExplorationArea(SQLModel, table=True):
 
     __tablename__ = "exploration_areas"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    location_id: int = Field(foreign_key="locations.id")
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True, index=True)
+    location_id: str = Field(foreign_key="locations.id")
     name: str = Field(index=True, description="エリア名")
     description: str = Field(description="エリアの説明")
 
@@ -146,8 +153,8 @@ class ExplorationArea(SQLModel, table=True):
     # 遭遇率
     encounter_rate: int = Field(default=20, ge=0, le=100, description="歪み遭遇率")
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     location: Location = Relationship(back_populates="exploration_areas")
@@ -158,11 +165,11 @@ class CharacterLocationHistory(SQLModel, table=True):
 
     __tablename__ = "character_location_history"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True, index=True)
     character_id: str = Field(foreign_key="characters.id", index=True)
-    location_id: int = Field(foreign_key="locations.id")
+    location_id: str = Field(foreign_key="locations.id")
 
-    arrived_at: datetime = Field(default_factory=datetime.utcnow)
+    arrived_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     departed_at: Optional[datetime] = Field(default=None)
     sp_consumed: int = Field(default=0, ge=0, description="移動で消費したSP")
 
@@ -176,11 +183,11 @@ class ExplorationLog(SQLModel, table=True):
 
     __tablename__ = "exploration_logs"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True, index=True)
     character_id: str = Field(foreign_key="characters.id", index=True)
-    area_id: int = Field(foreign_key="exploration_areas.id")
+    area_id: str = Field(foreign_key="exploration_areas.id")
 
-    explored_at: datetime = Field(default_factory=datetime.utcnow)
+    explored_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     sp_consumed: int = Field(default=0, ge=0)
     fragments_found: int = Field(default=0, ge=0)
     encounters: int = Field(default=0, ge=0)
@@ -191,10 +198,3 @@ class ExplorationLog(SQLModel, table=True):
     # リレーション
     character: "Character" = Relationship()
     area: ExplorationArea = Relationship()
-
-
-# Characterモデルへの参照を追加するための型アノテーション
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .character import Character

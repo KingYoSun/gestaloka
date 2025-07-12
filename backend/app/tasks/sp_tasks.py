@@ -2,7 +2,7 @@
 SP関連のCeleryタスク
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any
 
 from celery import shared_task
@@ -13,7 +13,7 @@ from app.core.database import get_session
 from app.core.logging import get_logger
 from app.models.sp import PlayerSP
 from app.models.user import User
-from app.services.sp_service import SPService
+from app.services.sp_service import SPServiceSync
 
 logger = get_logger(__name__)
 
@@ -31,7 +31,7 @@ def process_daily_sp_recovery() -> dict[str, Any]:
     """
     with next(get_session()) as db:
         try:
-            sp_service = SPService(db)
+            sp_service = SPServiceSync(db)
             processed_count = 0
             error_count = 0
 
@@ -69,7 +69,7 @@ def process_daily_sp_recovery() -> dict[str, Any]:
                 "total_users": len(users),
                 "processed": processed_count,
                 "errors": error_count,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
 
             logger.info("Daily SP recovery batch completed", **summary)
@@ -92,7 +92,7 @@ def check_subscription_expiry() -> dict[str, Any]:
     """
     with next(get_session()) as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             expired_count = 0
 
             # 期限切れのサブスクリプションを持つプレイヤーを取得
@@ -138,7 +138,7 @@ def grant_login_bonus(user_id: str) -> dict[str, Any]:
     """
     with next(get_session()) as db:
         try:
-            sp_service = SPService(db)
+            sp_service = SPServiceSync(db)
 
             # 日次回復処理（ログインボーナスを含む）
             result = sp_service.process_daily_recovery_sync(user_id)

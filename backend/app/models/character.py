@@ -33,7 +33,7 @@ class Character(SQLModel, table=True):
     appearance: Optional[str] = Field(default=None, max_length=1000)
     personality: Optional[str] = Field(default=None, max_length=1000)
     location: str = Field(default="nexus", max_length=100)  # 後方互換性のため残す
-    location_id: Optional[int] = Field(default=None, foreign_key="locations.id")
+    location_id: Optional[str] = Field(default=None, foreign_key="locations.id")
     is_active: bool = Field(default=True)
     character_metadata: Optional[dict] = Field(default_factory=dict, sa_type=JSON)
     created_at: datetime = Field(default_factory=datetime.utcnow)

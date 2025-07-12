@@ -1,7 +1,7 @@
 """SP購入モデル定義"""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
@@ -34,7 +34,7 @@ class SPPurchase(SQLModel, table=True):
 
     __tablename__ = "sp_purchases"
 
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True)
     user_id: str = Field(foreign_key="users.id", index=True)
 
     # 購入情報
@@ -48,7 +48,7 @@ class SPPurchase(SQLModel, table=True):
 
     # テストモード用
     test_reason: Optional[str] = Field(default=None, max_length=500)
-    approved_by: Optional[uuid.UUID] = Field(default=None)
+    approved_by: Optional[str] = Field(default=None)
     approved_at: Optional[datetime] = Field(default=None)
 
     # 本番モード用（将来実装）
@@ -56,8 +56,8 @@ class SPPurchase(SQLModel, table=True):
     stripe_checkout_session_id: Optional[str] = Field(default=None)
 
     # メタデータ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     user: Optional["User"] = Relationship(back_populates="sp_purchases")

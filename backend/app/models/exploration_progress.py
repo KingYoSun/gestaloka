@@ -4,11 +4,11 @@
 キャラクターごとの探索進捗を記録し、ミニマップの霧効果に使用する
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import TYPE_CHECKING, Optional
-from uuid import UUID
+from uuid import uuid4
 
-from sqlalchemy import ARRAY, TIMESTAMP, Column, ForeignKey, Integer, String, text
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -21,76 +21,23 @@ class CharacterExplorationProgress(SQLModel, table=True):
 
     __tablename__ = "character_exploration_progress"
 
-    id: UUID = Field(
-        sa_column=Column(
-            "id",
-            String(36),
-            primary_key=True,
-            server_default=text("gen_random_uuid()"),
-        )
-    )
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True, index=True)
+    character_id: str = Field(foreign_key="characters.id", index=True)
+    location_id: str = Field(foreign_key="locations.id", index=True)
 
-    character_id: UUID = Field(
-        sa_column=Column(
-            "character_id",
-            String(36),
-            ForeignKey("characters.id", ondelete="CASCADE"),
-            nullable=False,
-        )
-    )
-
-    location_id: int = Field(
-        sa_column=Column(
-            "location_id",
-            Integer,
-            ForeignKey("locations.id", ondelete="CASCADE"),
-            nullable=False,
-        )
-    )
-
-    exploration_percentage: int = Field(
-        default=0,
-        sa_column=Column(
-            "exploration_percentage",
-            Integer,
-            nullable=False,
-            default=0,
-        ),
-        ge=0,
-        le=100,
-    )
-
-    fog_revealed_at: Optional[datetime] = Field(
-        sa_column=Column("fog_revealed_at", TIMESTAMP(timezone=True), nullable=True)
-    )
-
-    fully_explored_at: Optional[datetime] = Field(
-        sa_column=Column("fully_explored_at", TIMESTAMP(timezone=True), nullable=True)
-    )
-
+    exploration_percentage: int = Field(default=0, ge=0, le=100)
+    fog_revealed_at: Optional[datetime] = Field(default=None)
+    fully_explored_at: Optional[datetime] = Field(default=None)
+    
+    # エリア探索記録（JSON配列として保存）
     areas_explored: list[str] = Field(
-        default=[], sa_column=Column("areas_explored", ARRAY(String), nullable=False, default=text("'{}'::text[]"))
+        default_factory=list,
+        sa_column=Column("areas_explored", JSON, default=[])
     )
 
-    created_at: datetime = Field(
-        sa_column=Column(
-            "created_at", TIMESTAMP(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")
-        )
-    )
-
-    updated_at: datetime = Field(
-        sa_column=Column(
-            "updated_at",
-            TIMESTAMP(timezone=True),
-            nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
-            onupdate=text("CURRENT_TIMESTAMP"),
-        )
-    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Relationships
     character: "Character" = Relationship(back_populates="exploration_progress")
     location: "Location" = Relationship(back_populates="exploration_progress")
-
-    class Config:
-        arbitrary_types_allowed = True

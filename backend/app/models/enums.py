@@ -25,31 +25,6 @@ class TimeOfDay(str, Enum):
     NIGHT = "night"  # 夜 (19:00-05:00)
 
 
-class CharacterStatus(str, Enum):
-    """キャラクターの状態"""
-
-    NORMAL = "normal"  # 通常
-    POISONED = "poisoned"  # 毒
-    PARALYZED = "paralyzed"  # 麻痺
-    SLEEPING = "sleeping"  # 睡眠
-    CONFUSED = "confused"  # 混乱
-    FROZEN = "frozen"  # 凍結
-    BURNING = "burning"  # 炎上
-    BLESSED = "blessed"  # 祝福
-    CURSED = "cursed"  # 呪い
-
-
-class SkillType(str, Enum):
-    """スキルの種類"""
-
-    COMBAT = "combat"  # 戦闘系
-    MAGIC = "magic"  # 魔法系
-    SUPPORT = "support"  # 支援系
-    CRAFTING = "crafting"  # 製作系
-    SOCIAL = "social"  # 社交系
-    EXPLORATION = "exploration"  # 探索系
-
-
 class ItemType(str, Enum):
     """アイテムの種類"""
 
@@ -69,14 +44,3 @@ class QuestStatus(str, Enum):
     COMPLETED = "completed"  # 完了
     FAILED = "failed"  # 失敗
     ABANDONED = "abandoned"  # 放棄
-
-
-class RelationshipLevel(str, Enum):
-    """関係性レベル"""
-
-    HOSTILE = "hostile"  # 敵対的
-    UNFRIENDLY = "unfriendly"  # 非友好的
-    NEUTRAL = "neutral"  # 中立
-    FRIENDLY = "friendly"  # 友好的
-    TRUSTED = "trusted"  # 信頼
-    DEVOTED = "devoted"  # 献身的
