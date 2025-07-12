@@ -12,7 +12,7 @@ from app.core.sp_plans import SP_PLANS, SPPlan
 from app.models.sp import SPTransactionType
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
 from app.models.user import User
-from app.services.sp_service import SPService
+from app.services.sp_service import SPService, SPServiceSync
 
 
 class SPPurchaseService:
@@ -107,7 +107,7 @@ class SPPurchaseService:
 
         try:
             # SP付与
-            sp_service = SPService(db)
+            sp_service = SPServiceSync(db)
             sp_service.add_sp_sync(
                 user_id=purchase.user_id,
                 amount=purchase.sp_amount,
@@ -229,7 +229,7 @@ class SPPurchaseService:
             total_sp = plan.sp_amount + plan.bonus_sp
 
             # SPを付与
-            sp_service = SPService(db)
+            sp_service = SPServiceSync(db)
             await sp_service.add_sp(
                 user_id=purchase.user_id,
                 amount=total_sp,

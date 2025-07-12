@@ -209,7 +209,8 @@ async def get_transaction_history(
     """
     try:
         service = SPService(db)
-        transactions = await service.get_transaction_history(
+        transactions = []
+        async for transaction in service.get_transaction_history(
             user_id=current_user.id,
             transaction_type=transaction_type,
             start_date=start_date,
@@ -218,7 +219,8 @@ async def get_transaction_history(
             related_entity_id=related_entity_id,
             limit=limit,
             offset=offset,
-        )
+        ):
+            transactions.append(transaction)
         return transactions
 
     except SPSystemError as e:

@@ -81,6 +81,7 @@ class Location(SQLModel, table=True):
     )
     exploration_areas: list["ExplorationArea"] = Relationship(back_populates="location")
     exploration_progress: list["CharacterExplorationProgress"] = Relationship(back_populates="location")
+    characters: list["Character"] = Relationship(back_populates="current_location")
 
 
 class PathType(str, Enum):

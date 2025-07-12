@@ -128,7 +128,7 @@ class TestSPPurchaseService:
             )
 
             # 承認
-            with patch("app.services.sp_service.SPService.add_sp_sync") as mock_add_sp:
+            with patch("app.services.sp_service.SPServiceSync.add_sp_sync") as mock_add_sp:
                 mock_add_sp.return_value = None
 
                 approved, event_type, error = SPPurchaseService.approve_test_purchase(

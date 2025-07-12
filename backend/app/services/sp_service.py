@@ -230,14 +230,16 @@ class SPService(SPServiceBase):
             self.db.commit()
 
             # 日次回復イベントを送信
-            await SPEventEmitter.emit_daily_recovery(
+            await SPEventEmitter.emit_daily_recovery_completed(
                 user_id=user_id,
-                recovered_amount=result["recovered_amount"],
-                subscription_bonus=result["subscription_bonus"],
-                login_bonus=result["login_bonus"],
-                consecutive_days=result["consecutive_days"],
-                total_amount=result["total_amount"],
-                balance_after=result["balance_after"],
+                recovery_details={
+                    "recovered_amount": result["recovered_amount"],
+                    "subscription_bonus": result["subscription_bonus"],
+                    "login_bonus": result["login_bonus"],
+                    "consecutive_days": result["consecutive_days"],
+                    "total_amount": result["total_amount"],
+                    "balance_after": result["balance_after"],
+                },
             )
 
             logger.info(
@@ -264,6 +266,10 @@ class SPService(SPServiceBase):
         limit: int = 20,
         offset: int = 0,
         transaction_type: Optional[SPTransactionType] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        related_entity_type: Optional[str] = None,
+        related_entity_id: Optional[str] = None,
     ) -> AsyncGenerator[SPTransaction, None]:
         """取引履歴を取得"""
         try:
@@ -271,6 +277,18 @@ class SPService(SPServiceBase):
             
             if transaction_type:
                 query = query.where(col(SPTransaction.transaction_type) == transaction_type)
+            
+            if start_date:
+                query = query.where(col(SPTransaction.created_at) >= start_date)
+            
+            if end_date:
+                query = query.where(col(SPTransaction.created_at) <= end_date)
+            
+            if related_entity_type:
+                query = query.where(col(SPTransaction.related_entity_type) == related_entity_type)
+            
+            if related_entity_id:
+                query = query.where(col(SPTransaction.related_entity_id) == related_entity_id)
             
             query = query.order_by(col(SPTransaction.created_at).desc()).limit(limit).offset(offset)
             
