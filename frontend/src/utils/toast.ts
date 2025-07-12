@@ -1,29 +1,41 @@
-import { toast } from '@/hooks/use-toast'
+import { useToast } from '@/hooks/useToast'
 
-export const showSuccessToast = (title: string, description?: string) => {
-  toast({
-    title,
-    description,
-    variant: 'success',
-  })
-}
+// トースト表示のユーティリティ関数
+// 注意: これらの関数は React コンポーネント内でのみ使用可能
+export const useToastUtils = () => {
+  const { toast } = useToast()
 
-export const showErrorToast = (
-  error: unknown,
-  defaultMessage = 'エラーが発生しました'
-) => {
-  const description = error instanceof Error ? error.message : defaultMessage
+  const showSuccessToast = (title: string, description?: string) => {
+    toast({
+      title,
+      description,
+      variant: 'success',
+    })
+  }
 
-  toast({
-    title: 'エラー',
-    description,
-    variant: 'destructive',
-  })
-}
+  const showErrorToast = (
+    error: unknown,
+    defaultMessage = 'エラーが発生しました'
+  ) => {
+    const description = error instanceof Error ? error.message : defaultMessage
 
-export const showInfoToast = (title: string, description?: string) => {
-  toast({
-    title,
-    description,
-  })
+    toast({
+      title: 'エラー',
+      description,
+      variant: 'destructive',
+    })
+  }
+
+  const showInfoToast = (title: string, description?: string) => {
+    toast({
+      title,
+      description,
+    })
+  }
+
+  return {
+    showSuccessToast,
+    showErrorToast,
+    showInfoToast,
+  }
 }

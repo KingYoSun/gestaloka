@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, waitFor, screen } from '@testing-library/react'
 
 import { WebSocketProvider } from './WebSocketProvider'
-import { useWebSocketContext } from './useWebSocketContext'
+import { useWebSocketContext } from './webSocketContext'
 import { useNotificationWebSocket } from '@/hooks/useWebSocket'
 import { useAuth } from '@/features/auth/useAuth'
 

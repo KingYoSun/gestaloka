@@ -120,16 +120,19 @@ class TestCompilationBonusService:
         service = CompilationBonusService(session)
 
         # 単一フラグメント
+        # 基本コスト(10) + フラグメント数(1) * 2 + レアリティコスト(RARE: 5 * 2.0 = 10) = 22
         cost = service._calculate_base_sp_cost([test_fragments[0]])  # RARE
-        assert cost == 40
+        assert cost == 22
 
         # 複数フラグメント
+        # 基本コスト(10) + フラグメント数(3) * 2 + レアリティコスト(RARE: 10, EPIC: 15, LEGENDARY: 25) = 66
         cost = service._calculate_base_sp_cost(test_fragments[:3])  # RARE, EPIC, LEGENDARY
-        assert cost == 40 + 80 + 160
+        assert cost == 66
 
-        # 4つ以上のフラグメント（追加コスト）
+        # 4つ以上のフラグメント
+        # 基本コスト(10) + フラグメント数(4) * 2 + レアリティコスト(RARE: 10, EPIC: 15, LEGENDARY: 25, LEGENDARY: 25) = 93
         cost = service._calculate_base_sp_cost(test_fragments)  # 4つ
-        assert cost == 40 + 80 + 160 + 160 + 20  # 基本コスト + 追加コスト
+        assert cost == 93
 
     def test_memory_combo_detection(self, session: Session, test_character, test_fragments):
         """記憶タイプコンボの検出テスト"""
@@ -182,8 +185,9 @@ class TestCompilationBonusService:
         )
 
         # 記憶収集者特性による10%削減
-        base_cost = 40 + 80  # RARE + EPIC
-        expected_cost = int(base_cost * 0.9)
+        # 基本コスト(10) + フラグメント数(2) * 2 + レアリティコスト(RARE: 10, EPIC: 15) = 39
+        base_cost = 39
+        expected_cost = int(base_cost * 0.9)  # 35
         assert result.final_sp_cost == expected_cost
 
     def test_legendary_combo(self, session: Session, test_character, test_fragments):

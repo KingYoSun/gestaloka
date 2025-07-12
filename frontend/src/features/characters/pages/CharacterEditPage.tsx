@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { LoadingState } from '@/components/ui/LoadingState'
+import { LoadingState } from '@/components/ui/loading-spinner'
 
 import { CharacterEditForm } from '../components/CharacterEditForm'
 import { useCharacter, useUpdateCharacter } from '@/hooks/useCharacters'

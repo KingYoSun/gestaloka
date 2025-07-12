@@ -7,6 +7,8 @@ import { Loader2 } from 'lucide-react'
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg'
   className?: string
+  message?: string
+  containerClassName?: string
 }
 
 const sizeClasses = {
@@ -18,8 +20,24 @@ const sizeClasses = {
 export function LoadingSpinner({
   size = 'md',
   className,
+  message,
+  containerClassName,
 }: LoadingSpinnerProps) {
-  return (
+  const spinner = (
     <Loader2 className={cn('animate-spin', sizeClasses[size], className)} />
   )
+
+  if (message) {
+    return (
+      <div className={cn('flex items-center justify-center h-64', containerClassName)}>
+        {spinner}
+        <span className="ml-2 text-lg text-slate-600">{message}</span>
+      </div>
+    )
+  }
+
+  return spinner
 }
+
+// LoadingStateとの互換性のためのエイリアス
+export const LoadingState = LoadingSpinner

@@ -3,7 +3,7 @@
  */
 import { Wifi, WifiOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useWebSocketContext } from '@/providers/useWebSocketContext'
+import { useWebSocketContext } from '@/providers/webSocketContext'
 import {
   Tooltip,
   TooltipContent,

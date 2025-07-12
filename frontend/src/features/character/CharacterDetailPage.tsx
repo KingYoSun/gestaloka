@@ -30,7 +30,7 @@ import {
 import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
-import { LoadingState } from '@/components/ui/LoadingState'
+import { LoadingState } from '@/components/ui/loading-spinner'
 import { LoadingButton } from '@/components/ui/LoadingButton'
 import { containerStyles } from '@/lib/styles'
 import { toast } from 'sonner'
