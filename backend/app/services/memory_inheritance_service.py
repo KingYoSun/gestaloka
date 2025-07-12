@@ -20,6 +20,7 @@ from app.schemas.memory_inheritance import (
     MemoryInheritanceResult,
     MemoryInheritanceType,
 )
+from app.services.sp_calculation import SPCalculationService
 from app.services.sp_service import SPService
 
 
@@ -176,38 +177,29 @@ class MemoryInheritanceService:
 
     def _calculate_sp_cost(self, fragments: list[LogFragment], inheritance_type: MemoryInheritanceType) -> int:
         """SP消費を計算"""
-        # 基本コスト
-        base_costs = {
-            MemoryInheritanceType.SKILL: 30,
-            MemoryInheritanceType.TITLE: 50,
-            MemoryInheritanceType.ITEM: 100,
-            MemoryInheritanceType.LOG_ENHANCEMENT: 20,
-        }
-        base_cost = base_costs.get(inheritance_type, 50)
-
-        # レアリティによる倍率
-        rarity_multipliers = {
-            LogFragmentRarity.COMMON: 1.0,
-            LogFragmentRarity.UNCOMMON: 1.2,
-            LogFragmentRarity.RARE: 1.5,
-            LogFragmentRarity.EPIC: 2.0,
-            LogFragmentRarity.LEGENDARY: 3.0,
-            LogFragmentRarity.UNIQUE: 2.5,
-            LogFragmentRarity.ARCHITECT: 5.0,
-        }
-
-        # 最高レアリティの倍率を適用
+        # 最高レアリティのフラグメントを使用
         max_rarity = max(f.rarity for f in fragments)
-        multiplier = rarity_multipliers.get(max_rarity, 1.0)
-
-        # フラグメント数によるボーナス割引
-        fragment_count = len(fragments)
-        if fragment_count >= 5:
-            multiplier *= 0.8  # 20%割引
-        elif fragment_count >= 3:
-            multiplier *= 0.9  # 10%割引
-
-        return int(base_cost * multiplier)
+        
+        # SPCalculationServiceを使用して計算
+        # UNIQUE, ARCHITECTはLEGENDARYとして扱う
+        if max_rarity in [LogFragmentRarity.UNIQUE, LogFragmentRarity.ARCHITECT]:
+            source_rarity = LogFragmentRarity.LEGENDARY
+        else:
+            source_rarity = max_rarity
+        
+        inheritance_type_map = {
+            MemoryInheritanceType.SKILL: "skill",
+            MemoryInheritanceType.TITLE: "title",
+            MemoryInheritanceType.ITEM: "item",
+            MemoryInheritanceType.LOG_ENHANCEMENT: "log_enhancement",
+        }
+        type_str = inheritance_type_map.get(inheritance_type, "skill")
+        
+        return SPCalculationService.calculate_memory_inheritance_cost(
+            inheritance_type=type_str,
+            source_rarity=source_rarity,
+            target_level=1
+        )
 
     def _calculate_combo_bonus(self, fragment_count: int) -> Optional[str]:
         """コンボボーナスを計算"""

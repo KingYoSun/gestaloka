@@ -9,14 +9,14 @@ from sqlmodel import Session, select
 
 from app.models import Character, Location, LocationConnection
 from app.schemas.narrative import GMAIResponse, LocationEvent
-from app.services.ai_base_service import AIBaseService
+from app.services.sp_calculation import SPCalculationService
 
 
-class GMAIService(AIBaseService):
+class GMAIService:
     """GM AI評議会の統合サービス"""
 
     def __init__(self, db: Session):
-        super().__init__(db)
+        self.db = db
 
     async def process_narrative_action(
         self, character: Character, action: str, current_location: Location, context: Optional[dict[str, Any]] = None
@@ -26,13 +26,9 @@ class GMAIService(AIBaseService):
         # プロンプトを構築
         prompt = self._build_narrative_prompt(character, action, current_location, context)
 
-        # AI応答を生成
-        response = await self.generate_ai_response(
-            prompt,
-            agent_type="scriptwriter",
-            character_name=character.name,
-            metadata={"action": action, "location": current_location.name},
-        )
+        # AI応答を生成（仮実装）
+        # TODO: 実際のAIエージェントを使用するように変更
+        response = self._generate_mock_response(character, action, current_location, prompt)
 
         # レスポンスを解析
         return self._parse_narrative_response(response, character, current_location, action)
@@ -87,6 +83,10 @@ class GMAIService(AIBaseService):
                     prompt += f"- {to_location.name}（{conn.travel_description or '未知の道'}）\n"
 
         return prompt
+
+    def _generate_mock_response(self, character: Character, action: str, location: Location, prompt: str) -> str:
+        """モック応答を生成（仮実装）"""
+        return f"[GM AI Response]\n\n{character.name}は{location.name}で{action}を実行しました。\n\n周囲を見渡すと、薄暗い廊下が続いています。古びた石壁には苔がむし、どこか湿った空気が漂っています。奥からは微かに水の滴る音が聞こえてきます。"
 
     def _parse_narrative_response(
         self, ai_response: str, character: Character, current_location: Location, action: str
@@ -155,17 +155,23 @@ class GMAIService(AIBaseService):
 
     def _calculate_default_sp_cost(self, from_location: Location, to_location: Location) -> int:
         """デフォルトのSP消費を計算"""
-        base_cost = 5
-
-        # 階層差による追加コスト
+        # 移動の複雑度を判定
         level_diff = abs(to_location.hierarchy_level - from_location.hierarchy_level)
-        base_cost += level_diff * 2
-
-        # 危険度による追加コスト
-        danger_costs = {"safe": 0, "low": 1, "medium": 3, "high": 5, "extreme": 10}
-        base_cost += danger_costs.get(to_location.danger_level.value, 0)
-
-        return base_cost
+        danger_level = to_location.danger_level.value
+        
+        # 複雑度の判定
+        complexity = "normal"
+        if level_diff == 0 and danger_level in ["safe", "low"]:
+            complexity = "simple"
+        elif level_diff >= 2 or danger_level in ["high", "extreme"]:
+            complexity = "complex"
+        
+        # SPCalculationServiceを使用
+        return SPCalculationService.calculate_action_cost(
+            action_type="movement",
+            complexity=complexity,
+            has_bonus=False
+        )
 
     def _extract_movement_description(self, narrative: str) -> str:
         """物語から移動部分の描写を抽出"""

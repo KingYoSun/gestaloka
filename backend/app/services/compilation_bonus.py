@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 
 from app.models.character import Character
 from app.models.log import LogFragment, LogFragmentRarity, MemoryType
+from app.services.sp_calculation import SPCalculationService
 
 
 class BonusType(str, Enum):
@@ -152,22 +153,13 @@ class CompilationBonusService:
 
     def _calculate_base_sp_cost(self, fragments: list[LogFragment]) -> int:
         """基本SP消費を計算"""
-        total_cost = 0
-
-        for fragment in fragments:
-            # rarityはLogFragmentRarity型なので直接使用
-            rarity_cost = self.RARITY_SP_COSTS.get(fragment.rarity, 10)
-
-            # UNIQUEとARCHITECTは追加コスト
-            if fragment.rarity in [LogFragmentRarity.UNIQUE, LogFragmentRarity.ARCHITECT]:
-                rarity_cost = int(rarity_cost * 1.5)
-            total_cost += rarity_cost
-
-        # フラグメント数による追加コスト
-        if len(fragments) > 3:
-            total_cost += (len(fragments) - 3) * 20
-
-        return int(total_cost)
+        # SPCalculationServiceを使用
+        # コンボボーナスと汚染度は後で適用されるので、ここでは1.0と0.0を使用
+        return SPCalculationService.calculate_compilation_cost(
+            fragments=fragments,
+            combo_multiplier=1.0,
+            contamination_level=0.0
+        )
 
     def _detect_combo_bonuses(self, fragments: list[LogFragment]) -> list[ComboBonus]:
         """コンボボーナスを検出"""

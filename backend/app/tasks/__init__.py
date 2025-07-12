@@ -17,7 +17,6 @@ from .notification_tasks import (
     send_log_contract_notification,
     send_player_notification,
 )
-from .session_result_tasks import process_session_result
 
 __all__ = [
     "archive_old_game_sessions",
@@ -33,7 +32,6 @@ __all__ = [
     "generate_world_events",
     "optimize_database_indices",
     "process_player_log",
-    "process_session_result",
     "purify_contaminated_log",
     "send_log_contract_notification",
     "send_player_notification",
