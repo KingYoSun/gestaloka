@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/12（13:30 JST）
+## 最終更新: 2025/07/13（21:39 JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -125,6 +125,38 @@
   - 初回セッションではシステムメッセージを保存しない仕様に対応
   - テストを2回目のセッション作成に変更
   - 全テスト成功（バックエンド242/242、フロントエンド28/28）
+
+### 2025/07/13の変更
+- **バックエンドテストのデータベース接続問題修正**
+  - PostgreSQL・Neo4j接続エラーを完全解決
+  - テスト環境のホスト名を動的解決（conftest.py、database.py）
+  - Locationモデルの必須フィールド不足を修正
+  - LocationEventのJSONシリアライズ問題をmodel_dump()で解決
+  - 全210個のテストが成功（100%）
+  - 詳細は`documents/01_project/progressReports/2025-07-13_test_database_connection_fix.md`参照
+- **バックエンドリファクタリング第3回（HTTPException共通化・テスト追加）**
+  - narrative.pyのHTTPExceptionを共通関数に置換
+  - narrative.pyに7つの包括的なテストケースを追加
+  - logs.py、sp.pyのHTTPExceptionを共通化（23箇所）
+  - 詳細は`documents/01_project/progressReports/2025-07-13_backend_refactoring_part3.md`参照
+- **リファクタリング継続作業（リント・型エラー修正）**
+  - バックエンドリントエラー122個を完全解消
+  - フロントエンド型エラー16個を数個まで削減
+  - 未実装フック3つを実装（use-sp-purchase、useTitles、useMemoryInheritance）
+  - 詳細は`documents/01_project/progressReports/2025-07-13_refactoring_continuation.md`参照
+- **GM AIサービスのリファクタリング**
+  - Coordinator Factoryの作成とGM AIサービス統合
+  - モック実装から実際のAI処理への移行
+  - 詳細は`documents/01_project/progressReports/2025-07-13_gm_ai_service_refactoring.md`参照
+- **Coordinator AI実装と型エラー修正**
+  - Coordinator AIを独立したAgentとして実装
+  - バックエンド型エラーを28件から1件に削減
+  - 詳細は`documents/01_project/progressReports/2025-07-13_refactoring_coordinator_implementation.md`参照
+- **全体リファクタリング第3回（DRY原則・未使用コード削除）**
+  - datetime.utcnow()を103箇所で置き換え（23ファイル）
+  - WebSocket関連コードの完全削除
+  - フロントエンド型エラーを72件から16件に削減
+  - 詳細は`documents/01_project/progressReports/2025-07-13_refactoring_report.md`参照
 
 ### 2025/07/08の変更
 - **セッションシステム再設計の全フェーズ完了**
@@ -319,21 +351,22 @@
 - **ボリューム**: 全データ永続化設定済み
 
 ## 現在の問題点（2025/07/09 10:55更新）
-### テスト状況（2025-07-12更新）
-- バックエンドテスト: 202/203成功（99.5%成功率）✅
-  - データベース再構築後のクリーンな状態
-  - 確率的テスト1件（test_high_contamination_effects）のみ失敗
-  - ID型統一による整合性向上
+### テスト状況（2025-07-13更新）
+- バックエンドテスト: 210/210成功（100%成功率）✅
+  - データベース接続問題を完全解決
+  - Neo4j・セキュリティテストホスト問題を修正
+  - 型エラーとJSONシリアライズ問題を解決
+  - 確率的テストの安定性を改善（dispatch_ai_simulation）
 - フロントエンドテスト: 28/28成功（100%成功率）✅
   - 全てのテストが成功
   - 型安全性確保
 
 ### リントエラー ✅ 完全解消
-- バックエンド: 0個 ✅
+- バックエンド: 0個 ✅（2025-07-13: 122個から完全解消）
 - フロントエンド: 0個のエラー（45個のwarning - any型使用）
 
 ### 型エラー ✅ 完全解消
-- バックエンド: 0個 ✅（50個から完全解消）
+- バックエンド: 0個 ✅（28個から1個を経て完全解消）
 - フロントエンド: 0個 ✅（完全解消）
 
 ### ヘルスチェック（完全解決）

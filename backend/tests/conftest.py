@@ -14,6 +14,14 @@ from alembic.config import Config
 from app.core.database import get_session
 from app.main import app
 
+# モデルのインポート（関係解決のため）
+from app.models.character import Character  # noqa
+from app.models.location import Location  # noqa
+from app.models.log import CompletedLog  # noqa
+from app.models.sp import PlayerSP  # noqa
+from app.models.story_arc import StoryArc  # noqa
+from app.models.user import User  # noqa
+
 # テストデータベースURL（開発用PostgreSQLコンテナを使用）
 # Docker内で実行する場合はpostgres、ローカルで実行する場合はlocalhost
 if os.environ.get("DOCKER_ENV"):
@@ -134,8 +142,14 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["ENVIRONMENT"] = "test"
 
 # Neo4j設定（テスト用）
-# テスト用Neo4jコンテナを使用（ポート7688）
-os.environ["NEO4J_URI"] = "bolt://neo4j-test:7687"
+# テスト用Neo4jコンテナを使用
+if os.environ.get("DOCKER_ENV"):
+    os.environ["NEO4J_URI"] = "bolt://neo4j-test:7687"
+    os.environ["REDIS_URL"] = "redis://redis-test:6379/0"
+else:
+    os.environ["NEO4J_URI"] = "bolt://localhost:7688"
+    os.environ["REDIS_URL"] = "redis://localhost:6380/0"
+
 os.environ["NEO4J_USER"] = "neo4j"
 os.environ["NEO4J_PASSWORD"] = "test_password"
-os.environ["NEO4J_TEST_URL"] = "bolt://neo4j:test_password@neo4j-test:7687"
+os.environ["NEO4J_TEST_URL"] = os.environ["NEO4J_URI"].replace("bolt://", "bolt://neo4j:test_password@")

@@ -85,9 +85,12 @@ class TestNarrativeEndpoints:
         location = Location(
             id=str(uuid.uuid4()),
             name="Test Location",
+            description="テスト用の場所",
+            location_type="town",
             x_coordinate=0,
             y_coordinate=0,
-            hierarchy_level=1
+            hierarchy_level=1,
+            danger_level="safe"
         )
         session.add(location)
         session.commit()
@@ -109,9 +112,12 @@ class TestNarrativeEndpoints:
         location = Location(
             id=str(uuid.uuid4()),
             name="Connected Location",
+            description="接続されたテスト用の場所",
+            location_type="wild",
             x_coordinate=1,
             y_coordinate=0,
-            hierarchy_level=1
+            hierarchy_level=1,
+            danger_level="safe"
         )
         session.add(location)
         session.commit()
@@ -240,13 +246,29 @@ class TestNarrativeEndpoints:
         self, client: TestClient, auth_headers: dict[str, str], character: Character, test_user: UserModel, session: Session, mock_auth
     ):
         """他のキャラクターへのアクション実行は禁止"""
+        # 別のユーザーを作成
+        other_user = UserModel(
+            id=str(uuid.uuid4()),
+            username="other_user",
+            email="other@example.com",
+            hashed_password="dummy"
+        )
+        session.add(other_user)
+        session.commit()
+        
         # 別のキャラクターを作成
         other_character = Character(
             id=str(uuid.uuid4()),
-            user_id=str(uuid.uuid4()),  # 別のユーザー
+            user_id=other_user.id,
             name="Other Character",
-            location_id=character.location_id
+            location_id=character.location_id,
+            hp=100,
+            energy=100,
+            attack=10,
+            defense=5
         )
+        session.add(other_character)
+        session.commit()
 
         action_request = {
             "text": "何かする",
@@ -259,7 +281,9 @@ class TestNarrativeEndpoints:
             headers=auth_headers
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # セキュリティ上の理由から、他のユーザーのキャラクターの存在を明かさない
+        # 404 Not Foundを返す
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_get_available_actions(
@@ -299,17 +323,43 @@ class TestNarrativeEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_available_actions_forbidden(
-        self, client: TestClient, auth_headers: dict[str, str], character: Character, mock_auth
+        self, client: TestClient, auth_headers: dict[str, str], character: Character, session: Session, mock_auth
     ):
         """他のキャラクターのアクション取得は禁止"""
-        other_character_id = str(uuid.uuid4())
+        # 別のユーザーを作成
+        other_user = UserModel(
+            id=str(uuid.uuid4()),
+            username="other_user_get_actions",
+            email="other_get_actions@example.com",
+            hashed_password="dummy"
+        )
+        session.add(other_user)
+        session.commit()
+        
+        # 別のキャラクターを作成
+        other_character = Character(
+            id=str(uuid.uuid4()),
+            user_id=other_user.id,
+            name="Other Character For Get Actions",
+            location_id=character.location_id,
+            hp=100,
+            energy=100,
+            attack=10,
+            defense=5
+        )
+        session.add(other_character)
+        session.commit()
+        
+        other_character_id = other_character.id
 
         response = client.get(
             f"/api/v1/narrative/{other_character_id}/actions",
             headers=auth_headers
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # セキュリティ上の理由から、他のユーザーのキャラクターの存在を明かさない
+        # 404 Not Foundを返す
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.asyncio
     async def test_update_location_history(self, session: Session, character: Character, connected_location: Location):

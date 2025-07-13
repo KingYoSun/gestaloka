@@ -76,7 +76,7 @@ async def perform_narrative_action(
             "location_id": str(current_location.id),
             "location_name": current_location.name,
             "action_type": action.context.get("action_type", "narrative") if action.context else "narrative",
-            "narrative_events": narrative_result.events,
+            "narrative_events": [event.model_dump() for event in narrative_result.events] if narrative_result.events else [],
         }
 
         if narrative_result.location_changed:
@@ -97,12 +97,7 @@ async def perform_narrative_action(
 
     # 場所が変わった場合の処理
     if narrative_result.location_changed and narrative_result.new_location_id:
-        # 新しい場所を取得
-        new_location = db.get(Location, narrative_result.new_location_id)
-        if not new_location:
-            raise_internal_error("Invalid new location")
-
-        # SP消費処理
+        # まずSP消費可能かチェック
         if narrative_result.sp_cost > 0:
             sp_service = SPService(db)
             player_sp = await sp_service.get_or_create_player_sp(current_character.user_id)
@@ -113,6 +108,10 @@ async def perform_narrative_action(
                 narrative_result.location_changed = False
                 narrative_result.new_location_id = None
             else:
+                # SP消費可能な場合のみ新しい場所を取得
+                new_location = db.get(Location, narrative_result.new_location_id)
+                if not new_location:
+                    raise_internal_error("Invalid new location")
                 # SP消費
                 await sp_service.consume_sp(
                     user_id=current_character.user_id,

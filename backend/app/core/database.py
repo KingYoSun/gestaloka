@@ -63,7 +63,17 @@ def get_session() -> Generator[Session, None, None]:
 def setup_neo4j():
     """Neo4j接続を設定"""
     # neomodelが要求する形式: bolt://user:password@host:port
-    neo4j_url = f"bolt://{settings.NEO4J_USER}:{settings.NEO4J_PASSWORD}@neo4j:7687"
+    # NEO4J_URIからホスト情報を取得
+    import re
+    neo4j_host_match = re.match(r"bolt://([^:]+):(\d+)", settings.NEO4J_URI)
+    if neo4j_host_match:
+        neo4j_host = neo4j_host_match.group(1)
+        neo4j_port = neo4j_host_match.group(2)
+    else:
+        neo4j_host = "neo4j"
+        neo4j_port = "7687"
+    
+    neo4j_url = f"bolt://{settings.NEO4J_USER}:{settings.NEO4J_PASSWORD}@{neo4j_host}:{neo4j_port}"
 
     logger.info("Setting up Neo4j connection", url=neo4j_url, user=settings.NEO4J_USER)
 
