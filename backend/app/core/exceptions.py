@@ -55,6 +55,14 @@ class AIRateLimitError(AIServiceError):
         super().__init__(message, service="rate_limit")
 
 
+class SPSystemError(LogverseError):
+    """SPシステムエラー"""
+
+    def __init__(self, message: str, operation: Optional[str] = None):
+        details = {"operation": operation} if operation else {}
+        super().__init__(message, code="SP_SYSTEM_ERROR", details=details)
+
+
 class InsufficientSPError(SPSystemError):
     """SP残高不足エラー"""
 
@@ -77,6 +85,7 @@ def to_http_exception(exc: LogverseError) -> HTTPException:
         "VALIDATION_ERROR": status.HTTP_400_BAD_REQUEST,
         "DATABASE_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
         "AI_SERVICE_ERROR": status.HTTP_503_SERVICE_UNAVAILABLE,
+        "SP_SYSTEM_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
     }
 
     status_code = status_code_map.get(exc.code or "", status.HTTP_500_INTERNAL_SERVER_ERROR)

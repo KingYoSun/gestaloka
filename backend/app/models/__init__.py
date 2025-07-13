@@ -49,6 +49,7 @@ from app.models.sp import (
     SPTransactionType,
 )
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
+from app.models.story_arc import StoryArc, StoryArcMilestone, StoryArcStatus, StoryArcType as SAType
 from app.models.title import CharacterTitle
 from app.models.user import User
 
@@ -101,6 +102,9 @@ __all__ = [
     "SessionResult",
     "SharedQuest",
     "Skill",
+    "StoryArc",
+    "StoryArcMilestone",
+    "StoryArcStatus",
     "StoryArcType",
     "User",
 ]

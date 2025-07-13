@@ -1,8 +1,22 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-13（22:35 JST）
+## 最終更新: 2025-07-14（02:20 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
+
+1. **バックエンドコンテナ起動エラー修正（2025-07-14 02:20）✅**
+   - **実施内容**
+     - SPSystemErrorクラスが未定義だったエラーを修正
+     - StoryArcモデルのインポートエラーを修正
+     - app/core/exceptions.pyにSPSystemErrorクラスを追加
+     - app/models/__init__.pyにStoryArcとStoryArcMilestoneのインポートを追加
+   - **主な成果**
+     - backend、celery-beat、celery-workerコンテナが正常起動
+     - 全コンテナがhealthy状態
+     - APIエンドポイントが正常動作
+   - **技術的詳細**
+     - SPSystemErrorをLogverseErrorから継承して実装
+     - HTTPステータスコードマッピングにSP_SYSTEM_ERRORを追加
 
 1. **全体リファクタリング第4回（未使用コード削除・コード品質改善）（2025-07-13 22:35）✅**
    - **実施内容**
