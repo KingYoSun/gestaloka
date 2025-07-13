@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy import desc
 from sqlmodel import Session, and_, select
 
@@ -34,7 +34,7 @@ from app.schemas.user import User
 from app.services.compilation_bonus import CompilationBonusService
 from app.services.contamination_purification import ContaminationPurificationService
 from app.services.sp_service import SPService
-from app.utils.exceptions import get_by_condition_or_404
+from app.utils.exceptions import get_by_condition_or_404, get_or_404, raise_bad_request, raise_not_found
 
 router = APIRouter()
 
@@ -96,12 +96,11 @@ async def get_character_fragments(
     キャラクターのログフラグメント一覧を取得
     """
     # キャラクターの所有権確認
-    character = db.exec(
-        select(Character).where(Character.id == character_id, Character.user_id == current_user.id)
-    ).first()
-
-    if not character:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+    get_by_condition_or_404(
+        db,
+        select(Character).where(Character.id == character_id, Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # フラグメント取得
     fragment_stmt = (
@@ -129,12 +128,11 @@ async def create_completed_log(
     他プレイヤーの世界でNPCとして活動可能な完全な記録を作成。
     """
     # キャラクターの所有権確認
-    character = db.exec(
-        select(Character).where(Character.id == log_in.creator_id, Character.user_id == current_user.id)
-    ).first()
-
-    if not character:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.id == log_in.creator_id, Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # コアフラグメントの確認
     core_stmt = select(LogFragment).where(
@@ -146,10 +144,7 @@ async def create_completed_log(
     result = db.exec(core_stmt)
     core_fragment = result.first()
     if not core_fragment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Core fragment not found",
-        )
+        raise_not_found("Core fragment not found")
 
     # サブフラグメントの確認
     sub_fragments = []
@@ -163,10 +158,7 @@ async def create_completed_log(
         result = db.exec(sub_stmt)
         fragment = result.first()
         if not fragment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Sub fragment {sub_id} not found",
-            )
+            raise_not_found(f"Sub fragment {sub_id} not found")
         sub_fragments.append(fragment)
 
     # コンボボーナスサービスの初期化
@@ -187,10 +179,7 @@ async def create_completed_log(
     # SP残高の確認
     player_sp = await sp_service.get_balance(character.user_id)
     if player_sp.current_sp < compilation_result.final_sp_cost:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient SP. Required: {compilation_result.final_sp_cost}, Current: {player_sp.current_sp}",
-        )
+        raise_bad_request(f"Insufficient SP. Required: {compilation_result.final_sp_cost}, Current: {player_sp.current_sp}")
 
     # SP消費
     from app.models.sp import SPTransactionType
@@ -271,17 +260,11 @@ async def update_completed_log(
     result = db.exec(stmt)
     db_log = result.first()
     if not db_log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Completed log not found",
-        )
+        raise_not_found("Completed log not found")
 
     # ステータスが編纂中でない場合は更新不可
     if db_log.status != CompletedLogStatus.DRAFT:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only update logs in draft status",
-        )
+        raise_bad_request("Can only update logs in draft status")
 
     # 更新
     update_data = log_in.model_dump(exclude_unset=True)
@@ -308,12 +291,11 @@ async def get_character_completed_logs(
     キャラクターの完成ログ一覧を取得
     """
     # キャラクターの所有権確認
-    character = db.exec(
-        select(Character).where(Character.id == character_id, Character.user_id == current_user.id)
-    ).first()
-
-    if not character:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+    get_by_condition_or_404(
+        db,
+        select(Character).where(Character.id == character_id, Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # 完成ログ取得
     log_stmt = (
@@ -340,12 +322,11 @@ async def preview_compilation_cost(
     実際にSPを消費せずに、編纂時のコストとボーナスを確認できる
     """
     # キャラクターの所有権確認
-    character = db.exec(
-        select(Character).where(Character.id == preview_in.creator_id, Character.user_id == current_user.id)
-    ).first()
-
-    if not character:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+    character = get_by_condition_or_404(
+        db,
+        select(Character).where(Character.id == preview_in.creator_id, Character.user_id == current_user.id),
+        "Character not found"
+    )
 
     # コアフラグメントの確認
     core_stmt = select(LogFragment).where(
@@ -357,10 +338,7 @@ async def preview_compilation_cost(
     result = db.exec(core_stmt)
     core_fragment = result.first()
     if not core_fragment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Core fragment not found",
-        )
+        raise_not_found("Core fragment not found")
 
     # サブフラグメントの確認
     sub_fragments = []
@@ -374,10 +352,7 @@ async def preview_compilation_cost(
         result = db.exec(sub_stmt)
         fragment = result.first()
         if not fragment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Sub fragment {sub_id} not found",
-            )
+            raise_not_found(f"Sub fragment {sub_id} not found")
         sub_fragments.append(fragment)
 
     # コンボボーナスサービスの初期化
@@ -436,22 +411,13 @@ async def purify_completed_log(
     result = db.exec(stmt)
     db_log = result.first()
     if not db_log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Completed log not found",
-        )
+        raise_not_found("Completed log not found")
 
     # キャラクターの取得
-    character = db.exec(select(Character).where(Character.id == db_log.creator_id)).first()
+    character = get_or_404(db, Character, db_log.creator_id, "Character not found")
 
     # 浄化サービスの実行
     purification_service = ContaminationPurificationService(db)
-
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
 
     try:
         purification_result = await purification_service.purify_completed_log(
@@ -468,7 +434,7 @@ async def purify_completed_log(
             "special_effects": purification_result.special_effects,
         }
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise_bad_request(str(e))
 
 
 @router.post("/fragments/create-purification-item")
@@ -484,10 +450,7 @@ async def create_purification_item_from_fragments(
     ポジティブなフラグメントを組み合わせて浄化アイテムを生成
     """
     if len(fragment_ids) < 3:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least 3 fragments are required to create a purification item",
-        )
+        raise_bad_request("At least 3 fragments are required to create a purification item")
 
     # フラグメントの取得と所有権確認
     fragments = []
@@ -499,29 +462,18 @@ async def create_purification_item_from_fragments(
         )
         fragment = db.exec(stmt).first()
         if not fragment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"Fragment {frag_id} not found or not owned by user"
-            )
+            raise_not_found(f"Fragment {frag_id} not found or not owned by user")
         fragments.append(fragment)
 
     # キャラクターの取得
-    character = db.exec(select(Character).where(Character.id == fragments[0].character_id)).first()
+    character = get_or_404(db, Character, fragments[0].character_id, "Character not found")
 
     # 浄化アイテムの作成
     purification_service = ContaminationPurificationService(db)
 
-    if not character:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Character not found",
-        )
-
     item = await purification_service.create_purification_item(character=character, fragments=fragments)
 
     if not item:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Not enough positive fragments to create a purification item",
-        )
+        raise_bad_request("Not enough positive fragments to create a purification item")
 
     return {"item_name": item.name, "description": item.description, "rarity": item.rarity, "effects": item.effects}

@@ -4,7 +4,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
 from app.api.deps import get_current_active_user, get_user_character
@@ -26,6 +26,7 @@ from app.services.gm_ai_service import GMAIService
 from app.services.log_fragment_service import LogFragmentService
 from app.services.sp_service import SPService
 from app.services.websocket_service import WebSocketService
+from app.utils.exceptions import get_or_404, raise_forbidden, raise_internal_error
 
 router = APIRouter()
 
@@ -42,14 +43,10 @@ async def perform_narrative_action(
     """物語主導の行動処理"""
     # 権限チェック
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You can only perform actions for your own character"
-        )
+        raise_forbidden("You can only perform actions for your own character")
 
     # 現在地を取得
-    current_location = db.get(Location, current_character.location_id)
-    if not current_location:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current location not found")
+    current_location = get_or_404(db, Location, current_character.location_id, "Current location not found")
 
     # GM AIサービスを初期化
     gm_ai_service = GMAIService(db)
@@ -103,7 +100,7 @@ async def perform_narrative_action(
         # 新しい場所を取得
         new_location = db.get(Location, narrative_result.new_location_id)
         if not new_location:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid new location")
+            raise_internal_error("Invalid new location")
 
         # SP消費処理
         if narrative_result.sp_cost > 0:
@@ -125,7 +122,7 @@ async def perform_narrative_action(
                 )
 
                 # 移動履歴を更新
-                await update_location_history(db, current_character, new_location, narrative_result.sp_cost)
+                update_location_history(db, current_character, new_location, narrative_result.sp_cost)
 
                 # キャラクターの現在地を更新
                 current_character.location_id = new_location.id
@@ -155,7 +152,7 @@ async def perform_narrative_action(
                 )
 
     # 次の行動選択肢を生成
-    action_choices = await generate_action_choices(
+    action_choices = generate_action_choices(
         db,
         current_character,
         narrative_result.narrative,
@@ -188,12 +185,10 @@ async def get_available_actions(
     """現在の状況に応じた行動選択肢を取得"""
     # 権限チェック
     if current_character.id != character_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You can only view actions for your own character"
-        )
+        raise_forbidden("You can only view actions for your own character")
 
     # 現在地と文脈から選択肢を生成
-    return await generate_action_choices(
+    return generate_action_choices(
         db,
         current_character,
         "",  # 現在の物語文脈（セッションから取得する実装が必要）
@@ -201,7 +196,7 @@ async def get_available_actions(
     )
 
 
-async def update_location_history(db: Session, character: Character, new_location: Location, sp_cost: int) -> None:
+def update_location_history(db: Session, character: Character, new_location: Location, sp_cost: int) -> None:
     """場所移動の履歴を更新"""
     # 現在地の履歴を終了
     result = db.execute(
@@ -221,7 +216,7 @@ async def update_location_history(db: Session, character: Character, new_locatio
     db.add(new_history)
 
 
-async def generate_action_choices(
+def generate_action_choices(
     db: Session, character: Character, narrative_context: str, location_id: str
 ) -> list[ActionChoice]:
     """現在の文脈に応じた行動選択肢を生成"""

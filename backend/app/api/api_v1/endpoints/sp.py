@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_
 from sqlmodel import Session, col, select
 
@@ -37,7 +37,13 @@ from app.schemas.sp_purchase import (
 )
 from app.services.sp_purchase_service import SPPurchaseService
 from app.services.sp_service import SPService
-from app.utils.exceptions import get_by_condition_or_404, handle_sp_errors
+from app.utils.exceptions import (
+    get_by_condition_or_404,
+    handle_sp_errors,
+    raise_bad_request,
+    raise_internal_error,
+    raise_not_found,
+)
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -137,7 +143,7 @@ async def process_daily_recovery(
     result = await service.process_daily_recovery(current_user.id)
 
     if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["message"])
+        raise_bad_request(result["message"])
 
     return SPDailyRecoveryResponse(**result)
 
@@ -246,7 +252,7 @@ async def create_purchase(
     """
     # テストモードでの検証
     if settings.PAYMENT_MODE == "test" and not request.test_reason:
-        raise HTTPException(status_code=400, detail="Test reason is required in test mode")
+        raise_bad_request("Test reason is required in test mode")
 
     try:
         purchase = SPPurchaseService.create_purchase(
@@ -263,9 +269,9 @@ async def create_purchase(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise_bad_request(str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"購入処理中にエラーが発生しました: {e!s}")
+        raise_internal_error(f"購入処理中にエラーが発生しました: {e!s}")
 
 
 @router.get("/purchases", response_model=SPPurchaseList)
@@ -322,7 +328,7 @@ async def get_purchase_detail(
     purchase = SPPurchaseService.get_purchase(db=db, purchase_id=purchase_id, user_id=current_user.id)
 
     if not purchase:
-        raise HTTPException(status_code=404, detail="Purchase not found")
+        raise_not_found("Purchase not found")
 
     return SPPurchaseDetail(
         id=str(purchase.id),
@@ -366,9 +372,9 @@ async def cancel_purchase(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise_bad_request(str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"キャンセル処理中にエラーが発生しました: {e!s}")
+        raise_internal_error(f"キャンセル処理中にエラーが発生しました: {e!s}")
 
 
 @router.get("/purchase-stats", response_model=SPPurchaseStats)
@@ -397,17 +403,17 @@ async def create_stripe_checkout(
     """
     # 本番モードチェック
     if settings.PAYMENT_MODE != "production":
-        raise HTTPException(status_code=400, detail="Stripe checkout is only available in production mode")
+        raise_bad_request("Stripe checkout is only available in production mode")
 
     # Stripe設定チェック
     if not stripe_service.config.is_configured:
-        raise HTTPException(status_code=500, detail="Stripe is not configured. Please contact support.")
+        raise_internal_error("Stripe is not configured. Please contact support.")
 
     # プランの検証
     plans = SPPurchaseService.get_plans()
     plan = next((p for p in plans if p.id == request.plan_id), None)
     if not plan:
-        raise HTTPException(status_code=400, detail="Invalid plan ID")
+        raise_bad_request("Invalid plan ID")
 
     try:
         # 購入申請を作成（PENDING状態）
@@ -445,4 +451,4 @@ async def create_stripe_checkout(
         if "purchase" in locals():
             db.delete(purchase)
             db.commit()
-        raise HTTPException(status_code=500, detail=f"チェックアウトセッション作成中にエラーが発生しました: {e!s}")
+        raise_internal_error(f"チェックアウトセッション作成中にエラーが発生しました: {e!s}")
