@@ -9,9 +9,8 @@ import json
 import time
 from typing import Any, Optional
 
-from app.core.logging import get_logger
-
 from app.ai.coordination_models import AIResponse
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 

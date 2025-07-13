@@ -17,14 +17,6 @@ class LogverseError(Exception):
         super().__init__(self.message)
 
 
-class ValidationError(LogverseError):
-    """バリデーションエラー"""
-
-    def __init__(self, message: str, field: Optional[str] = None):
-        details = {"field": field} if field else {}
-        super().__init__(message, code="VALIDATION_ERROR", details=details)
-
-
 class DatabaseError(LogverseError):
     """データベースエラー"""
 
@@ -82,7 +74,6 @@ def to_http_exception(exc: LogverseError) -> HTTPException:
         HTTPException
     """
     status_code_map = {
-        "VALIDATION_ERROR": status.HTTP_400_BAD_REQUEST,
         "DATABASE_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
         "AI_SERVICE_ERROR": status.HTTP_503_SERVICE_UNAVAILABLE,
         "SP_SYSTEM_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,

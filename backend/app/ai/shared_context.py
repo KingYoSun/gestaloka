@@ -13,7 +13,6 @@ from enum import Enum
 from typing import Any, Optional
 
 from app.core.logging import get_logger
-
 from app.models.enums import TimeOfDay, Weather
 
 logger = get_logger(__name__)

@@ -9,9 +9,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from app.core.logging import get_logger
-
 from app.ai.shared_context import PlayerAction, SharedContext
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 

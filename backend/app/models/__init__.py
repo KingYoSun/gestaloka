@@ -9,7 +9,6 @@ from app.models.encounter_story import (
     EncounterType,
     RelationshipStatus,
     SharedQuest,
-    StoryArcType,
 )
 from app.models.exploration_progress import CharacterExplorationProgress
 from app.models.game_message import GameMessage
@@ -49,7 +48,7 @@ from app.models.sp import (
     SPTransactionType,
 )
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
-from app.models.story_arc import StoryArc, StoryArcMilestone, StoryArcStatus, StoryArcType as SAType
+from app.models.story_arc import StoryArc, StoryArcMilestone, StoryArcStatus, StoryArcType
 from app.models.title import CharacterTitle
 from app.models.user import User
 

@@ -14,9 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from app.core.logging import get_logger
-
 from app.ai.shared_context import EventType, GameEvent
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
