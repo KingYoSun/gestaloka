@@ -12,7 +12,7 @@ interface MemoryInheritanceScreenProps {
 }
 
 export function MemoryInheritanceScreen({
-  characterId,
+  characterId: _characterId,
 }: MemoryInheritanceScreenProps) {
   const {
     fragments,

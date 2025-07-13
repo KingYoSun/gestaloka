@@ -39,7 +39,6 @@ const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
   const getDuration = () => {
     if (!quest.started_at || !quest.completed_at) return null
     const start = new Date(quest.started_at)
-    // const end = new Date(quest.completed_at);
     return formatRelativeTime(start).replace(/前$/, '')
   }
 

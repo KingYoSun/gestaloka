@@ -72,7 +72,7 @@ def setup_neo4j():
     else:
         neo4j_host = "neo4j"
         neo4j_port = "7687"
-    
+
     neo4j_url = f"bolt://{settings.NEO4J_USER}:{settings.NEO4J_PASSWORD}@{neo4j_host}:{neo4j_port}"
 
     logger.info("Setting up Neo4j connection", url=neo4j_url, user=settings.NEO4J_USER)

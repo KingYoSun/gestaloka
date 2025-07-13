@@ -115,13 +115,11 @@ export function useLogEnhancements() {
  * 記憶継承管理用のまとめフック
  */
 export function useMemoryInheritance() {
-  const preview = (fragmentIds: string[]) => useMemoryPreview(fragmentIds)
   const execute = useExecuteMemoryInheritance()
   const history = useInheritanceHistory()
   const enhancements = useLogEnhancements()
 
   return {
-    preview,
     execute: execute.mutate,
     isExecuting: execute.isPending,
     history: history.data || [],

@@ -255,7 +255,7 @@ class TestNarrativeEndpoints:
         )
         session.add(other_user)
         session.commit()
-        
+
         # 別のキャラクターを作成
         other_character = Character(
             id=str(uuid.uuid4()),
@@ -335,7 +335,7 @@ class TestNarrativeEndpoints:
         )
         session.add(other_user)
         session.commit()
-        
+
         # 別のキャラクターを作成
         other_character = Character(
             id=str(uuid.uuid4()),
@@ -349,7 +349,7 @@ class TestNarrativeEndpoints:
         )
         session.add(other_character)
         session.commit()
-        
+
         other_character_id = other_character.id
 
         response = client.get(

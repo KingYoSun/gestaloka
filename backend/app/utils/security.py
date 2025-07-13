@@ -62,39 +62,3 @@ def verify_token(token: str) -> Optional[dict[str, Any]]:
         return payload  # type: ignore[no-any-return]
     except jwt.JWTError:
         return None
-
-
-def is_safe_url(url: str, allowed_hosts: set) -> bool:
-    """URLが安全かチェック"""
-    from urllib.parse import urlparse
-
-    try:
-        parsed = urlparse(url)
-        return parsed.netloc in allowed_hosts
-    except Exception:
-        return False
-
-
-def sanitize_filename(filename: str) -> str:
-    """ファイル名をサニタイズ"""
-    import re
-
-    # 危険な文字を除去
-    filename = re.sub(r"[^\w\-_\.]", "", filename)
-
-    # 長さ制限
-    if len(filename) > 255:
-        name, ext = filename.rsplit(".", 1) if "." in filename else (filename, "")
-        filename = name[: 255 - len(ext) - 1] + "." + ext if ext else name[:255]
-
-    return filename
-
-
-def generate_csrf_token() -> str:
-    """CSRFトークンを生成"""
-    return secrets.token_urlsafe(32)
-
-
-def constant_time_compare(val1: str, val2: str) -> bool:
-    """定数時間での文字列比較"""
-    return secrets.compare_digest(val1, val2)

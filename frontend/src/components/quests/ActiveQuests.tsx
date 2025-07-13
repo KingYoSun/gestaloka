@@ -72,11 +72,6 @@ const QuestCard: React.FC<QuestCardProps> = ({
     }
   }
 
-  // const getProgressColor = (percentage: number) => {
-  //   if (percentage >= 80) return "bg-green-500";
-  //   if (percentage >= 50) return "bg-yellow-500";
-  //   return "bg-blue-500";
-  // };
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
