@@ -2,12 +2,13 @@
 共通のHTTPExceptionパターンを提供するユーティリティ
 """
 
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlmodel import SQLModel, select
+from sqlmodel import SQLModel
 
 from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
@@ -114,7 +115,7 @@ def handle_sp_errors(func: Callable[..., T]) -> Callable[..., T]:
                     break
             if not user_id and 'current_user' in kwargs:
                 user_id = kwargs['current_user'].id
-                
+
             logger.warning(
                 "Insufficient SP",
                 user_id=user_id,
@@ -130,12 +131,12 @@ def handle_sp_errors(func: Callable[..., T]) -> Callable[..., T]:
                     break
             if not user_id and 'current_user' in kwargs:
                 user_id = kwargs['current_user'].id
-                
+
             logger.error(
                 f"SP system error in {func.__name__}",
                 user_id=user_id,
                 error=str(e),
             )
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-    
+
     return wrapper

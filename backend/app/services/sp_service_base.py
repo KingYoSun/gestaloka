@@ -4,14 +4,14 @@ SPサービスの共通ロジック
 同期/非同期の重複を解消するための基底クラス
 """
 
-from datetime import datetime, timedelta, UTC
-from typing import ClassVar, Dict, Optional, Union
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime, timedelta
+from typing import ClassVar, Optional
 
-from sqlalchemy.orm import Session as SyncSession
-from sqlmodel import Session, select, col
+from sqlmodel import Session
 
-from app.core.exceptions import InsufficientSPError, SPSystemError
+from app.core.exceptions import InsufficientSPError
+from app.core.logging import get_logger
 from app.models.sp import (
     PlayerSP,
     SPPurchasePackage,
@@ -19,8 +19,6 @@ from app.models.sp import (
     SPTransaction,
     SPTransactionType,
 )
-from app.models.user import User
-from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -149,7 +147,7 @@ class SPServiceBase(ABC):
         amount: int,
         description: str,
         balance_before: int,
-        metadata: Optional[Dict] = None,
+        metadata: Optional[dict] = None,
         related_entity_type: Optional[str] = None,
         related_entity_id: Optional[str] = None,
     ) -> SPTransaction:
@@ -175,7 +173,7 @@ class SPServiceBase(ABC):
         if player_sp.active_subscription and player_sp.subscription_expires_at:
             if player_sp.subscription_expires_at > datetime.now(UTC):
                 discount_rate = self.SUBSCRIPTION_BENEFITS[player_sp.active_subscription]["discount_rate"]
-        
+
         final_amount = int(amount * (1 - discount_rate))
         return final_amount, discount_rate
 

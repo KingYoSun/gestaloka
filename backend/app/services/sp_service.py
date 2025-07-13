@@ -2,11 +2,11 @@
 SPシステムのビジネスロジックを管理するサービスクラス
 """
 
-from datetime import datetime, UTC
-from typing import Optional
 from collections.abc import AsyncGenerator
+from datetime import datetime
+from typing import Optional
 
-from sqlmodel import Session, col, select
+from sqlmodel import col, select
 
 from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
@@ -122,7 +122,7 @@ class SPService(SPServiceBase):
 
             return transaction
 
-        except InsufficientSPError as e:
+        except InsufficientSPError:
             # SP不足イベントを送信
             await SPEventEmitter.emit_sp_insufficient(
                 user_id=user_id,
@@ -274,29 +274,29 @@ class SPService(SPServiceBase):
         """取引履歴を取得"""
         try:
             query = select(SPTransaction).where(col(SPTransaction.user_id) == user_id)
-            
+
             if transaction_type:
                 query = query.where(col(SPTransaction.transaction_type) == transaction_type)
-            
+
             if start_date:
                 query = query.where(col(SPTransaction.created_at) >= start_date)
-            
+
             if end_date:
                 query = query.where(col(SPTransaction.created_at) <= end_date)
-            
+
             if related_entity_type:
                 query = query.where(col(SPTransaction.related_entity_type) == related_entity_type)
-            
+
             if related_entity_id:
                 query = query.where(col(SPTransaction.related_entity_id) == related_entity_id)
-            
+
             query = query.order_by(col(SPTransaction.created_at).desc()).limit(limit).offset(offset)
-            
+
             results = self.db.exec(query).all()
-            
+
             for transaction in results:
                 yield transaction
-                
+
         except Exception as e:
             logger.error(
                 "Failed to get transaction history",

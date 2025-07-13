@@ -5,7 +5,7 @@
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, ClassVar, Optional
 
 from sqlmodel import Session, select
@@ -160,7 +160,7 @@ class ContaminationPurificationService:
         log.compilation_metadata["purification_history"] = log.compilation_metadata.get("purification_history", [])
         log.compilation_metadata["purification_history"].append(
             {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "original_contamination": original_contamination,
                 "purified_contamination": purified_contamination,
                 "purification_rate": purification_rate,

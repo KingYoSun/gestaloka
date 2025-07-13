@@ -4,8 +4,7 @@ SP計算ロジックを統合したサービス
 すべてのSP関連の計算ロジックを一元化し、DRY原則に従って実装
 """
 
-from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Optional
 
 from app.models.log import CompletedLog, LogFragment, LogFragmentRarity
 from app.models.title import CharacterTitle
@@ -30,7 +29,7 @@ class SPCalculationService:
     }
 
     @classmethod
-    def calculate_action_cost(cls, 
+    def calculate_action_cost(cls,
                             action_type: str,
                             complexity: Optional[str] = None,
                             has_bonus: bool = False) -> int:
@@ -60,7 +59,7 @@ class SPCalculationService:
 
     @classmethod
     def calculate_compilation_cost(cls,
-                                 fragments: List[LogFragment],
+                                 fragments: list[LogFragment],
                                  combo_multiplier: float = 1.0,
                                  contamination_level: float = 0.0) -> int:
         """ログ編纂のSPコストを計算
@@ -188,7 +187,7 @@ class SPCalculationService:
 
     @classmethod
     def calculate_title_effects_bonus(cls,
-                                    titles: List[CharacterTitle]) -> float:
+                                    titles: list[CharacterTitle]) -> float:
         """称号効果によるSPボーナス倍率を計算
         
         Args:
@@ -201,7 +200,7 @@ class SPCalculationService:
             return 1.0
 
         total_discount = 0.0
-        
+
         for title in titles:
             if title.is_equipped and title.effects:
                 # SPコスト削減効果を探す

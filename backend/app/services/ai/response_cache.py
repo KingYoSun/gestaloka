@@ -7,7 +7,7 @@ APIコールを削減してパフォーマンスを向上させます。
 
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Optional
 
 import structlog
@@ -30,7 +30,7 @@ class CacheEntry(BaseModel):
     @property
     def is_expired(self) -> bool:
         """有効期限切れかどうか"""
-        return datetime.utcnow() > self.created_at + timedelta(seconds=self.ttl_seconds)
+        return datetime.now(UTC) > self.created_at + timedelta(seconds=self.ttl_seconds)
 
 
 class ResponseCache:
@@ -105,7 +105,7 @@ class ResponseCache:
                 "Cache hit",
                 key=key[:8],
                 hit_count=entry.hit_count,
-                age_seconds=(datetime.utcnow() - entry.created_at).total_seconds(),
+                age_seconds=(datetime.now(UTC) - entry.created_at).total_seconds(),
             )
             return entry.value
 
@@ -165,7 +165,7 @@ class ResponseCache:
                 {
                     "key": entry.key[:8],
                     "hit_count": entry.hit_count,
-                    "age_seconds": (datetime.utcnow() - entry.created_at).total_seconds(),
+                    "age_seconds": (datetime.now(UTC) - entry.created_at).total_seconds(),
                     "ttl_seconds": entry.ttl_seconds,
                 }
                 for entry in sorted(self._cache.values(), key=lambda e: e.hit_count, reverse=True)[:10]  # Top 10

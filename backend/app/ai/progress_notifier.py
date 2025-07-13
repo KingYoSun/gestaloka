@@ -5,7 +5,7 @@ WebSocketを通じてリアルタイムで処理状況を通知し、
 プレイヤーの待ち時間に対する不安を軽減します。
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 import structlog
@@ -23,13 +23,13 @@ class ProgressNotifier:
         self.current_progress = 0
         self.current_task = ""
         self.session_id: Optional[str] = None
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(UTC)
         self.progress_history: list[ProgressUpdate] = []
 
     def set_session(self, session_id: str) -> None:
         """セッションIDを設定"""
         self.session_id = session_id
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(UTC)
 
     async def notify_progress(
         self,
@@ -64,11 +64,11 @@ class ProgressNotifier:
                 "type": "ai_processing_progress",
                 "percentage": percentage,
                 "message": message,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "current_task": current_task,
                 "estimated_time_remaining": estimated_time_remaining,
                 "details": details or {},
-                "elapsed_time": (datetime.utcnow() - self.start_time).total_seconds(),
+                "elapsed_time": (datetime.now(UTC) - self.start_time).total_seconds(),
             }
 
             try:
@@ -107,7 +107,7 @@ class ProgressNotifier:
 
     async def notify_completion(self) -> None:
         """処理完了を通知"""
-        total_time = (datetime.utcnow() - self.start_time).total_seconds()
+        total_time = (datetime.now(UTC) - self.start_time).total_seconds()
         await self.notify_progress("処理完了", 100, details={"total_time": total_time})
 
     async def notify_error(self, error_message: str) -> None:
@@ -135,7 +135,7 @@ class ProgressNotifier:
 
     def get_progress_summary(self) -> dict[str, Any]:
         """進捗サマリーを取得"""
-        total_time = (datetime.utcnow() - self.start_time).total_seconds()
+        total_time = (datetime.now(UTC) - self.start_time).total_seconds()
 
         return {
             "current_progress": self.current_progress,

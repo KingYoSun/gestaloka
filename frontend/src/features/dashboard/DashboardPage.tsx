@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +7,7 @@ import { useGameSessions } from '@/hooks/useGameSessions'
 import { useCharacters } from '@/hooks/useCharacters'
 
 export function DashboardPage() {
+  const navigate = useNavigate()
   const { data: characters } = useCharacters()
   const { data: sessions } = useGameSessions()
   
@@ -90,11 +91,13 @@ export function DashboardPage() {
                           })()}
                         </p>
                       </div>
-                      <Link to="/game/$sessionId" params={{ sessionId: session.id }}>
-                        <Button size="sm" variant="ghost">
-                          <PlayCircle className="h-4 w-4" />
-                        </Button>
-                      </Link>
+                      <Button 
+                        size="sm" 
+                        variant="ghost"
+                        onClick={() => navigate({ to: `/game/${session.id}` })}
+                      >
+                        <PlayCircle className="h-4 w-4" />
+                      </Button>
                     </div>
                   )
                 })}

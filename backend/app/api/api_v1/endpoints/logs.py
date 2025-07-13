@@ -9,13 +9,12 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import desc
 from sqlmodel import Session, and_, select
 
 from app.api.deps import get_current_active_user
 from app.core.database import get_session
-from app.utils.exceptions import get_by_condition_or_404, raise_not_found
 from app.models.character import Character, GameSession
 from app.models.log import (
     CompletedLog,
@@ -35,6 +34,7 @@ from app.schemas.user import User
 from app.services.compilation_bonus import CompilationBonusService
 from app.services.contamination_purification import ContaminationPurificationService
 from app.services.sp_service import SPService
+from app.utils.exceptions import get_by_condition_or_404
 
 router = APIRouter()
 
@@ -53,14 +53,14 @@ async def create_log_fragment(
     GMのAIによって自動生成される。
     """
     # キャラクターの所有権確認
-    character = get_by_condition_or_404(
+    get_by_condition_or_404(
         db,
         select(Character).where(Character.id == fragment_in.character_id, Character.user_id == current_user.id),
         "Character not found"
     )
 
     # ゲームセッションの確認
-    session = get_by_condition_or_404(
+    get_by_condition_or_404(
         db,
         select(GameSession).where(
             and_(
@@ -289,7 +289,7 @@ async def update_completed_log(
         setattr(db_log, key, value)
 
     if log_in.status == CompletedLogStatus.COMPLETED:
-        db_log.completed_at = datetime.utcnow()
+        db_log.completed_at = datetime.now(UTC)
 
     db.commit()
     db.refresh(db_log)

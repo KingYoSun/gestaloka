@@ -216,34 +216,6 @@ export interface PaginatedResponse<T> {
   hasPrev: boolean
 }
 
-// WebSocket関連の型定義
-export type WebSocketData =
-  | string
-  | number
-  | boolean
-  | null
-  | Record<string, unknown>
-  | unknown[]
-
-export interface WebSocketMessage {
-  type: string
-  data: WebSocketData
-  timestamp: string
-}
-
-export type GameUpdateData = {
-  scene?: string
-  character?: Character
-  message?: GameMessage
-  actionRequired?: boolean
-  [key: string]: unknown
-}
-
-export interface GameUpdate {
-  sessionId: string
-  type: 'scene_change' | 'character_update' | 'new_message' | 'action_required'
-  data: GameUpdateData
-}
 
 // UI関連の型定義
 export interface ToastOptions {

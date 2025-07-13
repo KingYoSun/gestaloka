@@ -2,7 +2,7 @@
 SPサブスクリプションサービス
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, ClassVar, Optional
 
 from sqlalchemy import and_
@@ -86,7 +86,7 @@ class SPSubscriptionService:
             and_(
                 col(SPSubscription.user_id) == user_id,
                 col(SPSubscription.status) == SubscriptionStatus.ACTIVE,
-                col(SPSubscription.expires_at) > datetime.utcnow(),
+                col(SPSubscription.expires_at) > datetime.now(UTC),
             )
         )
         return self.db.exec(stmt).first()
@@ -133,12 +133,12 @@ class SPSubscriptionService:
                     user_id=user_id,
                     subscription_type=data.subscription_type,
                     status=SubscriptionStatus.ACTIVE,
-                    started_at=datetime.utcnow(),
-                    expires_at=datetime.utcnow() + timedelta(days=30),
+                    started_at=datetime.now(UTC),
+                    expires_at=datetime.now(UTC) + timedelta(days=30),
                     price=plan_info["price"],
                     currency="jpy",
                     auto_renew=data.auto_renew,
-                    next_billing_date=datetime.utcnow() + timedelta(days=30),
+                    next_billing_date=datetime.now(UTC) + timedelta(days=30),
                 )
                 self.db.add(subscription)
 
@@ -203,7 +203,7 @@ class SPSubscriptionService:
                     price=plan_info["price"],
                     currency="jpy",
                     auto_renew=data.auto_renew,
-                    trial_end=(datetime.utcnow() + timedelta(days=data.trial_days) if data.trial_days else None),
+                    trial_end=(datetime.now(UTC) + timedelta(days=data.trial_days) if data.trial_days else None),
                 )
                 self.db.add(subscription)
 
@@ -254,12 +254,12 @@ class SPSubscriptionService:
                 # 即座にキャンセル処理
                 if data.immediate:
                     subscription.status = SubscriptionStatus.CANCELLED
-                    subscription.expires_at = datetime.utcnow()
+                    subscription.expires_at = datetime.now(UTC)
                 else:
                     # 期限まで有効
                     subscription.auto_renew = False
 
-                subscription.cancelled_at = datetime.utcnow()
+                subscription.cancelled_at = datetime.now(UTC)
 
                 # PlayerSPも更新
                 player_sp = await self.sp_service.get_or_create_player_sp(user_id)
@@ -290,10 +290,10 @@ class SPSubscriptionService:
                     return stripe_result
 
                 # サブスクリプションレコードを更新
-                subscription.cancelled_at = datetime.utcnow()
+                subscription.cancelled_at = datetime.now(UTC)
                 if data.immediate:
                     subscription.status = SubscriptionStatus.CANCELLED
-                    subscription.expires_at = datetime.utcnow()
+                    subscription.expires_at = datetime.now(UTC)
                 else:
                     subscription.auto_renew = False
 
@@ -381,8 +381,8 @@ class SPSubscriptionService:
 
             # サブスクリプションを有効化
             subscription.status = SubscriptionStatus.ACTIVE
-            subscription.started_at = datetime.utcnow()
-            subscription.expires_at = datetime.utcnow() + timedelta(days=30)
+            subscription.started_at = datetime.now(UTC)
+            subscription.expires_at = datetime.now(UTC) + timedelta(days=30)
             subscription.next_billing_date = subscription.expires_at
 
             # PlayerSPも更新
@@ -423,7 +423,7 @@ class SPSubscriptionService:
 
     def to_response(self, subscription: SPSubscription) -> SPSubscriptionResponse:
         """サブスクリプションをレスポンス形式に変換"""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         is_active = (
             subscription.status == SubscriptionStatus.ACTIVE
             and subscription.expires_at

@@ -6,7 +6,7 @@
 
 import asyncio
 import random
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 import structlog
@@ -63,7 +63,7 @@ def process_dispatch_activities(dispatch_id: str) -> dict[str, Any]:
         # 現在位置を更新
         if activity.get("location"):
             dispatch.current_location = activity["location"]
-            dispatch.last_location_update = datetime.utcnow()
+            dispatch.last_location_update = datetime.now(UTC)
 
         # 目的に応じた成果を記録
         if dispatch.objective_type == DispatchObjectiveType.EXPLORE and activity.get("discovered_location"):
@@ -72,10 +72,10 @@ def process_dispatch_activities(dispatch_id: str) -> dict[str, Any]:
             dispatch.collected_items.append(activity["collected_item"])
 
         # 派遣期限を確認
-        if dispatch.expected_return_at and datetime.utcnow() >= dispatch.expected_return_at:
+        if dispatch.expected_return_at and datetime.now(UTC) >= dispatch.expected_return_at:
             # 派遣完了
             dispatch.status = DispatchStatus.COMPLETED
-            dispatch.actual_return_at = datetime.utcnow()
+            dispatch.actual_return_at = datetime.now(UTC)
 
             # 成果を計算
             dispatch.achievement_score = calculate_achievement_score(dispatch)
@@ -166,7 +166,7 @@ def simulate_dispatch_activity_fallback(
     派遣中の活動をシミュレート（フォールバック版）
     """
     activity = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "location": generate_location_name(),
         "action": "",
         "result": "",
@@ -251,7 +251,7 @@ def create_random_encounter(dispatch: LogDispatch, db: Session) -> Optional[Disp
         outcome=outcome,
         relationship_change=random.uniform(-0.5, 0.5) if outcome == "hostile" else random.uniform(0, 1),
         items_exchanged=[],
-        occurred_at=datetime.utcnow(),
+        occurred_at=datetime.now(UTC),
     )
 
     db.add(encounter)
@@ -367,7 +367,7 @@ def generate_dispatch_report(dispatch_id: str) -> dict[str, Any]:
             epilogue=generate_epilogue(dispatch, completed_log) if dispatch.achievement_score > 0.7 else None,
             economic_details=economic_details,
             special_achievements=special_achievements,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         db.add(report)
@@ -489,7 +489,7 @@ async def generate_narrative_summary(
         # 派遣活動の詳細をまとめる
         duration_str = "0:00:00"
         if dispatch.dispatched_at:
-            end_time = dispatch.actual_return_at or datetime.utcnow()
+            end_time = dispatch.actual_return_at or datetime.now(UTC)
             duration_str = str(end_time - dispatch.dispatched_at)
 
         activity_summary = {

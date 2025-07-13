@@ -16,7 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Sparkles, Info, Heart, Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCreatePurificationItem } from '../hooks/usePurificationItems'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/hooks/useToast'
 
 interface CreatePurificationItemDialogProps {
   fragments: LogFragment[]

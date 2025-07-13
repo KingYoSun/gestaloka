@@ -4,7 +4,7 @@
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlmodel import Session
 
@@ -25,7 +25,7 @@ def process_player_log(self, character_id: str, action_data: dict):
         # TODO: ログフラグメントの生成と保存
         log_fragment = {
             "character_id": character_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "action": action_data.get("action"),
             "context": action_data.get("context", {}),
             "importance": calculate_log_importance(action_data),
@@ -63,7 +63,7 @@ def compile_log_fragments(self, character_id: str, fragment_ids: list[str]):
         compiled_log = {
             "character_id": character_id,
             "fragment_ids": fragment_ids,
-            "compiled_at": datetime.utcnow().isoformat(),
+            "compiled_at": datetime.now(UTC).isoformat(),
             "title": "編纂されたログ",
             "summary": "フラグメントから生成されたログの要約",
             "quality": "normal",

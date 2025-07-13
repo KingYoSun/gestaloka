@@ -3,7 +3,7 @@
 遭遇から発展したストーリーの進行を管理し、世界に影響を与える
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Optional
 
 from sqlmodel import Session, select
@@ -73,7 +73,7 @@ class StoryProgressionManager:
     def _should_progress_story(self, story: EncounterStory) -> bool:
         """ストーリーが進行すべきかを判定"""
         # 最後の相互作用からの経過時間
-        time_since_last = datetime.utcnow() - story.last_interaction_at
+        time_since_last = datetime.now(UTC) - story.last_interaction_at
 
         # ストーリーアークタイプによる進行頻度
         progression_intervals = {
@@ -96,7 +96,7 @@ class StoryProgressionManager:
         base_urgency = 0.5
 
         # 時間経過による増加
-        time_since_last = datetime.utcnow() - story.last_interaction_at
+        time_since_last = datetime.now(UTC) - story.last_interaction_at
         time_factor = min(1.0, time_since_last.total_seconds() / (24 * 3600))
 
         # ストーリータイプによる重み
@@ -377,14 +377,14 @@ class StoryProgressionManager:
         """ストーリーを更新"""
         # 章を進める
         story.current_chapter += 1
-        story.last_interaction_at = datetime.utcnow()
+        story.last_interaction_at = datetime.now(UTC)
 
         # ストーリービートを追加
         new_beat = {
             "chapter": story.current_chapter,
             "beat": development["beat_title"],
             "description": development["description"],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "choices_presented": development.get("choices", []),
         }
         story.story_beats.append(new_beat)
@@ -416,7 +416,7 @@ class StoryProgressionManager:
         story.relationship_status = self._evaluate_relationship_status(story)
 
         # 次の重要なビートの予想時期を設定
-        story.next_expected_beat = datetime.utcnow() + timedelta(hours=self._calculate_next_beat_interval(story))
+        story.next_expected_beat = datetime.now(UTC) + timedelta(hours=self._calculate_next_beat_interval(story))
 
         return {
             "new_beat": new_beat,
@@ -506,7 +506,7 @@ class StoryProgressionManager:
         if not story.world_impact:
             story.world_impact = {}
 
-        story.world_impact[datetime.utcnow().isoformat()] = impact
+        story.world_impact[datetime.now(UTC).isoformat()] = impact
 
     async def _update_related_quests(
         self,
@@ -527,7 +527,7 @@ class StoryProgressionManager:
             # クエストの完了判定
             if quest.progress_percentage >= 100.0:
                 quest.status = QuestStatus.COMPLETED
-                quest.completed_at = datetime.utcnow()
+                quest.completed_at = datetime.now(UTC)
                 story.completed_quest_ids.append(quest_id)
                 story.active_quest_ids.remove(quest_id)
 
@@ -577,14 +577,14 @@ class StoryProgressionManager:
 
         # 同期アクションを記録
         sync_action = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "participants": [a["participant_id"] for a in participant_actions],
             "actions": participant_actions,
             "cooperation_level": shared_quest.cooperation_level,
         }
         shared_quest.synchronized_actions.append(sync_action)
 
-        shared_quest.last_sync_at = datetime.utcnow()
+        shared_quest.last_sync_at = datetime.now(UTC)
 
         self.db.add(shared_quest)
         self.db.commit()

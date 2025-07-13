@@ -12,7 +12,6 @@ import { useNarrativeActions } from './hooks/useNarrativeActions'
 // Minimap import removed - exploration feature integrated into session
 import { ActionChoice } from '@/api/generated'
 import { cn } from '@/lib/utils'
-import { useWebSocket } from '@/hooks/useWebSocket'
 import { toast } from 'sonner'
 import { EquippedTitleBadge } from '@/components/titles/EquippedTitleBadge'
 
@@ -28,20 +27,6 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
   const [narrativeHistory, setNarrativeHistory] = useState<string[]>([])
   const [currentActions, setCurrentActions] = useState<ActionChoice[]>([])
 
-  // WebSocket接続
-  const { subscribe } = useWebSocket()
-
-  useEffect(() => {
-    // WebSocketイベントの購読
-    const unsubscribe = subscribe('narrative:location_changed', (data: any) => {
-      // 場所変更時のアニメーション通知
-      toast.success(`${data.to.name}へ移動しました`, {
-        icon: <MapPin className="h-4 w-4" />,
-      })
-    })
-
-    return unsubscribe
-  }, [subscribe])
 
   // 初期行動選択肢を取得
   useEffect(() => {

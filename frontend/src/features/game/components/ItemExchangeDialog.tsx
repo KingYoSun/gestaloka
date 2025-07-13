@@ -21,7 +21,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ArrowLeftRight, Package, AlertCircle, Check } from 'lucide-react'
-import type { NPCProfile } from '@/types/websocket'
+import type { NPCData } from '@/types'
 
 interface Item {
   id: string
@@ -35,7 +35,7 @@ interface Item {
 interface ItemExchangeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  npc: NPCProfile
+  npc: NPCData
   playerItems: Item[]
   npcItems: Item[]
   onExchange: (

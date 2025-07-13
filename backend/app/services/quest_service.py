@@ -3,7 +3,7 @@
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from sqlmodel import Session, and_, desc, select
@@ -40,6 +40,15 @@ class QuestService:
             提案されたクエストのリスト
         """
         try:
+            # キャラクターを取得
+            character = self.db.exec(
+                select(Character).where(Character.id == character_id)
+            ).first()
+            
+            if not character:
+                logger.warning(f"Character not found: {character_id}")
+                return []
+            
             # 最近の行動履歴を取得
             recent_actions = self.db.exec(
                 select(ActionLog)
@@ -108,7 +117,7 @@ JSON形式で回答してください。
 
             # AI応答を取得
             response = await self.gm_ai_service.generate_ai_response(
-                prompt=prompt, 
+                prompt=prompt,
                 agent_type="quest_proposal",
                 character_name=character.name,
                 metadata={"context_type": "quest_proposal"}
@@ -200,7 +209,7 @@ JSON形式で回答してください。
             return None
 
         quest.status = QuestStatus.ACTIVE
-        quest.started_at = datetime.utcnow()
+        quest.started_at = datetime.now(UTC)
 
         self.db.add(quest)
         self.db.commit()
@@ -233,7 +242,7 @@ JSON形式で回答してください。
         # 関連するイベントを追加
         if recent_action:
             event = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "action_id": recent_action.id,
                 "description": recent_action.response_content,
                 "importance": 0.5,  # AIで後で評価
@@ -266,7 +275,7 @@ JSON形式で回答してください。
         # キャラクター情報を取得
         from app.models.character import Character
         character = self.db.get(Character, character_id)
-        
+
         response = await self.gm_ai_service.generate_ai_response(
             prompt=prompt,
             agent_type="quest_progress",
@@ -285,7 +294,7 @@ JSON形式で回答してください。
             quest.emotional_satisfaction = float(
                 progress_data.get("emotional_satisfaction", quest.emotional_satisfaction)
             )
-            quest.last_progress_at = datetime.utcnow()
+            quest.last_progress_at = datetime.now(UTC)
 
             # ステータスの更新
             new_status = progress_data.get("status")
@@ -318,7 +327,7 @@ JSON形式で回答してください。
         Args:
             quest: 完了したクエスト
         """
-        quest.completed_at = datetime.utcnow()
+        quest.completed_at = datetime.now(UTC)
 
         # 物語のサマライズを生成
         prompt = f"""
@@ -343,7 +352,7 @@ JSON形式で回答してください。
         # キャラクター情報を取得
         from app.models.character import Character
         character = self.db.get(Character, quest.character_id)
-        
+
         response = await self.gm_ai_service.generate_ai_response(
             prompt=prompt,
             agent_type="quest_completion",
@@ -406,6 +415,15 @@ JSON形式で回答してください。
         Returns:
             推測されたクエスト（作成された場合）
         """
+        # キャラクターを取得
+        character = self.db.exec(
+            select(Character).where(Character.id == character_id)
+        ).first()
+        
+        if not character:
+            logger.warning(f"Character not found: {character_id}")
+            return None
+            
         # 最近の行動を分析
         recent_actions = self.db.exec(
             select(ActionLog)
@@ -473,7 +491,7 @@ JSON形式で回答してください。
 
                     # 自動的にアクティブ化
                     quest.status = QuestStatus.ACTIVE
-                    quest.started_at = datetime.utcnow()
+                    quest.started_at = datetime.now(UTC)
 
                     self.db.add(quest)
                     self.db.commit()

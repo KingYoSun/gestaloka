@@ -13,7 +13,6 @@ from sqlmodel import Session, col, select
 from app.api.deps import get_current_active_user, get_db
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.utils.exceptions import get_by_condition_or_404, handle_sp_errors
 from app.core.stripe_config import stripe_service
 from app.models.sp import SPTransaction, SPTransactionType
 from app.models.sp_purchase import PurchaseStatus
@@ -38,6 +37,7 @@ from app.schemas.sp_purchase import (
 )
 from app.services.sp_purchase_service import SPPurchaseService
 from app.services.sp_service import SPService
+from app.utils.exceptions import get_by_condition_or_404, handle_sp_errors
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -214,7 +214,7 @@ async def get_transaction_detail(
         ),
         "指定された取引が見つかりません"
     )
-    
+
     return transaction
 
 

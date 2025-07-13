@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 import { AuthProvider } from '@/features/auth/AuthProvider'
-import { WebSocketProvider } from '@/providers/WebSocketProvider'
 import { useAuth } from '@/features/auth/useAuth'
 import '@/types/router'
 
@@ -54,11 +53,9 @@ function InnerRoot() {
 
   return (
     <AuthContext.Provider value={auth}>
-      <WebSocketProvider>
-        <div className="min-h-screen bg-background text-foreground">
-          <Outlet />
-        </div>
-      </WebSocketProvider>
+      <div className="min-h-screen bg-background text-foreground">
+        <Outlet />
+      </div>
     </AuthContext.Provider>
   )
 }

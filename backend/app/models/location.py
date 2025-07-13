@@ -2,7 +2,7 @@
 場所（Location）関連のモデル定義
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4

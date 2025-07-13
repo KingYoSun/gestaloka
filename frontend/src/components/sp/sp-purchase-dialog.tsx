@@ -17,7 +17,7 @@ import {
 } from '@/hooks/use-sp-purchase'
 import type { SPPlan } from '@/api/sp-purchase'
 import { Loader2 } from 'lucide-react'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/hooks/useToast'
 
 interface SPPurchaseDialogProps {
   plan: SPPlan | null

@@ -25,8 +25,7 @@ import { useActiveCharacter } from '@/stores/characterStore'
 import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
 import { Character } from '@/types'
 import { formatRelativeTime } from '@/lib/utils'
-import { LoadingState } from '@/components/ui/loading-spinner'
-import { LoadingButton } from '@/components/ui/LoadingButton'
+import { LoadingState, LoadingSpinner } from '@/components/ui/loading-spinner'
 import { containerStyles, cardStyles } from '@/lib/styles'
 import { toast } from 'sonner'
 
@@ -133,14 +132,23 @@ export function CharacterListPage() {
           </div>
           <div className="flex gap-2">
             {activeCharacter && (
-              <LoadingButton
+              <Button
                 onClick={handleStartSession}
-                isLoading={createSessionMutation.isPending}
+                disabled={createSessionMutation.isPending}
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
               >
-                <Play className="mr-2 h-4 w-4" />
-                {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
-              </LoadingButton>
+                {createSessionMutation.isPending ? (
+                  <>
+                    <LoadingSpinner size="sm" className="mr-2" />
+                    読み込み中...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
+                  </>
+                )}
+              </Button>
             )}
             <Link to="/character/create">
               <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
@@ -226,15 +234,24 @@ export function CharacterListPage() {
                     </Badge>
                   </div>
                 </div>
-                <LoadingButton
+                <Button
                   onClick={handleStartSession}
-                  isLoading={createSessionMutation.isPending}
+                  disabled={createSessionMutation.isPending}
                   size="lg"
                   className="ml-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
                 >
-                  <Play className="mr-2 h-4 w-4" />
-                  {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
-                </LoadingButton>
+                  {createSessionMutation.isPending ? (
+                    <>
+                      <LoadingSpinner size="sm" className="mr-2" />
+                      読み込み中...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="mr-2 h-4 w-4" />
+                      {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
+                    </>
+                  )}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -345,31 +362,45 @@ function CharacterCard({
 
         {/* アクションボタン */}
         <div className="flex gap-2">
-          <LoadingButton
+          <Button
             variant={isActive ? 'default' : 'outline'}
             size="sm"
             className="flex-1"
             onClick={isActive ? onDeactivate : onActivate}
-            isLoading={isActive ? isDeactivating : isActivating}
+            disabled={isActive ? isDeactivating : isActivating}
           >
-            <Star
-              className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`}
-            />
-            {isActive ? '選択中' : '選択'}
-          </LoadingButton>
+            {(isActive ? isDeactivating : isActivating) ? (
+              <>
+                <LoadingSpinner size="sm" className="mr-2" />
+                処理中...
+              </>
+            ) : (
+              <>
+                <Star
+                  className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`}
+                />
+                {isActive ? '選択中' : '選択'}
+              </>
+            )}
+          </Button>
 
           <Button variant="outline" size="sm" onClick={onNavigateToEdit}>
             <Edit3 className="h-3 w-3" />
           </Button>
 
-          <LoadingButton
+          <Button
             variant="outline"
             size="sm"
             onClick={onDelete}
-            isLoading={isDeleting}
-            icon={Trash2}
+            disabled={isDeleting}
             className="text-red-600 hover:text-red-700 hover:bg-red-50"
-          />
+          >
+            {isDeleting ? (
+              <LoadingSpinner size="sm" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
+          </Button>
         </div>
       </CardContent>
     </Card>

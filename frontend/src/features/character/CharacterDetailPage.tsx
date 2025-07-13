@@ -30,8 +30,7 @@ import {
 import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
-import { LoadingState } from '@/components/ui/loading-spinner'
-import { LoadingButton } from '@/components/ui/LoadingButton'
+import { LoadingState, LoadingSpinner } from '@/components/ui/loading-spinner'
 import { containerStyles } from '@/lib/styles'
 import { toast } from 'sonner'
 import { Play } from 'lucide-react'
@@ -171,20 +170,29 @@ export function CharacterDetailPage() {
 
           <div className="flex gap-2">
             {isActive && (
-              <LoadingButton
+              <Button
                 onClick={handleStartSession}
-                isLoading={createSessionMutation.isPending}
+                disabled={createSessionMutation.isPending}
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
               >
-                <Play className="mr-2 h-4 w-4" />
-                {sessions?.sessions?.find(s => s.characterId === character.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
-              </LoadingButton>
+                {createSessionMutation.isPending ? (
+                  <>
+                    <LoadingSpinner size="sm" className="mr-2" />
+                    読み込み中...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    {sessions?.sessions?.find(s => s.characterId === character.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
+                  </>
+                )}
+              </Button>
             )}
-            <LoadingButton
+            <Button
               onClick={
                 isActive ? handleDeactivateCharacter : handleActivateCharacter
               }
-              isLoading={
+              disabled={
                 isActive
                   ? deactivateCharacterMutation.isPending
                   : activateCharacterMutation.isPending
@@ -195,11 +203,20 @@ export function CharacterDetailPage() {
                   : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
               }
             >
-              <Star
-                className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`}
-              />
-              {isActive ? '選択中' : '選択'}
-            </LoadingButton>
+              {(isActive ? deactivateCharacterMutation.isPending : activateCharacterMutation.isPending) ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  処理中...
+                </>
+              ) : (
+                <>
+                  <Star
+                    className={`mr-2 h-4 w-4 ${isActive ? 'fill-current' : ''}`}
+                  />
+                  {isActive ? '選択中' : '選択'}
+                </>
+              )}
+            </Button>
             <Button
               variant="outline"
               onClick={() => navigate({ to: `/character/${id}/edit` })}
@@ -207,15 +224,24 @@ export function CharacterDetailPage() {
               <Edit3 className="mr-2 h-4 w-4" />
               編集
             </Button>
-            <LoadingButton
+            <Button
               variant="outline"
               onClick={handleDeleteCharacter}
-              isLoading={isDeleting}
-              icon={Trash2}
+              disabled={isDeleting}
               className="text-red-600 hover:text-red-700 hover:bg-red-50"
             >
-              削除
-            </LoadingButton>
+              {isDeleting ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  削除中...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  削除
+                </>
+              )}
+            </Button>
           </div>
         </div>
 

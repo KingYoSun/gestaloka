@@ -6,7 +6,7 @@
 """
 
 import random
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 import structlog
@@ -121,7 +121,7 @@ class DispatchSimulator:
         """活動コンテキストを構築"""
         # 経過時間の計算
         elapsed_hours = (
-            int((datetime.utcnow() - dispatch.dispatched_at).total_seconds() / 3600) if dispatch.dispatched_at else 0
+            int((datetime.now(UTC) - dispatch.dispatched_at).total_seconds() / 3600) if dispatch.dispatched_at else 0
         )
 
         # 遭遇可能性の計算（時間経過と目的による）
@@ -186,7 +186,7 @@ class DispatchSimulator:
 
         # 活動結果の構築
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action="周辺地域の詳細な調査",
             result=(f"{discovered_location}を発見した" if discovered_location else "既知の地域の詳細な地図を作成した"),
@@ -215,7 +215,7 @@ class DispatchSimulator:
             if encounter:
                 # 遭遇した場合の活動
                 activity = SimulatedActivity(
-                    timestamp=datetime.utcnow(),
+                    timestamp=datetime.now(UTC),
                     location=context.current_location,
                     action=f"{encounter.encountered_npc_name}との出会い",
                     result=encounter.interaction_summary,
@@ -265,7 +265,7 @@ class DispatchSimulator:
             collected_item = await self._generate_contextual_item(context)
 
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action="貴重な資源の探索",
             result=(f"{collected_item['name']}を発見した" if collected_item else "有用なものは見つからなかった"),
@@ -305,7 +305,7 @@ class DispatchSimulator:
             result = "異常なし、区域は安全に保たれている"
 
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action=action,
             result=result,
@@ -344,7 +344,7 @@ class DispatchSimulator:
         profit = int(trade_value * final_profit_rate)
 
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action="商取引の実施",
             result=f"{profit}ゴールドの利益を獲得",
@@ -392,7 +392,7 @@ class DispatchSimulator:
         memories_preserved = int(memories_found * random.uniform(0.5, 0.9))
 
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action="失われた記憶の収集と保存",
             result=f"{memories_found}個の記憶を発見、{memories_preserved}個を保存",
@@ -438,7 +438,7 @@ class DispatchSimulator:
         progress = random.uniform(base_progress, base_progress + 0.1)
 
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action="古代の遺物や現象の研究",
             result=f"研究が{progress * 100:.1f}%進展",
@@ -502,7 +502,7 @@ class DispatchSimulator:
         chosen_type = random.choice(activity_types)
 
         activity = SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action=chosen_type["action"],
             result=chosen_type["result"],
@@ -609,7 +609,7 @@ class DispatchSimulator:
             outcome=interaction_result["outcome"],
             relationship_change=interaction_result["relationship_change"],
             items_exchanged=interaction_result.get("items_exchanged", []),
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
         )
 
         db.add(encounter)
@@ -770,7 +770,7 @@ class DispatchSimulator:
         chosen = random.choice(activities)
 
         return SimulatedActivity(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             location=context.current_location,
             action=str(chosen["action"]),
             result=str(chosen["result"]),

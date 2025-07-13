@@ -4,7 +4,7 @@
 キャラクターごとの探索進捗を記録し、ミニマップの霧効果に使用する
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
@@ -28,7 +28,7 @@ class CharacterExplorationProgress(SQLModel, table=True):
     exploration_percentage: int = Field(default=0, ge=0, le=100)
     fog_revealed_at: Optional[datetime] = Field(default=None)
     fully_explored_at: Optional[datetime] = Field(default=None)
-    
+
     # エリア探索記録（JSON配列として保存）
     areas_explored: list[str] = Field(
         default_factory=list,

@@ -2,7 +2,7 @@
 通知関連タスク
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 
 from app.celery import celery_app
 from app.core.logging import get_logger
@@ -30,7 +30,7 @@ def send_player_notification(self, player_id: str, notification_data: dict):
             "title": notification_data.get("title"),
             "message": notification_data.get("message"),
             "priority": notification_data.get("priority", "normal"),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "read": False,
             "data": notification_data.get("data", {}),
         }
@@ -147,7 +147,7 @@ def cleanup_old_notifications(self, days_to_keep: int = 30):
 
         logger.info("Notification cleanup completed", task_id=self.request.id, notifications_removed=cleanup_count)
 
-        return {"removed_count": cleanup_count, "cleanup_date": datetime.utcnow().isoformat()}
+        return {"removed_count": cleanup_count, "cleanup_date": datetime.now(UTC).isoformat()}
 
     except Exception as e:
         logger.error("Failed to cleanup notifications", task_id=self.request.id, error=str(e))

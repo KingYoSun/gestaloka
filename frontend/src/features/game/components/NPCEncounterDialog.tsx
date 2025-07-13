@@ -19,7 +19,7 @@ import {
   HelpCircle,
   X,
 } from 'lucide-react'
-import type { NPCEncounterData } from '@/types/websocket'
+import type { NPCEncounterData } from '../types'
 
 interface NPCEncounterDialogProps {
   encounter: NPCEncounterData | null

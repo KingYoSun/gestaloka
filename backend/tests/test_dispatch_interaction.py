@@ -2,7 +2,7 @@
 派遣ログ相互作用システムのテスト
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -385,7 +385,7 @@ def test_hours_since_last_interaction():
     manager = DispatchInteractionManager()
 
     # 6時間前の相互作用記録
-    past_interaction_time = datetime.utcnow() - timedelta(hours=6)
+    past_interaction_time = datetime.now(UTC) - timedelta(hours=6)
 
     dispatch_2 = MagicMock(id="d2")
 

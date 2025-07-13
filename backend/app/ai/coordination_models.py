@@ -3,7 +3,7 @@ AI協調動作のためのデータモデル定義
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 from app.ai.shared_context import GameEvent
@@ -19,7 +19,7 @@ class ActionContext:
     action_text: str
     session_id: str
     character_id: str
-    timestamp: datetime = field(default_factory=lambda: datetime.utcnow())
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

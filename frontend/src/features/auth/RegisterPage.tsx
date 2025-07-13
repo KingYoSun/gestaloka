@@ -4,10 +4,10 @@ import { Input } from '@/components/ui/input'
 import { apiClient } from '@/api/client'
 import { userRegisterSchema } from '@/lib/validations/schemas/auth'
 import { getPasswordStrength } from '@/lib/validations/validators/password'
-import { LoadingButton } from '@/components/ui/LoadingButton'
+import { Button } from '@/components/ui/button'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { FormError } from '@/components/ui/FormError'
 import { containerStyles } from '@/lib/styles'
-import { useFormError } from '@/hooks/useFormError'
 
 export function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -16,7 +16,8 @@ export function RegisterPage() {
     password: '',
     confirmPassword: '',
   })
-  const { error, isLoading, handleAsync } = useFormError()
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [validationErrors, setValidationErrors] = useState<
     Record<string, string>
@@ -63,7 +64,10 @@ export function RegisterPage() {
       return
     }
 
-    await handleAsync(async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
       await apiClient.register({
         username: formData.username,
         email: formData.email,
@@ -76,7 +80,11 @@ export function RegisterPage() {
       setTimeout(() => {
         navigate({ to: '/login' })
       }, 3000)
-    }, '登録に失敗しました')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '登録に失敗しました')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   if (success) {
@@ -249,14 +257,20 @@ export function RegisterPage() {
 
           <FormError error={error} />
 
-          <LoadingButton
+          <Button
             type="submit"
             className="w-full"
-            isLoading={isLoading}
-            loadingText="登録中..."
+            disabled={isLoading}
           >
-            アカウント作成
-          </LoadingButton>
+            {isLoading ? (
+              <>
+                <LoadingSpinner size="sm" className="mr-2" />
+                登録中...
+              </>
+            ) : (
+              'アカウント作成'
+            )}
+          </Button>
         </form>
 
         <div className="text-center">

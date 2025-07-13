@@ -2,16 +2,17 @@ import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { Input } from '@/components/ui/input'
 import { useAuth } from './useAuth'
-import { LoadingButton } from '@/components/ui/LoadingButton'
+import { Button } from '@/components/ui/button'
+import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { FormError } from '@/components/ui/FormError'
 import { containerStyles } from '@/lib/styles'
-import { useFormError } from '@/hooks/useFormError'
 import { Route } from '@/routes/login'
 
 export function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const { error, isLoading, handleAsync } = useFormError()
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -21,11 +22,18 @@ export function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    await handleAsync(async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
       await login(username, password)
       // リダイレクト先またはダッシュボードへ遷移
       navigate({ to: redirect })
-    }, 'ログインに失敗しました。ユーザー名とパスワードを確認してください。')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ログインに失敗しました。ユーザー名とパスワードを確認してください。')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -75,14 +83,20 @@ export function LoginPage() {
 
           <FormError error={error} />
 
-          <LoadingButton
+          <Button
             type="submit"
             className="w-full"
-            isLoading={isLoading}
-            loadingText="ログイン中..."
+            disabled={isLoading}
           >
-            ログイン
-          </LoadingButton>
+            {isLoading ? (
+              <>
+                <LoadingSpinner size="sm" className="mr-2" />
+                ログイン中...
+              </>
+            ) : (
+              'ログイン'
+            )}
+          </Button>
         </form>
 
         <div className="text-center">

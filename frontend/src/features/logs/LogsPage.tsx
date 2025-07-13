@@ -22,7 +22,7 @@ import {
   Brain,
 } from 'lucide-react'
 import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/hooks/useToast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
 import { MemoryInheritanceScreen } from '@/components/memory/MemoryInheritanceScreen'
 

@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import { apiClient } from '@/api/client'
 import { CharacterCreationForm } from '@/types'
 import { useCharacterStore } from '@/stores/characterStore'
-import { showSuccessToast, showErrorToast } from '@/utils/toast'
+import { useToast } from '@/hooks/useToast'
 
 /**
  * キャラクター一覧を取得（Zustandストア統合）
@@ -69,6 +69,7 @@ export function useCharacter(characterId: string | undefined) {
 export function useCreateCharacter() {
   const queryClient = useQueryClient()
   const addCharacter = useCharacterStore(state => state.addCharacter)
+  const { toast } = useToast()
 
   return useMutation({
     mutationFn: (data: CharacterCreationForm) =>
@@ -80,13 +81,18 @@ export function useCreateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      showSuccessToast(
-        'キャラクター作成成功',
-        `${newCharacter.name}を作成しました`
-      )
+      toast({
+        title: 'キャラクター作成成功',
+        description: `${newCharacter.name}を作成しました`,
+        variant: 'success',
+      })
     },
     onError: (error: Error) => {
-      showErrorToast(error, 'キャラクター作成に失敗しました')
+      toast({
+        title: 'エラー',
+        description: error.message || 'キャラクター作成に失敗しました',
+        variant: 'destructive',
+      })
     },
   })
 }
@@ -97,6 +103,7 @@ export function useCreateCharacter() {
 export function useUpdateCharacter() {
   const queryClient = useQueryClient()
   const updateCharacter = useCharacterStore(state => state.updateCharacter)
+  const { toast } = useToast()
 
   return useMutation({
     mutationFn: ({
@@ -116,10 +123,18 @@ export function useUpdateCharacter() {
         queryKey: ['characters', updatedCharacter.id],
       })
 
-      showSuccessToast('更新成功', 'キャラクター情報を更新しました')
+      toast({
+        title: '更新成功',
+        description: 'キャラクター情報を更新しました',
+        variant: 'success',
+      })
     },
     onError: (error: Error) => {
-      showErrorToast(error, '更新に失敗しました')
+      toast({
+        title: 'エラー',
+        description: error.message || '更新に失敗しました',
+        variant: 'destructive',
+      })
     },
   })
 }
@@ -130,6 +145,7 @@ export function useUpdateCharacter() {
 export function useDeleteCharacter() {
   const queryClient = useQueryClient()
   const removeCharacter = useCharacterStore(state => state.removeCharacter)
+  const { toast } = useToast()
 
   return useMutation({
     mutationFn: (characterId: string) => apiClient.deleteCharacter(characterId),
@@ -140,10 +156,18 @@ export function useDeleteCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      showSuccessToast('削除成功', 'キャラクターを削除しました')
+      toast({
+        title: '削除成功',
+        description: 'キャラクターを削除しました',
+        variant: 'success',
+      })
     },
     onError: (error: Error) => {
-      showErrorToast(error, '削除に失敗しました')
+      toast({
+        title: 'エラー',
+        description: error.message || '削除に失敗しました',
+        variant: 'destructive',
+      })
     },
   })
 }
@@ -156,6 +180,7 @@ export function useActivateCharacter() {
   const setActiveCharacter = useCharacterStore(
     state => state.setActiveCharacter
   )
+  const { toast } = useToast()
 
   return useMutation({
     mutationFn: (characterId: string) =>
@@ -167,13 +192,18 @@ export function useActivateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      showSuccessToast(
-        'キャラクター選択',
-        `${activatedCharacter.name}を選択しました`
-      )
+      toast({
+        title: 'キャラクター選択',
+        description: `${activatedCharacter.name}を選択しました`,
+        variant: 'success',
+      })
     },
     onError: (error: Error) => {
-      showErrorToast(error, 'キャラクターの選択に失敗しました')
+      toast({
+        title: 'エラー',
+        description: error.message || 'キャラクターの選択に失敗しました',
+        variant: 'destructive',
+      })
     },
   })
 }
@@ -183,6 +213,7 @@ export function useActivateCharacter() {
  */
 export function useDeactivateCharacter() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
   const setActiveCharacter = useCharacterStore(
     state => state.setActiveCharacter
   )
@@ -199,7 +230,11 @@ export function useDeactivateCharacter() {
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
-      showSuccessToast('選択解除', 'キャラクターの選択を解除しました')
+      toast({
+        title: '選択解除',
+        description: 'キャラクターの選択を解除しました',
+        variant: 'success',
+      })
     },
   })
 }

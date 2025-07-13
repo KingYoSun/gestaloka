@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, desc, select
 
 from app.api import deps
-from app.utils.exceptions import get_by_condition_or_404
 from app.core.logging import get_logger
 from app.models.character import Character
 from app.models.title import CharacterTitle
@@ -14,6 +13,7 @@ from app.models.user import User
 from app.schemas.title import (
     CharacterTitleRead,
 )
+from app.utils.exceptions import get_by_condition_or_404
 
 logger = get_logger(__name__)
 router = APIRouter()

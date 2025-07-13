@@ -5,7 +5,7 @@
 プレイヤーの行動履歴を管理し、将来的なログNPC化の基盤を提供する。
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
@@ -242,7 +242,7 @@ WARNINGS: [一貫性の問題があれば記載]"""
             action_details=action_details,
             location={"name": context.location},
             participants=self._extract_participants(context, action_details),
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             importance_level=analysis.importance_level,
             tags=analysis.categorization,
             consequences=analysis.consequences,

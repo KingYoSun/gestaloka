@@ -367,7 +367,7 @@ class NPCManagerAgent(BaseAgent):
 
                 if existing_relationship:
                     # 既存の関係性を更新
-                    existing_relationship.history.append(f"Encounter on {datetime.utcnow().isoformat()}")
+                    existing_relationship.history.append(f"Encounter on {datetime.now(UTC).isoformat()}")
                 else:
                     # 新しい関係性を追加
                     npc.relationships.append(
@@ -375,7 +375,7 @@ class NPCManagerAgent(BaseAgent):
                             target_id=character.id,
                             relationship_type="encounter_initiated",
                             intensity=0.1,
-                            history=[f"First encounter on {datetime.utcnow().isoformat()}"],
+                            history=[f"First encounter on {datetime.now(UTC).isoformat()}"],
                         )
                     )
 
@@ -571,7 +571,7 @@ class NPCManagerAgent(BaseAgent):
 
             if existing_rel:
                 # 既存の関係を更新
-                existing_rel.history.append(f"{datetime.utcnow()}: {context.recent_actions[-1]}")
+                existing_rel.history.append(f"{datetime.now(UTC)}: {context.recent_actions[-1]}")
             else:
                 # 新しい関係を追加
                 npc.relationships.append(
@@ -579,7 +579,7 @@ class NPCManagerAgent(BaseAgent):
                         target_id=context.character_name,
                         relationship_type="初対面",
                         intensity=0.0,
-                        history=[f"{datetime.utcnow()}: 初めて出会った"],
+                        history=[f"{datetime.now(UTC)}: 初めて出会った"],
                     )
                 )
 
@@ -590,7 +590,7 @@ class NPCManagerAgent(BaseAgent):
         summary: dict[str, Any] = {
             "name": npc.name,
             "relationship_count": len(npc.relationships),
-            "last_updated": datetime.utcnow().isoformat(),
+            "last_updated": datetime.now(UTC).isoformat(),
         }
         return summary
 

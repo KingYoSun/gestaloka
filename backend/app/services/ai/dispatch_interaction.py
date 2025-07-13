@@ -6,7 +6,7 @@
 """
 
 import random
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 import structlog
@@ -530,7 +530,7 @@ class DispatchInteractionManager:
             # For now, we'll add it to the travel log
             knowledge_entry = {
                 "knowledge_gained": outcome.knowledge_shared,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
             dispatch.travel_log.append(knowledge_entry)
             impact["knowledge_gained"] = outcome.knowledge_shared  # type: ignore[assignment]
@@ -542,7 +542,7 @@ class DispatchInteractionManager:
             alliance_entry = {
                 "alliance_formed": {
                     "with": log.name if not is_initiator else "other",
-                    "formed_at": datetime.utcnow().isoformat(),
+                    "formed_at": datetime.now(UTC).isoformat(),
                 }
             }
             dispatch.travel_log.append(alliance_entry)
@@ -571,7 +571,7 @@ class DispatchInteractionManager:
             outcome=outcome.outcome,
             relationship_change=outcome.relationship_change,
             items_exchanged=outcome.items_exchanged,
-            occurred_at=datetime.utcnow(),
+            occurred_at=datetime.now(UTC),
         )
 
         db.add(encounter)
@@ -612,7 +612,7 @@ class DispatchInteractionManager:
     ) -> None:
         """活動ログに記録を追加"""
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "location": encounter.location,
             "action": f"派遣ログとの遭遇: {encounter.encountered_npc_name}",
             "result": encounter.interaction_summary,
@@ -640,7 +640,7 @@ class DispatchInteractionManager:
             if isinstance(log, dict) and log.get("special_type") == "dispatch_interaction":
                 if dispatch_2.id in str(log):
                     timestamp = datetime.fromisoformat(log["timestamp"])
-                    return (datetime.utcnow() - timestamp).total_seconds() / 3600
+                    return (datetime.now(UTC) - timestamp).total_seconds() / 3600
 
         return 999  # 相互作用なし
 

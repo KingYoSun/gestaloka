@@ -1,7 +1,7 @@
 """SP購入サービス"""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from sqlalchemy import and_, func, select
@@ -12,7 +12,7 @@ from app.core.sp_plans import SP_PLANS, SPPlan
 from app.models.sp import SPTransactionType
 from app.models.sp_purchase import PaymentMode, PurchaseStatus, SPPurchase
 from app.models.user import User
-from app.services.sp_service import SPService, SPServiceSync
+from app.services.sp_service import SPServiceSync
 
 
 class SPPurchaseService:
@@ -102,8 +102,8 @@ class SPPurchaseService:
         # ステータス更新
         purchase.status = PurchaseStatus.PROCESSING
         purchase.approved_by = uuid.UUID(approved_by_user_id) if approved_by_user_id and not system_approved else None
-        purchase.approved_at = datetime.utcnow()
-        purchase.updated_at = datetime.utcnow()
+        purchase.approved_at = datetime.now(UTC)
+        purchase.updated_at = datetime.now(UTC)
 
         try:
             # SP付与
@@ -119,7 +119,7 @@ class SPPurchaseService:
 
             # ステータスを完了に更新
             purchase.status = PurchaseStatus.COMPLETED
-            purchase.updated_at = datetime.utcnow()
+            purchase.updated_at = datetime.now(UTC)
 
             db.commit()
             db.refresh(purchase)
@@ -130,7 +130,7 @@ class SPPurchaseService:
         except Exception as e:
             # エラー時はステータスを失敗に更新
             purchase.status = PurchaseStatus.FAILED
-            purchase.updated_at = datetime.utcnow()
+            purchase.updated_at = datetime.now(UTC)
             db.commit()
 
             # WebSocketイベント送信はAPIエンドポイントで処理
@@ -173,7 +173,7 @@ class SPPurchaseService:
 
         # ステータス更新
         purchase.status = PurchaseStatus.CANCELLED
-        purchase.updated_at = datetime.utcnow()
+        purchase.updated_at = datetime.now(UTC)
 
         db.commit()
         db.refresh(purchase)
@@ -216,7 +216,7 @@ class SPPurchaseService:
 
             # ステータスを更新
             purchase.status = PurchaseStatus.COMPLETED
-            purchase.approved_at = datetime.utcnow()
+            purchase.approved_at = datetime.now(UTC)
             purchase.stripe_checkout_session_id = stripe_session_id
             if payment_intent_id:
                 purchase.stripe_payment_intent_id = payment_intent_id
@@ -262,7 +262,7 @@ class SPPurchaseService:
 
             # ステータスを更新
             purchase.status = PurchaseStatus.FAILED
-            purchase.updated_at = datetime.utcnow()
+            purchase.updated_at = datetime.now(UTC)
 
             db.add(purchase)
             db.commit()

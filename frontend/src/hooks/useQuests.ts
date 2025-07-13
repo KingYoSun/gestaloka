@@ -2,13 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { questsApi } from '@/api/quests'
 import type { CreateQuestRequest, Quest } from '@/types/quest'
 import { QuestStatus } from '@/types/quest'
-import { useWebSocket } from '@/hooks/useWebSocket'
-import { useCallback, useEffect } from 'react'
+import { useCallback } from 'react'
 
 export function useQuests(characterId?: string, status?: QuestStatus) {
-  const queryClient = useQueryClient()
-  const { on, off } = useWebSocket()
-
   // クエスト一覧取得
   const questsQuery = useQuery({
     queryKey: ['quests', characterId, status],
@@ -18,39 +14,6 @@ export function useQuests(characterId?: string, status?: QuestStatus) {
     },
     enabled: !!characterId,
   })
-
-  // WebSocketイベントリスナー
-  useEffect(() => {
-    if (!characterId) return
-
-    const handleQuestUpdate = (data: any) => {
-      if (data.character_id === characterId) {
-        // クエストリストを再取得
-        queryClient.invalidateQueries({ queryKey: ['quests', characterId] })
-        // 特定のクエストも更新
-        if (data.quest_id) {
-          queryClient.setQueryData(
-            ['quest', data.quest_id],
-            (oldData: any) => ({ ...oldData, ...data.quest })
-          )
-        }
-      }
-    }
-
-    const handleQuestCreated = (data: any) => handleQuestUpdate(data)
-    const handleQuestUpdated = (data: any) => handleQuestUpdate(data)
-    const handleQuestCompleted = (data: any) => handleQuestUpdate(data)
-
-    on('quest_created', handleQuestCreated)
-    on('quest_updated', handleQuestUpdated)
-    on('quest_completed', handleQuestCompleted)
-
-    return () => {
-      off('quest_created', handleQuestCreated)
-      off('quest_updated', handleQuestUpdated)
-      off('quest_completed', handleQuestCompleted)
-    }
-  }, [characterId, queryClient, on, off])
 
   return {
     quests: questsQuery.data?.quests || [],

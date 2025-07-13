@@ -2,7 +2,7 @@
 派遣ログAIシミュレーションのテスト
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -52,7 +52,7 @@ def mock_dispatch_explore(mock_completed_log):
         dispatch_duration_days=7,
         sp_cost=10,
         status=DispatchStatus.DISPATCHED,
-        dispatched_at=datetime.utcnow(),
+        dispatched_at=datetime.now(UTC),
         travel_log=[],
         discovered_locations=[],
         collected_items=[],
@@ -72,7 +72,7 @@ def mock_dispatch_interact(mock_completed_log):
         dispatch_duration_days=5,
         sp_cost=10,
         status=DispatchStatus.DISPATCHED,
-        dispatched_at=datetime.utcnow(),
+        dispatched_at=datetime.now(UTC),
         travel_log=[],
         discovered_locations=[],
         collected_items=[],
@@ -304,7 +304,7 @@ def test_activity_context_building(mock_completed_log):
         sp_cost=10,
         status=DispatchStatus.DISPATCHED,
         current_location="警備地点",
-        dispatched_at=datetime.utcnow(),
+        dispatched_at=datetime.now(UTC),
         travel_log=[
             {"action": "出発", "result": "順調"},
             {"action": "巡回開始", "result": "異常なし"},
@@ -341,7 +341,7 @@ async def test_trade_activity_simulation():
         sp_cost=50,
         status=DispatchStatus.DISPATCHED,
         travel_log=[],
-        dispatched_at=datetime.utcnow(),
+        dispatched_at=datetime.now(UTC),
     )
 
     mock_log = CompletedLog(
@@ -402,7 +402,7 @@ async def test_memory_preservation_activity():
         sp_cost=30,
         status=DispatchStatus.DISPATCHED,
         travel_log=[],
-        dispatched_at=datetime.utcnow(),
+        dispatched_at=datetime.now(UTC),
     )
 
     # 高汚染度は記憶との親和性が高い

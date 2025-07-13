@@ -4,7 +4,7 @@
 完成ログを他のプレイヤーの世界に独立NPCとして派遣するエンドポイント群
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -50,8 +50,8 @@ async def check_sp_balance(user_id: str, required_sp: int, db: Session) -> Playe
             current_sp=30,  # 初期SP
             total_earned_sp=30,
             total_consumed_sp=0,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         db.add(player_sp)
         db.commit()
@@ -80,7 +80,7 @@ async def consume_sp(
     # SP残高を更新
     player_sp.current_sp -= amount
     player_sp.total_consumed_sp += amount
-    player_sp.updated_at = datetime.utcnow()
+    player_sp.updated_at = datetime.now(UTC)
 
     # トランザクションを記録
     transaction = SPTransaction(
@@ -93,7 +93,7 @@ async def consume_sp(
         balance_after=player_sp.current_sp,
         description=description,
         transaction_metadata=metadata or {},
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
 
     db.add(transaction)
@@ -152,7 +152,7 @@ async def create_dispatch(
         objective_detail=dispatch_in.objective_detail,
         initial_location=dispatch_in.initial_location,
         current_location=dispatch_in.initial_location,  # 初期位置を現在位置に設定
-        last_location_update=datetime.utcnow(),
+        last_location_update=datetime.now(UTC),
         dispatch_duration_days=dispatch_in.dispatch_duration_days,
         sp_cost=sp_cost,
         status=DispatchStatus.PREPARING,
@@ -161,7 +161,7 @@ async def create_dispatch(
         discovered_locations=[],
         sp_refund_amount=0,
         achievement_score=0.0,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
 
     db.add(dispatch)
@@ -182,8 +182,8 @@ async def create_dispatch(
 
     # 派遣開始
     dispatch.status = DispatchStatus.DISPATCHED
-    dispatch.dispatched_at = datetime.utcnow()
-    dispatch.expected_return_at = datetime.utcnow() + timedelta(days=dispatch_in.dispatch_duration_days)
+    dispatch.dispatched_at = datetime.now(UTC)
+    dispatch.expected_return_at = datetime.now(UTC) + timedelta(days=dispatch_in.dispatch_duration_days)
 
     # Celeryタスクをスケジュール（派遣処理）
     from app.tasks.dispatch_tasks import process_dispatch_activities
@@ -377,13 +377,13 @@ async def recall_dispatch(
 
     # 派遣を召還
     dispatch.status = DispatchStatus.RECALLED
-    dispatch.actual_return_at = datetime.utcnow()
+    dispatch.actual_return_at = datetime.now(UTC)
 
     # 部分的な成果計算（経過時間に基づく）
     if dispatch.dispatched_at:
         if dispatch.expected_return_at and dispatch.dispatched_at:
             total_duration = dispatch.expected_return_at - dispatch.dispatched_at
-            actual_duration = datetime.utcnow() - dispatch.dispatched_at
+            actual_duration = datetime.now(UTC) - dispatch.dispatched_at
         else:
             total_duration = timedelta(days=1)
             actual_duration = timedelta(hours=1)

@@ -8,7 +8,7 @@ AI協調動作のための共有コンテキスト管理システム
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import Any, Optional
 
@@ -105,7 +105,7 @@ class GameEvent:
     id: str
     type: EventType
     source: str  # 発生源（AI名またはシステム）
-    timestamp: datetime = field(default_factory=lambda: datetime.utcnow())
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     data: dict[str, Any] = field(default_factory=dict)
     priority: EventPriority = EventPriority.NORMAL
 
@@ -122,7 +122,7 @@ class PlayerAction:
     action_id: str
     action_type: str
     action_text: str
-    timestamp: datetime = field(default_factory=lambda: datetime.utcnow())
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -146,7 +146,7 @@ class AIDecision:
     decision_type: str
     reasoning: str
     confidence: float
-    timestamp: datetime = field(default_factory=lambda: datetime.utcnow())
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -193,7 +193,7 @@ class SharedContext:
     environmental_modifiers: dict[str, float] = field(default_factory=dict)
 
     # メタデータ
-    last_updated: datetime = field(default_factory=lambda: datetime.utcnow())
+    last_updated: datetime = field(default_factory=lambda: datetime.now(UTC))
     update_count: int = 0
 
 
@@ -221,7 +221,7 @@ class SharedContextManager:
                         logger.warning(f"Unknown context attribute: {key}", session_id=self.context.session_id)
 
                 # メタデータ更新
-                self.context.last_updated = datetime.utcnow()
+                self.context.last_updated = datetime.now(UTC)
                 self.context.update_count += 1
 
                 # 更新履歴の記録
@@ -311,7 +311,7 @@ class SharedContextManager:
     def _log_update(self, updates: dict[str, Any], before_state: dict[str, Any]) -> None:
         """更新履歴を記録"""
         update_record = {
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(UTC),
             "updates": updates,
             "before_state": before_state,
             "after_state": self._get_current_state(),

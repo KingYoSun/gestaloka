@@ -158,14 +158,14 @@ class GMAIService:
         # 移動の複雑度を判定
         level_diff = abs(to_location.hierarchy_level - from_location.hierarchy_level)
         danger_level = to_location.danger_level.value
-        
+
         # 複雑度の判定
         complexity = "normal"
         if level_diff == 0 and danger_level in ["safe", "low"]:
             complexity = "simple"
         elif level_diff >= 2 or danger_level in ["high", "extreme"]:
             complexity = "complex"
-        
+
         # SPCalculationServiceを使用
         return SPCalculationService.calculate_action_cost(
             action_type="movement",

@@ -184,62 +184,61 @@ class DramatistAgent(BaseAgent):
                 cleaned_response = cleaned_response[7:]  # ```json を除去
             elif cleaned_response.startswith('```'):
                 cleaned_response = cleaned_response[3:]  # ``` を除去
-            
+
             if cleaned_response.endswith('```'):
                 cleaned_response = cleaned_response[:-3]  # 終端の ``` を除去
-            
+
             cleaned_response = cleaned_response.strip()
-            
+
             # JSON形式でパース
             response_data = json.loads(cleaned_response)
-            
+
             # narrativeフィールドを取得
             narrative = response_data.get("narrative", "")
-            
+
             # choicesフィールドから選択肢を構築
             choices = []
             choices_data = response_data.get("choices", [])
-            
+
             for idx, choice_data in enumerate(choices_data[:3]):  # 最大3つまで
                 choice_id = choice_data.get("id", f"choice_{idx + 1}")
                 choice_text = choice_data.get("text", "")
                 difficulty = choice_data.get("difficulty")
-                
+
                 if choice_text:
                     choices.append(ActionChoice(
                         id=choice_id,
                         text=choice_text,
                         difficulty=difficulty
                     ))
-            
+
             # 追加情報があれば物語に追加
             additional_info = response_data.get("additional_info")
             if additional_info:
                 narrative = f"{narrative}\n\n{additional_info}"
-            
+
             # パース結果をログ出力
-            self.logger.info("Parsed JSON response successfully", 
-                           narrative_length=len(narrative), 
+            self.logger.info("Parsed JSON response successfully",
+                           narrative_length=len(narrative),
                            choice_count=len(choices))
-            
+
             return narrative, choices
-            
+
         except json.JSONDecodeError as e:
             self.logger.warning("Failed to parse as JSON, falling back to text parsing", error=str(e))
             # JSON解析に失敗した場合は、従来のテキストパース処理にフォールバック
             return self._parse_response_as_text(raw_response)
-    
+
     def _parse_response_as_text(self, raw_response: str) -> tuple[str, list[ActionChoice]]:
         """
         テキスト形式のレスポンスをパース（フォールバック用）
         """
-        lines = raw_response.strip().split("\n")
         narrative = raw_response  # デフォルトは全体を物語として扱う
         choices = self._generate_default_choices()
-        
+
         # 簡易的なパース処理
         # JSONに失敗した場合はデフォルト選択肢を返す
-        
+
         return narrative, choices
 
     def _generate_default_choices(self) -> list[ActionChoice]:

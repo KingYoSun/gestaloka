@@ -2,7 +2,7 @@
 SP関連のCeleryタスク
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from celery import shared_task

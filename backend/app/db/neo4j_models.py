@@ -2,7 +2,7 @@
 Neo4jグラフデータベースモデル定義
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from neomodel import (
@@ -179,7 +179,7 @@ def create_npc_from_log(completed_log_data: dict, location: Optional[Location] =
     npc.originated_from.connect(
         log_node,
         {
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(UTC),
             "contamination_level": completed_log_data.get("contamination_level", 0),
         },
     )

@@ -179,14 +179,14 @@ class MemoryInheritanceService:
         """SP消費を計算"""
         # 最高レアリティのフラグメントを使用
         max_rarity = max(f.rarity for f in fragments)
-        
+
         # SPCalculationServiceを使用して計算
         # UNIQUE, ARCHITECTはLEGENDARYとして扱う
         if max_rarity in [LogFragmentRarity.UNIQUE, LogFragmentRarity.ARCHITECT]:
             source_rarity = LogFragmentRarity.LEGENDARY
         else:
             source_rarity = max_rarity
-        
+
         inheritance_type_map = {
             MemoryInheritanceType.SKILL: "skill",
             MemoryInheritanceType.TITLE: "title",
@@ -194,7 +194,7 @@ class MemoryInheritanceService:
             MemoryInheritanceType.LOG_ENHANCEMENT: "log_enhancement",
         }
         type_str = inheritance_type_map.get(inheritance_type, "skill")
-        
+
         return SPCalculationService.calculate_memory_inheritance_cost(
             inheritance_type=type_str,
             source_rarity=source_rarity,

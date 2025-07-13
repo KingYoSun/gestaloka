@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { dispatchApi } from '@/api/dispatch'
-import { useToast } from '@/hooks/use-toast'
+import { useToast } from '@/hooks/useToast'
 import {
   Dialog,
   DialogContent,

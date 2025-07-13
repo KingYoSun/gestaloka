@@ -2,7 +2,7 @@
 物語主導型探索システムAPIエンドポイント
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
@@ -130,7 +130,7 @@ async def perform_narrative_action(
                 # キャラクターの現在地を更新
                 current_character.location_id = new_location.id
                 current_character.location = new_location.name  # 後方互換性
-                current_character.updated_at = datetime.utcnow()
+                current_character.updated_at = datetime.now(UTC)
                 db.add(current_character)
                 db.commit()
 
@@ -212,7 +212,7 @@ async def update_location_history(db: Session, character: Character, new_locatio
     ).first()
 
     if current_history:
-        current_history.departed_at = datetime.utcnow()
+        current_history.departed_at = datetime.now(UTC)
         db.add(current_history)
 
     # 新しい履歴を作成

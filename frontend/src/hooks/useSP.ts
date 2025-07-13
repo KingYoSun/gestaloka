@@ -2,11 +2,9 @@
  * SPシステム関連のカスタムフック
  */
 
-import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { useToast } from '@/hooks/useToast'
-import { websocketManager } from '@/lib/websocket/socket'
 import type { PlayerSP, SPConsumeRequest } from '@/types/sp'
 
 /**
@@ -24,78 +22,6 @@ export function useSPBalance() {
  * SP残高の概要を取得するフック（軽量版）
  */
 export function useSPBalanceSummary() {
-  const queryClient = useQueryClient()
-
-  // WebSocketでSP更新イベントを受信したら自動的に再取得
-  useEffect(() => {
-    const handleSPUpdate = (data: {
-      current_sp: number
-      amount_changed: number
-      transaction_type: string
-      description: string
-    }) => {
-      // クエリを無効化して最新データを取得
-      queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
-
-      // キャッシュを直接更新（楽観的更新）
-      queryClient.setQueryData(['sp', 'balance', 'summary'], (oldData: any) => {
-        if (!oldData) return oldData
-        return {
-          ...oldData,
-          current_sp: data.current_sp,
-        }
-      })
-
-      // ユーザーへの通知（重要な変更のみ）
-      const isIncrease = data.amount_changed > 0
-      const isSignificant = Math.abs(data.amount_changed) >= 10
-
-      if (isSignificant) {
-        if (isIncrease) {
-          showSuccessToast(
-            'SPを獲得しました',
-            `${data.description} (+${data.amount_changed} SP)`
-          )
-        } else {
-          showInfoToast(
-            'SPを消費しました',
-            `${data.description} (${data.amount_changed} SP)`
-          )
-        }
-      }
-    }
-
-    const handleSPInsufficient = (data: {
-      required_amount: number
-      current_sp: number
-      action: string
-      message: string
-    }) => {
-      showErrorToast(new Error(data.message), 'SP不足')
-    }
-
-    const handleDailyRecovery = (data: {
-      success: boolean
-      total_amount: number
-      message: string
-    }) => {
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
-        showSuccessToast('日次回復完了', data.message)
-      }
-    }
-
-    websocketManager.on('sp:update', handleSPUpdate)
-    websocketManager.on('sp:insufficient', handleSPInsufficient)
-    websocketManager.on('sp:daily_recovery', handleDailyRecovery)
-
-    return () => {
-      websocketManager.off('sp:update', handleSPUpdate)
-      websocketManager.off('sp:insufficient', handleSPInsufficient)
-      websocketManager.off('sp:daily_recovery', handleDailyRecovery)
-    }
-  }, [queryClient])
-
   return useQuery({
     queryKey: ['sp', 'balance', 'summary'],
     queryFn: () => apiClient.getSPBalanceSummary(),
@@ -110,6 +36,7 @@ export function useSPBalanceSummary() {
  */
 export function useConsumeSP() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   return useMutation({
     mutationFn: (request: SPConsumeRequest) => apiClient.consumeSP(request),
@@ -118,7 +45,11 @@ export function useConsumeSP() {
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
       queryClient.invalidateQueries({ queryKey: ['sp', 'transactions'] })
 
-      showSuccessToast('SP消費完了', response.message)
+      toast({
+        title: 'SP消費完了',
+        description: response.message,
+        variant: 'success',
+      })
     },
     onError: (error: unknown) => {
       const errorResponse = (error as any)?.response
@@ -128,12 +59,17 @@ export function useConsumeSP() {
       // SP不足エラーの特別処理
       if (errorResponse?.status === 400 && errorMessage.includes('SP不足')) {
         // SP不足の場合は特別なメッセージ
-        showErrorToast(
-          new Error(errorMessage + '\nSPを回復するか、より簡単な行動を選択してください。'),
-          'SP不足'
-        )
+        toast({
+          title: 'SP不足',
+          description: errorMessage + '\nSPを回復するか、より簡単な行動を選択してください。',
+          variant: 'destructive',
+        })
       } else {
-        showErrorToast(new Error(errorMessage), 'SP消費エラー')
+        toast({
+          title: 'SP消費エラー',
+          description: errorMessage,
+          variant: 'destructive',
+        })
       }
     },
   })
@@ -144,6 +80,7 @@ export function useConsumeSP() {
  */
 export function useDailyRecovery() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   return useMutation({
     mutationFn: () => apiClient.processDailyRecovery(),
@@ -152,7 +89,11 @@ export function useDailyRecovery() {
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
       queryClient.invalidateQueries({ queryKey: ['sp', 'transactions'] })
 
-      showSuccessToast('日次回復完了', response.message)
+      toast({
+        title: '日次回復完了',
+        description: response.message,
+        variant: 'success',
+      })
     },
     onError: (error: unknown) => {
       const errorMessage =
@@ -160,9 +101,16 @@ export function useDailyRecovery() {
 
       // 既に回復済みの場合は警告として表示
       if (errorMessage.includes('既に完了')) {
-        showInfoToast('日次回復済み', errorMessage)
+        toast({
+          title: '日次回復済み',
+          description: errorMessage,
+        })
       } else {
-        showErrorToast(new Error(errorMessage), '日次回復エラー')
+        toast({
+          title: '日次回復エラー',
+          description: errorMessage,
+          variant: 'destructive',
+        })
       }
     },
   })

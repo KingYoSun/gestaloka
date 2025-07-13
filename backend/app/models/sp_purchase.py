@@ -1,7 +1,7 @@
 """SP購入モデル定義"""
 
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 

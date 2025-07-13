@@ -2,7 +2,7 @@
 クリーンアップ関連タスク
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from app.celery import celery_app
 from app.core.logging import get_logger
@@ -23,7 +23,7 @@ def cleanup_expired_sessions(self):
 
         logger.info("Expired sessions cleanup completed", task_id=self.request.id, sessions_removed=cleanup_count)
 
-        return {"removed_count": cleanup_count, "cleanup_date": datetime.utcnow().isoformat()}
+        return {"removed_count": cleanup_count, "cleanup_date": datetime.now(UTC).isoformat()}
 
     except Exception as e:
         logger.error("Failed to cleanup expired sessions", task_id=self.request.id, error=str(e))
@@ -36,7 +36,7 @@ def cleanup_orphaned_logs(self, days_threshold: int = 90):
     try:
         logger.info("Starting orphaned logs cleanup", task_id=self.request.id, days_threshold=days_threshold)
 
-        threshold_date = datetime.utcnow() - timedelta(days=days_threshold)
+        threshold_date = datetime.now(UTC) - timedelta(days=days_threshold)
 
         # TODO: キャラクターが削除されたログフラグメントを削除
         # TODO: 参照されていない古いログを削除
@@ -48,7 +48,7 @@ def cleanup_orphaned_logs(self, days_threshold: int = 90):
         return {
             "removed_count": cleanup_count,
             "threshold_date": threshold_date.isoformat(),
-            "cleanup_date": datetime.utcnow().isoformat(),
+            "cleanup_date": datetime.now(UTC).isoformat(),
         }
 
     except Exception as e:
@@ -62,7 +62,7 @@ def cleanup_temporary_npcs(self, hours_threshold: int = 24):
     try:
         logger.info("Starting temporary NPCs cleanup", task_id=self.request.id, hours_threshold=hours_threshold)
 
-        threshold_date = datetime.utcnow() - timedelta(hours=hours_threshold)
+        threshold_date = datetime.now(UTC) - timedelta(hours=hours_threshold)
 
         # TODO: 一時的なNPC（イベントNPCなど）を削除
         # 永続的NPCとログNPCは除外
@@ -74,7 +74,7 @@ def cleanup_temporary_npcs(self, hours_threshold: int = 24):
         return {
             "removed_count": cleanup_count,
             "threshold_date": threshold_date.isoformat(),
-            "cleanup_date": datetime.utcnow().isoformat(),
+            "cleanup_date": datetime.now(UTC).isoformat(),
         }
 
     except Exception as e:
@@ -88,7 +88,7 @@ def archive_old_game_sessions(self, days_threshold: int = 30):
     try:
         logger.info("Starting game sessions archival", task_id=self.request.id, days_threshold=days_threshold)
 
-        threshold_date = datetime.utcnow() - timedelta(days=days_threshold)
+        threshold_date = datetime.now(UTC) - timedelta(days=days_threshold)
 
         # TODO: 古いゲームセッションをアーカイブテーブルに移動
         # アクティブでないセッションのみ対象
@@ -100,7 +100,7 @@ def archive_old_game_sessions(self, days_threshold: int = 30):
         return {
             "archived_count": archive_count,
             "threshold_date": threshold_date.isoformat(),
-            "archive_date": datetime.utcnow().isoformat(),
+            "archive_date": datetime.now(UTC).isoformat(),
         }
 
     except Exception as e:

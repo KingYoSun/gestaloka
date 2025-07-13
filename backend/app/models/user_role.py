@@ -2,7 +2,7 @@
 ユーザーロールモデル
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Optional
 from uuid import uuid4

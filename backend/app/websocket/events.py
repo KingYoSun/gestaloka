@@ -3,7 +3,7 @@ WebSocketイベントエミッター
 ゲームロジックからWebSocket経由でクライアントに通知を送るためのユーティリティ
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 
 from app.core.logging import get_logger
@@ -26,7 +26,7 @@ class GameEventEmitter:
                     "type": "game_started",
                     "game_session_id": game_session_id,
                     "initial_state": initial_state,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info("Game started event emitted", game_session_id=game_session_id)
@@ -44,7 +44,7 @@ class GameEventEmitter:
                     "type": "narrative_update",
                     "narrative_type": narrative_type,
                     "narrative": narrative,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info("Narrative update emitted", game_session_id=game_session_id, narrative_type=narrative_type)
@@ -63,7 +63,7 @@ class GameEventEmitter:
                     "user_id": user_id,
                     "action": action,
                     "result": result,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info("Action result emitted", game_session_id=game_session_id, user_id=user_id, action=action)
@@ -77,7 +77,7 @@ class GameEventEmitter:
             await broadcast_to_game(
                 game_session_id,
                 "state_update",
-                {"type": "state_update", "update": state_update, "timestamp": datetime.utcnow().isoformat()},
+                {"type": "state_update", "update": state_update, "timestamp": datetime.now(UTC).isoformat()},
             )
             logger.info("State update emitted", game_session_id=game_session_id)
         except Exception as e:
@@ -94,7 +94,7 @@ class GameEventEmitter:
                     "type": "player_status_update",
                     "user_id": user_id,
                     "status": status,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info("Player status update emitted", game_session_id=game_session_id, user_id=user_id)
@@ -112,7 +112,7 @@ class GameEventEmitter:
                     "type": "game_ended",
                     "reason": reason,
                     "final_state": final_state,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info("Game ended event emitted", game_session_id=game_session_id, reason=reason)
@@ -130,7 +130,7 @@ class GameEventEmitter:
                     "type": "game_error",
                     "error_type": error_type,
                     "message": error_message,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.error(
@@ -149,7 +149,7 @@ class GameEventEmitter:
                 {
                     "type": event_type,
                     **data,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info("Custom event emitted", game_session_id=game_session_id, event_type=event_type)
@@ -173,7 +173,7 @@ class GameEventEmitter:
                     "encounter_type": encounter_type,
                     "npc": npc_data,
                     "choices": choices or [],
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info(
@@ -213,7 +213,7 @@ class SPEventEmitter:
                     "balance_before": balance_before,
                     "balance_after": current_sp,
                     "metadata": metadata or {},
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info(
@@ -244,7 +244,7 @@ class SPEventEmitter:
                     "current_sp": current_sp,
                     "action": action,
                     "message": f"SP残高が不足しています。必要: {required_amount}, 現在: {current_sp}",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info(
@@ -269,7 +269,7 @@ class SPEventEmitter:
                 {
                     "type": "sp_daily_recovery",
                     **recovery_details,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
             )
             logger.info(
@@ -291,7 +291,7 @@ async def emit_sp_purchase_event(
             "purchase_id": purchase_id,
             "status": status,
             "sp_amount": sp_amount,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         if error:

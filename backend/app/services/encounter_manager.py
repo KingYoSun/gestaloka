@@ -4,7 +4,7 @@
 """
 
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Any, Optional
 
 from sqlmodel import Session, select
@@ -93,7 +93,7 @@ class EncounterManager:
                 "chapter": 1,
                 "beat": "初めての出会い",
                 "description": first_event["description"],
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "choices_presented": first_event.get("choices", []),
             }
         )
@@ -126,7 +126,7 @@ class EncounterManager:
 
         # ストーリーの更新
         story.current_chapter = min(story.current_chapter + 1, story.total_chapters or 99)
-        story.last_interaction_at = datetime.utcnow()
+        story.last_interaction_at = datetime.now(UTC)
         story.relationship_depth = min(1.0, story.relationship_depth + relationship_progression)
 
         # ストーリービートを追加
@@ -135,7 +135,7 @@ class EncounterManager:
                 "chapter": story.current_chapter,
                 "beat": next_beat["beat_title"],
                 "description": next_beat["description"],
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "relationship_change": relationship_progression,
             }
         )
@@ -378,7 +378,7 @@ class EncounterManager:
         modifier = arc_modifiers.get(story.story_arc_type, 1.0)
 
         # 最近の相互作用からの時間経過による減衰
-        time_since_last = datetime.utcnow() - story.last_interaction_at
+        time_since_last = datetime.now(UTC) - story.last_interaction_at
         if time_since_last > timedelta(days=7):
             modifier *= 0.5
 
@@ -583,7 +583,7 @@ class EncounterManager:
             immediate_consequence=choice_result.get("immediate_consequence", ""),
             long_term_impact=choice_result.get("long_term_impact", {}),
             relationship_change=choice_result.get("relationship_change", {}),
-            decided_at=datetime.utcnow(),
+            decided_at=datetime.now(UTC),
         )
 
         # 関係性への影響を適用

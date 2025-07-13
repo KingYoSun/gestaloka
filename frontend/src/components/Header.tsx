@@ -1,6 +1,5 @@
 import { Bell, Menu } from 'lucide-react'
 import { Button } from './ui/button'
-import { WebSocketStatus } from './WebSocketStatus'
 import { SPDisplay } from './sp/SPDisplay'
 import { useAuthStore } from '@/store/authStore'
 
@@ -24,7 +23,6 @@ export function Header() {
 
         <div className="flex items-center gap-4">
           {isAuthenticated && <SPDisplay variant="compact" />}
-          <WebSocketStatus />
           <Button variant="ghost" size="icon">
             <Bell className="h-5 w-5" />
           </Button>

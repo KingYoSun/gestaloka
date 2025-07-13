@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Users, X } from 'lucide-react'
 import { NPCEncounterDialog } from './NPCEncounterDialog'
-import type { NPCEncounterData } from '@/types/websocket'
+import type { NPCEncounterData } from '../types'
 
 interface NPCEncounterManagerProps {
   encounters: NPCEncounterData[]
