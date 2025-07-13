@@ -7,18 +7,19 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.core.config import settings
-from app.core.logging import LoggerMixin
+from app.core.logging import get_logger
 from app.models.character import Character as CharacterModel
 from app.models.character import CharacterStats as CharacterStatsModel
 from app.schemas.character import Character, CharacterCreate, CharacterUpdate
 from app.utils.security import generate_uuid
 
+logger = get_logger(__name__)
 
-class CharacterService(LoggerMixin):
+
+class CharacterService:
     """キャラクター関連サービス"""
 
     def __init__(self, db: Session):
-        super().__init__()
         self.db = db
 
     async def get_by_id(self, character_id: str) -> Optional[Character]:
@@ -29,7 +30,7 @@ class CharacterService(LoggerMixin):
             character = result.first()
             return Character.model_validate(character) if character else None
         except Exception as e:
-            self.log_error("Failed to get character by ID", character_id=character_id, error=str(e))
+            logger.error("Failed to get character by ID", character_id=character_id, error=str(e))
             raise
 
     async def get_by_user(self, user_id: str) -> list[Character]:
@@ -65,7 +66,7 @@ class CharacterService(LoggerMixin):
 
             return character_list
         except Exception as e:
-            self.log_error("Failed to get characters by user", user_id=user_id, error=str(e))
+            logger.error("Failed to get characters by user", user_id=user_id, error=str(e))
             raise
 
     async def create(self, user_id: str, character_create: CharacterCreate) -> Character:
@@ -102,7 +103,7 @@ class CharacterService(LoggerMixin):
             self.db.commit()
             self.db.refresh(character_model)
 
-            self.log_info(
+            logger.info(
                 "Character created", user_id=user_id, character_id=character_id, character_name=character_create.name
             )
 
@@ -110,7 +111,7 @@ class CharacterService(LoggerMixin):
 
         except Exception as e:
             self.db.rollback()
-            self.log_error(
+            logger.error(
                 "Failed to create character", user_id=user_id, character_name=character_create.name, error=str(e)
             )
             raise
@@ -141,12 +142,12 @@ class CharacterService(LoggerMixin):
             self.db.commit()
             self.db.refresh(character)
 
-            self.log_info("Character updated", character_id=character_id)
+            logger.info("Character updated", character_id=character_id)
             return Character.model_validate(character)
 
         except Exception as e:
             self.db.rollback()
-            self.log_error("Failed to update character", character_id=character_id, error=str(e))
+            logger.error("Failed to update character", character_id=character_id, error=str(e))
             raise
 
     async def delete(self, character_id: str) -> bool:
@@ -164,12 +165,12 @@ class CharacterService(LoggerMixin):
             self.db.add(character)
             self.db.commit()
 
-            self.log_info("Character deleted", character_id=character_id)
+            logger.info("Character deleted", character_id=character_id)
             return True
 
         except Exception as e:
             self.db.rollback()
-            self.log_error("Failed to delete character", character_id=character_id, error=str(e))
+            logger.error("Failed to delete character", character_id=character_id, error=str(e))
             raise
 
     async def clear_active_character(self, user_id: str) -> None:
@@ -179,5 +180,5 @@ class CharacterService(LoggerMixin):
             # 例: ユーザーテーブルにactive_character_idフィールドを追加して管理する
             pass
         except Exception as e:
-            self.log_error("Failed to clear active character", user_id=user_id, error=str(e))
+            logger.error("Failed to clear active character", user_id=user_id, error=str(e))
             raise

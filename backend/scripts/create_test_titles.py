@@ -13,7 +13,7 @@ import sys
 import uuid
 from datetime import datetime
 
-import psycopg2
+import psycopg2  # type: ignore
 
 
 def create_test_titles(user_email="test@example.com"):

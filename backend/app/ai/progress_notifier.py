@@ -8,11 +8,10 @@ WebSocketを通じてリアルタイムで処理状況を通知し、
 from datetime import UTC, datetime
 from typing import Any, Optional
 
-import structlog
-
 from app.ai.coordination_models import ProgressUpdate
+from app.core.logging import get_logger
 
-logger = structlog.get_logger()
+logger = get_logger(__name__)
 
 
 class ProgressNotifier:

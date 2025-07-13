@@ -94,42 +94,6 @@ export interface GameActionResponse {
 }
 
 // セッション終了関連の型定義
-export interface SessionEndingProposal {
-  reason: string
-  summaryPreview: string
-  continuationHint: string
-  rewardsPreview: {
-    experience: number
-    skills: Record<string, number>
-    items: string[]
-  }
-  proposalCount: number
-  isMandatory: boolean
-}
-
-export interface SessionEndingAcceptResponse {
-  resultId: string
-  processingStatus: 'processing'
-}
-
-export interface SessionEndingRejectResponse {
-  proposalCount: number
-  canRejectNext: boolean
-}
-
-export interface SessionResultResponse {
-  id: string
-  sessionId: string
-  storySummary: string
-  keyEvents: string[]
-  experienceGained: number
-  skillsImproved: Record<string, number>
-  itemsAcquired: string[]
-  continuationContext: string
-  unresolvedPlots: string[]
-  createdAt: string
-}
-
 export interface GameMessageMetadata {
   newScene?: string
   choices?: ActionChoice[]
@@ -151,13 +115,6 @@ export interface GameMessage {
   content: string
   metadata?: GameMessageMetadata
   timestamp: string
-}
-
-export interface GameAction {
-  id: string
-  type: 'text' | 'choice'
-  content: string
-  choices?: ActionChoice[]
 }
 
 export interface ActionChoice {
@@ -184,19 +141,9 @@ export interface CompletedLog {
   title: string
   summary: string
   fragments: LogFragment[]
-  npcData?: NPCData
   status: 'draft' | 'completed' | 'published'
   createdAt: string
   updatedAt: string
-}
-
-export interface NPCData {
-  name: string
-  personality: string
-  appearance: string
-  backstory: string
-  motivations: string[]
-  relationships: Record<string, string>
 }
 
 // API関連の型定義
@@ -225,13 +172,6 @@ export interface ToastOptions {
   duration?: number
 }
 
-export interface ModalProps {
-  isOpen: boolean
-  onClose: () => void
-  title?: string
-  children: React.ReactNode
-}
-
 // フォーム関連の型定義
 export interface CharacterCreationForm {
   name: string
@@ -240,55 +180,6 @@ export interface CharacterCreationForm {
   personality?: string
 }
 
-export interface LoginForm {
-  username: string
-  password: string
-}
-
-export interface RegisterForm {
-  username: string
-  email: string
-  password: string
-  confirmPassword: string
-}
-
 // エラー関連の型定義
-export interface ErrorDetails {
-  [key: string]:
-    | string
-    | number
-    | boolean
-    | null
-    | ErrorDetails
-    | ErrorDetails[]
-}
-
-export interface AppError {
-  code: string
-  message: string
-  details?: ErrorDetails
-}
-
-export interface ValidationError {
-  field: string
-  message: string
-}
-
 // 設定関連の型定義
-export interface AppSettings {
-  theme: 'light' | 'dark' | 'system'
-  fontSize: 'small' | 'medium' | 'large'
-  autoSave: boolean
-  notifications: boolean
-}
-
 // ルート関連の型定義
-export type AppRoute =
-  | '/login'
-  | '/register'
-  | '/dashboard'
-  | '/character/create'
-  | '/character/:id'
-  | '/game/:sessionId'
-  | '/logs'
-  | '/settings'

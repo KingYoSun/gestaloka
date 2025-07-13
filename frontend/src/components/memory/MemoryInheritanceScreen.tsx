@@ -1,4 +1,8 @@
-import { useMemoryInheritance } from '@/hooks/useMemoryInheritance'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useMemoryInheritance, useMemoryPreview } from '@/hooks/useMemoryInheritance'
+import { apiClient } from '@/api/client'
+import type { LogFragment } from '@/api/generated'
 import { MemoryFragmentSelector } from './MemoryFragmentSelector'
 import { MemoryInheritancePreview } from './MemoryInheritancePreview'
 import { MemoryInheritanceHistory } from './MemoryInheritanceHistory'
@@ -6,30 +10,53 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Loader2, Sparkles } from 'lucide-react'
+import type { MemoryInheritanceRequest, MemoryInheritanceType } from '@/api/memoryInheritance'
 
 interface MemoryInheritanceScreenProps {
   characterId: string
 }
 
 export function MemoryInheritanceScreen({
-  characterId: _characterId,
+  characterId,
 }: MemoryInheritanceScreenProps) {
-  const {
-    fragments,
-    isLoadingFragments,
-    selectedFragmentIds,
-    selectedType,
-    setSelectedType,
-    preview,
-    isLoadingPreview,
-    history,
-    isLoadingHistory,
-    toggleFragmentSelection,
-    clearSelection,
-    executeInheritance,
-    isExecuting,
-    canExecute,
-  } = useMemoryInheritance()
+  const [selectedFragmentIds, setSelectedFragmentIds] = useState<string[]>([])
+  const [selectedType, setSelectedType] = useState<MemoryInheritanceType | null>(null)
+  
+  // フラグメントを取得
+  const { data: fragments, isLoading: isLoadingFragments } = useQuery({
+    queryKey: ['log-fragments', characterId],
+    queryFn: () => apiClient.get<LogFragment[]>(`/api/v1/logs/fragments/${characterId}`),
+    enabled: !!characterId,
+  })
+  
+  // プレビューを取得
+  const { data: preview, isLoading: isLoadingPreview } = useMemoryPreview(selectedFragmentIds)
+  
+  // 記憶継承の実行とhistory取得
+  const { execute, isExecuting, history, isLoadingHistory } = useMemoryInheritance()
+  
+  const toggleFragmentSelection = (fragmentId: string) => {
+    setSelectedFragmentIds(prev => 
+      prev.includes(fragmentId)
+        ? prev.filter(id => id !== fragmentId)
+        : [...prev, fragmentId]
+    )
+  }
+  
+  const clearSelection = () => {
+    setSelectedFragmentIds([])
+  }
+  
+  const executeInheritance = () => {
+    if (!selectedType) return
+    const request: MemoryInheritanceRequest = {
+      fragment_ids: selectedFragmentIds,
+      inheritance_type: selectedType,
+    }
+    execute(request)
+  }
+  
+  const canExecute = selectedFragmentIds.length >= 2 && selectedType && !isExecuting
 
   return (
     <div className="container mx-auto p-4 max-w-7xl">
@@ -64,7 +91,7 @@ export function MemoryInheritanceScreen({
                   <div className="flex items-center justify-center h-64">
                     <Loader2 className="w-8 h-8 animate-spin" />
                   </div>
-                ) : fragments.length === 0 ? (
+                ) : !fragments || fragments.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <p>記憶フラグメントがありません</p>
                     <p className="text-sm mt-2">
@@ -100,7 +127,7 @@ export function MemoryInheritanceScreen({
                     <MemoryInheritancePreview
                       preview={preview}
                       selectedType={selectedType}
-                      onSelectType={setSelectedType}
+                      onSelectType={(type: MemoryInheritanceType) => setSelectedType(type)}
                     />
                   ) : null}
                 </CardContent>

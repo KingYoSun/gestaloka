@@ -10,10 +10,6 @@ import {
   GameSessionListResponse,
   GameActionRequest,
   GameActionResponse,
-  SessionEndingProposal,
-  SessionEndingAcceptResponse,
-  SessionEndingRejectResponse,
-  SessionResultResponse,
 } from '@/types'
 import {
   LogFragment,
@@ -285,41 +281,7 @@ class ApiClient {
     )
   }
 
-  // セッション終了提案を取得
-  async getSessionEndingProposal(
-    sessionId: string
-  ): Promise<SessionEndingProposal> {
-    return this.requestWithTransform<SessionEndingProposal>(
-      `/game/sessions/${sessionId}/ending-proposal`
-    )
-  }
-
-  // セッション終了を承認
-  async acceptSessionEnding(
-    sessionId: string
-  ): Promise<SessionEndingAcceptResponse> {
-    return this.requestWithTransform<SessionEndingAcceptResponse>(
-      `/game/sessions/${sessionId}/accept-ending`,
-      { method: 'POST' }
-    )
-  }
-
-  // セッション終了を拒否
-  async rejectSessionEnding(
-    sessionId: string
-  ): Promise<SessionEndingRejectResponse> {
-    return this.requestWithTransform<SessionEndingRejectResponse>(
-      `/game/sessions/${sessionId}/reject-ending`,
-      { method: 'POST' }
-    )
-  }
-
-  // セッションリザルトを取得
-  async getSessionResult(sessionId: string): Promise<SessionResultResponse> {
-    return this.requestWithTransform<SessionResultResponse>(
-      `/game/sessions/${sessionId}/result`
-    )
-  }
+  // セッション終了関連 - TODO: 将来的に実装
 
   // ログフラグメント関連
   async createLogFragment(fragment: LogFragmentCreate): Promise<LogFragment> {

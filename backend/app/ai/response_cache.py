@@ -9,11 +9,11 @@ import json
 import time
 from typing import Any, Optional
 
-import structlog
+from app.core.logging import get_logger
 
 from app.ai.coordination_models import AIResponse
 
-logger = structlog.get_logger()
+logger = get_logger(__name__)
 
 
 class ResponseCache:

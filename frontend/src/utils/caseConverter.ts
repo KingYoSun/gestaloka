@@ -9,14 +9,14 @@ type ConvertibleObject = { [key: string]: unknown }
 /**
  * snake_caseをcamelCaseに変換
  */
-export function snakeToCamel(str: string): string {
+function snakeToCamel(str: string): string {
   return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
 }
 
 /**
  * camelCaseをsnake_caseに変換
  */
-export function camelToSnake(str: string): string {
+function camelToSnake(str: string): string {
   return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
 }
 

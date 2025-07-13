@@ -39,12 +39,15 @@ def raise_internal_error(detail: str = "Internal server error") -> NoReturn:
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail)
 
 
+M = TypeVar('M', bound=SQLModel)
+
+
 def get_or_404(
     db: Session,
-    model: type[SQLModel],
+    model: type[M],
     id: Any,
     detail: str | None = None
-) -> SQLModel:
+) -> M:
     """
     IDでモデルを取得し、存在しない場合は404エラーを送出
 

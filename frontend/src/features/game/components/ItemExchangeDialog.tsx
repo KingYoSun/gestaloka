@@ -21,7 +21,9 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ArrowLeftRight, Package, AlertCircle, Check } from 'lucide-react'
-import type { NPCData } from '@/types'
+interface NPCData {
+  name: string
+}
 
 interface Item {
   id: string

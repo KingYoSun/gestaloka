@@ -7,20 +7,20 @@ from typing import Optional
 from passlib.context import CryptContext
 from sqlmodel import Session, select
 
-from app.core.logging import LoggerMixin
+from app.core.logging import get_logger
 from app.models.user import User as UserModel
 from app.models.user_role import RoleType, UserRole
 from app.schemas.user import User, UserCreate, UserUpdate
 from app.utils.security import generate_uuid
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = get_logger(__name__)
 
 
-class UserService(LoggerMixin):
+class UserService:
     """ユーザー関連サービス"""
 
     def __init__(self, db: Session):
-        super().__init__()
         self.db = db
 
     async def _get_user_roles(self, user_id: str) -> list[str]:
@@ -31,7 +31,7 @@ class UserService(LoggerMixin):
             roles = result.all()
             return [role.role.value for role in roles]
         except Exception as e:
-            self.log_error("Failed to get user roles", user_id=user_id, error=str(e))
+            logger.error("Failed to get user roles", user_id=user_id, error=str(e))
             return []
 
     async def get_by_id(self, user_id: str) -> Optional[User]:
@@ -51,7 +51,7 @@ class UserService(LoggerMixin):
             user_schema.roles = roles
             return user_schema
         except Exception as e:
-            self.log_error("Failed to get user by ID", user_id=user_id, error=str(e))
+            logger.error("Failed to get user by ID", user_id=user_id, error=str(e))
             raise
 
     async def get_by_username(self, username: str) -> Optional[User]:
@@ -71,7 +71,7 @@ class UserService(LoggerMixin):
             user_schema.roles = roles
             return user_schema
         except Exception as e:
-            self.log_error("Failed to get user by username", username=username, error=str(e))
+            logger.error("Failed to get user by username", username=username, error=str(e))
             raise
 
     async def get_by_email(self, email: str) -> Optional[User]:
@@ -91,7 +91,7 @@ class UserService(LoggerMixin):
             user_schema.roles = roles
             return user_schema
         except Exception as e:
-            self.log_error("Failed to get user by email", email=email, error=str(e))
+            logger.error("Failed to get user by email", email=email, error=str(e))
             raise
 
     async def create(self, user_create: UserCreate) -> User:
@@ -119,7 +119,7 @@ class UserService(LoggerMixin):
             self.db.add(default_role)
             self.db.commit()
 
-            self.log_info("User created", user_id=user_model.id, username=user_create.username)
+            logger.info("User created", user_id=user_model.id, username=user_create.username)
 
             # ロール情報を含めて返す
             user_schema = User.model_validate(user_model)
@@ -128,7 +128,7 @@ class UserService(LoggerMixin):
 
         except Exception as e:
             self.db.rollback()
-            self.log_error("Failed to create user", username=user_create.username, error=str(e))
+            logger.error("Failed to create user", username=user_create.username, error=str(e))
             raise
 
     async def update(self, user_id: str, user_update: UserUpdate) -> Optional[User]:
@@ -151,12 +151,12 @@ class UserService(LoggerMixin):
             self.db.commit()
             self.db.refresh(user)
 
-            self.log_info("User updated", user_id=user_id)
+            logger.info("User updated", user_id=user_id)
             return User.model_validate(user)
 
         except Exception as e:
             self.db.rollback()
-            self.log_error("Failed to update user", user_id=user_id, error=str(e))
+            logger.error("Failed to update user", user_id=user_id, error=str(e))
             raise
 
     async def delete(self, user_id: str) -> bool:
@@ -174,12 +174,12 @@ class UserService(LoggerMixin):
             self.db.add(user)
             self.db.commit()
 
-            self.log_info("User deleted", user_id=user_id)
+            logger.info("User deleted", user_id=user_id)
             return True
 
         except Exception as e:
             self.db.rollback()
-            self.log_error("Failed to delete user", user_id=user_id, error=str(e))
+            logger.error("Failed to delete user", user_id=user_id, error=str(e))
             raise
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
