@@ -428,7 +428,9 @@ class MemoryInheritanceService:
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
+            prompt=f"{messages[0].content}\n\n{messages[1].content}",
+            agent_type="memory_inheritance",
+            character_name="Player"  # TODO: 実際のキャラクター名を取得
         )
 
         # レスポンスをパース（実際の実装では適切なパースが必要）
@@ -454,7 +456,9 @@ class MemoryInheritanceService:
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
+            prompt=f"{messages[0].content}\n\n{messages[1].content}",
+            agent_type="memory_inheritance",
+            character_name="Player"  # TODO: 実際のキャラクター名を取得
         )
         return self._parse_title_response(response)
 
@@ -480,7 +484,9 @@ class MemoryInheritanceService:
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
+            prompt=f"{messages[0].content}\n\n{messages[1].content}",
+            agent_type="memory_inheritance",
+            character_name="Player"  # TODO: 実際のキャラクター名を取得
         )
         return self._parse_item_response(response)
 
@@ -504,7 +510,9 @@ class MemoryInheritanceService:
         ]
 
         response = await self.ai_service.generate_ai_response(
-            f"{messages[0].content}\n\n{messages[1].content}", agent_type="memory_inheritance"
+            prompt=f"{messages[0].content}\n\n{messages[1].content}",
+            agent_type="memory_inheritance",
+            character_name="Player"  # TODO: 実際のキャラクター名を取得
         )
         return self._parse_enhancement_response(response)
 

@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 class SPService(SPServiceBase):
     """SPシステムのサービスクラス（非同期版）"""
 
-    async def _save_transaction(self, transaction: SPTransaction) -> None:
+    async def _save_transaction(self, transaction: SPTransaction) -> None:  # type: ignore[override]
         """トランザクションを保存（非同期版）"""
         self.db.add(transaction)
         # Note: コミットは呼び出し側で行う
@@ -34,7 +34,7 @@ class SPService(SPServiceBase):
         try:
             # 既存のレコードを検索
             stmt = select(PlayerSP).where(col(PlayerSP.user_id) == user_id)
-            player_sp = self.db.exec(stmt).first()
+            player_sp = self.db.execute(stmt).scalars().first()
 
             if not player_sp:
                 # 新規作成
@@ -292,7 +292,7 @@ class SPService(SPServiceBase):
 
             query = query.order_by(col(SPTransaction.created_at).desc()).limit(limit).offset(offset)
 
-            results = self.db.exec(query).all()
+            results = self.db.execute(query).scalars().all()
 
             for transaction in results:
                 yield transaction
@@ -319,7 +319,7 @@ class SPServiceSync(SPServiceBase):
         try:
             # 既存のレコードを検索
             stmt = select(PlayerSP).where(col(PlayerSP.user_id) == user_id)
-            player_sp = self.db.exec(stmt).first()
+            player_sp = self.db.execute(stmt).scalars().first()
 
             if not player_sp:
                 # 新規作成

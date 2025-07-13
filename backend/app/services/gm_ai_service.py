@@ -10,6 +10,10 @@ from sqlmodel import Session, select
 from app.models import Character, Location, LocationConnection
 from app.schemas.narrative import GMAIResponse, LocationEvent
 from app.services.sp_calculation import SPCalculationService
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.ai.agents.coordinator import CoordinatorAI
 
 
 class GMAIService:
@@ -17,6 +21,8 @@ class GMAIService:
 
     def __init__(self, db: Session):
         self.db = db
+        # Coordinator AIを後で注入するためのプレースホルダー
+        self.coordinator_ai: Optional["CoordinatorAI"] = None
 
     async def process_narrative_action(
         self, character: Character, action: str, current_location: Location, context: Optional[dict[str, Any]] = None
@@ -79,8 +85,19 @@ class GMAIService:
             prompt += "\n\n## 移動可能な場所\n"
             for conn in connections:
                 to_location = self.db.get(Location, conn.to_location_id)
-                if to_location and to_location.is_discovered:
-                    prompt += f"- {to_location.name}（{conn.travel_description or '未知の道'}）\n"
+                if to_location:
+                    # 探索進捗をチェックして発見済みか確認
+                    from app.models.exploration_progress import CharacterExplorationProgress
+                    progress = self.db.exec(
+                        select(CharacterExplorationProgress).where(
+                            CharacterExplorationProgress.character_id == character.id,
+                            CharacterExplorationProgress.location_id == to_location.id
+                        )
+                    ).first()
+                    
+                    # 発見済み（霧が晴れている）場合のみ表示
+                    if progress and progress.fog_revealed_at:
+                        prompt += f"- {to_location.name}（{conn.travel_description or '未知の道'}）\n"
 
         return prompt
 
@@ -180,3 +197,31 @@ class GMAIService:
         if len(paragraphs) > 1:
             return paragraphs[-1]
         return "新しい場所へと移動した。"
+    
+    async def generate_ai_response(
+        self,
+        prompt: str,
+        agent_type: str,
+        character_name: str,
+        metadata: Optional[dict[str, Any]] = None
+    ) -> str:
+        """
+        他のサービスから呼び出されるAIレスポンス生成
+        Coordinator AIが実装されるまでの一時的な実装
+        """
+        if self.coordinator_ai:
+            # Coordinator AIが利用可能な場合はそちらを使用
+            return await self.coordinator_ai.generate_response(
+                prompt=prompt,
+                agent_type=agent_type,
+                character_name=character_name,
+                metadata=metadata
+            )
+        
+        # 一時的なモック実装
+        if agent_type == "quest_proposal":
+            return '[{"title": "村人の依頼", "description": "村人からの簡単なお使い", "reasoning": "キャラクターの現在地に適したクエスト", "difficulty_estimate": 0.3, "relevance_score": 0.8, "suggested_rewards": []}]'
+        elif agent_type in ["quest_progress", "quest_completion"]:
+            return '{"progress": 50, "completed": false, "description": "進行中"}'
+        else:
+            return f"[{agent_type}] {character_name}のAI応答モック"

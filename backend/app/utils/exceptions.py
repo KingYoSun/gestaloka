@@ -4,11 +4,14 @@
 
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar, TYPE_CHECKING
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlmodel import SQLModel
+
+if TYPE_CHECKING:
+    from typing import Coroutine
 
 from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
@@ -84,7 +87,8 @@ def get_by_condition_or_404(
     Raises:
         HTTPException: モデルが存在しない場合
     """
-    obj = db.exec(statement).first()
+    result = db.execute(statement)
+    obj = result.scalars().first()
     if not obj:
         if detail is None:
             detail = "Resource not found"
@@ -95,7 +99,7 @@ def get_by_condition_or_404(
 T = TypeVar('T')
 
 
-def handle_sp_errors(func: Callable[..., T]) -> Callable[..., T]:
+def handle_sp_errors(func: Callable[..., "Coroutine[Any, Any, T]"]) -> Callable[..., "Coroutine[Any, Any, T]"]:
     """
     SP関連のエラーを自動的にHTTPExceptionに変換するデコレータ
     

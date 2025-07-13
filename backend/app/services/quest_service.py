@@ -9,6 +9,7 @@ from typing import Optional
 from sqlmodel import Session, and_, desc, select
 
 from app.core.logging import get_logger
+from app.models.character import Character
 from app.models.log import ActionLog
 from app.models.quest import Quest, QuestOrigin, QuestProposal, QuestStatus
 from app.services.gm_ai_service import GMAIService

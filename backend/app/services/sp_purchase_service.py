@@ -82,7 +82,7 @@ class SPPurchaseService:
     @staticmethod
     def approve_test_purchase(
         db: Session,
-        purchase_id: uuid.UUID,
+        purchase_id: str,
         approved_by_user_id: Optional[str] = None,
         system_approved: bool = False,
     ) -> tuple[SPPurchase, str, Optional[str]]:
@@ -101,7 +101,7 @@ class SPPurchaseService:
 
         # ステータス更新
         purchase.status = PurchaseStatus.PROCESSING
-        purchase.approved_by = uuid.UUID(approved_by_user_id) if approved_by_user_id and not system_approved else None
+        purchase.approved_by = approved_by_user_id if approved_by_user_id and not system_approved else None
         purchase.approved_at = datetime.now(UTC)
         purchase.updated_at = datetime.now(UTC)
 
@@ -230,11 +230,13 @@ class SPPurchaseService:
 
             # SPを付与
             sp_service = SPServiceSync(db)
-            await sp_service.add_sp(
+            sp_service.add_sp_sync(
                 user_id=purchase.user_id,
                 amount=total_sp,
                 transaction_type=SPTransactionType.PURCHASE,
                 description=f"SP購入: {plan.name}",
+                related_entity_type="sp_purchase",
+                related_entity_id=str(purchase.id),
             )
 
             db.add(purchase)

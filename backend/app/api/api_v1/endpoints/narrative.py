@@ -204,12 +204,13 @@ async def get_available_actions(
 async def update_location_history(db: Session, character: Character, new_location: Location, sp_cost: int) -> None:
     """場所移動の履歴を更新"""
     # 現在地の履歴を終了
-    current_history = db.exec(
+    result = db.execute(
         select(CharacterLocationHistory).where(
             CharacterLocationHistory.character_id == character.id,
             CharacterLocationHistory.departed_at == None,  # noqa: E711
         )
-    ).first()
+    )
+    current_history = result.scalars().first()
 
     if current_history:
         current_history.departed_at = datetime.now(UTC)
@@ -241,35 +242,48 @@ async def generate_action_choices(
     location = db.get(Location, location_id)
     if location:
         # 移動可能な接続を取得
-        connections = db.exec(
+        result = db.execute(
             select(LocationConnection).where(
                 LocationConnection.from_location_id == location.id,
                 LocationConnection.is_blocked == False,  # noqa: E712
             )
-        ).all()
+        )
+        connections = result.scalars().all()
 
         for conn in connections:
             to_location = db.get(Location, conn.to_location_id)
-            if to_location and to_location.is_discovered:
-                # 物語的な選択肢として提示
-                if conn.path_type == "stairs":
-                    choices.append(
-                        ActionChoice(
-                            text=f"階段を{('上る' if to_location.hierarchy_level > location.hierarchy_level else '下る')}",
-                            action_type="move",
-                            description=None,
-                            metadata={"connection_id": str(conn.id)},
+            if to_location:
+                # 探索進捗を確認
+                from app.models.exploration_progress import CharacterExplorationProgress
+                from sqlmodel import select
+                
+                progress_stmt = select(CharacterExplorationProgress).where(
+                    CharacterExplorationProgress.character_id == character.id,
+                    CharacterExplorationProgress.location_id == to_location.id
+                )
+                progress = db.execute(progress_stmt).scalars().first()
+                
+                # 発見済み（霧が晴れている）場所のみ表示
+                if progress and progress.fog_revealed_at:
+                    # 物語的な選択肢として提示
+                    if conn.path_type == "stairs":
+                        choices.append(
+                            ActionChoice(
+                                text=f"階段を{('上る' if to_location.hierarchy_level > location.hierarchy_level else '下る')}",
+                                action_type="move",
+                                description=None,
+                                metadata={"connection_id": str(conn.id)},
+                            )
                         )
-                    )
-                elif conn.path_type == "direct":
-                    choices.append(
-                        ActionChoice(
-                            text=f"{to_location.name}へ向かう道を進む",
-                            action_type="move",
-                            description=None,
-                            metadata={"connection_id": str(conn.id)},
+                    elif conn.path_type == "direct":
+                        choices.append(
+                            ActionChoice(
+                                text=f"{to_location.name}へ向かう道を進む",
+                                action_type="move",
+                                description=None,
+                                metadata={"connection_id": str(conn.id)},
+                            )
                         )
-                    )
 
     # 文脈依存の選択肢
     if "扉" in narrative_context:
