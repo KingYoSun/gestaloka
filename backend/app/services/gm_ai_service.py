@@ -1,19 +1,19 @@
 """
 GM AIサービス - 物語生成と世界管理
+
+Coordinator AIを使用して物語生成と世界管理を行います。
 """
 
-import random
+import re
 from typing import Any, Optional
 
 from sqlmodel import Session, select
 
 from app.models import Character, Location, LocationConnection
+from app.models.exploration_progress import CharacterExplorationProgress
 from app.schemas.narrative import GMAIResponse, LocationEvent
+from app.services.ai.coordinator_factory import get_coordinator_ai
 from app.services.sp_calculation import SPCalculationService
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from app.services.ai.agents.coordinator import CoordinatorAI
 
 
 class GMAIService:
@@ -21,8 +21,8 @@ class GMAIService:
 
     def __init__(self, db: Session):
         self.db = db
-        # Coordinator AIを後で注入するためのプレースホルダー
-        self.coordinator_ai: Optional["CoordinatorAI"] = None
+        # Coordinator AIを取得
+        self.coordinator_ai = get_coordinator_ai()
 
     async def process_narrative_action(
         self, character: Character, action: str, current_location: Location, context: Optional[dict[str, Any]] = None
@@ -32,9 +32,18 @@ class GMAIService:
         # プロンプトを構築
         prompt = self._build_narrative_prompt(character, action, current_location, context)
 
-        # AI応答を生成（仮実装）
-        # TODO: 実際のAIエージェントを使用するように変更
-        response = self._generate_mock_response(character, action, current_location, prompt)
+        # Coordinator AIを使用してAI応答を生成
+        response = await self.coordinator_ai.generate_response(
+            prompt=prompt,
+            agent_type="dramatist",
+            character_name=character.name,
+            metadata={
+                "location_id": str(current_location.id),
+                "location_name": current_location.name,
+                "action": action,
+                "context": context
+            }
+        )
 
         # レスポンスを解析
         return self._parse_narrative_response(response, character, current_location, action)
@@ -74,93 +83,83 @@ class GMAIService:
 [SP消費: 数値]"""
 
         # 利用可能な接続情報を追加
+        available_locations = self._get_available_locations(character, location)
+        if available_locations:
+            prompt += "\n\n## 移動可能な場所\n"
+            for to_location, travel_description in available_locations:
+                prompt += f"- {to_location.name}（{travel_description or '未知の道'}）\n"
+
+        return prompt
+    
+    def _get_available_locations(
+        self, character: Character, location: Location
+    ) -> list[tuple[Location, Optional[str]]]:
+        """現在地から移動可能な場所を取得"""
+        available = []
+        
         connections = self.db.exec(
             select(LocationConnection).where(
                 LocationConnection.from_location_id == location.id,
                 LocationConnection.is_blocked == False,  # noqa: E712
             )
         ).all()
-
-        if connections:
-            prompt += "\n\n## 移動可能な場所\n"
-            for conn in connections:
-                to_location = self.db.get(Location, conn.to_location_id)
-                if to_location:
-                    # 探索進捗をチェックして発見済みか確認
-                    from app.models.exploration_progress import CharacterExplorationProgress
-                    progress = self.db.exec(
-                        select(CharacterExplorationProgress).where(
-                            CharacterExplorationProgress.character_id == character.id,
-                            CharacterExplorationProgress.location_id == to_location.id
-                        )
-                    ).first()
-                    
-                    # 発見済み（霧が晴れている）場合のみ表示
-                    if progress and progress.fog_revealed_at:
-                        prompt += f"- {to_location.name}（{conn.travel_description or '未知の道'}）\n"
-
-        return prompt
-
-    def _generate_mock_response(self, character: Character, action: str, location: Location, prompt: str) -> str:
-        """モック応答を生成（仮実装）"""
-        return f"[GM AI Response]\n\n{character.name}は{location.name}で{action}を実行しました。\n\n周囲を見渡すと、薄暗い廊下が続いています。古びた石壁には苔がむし、どこか湿った空気が漂っています。奥からは微かに水の滴る音が聞こえてきます。"
+        
+        for conn in connections:
+            to_location = self.db.get(Location, conn.to_location_id)
+            if to_location:
+                # 探索進捗をチェックして発見済みか確認
+                progress = self.db.exec(
+                    select(CharacterExplorationProgress).where(
+                        CharacterExplorationProgress.character_id == character.id,
+                        CharacterExplorationProgress.location_id == to_location.id
+                    )
+                ).first()
+                
+                # 発見済み（霧が晴れている）場合のみ追加
+                if progress and progress.fog_revealed_at:
+                    available.append((to_location, conn.travel_description))
+        
+        return available
 
     def _parse_narrative_response(
         self, ai_response: str, character: Character, current_location: Location, action: str
     ) -> GMAIResponse:
         """AI応答を解析してGMAIResponseを生成"""
 
-        # デフォルト値
-        narrative = ai_response
+        # メタデータを抽出
+        metadata = self._extract_metadata_from_response(ai_response)
+        
+        # メタデータを除去したナラティブを取得
+        narrative = self._clean_narrative(ai_response, metadata)
+        
+        # 場所移動の処理
         location_changed = False
         new_location_id = None
         movement_description = None
         sp_cost = 0
-        events = []
-
-        # 移動判定
-        if "[移動先:" in ai_response:
-            # 移動先を抽出
-            try:
-                start = ai_response.index("[移動先:") + 5
-                end = ai_response.index("]", start)
-                destination_name = ai_response[start:end].strip()
-
-                # 場所を検索
-                new_location = self.db.exec(select(Location).where(Location.name == destination_name)).first()
-
-                if new_location:
-                    location_changed = True
-                    new_location_id = str(new_location.id)
-
-                    # SP消費を抽出
-                    if "[SP消費:" in ai_response:
-                        sp_start = ai_response.index("[SP消費:") + 6
-                        sp_end = ai_response.index("]", sp_start)
-                        try:
-                            sp_cost = int(ai_response[sp_start:sp_end].strip())
-                        except ValueError:
-                            sp_cost = self._calculate_default_sp_cost(current_location, new_location)
-
-                    # メタ情報を除去
-                    narrative = ai_response[: ai_response.index("[移動先:")].strip()
-                    movement_description = self._extract_movement_description(narrative)
-
-            except (ValueError, IndexError):
-                # パース失敗時はそのまま
-                pass
-
-        # イベント判定（簡易実装）
-        if random.random() < 0.1:  # 10%の確率でイベント発生
-            events.append(
-                LocationEvent(
-                    type="discovery",
-                    title="何かを発見した",
-                    description="探索中に興味深いものを見つけた",
-                    effects={"fragments": 1},
-                )
-            )
-
+        
+        if "destination" in metadata:
+            new_location = self.db.exec(
+                select(Location).where(Location.name == metadata["destination"])
+            ).first()
+            
+            if new_location:
+                location_changed = True
+                new_location_id = str(new_location.id)
+                movement_description = self._extract_movement_description(narrative)
+                
+                # SP消費の計算
+                if "sp_cost" in metadata:
+                    try:
+                        sp_cost = int(metadata["sp_cost"])
+                    except (ValueError, TypeError):
+                        sp_cost = self._calculate_default_sp_cost(current_location, new_location)
+                else:
+                    sp_cost = self._calculate_default_sp_cost(current_location, new_location)
+        
+        # イベントの生成（AI応答に基づいて判定）
+        events = self._generate_events_from_narrative(narrative, action)
+        
         return GMAIResponse(
             narrative=narrative,
             location_changed=location_changed,
@@ -198,6 +197,77 @@ class GMAIService:
             return paragraphs[-1]
         return "新しい場所へと移動した。"
     
+    def _extract_metadata_from_response(self, response: str) -> dict[str, str]:
+        """レスポンスからメタデータを抽出"""
+        metadata = {}
+        
+        # [移動先: XXX] パターン
+        destination_match = re.search(r'\[移動先:\s*([^\]]+)\]', response)
+        if destination_match:
+            metadata["destination"] = destination_match.group(1).strip()
+        
+        # [SP消費: XXX] パターン
+        sp_match = re.search(r'\[SP消費:\s*([^\]]+)\]', response)
+        if sp_match:
+            metadata["sp_cost"] = sp_match.group(1).strip()
+        
+        # [イベント: XXX] パターン（将来的な拡張用）
+        event_match = re.search(r'\[イベント:\s*([^\]]+)\]', response)
+        if event_match:
+            metadata["event"] = event_match.group(1).strip()
+        
+        return metadata
+    
+    def _clean_narrative(self, response: str, metadata: dict[str, str]) -> str:
+        """メタデータを除去したクリーンなナラティブを返す"""
+        # すべてのメタデータパターンを削除
+        patterns = [
+            r'\[移動先:[^\]]+\]',
+            r'\[SP消費:[^\]]+\]',
+            r'\[イベント:[^\]]+\]'
+        ]
+        
+        clean_response = response
+        for pattern in patterns:
+            clean_response = re.sub(pattern, '', clean_response)
+        
+        # 連続する改行を整理
+        clean_response = re.sub(r'\n{3,}', '\n\n', clean_response)
+        
+        return clean_response.strip()
+    
+    def _generate_events_from_narrative(self, narrative: str, action: str) -> list[LocationEvent]:
+        """ナラティブやアクションに基づいてイベントを生成"""
+        events = []
+        
+        # キーワードに基づいたイベント判定
+        discovery_keywords = ["発見", "見つけ", "手に入れ", "発掘", "探し出"]
+        encounter_keywords = ["出会", "遭遇", "出くわ", "現れ", "姿を見せ"]
+        
+        # 発見イベント
+        if any(keyword in narrative or keyword in action for keyword in discovery_keywords):
+            events.append(
+                LocationEvent(
+                    type="discovery",
+                    title="何かを発見した",
+                    description="探索中に興味深いものを見つけた",
+                    effects={"fragments": 1},
+                )
+            )
+        
+        # 遭遇イベント
+        if any(keyword in narrative for keyword in encounter_keywords):
+            events.append(
+                LocationEvent(
+                    type="encounter",
+                    title="誰かと出会った",
+                    description="予期せぬ出会いがあった",
+                    effects={},
+                )
+            )
+        
+        return events
+    
     async def generate_ai_response(
         self,
         prompt: str,
@@ -207,21 +277,12 @@ class GMAIService:
     ) -> str:
         """
         他のサービスから呼び出されるAIレスポンス生成
-        Coordinator AIが実装されるまでの一時的な実装
-        """
-        if self.coordinator_ai:
-            # Coordinator AIが利用可能な場合はそちらを使用
-            return await self.coordinator_ai.generate_response(
-                prompt=prompt,
-                agent_type=agent_type,
-                character_name=character_name,
-                metadata=metadata
-            )
         
-        # 一時的なモック実装
-        if agent_type == "quest_proposal":
-            return '[{"title": "村人の依頼", "description": "村人からの簡単なお使い", "reasoning": "キャラクターの現在地に適したクエスト", "difficulty_estimate": 0.3, "relevance_score": 0.8, "suggested_rewards": []}]'
-        elif agent_type in ["quest_progress", "quest_completion"]:
-            return '{"progress": 50, "completed": false, "description": "進行中"}'
-        else:
-            return f"[{agent_type}] {character_name}のAI応答モック"
+        Coordinator AIを使用してリクエストを処理します。
+        """
+        return await self.coordinator_ai.generate_response(
+            prompt=prompt,
+            agent_type=agent_type,
+            character_name=character_name,
+            metadata=metadata
+        )
