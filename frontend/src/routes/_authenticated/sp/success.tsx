@@ -23,7 +23,7 @@ function SPPurchaseSuccess() {
   const queryClient = useQueryClient()
 
   // 購入詳細を取得
-  const { data: purchase } = useSPPurchaseDetail(purchaseId || '', !!purchaseId)
+  const { data: purchase } = useSPPurchaseDetail(purchaseId)
 
   useEffect(() => {
     // SP残高と購入履歴を更新

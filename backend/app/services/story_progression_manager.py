@@ -3,7 +3,7 @@
 遭遇から発展したストーリーの進行を管理し、世界に影響を与える
 """
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
 from sqlmodel import Session, select

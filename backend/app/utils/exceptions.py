@@ -4,14 +4,14 @@
 
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, NoReturn, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlmodel import SQLModel
 
 if TYPE_CHECKING:
-    from typing import Coroutine
+    from collections.abc import Coroutine
 
 from app.core.exceptions import InsufficientSPError, SPSystemError
 from app.core.logging import get_logger
@@ -47,16 +47,16 @@ def get_or_404(
 ) -> SQLModel:
     """
     IDでモデルを取得し、存在しない場合は404エラーを送出
-    
+
     Args:
         db: データベースセッション
         model: SQLModelクラス
         id: 取得するモデルのID
         detail: エラーメッセージ（省略時はデフォルトメッセージ）
-        
+
     Returns:
         取得したモデルインスタンス
-        
+
     Raises:
         HTTPException: モデルが存在しない場合
     """
@@ -75,15 +75,15 @@ def get_by_condition_or_404(
 ) -> Any:
     """
     条件でモデルを取得し、存在しない場合は404エラーを送出
-    
+
     Args:
         db: データベースセッション
         statement: SQLModel select文
         detail: エラーメッセージ（省略時はデフォルトメッセージ）
-        
+
     Returns:
         取得したモデルインスタンス
-        
+
     Raises:
         HTTPException: モデルが存在しない場合
     """
@@ -102,7 +102,7 @@ T = TypeVar('T')
 def handle_sp_errors(func: Callable[..., "Coroutine[Any, Any, T]"]) -> Callable[..., "Coroutine[Any, Any, T]"]:
     """
     SP関連のエラーを自動的にHTTPExceptionに変換するデコレータ
-    
+
     InsufficientSPError → 400 Bad Request
     SPSystemError → 500 Internal Server Error
     """

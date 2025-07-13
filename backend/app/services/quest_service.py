@@ -3,7 +3,7 @@
 """
 
 import json
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Optional
 
 from sqlmodel import Session, and_, desc, select
@@ -45,11 +45,11 @@ class QuestService:
             character = self.db.exec(
                 select(Character).where(Character.id == character_id)
             ).first()
-            
+
             if not character:
                 logger.warning(f"Character not found: {character_id}")
                 return []
-            
+
             # 最近の行動履歴を取得
             recent_actions = self.db.exec(
                 select(ActionLog)
@@ -420,11 +420,11 @@ JSON形式で回答してください。
         character = self.db.exec(
             select(Character).where(Character.id == character_id)
         ).first()
-        
+
         if not character:
             logger.warning(f"Character not found: {character_id}")
             return None
-            
+
         # 最近の行動を分析
         recent_actions = self.db.exec(
             select(ActionLog)

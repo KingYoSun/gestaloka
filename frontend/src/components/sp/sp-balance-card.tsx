@@ -1,12 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { usePlayerSP } from '@/hooks/use-sp'
+import { useSPBalance } from '@/hooks/useSP'
 import { useSPPurchaseStats } from '@/hooks/use-sp-purchase'
 import { Coins, TrendingUp, ShoppingBag } from 'lucide-react'
 
 export function SPBalanceCard() {
-  const { data: spData, isLoading: isLoadingSP } = usePlayerSP()
+  const { data: spData, isLoading: isLoadingSP } = useSPBalance()
   const { data: statsData, isLoading: isLoadingStats } = useSPPurchaseStats()
 
   if (isLoadingSP || isLoadingStats) {
@@ -24,7 +23,8 @@ export function SPBalanceCard() {
     )
   }
 
-  const spPercentage = spData ? (spData.current_sp / spData.max_sp) * 100 : 0
+  // SPには最大値の概念がないため、残高の表示のみ
+  const currentSp = spData?.currentSp || 0
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('ja-JP').format(num)
@@ -40,11 +40,10 @@ export function SPBalanceCard() {
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">現在のSP</span>
             <span className="font-medium">
-              {formatNumber(spData?.current_sp || 0)} /{' '}
-              {formatNumber(spData?.max_sp || 0)}
+              {formatNumber(currentSp)} SP
             </span>
           </div>
-          <Progress value={spPercentage} className="h-2" />
+          {/* SPの残高バーは表示しない（最大値がないため） */}
         </div>
 
         <div className="grid gap-4 pt-4">

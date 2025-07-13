@@ -17,22 +17,22 @@ _coordinator_instance: Optional[CoordinatorAI] = None
 def get_coordinator_ai() -> CoordinatorAI:
     """
     Coordinator AIのシングルトンインスタンスを取得
-    
+
     Returns:
         Coordinator AIインスタンス
     """
     global _coordinator_instance
-    
+
     if _coordinator_instance is None:
         # Geminiクライアントを取得（標準モデルを使用）
         gemini_client = get_gemini_client(
             model_type=ModelType.STANDARD,
             temperature=0.7
         )
-        
+
         # Coordinator AIを初期化
         _coordinator_instance = CoordinatorAI(gemini_client=gemini_client)
-    
+
     return _coordinator_instance
 
 

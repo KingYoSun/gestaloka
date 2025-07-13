@@ -1,7 +1,7 @@
 """initial migration with all models
 
 Revision ID: 8fafb2fb32b7
-Revises: 
+Revises:
 Create Date: 2025-07-12 04:21:22.166654
 
 """

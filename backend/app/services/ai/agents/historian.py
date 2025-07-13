@@ -5,7 +5,7 @@
 プレイヤーの行動履歴を管理し、将来的なログNPC化の基盤を提供する。
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4

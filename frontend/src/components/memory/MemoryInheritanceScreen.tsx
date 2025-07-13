@@ -1,4 +1,4 @@
-import { useMemoryInheritanceScreen } from '@/hooks/useMemoryInheritance'
+import { useMemoryInheritance } from '@/hooks/useMemoryInheritance'
 import { MemoryFragmentSelector } from './MemoryFragmentSelector'
 import { MemoryInheritancePreview } from './MemoryInheritancePreview'
 import { MemoryInheritanceHistory } from './MemoryInheritanceHistory'
@@ -29,7 +29,7 @@ export function MemoryInheritanceScreen({
     executeInheritance,
     isExecuting,
     canExecute,
-  } = useMemoryInheritanceScreen(characterId)
+  } = useMemoryInheritance()
 
   return (
     <div className="container mx-auto p-4 max-w-7xl">

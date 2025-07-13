@@ -4,7 +4,7 @@
 完成ログを他のプレイヤーの世界に独立NPCとして派遣するエンドポイント群
 """
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 from uuid import uuid4
 

@@ -3,7 +3,7 @@ WebSocketイベントエミッター
 ゲームロジックからWebSocket経由でクライアントに通知を送るためのユーティリティ
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from app.core.logging import get_logger

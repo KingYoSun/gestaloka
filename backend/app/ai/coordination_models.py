@@ -3,7 +3,7 @@ AI協調動作のためのデータモデル定義
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from app.ai.shared_context import GameEvent

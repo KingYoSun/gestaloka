@@ -1,4 +1,4 @@
-import { apiClient } from '@/lib/api-client'
+import { apiClient } from '@/api/client'
 
 // 記憶継承タイプ
 export enum MemoryInheritanceType {

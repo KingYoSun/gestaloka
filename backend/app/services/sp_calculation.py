@@ -4,7 +4,7 @@ SP計算ロジックを統合したサービス
 すべてのSP関連の計算ロジックを一元化し、DRY原則に従って実装
 """
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 from app.models.log import CompletedLog, LogFragment, LogFragmentRarity
 from app.models.title import CharacterTitle
@@ -20,7 +20,7 @@ class SPCalculationService:
     BASE_MEMORY_INHERITANCE_COST = 50
 
     # レアリティ係数
-    RARITY_MULTIPLIERS = {
+    RARITY_MULTIPLIERS: ClassVar[dict[LogFragmentRarity, float]] = {
         LogFragmentRarity.COMMON: 1.0,
         LogFragmentRarity.UNCOMMON: 1.5,
         LogFragmentRarity.RARE: 2.0,
@@ -34,12 +34,12 @@ class SPCalculationService:
                             complexity: Optional[str] = None,
                             has_bonus: bool = False) -> int:
         """アクションのSPコストを計算
-        
+
         Args:
             action_type: アクションタイプ
             complexity: 複雑度（simple, normal, complex）
             has_bonus: ボーナスがあるか
-            
+
         Returns:
             SP消費量
         """
@@ -63,12 +63,12 @@ class SPCalculationService:
                                  combo_multiplier: float = 1.0,
                                  contamination_level: float = 0.0) -> int:
         """ログ編纂のSPコストを計算
-        
+
         Args:
             fragments: 使用するフラグメントリスト
             combo_multiplier: コンボボーナス倍率
             contamination_level: 汚染度（0.0-1.0）
-            
+
         Returns:
             SP消費量
         """
@@ -100,11 +100,11 @@ class SPCalculationService:
                                   log: CompletedLog,
                                   purification_strength: float = 1.0) -> int:
         """ログ浄化のSPコストを計算
-        
+
         Args:
             log: 浄化対象のログ
             purification_strength: 浄化強度（1.0-3.0）
-            
+
         Returns:
             SP消費量
         """
@@ -126,12 +126,12 @@ class SPCalculationService:
                                         source_rarity: LogFragmentRarity,
                                         target_level: int = 1) -> int:
         """記憶継承のSPコストを計算
-        
+
         Args:
             inheritance_type: 継承タイプ（skill, title, item, log_enhancement）
             source_rarity: ソースログのレアリティ
             target_level: ターゲットのレベル
-            
+
         Returns:
             SP消費量
         """
@@ -162,12 +162,12 @@ class SPCalculationService:
                               destination_distance: int = 1,
                               special_effects: bool = False) -> int:
         """ログ派遣のSPコストを計算
-        
+
         Args:
             log_rarity: 派遣するログのレアリティ
             destination_distance: 派遣先の距離（階層差）
             special_effects: 特殊効果を持つか
-            
+
         Returns:
             SP消費量
         """
@@ -189,10 +189,10 @@ class SPCalculationService:
     def calculate_title_effects_bonus(cls,
                                     titles: list[CharacterTitle]) -> float:
         """称号効果によるSPボーナス倍率を計算
-        
+
         Args:
             titles: 装備中の称号リスト
-            
+
         Returns:
             ボーナス倍率（0.8 = 20%割引など）
         """
@@ -215,11 +215,11 @@ class SPCalculationService:
     @classmethod
     def apply_test_mode_discount(cls, cost: int, is_test_mode: bool = False) -> int:
         """テストモードの割引を適用
-        
+
         Args:
             cost: 元のコスト
             is_test_mode: テストモードか
-            
+
         Returns:
             割引後のコスト
         """

@@ -2,7 +2,7 @@
 SPサブスクリプションサービス
 """
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar, Optional
 
 from sqlalchemy import and_

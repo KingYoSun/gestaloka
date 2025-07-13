@@ -6,7 +6,7 @@
 
 import asyncio
 import random
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import structlog

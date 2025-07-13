@@ -2,7 +2,7 @@
 通知関連タスク
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from app.celery import celery_app
 from app.core.logging import get_logger

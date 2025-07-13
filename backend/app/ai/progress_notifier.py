@@ -5,7 +5,7 @@ WebSocketを通じてリアルタイムで処理状況を通知し、
 プレイヤーの待ち時間に対する不安を軽減します。
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import structlog

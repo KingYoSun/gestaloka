@@ -4,7 +4,7 @@
 
 import asyncio
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from sqlmodel import Session
 

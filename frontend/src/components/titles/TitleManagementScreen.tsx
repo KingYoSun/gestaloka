@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Loader2, Trophy, Crown, Info } from 'lucide-react'
-import { useTitles } from '@/hooks/useTitles'
+import { useTitleManagement } from '@/hooks/useTitles'
 import { TitleCard } from './TitleCard'
 
 export const TitleManagementScreen = () => {
@@ -18,7 +18,7 @@ export const TitleManagementScreen = () => {
     unequipAllTitles,
     isEquipping,
     isUnequipping,
-  } = useTitles()
+  } = useTitleManagement()
 
   if (isLoading) {
     return (
@@ -37,7 +37,7 @@ export const TitleManagementScreen = () => {
   }
 
   // Separate titles by equipped status
-  const unequippedTitles = titles.filter(t => !t.is_equipped)
+  const unequippedTitles = titles.filter((t: any) => !t.is_equipped)
 
   return (
     <div className="space-y-6">
@@ -85,7 +85,7 @@ export const TitleManagementScreen = () => {
             <div className="text-sm text-muted-foreground">
               {equippedTitle?.effects &&
               Object.keys(equippedTitle.effects).length > 0 ? (
-                Object.entries(equippedTitle.effects).map(([key, value]) => (
+                Object.entries(equippedTitle.effects).map(([key, value]: [string, any]) => (
                   <p key={key}>
                     {key}: {value}
                   </p>
@@ -141,7 +141,7 @@ export const TitleManagementScreen = () => {
                 <div>
                   <h3 className="text-lg font-semibold mb-3">獲得済みの称号</h3>
                   <div className="grid gap-4 md:grid-cols-2">
-                    {unequippedTitles.map(title => (
+                    {unequippedTitles.map((title: any) => (
                       <TitleCard
                         key={title.id}
                         title={title}

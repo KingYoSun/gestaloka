@@ -2,7 +2,7 @@
 クリーンアップ関連タスク
 """
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 from app.celery import celery_app
 from app.core.logging import get_logger

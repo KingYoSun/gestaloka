@@ -2,7 +2,7 @@
 物語主導型探索システムAPIエンドポイント
 """
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
@@ -255,14 +255,13 @@ async def generate_action_choices(
             if to_location:
                 # 探索進捗を確認
                 from app.models.exploration_progress import CharacterExplorationProgress
-                from sqlmodel import select
-                
+
                 progress_stmt = select(CharacterExplorationProgress).where(
                     CharacterExplorationProgress.character_id == character.id,
                     CharacterExplorationProgress.location_id == to_location.id
                 )
                 progress = db.execute(progress_stmt).scalars().first()
-                
+
                 # 発見済み（霧が晴れている）場所のみ表示
                 if progress and progress.fog_revealed_at:
                     # 物語的な選択肢として提示
