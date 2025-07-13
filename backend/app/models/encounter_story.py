@@ -11,6 +11,8 @@ from typing import Any, ClassVar, Optional
 from sqlalchemy import Text
 from sqlmodel import JSON, Column, Field, SQLModel
 
+from app.models.story_arc import StoryArcType
+
 
 class EncounterType(str, Enum):
     """遭遇の種類"""
@@ -21,17 +23,7 @@ class EncounterType(str, Enum):
     LOG_ENCOUNTER = "log_encounter"  # 派遣ログ同士の遭遇
 
 
-class StoryArcType(str, Enum):
-    """ストーリーアークの種類"""
-
-    QUEST_CHAIN = "quest_chain"  # 連続クエスト
-    RIVALRY = "rivalry"  # ライバル関係
-    ALLIANCE = "alliance"  # 同盟関係
-    MENTORSHIP = "mentorship"  # 師弟関係
-    ROMANCE = "romance"  # ロマンス
-    MYSTERY = "mystery"  # 謎解き
-    CONFLICT = "conflict"  # 対立
-    COLLABORATION = "collaboration"  # 協力関係
+# StoryArcTypeはstory_arc.pyからインポート
 
 
 class RelationshipStatus(str, Enum):

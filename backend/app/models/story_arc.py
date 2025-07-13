@@ -32,6 +32,14 @@ class StoryArcType(str, Enum):
     CHARACTER_ARC = "character_arc"  # キャラクターアーク
     WORLD_EVENT = "world_event"  # ワールドイベント
     PERSONAL_STORY = "personal_story"  # 個人の物語
+    QUEST_CHAIN = "quest_chain"  # クエストチェーン
+    RIVALRY = "rivalry"  # ライバル関係
+    ALLIANCE = "alliance"  # 同盟関係
+    MENTORSHIP = "mentorship"  # 師弟関係
+    ROMANCE = "romance"  # ロマンス
+    MYSTERY = "mystery"  # 謎解き
+    CONFLICT = "conflict"  # 対立
+    COLLABORATION = "collaboration"  # 共同作業
 
 
 class StoryArc(SQLModel, table=True):

@@ -1,10 +1,10 @@
 import { Bell, Menu } from 'lucide-react'
 import { Button } from './ui/button'
 import { SPDisplay } from './sp/SPDisplay'
-import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/features/auth/useAuth'
 
 export function Header() {
-  const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+  const { isAuthenticated } = useAuth()
 
   return (
     <header className="h-16 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">

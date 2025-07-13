@@ -1,11 +1,11 @@
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { useAuthStore } from '@/store/authStore'
+import { useAuth } from '@/features/auth/useAuth'
 import { Button } from '@/components/ui/button'
 import { Home, Activity, Users, Settings, LogOut, Coins } from 'lucide-react'
 
 export function AdminLayout() {
-  const { user, logout } = useAuthStore()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -16,9 +16,13 @@ export function AdminLayout() {
     }
   }, [user, navigate])
 
-  const handleLogout = () => {
-    logout()
-    navigate({ to: '/' })
+  const handleLogout = async () => {
+    try {
+      await logout()
+      navigate({ to: '/' })
+    } catch (error) {
+      console.error('ログアウトエラー:', error)
+    }
   }
 
   if (!user) {

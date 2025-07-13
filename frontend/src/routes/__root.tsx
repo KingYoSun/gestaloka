@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import { useAuth } from '@/features/auth/useAuth'
+import { ValidationRulesProvider } from '@/contexts/ValidationRulesContext'
 import '@/types/router'
 
 // React Query設定
@@ -30,7 +31,9 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <InnerRoot />
+        <ValidationRulesProvider>
+          <InnerRoot />
+        </ValidationRulesProvider>
       </AuthProvider>
       <ReactQueryDevtools initialIsOpen={false} />
       <TanStackRouterDevtools />

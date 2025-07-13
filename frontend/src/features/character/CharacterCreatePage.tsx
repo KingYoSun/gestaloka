@@ -16,14 +16,19 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Sparkles, User, Eye, Heart } from 'lucide-react'
 import { useCreateCharacter } from '@/hooks/useCharacters'
 import {
-  characterCreationSchema,
+  createCharacterCreationSchema,
   type CharacterCreationFormData,
 } from '@/schemas/character'
+import { useValidationRulesContext } from '@/contexts/ValidationRulesContext'
 
 export function CharacterCreatePage() {
   const navigate = useNavigate()
   const createCharacterMutation = useCreateCharacter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const validationRules = useValidationRulesContext()
+  
+  // バリデーションルールに基づいてスキーマを作成
+  const characterCreationSchema = createCharacterCreationSchema(validationRules)
 
   const {
     register,

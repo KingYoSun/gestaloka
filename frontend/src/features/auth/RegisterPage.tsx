@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { Input } from '@/components/ui/input'
 import { apiClient } from '@/api/client'
-import { userRegisterSchema } from '@/lib/validations/schemas/auth'
+import { createUserRegisterSchema } from '@/lib/validations/schemas/auth'
 import { getPasswordStrength } from '@/lib/validations/validators/password'
+import { useValidationRulesContext } from '@/contexts/ValidationRulesContext'
 import { Button } from '@/components/ui/button'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { FormError } from '@/components/ui/FormError'
@@ -27,6 +28,10 @@ export function RegisterPage() {
   > | null>(null)
 
   const navigate = useNavigate()
+  const validationRules = useValidationRulesContext()
+  
+  // バリデーションルールに基づいてスキーマを作成
+  const userRegisterSchema = createUserRegisterSchema(validationRules)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -131,8 +136,8 @@ export function RegisterPage() {
                 value={formData.username}
                 onChange={handleChange}
                 required
-                minLength={3}
-                maxLength={50}
+                minLength={validationRules.user.username.min_length}
+                maxLength={validationRules.user.username.max_length}
                 placeholder="ユーザー名を入力（3-50文字）"
                 className={validationErrors.username ? 'border-red-500' : ''}
               />
