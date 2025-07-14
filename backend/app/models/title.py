@@ -1,6 +1,6 @@
 """称号モデル"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import JSON
@@ -22,8 +22,8 @@ class CharacterTitle(SQLModel, table=True):
     acquired_at: str = Field(..., description="獲得方法")
     effects: dict[str, Any] = Field(default_factory=dict, sa_type=JSON, description="称号の効果")
     is_equipped: bool = Field(default=False, description="装備中かどうか")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     character: Optional["Character"] = Relationship(back_populates="titles")

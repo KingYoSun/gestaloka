@@ -4,7 +4,7 @@
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, ClassVar, Optional
 
@@ -110,8 +110,8 @@ class EncounterStory(SQLModel, table=True):
     story_momentum: float = Field(default=0.5, ge=0.0, le=1.0, description="ストーリーの勢い（0-1）")
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="ストーリー開始日時")
-    last_interaction_at: datetime = Field(default_factory=datetime.utcnow, description="最後の相互作用日時")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="ストーリー開始日時")
+    last_interaction_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="最後の相互作用日時")
     next_expected_beat: Optional[datetime] = Field(default=None, description="次の重要な展開の予想時期")
 
     class Config:
@@ -180,7 +180,7 @@ class EncounterChoice(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    presented_at: datetime = Field(default_factory=datetime.utcnow, description="選択肢が提示された日時")
+    presented_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="選択肢が提示された日時")
     decided_at: Optional[datetime] = Field(default=None, description="決定された日時")
 
 
@@ -237,6 +237,6 @@ class SharedQuest(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="共同クエスト開始日時")
-    last_sync_at: datetime = Field(default_factory=datetime.utcnow, description="最後の同期日時")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="共同クエスト開始日時")
+    last_sync_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="最後の同期日時")
     completed_at: Optional[datetime] = Field(default=None, description="完了日時")

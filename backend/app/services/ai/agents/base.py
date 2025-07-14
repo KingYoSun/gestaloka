@@ -5,14 +5,15 @@ AIエージェント基底クラス
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-import structlog
 from pydantic import BaseModel, Field
 
+from app.core.logging import get_logger
 from app.schemas.game_session import ActionChoice
 from app.services.ai.gemini_client import GeminiClient
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext, PromptManager
+from app.services.ai.utils import ResponseParser, ContextEnhancer
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentContext(BaseModel):
@@ -145,3 +146,15 @@ class BaseAgent(ABC):
             "has_world_state": bool(context.world_state),
             "session_length": len(context.session_history),
         }
+    
+    def parse_json_response(self, raw_response: str) -> Optional[dict[str, Any]]:
+        """
+        AI応答からJSONを抽出
+
+        Args:
+            raw_response: 生のAI応答
+
+        Returns:
+            抽出されたJSONデータまたはNone
+        """
+        return ResponseParser.extract_json_block(raw_response)

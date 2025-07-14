@@ -2,7 +2,7 @@
 データベースモデル
 """
 
-from app.models.character import Character, CharacterSkill, CharacterStats, GameSession, Skill
+from app.models.character import Character, CharacterSkill, CharacterStats, Skill
 from app.models.encounter_story import (
     EncounterChoice,
     EncounterStory,
@@ -10,9 +10,11 @@ from app.models.encounter_story import (
     RelationshipStatus,
     SharedQuest,
 )
+from app.models.enums import ItemRarity, ItemType
 from app.models.exploration_progress import CharacterExplorationProgress
 from app.models.game_message import GameMessage
-from app.models.item import CharacterItem, Item, ItemRarity, ItemType
+from app.models.game_session import GameSession
+from app.models.item import CharacterItem, Item
 from app.models.location import (
     CharacterLocationHistory,
     DangerLevel,

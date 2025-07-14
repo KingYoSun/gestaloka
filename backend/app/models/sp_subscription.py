@@ -3,7 +3,7 @@ SPサブスクリプションモデル定義
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
@@ -78,8 +78,8 @@ class SPSubscription(SQLModel, table=True):
     extra_data: dict = Field(default_factory=dict, sa_column=Column(JSON), description="追加情報")
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="作成日時")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="更新日時")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="作成日時")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="更新日時")
 
     # リレーション
     user: Optional["User"] = Relationship(back_populates="sp_subscriptions")
@@ -117,8 +117,8 @@ class SubscriptionTransaction(SQLModel, table=True):
     extra_data: dict = Field(default_factory=dict, sa_column=Column(JSON), description="追加情報")
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="作成日時")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="更新日時")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="作成日時")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="更新日時")
 
     # リレーション
     subscription: Optional[SPSubscription] = Relationship()

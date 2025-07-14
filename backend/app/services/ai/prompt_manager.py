@@ -9,11 +9,12 @@ import json
 from enum import Enum
 from typing import Any, Optional
 
-import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-logger = structlog.get_logger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class AIAgentRole(str, Enum):

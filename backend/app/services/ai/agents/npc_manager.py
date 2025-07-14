@@ -9,11 +9,11 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
-import structlog
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from app.core.exceptions import AIServiceError
+from app.core.logging import get_logger
 from app.models import EncounterType
 from app.schemas.game_session import ActionChoice
 from app.services.ai.agents.base import AgentContext, AgentResponse, BaseAgent
@@ -22,7 +22,7 @@ from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 if TYPE_CHECKING:
     from app.models.game_message import GameMessage
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class NPCType(Enum):
@@ -73,7 +73,7 @@ class NPCCharacterSheet(BaseModel):
     relationships: list[NPCRelationship] = Field(default_factory=list, description="関係性リスト")
     dialogue_topics: list[str] = Field(description="会話可能なトピック")
     quest_potential: bool = Field(default=False, description="クエスト付与可能か")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_by: str = Field(description="生成者（AI名）")
     persistence_level: int = Field(ge=1, le=10, description="永続性レベル")
 

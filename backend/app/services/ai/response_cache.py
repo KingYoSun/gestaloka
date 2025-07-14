@@ -10,12 +10,12 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, Optional
 
-import structlog
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.logging import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class CacheEntry(BaseModel):
@@ -23,7 +23,7 @@ class CacheEntry(BaseModel):
 
     key: str = Field(description="キャッシュキー")
     value: str = Field(description="キャッシュされた値")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     ttl_seconds: int = Field(default=3600)  # デフォルト1時間
     hit_count: int = Field(default=0)
 

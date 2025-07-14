@@ -4,7 +4,7 @@
 複数セッションに跨る大きな物語の流れを管理
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
@@ -73,8 +73,8 @@ class StoryArc(SQLModel, table=True):
 
     # メタデータ
     arc_metadata: dict = Field(default_factory=dict, sa_type=JSON)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
 
@@ -112,8 +112,8 @@ class StoryArcMilestone(SQLModel, table=True):
     rewards: dict = Field(default_factory=dict, sa_type=JSON)  # マイルストーン達成報酬
     triggers_next_phase: bool = Field(default=False)  # 次フェーズへの移行トリガーか
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     story_arc: StoryArc = Relationship(back_populates="milestones")

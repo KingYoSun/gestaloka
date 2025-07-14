@@ -6,14 +6,18 @@ import json
 import re
 from typing import Any, Optional
 
-import structlog
-
 from app.core.exceptions import AIServiceError
+from app.core.logging import get_logger
 from app.schemas.game_session import ActionChoice, SessionEndingProposal
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
+from app.services.ai.utils import agent_error_handler, ResponseParser
+from app.services.ai.constants import (
+    DEFAULT_TEMPERATURE,
+    DEFAULT_MAX_TOKENS
+)
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class DramatistAgent(BaseAgent):
@@ -28,6 +32,7 @@ class DramatistAgent(BaseAgent):
         """脚本家AIの初期化"""
         super().__init__(role=AIAgentRole.DRAMATIST, **kwargs)
 
+    @agent_error_handler("Dramatist")
     async def process(self, context: PromptContext, **kwargs: Any) -> AgentResponse:
         """
         物語的な描写と行動選択肢を生成
@@ -43,33 +48,30 @@ class DramatistAgent(BaseAgent):
         if not self.validate_context(context):
             raise AIServiceError("Invalid context for Dramatist agent")
 
-        try:
-            # カスタムプロンプトの追加
-            enhanced_context = self._enhance_context(context)
+        # カスタムプロンプトの追加
+        enhanced_context = self._enhance_context(context)
 
-            # レスポンス生成
-            raw_response = await self.generate_response(
-                enhanced_context, temperature=kwargs.get("temperature", 0.8), max_tokens=kwargs.get("max_tokens", 1500)
-            )
+        # レスポンス生成
+        raw_response = await self.generate_response(
+            enhanced_context, 
+            temperature=kwargs.get("temperature", DEFAULT_TEMPERATURE), 
+            max_tokens=kwargs.get("max_tokens", DEFAULT_MAX_TOKENS)
+        )
 
-            # レスポンスの解析
-            narrative, choices = self._parse_response(raw_response)
+        # レスポンスの解析
+        narrative, choices = self._parse_response(raw_response)
 
-            # メタデータの抽出
-            metadata = self.extract_metadata(context)
-            metadata["response_length"] = len(narrative) if narrative else 0
-            metadata["choice_count"] = len(choices)
+        # メタデータの抽出
+        metadata = self.extract_metadata(context)
+        metadata["response_length"] = len(narrative) if narrative else 0
+        metadata["choice_count"] = len(choices)
 
-            return AgentResponse(
-                agent_role=self.role.value,
-                narrative=narrative or "物語は続きます...",
-                choices=choices,
-                metadata=metadata,
-            )
-
-        except Exception as e:
-            self.logger.error("Dramatist processing failed", error=str(e), character=context.character_name)
-            raise AIServiceError(f"Dramatist agent error: {e!s}")
+        return AgentResponse(
+            agent_role=self.role.value,
+            narrative=narrative or "物語は続きます...",
+            choices=choices,
+            metadata=metadata,
+        )
 
     def _enhance_context(self, context: PromptContext) -> PromptContext:
         """
@@ -177,28 +179,16 @@ class DramatistAgent(BaseAgent):
         # デバッグ用ログ
         self.logger.debug("Parsing AI response", response_length=len(raw_response), response_preview=raw_response[:500])
 
-        try:
-            # Markdownコードブロックを除去
-            cleaned_response = raw_response.strip()
-            if cleaned_response.startswith('```json'):
-                cleaned_response = cleaned_response[7:]  # ```json を除去
-            elif cleaned_response.startswith('```'):
-                cleaned_response = cleaned_response[3:]  # ``` を除去
-
-            if cleaned_response.endswith('```'):
-                cleaned_response = cleaned_response[:-3]  # 終端の ``` を除去
-
-            cleaned_response = cleaned_response.strip()
-
-            # JSON形式でパース
-            response_data = json.loads(cleaned_response)
-
+        # JSONブロックの抽出を試みる
+        response_data = self.parse_json_response(raw_response)
+        
+        if response_data:
             # narrativeフィールドを取得
-            narrative = response_data.get("narrative", "")
+            narrative = ResponseParser.extract_text_content(response_data, "narrative")
 
             # choicesフィールドから選択肢を構築
             choices = []
-            choices_data = response_data.get("choices", [])
+            choices_data = ResponseParser.extract_choices(response_data)
 
             for idx, choice_data in enumerate(choices_data[:3]):  # 最大3つまで
                 choice_id = choice_data.get("id", f"choice_{idx + 1}")
@@ -223,9 +213,8 @@ class DramatistAgent(BaseAgent):
                            choice_count=len(choices))
 
             return narrative, choices
-
-        except json.JSONDecodeError as e:
-            self.logger.warning("Failed to parse as JSON, falling back to text parsing", error=str(e))
+        else:
+            self.logger.warning("Failed to parse as JSON, falling back to text parsing")
             # JSON解析に失敗した場合は、従来のテキストパース処理にフォールバック
             return self._parse_response_as_text(raw_response)
 

@@ -47,7 +47,7 @@ class TestAnomalyAgent:
         """初期化のテスト"""
         assert anomaly_agent.role == AIAgentRole.ANOMALY
         assert anomaly_agent.event_probability == 0.15
-        assert anomaly_agent.cooldown_turns == 5
+        assert anomaly_agent.cooldown_turns == 10
         assert anomaly_agent.last_event_turn == -float("inf")
 
     def test_should_trigger_event_cooldown(self, anomaly_agent, mock_context):

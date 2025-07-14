@@ -6,14 +6,18 @@ import random
 import re
 from typing import Any, Optional
 
-import structlog
-
 from app.core.exceptions import AIServiceError
+from app.core.logging import get_logger
 from app.schemas.game_session import ActionChoice
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
+from app.services.ai.utils import agent_error_handler
+from app.services.ai.constants import (
+    ANOMALY_BASE_PROBABILITY,
+    ANOMALY_COOLDOWN_ACTIONS
+)
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class AnomalyEvent:
@@ -45,10 +49,11 @@ class AnomalyAgent(BaseAgent):
     def __init__(self, **kwargs: Any) -> None:
         """混沌AIの初期化"""
         super().__init__(role=AIAgentRole.ANOMALY, **kwargs)
-        self.event_probability = 0.15  # 基本発生確率
-        self.cooldown_turns = 5  # 最小間隔
+        self.event_probability = ANOMALY_BASE_PROBABILITY  # 基本発生確率
+        self.cooldown_turns = ANOMALY_COOLDOWN_ACTIONS  # 最小間隔
         self.last_event_turn: float = -float("inf")
 
+    @agent_error_handler("Anomaly")
     async def process(self, context: PromptContext, **kwargs: Any) -> AgentResponse:
         """
         混沌イベントの発生判定と生成
@@ -64,30 +69,25 @@ class AnomalyAgent(BaseAgent):
         if not self.validate_context(context):
             raise AIServiceError("Invalid context for Anomaly agent")
 
-        try:
-            # イベント発生判定
-            if not self._should_trigger_event(context):
-                return self._create_empty_response()
+        # イベント発生判定
+        if not self._should_trigger_event(context):
+            return self._create_empty_response()
 
-            # 混沌エネルギーレベルの計算
-            chaos_level = self._calculate_chaos_level(context)
+        # 混沌エネルギーレベルの計算
+        chaos_level = self._calculate_chaos_level(context)
 
-            # イベントタイプの決定
-            event_type = self._determine_event_type(context, chaos_level)
+        # イベントタイプの決定
+        event_type = self._determine_event_type(context, chaos_level)
 
-            # イベントの生成
-            event = await self._generate_anomaly_event(context, event_type, chaos_level)
+        # イベントの生成
+        event = await self._generate_anomaly_event(context, event_type, chaos_level)
 
-            # ログNPC暴走の可能性チェック
-            if event_type == "log_corruption" and self._check_log_rampage(context):
-                event = await self._enhance_to_log_rampage(context, event)
+        # ログNPC暴走の可能性チェック
+        if event_type == "log_corruption" and self._check_log_rampage(context):
+            event = await self._enhance_to_log_rampage(context, event)
 
-            # レスポンスの構築
-            return self._build_response(event, context)
-
-        except Exception as e:
-            self.logger.error("Anomaly processing failed", error=str(e), character=context.character_name)
-            raise AIServiceError(f"Anomaly agent error: {e!s}")
+        # レスポンスの構築
+        return self._build_response(event, context)
 
     def _should_trigger_event(self, context: PromptContext) -> bool:
         """

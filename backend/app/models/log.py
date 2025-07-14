@@ -5,7 +5,7 @@
 他プレイヤーの世界でNPCとして活用するためのモデル群
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
@@ -95,7 +95,7 @@ class LogFragment(SQLModel, table=True):
     is_consumed: bool = Field(default=False, description="消費されたかどうか（常にFalseで永続性を保証）")
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     acquisition_date: Optional[datetime] = Field(default=None, description="記憶として獲得された日時")
 
     # リレーションシップ
@@ -156,7 +156,7 @@ class CompletedLog(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: Optional[datetime] = Field(default=None)
 
     # リレーションシップ
@@ -225,7 +225,7 @@ class ActionLog(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーションシップ
     session: Optional["GameSession"] = Relationship(back_populates="action_logs")

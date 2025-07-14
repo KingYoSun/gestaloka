@@ -1,35 +1,15 @@
 """アイテムモデル"""
 
-from datetime import datetime
-from enum import Enum
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
+from app.models.enums import ItemRarity, ItemType
+
 if TYPE_CHECKING:
     from app.models.character import Character
-
-
-class ItemType(str, Enum):
-    """アイテムタイプ"""
-
-    WEAPON = "weapon"
-    ARMOR = "armor"
-    ACCESSORY = "accessory"
-    CONSUMABLE = "consumable"
-    SPECIAL = "special"
-    MATERIAL = "material"
-
-
-class ItemRarity(str, Enum):
-    """アイテムレアリティ"""
-
-    COMMON = "COMMON"
-    UNCOMMON = "UNCOMMON"
-    RARE = "RARE"
-    EPIC = "EPIC"
-    LEGENDARY = "LEGENDARY"
 
 
 class Item(SQLModel, table=True):
@@ -46,8 +26,8 @@ class Item(SQLModel, table=True):
     tradeable: bool = Field(default=True)
     stackable: bool = Field(default=True)
     max_stack: int = Field(default=99)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     character_items: list["CharacterItem"] = Relationship(back_populates="item")
@@ -65,8 +45,8 @@ class CharacterItem(SQLModel, table=True):
     obtained_at: str = Field(..., description="入手方法")
     is_equipped: bool = Field(default=False)
     slot: Optional[str] = Field(None, description="装備スロット")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーション
     character: Optional["Character"] = Relationship(back_populates="items")

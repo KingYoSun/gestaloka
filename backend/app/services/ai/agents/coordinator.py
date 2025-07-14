@@ -8,24 +8,15 @@ Coordinator AI - すべてのAIエージェントを統括する中央調整役
 import json
 from typing import Any, Optional
 
-import structlog
-from pydantic import BaseModel
 
+from app.core.logging import get_logger
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.agents.dramatist import DramatistAgent
 from app.services.ai.agents.historian import HistorianAgent
 from app.services.ai.agents.state_manager import StateManagerAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 
-logger = structlog.get_logger(__name__)
-
-
-class CoordinatorRequest(BaseModel):
-    """Coordinator AIへのリクエスト"""
-    prompt: str
-    agent_type: str
-    character_name: str
-    metadata: Optional[dict[str, Any]] = None
+logger = get_logger(__name__)
 
 
 class CoordinatorAI(BaseAgent):

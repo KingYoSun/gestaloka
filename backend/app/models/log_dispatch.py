@@ -4,7 +4,7 @@
 完成ログを他のプレイヤーの世界に派遣するためのモデル群
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
@@ -103,7 +103,7 @@ class LogDispatch(SQLModel, table=True):
     achievement_score: float = Field(default=0.0, description="達成度スコア（0.0-1.0）")
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     dispatched_at: Optional[datetime] = Field(default=None)
     expected_return_at: Optional[datetime] = Field(default=None)
     actual_return_at: Optional[datetime] = Field(default=None)
@@ -143,7 +143,7 @@ class DispatchEncounter(SQLModel, table=True):
     items_exchanged: list[str] = Field(default_factory=list, sa_column=Column(JSON), description="交換したアイテム")
 
     # タイムスタンプ
-    occurred_at: datetime = Field(default_factory=datetime.utcnow)
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーションシップ
     dispatch: Optional[LogDispatch] = Relationship(back_populates="encounters")
@@ -191,7 +191,7 @@ class DispatchReport(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # リレーションシップ
     dispatch: Optional[LogDispatch] = Relationship(back_populates="report")

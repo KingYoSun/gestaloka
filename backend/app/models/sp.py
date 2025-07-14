@@ -5,7 +5,7 @@ Story Points（SP）は、プレイヤーが世界に干渉する力を表すリ
 プレイヤーの行動、ログ派遣、特殊機能の使用などで消費されます。
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
@@ -105,9 +105,9 @@ class PlayerSP(SQLModel, table=True):
     last_login_date: Optional[datetime] = Field(default=None, description="最後のログイン日")
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow, description="作成日時")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="作成日時")
 
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="更新日時")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="更新日時")
 
     # Relationships
     user: Optional["User"] = Relationship(back_populates="player_sp")
@@ -173,7 +173,7 @@ class SPTransaction(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, description="取引日時")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), index=True, description="取引日時")
 
     # Relationships
     player_sp: Optional["PlayerSP"] = Relationship(back_populates="transactions")

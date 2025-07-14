@@ -3,7 +3,7 @@
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, ClassVar, Optional
 
@@ -90,10 +90,10 @@ class Quest(SQLModel, table=True):
     )
 
     # タイムスタンプ
-    proposed_at: datetime = Field(default_factory=datetime.utcnow, description="クエストが提案された日時")
+    proposed_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="クエストが提案された日時")
     started_at: Optional[datetime] = Field(default=None, description="クエストが開始された日時")
     completed_at: Optional[datetime] = Field(default=None, description="クエストが完了した日時")
-    last_progress_at: datetime = Field(default_factory=datetime.utcnow, description="最後に進行があった日時")
+    last_progress_at: datetime = Field(default_factory=lambda: datetime.now(UTC), description="最後に進行があった日時")
 
     class Config:
         json_schema_extra: ClassVar[dict] = {

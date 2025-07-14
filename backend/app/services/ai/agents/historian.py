@@ -10,17 +10,19 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
-import structlog
 from pydantic import BaseModel, Field
 
+from app.core.logging import get_logger
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.gemini_client import GeminiClient
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext, PromptManager
+from app.services.ai.utils import agent_error_handler
+from app.services.ai.constants import LOW_CREATIVITY_TEMPERATURE
 
 if TYPE_CHECKING:
     from app.models.game_message import GameMessage
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class ActionType(Enum):
@@ -79,6 +81,7 @@ class HistorianAgent(BaseAgent):
         )
         self.records_cache: dict[str, HistoricalRecord] = {}
 
+    @agent_error_handler("Historian")
     async def process(self, context: PromptContext, **kwargs: Any) -> AgentResponse:
         """
         歴史的コンテキストを処理してレスポンスを生成
@@ -141,7 +144,7 @@ class HistorianAgent(BaseAgent):
             response = await self.generate_response(
                 context=context,
                 system_message=analysis_prompt,
-                temperature=0.3,  # 分析には低温度を使用
+                temperature=LOW_CREATIVITY_TEMPERATURE,  # 分析には低温度を使用
                 max_output_tokens=500,
             )
 

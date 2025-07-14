@@ -7,15 +7,15 @@ import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import structlog
 from pydantic import BaseModel, Field
 
+from app.core.logging import get_logger
 from app.schemas.game_session import ActionChoice
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 
 from .base import AgentResponse, BaseAgent
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class WorldEvent(BaseModel):

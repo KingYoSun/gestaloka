@@ -2,7 +2,7 @@
 ゲームメッセージモデル
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON
@@ -34,7 +34,7 @@ class GameMessage(SQLModel, table=True):
     sender_type: str = Field(...)  # "player", "gm", "system"
     content: str = Field(...)
     message_metadata: Optional[dict] = Field(default=None, sa_type=JSON)  # choices, character_status等
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # インデックス
     turn_number: int = Field(..., index=True)  # セッション内のターン番号

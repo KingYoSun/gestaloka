@@ -6,16 +6,17 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, Optional
 
-import structlog
-
 from app.core.exceptions import AIServiceError
+from app.core.logging import get_logger
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
+from app.services.ai.utils import agent_error_handler
+from app.services.ai.constants import LOW_CREATIVITY_TEMPERATURE
 
 if TYPE_CHECKING:
     from app.models.game_message import GameMessage
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class StateChangeResult:
@@ -77,6 +78,7 @@ class StateManagerAgent(BaseAgent):
             },
         }
 
+    @agent_error_handler("State Manager")
     async def process(self, context: PromptContext, **kwargs: Any) -> AgentResponse:
         """
         行動結果の判定と状態変更を処理
@@ -92,55 +94,50 @@ class StateManagerAgent(BaseAgent):
         if not self.validate_context(context):
             raise AIServiceError("Invalid context for State Manager agent")
 
-        try:
-            # 行動情報の取得
-            action = kwargs.get("action", context.recent_actions[-1] if context.recent_actions else "")
-            action_type = kwargs.get("action_type", "physical")
-            difficulty = kwargs.get("difficulty", "medium")
+        # 行動情報の取得
+        action = kwargs.get("action", context.recent_actions[-1] if context.recent_actions else "")
+        action_type = kwargs.get("action_type", "physical")
+        difficulty = kwargs.get("difficulty", "medium")
 
-            # コンテキストの拡張
-            enhanced_context = self._enhance_context(context, action, action_type, difficulty)
+        # コンテキストの拡張
+        enhanced_context = self._enhance_context(context, action, action_type, difficulty)
 
-            # AIによる判定生成
-            raw_response = await self.generate_response(
-                enhanced_context,
-                temperature=kwargs.get("temperature", 0.3),  # 判定は一貫性重視で低めの温度
-                max_tokens=kwargs.get("max_tokens", 1000),
-            )
+        # AIによる判定生成
+        raw_response = await self.generate_response(
+            enhanced_context,
+            temperature=kwargs.get("temperature", LOW_CREATIVITY_TEMPERATURE),  # 判定は一貫性重視で低めの温度
+            max_tokens=kwargs.get("max_tokens", 1000),
+        )
 
-            # レスポンスの解析
-            state_changes = self._parse_response(raw_response)
+        # レスポンスの解析
+        state_changes = self._parse_response(raw_response)
 
-            # ルールベースの検証と調整
-            validated_changes = self._validate_state_changes(context.character_stats, state_changes, action_type)
+        # ルールベースの検証と調整
+        validated_changes = self._validate_state_changes(context.character_stats, state_changes, action_type)
 
-            # メタデータの構築
-            metadata = self.extract_metadata(context)
-            metadata.update(
-                {
-                    "action_type": action_type,
-                    "difficulty": difficulty,
-                    "success": validated_changes.success,
-                    "critical_hit": self._check_critical(validated_changes),
-                    "rules_applied": True,
-                }
-            )
+        # メタデータの構築
+        metadata = self.extract_metadata(context)
+        metadata.update(
+            {
+                "action_type": action_type,
+                "difficulty": difficulty,
+                "success": validated_changes.success,
+                "critical_hit": self._check_critical(validated_changes),
+                "rules_applied": True,
+            }
+        )
 
-            return AgentResponse(
-                agent_role=self.role.value,
-                state_changes={
-                    "success": validated_changes.success,
-                    "parameter_changes": validated_changes.parameter_changes,
-                    "triggered_events": validated_changes.triggered_events,
-                    "new_relationships": validated_changes.new_relationships,
-                    "reason": validated_changes.reason,
-                },
-                metadata=metadata,
-            )
-
-        except Exception as e:
-            self.logger.error("State Manager processing failed", error=str(e), character=context.character_name)
-            raise AIServiceError(f"State Manager agent error: {e!s}")
+        return AgentResponse(
+            agent_role=self.role.value,
+            state_changes={
+                "success": validated_changes.success,
+                "parameter_changes": validated_changes.parameter_changes,
+                "triggered_events": validated_changes.triggered_events,
+                "new_relationships": validated_changes.new_relationships,
+                "reason": validated_changes.reason,
+            },
+            metadata=metadata,
+        )
 
     def _enhance_context(self, context: PromptContext, action: str, action_type: str, difficulty: str) -> PromptContext:
         """

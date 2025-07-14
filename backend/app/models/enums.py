@@ -30,10 +30,23 @@ class ItemType(str, Enum):
 
     WEAPON = "weapon"  # 武器
     ARMOR = "armor"  # 防具
+    ACCESSORY = "accessory"  # アクセサリー
     CONSUMABLE = "consumable"  # 消費アイテム
     MATERIAL = "material"  # 素材
     KEY_ITEM = "key_item"  # キーアイテム
     CURRENCY = "currency"  # 通貨
+    SPECIAL = "special"  # 特殊アイテム
+
+
+class ItemRarity(str, Enum):
+    """アイテムレアリティ"""
+
+    COMMON = "common"
+    UNCOMMON = "uncommon"
+    RARE = "rare"
+    EPIC = "epic"
+    LEGENDARY = "legendary"
+    MYTHIC = "mythic"
 
 
 class QuestStatus(str, Enum):
