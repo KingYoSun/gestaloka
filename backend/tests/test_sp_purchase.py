@@ -18,17 +18,33 @@ class TestSPPurchaseService:
         """価格プラン一覧取得のテスト"""
         plans = SPPurchaseService.get_plans()
 
-        assert len(plans) == 4
+        assert len(plans) == 5
         assert plans[0].id == "small"
         assert plans[1].id == "medium"
         assert plans[2].id == "large"
         assert plans[3].id == "xlarge"
+        assert plans[4].id == "xxlarge"
+
+        # SP量の検証
+        assert plans[0].sp_amount == 100
+        assert plans[1].sp_amount == 300
+        assert plans[2].sp_amount == 500
+        assert plans[3].sp_amount == 1000
+        assert plans[4].sp_amount == 3000
+
+        # 価格の検証
+        assert plans[0].price_jpy == 500
+        assert plans[1].price_jpy == 1200
+        assert plans[2].price_jpy == 2000
+        assert plans[3].price_jpy == 3500
+        assert plans[4].price_jpy == 8000
 
         # ボーナスの検証
         assert plans[0].bonus_percentage == 0
-        assert plans[1].bonus_percentage == 25
-        assert plans[2].bonus_percentage == 50
-        assert plans[3].bonus_percentage == 100
+        assert plans[1].bonus_percentage == 20
+        assert plans[2].bonus_percentage == 25
+        assert plans[3].bonus_percentage == 43
+        assert plans[4].bonus_percentage == 67
 
     def test_create_purchase_test_mode(self, session: Session):
         """テストモードでの購入申請作成のテスト"""

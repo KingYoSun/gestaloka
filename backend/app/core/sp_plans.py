@@ -38,26 +38,34 @@ SP_PLANS: dict[str, SPPlan] = {
     "medium": SPPlan(
         id="medium",
         name="ミディアムパック",
-        sp_amount=250,
-        price_jpy=1000,
-        bonus_percentage=25,  # 25%ボーナス
+        sp_amount=300,
+        price_jpy=1200,
+        bonus_percentage=20,  # 50 SP (20%ボーナス)
         popular=True,
-        description="一番人気！25%ボーナス付き",
+        description="一番人気！50 SPボーナス付き",
     ),
     "large": SPPlan(
         id="large",
         name="ラージパック",
-        sp_amount=600,
+        sp_amount=500,
         price_jpy=2000,
-        bonus_percentage=50,  # 50%ボーナス
-        description="たっぷり遊びたい方に。50%ボーナス",
+        bonus_percentage=25,  # 100 SP (25%ボーナス)
+        description="たっぷり遊びたい方に。100 SPボーナス",
     ),
     "xlarge": SPPlan(
         id="xlarge",
         name="エクストララージパック",
-        sp_amount=2000,
-        price_jpy=5000,
-        bonus_percentage=100,  # 100%ボーナス
-        description="最大のお得！100%ボーナス",
+        sp_amount=1000,
+        price_jpy=3500,
+        bonus_percentage=43,  # 300 SP (約43%ボーナス)
+        description="お得！300 SPボーナス",
+    ),
+    "xxlarge": SPPlan(
+        id="xxlarge",
+        name="ウルトラパック",
+        sp_amount=3000,
+        price_jpy=8000,
+        bonus_percentage=67,  # 1200 SP (約67%ボーナス)
+        description="最大のお得！1200 SPボーナス",
     ),
 }

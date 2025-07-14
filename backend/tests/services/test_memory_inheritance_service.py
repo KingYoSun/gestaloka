@@ -40,6 +40,7 @@ class TestMemoryInheritanceService:
         character.id = "test-character-id"
         character.user_id = "test-user-id"
         character.name = "テストキャラクター"
+        character.character_metadata = {}  # 空の辞書として初期化
         return character
 
     @pytest.fixture
@@ -124,15 +125,10 @@ class TestMemoryInheritanceService:
 
         # モック継承結果
         mock_result = {
-            "success": True,
-            "inheritance_type": MemoryInheritanceType.SKILL,
-            "result": {
-                "created_entity_id": "new-skill-id",
-                "entity_name": "新しいスキル",
-                "description": "記憶から生まれた新しいスキル",
-            },
-            "sp_consumed": 50,
-            "fragments_consumed": 2,
+            "type": "skill",
+            "skill_id": "new-skill-id",
+            "name": "新しいスキル",
+            "description": "記憶から生まれた新しいスキル",
         }
 
         # モックの設定
@@ -146,9 +142,11 @@ class TestMemoryInheritanceService:
                                 result = await service.execute_inheritance(character_id, request)
 
                                 # 検証
-                                assert result == mock_result
-                                assert result["inheritance_type"] == MemoryInheritanceType.SKILL
-                                assert result["sp_consumed"] == 50
+                                assert result.success is True
+                                assert result.inheritance_type == MemoryInheritanceType.SKILL
+                                assert result.sp_consumed == 50
+                                assert result.fragments_used == ["fragment-0", "fragment-1"]
+                                assert result.result["name"] == "新しいスキル"
 
     @pytest.mark.asyncio
     async def test_execute_inheritance_insufficient_sp(self, service, mock_character, mock_fragments):
@@ -187,15 +185,11 @@ class TestMemoryInheritanceService:
 
         # モック継承結果
         mock_result = {
-            "success": True,
-            "inheritance_type": MemoryInheritanceType.TITLE,
-            "result": {
-                "created_entity_id": "new-title-id",
-                "entity_name": "記憶の守護者",
-                "description": "複数の記憶を束ねた者",
-            },
-            "sp_consumed": 40,
-            "fragments_consumed": 2,
+            "type": "title",
+            "title_id": "new-title-id",
+            "title": "記憶の守護者",
+            "description": "複数の記憶を束ねた者",
+            "effects": {},
         }
 
         # モックの設定
@@ -209,8 +203,11 @@ class TestMemoryInheritanceService:
                                 result = await service.execute_inheritance(character_id, request)
 
                                 # 検証
-                                assert result["inheritance_type"] == MemoryInheritanceType.TITLE
-                                assert result["result"]["entity_name"] == "記憶の守護者"
+                                assert result.success is True
+                                assert result.inheritance_type == MemoryInheritanceType.TITLE
+                                assert result.sp_consumed == 40
+                                assert result.fragments_used == ["fragment-0", "fragment-1"]
+                                assert result.result["title"] == "記憶の守護者"
 
     @pytest.mark.asyncio
     async def test_execute_inheritance_item(self, service, mock_character, mock_fragments):
@@ -227,15 +224,11 @@ class TestMemoryInheritanceService:
 
         # モック継承結果
         mock_result = {
-            "success": True,
-            "inheritance_type": MemoryInheritanceType.ITEM,
-            "result": {
-                "created_entity_id": "new-item-id",
-                "entity_name": "記憶の結晶",
-                "description": "記憶が物質化したアイテム",
-            },
-            "sp_consumed": 30,
-            "fragments_consumed": 2,
+            "type": "item",
+            "item_id": "new-item-id",
+            "name": "記憶の結晶",
+            "description": "記憶が物質化したアイテム",
+            "rarity": "rare",
         }
 
         # モックの設定
@@ -249,8 +242,11 @@ class TestMemoryInheritanceService:
                                 result = await service.execute_inheritance(character_id, request)
 
                                 # 検証
-                                assert result["inheritance_type"] == MemoryInheritanceType.ITEM
-                                assert "結晶" in result.entity_name
+                                assert result.success is True
+                                assert result.inheritance_type == MemoryInheritanceType.ITEM
+                                assert result.sp_consumed == 30
+                                assert result.fragments_used == ["fragment-0", "fragment-1"]
+                                assert "結晶" in result.result["name"]
 
     @pytest.mark.asyncio
     async def test_execute_inheritance_log_enhancement(self, service, mock_character, mock_fragments):
@@ -267,15 +263,12 @@ class TestMemoryInheritanceService:
 
         # モック継承結果
         mock_result = {
-            "success": True,
-            "inheritance_type": MemoryInheritanceType.LOG_ENHANCEMENT,
-            "result": {
-                "created_entity_id": "enhanced-log-id",
-                "entity_name": "強化されたログ",
-                "description": "複数の記憶が融合した強力なログ",
-            },
-            "sp_consumed": 60,
-            "fragments_consumed": 3,
+            "type": "log_enhancement",
+            "enhancement_id": "enhanced-log-id",
+            "name": "強化されたログ",
+            "description": "複数の記憶が融合した強力なログ",
+            "effects": ["経験値ボーナス+20%"],
+            "fragment_ids": ["fragment-0", "fragment-1", "fragment-2"],
         }
 
         # モックの設定
@@ -289,8 +282,11 @@ class TestMemoryInheritanceService:
                                 result = await service.execute_inheritance(character_id, request)
 
                                 # 検証
-                                assert result["inheritance_type"] == MemoryInheritanceType.LOG_ENHANCEMENT
-                                assert result["fragments_consumed"] == 3
+                                assert result.success is True
+                                assert result.inheritance_type == MemoryInheritanceType.LOG_ENHANCEMENT
+                                assert result.sp_consumed == 60
+                                assert result.fragments_used == ["fragment-0", "fragment-1", "fragment-2"]
+                                assert result.result["name"] == "強化されたログ"
 
     @pytest.mark.asyncio
     async def test_execute_inheritance_failure(self, service, mock_character, mock_fragments):
