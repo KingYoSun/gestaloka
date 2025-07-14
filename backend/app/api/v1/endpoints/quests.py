@@ -13,7 +13,6 @@ from app.core.logging import get_logger
 from app.models.character import Character
 from app.models.quest import Quest, QuestOrigin, QuestProposal, QuestStatus
 from app.services.quest_service import QuestService
-from app.services.websocket_service import WebSocketService
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -79,8 +78,9 @@ def create_quest(
     )
 
     # WebSocket通知
-    websocket_service = WebSocketService()
-    websocket_service.notify_quest_created(character_id, quest)
+    # TODO: WebSocket実装時に通知を追加
+    # websocket_service = WebSocketService()
+    # websocket_service.notify_quest_created(character_id, quest)
 
     return quest
 
@@ -112,8 +112,9 @@ def accept_quest(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="クエストが見つかりません")
 
     # WebSocket通知
-    websocket_service = WebSocketService()
-    websocket_service.notify_quest_updated(character_id, quest)
+    # TODO: WebSocket実装時に通知を追加
+    # websocket_service = WebSocketService()
+    # websocket_service.notify_quest_updated(character_id, quest)
 
     return quest
 
@@ -145,12 +146,14 @@ async def update_quest_progress(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="クエストが見つかりません")
 
     # WebSocket通知
-    websocket_service = WebSocketService()
-    websocket_service.notify_quest_updated(character_id, quest)
+    # TODO: WebSocket実装時に通知を追加
+    # websocket_service = WebSocketService()
+    # websocket_service.notify_quest_updated(character_id, quest)
 
     # クエスト完了時の追加通知
-    if quest.status == QuestStatus.COMPLETED:
-        websocket_service.notify_quest_completed(character_id, quest)
+    # TODO: WebSocket実装時に通知を追加
+    # if quest.status == QuestStatus.COMPLETED:
+    #     websocket_service.notify_quest_completed(character_id, quest)
 
     return quest
 
@@ -210,7 +213,9 @@ async def infer_implicit_quest(
 
     if quest:
         # WebSocket通知
-        websocket_service = WebSocketService()
-        websocket_service.notify_quest_created(character_id, quest)
+        # TODO: WebSocket実装時に通知を追加
+        # websocket_service = WebSocketService()
+        # websocket_service.notify_quest_created(character_id, quest)
+        pass
 
     return quest

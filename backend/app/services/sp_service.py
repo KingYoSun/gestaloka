@@ -32,34 +32,12 @@ class SPService(SPServiceBase):
     async def get_or_create_player_sp(self, user_id: str) -> PlayerSP:
         """プレイヤーのSP残高を取得または作成"""
         try:
-            # 既存のレコードを検索
-            stmt = select(PlayerSP).where(col(PlayerSP.user_id) == user_id)
-            player_sp = self.db.execute(stmt).scalars().first()
+            # 共通ロジックを使用
+            player_sp, is_new = self._get_or_create_player_sp_logic(user_id)
 
-            if not player_sp:
-                # 新規作成
-                player_sp = self._create_player_sp(user_id, initial_sp=50)
-                self.db.add(player_sp)
+            # 新規作成の場合、コミットが必要
+            if is_new:
                 self.db.commit()
-                self.db.refresh(player_sp)
-
-                # 初期ボーナスの取引記録
-                transaction = self._create_transaction_data(
-                    player_sp=player_sp,
-                    transaction_type=SPTransactionType.ACHIEVEMENT,
-                    amount=50,
-                    description="初回登録ボーナス",
-                    balance_before=0,
-                    metadata={"achievement": "first_registration"},
-                )
-                await self._save_transaction(transaction)
-                self.db.commit()
-
-                logger.info(
-                    "Created new PlayerSP",
-                    user_id=user_id,
-                    initial_sp=50,
-                )
 
             return player_sp
 
@@ -317,34 +295,12 @@ class SPServiceSync(SPServiceBase):
     def get_or_create_player_sp_sync(self, user_id: str) -> PlayerSP:
         """プレイヤーのSP残高を取得または作成（同期版）"""
         try:
-            # 既存のレコードを検索
-            stmt = select(PlayerSP).where(col(PlayerSP.user_id) == user_id)
-            player_sp = self.db.execute(stmt).scalars().first()
+            # 共通ロジックを使用
+            player_sp, is_new = self._get_or_create_player_sp_logic(user_id)
 
-            if not player_sp:
-                # 新規作成
-                player_sp = self._create_player_sp(user_id, initial_sp=50)
-                self.db.add(player_sp)
+            # 新規作成の場合、コミットが必要
+            if is_new:
                 self.db.commit()
-                self.db.refresh(player_sp)
-
-                # 初期ボーナスの取引記録
-                transaction = self._create_transaction_data(
-                    player_sp=player_sp,
-                    transaction_type=SPTransactionType.ACHIEVEMENT,
-                    amount=50,
-                    description="初回登録ボーナス",
-                    balance_before=0,
-                    metadata={"achievement": "first_registration"},
-                )
-                self._save_transaction(transaction)
-                self.db.commit()
-
-                logger.info(
-                    "Created new PlayerSP (sync)",
-                    user_id=user_id,
-                    initial_sp=50,
-                )
 
             return player_sp
 

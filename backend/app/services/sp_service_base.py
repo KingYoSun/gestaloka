@@ -34,11 +34,6 @@ class SPServiceBase(ABC):
     LOGIN_BONUS_14_DAYS = 10
     LOGIN_BONUS_30_DAYS = 20
 
-    # 連続ログインボーナス
-    LOGIN_BONUS_7_DAYS = 5
-    LOGIN_BONUS_14_DAYS = 10
-    LOGIN_BONUS_30_DAYS = 20
-
     def __init__(self, db: Session):
         self.db = db
 
@@ -164,6 +159,48 @@ class SPServiceBase(ABC):
     def _save_transaction(self, transaction: SPTransaction) -> None:
         """トランザクションを保存（同期/非同期で実装が異なる）"""
         pass
+
+    def _get_or_create_player_sp_logic(self, user_id: str) -> tuple[PlayerSP, bool]:
+        """プレイヤーのSP残高を取得または作成する共通ロジック
+
+        Returns:
+            tuple[PlayerSP, bool]: (プレイヤーSP, 新規作成フラグ)
+        """
+        from sqlmodel import col, select
+
+        # 既存のレコードを検索
+        stmt = select(PlayerSP).where(col(PlayerSP.user_id) == user_id)
+        player_sp = self.db.execute(stmt).scalars().first()
+
+        if player_sp:
+            return player_sp, False
+
+        # 新規作成
+        player_sp = self._create_player_sp(user_id, initial_sp=50)
+        self.db.add(player_sp)
+        self.db.commit()
+        self.db.refresh(player_sp)
+
+        # 初期ボーナスの取引記録を作成（保存は呼び出し側で行う）
+        transaction = self._create_transaction_data(
+            player_sp=player_sp,
+            transaction_type=SPTransactionType.ACHIEVEMENT,
+            amount=50,
+            description="初回登録ボーナス",
+            balance_before=0,
+            metadata={"achievement": "first_registration"},
+        )
+
+        # 一時的に保存（呼び出し側でコミット）
+        self.db.add(transaction)
+
+        logger.info(
+            "Created new PlayerSP",
+            user_id=user_id,
+            initial_sp=50,
+        )
+
+        return player_sp, True
 
     def _get_subscription_benefits(self, subscription_type: SPSubscriptionType) -> dict[str, Any]:
         """サブスクリプションの特典情報を取得"""
