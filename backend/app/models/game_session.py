@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.game_message import GameMessage
     from app.models.log import ActionLog, LogFragment
     from app.models.session_result import SessionResult
+    from app.models.story_arc import StoryArc
 
 
 class SessionStatus(str, Enum):
@@ -43,6 +44,7 @@ class GameSession(SQLModel, table=True):
     story_arc_id: Optional[str] = Field(
         default=None, foreign_key="story_arcs.id"
     )  # ストーリーアークID（複数セッション跨ぎ）
+    is_first_session: bool = Field(default=False)  # 初回セッションかどうか
 
     # リザルト関連
     result_summary: Optional[str] = Field(default=None)  # セッションのサマリー
@@ -65,6 +67,7 @@ class GameSession(SQLModel, table=True):
     )
     log_fragments: list["LogFragment"] = Relationship(back_populates="session")
     action_logs: list["ActionLog"] = Relationship(back_populates="session")
+    story_arc: Optional["StoryArc"] = Relationship(back_populates="sessions")
 
     def __repr__(self) -> str:
         return f"<GameSession(id={self.id}, character_id={self.character_id}, status={self.session_status})>"

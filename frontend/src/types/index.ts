@@ -124,27 +124,6 @@ export interface ActionChoice {
   difficulty?: string
 }
 
-// ログ関連の型定義
-export interface LogFragment {
-  id: string
-  characterId: string
-  content: string
-  type: 'action' | 'dialogue' | 'emotion' | 'thought'
-  tags: string[]
-  quality: number
-  createdAt: string
-}
-
-export interface CompletedLog {
-  id: string
-  characterId: string
-  title: string
-  summary: string
-  fragments: LogFragment[]
-  status: 'draft' | 'completed' | 'published'
-  createdAt: string
-  updatedAt: string
-}
 
 // API関連の型定義
 export interface ApiResponse<T> {
