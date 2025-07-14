@@ -13,7 +13,7 @@ from app.models import Character, Location, LocationConnection
 from app.models.exploration_progress import CharacterExplorationProgress
 from app.schemas.narrative import GMAIResponse, LocationEvent
 from app.services.ai.coordinator_factory import get_coordinator_ai
-from app.services.sp_calculation import SPCalculationService
+from app.services.game_action_sp_calculation import SPCalculationService
 
 
 class GMAIService:

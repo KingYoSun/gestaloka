@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { useToast } from '@/components/ui/use-toast'
+import { useToast } from '@/hooks/useToast'
 import { Loader2, Search, Plus, Minus, History } from 'lucide-react'
 import {
   adminSPManagementApi,

@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from app.core.database import engine
 from app.models.character import Character
 from app.models.user import User
-from app.utils.security import get_password_hash
+from app.services.user_service import UserService
 
 
 def create_test_data():
@@ -27,7 +27,7 @@ def create_test_data():
                 id=str(uuid.uuid4()),
                 username="testuser",
                 email="test@example.com",
-                hashed_password=get_password_hash("password123"),
+                hashed_password=UserService.get_password_hash("password123"),
                 is_active=True,
                 is_verified=True,
                 created_at=datetime.utcnow(),

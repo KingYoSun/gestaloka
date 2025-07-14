@@ -21,7 +21,7 @@ from app.schemas.memory_inheritance import (
     MemoryInheritanceResult,
     MemoryInheritanceType,
 )
-from app.services.sp_calculation import SPCalculationService
+from app.services.game_action_sp_calculation import SPCalculationService
 from app.services.sp_service import SPService
 
 

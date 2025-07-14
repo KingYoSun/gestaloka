@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 
 from app.models.character import Character
 from app.models.log import LogFragment, LogFragmentRarity, MemoryType
-from app.services.sp_calculation import SPCalculationService
+from app.services.game_action_sp_calculation import SPCalculationService
 
 
 class BonusType(str, Enum):

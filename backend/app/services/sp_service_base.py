@@ -6,7 +6,7 @@ SPサービスの共通ロジック
 
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar, Optional
+from typing import Any, Optional
 
 from sqlmodel import Session
 
@@ -14,7 +14,6 @@ from app.core.exceptions import InsufficientSPError
 from app.core.logging import get_logger
 from app.models.sp import (
     PlayerSP,
-    SPPurchasePackage,
     SPSubscriptionType,
     SPTransaction,
     SPTransactionType,
@@ -35,28 +34,10 @@ class SPServiceBase(ABC):
     LOGIN_BONUS_14_DAYS = 10
     LOGIN_BONUS_30_DAYS = 20
 
-    # 購入パッケージ設定
-    PURCHASE_PACKAGES: ClassVar[dict[SPPurchasePackage, dict[str, int]]] = {
-        SPPurchasePackage.SMALL: {"sp": 100, "price": 500},
-        SPPurchasePackage.MEDIUM: {"sp": 300, "price": 1200},
-        SPPurchasePackage.LARGE: {"sp": 500, "price": 2000},
-        SPPurchasePackage.EXTRA_LARGE: {"sp": 1000, "price": 3500},
-        SPPurchasePackage.MEGA: {"sp": 3000, "price": 8000},
-    }
-
-    # サブスクリプション設定
-    SUBSCRIPTION_BENEFITS: ClassVar[dict[SPSubscriptionType, dict[str, float | int]]] = {
-        SPSubscriptionType.BASIC: {
-            "daily_bonus": 20,
-            "discount_rate": 0.1,  # 10%割引
-            "price": 1000,
-        },
-        SPSubscriptionType.PREMIUM: {
-            "daily_bonus": 50,
-            "discount_rate": 0.2,  # 20%割引
-            "price": 2500,
-        },
-    }
+    # 連続ログインボーナス
+    LOGIN_BONUS_7_DAYS = 5
+    LOGIN_BONUS_14_DAYS = 10
+    LOGIN_BONUS_30_DAYS = 20
 
     def __init__(self, db: Session):
         self.db = db
@@ -94,7 +75,8 @@ class SPServiceBase(ABC):
         subscription_bonus: int = 0
         if player_sp.active_subscription and player_sp.subscription_expires_at:
             if player_sp.subscription_expires_at > now:
-                subscription_bonus = int(self.SUBSCRIPTION_BENEFITS[player_sp.active_subscription]["daily_bonus"])
+                benefits = self._get_subscription_benefits(player_sp.active_subscription)
+                subscription_bonus = int(benefits.get("daily_bonus", 0))
 
         # 連続ログイン処理
         login_bonus = 0
@@ -172,7 +154,8 @@ class SPServiceBase(ABC):
         discount_rate = 0.0
         if player_sp.active_subscription and player_sp.subscription_expires_at:
             if player_sp.subscription_expires_at > datetime.now(UTC):
-                discount_rate = self.SUBSCRIPTION_BENEFITS[player_sp.active_subscription]["discount_rate"]
+                benefits = self._get_subscription_benefits(player_sp.active_subscription)
+                discount_rate = float(benefits.get("discount_rate", 0.0))
 
         final_amount = int(amount * (1 - discount_rate))
         return final_amount, discount_rate
@@ -181,6 +164,21 @@ class SPServiceBase(ABC):
     def _save_transaction(self, transaction: SPTransaction) -> None:
         """トランザクションを保存（同期/非同期で実装が異なる）"""
         pass
+
+    def _get_subscription_benefits(self, subscription_type: SPSubscriptionType) -> dict[str, Any]:
+        """サブスクリプションの特典情報を取得"""
+        # デフォルト値を返す。実際の値はsp_subscription_service.pyで管理
+        default_benefits = {
+            SPSubscriptionType.BASIC: {
+                "daily_bonus": 20,
+                "discount_rate": 0.1,
+            },
+            SPSubscriptionType.PREMIUM: {
+                "daily_bonus": 50,
+                "discount_rate": 0.2,
+            },
+        }
+        return default_benefits.get(subscription_type, {})
 
     def _consume_sp_logic(
         self,
