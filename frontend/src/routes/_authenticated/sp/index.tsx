@@ -5,6 +5,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Coins, History, TrendingUp, Calendar, RefreshCw } from 'lucide-react'
+import { formatNumber } from '@/lib/utils'
 import { useSPBalance, useDailyRecovery } from '@/hooks/useSP'
 import { SPDisplay } from '@/components/sp/SPDisplay'
 import { SPTransactionHistory } from '@/components/sp/SPTransactionHistory'
@@ -39,10 +40,6 @@ function SPPage() {
   const [activeTab, setActiveTab] = useState('overview')
   const [selectedPlan, setSelectedPlan] = useState<SPPlan | null>(null)
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
-
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('ja-JP').format(num)
-  }
 
   const handleDailyRecovery = async () => {
     try {

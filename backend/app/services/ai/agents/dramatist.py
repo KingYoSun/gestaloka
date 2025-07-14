@@ -10,12 +10,9 @@ from app.core.exceptions import AIServiceError
 from app.core.logging import get_logger
 from app.schemas.game_session import ActionChoice, SessionEndingProposal
 from app.services.ai.agents.base import AgentResponse, BaseAgent
+from app.services.ai.constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
-from app.services.ai.utils import agent_error_handler, ResponseParser
-from app.services.ai.constants import (
-    DEFAULT_TEMPERATURE,
-    DEFAULT_MAX_TOKENS
-)
+from app.services.ai.utils import ResponseParser, agent_error_handler
 
 logger = get_logger(__name__)
 
@@ -53,8 +50,8 @@ class DramatistAgent(BaseAgent):
 
         # レスポンス生成
         raw_response = await self.generate_response(
-            enhanced_context, 
-            temperature=kwargs.get("temperature", DEFAULT_TEMPERATURE), 
+            enhanced_context,
+            temperature=kwargs.get("temperature", DEFAULT_TEMPERATURE),
             max_tokens=kwargs.get("max_tokens", DEFAULT_MAX_TOKENS)
         )
 
@@ -181,7 +178,7 @@ class DramatistAgent(BaseAgent):
 
         # JSONブロックの抽出を試みる
         response_data = self.parse_json_response(raw_response)
-        
+
         if response_data:
             # narrativeフィールドを取得
             narrative = ResponseParser.extract_text_content(response_data, "narrative")

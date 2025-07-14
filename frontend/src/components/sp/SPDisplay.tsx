@@ -10,7 +10,7 @@ import {
   AlertCircle,
   AlertTriangle,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 import { useSPBalanceSummary } from '@/hooks/useSP'
 import { SPSubscriptionInfo } from '@/types/sp'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -78,10 +78,6 @@ export const SPDisplay = memo(function SPDisplay({
   const subscriptionInfo = balance.activeSubscription
     ? SPSubscriptionInfo[balance.activeSubscription]
     : null
-
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('ja-JP').format(num)
-  }
 
   const isLowBalance = balance.currentSp < lowBalanceThreshold
   const balanceChange =

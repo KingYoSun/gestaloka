@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatNumber } from '@/lib/utils'
 import { useSPBalance } from '@/hooks/useSP'
 import { useSPPurchaseStats } from '@/hooks/use-sp-purchase'
 import { Coins, TrendingUp, ShoppingBag } from 'lucide-react'
@@ -25,10 +26,6 @@ export function SPBalanceCard() {
 
   // SPには最大値の概念がないため、残高の表示のみ
   const currentSp = spData?.currentSp || 0
-
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('ja-JP').format(num)
-  }
 
   return (
     <Card>

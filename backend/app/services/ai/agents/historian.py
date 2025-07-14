@@ -14,10 +14,10 @@ from pydantic import BaseModel, Field
 
 from app.core.logging import get_logger
 from app.services.ai.agents.base import AgentResponse, BaseAgent
+from app.services.ai.constants import LOW_CREATIVITY_TEMPERATURE
 from app.services.ai.gemini_client import GeminiClient
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext, PromptManager
 from app.services.ai.utils import agent_error_handler
-from app.services.ai.constants import LOW_CREATIVITY_TEMPERATURE
 
 if TYPE_CHECKING:
     from app.models.game_message import GameMessage

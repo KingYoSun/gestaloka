@@ -15,7 +15,8 @@ from sqlmodel import Session, and_, select
 
 from app.api.deps import get_current_active_user
 from app.core.database import get_session
-from app.models.character import Character, GameSession
+from app.models.character import Character
+from app.models.game_session import GameSession
 from app.models.log import (
     CompletedLog,
     CompletedLogStatus,

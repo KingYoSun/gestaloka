@@ -8,7 +8,6 @@ Coordinator AI - すべてのAIエージェントを統括する中央調整役
 import json
 from typing import Any, Optional
 
-
 from app.core.logging import get_logger
 from app.services.ai.agents.base import AgentResponse, BaseAgent
 from app.services.ai.agents.dramatist import DramatistAgent

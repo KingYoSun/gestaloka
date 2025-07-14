@@ -7,7 +7,8 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
 
-from app.models.character import Character, GameSession
+from app.models.character import Character
+from app.models.game_session import GameSession
 
 
 def check_character_ownership(

@@ -28,7 +28,7 @@ class TimestampedModel(SQLModel):
 class BaseModel(TimestampedModel):
     """
     すべてのモデルの基底クラス
-    
+
     ID生成とタイムスタンプフィールドを提供します。
     """
 
@@ -42,7 +42,7 @@ class BaseModel(TimestampedModel):
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """
         モデルを辞書形式にシリアライズ
-        
+
         datetimeオブジェクトをISO形式の文字列に変換します。
         """
         data = super().model_dump(**kwargs)

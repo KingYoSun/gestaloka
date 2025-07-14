@@ -9,7 +9,7 @@ from sqlalchemy import JSON
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from app.models.character import GameSession
+    from app.models.game_session import GameSession
 
 
 # Constants for message types

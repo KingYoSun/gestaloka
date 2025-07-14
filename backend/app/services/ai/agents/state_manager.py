@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any, Optional
 from app.core.exceptions import AIServiceError
 from app.core.logging import get_logger
 from app.services.ai.agents.base import AgentResponse, BaseAgent
+from app.services.ai.constants import LOW_CREATIVITY_TEMPERATURE
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 from app.services.ai.utils import agent_error_handler
-from app.services.ai.constants import LOW_CREATIVITY_TEMPERATURE
 
 if TYPE_CHECKING:
     from app.models.game_message import GameMessage

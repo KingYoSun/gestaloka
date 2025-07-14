@@ -37,7 +37,7 @@ class CharacterService:
         """ユーザーのキャラクター一覧を取得"""
         try:
             # 各キャラクターの最終セッション時間を取得するサブクエリ
-            from app.models.character import GameSession
+            from app.models.game_session import GameSession
 
             statement = select(CharacterModel).where(
                 CharacterModel.user_id == user_id,

@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlmodel import Session
 
-from app.models.character import Character, GameSession
+from app.models.character import Character
+from app.models.game_session import GameSession
 from app.models.log import (
     CompletedLog,
     CompletedLogStatus,
@@ -115,7 +116,7 @@ class TestNPCGeneratorIntegration(BaseNeo4jIntegrationTest):
     @pytest.fixture
     def test_session_obj(self, test_db_session: Session, test_character: Character) -> GameSession:
         """テスト用ゲームセッション"""
-        from app.models.character import GameSession
+        from app.models.game_session import GameSession
 
         game_session = GameSession(
             id=str(uuid.uuid4()),

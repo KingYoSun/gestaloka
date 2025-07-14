@@ -10,12 +10,9 @@ from app.core.exceptions import AIServiceError
 from app.core.logging import get_logger
 from app.schemas.game_session import ActionChoice
 from app.services.ai.agents.base import AgentResponse, BaseAgent
+from app.services.ai.constants import ANOMALY_BASE_PROBABILITY, ANOMALY_COOLDOWN_ACTIONS
 from app.services.ai.prompt_manager import AIAgentRole, PromptContext
 from app.services.ai.utils import agent_error_handler
-from app.services.ai.constants import (
-    ANOMALY_BASE_PROBABILITY,
-    ANOMALY_COOLDOWN_ACTIONS
-)
 
 logger = get_logger(__name__)
 

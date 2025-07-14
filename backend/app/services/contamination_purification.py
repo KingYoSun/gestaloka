@@ -10,6 +10,7 @@ from typing import Any, ClassVar, Optional
 
 from sqlmodel import Session, select
 
+from app.core.exceptions import InsufficientSPError
 from app.models.character import Character
 from app.models.item import CharacterItem, Item
 from app.models.log import CompletedLog, EmotionalValence, LogFragment
@@ -112,7 +113,7 @@ class ContaminationPurificationService:
         # SP残高確認
         player_sp = await self.sp_service.get_balance(character.user_id)
         if player_sp.current_sp < total_sp_cost:
-            raise ValueError(f"Insufficient SP. Required: {total_sp_cost}, Current: {player_sp.current_sp}")
+            raise InsufficientSPError(f"Insufficient SP. Required: {total_sp_cost}, Current: {player_sp.current_sp}")
 
         # SP消費
         from app.models.sp import SPTransactionType

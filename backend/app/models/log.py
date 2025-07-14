@@ -14,7 +14,8 @@ from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from app.models.character import Character, GameSession
+    from app.models.character import Character
+    from app.models.game_session import GameSession
     from app.models.log_dispatch import LogDispatch
 
 

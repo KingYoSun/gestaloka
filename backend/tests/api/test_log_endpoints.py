@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.character import Character, GameSession
+from app.models.character import Character
+from app.models.game_session import GameSession
 from app.models.log import (
     EmotionalValence,
     LogFragment,

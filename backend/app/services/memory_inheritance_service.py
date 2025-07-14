@@ -9,6 +9,7 @@ from uuid import uuid4
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlmodel import Session, select
 
+from app.core.exceptions import InsufficientSPError
 from app.models.character import Character, CharacterSkill, Skill
 from app.models.item import CharacterItem, Item
 from app.models.log import LogFragment, LogFragmentRarity
@@ -81,7 +82,7 @@ class MemoryInheritanceService:
         # SP残高確認
         player_sp = await self.sp_service.get_balance(character_id)
         if player_sp.current_sp < sp_cost:
-            raise ValueError(f"SP不足です。必要: {sp_cost} SP")
+            raise InsufficientSPError(f"SP不足です。必要: {sp_cost} SP")
 
         # 継承タイプに応じて実行
         result = None

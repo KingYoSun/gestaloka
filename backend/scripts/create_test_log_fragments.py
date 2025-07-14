@@ -15,7 +15,8 @@ from sqlalchemy import select
 from sqlmodel import Session
 
 from app.core.database import engine
-from app.models.character import Character, GameSession
+from app.models.character import Character
+from app.models.game_session import GameSession
 from app.models.log import EmotionalValence, LogFragment, LogFragmentRarity
 
 # テストデータのテンプレート
