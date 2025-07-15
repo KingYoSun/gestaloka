@@ -40,7 +40,7 @@ def test_user(test_db: Session):
         id=generate_uuid(),
         username="testuser",
         email="test@example.com",
-        password_hash="hashed_password",
+        hashed_password="hashed_password",
     )
     test_db.add(user)
     test_db.commit()
@@ -55,9 +55,9 @@ def test_character(test_db: Session, test_user: User):
         id=generate_uuid(),
         user_id=test_user.id,
         name="テストキャラクター",
-        introduction="テスト用",
-        public_info="公開情報",
-        private_info="非公開情報",
+        description="テスト用",
+        appearance="公開情報",
+        personality="非公開情報",
     )
     test_db.add(character)
     test_db.commit()
@@ -75,32 +75,20 @@ def quest_service(test_db: Session):
 
 def test_create_quest(quest_service: QuestService, test_character: Character):
     """クエスト作成のテスト"""
-    proposal = QuestProposal(
-        id=generate_uuid(),
+    quest = quest_service.create_quest(
         character_id=test_character.id,
-        session_id="test-session",
-        name="テストクエスト",
+        title="テストクエスト",
         description="テストクエストの説明",
-        objectives=["目標1", "目標2"],
-        trigger_keywords=["キーワード1", "キーワード2"],
-        estimated_difficulty=3,
-        relevance_score=0.8,
-        quest_type="exploration",
-        metadata={"test": "data"},
-        analyzed_actions=[],
+        origin=QuestOrigin.GM_PROPOSED,
+        session_id="test-session",
         context_summary="コンテキスト",
-        is_active=True,
     )
     
-    quest = quest_service.create_quest(proposal, test_character.id)
-    
-    assert quest.name == "テストクエスト"
+    assert quest.title == "テストクエスト"
     assert quest.description == "テストクエストの説明"
     assert quest.character_id == test_character.id
     assert quest.status == QuestStatus.ACTIVE
     assert quest.origin == QuestOrigin.AI_PROPOSED
-    assert quest.estimated_difficulty == 3
-    assert len(quest.objectives) == 2
 
 
 def test_accept_quest(quest_service: QuestService, test_character: Character, test_db: Session):
@@ -109,12 +97,10 @@ def test_accept_quest(quest_service: QuestService, test_character: Character, te
     quest = Quest(
         id=generate_uuid(),
         character_id=test_character.id,
-        name="受諾テストクエスト",
+        title="受諾テストクエスト",
         description="受諾テスト",
         status=QuestStatus.PROPOSED,
-        origin=QuestOrigin.AI_PROPOSED,
-        objectives=["目標"],
-        estimated_difficulty=2,
+        origin=QuestOrigin.GM_PROPOSED,
     )
     test_db.add(quest)
     test_db.commit()
@@ -124,7 +110,7 @@ def test_accept_quest(quest_service: QuestService, test_character: Character, te
     
     assert accepted_quest is not None
     assert accepted_quest.status == QuestStatus.ACTIVE
-    assert accepted_quest.accepted_at is not None
+    assert accepted_quest.started_at is not None
 
 
 def test_accept_quest_not_found(quest_service: QuestService):
@@ -139,13 +125,11 @@ def test_accept_quest_already_active(quest_service: QuestService, test_character
     quest = Quest(
         id=generate_uuid(),
         character_id=test_character.id,
-        name="アクティブクエスト",
+        title="アクティブクエスト",
         description="既にアクティブ",
         status=QuestStatus.ACTIVE,
-        origin=QuestOrigin.AI_PROPOSED,
-        objectives=["目標"],
-        estimated_difficulty=2,
-        accepted_at=datetime.now(UTC),
+        origin=QuestOrigin.GM_PROPOSED,
+        started_at=datetime.now(UTC),
     )
     test_db.add(quest)
     test_db.commit()
@@ -165,15 +149,11 @@ async def test_update_quest_progress(quest_service: QuestService, test_character
     quest = Quest(
         id=generate_uuid(),
         character_id=test_character.id,
-        name="進行テストクエスト",
+        title="進行テストクエスト",
         description="進行テスト",
         status=QuestStatus.ACTIVE,
-        origin=QuestOrigin.AI_PROPOSED,
-        objectives=["宝箱を見つける", "鍵を手に入れる"],
-        estimated_difficulty=3,
-        accepted_at=datetime.now(UTC),
-        progress_data={},
-        completed_objectives=[],
+        origin=QuestOrigin.GM_PROPOSED,
+        started_at=datetime.now(UTC),
     )
     test_db.add(quest)
     
@@ -185,8 +165,6 @@ async def test_update_quest_progress(quest_service: QuestService, test_character
         action_type="explore",
         action_content="古い宝箱を発見した",
         response_content="錆びた宝箱を見つけました",
-        sp_consumed=5,
-        success=True,
     )
     test_db.add(action)
     test_db.commit()
@@ -219,14 +197,12 @@ async def test_complete_quest(quest_service: QuestService, test_character: Chara
     quest = Quest(
         id=generate_uuid(),
         character_id=test_character.id,
-        name="完了テストクエスト",
+        title="完了テストクエスト",
         description="完了テスト",
         status=QuestStatus.PROGRESSING,
-        origin=QuestOrigin.AI_PROPOSED,
-        objectives=["目標1", "目標2"],
-        completed_objectives=["目標1", "目標2"],
-        estimated_difficulty=2,
-        accepted_at=datetime.now(UTC),
+        origin=QuestOrigin.GM_PROPOSED,
+        started_at=datetime.now(UTC),
+        progress_percentage=100.0,
     )
     test_db.add(quest)
     test_db.commit()
@@ -255,7 +231,7 @@ def test_get_character_quests(quest_service: QuestService, test_character: Chara
             name=f"クエスト{i+1}",
             description=f"説明{i+1}",
             status=status,
-            origin=QuestOrigin.AI_PROPOSED,
+            origin=QuestOrigin.GM_PROPOSED,
             objectives=["目標"],
             estimated_difficulty=i+1,
         )
@@ -294,8 +270,6 @@ async def test_analyze_and_propose_quests(quest_service: QuestService, test_char
             action_type="explore",
             action_content=f"行動{i+1}",
             response_content=f"結果{i+1}",
-            sp_consumed=5,
-            success=True,
         )
         test_db.add(action)
     test_db.commit()
@@ -339,8 +313,6 @@ async def test_infer_implicit_quest(quest_service: QuestService, test_character:
             action_type="collect",
             action_content=f"アイテム{i+1}を収集",
             response_content=f"アイテム{i+1}を入手しました",
-            sp_consumed=3,
-            success=True,
         )
         actions.append(action)
         test_db.add(action)

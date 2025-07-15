@@ -82,11 +82,15 @@ async def test_get_by_id(character_service: CharacterService, test_user: User, t
     stats = CharacterStats(
         id=generate_uuid(),
         character_id=character.id,
-        contamination_level=0,
-        mental_corruption=0,
-        insight_level=0,
-        physical_condition=100,
-        cognitive_integrity=100,
+        level=1,
+        experience=0,
+        health=100,
+        max_health=100,
+        mp=100,
+        max_mp=100,
+        attack=10,
+        defense=5,
+        agility=10,
     )
     test_db.add(character)
     test_db.add(stats)
@@ -116,9 +120,9 @@ async def test_get_by_user(character_service: CharacterService, test_user: User,
             id=generate_uuid(),
             user_id=test_user.id,
             name=f"キャラクター{i+1}",
-            introduction=f"テスト{i+1}",
-            public_info="公開",
-            private_info="非公開",
+            description=f"テスト{i+1}",
+            appearance="公開",
+            personality="非公開",
             is_active=True,
         )
         stats = CharacterStats(
@@ -180,17 +184,21 @@ async def test_update_character(character_service: CharacterService, test_user: 
         user_id=test_user.id,
         name="元の名前",
         description="元の紹介",
-        public_info="元の公開情報",
-        private_info="元の非公開情報",
+        appearance="元の外見",
+        personality="元の性格",
     )
     stats = CharacterStats(
         id=generate_uuid(),
         character_id=character.id,
-        contamination_level=0,
-        mental_corruption=0,
-        insight_level=0,
-        physical_condition=100,
-        cognitive_integrity=100,
+        level=1,
+        experience=0,
+        health=100,
+        max_health=100,
+        mp=100,
+        max_mp=100,
+        attack=10,
+        defense=5,
+        agility=10,
     )
     test_db.add(character)
     test_db.add(stats)
@@ -227,11 +235,15 @@ async def test_delete_character(character_service: CharacterService, test_user: 
     stats = CharacterStats(
         id=generate_uuid(),
         character_id=character.id,
-        contamination_level=0,
-        mental_corruption=0,
-        insight_level=0,
-        physical_condition=100,
-        cognitive_integrity=100,
+        level=1,
+        experience=0,
+        health=100,
+        max_health=100,
+        mp=100,
+        max_mp=100,
+        attack=10,
+        defense=5,
+        agility=10,
     )
     test_db.add(character)
     test_db.add(stats)
