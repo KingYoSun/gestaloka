@@ -1,0 +1,3 @@
+app/api/api_v1/endpoints/dispatch.py:407: unused variable 'encounter_id' (100% confidence)
+app/services/battle.py:33: unused variable 'session_data' (100% confidence)
+app/tasks/ai_tasks.py:39: unused variable 'target_world_context' (100% confidence)
