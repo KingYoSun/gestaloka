@@ -97,6 +97,16 @@ class UserService:
     async def create(self, user_create: UserCreate) -> User:
         """新しいユーザーを作成"""
         try:
+            # ユーザー名の重複チェック
+            existing_user = await self.get_by_username(user_create.username)
+            if existing_user:
+                raise ValueError(f"Username '{user_create.username}' already exists")
+            
+            # メールアドレスの重複チェック
+            existing_email = await self.get_by_email(user_create.email)
+            if existing_email:
+                raise ValueError(f"Email '{user_create.email}' already exists")
+            
             # パスワードをハッシュ化
             hashed_password = pwd_context.hash(user_create.password)
 
@@ -143,8 +153,17 @@ class UserService:
 
             # 更新データを適用
             if user_update.username is not None:
+                # ユーザー名の重複チェック（自分自身は除外）
+                existing_user = await self.get_by_username(user_update.username)
+                if existing_user and existing_user.id != user_id:
+                    raise ValueError(f"Username '{user_update.username}' already exists")
                 user.username = user_update.username
+            
             if user_update.email is not None:
+                # メールアドレスの重複チェック（自分自身は除外）
+                existing_email = await self.get_by_email(user_update.email)
+                if existing_email and existing_email.id != user_id:
+                    raise ValueError(f"Email '{user_update.email}' already exists")
                 user.email = user_update.email
 
             self.db.add(user)

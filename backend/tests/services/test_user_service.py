@@ -69,9 +69,8 @@ async def test_create_user_duplicate_username(user_service: UserService):
         password="Password123!",
     )
     
-    # 現在の実装では重複チェックがないため、SQLAlchemyのIntegrityErrorが発生する
-    from sqlalchemy.exc import IntegrityError
-    with pytest.raises(IntegrityError):
+    # 重複チェックでValueErrorが発生する
+    with pytest.raises(ValueError, match="Username 'existinguser' already exists"):
         await user_service.create(user_data)
 
 
@@ -93,9 +92,8 @@ async def test_create_user_duplicate_email(user_service: UserService):
         password="Password123!",
     )
     
-    # 現在の実装では重複チェックがないため、SQLAlchemyのIntegrityErrorが発生する
-    from sqlalchemy.exc import IntegrityError
-    with pytest.raises(IntegrityError):
+    # 重複チェックでValueErrorが発生する
+    with pytest.raises(ValueError, match="Email 'existing@example.com' already exists"):
         await user_service.create(user_data)
 
 
@@ -223,6 +221,60 @@ async def test_update_user_partial(user_service: UserService, test_db: Session):
     assert updated is not None
     assert updated.username == "newusername"
     assert updated.email == "email@example.com"  # 変更されていない
+
+
+@pytest.mark.asyncio
+async def test_update_user_duplicate_username(user_service: UserService, test_db: Session):
+    """重複ユーザー名での更新テスト"""
+    # 2人のユーザーを作成
+    user1 = UserModel(
+        id=generate_uuid(),
+        username="user1",
+        email="user1@example.com",
+        hashed_password="hashed",
+    )
+    user2 = UserModel(
+        id=generate_uuid(),
+        username="user2",
+        email="user2@example.com",
+        hashed_password="hashed",
+    )
+    test_db.add(user1)
+    test_db.add(user2)
+    test_db.commit()
+    
+    # user2のユーザー名をuser1と同じにしようとする
+    update_data = UserUpdate(username="user1")
+    
+    with pytest.raises(ValueError, match="Username 'user1' already exists"):
+        await user_service.update(user2.id, update_data)
+
+
+@pytest.mark.asyncio
+async def test_update_user_duplicate_email(user_service: UserService, test_db: Session):
+    """重複メールアドレスでの更新テスト"""
+    # 2人のユーザーを作成
+    user1 = UserModel(
+        id=generate_uuid(),
+        username="user1",
+        email="user1@example.com",
+        hashed_password="hashed",
+    )
+    user2 = UserModel(
+        id=generate_uuid(),
+        username="user2",
+        email="user2@example.com",
+        hashed_password="hashed",
+    )
+    test_db.add(user1)
+    test_db.add(user2)
+    test_db.commit()
+    
+    # user2のメールアドレスをuser1と同じにしようとする
+    update_data = UserUpdate(email="user1@example.com")
+    
+    with pytest.raises(ValueError, match="Email 'user1@example.com' already exists"):
+        await user_service.update(user2.id, update_data)
 
 
 @pytest.mark.asyncio
