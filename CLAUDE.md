@@ -123,3 +123,4 @@ make format            # フォーマット
 - 環境情報: `documents/01_project/activeContext/current_environment.md`
 - 既知の問題: `documents/01_project/activeContext/issuesAndNotes.md`
 - 開発進捗: `documents/01_project/progressReports/`
+- **OpenAPI Generator導入計画**: `documents/02_architecture/openapi-generator-implementation-plan.md`（2025/07/16作成）
