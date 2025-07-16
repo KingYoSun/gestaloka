@@ -29,7 +29,12 @@ export function LoadingSpinner({
 
   if (message) {
     return (
-      <div className={cn('flex items-center justify-center h-64', containerClassName)}>
+      <div
+        className={cn(
+          'flex items-center justify-center h-64',
+          containerClassName
+        )}
+      >
         {spinner}
         <span className="ml-2 text-lg text-slate-600">{message}</span>
       </div>

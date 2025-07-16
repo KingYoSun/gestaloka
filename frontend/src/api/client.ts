@@ -4,7 +4,9 @@
 import {
   User,
   Character,
-  CharacterCreationForm,
+  CharacterCreate,
+} from '@/api/generated'
+import {
   GameSession,
   GameSessionCreate,
   GameSessionListResponse,
@@ -183,7 +185,7 @@ class ApiClient {
   }
 
   async createCharacter(
-    characterData: CharacterCreationForm
+    characterData: CharacterCreate
   ): Promise<Character> {
     return this.requestWithTransform<Character>(
       '/characters/',
@@ -194,7 +196,7 @@ class ApiClient {
 
   async updateCharacter(
     characterId: string,
-    updates: Partial<CharacterCreationForm>
+    updates: Partial<CharacterCreate>
   ): Promise<Character> {
     return this.requestWithTransform<Character>(
       `/characters/${characterId}`,

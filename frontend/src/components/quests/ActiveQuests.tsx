@@ -72,7 +72,6 @@ const QuestCard: React.FC<QuestCardProps> = ({
     }
   }
 
-
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader>

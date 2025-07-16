@@ -50,7 +50,7 @@ export function useCreateGameSession() {
 export function useGameSession(sessionId: string | null) {
   return useQuery({
     queryKey: ['gameSessions', sessionId],
-    queryFn: () => sessionId ? apiClient.getGameSession(sessionId) : null,
+    queryFn: () => (sessionId ? apiClient.getGameSession(sessionId) : null),
     enabled: !!sessionId,
   })
 }

@@ -38,7 +38,9 @@ interface ValidationRules {
 }
 
 async function fetchValidationRules(): Promise<ValidationRules> {
-  return await apiClient.get<ValidationRules>('/api/v1/config/game/validation-rules')
+  return await apiClient.get<ValidationRules>(
+    '/api/v1/config/game/validation-rules'
+  )
 }
 
 export function useValidationRules() {

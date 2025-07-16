@@ -45,7 +45,8 @@ export function useCreatePurchase() {
         // テストモードで即時完了の場合
         toast({
           title: 'SP購入完了',
-          description: response.message || `${response.sp_amount} SPを購入しました`,
+          description:
+            response.message || `${response.sp_amount} SPを購入しました`,
           variant: 'success',
         })
       }
@@ -97,7 +98,8 @@ export function useCancelPurchase() {
   const { toast } = useToast()
 
   return useMutation({
-    mutationFn: (purchaseId: string) => spPurchaseApi.cancelPurchase(purchaseId),
+    mutationFn: (purchaseId: string) =>
+      spPurchaseApi.cancelPurchase(purchaseId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sp', 'purchases'] })
       toast({

@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/15（19:30 JST）
+## 最終更新: 2025/07/16（22:00 JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -63,6 +63,7 @@
   - フェーズ4: セッション間の継続性（AIナラティブ、Neo4j連携、初回仕様、ストーリーアーク）
 - ✅ ノベルゲーム風UIの実装（タイプライター効果、自動再生、表示モード切り替え）
 - ✅ ノベル風UIの改善（テーマ統合、直接実行、状態保持、レイアウト改善）
+- ✅ OpenAPI Generator導入によるAPI型の一元管理（Frontend/Backend型定義の統一）
 
 ## 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -84,6 +85,7 @@
 - TanStack Query 5.80
 - TanStack Router 1.121
 - Vitest 3.2
+- OpenAPI Generator 7.10（TypeScript-Axios）
 
 ### バックエンド
 - Python 3.11
@@ -125,6 +127,16 @@
   - 初回セッションではシステムメッセージを保存しない仕様に対応
   - テストを2回目のセッション作成に変更
   - 全テスト成功（バックエンド242/242、フロントエンド28/28）
+
+### 2025/07/16の変更
+- **OpenAPI Generator導入による型の一元管理**
+  - TypeScript-Axios generatorによる自動型生成システム構築
+  - 117個の型定義ファイルを自動生成
+  - Frontend/Backend間の型定義重複を完全解消（DRY原則違反60%→0%）
+  - APIクライアントの統一と最適化
+  - snake_case/camelCase変換アダプター実装
+  - 破壊的移行により3日間で完了
+  - 詳細レポート: `progressReports/2025-07-16_openapi-generator-migration.md`
 
 ### 2025/07/15の変更
 - **リファクタリング完了度調査**
@@ -450,10 +462,10 @@
 3. TypeScriptのany型警告（45箇所）
    - 段階的な型定義強化が推奨
 
-### 優先対応事項（2025-07-15更新）
-1. **型定義の重複解消（DRY原則違反60%）**
-   - Frontend/Backend間で手動再定義されている型の統一
-   - OpenAPI Generatorの導入による自動生成
+### 優先対応事項（2025-07-16更新）
+1. ~~**型定義の重複解消（DRY原則違反60%）**~~ ✅ **完了（2025-07-16）**
+   - ~~Frontend/Backend間で手動再定義されている型の統一~~
+   - ~~OpenAPI Generatorの導入による自動生成~~
 2. **テストカバレッジの向上**
    - フロントエンド: 0% → 50%以上
    - バックエンド: 29% → 50%以上

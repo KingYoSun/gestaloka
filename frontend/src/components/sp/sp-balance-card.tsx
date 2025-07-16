@@ -36,9 +36,7 @@ export function SPBalanceCard() {
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">現在のSP</span>
-            <span className="font-medium">
-              {formatNumber(currentSp)} SP
-            </span>
+            <span className="font-medium">{formatNumber(currentSp)} SP</span>
           </div>
           {/* SPの残高バーは表示しない（最大値がないため） */}
         </div>

@@ -71,7 +71,9 @@ export function ValidationRulesProvider({ children }: { children: ReactNode }) {
 export function useValidationRulesContext() {
   const context = useContext(ValidationRulesContext)
   if (!context) {
-    throw new Error('useValidationRulesContext must be used within a ValidationRulesProvider')
+    throw new Error(
+      'useValidationRulesContext must be used within a ValidationRulesProvider'
+    )
   }
   return context
 }
@@ -89,7 +91,11 @@ function getDefaultValidationRules(): ValidationRules {
       password: {
         min_length: 8,
         max_length: 100,
-        requirements: ['大文字を1つ以上含む', '小文字を1つ以上含む', '数字を1つ以上含む'],
+        requirements: [
+          '大文字を1つ以上含む',
+          '小文字を1つ以上含む',
+          '数字を1つ以上含む',
+        ],
       },
     },
     character: {

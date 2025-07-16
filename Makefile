@@ -98,6 +98,18 @@ dev-backend: ## バックエンドのみ起動
 dev-full: ## 完全な開発環境を起動
 	docker-compose up
 
+# API生成
+.PHONY: generate-api
+generate-api: ## APIクライアントと型を生成
+	docker-compose exec -T frontend npm run generate:api:clean
+
+.PHONY: generate-api-watch
+generate-api-watch: ## API仕様の変更を監視して自動生成
+	@echo "API仕様の変更を監視します..."
+	@echo "注意: nodemonのインストールが必要です"
+	docker-compose exec -T frontend npm install --save-dev nodemon
+	docker-compose exec -T frontend npx nodemon --watch 'http://backend:8000/api/v1/openapi.json' --exec 'npm run generate:api'
+
 # テスト
 .PHONY: test
 test: ## 全テストを実行

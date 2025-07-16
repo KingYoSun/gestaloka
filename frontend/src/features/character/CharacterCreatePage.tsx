@@ -26,7 +26,7 @@ export function CharacterCreatePage() {
   const createCharacterMutation = useCreateCharacter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const validationRules = useValidationRulesContext()
-  
+
   // バリデーションルールに基づいてスキーマを作成
   const characterCreationSchema = createCharacterCreationSchema(validationRules)
 

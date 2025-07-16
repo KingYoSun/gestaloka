@@ -1,0 +1,21 @@
+generatorName: typescript-axios
+outputDir: ./src/api/generated
+inputSpec: http://backend:8000/api/v1/openapi.json
+additionalProperties:
+  supportsES6: true
+  withSeparateModelsAndApi: true
+  modelPropertyNaming: original  # snake_caseを保持（バックエンドとの一貫性）
+  enumPropertyNaming: PascalCase
+  useSingleRequestParameter: true
+  withInterfaces: true
+  apiPackage: api
+  modelPackage: models
+  # axiosの設定最適化
+  withNodeImports: false
+  # 未使用の警告を抑制
+  disableWarnings: true
+typeMappings:
+  DateTime: Date
+  date: Date
+importMappings:
+  Date: Date

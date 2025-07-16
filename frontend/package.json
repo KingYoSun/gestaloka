@@ -15,7 +15,9 @@
     "test:watch": "vitest --watch",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "generate:api": "docker run --rm --network gestaloka_gestaloka-network -v \"$(pwd):/app\" openapitools/openapi-generator-cli:v7.14.0 generate -c /app/openapi-generator-config.yml",
+    "generate:api:clean": "rm -rf ./src/api/generated && npm run generate:api"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",
@@ -56,6 +58,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
+    "@openapitools/openapi-generator-cli": "^2.21.2",
     "@tailwindcss/postcss": "^4.1.10",
     "@tanstack/router-plugin": "^1.124.0",
     "@testing-library/jest-dom": "^6.6.3",

@@ -47,7 +47,7 @@ export function CharacterDetailPage() {
   const deactivateCharacterMutation = useDeactivateCharacter()
   const createSessionMutation = useCreateGameSession()
   const [isDeleting, setIsDeleting] = useState(false)
-  
+
   // セッション履歴を取得
   const { data: sessions } = useGameSessions()
 
@@ -77,7 +77,7 @@ export function CharacterDetailPage() {
   const handleDeactivateCharacter = async () => {
     await deactivateCharacterMutation.mutateAsync()
   }
-  
+
   const handleStartSession = async () => {
     if (!character) return
 
@@ -183,7 +183,11 @@ export function CharacterDetailPage() {
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    {sessions?.sessions?.find(s => s.characterId === character.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
+                    {sessions?.sessions?.find(
+                      s => s.characterId === character.id && s.isActive
+                    )
+                      ? '冒険を再開'
+                      : '冒険を始める'}
                   </>
                 )}
               </Button>
@@ -203,7 +207,11 @@ export function CharacterDetailPage() {
                   : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
               }
             >
-              {(isActive ? deactivateCharacterMutation.isPending : activateCharacterMutation.isPending) ? (
+              {(
+                isActive
+                  ? deactivateCharacterMutation.isPending
+                  : activateCharacterMutation.isPending
+              ) ? (
                 <>
                   <LoadingSpinner size="sm" className="mr-2" />
                   処理中...

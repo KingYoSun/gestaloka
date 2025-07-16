@@ -27,7 +27,6 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
   const [narrativeHistory, setNarrativeHistory] = useState<string[]>([])
   const [currentActions, setCurrentActions] = useState<ActionChoice[]>([])
 
-
   // 初期行動選択肢を取得
   useEffect(() => {
     loadActions()

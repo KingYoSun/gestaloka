@@ -24,13 +24,17 @@ export function LoginPage() {
 
     setIsLoading(true)
     setError(null)
-    
+
     try {
       await login(username, password)
       // リダイレクト先またはダッシュボードへ遷移
       navigate({ to: redirect })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'ログインに失敗しました。ユーザー名とパスワードを確認してください。')
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'ログインに失敗しました。ユーザー名とパスワードを確認してください。'
+      )
     } finally {
       setIsLoading(false)
     }
@@ -83,11 +87,7 @@ export function LoginPage() {
 
           <FormError error={error} />
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isLoading}
-          >
+          <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? (
               <>
                 <LoadingSpinner size="sm" className="mr-2" />

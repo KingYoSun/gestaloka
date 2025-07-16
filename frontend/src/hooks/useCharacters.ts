@@ -3,8 +3,8 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { apiClient } from '@/api/client'
-import { CharacterCreationForm } from '@/types'
+import { charactersApi } from '@/lib/api'
+import { CharacterCreate } from '@/api/generated'
 import { useCharacterStore } from '@/stores/characterStore'
 import { useToast } from '@/hooks/useToast'
 
@@ -19,7 +19,7 @@ export function useCharacters() {
 
   const query = useQuery({
     queryKey: ['characters'],
-    queryFn: () => apiClient.getCharacters(),
+    queryFn: () => charactersApi.getUserCharactersApiV1CharactersGet(),
     staleTime: 1000 * 60 * 5, // 5分間キャッシュ
   })
 
@@ -58,7 +58,7 @@ export function useCharacters() {
 export function useCharacter(characterId: string | undefined) {
   return useQuery({
     queryKey: ['characters', characterId],
-    queryFn: () => apiClient.getCharacter(characterId!),
+    queryFn: () => charactersApi.getCharacterApiV1CharactersCharacterIdGet({ characterId: characterId! }),
     enabled: !!characterId,
   })
 }
@@ -72,8 +72,8 @@ export function useCreateCharacter() {
   const { toast } = useToast()
 
   return useMutation({
-    mutationFn: (data: CharacterCreationForm) =>
-      apiClient.createCharacter(data),
+    mutationFn: (data: CharacterCreate) =>
+      charactersApi.createCharacterApiV1CharactersPost(data),
     onSuccess: newCharacter => {
       // ストアに新しいキャラクターを追加
       addCharacter(newCharacter)
@@ -111,8 +111,8 @@ export function useUpdateCharacter() {
       updates,
     }: {
       characterId: string
-      updates: Partial<CharacterCreationForm>
-    }) => apiClient.updateCharacter(characterId, updates),
+      updates: Partial<CharacterCreate>
+    }) => charactersApi.updateCharacterApiV1CharactersCharacterIdPut({ characterId, characterUpdate: updates }),
     onSuccess: updatedCharacter => {
       // ストアでキャラクター情報を更新
       updateCharacter(updatedCharacter.id, updatedCharacter)
@@ -148,7 +148,7 @@ export function useDeleteCharacter() {
   const { toast } = useToast()
 
   return useMutation({
-    mutationFn: (characterId: string) => apiClient.deleteCharacter(characterId),
+    mutationFn: (characterId: string) => charactersApi.deleteCharacterApiV1CharactersCharacterIdDelete({ characterId }),
     onSuccess: (_, characterId) => {
       // ストアからキャラクターを削除
       removeCharacter(characterId)
@@ -184,7 +184,7 @@ export function useActivateCharacter() {
 
   return useMutation({
     mutationFn: (characterId: string) =>
-      apiClient.activateCharacter(characterId),
+      charactersApi.activateCharacterApiV1CharactersCharacterIdActivatePost({ characterId }),
     onSuccess: activatedCharacter => {
       // ストアでアクティブキャラクターを設定
       setActiveCharacter(activatedCharacter.id)

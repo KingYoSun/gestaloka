@@ -42,7 +42,7 @@ export function useEquipTitle() {
 
   return useMutation({
     mutationFn: (titleId: string) => equipTitle(titleId),
-    onSuccess: (data) => {
+    onSuccess: data => {
       // タイトル一覧と装備中タイトルのキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['titles'] })
       queryClient.invalidateQueries({ queryKey: ['titles', 'equipped'] })

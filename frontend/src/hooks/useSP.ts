@@ -3,9 +3,9 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '@/api/client'
+import { spApi } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import type { PlayerSP, SPConsumeRequest } from '@/types/sp'
+import type { PlayerSPRead, PlayerSPSummary, SPConsumeRequest } from '@/api/generated'
 
 /**
  * SP残高を取得するフック
@@ -13,7 +13,7 @@ import type { PlayerSP, SPConsumeRequest } from '@/types/sp'
 export function useSPBalance() {
   return useQuery({
     queryKey: ['sp', 'balance'],
-    queryFn: () => apiClient.getSPBalance(),
+    queryFn: () => spApi.getSpBalanceApiV1SpBalanceGet(),
     staleTime: 30 * 1000, // 30秒
   })
 }
@@ -24,7 +24,7 @@ export function useSPBalance() {
 export function useSPBalanceSummary() {
   return useQuery({
     queryKey: ['sp', 'balance', 'summary'],
-    queryFn: () => apiClient.getSPBalanceSummary(),
+    queryFn: () => spApi.getSpBalanceSummaryApiV1SpBalanceSummaryGet(),
     staleTime: 5 * 1000, // 5秒
     refetchInterval: 30 * 1000, // 30秒ごとに自動更新
     refetchIntervalInBackground: true, // バックグラウンドでも更新
@@ -39,7 +39,7 @@ export function useConsumeSP() {
   const { toast } = useToast()
 
   return useMutation({
-    mutationFn: (request: SPConsumeRequest) => apiClient.consumeSP(request),
+    mutationFn: (request: SPConsumeRequest) => spApi.consumeSpApiV1SpConsumePost({ sPConsumeRequest: request }),
     onSuccess: response => {
       // 残高情報を更新
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
@@ -55,13 +55,15 @@ export function useConsumeSP() {
       const errorResponse = (error as any)?.response
       const errorMessage =
         errorResponse?.data?.detail || 'SPの消費に失敗しました'
-      
+
       // SP不足エラーの特別処理
       if (errorResponse?.status === 400 && errorMessage.includes('SP不足')) {
         // SP不足の場合は特別なメッセージ
         toast({
           title: 'SP不足',
-          description: errorMessage + '\nSPを回復するか、より簡単な行動を選択してください。',
+          description:
+            errorMessage +
+            '\nSPを回復するか、より簡単な行動を選択してください。',
           variant: 'destructive',
         })
       } else {
@@ -83,7 +85,7 @@ export function useDailyRecovery() {
   const { toast } = useToast()
 
   return useMutation({
-    mutationFn: () => apiClient.processDailyRecovery(),
+    mutationFn: () => spApi.processDailyRecoveryApiV1SpDailyRecoveryPost(),
     onSuccess: response => {
       // 残高情報を更新
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
@@ -130,7 +132,7 @@ export function useSPTransactions(params?: {
 }) {
   return useQuery({
     queryKey: ['sp', 'transactions', params],
-    queryFn: () => apiClient.getSPTransactions(params),
+    queryFn: () => spApi.getSpTransactionsApiV1SpTransactionsGet(params),
     staleTime: 60 * 1000, // 1分
   })
 }
@@ -142,7 +144,7 @@ export function useSPTransaction(transactionId: string | null) {
   return useQuery({
     queryKey: ['sp', 'transactions', transactionId],
     queryFn: () =>
-      transactionId ? apiClient.getSPTransaction(transactionId) : null,
+      transactionId ? spApi.getSpTransactionApiV1SpTransactionsTransactionIdGet({ transactionId }) : null,
     enabled: !!transactionId,
   })
 }
@@ -158,7 +160,7 @@ export function useSPBalanceSubscription(
   useQuery({
     queryKey: ['sp', 'balance', 'subscription'],
     queryFn: async () => {
-      const balance = await apiClient.getSPBalance()
+      const balance = await spApi.getSpBalanceApiV1SpBalanceGet()
       if (callback) {
         callback(balance)
       }

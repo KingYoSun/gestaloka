@@ -23,7 +23,7 @@ import {
 } from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
-import { Character } from '@/types'
+import { Character } from '@/api/generated'
 import { formatRelativeTime } from '@/lib/utils'
 import { LoadingState, LoadingSpinner } from '@/components/ui/loading-spinner'
 import { containerStyles, cardStyles } from '@/lib/styles'
@@ -38,7 +38,7 @@ export function CharacterListPage() {
   const deactivateCharacterMutation = useDeactivateCharacter()
   const createSessionMutation = useCreateGameSession()
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  
+
   // セッション一覧を取得
   const { data: sessions } = useGameSessions()
 
@@ -145,7 +145,11 @@ export function CharacterListPage() {
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
+                    {sessions?.sessions?.find(
+                      s => s.characterId === activeCharacter.id && s.isActive
+                    )
+                      ? '冒険を再開'
+                      : '冒険を始める'}
                   </>
                 )}
               </Button>
@@ -248,7 +252,11 @@ export function CharacterListPage() {
                   ) : (
                     <>
                       <Play className="mr-2 h-4 w-4" />
-                      {sessions?.sessions?.find(s => s.characterId === activeCharacter.id && s.isActive) ? '冒険を再開' : '冒険を始める'}
+                      {sessions?.sessions?.find(
+                        s => s.characterId === activeCharacter.id && s.isActive
+                      )
+                        ? '冒険を再開'
+                        : '冒険を始める'}
                     </>
                   )}
                 </Button>

@@ -29,7 +29,7 @@ export function RegisterPage() {
 
   const navigate = useNavigate()
   const validationRules = useValidationRulesContext()
-  
+
   // バリデーションルールに基づいてスキーマを作成
   const userRegisterSchema = createUserRegisterSchema(validationRules)
 
@@ -71,7 +71,7 @@ export function RegisterPage() {
 
     setIsLoading(true)
     setError(null)
-    
+
     try {
       await apiClient.register({
         username: formData.username,
@@ -262,11 +262,7 @@ export function RegisterPage() {
 
           <FormError error={error} />
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isLoading}
-          >
+          <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? (
               <>
                 <LoadingSpinner size="sm" className="mr-2" />

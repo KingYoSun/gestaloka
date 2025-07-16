@@ -46,7 +46,7 @@ export function useExecuteMemoryInheritance() {
       queryClient.invalidateQueries({ queryKey: ['memory-inheritance'] })
       queryClient.invalidateQueries({ queryKey: ['log-fragments'] })
       queryClient.invalidateQueries({ queryKey: ['sp', 'balance'] })
-      
+
       // 継承タイプに応じて追加のクエリを無効化
       if (result.inheritance_type === 'skill') {
         queryClient.invalidateQueries({ queryKey: ['skills'] })

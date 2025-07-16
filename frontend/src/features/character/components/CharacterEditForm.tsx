@@ -3,7 +3,7 @@ import { type FC } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 
-import type { Character } from '@/types'
+import type { Character } from '@/api/generated'
 import { Button } from '@/components/ui/button'
 import {
   Form,

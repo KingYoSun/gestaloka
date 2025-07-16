@@ -18,6 +18,20 @@
 - 権限チェック: `app.api.deps`の共通関数を使用
 - DRY原則: 新しいクラス・新しいメソッド・新しい型を実装する際は同じ機能を持ったものが既にないかを必ず調査する
 
+### OpenAPI Generator型管理（必須）
+```bash
+# 型の再生成（バックエンドの変更後は必ず実行）
+make generate-api
+# または
+docker-compose exec -T frontend npm run generate:api:clean
+```
+
+**重要な注意点**:
+1. **手動で型を追加しない** - すべての型はバックエンドから自動生成
+2. **APIクライアントは`/lib/api.ts`から使用** - 例: `import { charactersApi } from '@/lib/api'`
+3. **snake_case/camelCase変換** - バックエンドはsnake_case、必要に応じて`/lib/type-adapters.ts`を使用
+4. **セッション関連の型** - 現在`/types/session-temp.ts`に一時保管（後で自動生成に移行予定）
+
 ### Alembicマイグレーション（必須）
 ```bash
 # 1. モデルを変更/追加
@@ -63,6 +77,9 @@ make test-frontend     # フロントエンドのみ
 make lint              # リント
 make typecheck         # 型チェック
 make format            # フォーマット
+
+# API型生成
+make generate-api      # APIクライアントと型を再生成
 ```
 
 ## アーキテクチャ

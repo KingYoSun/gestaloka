@@ -2,7 +2,14 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Users, Plus, Gamepad2, BookOpen, Target, PlayCircle } from 'lucide-react'
+import {
+  Users,
+  Plus,
+  Gamepad2,
+  BookOpen,
+  Target,
+  PlayCircle,
+} from 'lucide-react'
 import { useGameSessions } from '@/hooks/useGameSessions'
 import { useCharacters } from '@/hooks/useCharacters'
 
@@ -10,15 +17,16 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const { data: characters } = useCharacters()
   const { data: sessions } = useGameSessions()
-  
+
   // アクティブなセッションを取得（削除されたキャラクターのセッションは除外）
-  const activeSessions = sessions?.sessions?.filter(session => {
-    if (!session.isActive) return false
-    // キャラクターが存在するセッションのみ表示
-    const character = characters?.find(c => c.id === session.characterId)
-    return !!character
-  }) || []
-  
+  const activeSessions =
+    sessions?.sessions?.filter(session => {
+      if (!session.isActive) return false
+      // キャラクターが存在するセッションのみ表示
+      const character = characters?.find(c => c.id === session.characterId)
+      return !!character
+    }) || []
+
   return (
     <div className="p-6">
       <div className="mb-8">
@@ -72,27 +80,39 @@ export function DashboardPage() {
           <CardContent>
             {activeSessions.length > 0 ? (
               <div className="space-y-3">
-                {activeSessions.slice(0, 3).map((session) => {
-                  const character = characters?.find(c => c.id === session.characterId)
+                {activeSessions.slice(0, 3).map(session => {
+                  const character = characters?.find(
+                    c => c.id === session.characterId
+                  )
                   // キャラクターが見つからない場合はスキップ（二重チェック）
                   if (!character) return null
-                  
+
                   return (
-                    <div key={session.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div
+                      key={session.id}
+                      className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+                    >
                       <div>
                         <p className="text-sm font-medium">{character.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          ターン {(() => {
-                            if (session.sessionData && typeof session.sessionData === 'object' && 'turn_count' in session.sessionData) {
+                          ターン{' '}
+                          {(() => {
+                            if (
+                              session.sessionData &&
+                              typeof session.sessionData === 'object' &&
+                              'turn_count' in session.sessionData
+                            ) {
                               const turnCount = session.sessionData.turn_count
-                              return typeof turnCount === 'number' ? turnCount : 0
+                              return typeof turnCount === 'number'
+                                ? turnCount
+                                : 0
                             }
                             return 0
                           })()}
                         </p>
                       </div>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="ghost"
                         onClick={() => navigate({ to: `/game/${session.id}` })}
                       >
