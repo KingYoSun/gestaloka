@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { logsApi } from '@/api/logs'
+import { logsApiWrapper } from '@/api/logs'
 import type {
   CompilationPreviewRequest,
   CompilationPreviewResponse,
@@ -11,6 +11,6 @@ export function useCompilationPreview() {
     Error,
     CompilationPreviewRequest
   >({
-    mutationFn: data => logsApi.previewCompilation(data),
+    mutationFn: data => logsApiWrapper.previewCompilation(data),
   })
 }

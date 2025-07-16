@@ -1,19 +1,10 @@
 /**
  * Character titles API client and types
  */
-import { apiClient } from './client'
+import { titlesApi } from '@/lib/api'
+import type { CharacterTitle } from '@/api/generated/models'
 
-export interface CharacterTitle {
-  id: string
-  character_id: string
-  title: string
-  description: string
-  effects?: Record<string, any>
-  is_equipped: boolean
-  acquired_at: string
-  created_at: string
-  updated_at: string
-}
+export type { CharacterTitle }
 
 export interface EquipTitleResponse {
   message?: string
@@ -24,8 +15,8 @@ export interface EquipTitleResponse {
  */
 export const getTitles = async (): Promise<CharacterTitle[]> => {
   try {
-    const response = await apiClient.get<CharacterTitle[]>('/titles/')
-    return response
+    const response = await titlesApi.getCharacterTitlesApiV1TitlesGet()
+    return response.data
   } catch (error) {
     console.error('Failed to fetch titles:', error)
     throw error
@@ -36,26 +27,22 @@ export const getTitles = async (): Promise<CharacterTitle[]> => {
  * Get the currently equipped title
  */
 export const getEquippedTitle = async (): Promise<CharacterTitle | null> => {
-  const response = await apiClient.get<CharacterTitle | null>(
-    '/titles/equipped'
-  )
-  return response
+  const response = await titlesApi.getEquippedTitleApiV1TitlesEquippedGet()
+  return response.data
 }
 
 /**
  * Equip a specific title
  */
 export const equipTitle = async (titleId: string): Promise<CharacterTitle> => {
-  const response = await apiClient.put<CharacterTitle>(
-    `/titles/${titleId}/equip`
-  )
-  return response
+  const response = await titlesApi.equipTitleApiV1TitlesTitleIdEquipPut({ titleId })
+  return response.data
 }
 
 /**
  * Unequip all titles
  */
 export const unequipAllTitles = async (): Promise<EquipTitleResponse> => {
-  const response = await apiClient.put<EquipTitleResponse>('/titles/unequip')
-  return response
+  const response = await titlesApi.unequipAllTitlesApiV1TitlesUnequipPut()
+  return response.data as EquipTitleResponse
 }

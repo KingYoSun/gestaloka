@@ -1,19 +1,17 @@
-import { apiClient } from './client'
+import { questsApi } from '@/lib/api'
 import type {
   Quest,
   QuestProposal,
   CreateQuestRequest,
   QuestListResponse,
   QuestStatus,
-} from '@/types/quest'
+} from '@/api/generated/models'
 
-export const questsApi = {
+export const questsApiWrapper = {
   // クエスト提案を取得
   getProposals: async (characterId: string): Promise<QuestProposal[]> => {
-    const response = await apiClient.get<QuestProposal[]>(
-      `/quests/${characterId}/proposals`
-    )
-    return response
+    const response = await questsApi.getQuestProposalsApiV1QuestsCharacterIdProposalsGet({ characterId })
+    return response.data
   },
 
   // 新規クエスト作成
@@ -21,19 +19,20 @@ export const questsApi = {
     characterId: string,
     request: CreateQuestRequest
   ): Promise<Quest> => {
-    const response = await apiClient.post<Quest>(
-      `/quests/${characterId}/create`,
-      request
-    )
-    return response
+    const response = await questsApi.createQuestApiV1QuestsCharacterIdCreatePost({ 
+      characterId, 
+      createQuestRequest: request 
+    })
+    return response.data
   },
 
   // クエスト受諾
   acceptQuest: async (characterId: string, questId: string): Promise<Quest> => {
-    const response = await apiClient.post<Quest>(
-      `/quests/${characterId}/quests/${questId}/accept`
-    )
-    return response
+    const response = await questsApi.acceptQuestApiV1QuestsCharacterIdQuestsQuestIdAcceptPost({ 
+      characterId, 
+      questId 
+    })
+    return response.data
   },
 
   // 進行状況更新
@@ -41,10 +40,11 @@ export const questsApi = {
     characterId: string,
     questId: string
   ): Promise<Quest> => {
-    const response = await apiClient.post<Quest>(
-      `/quests/${characterId}/quests/${questId}/update`
-    )
-    return response
+    const response = await questsApi.updateQuestProgressApiV1QuestsCharacterIdQuestsQuestIdUpdatePost({ 
+      characterId, 
+      questId 
+    })
+    return response.data
   },
 
   // クエスト一覧取得
@@ -56,18 +56,20 @@ export const questsApi = {
       offset?: number
     }
   ): Promise<QuestListResponse> => {
-    const response = await apiClient.get<QuestListResponse>(
-      `/quests/${characterId}/quests`,
-      { params }
-    )
-    return response
+    const response = await questsApi.getCharacterQuestsApiV1QuestsCharacterIdQuestsGet({
+      characterId,
+      status: params?.status,
+      limit: params?.limit,
+      offset: params?.offset
+    })
+    return response.data
   },
 
   // 暗黙的クエスト推測
   inferImplicitQuest: async (characterId: string): Promise<Quest | null> => {
-    const response = await apiClient.post<Quest | null>(
-      `/quests/${characterId}/quests/infer`
-    )
-    return response || null
+    const response = await questsApi.inferImplicitQuestApiV1QuestsCharacterIdQuestsInferPost({ 
+      characterId 
+    })
+    return response.data || null
   },
 }

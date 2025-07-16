@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '@/api/client'
+import { configApi } from '@/lib/api'
 
 interface ValidationRules {
   user: {
@@ -38,9 +38,8 @@ interface ValidationRules {
 }
 
 async function fetchValidationRules(): Promise<ValidationRules> {
-  return await apiClient.get<ValidationRules>(
-    '/api/v1/config/game/validation-rules'
-  )
+  const response = await configApi.getValidationRulesApiV1ConfigGameValidationRulesGet()
+  return response.data as ValidationRules
 }
 
 export function useValidationRules() {

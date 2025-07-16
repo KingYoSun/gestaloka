@@ -31,7 +31,7 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { logsApi } from '@/api/logs'
+import { logsApiWrapper } from '@/api/logs'
 import { useToast } from '@/hooks/useToast'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -99,7 +99,7 @@ export function PurificationDialog({
 
     setIsPurifying(true)
     try {
-      const response = await logsApi.purifyLog(log.id, {
+      const response = await logsApiWrapper.purifyLog(log.id, {
         purification_item_id: selectedItemId,
       })
 

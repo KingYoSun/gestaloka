@@ -47,7 +47,7 @@ export function useConsumeSP() {
 
       toast({
         title: 'SP消費完了',
-        description: response.message,
+        description: response.data.message,
         variant: 'success',
       })
     },
@@ -93,7 +93,7 @@ export function useDailyRecovery() {
 
       toast({
         title: '日次回復完了',
-        description: response.message,
+        description: response.data.message,
         variant: 'success',
       })
     },
@@ -132,7 +132,7 @@ export function useSPTransactions(params?: {
 }) {
   return useQuery({
     queryKey: ['sp', 'transactions', params],
-    queryFn: () => spApi.getSpTransactionsApiV1SpTransactionsGet(params),
+    queryFn: () => spApi.getTransactionHistoryApiV1SpTransactionsGet(params),
     staleTime: 60 * 1000, // 1分
   })
 }
@@ -144,7 +144,7 @@ export function useSPTransaction(transactionId: string | null) {
   return useQuery({
     queryKey: ['sp', 'transactions', transactionId],
     queryFn: () =>
-      transactionId ? spApi.getSpTransactionApiV1SpTransactionsTransactionIdGet({ transactionId }) : null,
+      transactionId ? spApi.getTransactionDetailApiV1SpTransactionsTransactionIdGet({ transactionId }) : null,
     enabled: !!transactionId,
   })
 }
@@ -153,18 +153,18 @@ export function useSPTransaction(transactionId: string | null) {
  * SP残高の変更を監視するフック
  */
 export function useSPBalanceSubscription(
-  callback?: (balance: PlayerSP) => void
+  callback?: (balance: PlayerSPRead) => void
 ) {
   // 定期的に残高を更新（本来はWebSocketで実装）
   // 現在は30秒ごとにポーリング
   useQuery({
     queryKey: ['sp', 'balance', 'subscription'],
     queryFn: async () => {
-      const balance = await spApi.getSpBalanceApiV1SpBalanceGet()
+      const response = await spApi.getSpBalanceApiV1SpBalanceGet()
       if (callback) {
-        callback(balance)
+        callback(response.data)
       }
-      return balance
+      return response
     },
     refetchInterval: 30 * 1000, // 30秒ごと
     enabled: true,

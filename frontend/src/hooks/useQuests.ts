@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { questsApi } from '@/api/quests'
-import type { CreateQuestRequest, Quest } from '@/types/quest'
-import { QuestStatus } from '@/types/quest'
+import { questsApiWrapper } from '@/api/quests'
+import type { CreateQuestRequest, Quest, QuestStatus } from '@/api/generated/models'
 import { useCallback } from 'react'
 
 export function useQuests(characterId?: string, status?: QuestStatus) {
@@ -10,7 +9,7 @@ export function useQuests(characterId?: string, status?: QuestStatus) {
     queryKey: ['quests', characterId, status],
     queryFn: () => {
       if (!characterId) return { quests: [], total: 0, limit: 20, offset: 0 }
-      return questsApi.getQuests(characterId, { status, limit: 20 })
+      return questsApiWrapper.getQuests(characterId, { status, limit: 20 })
     },
     enabled: !!characterId,
   })
@@ -29,7 +28,7 @@ export function useQuestProposals(characterId?: string) {
     queryKey: ['quest-proposals', characterId],
     queryFn: () => {
       if (!characterId) return []
-      return questsApi.getProposals(characterId)
+      return questsApiWrapper.getProposals(characterId)
     },
     enabled: !!characterId,
     staleTime: 1000 * 60 * 5, // 5分間キャッシュ
@@ -49,7 +48,7 @@ export function useCreateQuest(characterId?: string) {
   return useMutation({
     mutationFn: (request: CreateQuestRequest) => {
       if (!characterId) throw new Error('Character ID is required')
-      return questsApi.createQuest(characterId, request)
+      return questsApiWrapper.createQuest(characterId, request)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quests', characterId] })
@@ -63,7 +62,7 @@ export function useAcceptQuest(characterId?: string) {
   return useMutation({
     mutationFn: (questId: string) => {
       if (!characterId) throw new Error('Character ID is required')
-      return questsApi.acceptQuest(characterId, questId)
+      return questsApiWrapper.acceptQuest(characterId, questId)
     },
     onSuccess: data => {
       queryClient.invalidateQueries({ queryKey: ['quests', characterId] })
@@ -81,7 +80,7 @@ export function useUpdateQuestProgress(characterId?: string) {
   return useMutation({
     mutationFn: (questId: string) => {
       if (!characterId) throw new Error('Character ID is required')
-      return questsApi.updateProgress(characterId, questId)
+      return questsApiWrapper.updateProgress(characterId, questId)
     },
     onSuccess: data => {
       queryClient.invalidateQueries({ queryKey: ['quests', characterId] })
@@ -96,7 +95,7 @@ export function useInferImplicitQuest(characterId?: string) {
   return useMutation({
     mutationFn: () => {
       if (!characterId) throw new Error('Character ID is required')
-      return questsApi.inferImplicitQuest(characterId)
+      return questsApiWrapper.inferImplicitQuest(characterId)
     },
     onSuccess: data => {
       if (data) {

@@ -1,5 +1,5 @@
-import { apiClient } from '@/lib/api-client'
-import {
+import { logFragmentsApi, logsApi } from '@/lib/api'
+import type {
   CompletedLog,
   CompletedLogCreate,
   CompletedLogRead,
@@ -12,7 +12,7 @@ import {
   CreatePurificationItemRequest,
   CreatePurificationItemResponse,
   PurificationItem,
-} from '@/types/log'
+} from '@/api/generated/models'
 
 export type {
   CompletedLog,
@@ -29,39 +29,52 @@ export type {
   PurificationItem,
 }
 
-export const logsApi = {
+export const logsApiWrapper = {
   // ログフラグメント関連
-  createFragment: (data: LogFragmentCreate) =>
-    apiClient.post<LogFragment>('/logs/fragments', data),
+  createFragment: async (data: LogFragmentCreate) => {
+    const response = await logsApi.createLogFragmentApiV1LogsFragmentsPost({ logFragmentCreate: data })
+    return response.data
+  },
 
-  getFragments: (characterId: string) =>
-    apiClient.get<LogFragment[]>(`/logs/fragments/${characterId}`),
+  getFragments: async (characterId: string) => {
+    const response = await logFragmentsApi.getCharacterFragmentsApiV1LogFragmentsCharacterIdFragmentsGet({ characterId })
+    return response.data
+  },
 
   // 完成ログ関連
-  createCompletedLog: (data: CompletedLogCreate) =>
-    apiClient.post<CompletedLog>('/logs/completed', data),
+  createCompletedLog: async (data: CompletedLogCreate) => {
+    const response = await logsApi.createCompletedLogApiV1LogsCompletedPost({ completedLogCreate: data })
+    return response.data
+  },
 
-  updateCompletedLog: (logId: string, data: Partial<CompletedLogCreate>) =>
-    apiClient.patch<CompletedLog>(`/logs/completed/${logId}`, data),
+  updateCompletedLog: async (logId: string, data: Partial<CompletedLogCreate>) => {
+    const response = await logsApi.updateCompletedLogApiV1LogsCompletedLogIdPatch({ logId, completedLogUpdate: data })
+    return response.data
+  },
 
-  getCompletedLogs: (characterId: string) =>
-    apiClient.get<CompletedLogRead[]>(`/logs/completed/${characterId}`),
+  getCompletedLogs: async (characterId: string) => {
+    const response = await logsApi.getCharacterLogsApiV1LogsCompletedCharacterIdGet({ characterId })
+    return response.data
+  },
 
   // 高度な編纂メカニクス
-  previewCompilation: (data: CompilationPreviewRequest) =>
-    apiClient.post<CompilationPreviewResponse>('/logs/completed/preview', data),
+  previewCompilation: async (data: CompilationPreviewRequest) => {
+    const response = await logsApi.previewCompilationApiV1LogsCompletedPreviewPost({ compilationPreviewRequest: data })
+    return response.data
+  },
 
-  purifyLog: (logId: string, data: PurifyLogRequest) =>
-    apiClient.post<PurifyLogResponse>(`/logs/completed/${logId}/purify`, data),
+  purifyLog: async (logId: string, data: PurifyLogRequest) => {
+    const response = await logsApi.purifyLogApiV1LogsCompletedLogIdPurifyPost({ logId, purifyLogRequest: data })
+    return response.data
+  },
 
-  createPurificationItem: (data: CreatePurificationItemRequest) =>
-    apiClient.post<CreatePurificationItemResponse>(
-      '/logs/fragments/create-purification-item',
-      data
-    ),
+  createPurificationItem: async (data: CreatePurificationItemRequest) => {
+    const response = await logFragmentsApi.createPurificationItemApiV1LogFragmentsCreatePurificationItemPost({ createPurificationItemRequest: data })
+    return response.data
+  },
 
-  getPurificationItems: (characterId: string) =>
-    apiClient.get<PurificationItem[]>(
-      `/logs/purification-items/${characterId}`
-    ),
+  getPurificationItems: async (characterId: string) => {
+    const response = await logFragmentsApi.getPurificationItemsApiV1LogPurificationItemsCharacterIdGet({ characterId })
+    return response.data
+  },
 }

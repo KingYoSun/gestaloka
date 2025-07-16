@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { logsApi } from '@/api/logs'
+import { logsApiWrapper } from '@/api/logs'
 import type {
   PurificationItem,
   CreatePurificationItemRequest,
@@ -8,7 +8,7 @@ import type {
 export function usePurificationItems(characterId: string) {
   return useQuery<PurificationItem[]>({
     queryKey: ['purificationItems', characterId],
-    queryFn: () => logsApi.getPurificationItems(characterId),
+    queryFn: () => logsApiWrapper.getPurificationItems(characterId),
     enabled: !!characterId,
   })
 }
@@ -18,7 +18,7 @@ export function useCreatePurificationItem() {
 
   return useMutation({
     mutationFn: (data: CreatePurificationItemRequest) =>
-      logsApi.createPurificationItem(data),
+      logsApiWrapper.createPurificationItem(data),
     onSuccess: () => {
       // 浄化アイテムリストを更新
       queryClient.invalidateQueries({ queryKey: ['purificationItems'] })

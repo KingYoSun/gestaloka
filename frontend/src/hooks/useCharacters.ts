@@ -4,7 +4,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { charactersApi } from '@/lib/api'
-import { CharacterCreate } from '@/api/generated'
+import { Character, CharacterCreate } from '@/api/generated'
 import { useCharacterStore } from '@/stores/characterStore'
 import { useToast } from '@/hooks/useToast'
 
@@ -28,7 +28,7 @@ export function useCharacters() {
     setLoading(query.isLoading)
 
     if (query.data) {
-      setCharacters(query.data)
+      setCharacters(query.data.data as Character[])
       clearError()
     }
 
@@ -74,16 +74,16 @@ export function useCreateCharacter() {
   return useMutation({
     mutationFn: (data: CharacterCreate) =>
       charactersApi.createCharacterApiV1CharactersPost(data),
-    onSuccess: newCharacter => {
+    onSuccess: response => {
       // ストアに新しいキャラクターを追加
-      addCharacter(newCharacter)
+      addCharacter(response.data)
 
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
       toast({
         title: 'キャラクター作成成功',
-        description: `${newCharacter.name}を作成しました`,
+        description: `${response.data.name}を作成しました`,
         variant: 'success',
       })
     },
@@ -113,14 +113,14 @@ export function useUpdateCharacter() {
       characterId: string
       updates: Partial<CharacterCreate>
     }) => charactersApi.updateCharacterApiV1CharactersCharacterIdPut({ characterId, characterUpdate: updates }),
-    onSuccess: updatedCharacter => {
+    onSuccess: response => {
       // ストアでキャラクター情報を更新
-      updateCharacter(updatedCharacter.id, updatedCharacter)
+      updateCharacter(response.data.id, response.data)
 
       // 個別のキャラクターとリストのキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
       queryClient.invalidateQueries({
-        queryKey: ['characters', updatedCharacter.id],
+        queryKey: ['characters', response.data.id],
       })
 
       toast({
@@ -185,16 +185,16 @@ export function useActivateCharacter() {
   return useMutation({
     mutationFn: (characterId: string) =>
       charactersApi.activateCharacterApiV1CharactersCharacterIdActivatePost({ characterId }),
-    onSuccess: activatedCharacter => {
+    onSuccess: response => {
       // ストアでアクティブキャラクターを設定
-      setActiveCharacter(activatedCharacter.id)
+      setActiveCharacter(response.data.id)
 
       // キャラクター一覧のキャッシュを更新
       queryClient.invalidateQueries({ queryKey: ['characters'] })
 
       toast({
         title: 'キャラクター選択',
-        description: `${activatedCharacter.name}を選択しました`,
+        description: `${response.data.name}を選択しました`,
         variant: 'success',
       })
     },

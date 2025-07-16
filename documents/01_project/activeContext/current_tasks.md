@@ -1,6 +1,6 @@
 # 現在のタスク状況
 
-## 最終更新: 2025-07-16（22:00 JST）
+## 最終更新: 2025-07-16（22:48 JST）
 
 ### 最近完了したタスク ✅（過去7日間）
 
@@ -697,19 +697,24 @@
 ### 優先度：高 🔴
 
 1. **OpenAPI Generator移行の完了（残作業）**
-   - **状態**: 部分的完了
-   - **背景**: 基本的な移行は完了したが、全面的な移行にはまだ作業が必要
+   - **状態**: 60%完了（2025-07-16更新）
+   - **背景**: 基本的な移行は完了、主要なhooksとAPIの移行も進行中
+   - **完了した作業**（2025-07-16）:
+     - 9つのファイルを新APIクライアントに移行
+     - APIラッパー作成（logs、quests、titles、sp-purchase）
+     - TypeScriptエラーを400個以上→378個に削減
    - **残作業**:
-     - 残りのhooksとコンポーネントの移行（apiClient → 個別APIクライアント）
-     - TypeScriptエラーの完全な解消
+     - 残り8ファイルのAPIクライアント移行
+     - 欠落しているモジュールの問題解決
+     - UIコンポーネント（tabs、progress、skeleton）の復元
+     - AuthProviderの実装または代替
      - 既存テストの更新
-     - セッション機能再作成時の型統合
    - **現在の問題**:
-     - 多数のTypeScriptエラー（主にインポートパス関連）
-     - APIメソッド名の違いによる修正必要箇所
+     - 長い自動生成メソッド名による可読性低下
+     - 一部の型が自動生成されていない（ValidationRulesなど）
    - **参考資料**:
+     - `progressReports/2025-07-16_openapi-generator-migration-continuation.md`
      - `documents/02_architecture/openapi-generator-migration-guide.md`
-     - `CLAUDE.md`のOpenAPI Generator型管理セクション
 
 2. **フロントエンドテストの実装（カバレッジ0%対策）**
    - **状態**: 未着手

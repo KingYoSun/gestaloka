@@ -1,101 +1,49 @@
-import { apiClient } from './client'
+import { spApi, stripeApi } from '@/lib/api'
+import type {
+  SPPlan,
+  SPPlanResponse,
+  PurchaseRequest,
+  PurchaseResponse,
+  SPPurchaseDetail,
+  SPPurchaseList,
+  SPPurchaseStats,
+  StripeCheckoutRequest,
+  StripeCheckoutResponse,
+  PurchaseStatus,
+  PaymentMode,
+} from '@/api/generated/models'
 
-// SP購入関連の型定義
-export interface SPPlan {
-  id: string
-  name: string
-  sp_amount: number
-  price_jpy: number
-  bonus_percentage: number
-  popular?: boolean
+// 型の再エクスポート
+export type {
+  SPPlan,
+  SPPlanResponse,
+  PurchaseRequest,
+  PurchaseResponse,
+  SPPurchaseDetail,
+  SPPurchaseList,
+  SPPurchaseStats,
+  StripeCheckoutRequest,
+  StripeCheckoutResponse,
 }
 
-export interface SPPlanResponse {
-  plans: SPPlan[]
-  payment_mode: 'test' | 'production'
-  currency: string
-}
-
-export interface PurchaseRequest {
-  plan_id: string
-  test_reason?: string
-}
-
-export enum PurchaseStatus {
-  PENDING = 'pending',
-  PROCESSING = 'processing',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  CANCELLED = 'cancelled',
-  REFUNDED = 'refunded',
-}
-
-export enum PaymentMode {
-  TEST = 'test',
-  PRODUCTION = 'production',
-}
-
-export interface PurchaseResponse {
-  purchase_id: string
-  status: PurchaseStatus
-  sp_amount: number
-  price_jpy: number
-  payment_mode: PaymentMode
-  checkout_url?: string
-  message?: string
-}
-
-export interface SPPurchaseDetail {
-  id: string
-  plan_id: string
-  sp_amount: number
-  price_jpy: number
-  status: PurchaseStatus
-  payment_mode: PaymentMode
-  test_reason?: string
-  created_at: string
-  updated_at: string
-  approved_at?: string
-}
-
-export interface SPPurchaseList {
-  purchases: SPPurchaseDetail[]
-  total: number
-  limit: number
-  offset: number
-}
-
-export interface SPPurchaseStats {
-  total_purchases: number
-  total_sp_purchased: number
-  total_spent_jpy: number
-}
-
-export interface StripeCheckoutRequest {
-  plan_id: string
-}
-
-export interface StripeCheckoutResponse {
-  purchase_id: string
-  checkout_url: string
-  session_id: string
-}
+export { PurchaseStatus, PaymentMode }
 
 // API関数
 export const spPurchaseApi = {
   // プラン一覧取得
   getPlans: async (): Promise<SPPlanResponse> => {
-    return await apiClient.get<SPPlanResponse>('/api/v1/sp/plans')
+    const response = await spApi.getSpPlansApiV1SpPlansGet()
+    return response.data
   },
 
   // 購入申請作成
   createPurchase: async (
     request: PurchaseRequest
   ): Promise<PurchaseResponse> => {
-    return await apiClient.post<PurchaseResponse>(
-      '/api/v1/sp/purchase',
-      request
-    )
+    const response = await spApi.createPurchaseApiV1SpPurchasePost({
+      purchaseRequest: request
+    })
+    return response.data
   },
 
   // 購入履歴取得
@@ -104,37 +52,43 @@ export const spPurchaseApi = {
     limit?: number
     offset?: number
   }): Promise<SPPurchaseList> => {
-    return await apiClient.get<SPPurchaseList>('/api/v1/sp/purchases', {
-      params,
+    const response = await spApi.getUserPurchasesApiV1SpPurchasesGet({
+      status: params?.status,
+      limit: params?.limit,
+      offset: params?.offset,
     })
+    return response.data
   },
 
   // 購入詳細取得
   getPurchaseDetail: async (purchaseId: string): Promise<SPPurchaseDetail> => {
-    return await apiClient.get<SPPurchaseDetail>(
-      `/api/v1/sp/purchases/${purchaseId}`
-    )
+    const response = await spApi.getPurchaseDetailApiV1SpPurchasesPurchaseIdGet({
+      purchaseId
+    })
+    return response.data
   },
 
   // 購入キャンセル
   cancelPurchase: async (purchaseId: string): Promise<SPPurchaseDetail> => {
-    return await apiClient.post<SPPurchaseDetail>(
-      `/api/v1/sp/purchases/${purchaseId}/cancel`
-    )
+    const response = await spApi.cancelPurchaseApiV1SpPurchasesPurchaseIdCancelPost({
+      purchaseId
+    })
+    return response.data
   },
 
   // 購入統計取得
   getPurchaseStats: async (): Promise<SPPurchaseStats> => {
-    return await apiClient.get<SPPurchaseStats>('/api/v1/sp/purchase-stats')
+    const response = await spApi.getPurchaseStatsApiV1SpPurchaseStatsGet()
+    return response.data
   },
 
   // Stripeチェックアウトセッション作成
   createStripeCheckout: async (
     request: StripeCheckoutRequest
   ): Promise<StripeCheckoutResponse> => {
-    return await apiClient.post<StripeCheckoutResponse>(
-      '/api/v1/sp/stripe/checkout',
-      request
-    )
+    const response = await spApi.createStripeCheckoutApiV1SpStripeCheckoutPost({
+      stripeCheckoutRequest: request
+    })
+    return response.data
   },
 }
