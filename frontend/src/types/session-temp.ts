@@ -5,7 +5,7 @@
  * OpenAPI Generatorで自動生成される型に置き換えられます
  */
 
-import { ActionChoice } from '@/api/generated'
+import { ActionChoice } from '@/api/generated/models'
 
 // ゲームセッション関連の型定義
 export interface SessionData {

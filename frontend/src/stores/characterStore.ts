@@ -3,7 +3,7 @@
  */
 import { create } from 'zustand'
 import { devtools, persist } from 'zustand/middleware'
-import { Character } from '@/api/generated'
+import { Character } from '@/api/generated/models'
 
 interface CharacterState {
   // 状態

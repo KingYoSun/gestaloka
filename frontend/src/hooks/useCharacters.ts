@@ -4,7 +4,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { charactersApi } from '@/lib/api'
-import { Character, CharacterCreate } from '@/api/generated'
+import { Character, CharacterCreate } from '@/api/generated/models'
 import { useCharacterStore } from '@/stores/characterStore'
 import { useToast } from '@/hooks/useToast'
 

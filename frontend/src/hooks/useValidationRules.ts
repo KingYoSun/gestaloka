@@ -1,41 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { configApi } from '@/lib/api'
-
-interface ValidationRules {
-  user: {
-    username: {
-      min_length: number
-      max_length: number
-      pattern: string
-      pattern_description: string
-    }
-    password: {
-      min_length: number
-      max_length: number
-      requirements: string[]
-    }
-  }
-  character: {
-    name: {
-      min_length: number
-      max_length: number
-    }
-    description: {
-      max_length: number
-    }
-    appearance: {
-      max_length: number
-    }
-    personality: {
-      max_length: number
-    }
-  }
-  game_action: {
-    action_text: {
-      max_length: number
-    }
-  }
-}
+import type { ValidationRules } from '@/types/validation'
 
 async function fetchValidationRules(): Promise<ValidationRules> {
   const response = await configApi.getValidationRulesApiV1ConfigGameValidationRulesGet()

@@ -1,13 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '@/api/client'
-import { LogFragmentCreate } from '@/types/log'
+import { logsApiWrapper } from '@/api/logs'
+import type { LogFragmentCreate } from '@/api/logs'
 import { useToast } from '@/hooks/useToast'
 
 // ログフラグメント一覧を取得
 export function useLogFragments(characterId: string) {
   return useQuery({
     queryKey: ['logFragments', characterId],
-    queryFn: () => apiClient.getLogFragments(characterId),
+    queryFn: () => logsApiWrapper.getFragments(characterId),
     enabled: !!characterId,
     staleTime: 1000 * 60 * 5, // 5分間キャッシュ
   })
@@ -20,7 +20,7 @@ export function useCreateLogFragment() {
 
   return useMutation({
     mutationFn: (fragment: LogFragmentCreate) =>
-      apiClient.createLogFragment(fragment),
+      logsApiWrapper.createFragment(fragment),
     onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({

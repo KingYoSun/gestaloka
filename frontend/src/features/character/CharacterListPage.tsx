@@ -23,7 +23,7 @@ import {
 } from '@/hooks/useCharacters'
 import { useActiveCharacter } from '@/stores/characterStore'
 import { useCreateGameSession, useGameSessions } from '@/hooks/useGameSessions'
-import { Character } from '@/api/generated'
+import { Character } from '@/api/generated/models'
 import { formatRelativeTime } from '@/lib/utils'
 import { LoadingState, LoadingSpinner } from '@/components/ui/loading-spinner'
 import { containerStyles, cardStyles } from '@/lib/styles'

@@ -1,5 +1,8 @@
 /**
  * ゲームセッション関連のカスタムフック
+ * 
+ * TODO: ゲームセッションAPIがバックエンドのOpenAPIスキーマに定義されたら、
+ * 自動生成されたAPIクライアントを使用するように移行が必要
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'

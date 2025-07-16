@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { Input } from '@/components/ui/input'
-import { apiClient } from '@/api/client'
+import { authApi } from '@/lib/api'
 import { createUserRegisterSchema } from '@/lib/validations/schemas/auth'
 import { getPasswordStrength } from '@/lib/validations/validators/password'
 import { useValidationRulesContext } from '@/contexts/ValidationRulesContext'
@@ -73,11 +73,13 @@ export function RegisterPage() {
     setError(null)
 
     try {
-      await apiClient.register({
-        username: formData.username,
-        email: formData.email,
-        password: formData.password,
-        confirm_password: formData.confirmPassword,
+      await authApi.registerApiV1AuthRegisterPost({
+        userRegister: {
+          username: formData.username,
+          email: formData.email,
+          password: formData.password,
+          confirmPassword: formData.confirmPassword,
+        },
       })
 
       setSuccess(true)

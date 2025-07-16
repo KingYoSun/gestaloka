@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator'
 import { Loader2, MapPin, Sparkles } from 'lucide-react'
 import { useNarrativeActions } from './hooks/useNarrativeActions'
 // Minimap import removed - exploration feature integrated into session
-import { ActionChoice } from '@/api/generated'
+import { ActionChoice } from '@/api/generated/models'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { EquippedTitleBadge } from '@/components/titles/EquippedTitleBadge'

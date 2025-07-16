@@ -4,7 +4,7 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { narrativeApi } from '@/api/narrativeApi'
-import { GameActionRequest } from '@/api/generated'
+import { GameActionRequest } from '@/api/generated/models'
 import { toast } from 'sonner'
 
 export function useNarrativeActions(characterId: string) {

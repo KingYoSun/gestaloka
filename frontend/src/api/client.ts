@@ -5,7 +5,7 @@ import {
   User,
   Character,
   CharacterCreate,
-} from '@/api/generated'
+} from '@/api/generated/models'
 import {
   GameSession,
   GameSessionCreate,

@@ -1,5 +1,9 @@
+// TODO: Performance APIエンドポイントがバックエンドのOpenAPIスキーマに未定義
+// バックエンドでエンドポイントが定義されたら、自動生成されたAPIクライアントを使用するように移行が必要
+
 import { apiClient } from '@/api/client'
 
+// 以下の型はバックエンドでOpenAPIスキーマが定義されたら削除予定
 export interface PerformanceMetric {
   agent_name: string
   avg_execution_time: number
@@ -62,6 +66,8 @@ export interface RealtimeMetric {
   >
 }
 
+// 一時的に旧APIクライアントを使用し続ける
+// TODO: バックエンドでperformance APIがOpenAPIスキーマに追加されたら移行
 export const performanceApi = {
   async getStats(hours: number = 24): Promise<PerformanceStats> {
     return await apiClient.get<PerformanceStats>(

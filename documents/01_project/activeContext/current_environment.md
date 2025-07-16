@@ -1,6 +1,6 @@
 # 現在の開発環境状況 - ゲスタロカ (GESTALOKA)
 
-## 最終更新: 2025/07/16（22:00 JST）
+## 最終更新: 2025/07/17（JST）
 
 ## 稼働中のサービス（localhost） - 2025/07/03時点（PostgreSQL統合後）
 🟢 **PostgreSQL 17**: ポート5432 - 統合データベース（gestaloka、keycloak、gestaloka_test）（healthy）  
@@ -64,6 +64,7 @@
 - ✅ ノベルゲーム風UIの実装（タイプライター効果、自動再生、表示モード切り替え）
 - ✅ ノベル風UIの改善（テーマ統合、直接実行、状態保持、レイアウト改善）
 - ✅ OpenAPI Generator導入によるAPI型の一元管理（Frontend/Backend型定義の統一）
+- ✅ OpenAPI Generator移行作業完了（APIクライアント90%移行、型定義一元化完全実現）
 
 ## 利用可能なURL
 - **フロントエンド**: http://localhost:3000
@@ -80,12 +81,13 @@
 - TypeScript 5.8
 - React 19.1
 - Vite 6.3
-- shadcn/ui
+- shadcn/ui（tabs、progress、skeleton追加）
 - zustand 5.0
 - TanStack Query 5.80
 - TanStack Router 1.121
 - Vitest 3.2
-- OpenAPI Generator 7.10（TypeScript-Axios）
+- OpenAPI Generator 7.14.0（TypeScript-Axios）
+- @radix-ui/react-progress 1.1.7（新規追加）
 
 ### バックエンド
 - Python 3.11

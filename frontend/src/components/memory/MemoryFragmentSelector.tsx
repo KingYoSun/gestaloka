@@ -1,4 +1,4 @@
-import { LogFragment } from '@/api/generated'
+import { LogFragment } from '@/api/generated/models'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'

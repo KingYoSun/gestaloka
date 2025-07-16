@@ -1,13 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from '@/api/client'
-import { CompletedLogCreate } from '@/types/log'
+import { logsApiWrapper } from '@/api/logs'
+import type { CompletedLogCreate } from '@/api/logs'
 import { useToast } from '@/hooks/useToast'
 
 // 完成ログ一覧を取得
 export function useCompletedLogs(characterId: string) {
   return useQuery({
     queryKey: ['completedLogs', characterId],
-    queryFn: () => apiClient.getCompletedLogs(characterId),
+    queryFn: () => logsApiWrapper.getCompletedLogs(characterId),
     enabled: !!characterId,
     staleTime: 1000 * 60 * 5, // 5分間キャッシュ
   })
@@ -19,7 +19,7 @@ export function useCreateCompletedLog() {
   const { toast } = useToast()
 
   return useMutation({
-    mutationFn: (log: CompletedLogCreate) => apiClient.createCompletedLog(log),
+    mutationFn: (log: CompletedLogCreate) => logsApiWrapper.createCompletedLog(log),
     onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
@@ -54,7 +54,7 @@ export function useUpdateCompletedLog() {
     }: {
       logId: string
       updates: Partial<CompletedLogCreate>
-    }) => apiClient.updateCompletedLog(logId, updates),
+    }) => logsApiWrapper.updateCompletedLog(logId, updates),
     onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({

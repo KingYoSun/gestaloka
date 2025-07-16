@@ -2,33 +2,38 @@
  * 物語システムAPI
  */
 
-import { apiClient } from './client'
-import {
-  GameActionRequest,
+import { narrativeApi } from '@/lib/api'
+import type {
+  ActionRequest,
   ActionChoice,
-  ActionExecuteResponse,
-} from './generated'
+  NarrativeResponse,
+} from '@/api/generated/models'
 
-export const narrativeApi = {
+export const narrativeApiWrapper = {
   /**
    * 物語アクションを実行
    */
   async performAction(
     characterId: string,
-    action: GameActionRequest
-  ): Promise<ActionExecuteResponse> {
-    return await apiClient.post<ActionExecuteResponse>(
-      `/narrative/${characterId}/action`,
-      action
-    )
+    action: ActionRequest
+  ): Promise<NarrativeResponse> {
+    const response = await narrativeApi.performNarrativeActionApiV1NarrativeCharacterIdActionPost({
+      characterId,
+      actionRequest: action,
+    })
+    return response.data
   },
 
   /**
    * 利用可能な行動選択肢を取得
    */
   async getAvailableActions(characterId: string): Promise<ActionChoice[]> {
-    return await apiClient.get<ActionChoice[]>(
-      `/narrative/${characterId}/actions`
-    )
+    const response = await narrativeApi.getAvailableActionsApiV1NarrativeCharacterIdActionsGet({
+      characterId,
+    })
+    return response.data
   },
 }
+
+// 既存のコードとの互換性のため元の名前でエクスポート
+export { narrativeApiWrapper as narrativeApi }

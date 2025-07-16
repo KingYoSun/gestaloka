@@ -5,7 +5,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { spApi } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import type { PlayerSPRead, PlayerSPSummary, SPConsumeRequest } from '@/api/generated'
+import type { PlayerSPRead, PlayerSPSummary, SPConsumeRequest } from '@/api/generated/models'
 
 /**
  * SP残高を取得するフック
