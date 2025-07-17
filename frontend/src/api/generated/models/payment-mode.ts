@@ -13,6 +13,19 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * 支払いモード
+ * @export
+ * @enum {string}
+ */
+
+export const PaymentMode = {
+    Test: 'test',
+    Production: 'production'
+} as const;
+
+export type PaymentMode = typeof PaymentMode[keyof typeof PaymentMode];
+
+
+

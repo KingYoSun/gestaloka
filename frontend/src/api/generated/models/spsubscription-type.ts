@@ -13,6 +13,19 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * SP月額パスの種類
+ * @export
+ * @enum {string}
+ */
+
+export const SPSubscriptionType = {
+    Basic: 'basic',
+    Premium: 'premium'
+} as const;
+
+export type SPSubscriptionType = typeof SPSubscriptionType[keyof typeof SPSubscriptionType];
+
+
+

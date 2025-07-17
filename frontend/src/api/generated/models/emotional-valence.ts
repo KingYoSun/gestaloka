@@ -13,6 +13,21 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * 感情価
+ * @export
+ * @enum {string}
+ */
+
+export const EmotionalValence = {
+    Positive: 'positive',
+    Negative: 'negative',
+    Neutral: 'neutral',
+    Mixed: 'mixed'
+} as const;
+
+export type EmotionalValence = typeof EmotionalValence[keyof typeof EmotionalValence];
+
+
+

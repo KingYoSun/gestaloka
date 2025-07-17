@@ -101,7 +101,14 @@ dev-full: ## 完全な開発環境を起動
 # API生成
 .PHONY: generate-api
 generate-api: ## APIクライアントと型を生成
-	docker-compose exec -T frontend npm run generate:api:clean
+	@echo "APIクライアントと型を生成します..."
+	@rm -rf frontend/src/api/generated
+	@docker run --rm \
+		--network gestaloka_gestaloka-network \
+		-v "$$(pwd)/frontend:/app" \
+		-w /app \
+		openapitools/openapi-generator-cli:v7.14.0 \
+		generate -c /app/openapi-generator-config.yml
 
 .PHONY: generate-api-watch
 generate-api-watch: ## API仕様の変更を監視して自動生成

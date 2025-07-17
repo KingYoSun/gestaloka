@@ -13,6 +13,22 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * サブスクリプションステータス
+ * @export
+ * @enum {string}
+ */
+
+export const SubscriptionStatus = {
+    Active: 'active',
+    Cancelled: 'cancelled',
+    Expired: 'expired',
+    Pending: 'pending',
+    Failed: 'failed'
+} as const;
+
+export type SubscriptionStatus = typeof SubscriptionStatus[keyof typeof SubscriptionStatus];
+
+
+

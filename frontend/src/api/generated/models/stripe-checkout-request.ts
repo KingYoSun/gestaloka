@@ -13,6 +13,18 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * Stripeチェックアウトリクエスト
+ * @export
+ * @interface StripeCheckoutRequest
+ */
+export interface StripeCheckoutRequest {
+    /**
+     * 購入するプランID
+     * @type {string}
+     * @memberof StripeCheckoutRequest
+     */
+    'plan_id': string;
+}
+

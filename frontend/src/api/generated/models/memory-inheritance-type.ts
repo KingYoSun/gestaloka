@@ -13,6 +13,21 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * 記憶継承のタイプ
+ * @export
+ * @enum {string}
+ */
+
+export const MemoryInheritanceType = {
+    Skill: 'skill',
+    Title: 'title',
+    Item: 'item',
+    LogEnhancement: 'log_enhancement'
+} as const;
+
+export type MemoryInheritanceType = typeof MemoryInheritanceType[keyof typeof MemoryInheritanceType];
+
+
+

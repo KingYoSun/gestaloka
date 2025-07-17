@@ -13,6 +13,22 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * SP購入パッケージ
+ * @export
+ * @enum {string}
+ */
+
+export const SPPurchasePackage = {
+    Small: 'small',
+    Medium: 'medium',
+    Large: 'large',
+    ExtraLarge: 'extra_large',
+    Mega: 'mega'
+} as const;
+
+export type SPPurchasePackage = typeof SPPurchasePackage[keyof typeof SPPurchasePackage];
+
+
+

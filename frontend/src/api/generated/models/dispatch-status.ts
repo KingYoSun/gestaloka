@@ -13,6 +13,22 @@
  */
 
 
-export * from "./api";
-export * from "./configuration";
-export * from "./models";
+
+/**
+ * 派遣ステータス
+ * @export
+ * @enum {string}
+ */
+
+export const DispatchStatus = {
+    Preparing: 'preparing',
+    Dispatched: 'dispatched',
+    Returning: 'returning',
+    Completed: 'completed',
+    Recalled: 'recalled'
+} as const;
+
+export type DispatchStatus = typeof DispatchStatus[keyof typeof DispatchStatus];
+
+
+
