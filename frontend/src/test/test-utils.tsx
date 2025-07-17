@@ -1,7 +1,7 @@
 import { render, RenderOptions } from '@testing-library/react'
 import { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterProvider, createMemoryRouter } from '@tanstack/react-router'
+import { RouterProvider, createMemoryRouter } from '@/test/mocks/tanstack-router'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import { ValidationRulesProvider } from '@/contexts/ValidationRulesContext'
 

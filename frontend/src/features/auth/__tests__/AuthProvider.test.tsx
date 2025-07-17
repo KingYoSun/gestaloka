@@ -3,13 +3,13 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { AuthProvider } from '../AuthProvider'
 import { useAuth } from '../useAuth'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from '@tanstack/react-router'
+import { createMemoryRouter, RouterProvider } from '@/test/mocks/tanstack-router'
 import { mockUser } from '@/mocks/fixtures/user'
 
 // APIモック
 vi.mock('@/lib/api', () => ({
-  usersApi: {
-    getCurrentUserApiV1UsersMeGet: vi.fn(),
+  authApi: {
+    getCurrentUserInfoApiV1AuthMeGet: vi.fn(),
   },
 }))
 
@@ -60,7 +60,12 @@ describe('AuthProvider', () => {
     localStorage.clear()
   })
 
-  it('should provide auth context to children', () => {
+  it('should provide auth context to children', async () => {
+    const { authApi } = await import('@/lib/api')
+    vi.mocked(authApi.getCurrentUserInfoApiV1AuthMeGet).mockRejectedValue(
+      new Error('No token')
+    )
+    
     render(
       <AuthProvider>
         <TestComponent />
@@ -68,16 +73,20 @@ describe('AuthProvider', () => {
       { wrapper: createWrapper() }
     )
 
-    expect(screen.getByTestId('loading')).toHaveTextContent('Loading')
-    expect(screen.getByTestId('authenticated')).toHaveTextContent('Not Authenticated')
-    expect(screen.getByTestId('user')).toHaveTextContent('No User')
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('Not Loading')
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('Not Authenticated')
+      expect(screen.getByTestId('user')).toHaveTextContent('No User')
+    })
   })
 
   it('should initialize with authenticated user when token exists', async () => {
     localStorage.setItem('accessToken', 'existing-token')
     
-    const { usersApi } = await import('@/lib/api')
-    vi.mocked(usersApi.getCurrentUserApiV1UsersMeGet).mockResolvedValue(mockUser)
+    const { authApi } = await import('@/lib/api')
+    vi.mocked(authApi.getCurrentUserInfoApiV1AuthMeGet).mockResolvedValue({
+      data: mockUser,
+    } as any)
 
     render(
       <AuthProvider>
@@ -96,8 +105,8 @@ describe('AuthProvider', () => {
   it('should handle initialization error', async () => {
     localStorage.setItem('accessToken', 'invalid-token')
     
-    const { usersApi } = await import('@/lib/api')
-    vi.mocked(usersApi.getCurrentUserApiV1UsersMeGet).mockRejectedValue(
+    const { authApi } = await import('@/lib/api')
+    vi.mocked(authApi.getCurrentUserInfoApiV1AuthMeGet).mockRejectedValue(
       new Error('Unauthorized')
     )
 

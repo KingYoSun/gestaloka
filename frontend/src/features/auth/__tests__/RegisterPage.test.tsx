@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RegisterPage } from '../RegisterPage'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from '@tanstack/react-router'
+import { createMemoryRouter, RouterProvider } from '@/test/mocks/tanstack-router'
 import { mockUser } from '@/mocks/fixtures/user'
 
 // AuthProviderのモック
@@ -24,15 +24,22 @@ vi.mock('../useAuth', () => ({
   }),
 }))
 
-// RouterのNavigateモック
-vi.mock('@tanstack/react-router', async () => {
-  const actual = await vi.importActual('@tanstack/react-router')
+// useNavigateのモック設定
+vi.mock('@/test/mocks/tanstack-router', async () => {
+  const actual = await vi.importActual('@/test/mocks/tanstack-router')
   return {
     ...actual,
     useNavigate: () => mockNavigate,
     Navigate: () => null,
   }
 })
+
+// routesのモック
+vi.mock('@/routes/register', () => ({
+  Route: {
+    useSearch: () => ({ redirect: null }),
+  },
+}))
 
 const renderRegisterPage = () => {
   const queryClient = new QueryClient({

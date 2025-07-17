@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { beforeAll, afterEach, afterAll } from 'vitest'
+import { beforeAll, afterEach, afterAll, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { server } from '@/mocks/server'
 
@@ -61,3 +61,8 @@ if (typeof global.IntersectionObserver === 'undefined') {
     }
   }
 }
+
+// TanStack Routerのモック設定
+vi.mock('@tanstack/react-router', () => {
+  return import('./mocks/tanstack-router')
+})
