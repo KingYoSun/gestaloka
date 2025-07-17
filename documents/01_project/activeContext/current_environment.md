@@ -130,6 +130,16 @@
   - テストを2回目のセッション作成に変更
   - 全テスト成功（バックエンド242/242、フロントエンド28/28）
 
+### 2025/07/17の変更
+- **Vitestカバレッジレポート設定の完了**
+  - vite.config.tsにカバレッジ設定を追加
+  - @vitest/coverage-v8プロバイダーの使用
+  - レポート形式: text、json、html、lcov（CI/CD連携可能）
+  - カバレッジ閾値: 80%（lines、functions、branches、statements）
+  - 除外パターン: テストファイル、型定義、自動生成ファイル、設定ファイル
+  - HTMLレポート: `frontend/coverage/index.html`で視覚的に確認可能
+  - npm run test:coverageコマンドで実行可能
+
 ### 2025/07/16の変更
 - **OpenAPI Generator導入による型の一元管理**
   - TypeScript-Axios generatorによる自動型生成システム構築
