@@ -2,16 +2,16 @@ import { http, HttpResponse } from 'msw'
 import { mockCharacter, mockCharacters } from '../fixtures/character'
 import type { CharacterCreate } from '@/api/generated/models'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export const charactersHandlers = [
   // キャラクター一覧取得
-  http.get(`${API_BASE_URL}/characters`, () => {
+  http.get(`${API_BASE_URL}/api/v1/characters`, () => {
     return HttpResponse.json(mockCharacters)
   }),
 
   // キャラクター詳細取得
-  http.get(`${API_BASE_URL}/characters/:characterId`, ({ params }) => {
+  http.get(`${API_BASE_URL}/api/v1/characters/:characterId`, ({ params }) => {
     const character = mockCharacters.find(c => c.id === params.characterId)
     
     if (character) {
@@ -25,7 +25,7 @@ export const charactersHandlers = [
   }),
 
   // キャラクター作成
-  http.post(`${API_BASE_URL}/characters`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/api/v1/characters`, async ({ request }) => {
     const body = await request.json() as CharacterCreate
     
     const newCharacter = {
@@ -41,7 +41,7 @@ export const charactersHandlers = [
   }),
 
   // キャラクター更新
-  http.put(`${API_BASE_URL}/characters/:characterId`, async ({ params, request }) => {
+  http.put(`${API_BASE_URL}/api/v1/characters/:characterId`, async ({ params, request }) => {
     const body = await request.json()
     const character = mockCharacters.find(c => c.id === params.characterId)
     
@@ -61,7 +61,7 @@ export const charactersHandlers = [
   }),
 
   // キャラクター削除
-  http.delete(`${API_BASE_URL}/characters/:characterId`, ({ params }) => {
+  http.delete(`${API_BASE_URL}/api/v1/characters/:characterId`, ({ params }) => {
     const character = mockCharacters.find(c => c.id === params.characterId)
     
     if (character) {

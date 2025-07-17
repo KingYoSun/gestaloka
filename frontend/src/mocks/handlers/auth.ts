@@ -1,11 +1,11 @@
 import { http, HttpResponse } from 'msw'
 import { mockUser } from '../fixtures/user'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export const authHandlers = [
   // ログイン
-  http.post(`${API_BASE_URL}/auth/login`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/api/v1/auth/login`, async ({ request }) => {
     const body = await request.json() as { email: string; password: string }
     
     if (body.email === 'test@example.com' && body.password === 'password123') {
@@ -22,7 +22,7 @@ export const authHandlers = [
   }),
 
   // 登録
-  http.post(`${API_BASE_URL}/auth/register`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/api/v1/auth/register`, async ({ request }) => {
     const body = await request.json() as { email: string; password: string }
     
     if (body.email === 'existing@example.com') {
@@ -36,7 +36,7 @@ export const authHandlers = [
   }),
 
   // 現在のユーザー取得
-  http.get(`${API_BASE_URL}/users/me`, ({ request }) => {
+  http.get(`${API_BASE_URL}/api/v1/users/me`, ({ request }) => {
     const authHeader = request.headers.get('Authorization')
     
     if (authHeader === 'Bearer mock-access-token') {
@@ -50,7 +50,7 @@ export const authHandlers = [
   }),
 
   // ログアウト
-  http.post(`${API_BASE_URL}/auth/logout`, () => {
+  http.post(`${API_BASE_URL}/api/v1/auth/logout`, () => {
     return HttpResponse.json({ message: 'Successfully logged out' })
   }),
 ]

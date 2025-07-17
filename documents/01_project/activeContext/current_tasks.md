@@ -4,7 +4,26 @@
 
 ### 最近完了したタスク ✅（過去7日間）
 
-1. **Vitestカバレッジレポート設定（2025-07-17）✅**
+1. **フロントエンドテスト拡充作業（2025-07-17）✅NEW！**
+   - **実施内容**
+     - 既存テスト（RegisterPage、LoginPage）の修正と改善
+     - CharacterListPageテストの新規追加（11テスト）
+     - CharacterCreatePageテストの新規追加（7テスト）
+     - MSWハンドラーとValidationRulesProviderの統合
+   - **主な成果**
+     - 総テスト数51個（成功45個、失敗1個、スキップ5個）
+     - テスト成功率88.2%を達成
+     - 主要な認証・キャラクター管理機能のテストカバレッジ確保
+     - snake_case/camelCase変換問題の解決
+   - **技術的詳細**
+     - MSW（Mock Service Worker）によるAPIモック
+     - Zustandストアのテスト統合
+     - React Hook Formのバリデーションテスト
+     - OpenAPI Generated型との整合性確保
+   - **詳細レポート**: 
+     - `progressReports/2025-07-17_frontend_test_expansion.md`
+
+2. **Vitestカバレッジレポート設定（2025-07-17）✅**
    - **実施内容**
      - vite.config.tsにカバレッジ設定を追加
      - @vitest/coverage-v8パッケージの導入

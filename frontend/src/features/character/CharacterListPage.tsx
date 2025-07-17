@@ -31,7 +31,8 @@ import { toast } from 'sonner'
 
 export function CharacterListPage() {
   const navigate = useNavigate()
-  const { data: characters, isLoading, error } = useCharacters()
+  const { data: response, isLoading, error } = useCharacters()
+  const characters = response?.data || []
   const { activeCharacter } = useActiveCharacter()
   const deleteCharacterMutation = useDeleteCharacter()
   const activateCharacterMutation = useActivateCharacter()
@@ -126,7 +127,7 @@ export function CharacterListPage() {
                 あなたのキャラクター
               </h1>
               <p className="text-slate-600 mt-1">
-                {characters?.length || 0}体のキャラクターが作成されています
+                {characters.length}体のキャラクターが作成されています
               </p>
             </div>
           </div>
@@ -164,7 +165,7 @@ export function CharacterListPage() {
         </div>
 
         {/* キャラクター一覧 */}
-        {!characters || characters.length === 0 ? (
+        {characters.length === 0 ? (
           <Card className="text-center py-12 bg-white/80 backdrop-blur-sm">
             <CardContent>
               <div className="flex flex-col items-center space-y-4">
@@ -266,7 +267,7 @@ export function CharacterListPage() {
         )}
 
         {/* キャラクター作成制限の案内 */}
-        {characters && characters.length >= 5 && (
+        {characters.length >= 5 && (
           <Alert className="mt-6 bg-amber-50 border-amber-200">
             <AlertDescription className="text-amber-700">
               キャラクターは最大5体まで作成できます。新しいキャラクターを作成するには、既存のキャラクターを削除してください。
@@ -348,13 +349,13 @@ function CharacterCard({
             <div className="text-center">
               <div className="text-xs text-slate-500">HP</div>
               <div className="font-semibold text-sm">
-                {character.stats.health}/{character.stats.maxHealth}
+                {character.stats.health}/{character.stats.max_health}
               </div>
             </div>
             <div className="text-center">
               <div className="text-xs text-slate-500">MP</div>
               <div className="font-semibold text-sm">
-                {character.stats.mp}/{character.stats.maxMp}
+                {character.stats.mp}/{character.stats.max_mp}
               </div>
             </div>
           </div>
@@ -363,9 +364,9 @@ function CharacterCard({
         {/* 最終プレイ時間または作成日時 */}
         <div className="flex items-center text-xs text-slate-500 mb-4">
           <Clock className="h-3 w-3 mr-1" />
-          {character.lastPlayedAt
-            ? `最終プレイ: ${formatRelativeTime(character.lastPlayedAt)}`
-            : `作成: ${formatRelativeTime(character.createdAt)}`}
+          {character.last_played_at
+            ? `最終プレイ: ${formatRelativeTime(character.last_played_at)}`
+            : `作成: ${formatRelativeTime(character.created_at)}`}
         </div>
 
         {/* アクションボタン */}

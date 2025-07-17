@@ -2,11 +2,11 @@ import { http, HttpResponse, delay } from 'msw'
 import { mockNarrativeResponse } from '../fixtures/game'
 import type { ActionRequest } from '@/api/generated/models'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export const gameHandlers = [
   // ゲームセッション開始
-  http.post(`${API_BASE_URL}/narrative/start`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/api/v1/narrative/start`, async ({ request }) => {
     const body = await request.json() as { character_id: string }
     
     // 遅延を追加してリアルな動作を再現
@@ -19,7 +19,7 @@ export const gameHandlers = [
   }),
 
   // アクション実行
-  http.post(`${API_BASE_URL}/narrative/action`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/api/v1/narrative/action`, async ({ request }) => {
     const body = await request.json() as ActionRequest
     
     // 遅延を追加してリアルな動作を再現
@@ -42,7 +42,7 @@ export const gameHandlers = [
   }),
 
   // セッション終了
-  http.post(`${API_BASE_URL}/narrative/end`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/api/v1/narrative/end`, async ({ request }) => {
     const body = await request.json() as { session_id: string }
     
     return HttpResponse.json({
@@ -52,7 +52,7 @@ export const gameHandlers = [
   }),
 
   // ゲーム設定取得
-  http.get(`${API_BASE_URL}/config/game`, () => {
+  http.get(`${API_BASE_URL}/api/v1/config/game`, () => {
     return HttpResponse.json({
       game_mechanics: {
         sp_daily_recovery: 10,
