@@ -89,24 +89,8 @@ describe('LoginPage', () => {
     expect(mockLogin).not.toHaveBeenCalled()
   })
 
-  it.skip('should show validation error for invalid email', async () => {
-    renderLoginPage()
-
-    // バリデーションルールの読み込みを待つ
-    const usernameInput = await screen.findByLabelText(/ユーザー名/i)
-    const passwordInput = screen.getByLabelText(/パスワード/i)
-    const submitButton = screen.getByRole('button', { name: /ログイン/i })
-
-    await user.type(usernameInput, 'invalid-email')
-    await user.type(passwordInput, 'password123')
-    await user.click(submitButton)
-
-    await waitFor(() => {
-      expect(screen.getByText(/正しいユーザー名を入力してください/i)).toBeInTheDocument()
-    })
-
-    expect(mockLogin).not.toHaveBeenCalled()
-  })
+  // HTML5のバリデーションに依存するため、jsdomでは完全にテストできません
+  // 実際のブラウザ環境でのE2Eテストで検証する必要があります
 
   it('should handle login error', async () => {
     mockLogin.mockRejectedValue(new Error('Invalid credentials'))
@@ -168,8 +152,6 @@ describe('LoginPage', () => {
     })
   })
 
-  it.skip('should redirect to dashboard if already authenticated', () => {
-    // LoginPageコンポーネント自体には認証チェックロジックがないため、
-    // ルーターレベルでのガードテストが必要
-  })
+  // 認証済みユーザーのリダイレクトはルーターレベルで処理されるため、
+  // コンポーネントレベルではテストしません
 })

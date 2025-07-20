@@ -235,17 +235,20 @@ describe('CharacterListPage', () => {
         expect(screen.getByText('テストキャラクター')).toBeInTheDocument()
       })
 
-      // 編集ボタンを探す（小さなoutlineボタンでEdit3アイコンを含む）
-      const buttons = screen.getAllByRole('button')
+      // 最初のキャラクターカード内のボタンを取得
+      // カードはキャラクター名のリンクを含む要素
+      const characterLink = screen.getByRole('link', { name: 'テストキャラクター' })
+      const card = characterLink.closest('.group') // CharacterCardのCard要素
       
-      // variant="outline" size="sm"のボタンを探す
-      const outlineSmButtons = buttons.filter(button => {
-        const classes = button.className
-        return classes.includes('outline') && button.querySelector('svg')
-      })
+      if (!card) {
+        throw new Error('Character card not found')
+      }
+
+      // カード内のボタンを取得
+      const buttonsInCard = card.querySelectorAll('button')
       
-      // 編集ボタンは通常、選択ボタンの次（2番目）
-      const editButton = outlineSmButtons[1]
+      // ボタンの順番: 1番目は選択ボタン、2番目は編集ボタン、3番目は削除ボタン
+      const editButton = buttonsInCard[1] // 0-indexed, so 1 is the second button
       
       expect(editButton).toBeDefined()
       await user.click(editButton)

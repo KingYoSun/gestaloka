@@ -152,27 +152,8 @@ describe('RegisterPage', () => {
     expect(authApi.registerApiV1AuthRegisterPost).not.toHaveBeenCalled()
   })
 
-  it.skip('should show validation error for invalid email', async () => {
-    // このテストはHTMLのtype="email"バリデーションに依存するため、
-    // ブラウザ環境でのみ正しく動作します
-    renderRegisterPage()
-
-    // バリデーションルールの読み込みを待つ
-    const usernameInput = await screen.findByLabelText(/ユーザー名/i)
-    const emailInput = screen.getByLabelText(/メールアドレス/i)
-    const passwordInput = screen.getByLabelText('パスワード')
-    const confirmPasswordInput = screen.getByLabelText(/パスワード確認/i)
-    const submitButton = screen.getByRole('button', { name: /アカウント作成/i })
-
-    await user.type(usernameInput, 'newuser')
-    await user.type(emailInput, 'invalid-email')
-    await user.type(passwordInput, 'Password123!')
-    await user.type(confirmPasswordInput, 'Password123!')
-    await user.click(submitButton)
-
-    // HTML5のemail検証により、フォームが送信されない
-    expect(authApi.registerApiV1AuthRegisterPost).not.toHaveBeenCalled()
-  })
+  // HTML5のメールバリデーションはjsdomで完全にサポートされていないため、
+  // 実際のブラウザ環境でのE2Eテストで検証する必要があります
 
   it('should show error when passwords do not match', async () => {
     renderRegisterPage()
@@ -294,23 +275,6 @@ describe('RegisterPage', () => {
     })
   })
 
-  it.skip('should show password strength indicator', async () => {
-    renderRegisterPage()
-
-    const passwordInput = screen.getByLabelText('パスワード')
-
-    // 弱いパスワード
-    await user.type(passwordInput, 'password')
-    expect(screen.getByText(/弱い/i)).toBeInTheDocument()
-
-    // 中程度のパスワード
-    await user.clear(passwordInput)
-    await user.type(passwordInput, 'Password1')
-    expect(screen.getByText(/普通/i)).toBeInTheDocument()
-
-    // 強いパスワード
-    await user.clear(passwordInput)
-    await user.type(passwordInput, 'Password123!')
-    expect(screen.getByText(/強い/i)).toBeInTheDocument()
-  })
+  // パスワード強度インジケーターは現在未実装のため、
+  // 実装後にテストを追加する予定です
 })
