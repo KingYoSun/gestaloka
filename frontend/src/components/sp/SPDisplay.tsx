@@ -12,14 +12,8 @@ import {
 } from 'lucide-react'
 import { cn, formatNumber } from '@/lib/utils'
 import { useSPBalanceSummary } from '@/hooks/useSP'
-import { SPSubscriptionInfo } from '@/types/sp'
+import { SPSubscriptionInfo, SPSubscriptionType } from '@/types/sp'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from '@tanstack/react-router'
 
@@ -76,7 +70,7 @@ export const SPDisplay = memo(function SPDisplay({
   }
 
   const subscriptionInfo = balance.activeSubscription
-    ? SPSubscriptionInfo[balance.activeSubscription]
+    ? SPSubscriptionInfo[balance.activeSubscription as SPSubscriptionType]
     : null
 
   const isLowBalance = balance.currentSp < lowBalanceThreshold
@@ -86,81 +80,60 @@ export const SPDisplay = memo(function SPDisplay({
   if (variant === 'compact') {
     return (
       <Link to="/sp" className="no-underline">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <motion.div
-                className={cn(
-                  'flex items-center gap-1.5 cursor-pointer relative hover:opacity-80 transition-opacity',
-                  isLowBalance && 'text-orange-500',
-                  className
-                )}
-                animate={
-                  isAnimating
-                    ? {
-                        scale: [1, 1.1, 1],
-                      }
-                    : {}
+        <motion.div
+          className={cn(
+            'flex items-center gap-1.5 cursor-pointer relative hover:opacity-80 transition-opacity',
+            isLowBalance && 'text-orange-500',
+            className
+          )}
+          animate={
+            isAnimating
+              ? {
+                  scale: [1, 1.1, 1],
                 }
-                transition={{ duration: 0.3 }}
-              >
-                {isLowBalance ? (
-                  <AlertTriangle className="h-4 w-4 text-orange-500" />
-                ) : (
-                  <Coins className="h-4 w-4 text-yellow-500" />
-                )}
-                <span
-                  className={cn(
-                    'font-semibold',
-                    isAnimating && balanceChange > 0 && 'text-green-500',
-                    isAnimating && balanceChange < 0 && 'text-red-500'
-                  )}
-                >
-                  {formatNumber(balance.currentSp)}
-                </span>
-                <span className="text-xs text-muted-foreground">SP</span>
+              : {}
+          }
+          transition={{ duration: 0.3 }}
+          title={`現在のSP: ${formatNumber(balance.currentSp)}${
+            isLowBalance ? ' - SP残高が少なくなっています' : ''
+          }${
+            subscriptionInfo ? ` - ${subscriptionInfo.label} 加入中` : ''
+          } - クリックして詳細を見る`}
+        >
+          {isLowBalance ? (
+            <AlertTriangle className="h-4 w-4 text-orange-500" />
+          ) : (
+            <Coins className="h-4 w-4 text-yellow-500" />
+          )}
+          <span
+            className={cn(
+              'font-semibold',
+              isAnimating && balanceChange > 0 && 'text-green-500',
+              isAnimating && balanceChange < 0 && 'text-red-500'
+            )}
+          >
+            {formatNumber(balance.currentSp)}
+          </span>
+          <span className="text-xs text-muted-foreground">SP</span>
 
-                {/* 変更インジケーター */}
-                <AnimatePresence>
-                  {isAnimating && balanceChange !== 0 && (
-                    <motion.span
-                      initial={{ opacity: 0, y: 0 }}
-                      animate={{ opacity: 1, y: -20 }}
-                      exit={{ opacity: 0 }}
-                      className={cn(
-                        'absolute -top-4 right-0 text-xs font-bold',
-                        balanceChange > 0 ? 'text-green-500' : 'text-red-500'
-                      )}
-                    >
-                      {balanceChange > 0 ? '+' : ''}
-                      {formatNumber(balanceChange)}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  現在のSP: {formatNumber(balance.currentSp)}
-                </p>
-                {isLowBalance && (
-                  <p className="text-xs text-orange-500">
-                    ⚠️ SP残高が少なくなっています
-                  </p>
+          {/* 変更インジケーター */}
+          <AnimatePresence>
+            {isAnimating && balanceChange !== 0 && (
+              <motion.span
+                initial={{ opacity: 0, y: 0 }}
+                animate={{ opacity: 1, y: -20 }}
+                exit={{ opacity: 0 }}
+                className={cn(
+                  'absolute -top-4 right-0 text-xs font-bold',
+                  balanceChange > 0 ? 'text-green-500' : 'text-red-500'
                 )}
-                {subscriptionInfo && (
-                  <p className="text-xs text-muted-foreground">
-                    {subscriptionInfo.label} 加入中
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground mt-1">
-                  クリックして詳細を見る
-                </p>
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+              >
+                {balanceChange > 0 ? '+' : ''}
+                {formatNumber(balanceChange)}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </Link>
     )
   }
