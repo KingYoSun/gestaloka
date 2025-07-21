@@ -18,7 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useSPPurchases, useCancelPurchase } from '@/hooks/use-sp-purchase'
-import { PurchaseStatus } from '@/api/sp-purchase'
+import { PurchaseStatus } from '@/api/generated/models'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
@@ -74,12 +74,12 @@ export function SPPurchaseHistory() {
         variant: 'default' | 'secondary' | 'destructive' | 'outline'
       }
     > = {
-      [PurchaseStatus.PENDING]: { label: '申請中', variant: 'secondary' },
-      [PurchaseStatus.PROCESSING]: { label: '処理中', variant: 'secondary' },
-      [PurchaseStatus.COMPLETED]: { label: '完了', variant: 'default' },
-      [PurchaseStatus.FAILED]: { label: '失敗', variant: 'destructive' },
-      [PurchaseStatus.CANCELLED]: { label: 'キャンセル', variant: 'outline' },
-      [PurchaseStatus.REFUNDED]: { label: '返金済み', variant: 'outline' },
+      pending: { label: '申請中', variant: 'secondary' },
+      processing: { label: '処理中', variant: 'secondary' },
+      completed: { label: '完了', variant: 'default' },
+      failed: { label: '失敗', variant: 'destructive' },
+      cancelled: { label: 'キャンセル', variant: 'outline' },
+      refunded: { label: '返金済み', variant: 'outline' },
     }
 
     const config = variants[status]
@@ -88,7 +88,7 @@ export function SPPurchaseHistory() {
 
   const canCancel = (status: PurchaseStatus) => {
     return (
-      status === PurchaseStatus.PENDING || status === PurchaseStatus.PROCESSING
+      status === 'pending' || status === 'processing'
     )
   }
 

@@ -25,7 +25,7 @@ export function SPBalanceCard() {
   }
 
   // SPには最大値の概念がないため、残高の表示のみ
-  const currentSp = spData?.currentSp || 0
+  const currentSp = spData?.current_sp || 0
 
   return (
     <Card>

@@ -27,9 +27,8 @@ export const createCharacter = (overrides?: Partial<Character>): Character => ({
   user_id: 'test-user-id',
   name: 'Test Character',
   stats: createCharacterStats(),
-  active_title_id: null,
-  created_at: new Date(),
-  updated_at: new Date(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
   ...overrides,
 })
 

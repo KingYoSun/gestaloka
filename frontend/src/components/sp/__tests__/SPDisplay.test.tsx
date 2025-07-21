@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { SPDisplay } from '../SPDisplay'
 import { renderWithProviders as render } from '@/test/test-utils'
@@ -80,9 +80,9 @@ describe('SPDisplay', () => {
 
   it('should display SP balance in default variant', () => {
     const mockData: PlayerSPSummary = {
-      currentSp: 1500,
-      activeSubscription: null,
-      subscriptionExpiresAt: null,
+      current_sp: 1500,
+      active_subscription: null,
+      subscription_expires_at: null,
     }
 
     mockUseSPBalanceSummary.mockReturnValue({
@@ -99,9 +99,9 @@ describe('SPDisplay', () => {
 
   it('should display SP balance with subscription info', () => {
     const mockData: PlayerSPSummary = {
-      currentSp: 2000,
-      activeSubscription: 'premium',
-      subscriptionExpiresAt: '2025-08-20T00:00:00Z',
+      current_sp: 2000,
+      active_subscription: 'premium',
+      subscription_expires_at: '2025-08-20T00:00:00Z' as any,
     }
 
     mockUseSPBalanceSummary.mockReturnValue({
@@ -119,9 +119,9 @@ describe('SPDisplay', () => {
 
   it('should display compact variant correctly', async () => {
     const mockData: PlayerSPSummary = {
-      currentSp: 1000,
-      activeSubscription: null,
-      subscriptionExpiresAt: null,
+      current_sp: 1000,
+      active_subscription: null,
+      subscription_expires_at: null,
     }
 
     mockUseSPBalanceSummary.mockReturnValue({
@@ -142,9 +142,9 @@ describe('SPDisplay', () => {
 
   it('should show low balance warning when SP is below threshold', () => {
     const mockData: PlayerSPSummary = {
-      currentSp: 50,
-      activeSubscription: null,
-      subscriptionExpiresAt: null,
+      current_sp: 50,
+      active_subscription: null,
+      subscription_expires_at: null,
     }
 
     mockUseSPBalanceSummary.mockReturnValue({
@@ -162,9 +162,9 @@ describe('SPDisplay', () => {
 
   it('should not show subscription info when showSubscription is false', () => {
     const mockData: PlayerSPSummary = {
-      currentSp: 1500,
-      activeSubscription: 'basic',
-      subscriptionExpiresAt: '2025-08-20T00:00:00Z',
+      current_sp: 1500,
+      active_subscription: 'basic',
+      subscription_expires_at: '2025-08-20T00:00:00Z' as any,
     }
 
     mockUseSPBalanceSummary.mockReturnValue({
@@ -182,15 +182,15 @@ describe('SPDisplay', () => {
 
   it('should animate when balance changes', async () => {
     const mockData1: PlayerSPSummary = {
-      currentSp: 1000,
-      activeSubscription: null,
-      subscriptionExpiresAt: null,
+      current_sp: 1000,
+      active_subscription: null,
+      subscription_expires_at: null,
     }
 
     const mockData2: PlayerSPSummary = {
-      currentSp: 900,
-      activeSubscription: null,
-      subscriptionExpiresAt: null,
+      current_sp: 900,
+      active_subscription: null,
+      subscription_expires_at: null,
     }
 
     // 最初のデータ

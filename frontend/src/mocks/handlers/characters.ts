@@ -51,7 +51,7 @@ export const charactersHandlers = [
     if (character) {
       const updatedCharacter = {
         ...character,
-        ...(body || {}),
+        ...(body && typeof body === 'object' ? body : {}),
         updated_at: new Date(),
       }
       return HttpResponse.json(updatedCharacter)

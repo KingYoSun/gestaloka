@@ -56,7 +56,7 @@ export function useExecuteMemoryInheritance() {
 
       toast({
         title: '記憶継承成功',
-        description: result.message,
+        description: `${result.sp_consumed} SPを消費して記憶を継承しました`,
         variant: 'success',
       })
     },

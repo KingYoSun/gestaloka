@@ -109,7 +109,7 @@ export const QuestProposals: React.FC = () => {
       })
 
       // 作成したクエストを受諾
-      await acceptQuest.mutateAsync(newQuest.id)
+      await acceptQuest.mutateAsync(newQuest.id!)
       toast.success(`「${proposal.title}」を受諾しました`)
     } catch {
       toast.error('クエストの受諾に失敗しました')
@@ -168,14 +168,24 @@ export const QuestProposals: React.FC = () => {
         </Button>
       </div>
 
-      {proposals.map((proposal, index) => (
-        <QuestProposalCard
-          key={index}
-          proposal={proposal}
-          onAccept={handleAccept}
-          isAccepting={acceptQuest.isPending}
-        />
-      ))}
+      {proposals.map((proposal, index) => {
+        // 自動生成された型に不足しているプロパティを追加
+        const extendedProposal: QuestProposal = {
+          ...proposal,
+          origin: QuestOrigin.GM_PROPOSED,
+          rationale: proposal.reasoning || '',
+          key_themes: proposal.suggested_rewards || [],
+        }
+        
+        return (
+          <QuestProposalCard
+            key={index}
+            proposal={extendedProposal}
+            onAccept={handleAccept}
+            isAccepting={acceptQuest.isPending}
+          />
+        )
+      })}
     </div>
   )
 }

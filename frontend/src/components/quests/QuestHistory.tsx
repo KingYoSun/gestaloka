@@ -128,12 +128,12 @@ export const QuestHistory: React.FC = () => {
 
   const completedQuests = quests
     .filter(
-      quest =>
+      (quest: Quest) =>
         quest.status === QuestStatus.COMPLETED ||
         quest.status === QuestStatus.FAILED ||
         quest.status === QuestStatus.ABANDONED
     )
-    .sort((a, b) => {
+    .sort((a: Quest, b: Quest) => {
       const dateA = new Date(a.completed_at || a.updated_at || a.created_at)
       const dateB = new Date(b.completed_at || b.updated_at || b.created_at)
       return dateB.getTime() - dateA.getTime()
@@ -190,7 +190,7 @@ export const QuestHistory: React.FC = () => {
       <CardContent>
         <ScrollArea className="h-[500px] pr-4">
           <div className="space-y-1">
-            {completedQuests.map(quest => (
+            {completedQuests.map((quest: Quest) => (
               <QuestHistoryItem key={quest.id} quest={quest} />
             ))}
           </div>

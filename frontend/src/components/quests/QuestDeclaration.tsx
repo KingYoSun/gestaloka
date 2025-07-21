@@ -36,7 +36,7 @@ export const QuestDeclaration: React.FC = () => {
       await createQuest.mutateAsync({
         title: title.trim(),
         description: description.trim(),
-        origin: QuestOrigin.PLAYER_DECLARED,
+        origin: 'player_declared' as QuestOrigin,
       })
 
       toast.success(`クエストを宣言しました - 「${title}」`)

@@ -139,16 +139,16 @@ describe('useSP hooks', () => {
     it('should consume SP successfully', async () => {
       const request: SPConsumeRequest = {
         amount: 100,
-        reason: 'test_action',
-        relatedEntityType: 'game_session',
-        relatedEntityId: 'session-1',
+        description: 'test_action',
+        related_entity_type: 'game_session',
+        related_entity_id: 'session-1',
       }
 
       vi.mocked(spApi.consumeSpApiV1SpConsumePost).mockResolvedValue({
         data: {
           message: '100 SPを消費しました',
-          remainingSp: 1400,
-          transactionId: 'trans-1',
+          remaining_sp: 1400,
+          transaction_id: 'trans-1',
         },
         status: 200,
         headers: {},
@@ -241,8 +241,8 @@ describe('useSP hooks', () => {
       vi.mocked(spApi.processDailyRecoveryApiV1SpDailyRecoveryPost).mockResolvedValue({
         data: {
           message: '日次回復が完了しました。+100 SP',
-          recoveredAmount: 100,
-          currentSp: 1600,
+          recovered_amount: 100,
+          current_sp: 1600,
         },
         status: 200,
         headers: {},

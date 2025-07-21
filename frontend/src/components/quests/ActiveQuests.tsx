@@ -20,9 +20,8 @@ import {
 } from 'lucide-react'
 import { useActiveQuests, useUpdateQuestProgress } from '@/hooks/useQuests'
 import { useActiveCharacter } from '@/hooks/useActiveCharacter'
-import type { Quest } from '@/types/quest'
+import type { Quest, QuestStatus } from '@/api/generated/models'
 import {
-  QuestStatus,
   QuestStatusDisplay,
   QuestOriginDisplay,
 } from '@/types/quest'
@@ -251,7 +250,7 @@ export const ActiveQuests: React.FC = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {activeQuests.map(quest => (
+        {activeQuests.map((quest: Quest) => (
           <QuestCard
             key={quest.id}
             quest={quest}

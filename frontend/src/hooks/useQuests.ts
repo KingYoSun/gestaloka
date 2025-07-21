@@ -1,37 +1,44 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { questsApiWrapper } from '@/api/quests'
-import type { Quest } from '@/api/generated/models'
+import type { Quest, QuestOrigin } from '@/api/generated/models'
 import { QuestStatus } from '@/api/generated/models'
 import { useCallback } from 'react'
+
+interface CreateQuestRequest {
+  title: string
+  description: string
+  origin?: QuestOrigin
+  sessionId?: string
+}
 
 export function useQuests(characterId?: string, status?: QuestStatus) {
   // クエスト一覧取得
   const questsQuery = useQuery({
     queryKey: ['quests', characterId, status],
-    queryFn: () => {
-      if (!characterId) return { quests: [], total: 0, limit: 20, offset: 0 }
+    queryFn: async () => {
+      if (!characterId) return []
       return questsApiWrapper.getQuests(characterId, { status, limit: 20 })
     },
     enabled: !!characterId,
   })
 
   return {
-    quests: questsQuery.data?.quests || [],
-    total: questsQuery.data?.total || 0,
+    quests: questsQuery.data || [],
+    total: questsQuery.data?.length || 0,
     isLoading: questsQuery.isLoading,
     error: questsQuery.error,
     refetch: questsQuery.refetch,
   }
 }
 
-export function useQuestProposals(characterId?: string) {
+export function useQuestProposals(characterId?: string, sessionId?: string) {
   const proposalsQuery = useQuery({
-    queryKey: ['quest-proposals', characterId],
+    queryKey: ['quest-proposals', characterId, sessionId],
     queryFn: () => {
-      if (!characterId) return []
-      return questsApiWrapper.getProposals(characterId)
+      if (!characterId || !sessionId) return []
+      return questsApiWrapper.getProposals(characterId, sessionId)
     },
-    enabled: !!characterId,
+    enabled: !!characterId && !!sessionId,
     staleTime: 1000 * 60 * 5, // 5分間キャッシュ
   })
 
@@ -90,13 +97,13 @@ export function useUpdateQuestProgress(characterId?: string) {
   })
 }
 
-export function useInferImplicitQuest(characterId?: string) {
+export function useInferImplicitQuest(characterId?: string, sessionId?: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: () => {
-      if (!characterId) throw new Error('Character ID is required')
-      return questsApiWrapper.inferImplicitQuest(characterId)
+      if (!characterId || !sessionId) throw new Error('Character ID and Session ID are required')
+      return questsApiWrapper.inferImplicitQuest(characterId, sessionId)
     },
     onSuccess: data => {
       if (data) {
@@ -113,9 +120,9 @@ export function useActiveQuests(characterId?: string) {
   const activeQuests = useCallback(() => {
     return quests.filter(
       (quest: Quest) =>
-        quest.status === QuestStatus.Active ||
-        quest.status === QuestStatus.Progressing ||
-        quest.status === QuestStatus.NearCompletion
+        quest.status === 'active' ||
+        quest.status === 'progressing' ||
+        quest.status === 'near_completion'
     )
   }, [quests])
 
