@@ -132,23 +132,27 @@ describe('CompletedLogList', () => {
     render(<CompletedLogList completedLogs={mockCompletedLogs} isLoading={false} />)
 
     // 完成ログには派遣ボタンがある
-    const completedLogSection = screen.getByText('冒険の記録').closest('article')!
-    expect(within(completedLogSection).getByText('派遣')).toBeInTheDocument()
+    const completedLogSection = screen.getByText('冒険の記録').closest('div[class*="card"]')
+    expect(completedLogSection).not.toBeNull()
+    expect(within(completedLogSection!).getByText('派遣')).toBeInTheDocument()
 
     // ドラフトログには派遣ボタンがない
-    const draftLogSection = screen.getByText('戦闘の記録').closest('article')!
-    expect(within(draftLogSection).queryByText('派遣')).not.toBeInTheDocument()
+    const draftLogSection = screen.getByText('戦闘の記録').closest('div[class*="card"]')
+    expect(draftLogSection).not.toBeNull()
+    expect(within(draftLogSection!).queryByText('派遣')).not.toBeInTheDocument()
   })
 
   it('should show purify button for contaminated logs', () => {
     render(<CompletedLogList completedLogs={[mockCompletedLogs[0], mockCompletedLogs[1]]} isLoading={false} />)
     
     // 汚染度が0より大きいログには浄化ボタンがある
-    const adventureLogSection = screen.getByText('冒険の記録').closest('article')!
-    expect(within(adventureLogSection).getByText('浄化')).toBeInTheDocument()
+    const adventureLogSection = screen.getByText('冒険の記録').closest('div[class*="card"]')
+    expect(adventureLogSection).not.toBeNull()
+    expect(within(adventureLogSection!).getByText('浄化')).toBeInTheDocument()
     
-    const battleLogSection = screen.getByText('戦闘の記録').closest('article')!
-    expect(within(battleLogSection).getByText('浄化')).toBeInTheDocument()
+    const battleLogSection = screen.getByText('戦闘の記録').closest('div[class*="card"]')
+    expect(battleLogSection).not.toBeNull()
+    expect(within(battleLogSection!).getByText('浄化')).toBeInTheDocument()
   })
 
   it('should open detail view when clicking detail button', () => {

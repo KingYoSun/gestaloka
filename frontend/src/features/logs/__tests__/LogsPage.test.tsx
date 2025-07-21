@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import { LogsPage } from '../LogsPage'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-// BrowserRouterは不要（TanStack Routerを使用）
-import { ValidationRulesProvider } from '@/contexts/ValidationRulesContext'
+import { renderWithProviders as render } from '@/test/test-utils'
 import * as useCharactersModule from '@/hooks/useCharacters'
 import * as useLogFragmentsModule from '../hooks/useLogFragments'
 import * as useCompletedLogsModule from '../hooks/useCompletedLogs'
@@ -85,17 +83,27 @@ const mockCharacters = [
 const mockFragments = [
   {
     id: 'fragment1',
-    content: 'Test fragment content',
-    emotionalValence: 'positive',
-    sp: 10,
+    character_id: 'char1',
+    source_action: 'test-action-1',
+    action_description: 'Test fragment content',
+    keywords: ['test'],
+    emotional_valence: 'positive',
     rarity: 'common',
+    importance_score: 0.8,
+    context_data: {},
+    created_at: new Date().toISOString(),
   },
   {
     id: 'fragment2',
-    content: 'Another fragment',
-    emotionalValence: 'neutral',
-    sp: 20,
+    character_id: 'char1',
+    source_action: 'test-action-2',
+    action_description: 'Another fragment',
+    keywords: ['test'],
+    emotional_valence: 'neutral',
     rarity: 'rare',
+    importance_score: 0.6,
+    context_data: {},
+    created_at: new Date().toISOString(),
   },
 ]
 
@@ -107,19 +115,8 @@ const mockCompletedLogs = [
   },
 ]
 
-const createWrapper = () => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  })
-
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <ValidationRulesProvider>{children}</ValidationRulesProvider>
-    </QueryClientProvider>
-  )
+const renderLogsPage = () => {
+  return render(<LogsPage />)
 }
 
 describe('LogsPage', () => {
@@ -137,7 +134,7 @@ describe('LogsPage', () => {
     } as any)
 
     vi.spyOn(useLogFragmentsModule, 'useLogFragments').mockReturnValue({
-      data: mockFragments,
+      data: { fragments: mockFragments },
       isLoading: false,
       error: null,
       refetch: vi.fn(),
@@ -161,10 +158,11 @@ describe('LogsPage', () => {
     } as any)
   })
 
-  it('should render initial state with tabs', () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+  it('should render initial state with tabs', async () => {
+    renderLogsPage()
 
-    expect(screen.getByText('ログシステム')).toBeInTheDocument()
+    // ページのロードを待つ
+    expect(await screen.findByText('ログシステム')).toBeInTheDocument()
     expect(screen.getByTestId('tabs')).toBeInTheDocument()
     expect(screen.getByTestId('tab-fragments')).toBeInTheDocument()
     expect(screen.getByTestId('tab-completed')).toBeInTheDocument()
@@ -172,15 +170,15 @@ describe('LogsPage', () => {
     expect(screen.getByTestId('tab-memory')).toBeInTheDocument()
   })
 
-  it('should display character selection in fragments tab', () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+  it('should display character selection in fragments tab', async () => {
+    renderLogsPage()
 
-    expect(screen.getByText('キャラクター選択')).toBeInTheDocument()
+    expect(await screen.findByText('キャラクター選択')).toBeInTheDocument()
     expect(screen.getByText('テストキャラクター1')).toBeInTheDocument()
     expect(screen.getByText('テストキャラクター2')).toBeInTheDocument()
   })
 
-  it('should show loading state when characters are loading', () => {
+  it('should show loading state when characters are loading', async () => {
     vi.spyOn(useCharactersModule, 'useCharacters').mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -188,12 +186,12 @@ describe('LogsPage', () => {
       refetch: vi.fn(),
     } as any)
 
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
-    expect(screen.getByText('読み込み中...')).toBeInTheDocument()
+    expect(await screen.findByText('読み込み中...')).toBeInTheDocument()
   })
 
-  it('should show empty state when no characters exist', () => {
+  it('should show empty state when no characters exist', async () => {
     vi.spyOn(useCharactersModule, 'useCharacters').mockReturnValue({
       data: [],
       isLoading: false,
@@ -201,15 +199,15 @@ describe('LogsPage', () => {
       refetch: vi.fn(),
     } as any)
 
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
-    expect(screen.getByText('キャラクターがありません。まずキャラクターを作成してください。')).toBeInTheDocument()
+    expect(await screen.findByText('キャラクターがありません。まずキャラクターを作成してください。')).toBeInTheDocument()
   })
 
   it('should select character and show fragments', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
-    const charButton = screen.getByText('テストキャラクター1')
+    const charButton = await screen.findByText('テストキャラクター1')
     fireEvent.click(charButton)
 
     await waitFor(() => {
@@ -219,9 +217,9 @@ describe('LogsPage', () => {
   })
 
   it('should show purification button when positive fragments exist', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
-    const charButton = screen.getByText('テストキャラクター1')
+    const charButton = await screen.findByText('テストキャラクター1')
     fireEvent.click(charButton)
 
     await waitFor(() => {
@@ -230,10 +228,11 @@ describe('LogsPage', () => {
   })
 
   it('should handle fragment selection', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
 
     await waitFor(() => {
       expect(screen.getByTestId('log-fragment-list')).toBeInTheDocument()
@@ -249,10 +248,11 @@ describe('LogsPage', () => {
   })
 
   it('should show compilation editor when compile button is clicked', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
 
     await waitFor(() => {
       expect(screen.getByTestId('log-fragment-list')).toBeInTheDocument()
@@ -277,10 +277,11 @@ describe('LogsPage', () => {
   it('should handle log compilation success', async () => {
     mockCreateCompletedLog.mockResolvedValue({})
     
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
     
     // フラグメント選択
     await waitFor(() => {
@@ -299,15 +300,15 @@ describe('LogsPage', () => {
 
     await waitFor(() => {
       expect(mockCreateCompletedLog).toHaveBeenCalledWith({
-        creatorId: 'char1',
-        coreFragmentId: 'fragment1',
-        subFragmentIds: [],
+        creator_id: 'char1',
+        core_fragment_id: 'fragment1',
+        sub_fragment_ids: [],
         name: 'Test Log',
         title: undefined,
         description: 'Test Description',
         skills: [],
-        personalityTraits: [],
-        behaviorPatterns: {},
+        personality_traits: [],
+        behavior_patterns: {},
       })
       expect(mockToast).toHaveBeenCalledWith({
         title: 'ログ編纂完了',
@@ -320,10 +321,11 @@ describe('LogsPage', () => {
   it('should handle log compilation error', async () => {
     mockCreateCompletedLog.mockRejectedValue(new Error('Compilation failed'))
     
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
     
     // フラグメント選択
     await waitFor(() => {
@@ -350,10 +352,11 @@ describe('LogsPage', () => {
   })
 
   it('should cancel compilation editor', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
     
     // フラグメント選択
     await waitFor(() => {
@@ -377,10 +380,11 @@ describe('LogsPage', () => {
   })
 
   it('should show purification dialog', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
 
     await waitFor(() => {
       fireEvent.click(screen.getByText('浄化アイテム作成'))
@@ -392,10 +396,11 @@ describe('LogsPage', () => {
   })
 
   it('should close purification dialog', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
 
     await waitFor(() => {
       fireEvent.click(screen.getByText('浄化アイテム作成'))
@@ -411,51 +416,78 @@ describe('LogsPage', () => {
   })
 
   it('should show completed logs tab content', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
-    // タブをテキストで取得
-    const completedTab = screen.getByRole('tab', { name: /完成ログ/i })
+    // ページのロードを待つ
+    await screen.findByText('ログシステム')
+    
+    // タブをdata-testidで取得
+    const completedTab = screen.getByTestId('tab-completed')
     fireEvent.click(completedTab)
 
     // キャラクター未選択時
-    expect(screen.getByText('キャラクターを選択してください')).toBeInTheDocument()
+    const noCharacterTexts = screen.getAllByText('キャラクターを選択してください')
+    expect(noCharacterTexts.length).toBeGreaterThan(0)
 
-    // キャラクター選択  
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    // キャラクター選択のためにフラグメントタブに戻る
+    const fragmentsTab = screen.getByTestId('tab-fragments')
+    fireEvent.click(fragmentsTab)
+    
+    // キャラクター選択
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
+    
+    // 完成ログタブに戻る
+    fireEvent.click(completedTab)
 
     await waitFor(() => {
-      // completed-log-listのdata-testidがないので、完成ログのタイトルで確認
-      expect(screen.getByText('Completed Log 1')).toBeInTheDocument()
+      expect(screen.getByTestId('completed-log-list')).toBeInTheDocument()
     })
   })
 
-  it('should show dispatch list tab content', () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+  it('should show dispatch list tab content', async () => {
+    renderLogsPage()
 
-    // タブをテキストで取得
-    const dispatchTab = screen.getByRole('tab', { name: /派遣状況/i })
+    // ページのロードを待つ
+    await screen.findByText('ログシステム')
+    
+    // タブをdata-testidで取得
+    const dispatchTab = screen.getByTestId('tab-dispatches')
     fireEvent.click(dispatchTab)
 
-    // dispatch-listのdata-testidがないので、代わりにコンテンツを確認
-    expect(screen.getByText(/派遣/i)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByTestId('dispatch-list')).toBeInTheDocument()
+    })
   })
 
   it('should show memory inheritance tab content', async () => {
-    render(<LogsPage />, { wrapper: createWrapper() })
+    renderLogsPage()
 
-    // タブをテキストで取得
-    const memoryTab = screen.getByRole('tab', { name: /記憶継承/i })
+    // ページのロードを待つ
+    await screen.findByText('ログシステム')
+    
+    // タブをdata-testidで取得
+    const memoryTab = screen.getByTestId('tab-memory')
     fireEvent.click(memoryTab)
 
     // キャラクター未選択時
-    expect(screen.getByText('キャラクターを選択してください')).toBeInTheDocument()
+    const noCharacterTexts = screen.getAllByText('キャラクターを選択してください')
+    expect(noCharacterTexts.length).toBeGreaterThan(0)
 
+    // キャラクター選択のためにフラグメントタブに戻る
+    const fragmentsTab = screen.getByTestId('tab-fragments')
+    fireEvent.click(fragmentsTab)
+    
     // キャラクター選択
-    fireEvent.click(screen.getByText('テストキャラクター1'))
+    const charButton = await screen.findByText('テストキャラクター1')
+    fireEvent.click(charButton)
+    
+    // メモリー継承タブに戻る
+    fireEvent.click(memoryTab)
 
     await waitFor(() => {
-      // memory-inheritanceのdata-testidがないので、記憶継承関連のテキストで確認
-      expect(screen.getByText(/記憶継承/i)).toBeInTheDocument()
+      // 現在メモリー継承機能は開発中
+      expect(screen.getByText('メモリー継承機能は現在開発中です')).toBeInTheDocument()
     })
   })
 })

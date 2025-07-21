@@ -1,19 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import { DashboardPage } from '../DashboardPage'
+import { renderWithProviders as render } from '@/test/test-utils'
 import * as useCharactersModule from '@/hooks/useCharacters'
 import * as useGameSessionsModule from '@/hooks/useGameSessions'
 
 // React Routerのモック
 const mockNavigate = vi.fn()
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, children, className }: any) => (
-    <a href={to} className={className} data-testid={`link-${to}`}>
-      {children}
-    </a>
-  ),
-  useNavigate: () => mockNavigate,
-}))
+vi.mock('@tanstack/react-router', async () => {
+  const actual = await vi.importActual('@tanstack/react-router')
+  return {
+    ...actual,
+    Link: ({ to, children, className }: any) => (
+      <a href={to} className={className} data-testid={`link-${to}`}>
+        {children}
+      </a>
+    ),
+    useNavigate: () => mockNavigate,
+  }
+})
 
 const mockCharacters = [
   { id: 'char1', name: 'キャラクター1' },
@@ -75,10 +80,10 @@ describe('DashboardPage', () => {
     } as any)
   })
 
-  it('should render dashboard with all cards', () => {
+  it('should render dashboard with all cards', async () => {
     render(<DashboardPage />)
 
-    expect(screen.getByText('ダッシュボード')).toBeInTheDocument()
+    expect(await screen.findByText('ダッシュボード')).toBeInTheDocument()
     expect(screen.getByText('ゲスタロカへようこそ！ここから冒険を始めましょう。')).toBeInTheDocument()
     
     // 各カードのタイトル
@@ -88,10 +93,10 @@ describe('DashboardPage', () => {
     expect(screen.getByText('クエスト管理')).toBeInTheDocument()
   })
 
-  it('should render character management card with links', () => {
+  it('should render character management card with links', async () => {
     render(<DashboardPage />)
 
-    expect(screen.getByText('キャラクター管理')).toBeInTheDocument()
+    expect(await screen.findByText('キャラクター管理')).toBeInTheDocument()
     expect(screen.getByText('あなたのキャラクターを管理し、新しいキャラクターを作成しましょう')).toBeInTheDocument()
     
     // リンクの存在確認（ボタンテキストで確認）
@@ -99,18 +104,21 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /新規キャラクター作成/i })).toBeInTheDocument()
   })
 
-  it('should show active sessions count', () => {
+  it('should show active sessions count', async () => {
     render(<DashboardPage />)
 
     // アクティブで削除されていないキャラクターのセッション数
-    const sessionsTitle = screen.getByText(/進行中のセッション/i)
+    const sessionsTitle = await screen.findByText(/進行中のセッション/i)
     // Badge内の数字を確認
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
-  it('should list active sessions with valid characters', () => {
+  it('should list active sessions with valid characters', async () => {
     render(<DashboardPage />)
 
+    // ページのロードを待つ
+    await screen.findByText('ダッシュボード')
+    
     // 最初の3つのアクティブセッションが表示される
     // 複数要素がある場合はgetAllByTextを使用
     const character1Elements = screen.getAllByText('キャラクター1')
@@ -124,9 +132,12 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('ターン 8')).not.toBeInTheDocument()
   })
 
-  it('should navigate to game session when play button is clicked', () => {
+  it('should navigate to game session when play button is clicked', async () => {
     render(<DashboardPage />)
 
+    // ページのロードを待つ
+    await screen.findByText('ダッシュボード')
+    
     const playButtons = screen.getAllByRole('button')
     // PlayCircleアイコンを持つボタンを探す
     const firstPlayButton = playButtons.find(btn => {
@@ -140,7 +151,7 @@ describe('DashboardPage', () => {
     }
   })
 
-  it('should show no sessions message when there are no active sessions', () => {
+  it('should show no sessions message when there are no active sessions', async () => {
     vi.spyOn(useGameSessionsModule, 'useGameSessions').mockReturnValue({
       data: { sessions: [] },
       isLoading: false,
@@ -150,10 +161,10 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />)
 
-    expect(screen.getByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
+    expect(await screen.findByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
   })
 
-  it('should handle sessions with non-active status', () => {
+  it('should handle sessions with non-active status', async () => {
     vi.spyOn(useGameSessionsModule, 'useGameSessions').mockReturnValue({
       data: {
         sessions: [
@@ -172,10 +183,10 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />)
 
-    expect(screen.getByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
+    expect(await screen.findByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
   })
 
-  it('should handle sessions without turn_count data', () => {
+  it('should handle sessions without turn_count data', async () => {
     vi.spyOn(useGameSessionsModule, 'useGameSessions').mockReturnValue({
       data: {
         sessions: [
@@ -194,10 +205,13 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />)
 
+    // ページのロードを待つ
+    await screen.findByText('ダッシュボード')
+    
     expect(screen.getByText('ターン 0')).toBeInTheDocument()
   })
 
-  it('should handle sessions with invalid sessionData', () => {
+  it('should handle sessions with invalid sessionData', async () => {
     vi.spyOn(useGameSessionsModule, 'useGameSessions').mockReturnValue({
       data: {
         sessions: [
@@ -222,12 +236,15 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />)
 
+    // ページのロードを待つ
+    await screen.findByText('ダッシュボード')
+    
     const turnTexts = screen.getAllByText(/ターン \d+/)
     expect(turnTexts[0]).toHaveTextContent('ターン 0')
     expect(turnTexts[1]).toHaveTextContent('ターン 0')
   })
 
-  it('should show overflow message when more than 3 active sessions', () => {
+  it('should show overflow message when more than 3 active sessions', async () => {
     vi.spyOn(useGameSessionsModule, 'useGameSessions').mockReturnValue({
       data: {
         sessions: [
@@ -246,30 +263,33 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />)
 
+    // ページのロードを待つ
+    await screen.findByText('ダッシュボード')
+    
     expect(screen.getByText('他 2 件のセッション')).toBeInTheDocument()
   })
 
-  it('should render log system card with link', () => {
+  it('should render log system card with link', async () => {
     render(<DashboardPage />)
 
     // ログシステムのタイトルが存在することを確認
-    expect(screen.getByText('ログシステム')).toBeInTheDocument()
+    expect(await screen.findByText('ログシステム')).toBeInTheDocument()
     
     expect(screen.getByText('キャラクターの記録を管理し、ログを編纂してNPCを作成します')).toBeInTheDocument()
     expect(screen.getByTestId('link-/logs')).toBeInTheDocument()
   })
 
-  it('should render quest management card with link', () => {
+  it('should render quest management card with link', async () => {
     render(<DashboardPage />)
 
     // クエスト管理のタイトルが存在することを確認
-    expect(screen.getByText('クエスト管理')).toBeInTheDocument()
+    expect(await screen.findByText('クエスト管理')).toBeInTheDocument()
     
     expect(screen.getByText('物語の目標を設定し、進行状況を確認します')).toBeInTheDocument()
     expect(screen.getByTestId('link-/quests')).toBeInTheDocument()
   })
 
-  it('should handle missing characters data', () => {
+  it('should handle missing characters data', async () => {
     vi.spyOn(useCharactersModule, 'useCharacters').mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -280,10 +300,10 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
 
     // セッションカードは表示されるが、キャラクターがないのでセッションは表示されない
-    expect(screen.getByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
+    expect(await screen.findByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
   })
 
-  it('should handle missing sessions data', () => {
+  it('should handle missing sessions data', async () => {
     vi.spyOn(useGameSessionsModule, 'useGameSessions').mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -293,6 +313,6 @@ describe('DashboardPage', () => {
 
     render(<DashboardPage />)
 
-    expect(screen.getByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
+    expect(await screen.findByText('現在進行中のゲームセッションはありません')).toBeInTheDocument()
   })
 })
