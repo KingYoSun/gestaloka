@@ -63,7 +63,7 @@ export const createMemoryRouter = vi.fn((options: any) => {
   return router
 })
 
-export const RouterProvider = ({ children, router }: any) => {
+export const RouterProvider = ({ children }: any) => {
   return React.createElement('div', { 'data-testid': 'router-provider' }, children)
 }
 

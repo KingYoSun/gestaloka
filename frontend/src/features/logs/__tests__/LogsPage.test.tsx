@@ -27,7 +27,7 @@ vi.mock('@/components/ui/tabs', () => ({
 
 // コンポーネントのモック
 vi.mock('../components/LogFragmentList', () => ({
-  LogFragmentList: ({ fragments, isLoading, selectedFragmentIds, onFragmentSelect, selectionMode }: any) => (
+  LogFragmentList: ({ fragments: _fragments, isLoading, selectedFragmentIds, onFragmentSelect, selectionMode: _selectionMode }: any) => (
     <div data-testid="log-fragment-list">
       {isLoading ? (
         <div>Loading...</div>
@@ -58,7 +58,7 @@ vi.mock('../components/AdvancedLogCompilationEditor', () => ({
 }))
 
 vi.mock('../components/CompletedLogList', () => ({
-  CompletedLogList: ({ completedLogs, isLoading }: any) => <div data-testid="completed-log-list">Completed Logs</div>,
+  CompletedLogList: ({ completedLogs: _completedLogs, isLoading: _isLoading }: any) => <div data-testid="completed-log-list">Completed Logs</div>,
 }))
 
 vi.mock('../components/CreatePurificationItemDialog', () => ({

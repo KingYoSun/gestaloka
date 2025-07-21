@@ -211,8 +211,8 @@ class TestAuthService:
 
     def test_create_access_token_exception(self, auth_service):
         """トークン作成中の例外処理テスト"""
-        with patch("app.services.auth_service.jwt.encode", side_effect=Exception("Encoding error")):
-            with pytest.raises(Exception):
+        with patch("app.services.auth_service.jwt.encode", side_effect=RuntimeError("Encoding error")):
+            with pytest.raises(RuntimeError):
                 auth_service.create_access_token("test-user-id")
 
     @pytest.mark.asyncio

@@ -6,7 +6,8 @@ import pytest
 from sqlmodel import Session, create_engine
 from sqlmodel.pool import StaticPool
 
-from app.models.character import Character as CharacterModel, CharacterStats
+from app.models.character import Character as CharacterModel
+from app.models.character import CharacterStats
 from app.models.user import User
 from app.schemas.character import CharacterCreate, CharacterUpdate
 from app.services.character_service import CharacterService
@@ -23,7 +24,7 @@ def test_db():
     )
     from app.models.base import SQLModel
     SQLModel.metadata.create_all(engine)
-    
+
     with Session(engine) as session:
         yield session
 
@@ -58,9 +59,9 @@ async def test_create_character(character_service: CharacterService, test_user: 
         appearance="黒髪で背が高い",
         personality="優しく穏やか",
     )
-    
+
     character = await character_service.create(test_user.id, character_data)
-    
+
     assert character.name == "テストキャラクター"
     assert character.description == "テスト用のキャラクターです"
     assert character.user_id == test_user.id
@@ -95,10 +96,10 @@ async def test_get_by_id(character_service: CharacterService, test_user: User, t
     test_db.add(character)
     test_db.add(stats)
     test_db.commit()
-    
+
     # 取得テスト
     result = await character_service.get_by_id(character.id)
-    
+
     assert result is not None
     assert result.id == character.id
     assert result.name == "テストキャラクター"
@@ -136,7 +137,7 @@ async def test_get_by_user(character_service: CharacterService, test_user: User,
         )
         test_db.add(character)
         test_db.add(stats)
-    
+
     # 削除済みキャラクターも作成
     deleted_character = CharacterModel(
         id=generate_uuid(),
@@ -159,10 +160,10 @@ async def test_get_by_user(character_service: CharacterService, test_user: User,
     test_db.add(deleted_character)
     test_db.add(deleted_stats)
     test_db.commit()
-    
+
     # 取得テスト
     characters = await character_service.get_by_user(test_user.id)
-    
+
     assert len(characters) == 3  # アクティブなキャラクターのみ
     assert all(c.is_active for c in characters)
     assert all(c.user_id == test_user.id for c in characters)
@@ -203,15 +204,15 @@ async def test_update_character(character_service: CharacterService, test_user: 
     test_db.add(character)
     test_db.add(stats)
     test_db.commit()
-    
+
     # 更新
     update_data = CharacterUpdate(
         name="新しい名前",
         description="新しい紹介",
     )
-    
+
     updated = await character_service.update(character.id, update_data)
-    
+
     assert updated is not None
     assert updated.name == "新しい名前"
     assert updated.description == "新しい紹介"
@@ -248,12 +249,12 @@ async def test_delete_character(character_service: CharacterService, test_user: 
     test_db.add(character)
     test_db.add(stats)
     test_db.commit()
-    
+
     # 削除
     result = await character_service.delete(character.id)
-    
+
     assert result is True
-    
+
     # 削除確認
     test_db.refresh(character)
     assert character.is_active is False

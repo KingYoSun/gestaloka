@@ -1,7 +1,7 @@
 import { render, RenderOptions } from '@testing-library/react'
 import { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterProvider, createMemoryRouter } from '@/test/mocks/tanstack-router'
+import { createMemoryRouter } from '@/test/mocks/tanstack-router'
 import { AuthProvider } from '@/features/auth/AuthProvider'
 import { ValidationRulesProvider } from '@/contexts/ValidationRulesContext'
 
@@ -28,12 +28,12 @@ export function renderWithProviders(
   ui: ReactElement,
   options: CustomRenderOptions = {}
 ) {
-  const { initialRoute = '/', isAuthenticated = false, ...renderOptions } = options
+  const { ...renderOptions } = options
 
   const queryClient = createTestQueryClient()
 
   // 簡易的なルーター設定（実際のルートツリーは後で設定）
-  const router = createMemoryRouter({
+  createMemoryRouter({
     routeTree: {
       id: 'root',
       getRouteApi: () => ({} as any),

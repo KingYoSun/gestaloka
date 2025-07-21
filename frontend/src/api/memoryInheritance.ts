@@ -64,7 +64,7 @@ export const memoryInheritanceApiWrapper = {
 
   // ログ強化情報を取得（エンドポイントが存在しない可能性あり）
   getEnhancements: async (
-    characterId: string
+    _characterId: string
   ): Promise<LogEnhancementInfo[]> => {
     // TODO: 自動生成されたAPIに該当メソッドがあるか確認が必要
     throw new Error('Not implemented yet')

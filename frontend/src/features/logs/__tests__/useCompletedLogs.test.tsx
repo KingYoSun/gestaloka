@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useCompletedLogs, useCreateCompletedLog, useUpdateCompletedLog } from '../hooks/useCompletedLogs'
@@ -57,6 +57,10 @@ describe('useCompletedLogs', () => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('should fetch completed logs successfully', async () => {
     vi.spyOn(logsApiModule.logsApiWrapper, 'getCompletedLogs').mockResolvedValue(mockCompletedLogs)
 
@@ -78,6 +82,8 @@ describe('useCompletedLogs', () => {
   })
 
   it('should not fetch when characterId is empty', () => {
+    vi.spyOn(logsApiModule.logsApiWrapper, 'getCompletedLogs').mockResolvedValue([])
+    
     const { result } = renderHook(() => useCompletedLogs(''), {
       wrapper: createWrapper(),
     })
@@ -111,6 +117,12 @@ describe('useCreateCompletedLog', () => {
     vi.spyOn(useToastModule, 'useToast').mockReturnValue({
       toast: mockToast,
     } as any)
+    // エラーハンドリングのテスト時にconsole.errorが出力されるのを抑制
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('should create completed log successfully', async () => {
@@ -202,6 +214,7 @@ describe('useCreateCompletedLog', () => {
 
     try {
       await result.current.mutateAsync(createData)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       // エラーが発生することを期待
     }
@@ -225,6 +238,12 @@ describe('useUpdateCompletedLog', () => {
     vi.spyOn(useToastModule, 'useToast').mockReturnValue({
       toast: mockToast,
     } as any)
+    // エラーハンドリングのテスト時にconsole.errorが出力されるのを抑制
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('should update completed log successfully', async () => {
@@ -302,6 +321,7 @@ describe('useUpdateCompletedLog', () => {
 
     try {
       await result.current.mutateAsync(updateData)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       // エラーが発生することを期待
     }

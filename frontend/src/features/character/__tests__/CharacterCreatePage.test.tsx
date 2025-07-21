@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CharacterCreatePage } from '../CharacterCreatePage'
@@ -49,6 +49,12 @@ describe('CharacterCreatePage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // console.errorをモック化してエラーメッセージを抑制
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('フォーム表示', () => {
@@ -125,10 +131,12 @@ describe('CharacterCreatePage', () => {
 
       await waitFor(() => {
         expect(charactersApi.createCharacterApiV1CharactersPost).toHaveBeenCalledWith({
-          name: '新しいキャラクター',
-          description: 'テスト用のキャラクターです',
-          appearance: '黒髪で背が高い',
-          personality: '勇敢で正義感が強い',
+          characterCreate: {
+            name: '新しいキャラクター',
+            description: 'テスト用のキャラクターです',
+            appearance: '黒髪で背が高い',
+            personality: '勇敢で正義感が強い',
+          }
         })
       })
 

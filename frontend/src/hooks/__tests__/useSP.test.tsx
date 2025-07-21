@@ -103,7 +103,7 @@ describe('useSP hooks', () => {
         expect(result.current.isSuccess).toBe(true)
       })
 
-      expect(result.current.data?.data).toEqual(mockBalance)
+      expect(result.current.data).toEqual(mockBalance)
     })
   })
 
@@ -131,7 +131,7 @@ describe('useSP hooks', () => {
         expect(result.current.isSuccess).toBe(true)
       })
 
-      expect(result.current.data?.data).toEqual(mockSummary)
+      expect(result.current.data).toEqual(mockSummary)
     })
   })
 

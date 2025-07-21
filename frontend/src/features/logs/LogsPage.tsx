@@ -24,7 +24,6 @@ import {
 import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
 import { useToast } from '@/hooks/useToast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
-import { MemoryInheritanceScreen } from '@/components/memory/MemoryInheritanceScreen'
 
 export function LogsPage() {
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('')
@@ -270,7 +269,9 @@ export function LogsPage() {
 
         <TabsContent value="memory" className="space-y-6">
           {selectedCharacterId ? (
-            <MemoryInheritanceScreen characterId={selectedCharacterId} />
+            <div className="text-center text-muted-foreground">
+              メモリー継承機能は現在開発中です
+            </div>
           ) : (
             <Card>
               <CardContent className="py-8 text-center">

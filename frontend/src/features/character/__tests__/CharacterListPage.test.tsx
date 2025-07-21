@@ -6,7 +6,6 @@ import { renderWithProviders as render } from '@/test/test-utils'
 import { mockCharacters, mockCharacter } from '@/mocks/fixtures/character'
 import { charactersApi } from '@/lib/api'
 import { useCharacterStore } from '@/stores/characterStore'
-import type { Character } from '@/api/generated/models'
 
 // useNavigateのモック
 const mockNavigate = vi.fn()

@@ -26,7 +26,7 @@ vi.mock('../components/CompletedLogDetail', () => ({
 
 // ユーティリティのモック
 vi.mock('@/lib/utils', () => ({
-  formatRelativeTime: (date: string) => '2日前',
+  formatRelativeTime: (_date: string) => '2日前',
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
 }))
 

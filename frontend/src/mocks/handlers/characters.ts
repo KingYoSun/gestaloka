@@ -32,9 +32,12 @@ export const charactersHandlers = [
       ...mockCharacter,
       id: `new-character-${Date.now()}`,
       name: body.name,
-      stats: body.initial_stats,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      description: body.description || null,
+      appearance: body.appearance || null,
+      personality: body.personality || null,
+      location: body.location || 'Starting Village',
+      created_at: new Date(),
+      updated_at: new Date(),
     }
     
     return HttpResponse.json(newCharacter, { status: 201 })
@@ -48,8 +51,8 @@ export const charactersHandlers = [
     if (character) {
       const updatedCharacter = {
         ...character,
-        ...body,
-        updated_at: new Date().toISOString(),
+        ...(body || {}),
+        updated_at: new Date(),
       }
       return HttpResponse.json(updatedCharacter)
     }

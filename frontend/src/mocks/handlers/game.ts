@@ -7,15 +7,12 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 export const gameHandlers = [
   // ゲームセッション開始
   http.post(`${API_BASE_URL}/api/v1/narrative/start`, async ({ request }) => {
-    const body = await request.json() as { character_id: string }
+    await request.json() as { character_id: string }
     
     // 遅延を追加してリアルな動作を再現
     await delay(500)
     
-    return HttpResponse.json({
-      ...mockNarrativeResponse,
-      session_id: `session-${Date.now()}`,
-    })
+    return HttpResponse.json(mockNarrativeResponse)
   }),
 
   // アクション実行
@@ -25,19 +22,18 @@ export const gameHandlers = [
     // 遅延を追加してリアルな動作を再現
     await delay(1000)
     
-    // アクションに応じて異なるナラティブを返す
-    const narratives = {
-      'action-1': '剣を抜いたあなたは、勇敢に影に立ち向かった。激しい戦いの末、あなたは勝利を収めた。',
-      'action-2': 'あなたは冷静に話しかけた。影は徐々に形を変え、一人の老人の姿となった。',
-      'action-3': 'あなたは素早く洞窟から逃げ出した。背後から追いかけてくる気配はない。',
+    // アクションテキストに応じて異なるナラティブを返す
+    const narratives: Record<string, string> = {
+      '剣を抜いて戦う': '剣を抜いたあなたは、勇敢に影に立ち向かった。激しい戦いの末、あなたは勝利を収めた。',
+      '交渉を試みる': 'あなたは冷静に話しかけた。影は徐々に形を変え、一人の老人の姿となった。',
+      '逃げる': 'あなたは素早く洞窟から逃げ出した。背後から追いかけてくる気配はない。',
     }
     
-    const selectedNarrative = narratives[body.action_id as keyof typeof narratives] || 'あなたは行動を選択した。'
+    const selectedNarrative = narratives[body.text] || 'あなたは行動を選択した。'
     
     return HttpResponse.json({
       ...mockNarrativeResponse,
       narrative: selectedNarrative,
-      session_id: body.session_id,
     })
   }),
 

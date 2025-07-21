@@ -5,7 +5,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { spApi } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import type { PlayerSPRead, PlayerSPSummary, SPConsumeRequest } from '@/api/generated/models'
+import type { PlayerSPRead, SPConsumeRequest, SPTransactionType } from '@/api/generated/models'
 
 /**
  * SP残高を取得するフック
@@ -13,7 +13,10 @@ import type { PlayerSPRead, PlayerSPSummary, SPConsumeRequest } from '@/api/gene
 export function useSPBalance() {
   return useQuery({
     queryKey: ['sp', 'balance'],
-    queryFn: () => spApi.getSpBalanceApiV1SpBalanceGet(),
+    queryFn: async () => {
+      const response = await spApi.getSpBalanceApiV1SpBalanceGet()
+      return response.data
+    },
     staleTime: 30 * 1000, // 30秒
   })
 }
@@ -24,7 +27,10 @@ export function useSPBalance() {
 export function useSPBalanceSummary() {
   return useQuery({
     queryKey: ['sp', 'balance', 'summary'],
-    queryFn: () => spApi.getSpBalanceSummaryApiV1SpBalanceSummaryGet(),
+    queryFn: async () => {
+      const response = await spApi.getSpBalanceSummaryApiV1SpBalanceSummaryGet()
+      return response.data
+    },
     staleTime: 5 * 1000, // 5秒
     refetchInterval: 30 * 1000, // 30秒ごとに自動更新
     refetchIntervalInBackground: true, // バックグラウンドでも更新
@@ -122,7 +128,7 @@ export function useDailyRecovery() {
  * SP取引履歴を取得するフック
  */
 export function useSPTransactions(params?: {
-  transactionType?: string
+  transactionType?: SPTransactionType
   startDate?: string
   endDate?: string
   relatedEntityType?: string
@@ -132,7 +138,18 @@ export function useSPTransactions(params?: {
 }) {
   return useQuery({
     queryKey: ['sp', 'transactions', params],
-    queryFn: () => spApi.getTransactionHistoryApiV1SpTransactionsGet(params),
+    queryFn: async () => {
+      const response = await spApi.getTransactionHistoryApiV1SpTransactionsGet({
+        transactionType: params?.transactionType,
+        startDate: params?.startDate ? new Date(params.startDate) : undefined,
+        endDate: params?.endDate ? new Date(params.endDate) : undefined,
+        relatedEntityType: params?.relatedEntityType,
+        relatedEntityId: params?.relatedEntityId,
+        limit: params?.limit,
+        offset: params?.offset,
+      })
+      return response.data
+    },
     staleTime: 60 * 1000, // 1分
   })
 }

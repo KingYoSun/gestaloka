@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { renderHook, waitFor, act } from '@testing-library/react'
 import { useAuth } from '../useAuth'
 import { AuthProvider } from '../AuthProvider'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -47,6 +47,12 @@ describe('useAuth', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    // console.errorをモック化してエラーメッセージを抑制
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('should initialize with loading state', async () => {
@@ -86,7 +92,9 @@ describe('useAuth', () => {
       wrapper: createWrapper(),
     })
 
-    await result.current.login('test@example.com', 'password123')
+    await act(async () => {
+      await result.current.login('test@example.com', 'password123')
+    })
 
     await waitFor(() => {
       expect(result.current.isAuthenticated).toBe(true)
@@ -105,9 +113,11 @@ describe('useAuth', () => {
       wrapper: createWrapper(),
     })
 
-    await expect(
-      result.current.login('test@example.com', 'wrong-password')
-    ).rejects.toThrow('Invalid credentials')
+    await act(async () => {
+      await expect(
+        result.current.login('test@example.com', 'wrong-password')
+      ).rejects.toThrow('Invalid credentials')
+    })
 
     expect(result.current.isAuthenticated).toBe(false)
     expect(result.current.user).toBeNull()
@@ -133,14 +143,18 @@ describe('useAuth', () => {
     })
 
     // Login first
-    await result.current.login('test@example.com', 'password123')
+    await act(async () => {
+      await result.current.login('test@example.com', 'password123')
+    })
     
     await waitFor(() => {
       expect(result.current.isAuthenticated).toBe(true)
     })
 
     // Then logout
-    await result.current.logout()
+    await act(async () => {
+      await result.current.logout()
+    })
 
     await waitFor(() => {
       expect(result.current.isAuthenticated).toBe(false)

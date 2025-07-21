@@ -23,7 +23,7 @@ def test_db():
     )
     from app.models.base import SQLModel
     SQLModel.metadata.create_all(engine)
-    
+
     with Session(engine) as session:
         yield session
 
@@ -42,9 +42,9 @@ async def test_create_user(user_service: UserService):
         email="newuser@example.com",
         password="Password123!",
     )
-    
+
     user = await user_service.create(user_data)
-    
+
     assert user.username == "newuser"
     assert user.email == "newuser@example.com"
     assert user.is_active is True
@@ -61,14 +61,14 @@ async def test_create_user_duplicate_username(user_service: UserService):
         password="Password123!",
     )
     await user_service.create(first_user)
-    
+
     # 同じユーザー名で作成を試みる
     user_data = UserCreate(
         username="existinguser",
         email="another@example.com",
         password="Password123!",
     )
-    
+
     # 重複チェックでValueErrorが発生する
     with pytest.raises(ValueError, match="Username 'existinguser' already exists"):
         await user_service.create(user_data)
@@ -84,14 +84,14 @@ async def test_create_user_duplicate_email(user_service: UserService):
         password="Password123!",
     )
     await user_service.create(first_user)
-    
+
     # 同じメールアドレスで作成を試みる
     user_data = UserCreate(
         username="user2",
         email="existing@example.com",
         password="Password123!",
     )
-    
+
     # 重複チェックでValueErrorが発生する
     with pytest.raises(ValueError, match="Email 'existing@example.com' already exists"):
         await user_service.create(user_data)
@@ -108,7 +108,7 @@ async def test_get_by_id(user_service: UserService, test_db: Session):
         hashed_password="hashed",
     )
     test_db.add(user)
-    
+
     # ロールを付与
     role = UserRole(
         id=generate_uuid(),
@@ -117,10 +117,10 @@ async def test_get_by_id(user_service: UserService, test_db: Session):
     )
     test_db.add(role)
     test_db.commit()
-    
+
     # 取得テスト
     result = await user_service.get_by_id(user.id)
-    
+
     assert result is not None
     assert result.id == user.id
     assert result.username == "testuser"
@@ -146,10 +146,10 @@ async def test_get_by_username(user_service: UserService, test_db: Session):
     )
     test_db.add(user)
     test_db.commit()
-    
+
     # 取得テスト
     result = await user_service.get_by_username("uniqueuser")
-    
+
     assert result is not None
     assert result.username == "uniqueuser"
 
@@ -166,10 +166,10 @@ async def test_get_by_email(user_service: UserService, test_db: Session):
     )
     test_db.add(user)
     test_db.commit()
-    
+
     # 取得テスト
     result = await user_service.get_by_email("emailtest@example.com")
-    
+
     assert result is not None
     assert result.email == "emailtest@example.com"
 
@@ -186,15 +186,15 @@ async def test_update_user(user_service: UserService, test_db: Session):
     )
     test_db.add(user)
     test_db.commit()
-    
+
     # 更新（UserUpdateにはパスワードフィールドがないため、ユーザー名とメールのみ）
     update_data = UserUpdate(
         username="newusername",
         email="new@example.com",
     )
-    
+
     updated = await user_service.update(user.id, update_data)
-    
+
     assert updated is not None
     assert updated.username == "newusername"
     assert updated.email == "new@example.com"
@@ -212,12 +212,12 @@ async def test_update_user_partial(user_service: UserService, test_db: Session):
     )
     test_db.add(user)
     test_db.commit()
-    
+
     # ユーザー名のみ更新
     update_data = UserUpdate(username="newusername")
-    
+
     updated = await user_service.update(user.id, update_data)
-    
+
     assert updated is not None
     assert updated.username == "newusername"
     assert updated.email == "email@example.com"  # 変更されていない
@@ -242,10 +242,10 @@ async def test_update_user_duplicate_username(user_service: UserService, test_db
     test_db.add(user1)
     test_db.add(user2)
     test_db.commit()
-    
+
     # user2のユーザー名をuser1と同じにしようとする
     update_data = UserUpdate(username="user1")
-    
+
     with pytest.raises(ValueError, match="Username 'user1' already exists"):
         await user_service.update(user2.id, update_data)
 
@@ -269,10 +269,10 @@ async def test_update_user_duplicate_email(user_service: UserService, test_db: S
     test_db.add(user1)
     test_db.add(user2)
     test_db.commit()
-    
+
     # user2のメールアドレスをuser1と同じにしようとする
     update_data = UserUpdate(email="user1@example.com")
-    
+
     with pytest.raises(ValueError, match="Email 'user1@example.com' already exists"):
         await user_service.update(user2.id, update_data)
 
@@ -290,12 +290,12 @@ async def test_delete_user(user_service: UserService, test_db: Session):
     )
     test_db.add(user)
     test_db.commit()
-    
+
     # 削除
     result = await user_service.delete(user.id)
-    
+
     assert result is True
-    
+
     # 削除確認
     test_db.refresh(user)
     assert user.is_active is False
@@ -312,10 +312,10 @@ def test_verify_password(user_service: UserService):
     """パスワード検証のテスト"""
     password = "TestPassword123!"
     hashed = user_service.get_password_hash(password)
-    
+
     # 正しいパスワード
     assert user_service.verify_password(password, hashed) is True
-    
+
     # 間違ったパスワード
     assert user_service.verify_password("WrongPassword123!", hashed) is False
 
@@ -325,10 +325,10 @@ def test_get_password_hash(user_service: UserService):
     password = "TestPassword123!"
     hash1 = user_service.get_password_hash(password)
     hash2 = user_service.get_password_hash(password)
-    
+
     # 同じパスワードでも異なるハッシュが生成される
     assert hash1 != hash2
-    
+
     # どちらのハッシュも元のパスワードで検証できる
     assert user_service.verify_password(password, hash1) is True
     assert user_service.verify_password(password, hash2) is True

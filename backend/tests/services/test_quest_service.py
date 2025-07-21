@@ -4,7 +4,7 @@ QuestServiceのテスト
 
 import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlmodel import Session, create_engine
@@ -12,7 +12,7 @@ from sqlmodel.pool import StaticPool
 
 from app.models.character import Character
 from app.models.log import ActionLog
-from app.models.quest import Quest, QuestOrigin, QuestProposal, QuestStatus
+from app.models.quest import Quest, QuestOrigin, QuestStatus
 from app.models.user import User
 from app.services.quest_service import QuestService
 from app.utils.security import generate_uuid
@@ -28,7 +28,7 @@ def test_db():
     )
     from app.models.base import SQLModel
     SQLModel.metadata.create_all(engine)
-    
+
     with Session(engine) as session:
         yield session
 
@@ -83,7 +83,7 @@ def test_create_quest(quest_service: QuestService, test_character: Character):
         session_id="test-session",
         context_summary="コンテキスト",
     )
-    
+
     assert quest.title == "テストクエスト"
     assert quest.description == "テストクエストの説明"
     assert quest.character_id == test_character.id
@@ -104,10 +104,10 @@ def test_accept_quest(quest_service: QuestService, test_character: Character, te
     )
     test_db.add(quest)
     test_db.commit()
-    
+
     # 受諾
     accepted_quest = quest_service.accept_quest(quest.id)
-    
+
     assert accepted_quest is not None
     assert accepted_quest.status == QuestStatus.ACTIVE
     assert accepted_quest.started_at is not None
@@ -133,10 +133,10 @@ def test_accept_quest_already_active(quest_service: QuestService, test_character
     )
     test_db.add(quest)
     test_db.commit()
-    
+
     # 受諾を試みる
     result = quest_service.accept_quest(quest.id)
-    
+
     # 既にアクティブなのでNoneが返される（accept_questはPROPOSEDのみ受け付ける）
     assert result is None
 
@@ -155,7 +155,7 @@ async def test_update_quest_progress(quest_service: QuestService, test_character
         started_at=datetime.now(UTC),
     )
     test_db.add(quest)
-    
+
     # アクションログを作成
     action = ActionLog(
         id=generate_uuid(),
@@ -167,7 +167,7 @@ async def test_update_quest_progress(quest_service: QuestService, test_character
     )
     test_db.add(action)
     test_db.commit()
-    
+
     # GMサービスのモック設定
     mock_progress = {
         "progress_percentage": 50.0,
@@ -177,10 +177,10 @@ async def test_update_quest_progress(quest_service: QuestService, test_character
         "summary": "宝箱を見つけました"
     }
     quest_service.gm_ai_service.generate_ai_response = AsyncMock(return_value=json.dumps(mock_progress))
-    
+
     # 進行更新
     updated_quest = await quest_service.update_quest_progress(quest.id, test_character.id, action)
-    
+
     assert updated_quest is not None
     assert updated_quest.status == QuestStatus.PROGRESSING
     assert updated_quest.progress_percentage == 50.0
@@ -202,7 +202,7 @@ async def test_complete_quest(quest_service: QuestService, test_character: Chara
     )
     test_db.add(quest)
     test_db.commit()
-    
+
     # モック設定
     quest_service.log_fragment_service.generate_quest_memory = AsyncMock()
     quest_service.gm_ai_service.generate_ai_response = AsyncMock(
@@ -214,13 +214,13 @@ async def test_complete_quest(quest_service: QuestService, test_character: Chara
             "difficulty_score": 0.5
         })
     )
-    
+
     # statusを手動で設定（_complete_questはstatusを変更しない）
     quest.status = QuestStatus.COMPLETED
-    
+
     # _complete_questメソッドを呼び出し
     await quest_service._complete_quest(quest)
-    
+
     # 確認
     test_db.refresh(quest)
     assert quest.status == QuestStatus.COMPLETED
@@ -244,25 +244,25 @@ def test_get_character_quests(quest_service: QuestService, test_character: Chara
         quests.append(quest)
         test_db.add(quest)
     test_db.commit()
-    
+
     # 全クエスト取得
     all_quests = quest_service.get_character_quests(test_character.id)
     assert len(all_quests) == 3
-    
+
     # アクティブなクエストのみ取得
     active_quests = quest_service.get_character_quests(
         test_character.id,
         status=QuestStatus.ACTIVE
     )
     assert len(active_quests) == 1
-    
+
     # 進行中クエスト取得
     progressing_quests = quest_service.get_character_quests(
         test_character.id,
         status=QuestStatus.PROGRESSING
     )
     assert len(progressing_quests) == 1
-    
+
     # 完了済みクエスト取得
     completed_quests = quest_service.get_character_quests(
         test_character.id,
@@ -286,7 +286,7 @@ async def test_analyze_and_propose_quests(quest_service: QuestService, test_char
         )
         test_db.add(action)
     test_db.commit()
-    
+
     # モック設定
     mock_proposals = [
         {
@@ -301,12 +301,12 @@ async def test_analyze_and_propose_quests(quest_service: QuestService, test_char
     quest_service.gm_ai_service.generate_ai_response = AsyncMock(
         return_value=json.dumps(mock_proposals)
     )
-    
+
     # 分析と提案
     proposals = await quest_service.analyze_and_propose_quests(
         test_character.id, "test-session"
     )
-    
+
     assert len(proposals) == 1
     assert proposals[0].title == "提案クエスト1"
 
@@ -328,7 +328,7 @@ async def test_infer_implicit_quest(quest_service: QuestService, test_character:
         actions.append(action)
         test_db.add(action)
     test_db.commit()
-    
+
     # モック設定
     mock_quest_data = {
         "title": "収集家の道",
@@ -338,12 +338,12 @@ async def test_infer_implicit_quest(quest_service: QuestService, test_character:
     quest_service.gm_ai_service.generate_ai_response = AsyncMock(
         return_value=json.dumps(mock_quest_data)
     )
-    
+
     # 推論
     quest = await quest_service.infer_implicit_quest(
         test_character.id, "test-session"
     )
-    
+
     assert quest is not None
     assert quest.title == "収集家の道"
     assert quest.origin == QuestOrigin.BEHAVIOR_INFERRED

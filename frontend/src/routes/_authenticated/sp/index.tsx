@@ -85,8 +85,8 @@ function SPPage() {
   }
 
   const consumptionRate =
-    balance.totalEarnedSp > 0
-      ? (balance.totalConsumedSp / balance.totalEarnedSp) * 100
+    balance.total_earned_sp > 0
+      ? (balance.total_consumed_sp / balance.total_earned_sp) * 100
       : 0
 
   return (
@@ -130,7 +130,7 @@ function SPPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatNumber(balance.currentSp)} SP
+              {formatNumber(balance.current_sp)} SP
             </div>
             <p className="text-xs text-muted-foreground">
               利用可能なストーリーポイント
@@ -145,7 +145,7 @@ function SPPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatNumber(balance.totalEarnedSp)} SP
+              {formatNumber(balance.total_earned_sp)} SP
             </div>
             <p className="text-xs text-muted-foreground">
               これまでに獲得した総SP
@@ -160,7 +160,7 @@ function SPPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatNumber(balance.totalConsumedSp)} SP
+              {formatNumber(balance.total_consumed_sp)} SP
             </div>
             <Progress value={consumptionRate} className="h-2 mt-2" />
             <p className="text-xs text-muted-foreground mt-1">
@@ -176,14 +176,14 @@ function SPPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {balance.consecutiveLoginDays} 日
+              {balance.consecutive_login_days} 日
             </div>
             <p className="text-xs text-muted-foreground">
-              {balance.consecutiveLoginDays >= 30
+              {balance.consecutive_login_days >= 30
                 ? '最大ボーナス獲得中！'
-                : balance.consecutiveLoginDays >= 14
+                : balance.consecutive_login_days >= 14
                   ? '14日ボーナス獲得中'
-                  : balance.consecutiveLoginDays >= 7
+                  : balance.consecutive_login_days >= 7
                     ? '7日ボーナス獲得中'
                     : '連続ログインでボーナスSP'}
             </p>

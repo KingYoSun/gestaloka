@@ -1,4 +1,4 @@
-import { spApi, stripeApi } from '@/lib/api'
+import { spApi } from '@/lib/api'
 import type {
   SPPlan,
   SPPlanResponse,

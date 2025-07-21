@@ -6,8 +6,8 @@ import type {
   PlayerSPDetail,
   AdminSPAdjustment,
   AdminSPAdjustmentResponse,
-  SPTransaction,
   SPTransactionHistory,
+  SPTransactionType,
 } from '@/api/generated/models'
 
 export const adminSPManagementApi = {
@@ -45,7 +45,7 @@ export const adminSPManagementApi = {
     params?: {
       skip?: number
       limit?: number
-      transaction_type?: string
+      transaction_type?: SPTransactionType
     }
   ): Promise<SPTransactionHistory> => {
     const response = await adminApi.getPlayerSpTransactionsApiV1AdminAdminSpPlayersUserIdTransactionsGet({
@@ -76,7 +76,7 @@ export const adminSPManagementApi = {
     adjustments: AdminSPAdjustment[]
   ): Promise<AdminSPAdjustmentResponse[]> => {
     const response = await adminApi.batchAdjustSpApiV1AdminAdminSpBatchAdjustPost({
-      requestBody: adjustments,
+      adminSPAdjustment: adjustments,
     })
     return response.data
   },

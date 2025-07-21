@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useLogFragments, useCreateLogFragment } from '../hooks/useLogFragments'
@@ -58,6 +58,10 @@ describe('useLogFragments', () => {
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('should fetch log fragments successfully', async () => {
     vi.spyOn(logsApiModule.logsApiWrapper, 'getFragments').mockResolvedValue(mockFragments)
 
@@ -79,6 +83,8 @@ describe('useLogFragments', () => {
   })
 
   it('should not fetch when characterId is empty', () => {
+    vi.spyOn(logsApiModule.logsApiWrapper, 'getFragments').mockResolvedValue([])
+    
     const { result } = renderHook(() => useLogFragments(''), {
       wrapper: createWrapper(),
     })
@@ -112,6 +118,12 @@ describe('useCreateLogFragment', () => {
     vi.spyOn(useToastModule, 'useToast').mockReturnValue({
       toast: mockToast,
     } as any)
+    // エラーハンドリングのテスト時にconsole.errorが出力されるのを抑制
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('should create log fragment successfully', async () => {
@@ -197,6 +209,7 @@ describe('useCreateLogFragment', () => {
 
     try {
       await result.current.mutateAsync(createData)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
       // エラーが発生することを期待
     }

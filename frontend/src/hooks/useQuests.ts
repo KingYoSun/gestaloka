@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { questsApiWrapper } from '@/api/quests'
-import type { CreateQuestRequest, Quest, QuestStatus } from '@/api/generated/models'
+import type { Quest } from '@/api/generated/models'
+import { QuestStatus } from '@/api/generated/models'
 import { useCallback } from 'react'
 
 export function useQuests(characterId?: string, status?: QuestStatus) {
@@ -112,9 +113,9 @@ export function useActiveQuests(characterId?: string) {
   const activeQuests = useCallback(() => {
     return quests.filter(
       (quest: Quest) =>
-        quest.status === QuestStatus.ACTIVE ||
-        quest.status === QuestStatus.PROGRESSING ||
-        quest.status === QuestStatus.NEAR_COMPLETION
+        quest.status === QuestStatus.Active ||
+        quest.status === QuestStatus.Progressing ||
+        quest.status === QuestStatus.NearCompletion
     )
   }, [quests])
 

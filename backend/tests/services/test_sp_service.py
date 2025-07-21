@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 from sqlmodel import Session
@@ -44,12 +44,12 @@ class TestSPService:
     async def test_get_or_create_player_sp_existing(self, service, mock_player_sp):
         """既存のPlayerSP取得のテスト"""
         user_id = "test-user-id"
-        
+
         # モック設定
         with patch.object(service, "_get_or_create_player_sp_logic", return_value=(mock_player_sp, False)):
             # 実行
             result = await service.get_or_create_player_sp(user_id)
-            
+
             # 検証
             assert result == mock_player_sp
             service.db.commit.assert_not_called()  # 既存の場合はコミットしない
@@ -58,12 +58,12 @@ class TestSPService:
     async def test_get_or_create_player_sp_new(self, service, mock_player_sp):
         """新規PlayerSP作成のテスト"""
         user_id = "test-user-id"
-        
+
         # モック設定
         with patch.object(service, "_get_or_create_player_sp_logic", return_value=(mock_player_sp, True)):
             # 実行
             result = await service.get_or_create_player_sp(user_id)
-            
+
             # 検証
             assert result == mock_player_sp
             service.db.commit.assert_called_once()  # 新規作成の場合はコミット
@@ -72,7 +72,7 @@ class TestSPService:
     async def test_get_or_create_player_sp_error(self, service):
         """PlayerSP取得時のエラーハンドリング"""
         user_id = "test-user-id"
-        
+
         # モック設定
         with patch.object(service, "_get_or_create_player_sp_logic", side_effect=Exception("DB Error")):
             # 実行と検証
@@ -83,12 +83,12 @@ class TestSPService:
     async def test_get_balance(self, service, mock_player_sp):
         """SP残高取得のテスト"""
         user_id = "test-user-id"
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", return_value=mock_player_sp):
             # 実行
             result = await service.get_balance(user_id)
-            
+
             # 検証
             assert result == mock_player_sp
             service.get_or_create_player_sp.assert_called_once_with(user_id)
@@ -100,7 +100,7 @@ class TestSPService:
         amount = 50
         transaction_type = SPTransactionType.FREE_ACTION
         description = "アクション実行"
-        
+
         # モックトランザクション
         mock_transaction = Mock(spec=SPTransaction)
         mock_result = {
@@ -108,7 +108,7 @@ class TestSPService:
             "balance_before": 100,
             "metadata": {"discount_rate": 0}
         }
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", return_value=mock_player_sp):
             with patch.object(service, "_consume_sp_logic", return_value=(mock_transaction, mock_result)):
@@ -121,7 +121,7 @@ class TestSPService:
                             transaction_type=transaction_type,
                             description=description
                         )
-                        
+
                         # 検証
                         assert result == mock_transaction
                         mock_save.assert_called_once_with(mock_transaction)
@@ -135,7 +135,7 @@ class TestSPService:
         amount = 150  # 残高を超える量
         transaction_type = SPTransactionType.FREE_ACTION
         description = "アクション実行"
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", return_value=mock_player_sp):
             with patch.object(service, "_consume_sp_logic", side_effect=InsufficientSPError("SP不足")):
@@ -155,11 +155,11 @@ class TestSPService:
         amount = 100
         transaction_type = SPTransactionType.PURCHASE
         description = "SP購入"
-        
+
         # モックトランザクション
         mock_transaction = Mock(spec=SPTransaction)
         balance_before = 100
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", return_value=mock_player_sp):
             with patch.object(service, "_add_sp_logic", return_value=(mock_transaction, balance_before)):
@@ -172,7 +172,7 @@ class TestSPService:
                             transaction_type=transaction_type,
                             description=description
                         )
-                        
+
                         # 検証
                         assert result == mock_transaction
                         mock_save.assert_called_once_with(mock_transaction)
@@ -186,7 +186,7 @@ class TestSPService:
         amount = 100
         transaction_type = SPTransactionType.PURCHASE
         description = "SP購入"
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", side_effect=Exception("DB Error")):
             # 実行と検証
@@ -202,7 +202,7 @@ class TestSPService:
     async def test_process_daily_recovery_success(self, service, mock_player_sp):
         """デイリー回復成功のテスト"""
         user_id = "test-user-id"
-        
+
         # モック結果
         mock_result = {
             "success": True,
@@ -215,19 +215,19 @@ class TestSPService:
             "balance_after": 125,
             "already_recovered": False
         }
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", return_value=mock_player_sp):
             with patch.object(service, "_process_daily_recovery_logic", return_value=mock_result):
                 with patch.object(service, "_create_transaction_data") as mock_create:
                     mock_transaction = Mock(spec=SPTransaction)
                     mock_create.return_value = mock_transaction
-                    
+
                     with patch.object(service, "_save_transaction"):
                         with patch("app.services.sp_service.SPEventEmitter.emit_daily_recovery_completed"):
                             # 実行
                             result = await service.process_daily_recovery(user_id)
-                            
+
                             # 検証
                             assert result["success"] is True
                             assert result["total_amount"] == 25
@@ -239,20 +239,20 @@ class TestSPService:
     async def test_process_daily_recovery_already_recovered(self, service, mock_player_sp):
         """既に回復済みの場合のテスト"""
         user_id = "test-user-id"
-        
+
         # モック結果
         mock_result = {
             "success": False,
             "already_recovered": True,
             "total_amount": 0
         }
-        
+
         # モック設定
         with patch.object(service, "get_or_create_player_sp", return_value=mock_player_sp):
             with patch.object(service, "_process_daily_recovery_logic", return_value=mock_result):
                 # 実行
                 result = await service.process_daily_recovery(user_id)
-                
+
                 # 検証
                 assert result["success"] is False
                 assert result["already_recovered"] is True
@@ -264,20 +264,20 @@ class TestSPService:
         user_id = "test-user-id"
         limit = 10
         offset = 0
-        
+
         # モックトランザクション
         mock_transactions = [Mock(spec=SPTransaction) for _ in range(5)]
         mock_execute_result = Mock()
         mock_execute_result.scalars = Mock(return_value=Mock(all=Mock(return_value=mock_transactions)))
-        
+
         # モック設定
         service.db.execute = Mock(return_value=mock_execute_result)
-        
+
         # 実行 - AsyncGeneratorから値を収集
         result = []
         async for transaction in service.get_transaction_history(user_id, limit=limit, offset=offset):
             result.append(transaction)
-        
+
         # 検証
         assert result == mock_transactions
         service.db.execute.assert_called_once()
@@ -289,10 +289,10 @@ class TestSPService:
         """トランザクション保存のテスト"""
         # モックトランザクション
         mock_transaction = Mock(spec=SPTransaction)
-        
+
         # 実行
         await service._save_transaction(mock_transaction)
-        
+
         # 検証
         service.db.add.assert_called_once_with(mock_transaction)
         # コミットは呼び出し側で行うため、ここではコミットされない

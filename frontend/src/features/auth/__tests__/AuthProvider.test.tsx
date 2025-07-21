@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { AuthProvider } from '../AuthProvider'
 import { useAuth } from '../useAuth'
@@ -58,6 +58,12 @@ describe('AuthProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    // console.errorをモック化してエラーメッセージを抑制
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('should provide auth context to children', async () => {

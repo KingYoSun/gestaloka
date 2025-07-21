@@ -73,7 +73,7 @@ export function useCreateCharacter() {
 
   return useMutation({
     mutationFn: (data: CharacterCreate) =>
-      charactersApi.createCharacterApiV1CharactersPost(data),
+      charactersApi.createCharacterApiV1CharactersPost({ characterCreate: data }),
     onSuccess: response => {
       // ストアに新しいキャラクターを追加
       addCharacter(response.data)
