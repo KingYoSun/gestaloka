@@ -78,7 +78,7 @@ export function RegisterPage() {
           username: formData.username,
           email: formData.email,
           password: formData.password,
-          confirmPassword: formData.confirmPassword,
+          confirm_password: formData.confirmPassword,
         },
       })
 

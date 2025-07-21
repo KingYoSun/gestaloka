@@ -21,7 +21,8 @@ import {
   Shield,
   Brain,
 } from 'lucide-react'
-import { CompletedLogCreate, CompletedLogRead } from '@/types/log'
+import type { CompletedLogCreate, CompletedLogRead, LogFragmentDetail } from '@/api/generated/models'
+import type { LogFragment } from '@/types/log'
 import { useToast } from '@/hooks/useToast'
 import { DispatchList } from '@/features/dispatch/components/DispatchList'
 
@@ -33,8 +34,21 @@ export function LogsPage() {
     useState(false)
   const { data: characters = [], isLoading: isLoadingCharacters } =
     useCharacters()
-  const { data: fragments = [], isLoading: isLoadingFragments } =
+  const { data: fragmentsResponse, isLoading: isLoadingFragments } =
     useLogFragments(selectedCharacterId)
+  // LogFragmentDetail を LogFragment に変換
+  const fragments: LogFragment[] = (fragmentsResponse?.fragments || []).map((f: LogFragmentDetail) => ({
+    id: f.id,
+    characterId: f.character_id,
+    sessionId: f.source_action || '', // source_actionフィールドを使用
+    actionDescription: f.action_description,
+    keywords: f.keywords,
+    emotionalValence: f.emotional_valence,
+    rarity: f.rarity,
+    importanceScore: f.importance_score,
+    contextData: f.context_data as Record<string, unknown>, // 型を明示的にキャスト
+    createdAt: f.created_at.toString(),
+  }))
   const {
     data: completedLogs = [] as CompletedLogRead[],
     isLoading: isLoadingCompletedLogs,
@@ -62,17 +76,17 @@ export function LogsPage() {
     try {
       // バックエンドAPIの形式に合わせてデータを整形
       const logData: CompletedLogCreate = {
-        creatorId: selectedCharacterId,
-        coreFragmentId: compiledLogData.coreFragmentId,
-        subFragmentIds: compiledLogData.fragmentIds.filter(
+        creator_id: selectedCharacterId,
+        core_fragment_id: compiledLogData.coreFragmentId,
+        sub_fragment_ids: compiledLogData.fragmentIds.filter(
           (id: string) => id !== compiledLogData.coreFragmentId
         ),
         name: compiledLogData.name,
         title: compiledLogData.title || undefined,
         description: compiledLogData.description,
         skills: [], // TODO: スキル抽出ロジックを実装
-        personalityTraits: [], // TODO: 性格特性抽出ロジックを実装
-        behaviorPatterns: compiledLogData.isOmnibus ? { isOmnibus: true } : {},
+        personality_traits: [], // TODO: 性格特性抽出ロジックを実装
+        behavior_patterns: compiledLogData.isOmnibus ? { isOmnibus: true } : {},
       }
 
       await createCompletedLog.mutateAsync(logData)

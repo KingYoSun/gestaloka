@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import {
-  CompletedLog,
+  CompletedLogRead,
+} from '@/api/logs'
+import {
   PurificationItem,
   PurificationItemType,
 } from '@/types/log'
@@ -31,12 +33,12 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { logsApiWrapper } from '@/api/logs'
+// import { logsApiWrapper } from '@/api/logs' // TODO: purifyLog APIが実装されたら有効化
 import { useToast } from '@/hooks/useToast'
 import { useQueryClient } from '@tanstack/react-query'
 
 interface PurificationDialogProps {
-  log: CompletedLog
+  log: CompletedLogRead
   purificationItems: PurificationItem[]
   onPurify: () => void
   onClose: () => void
@@ -87,9 +89,9 @@ export function PurificationDialog({
 
   // 浄化後の汚染度を計算
   const calculatePurifiedLevel = () => {
-    if (!selectedItem) return log.contaminationLevel
+    if (!selectedItem) return log.contamination_level
     const purificationAmount = selectedItem.purification_power / 100
-    return Math.max(0, log.contaminationLevel - purificationAmount)
+    return Math.max(0, log.contamination_level - purificationAmount)
   }
 
   const purifiedLevel = calculatePurifiedLevel()
@@ -99,33 +101,41 @@ export function PurificationDialog({
 
     setIsPurifying(true)
     try {
-      const response = await logsApiWrapper.purifyLog(log.id, {
-        purification_item_id: selectedItemId,
-      })
+      // TODO: purifyLog APIが実装されたら以下のコメントを解除
+      // const response = await logsApiWrapper.purifyLog(log.id, {
+      //   purification_item_id: selectedItemId,
+      // })
 
+      // toast({
+      //   title: '浄化完了',
+      //   description: `汚染度が${Math.round(response.old_contamination * 100)}%から${Math.round(response.new_contamination * 100)}%に減少しました。`,
+      //   variant: 'success',
+      // })
+
+      // // 特殊効果がある場合は表示
+      // if (response.special_effects.length > 0) {
+      //   toast({
+      //     title: '特殊効果発動！',
+      //     description: response.special_effects.join(' '),
+      //     variant: 'default',
+      //   })
+      // }
+
+      // // 特殊称号を獲得した場合は表示
+      // if (response.special_title) {
+      //   toast({
+      //     title: '特殊称号獲得！',
+      //     description: `「${response.special_title}」を獲得しました！`,
+      //     variant: 'success',
+      //   })
+      // }
+
+      // 一時的な実装
       toast({
-        title: '浄化完了',
-        description: `汚染度が${Math.round(response.old_contamination * 100)}%から${Math.round(response.new_contamination * 100)}%に減少しました。`,
-        variant: 'success',
+        title: '浄化機能は準備中です',
+        description: '浄化機能は現在開発中です。',
+        variant: 'default',
       })
-
-      // 特殊効果がある場合は表示
-      if (response.special_effects.length > 0) {
-        toast({
-          title: '特殊効果発動！',
-          description: response.special_effects.join(' '),
-          variant: 'default',
-        })
-      }
-
-      // 特殊称号を獲得した場合は表示
-      if (response.special_title) {
-        toast({
-          title: '特殊称号獲得！',
-          description: `「${response.special_title}」を獲得しました！`,
-          variant: 'success',
-        })
-      }
 
       // データを更新
       queryClient.invalidateQueries({ queryKey: ['completedLogs'] })
@@ -164,18 +174,18 @@ export function PurificationDialog({
             <div className="flex items-center gap-4">
               <div className="flex-1">
                 <Progress
-                  value={log.contaminationLevel * 100}
+                  value={log.contamination_level * 100}
                   className={cn(
                     'h-3',
-                    log.contaminationLevel > 0.7 && '[&>div]:bg-red-500',
-                    log.contaminationLevel > 0.5 &&
-                      log.contaminationLevel <= 0.7 &&
+                    log.contamination_level > 0.7 && '[&>div]:bg-red-500',
+                    log.contamination_level > 0.5 &&
+                      log.contamination_level <= 0.7 &&
                       '[&>div]:bg-yellow-500',
-                    log.contaminationLevel <= 0.5 && '[&>div]:bg-green-500'
+                    log.contamination_level <= 0.5 && '[&>div]:bg-green-500'
                   )}
                 />
                 <p className="text-sm text-muted-foreground mt-1">
-                  {Math.round(log.contaminationLevel * 100)}%
+                  {Math.round(log.contamination_level * 100)}%
                 </p>
               </div>
               {selectedItem && (
@@ -255,7 +265,7 @@ export function PurificationDialog({
           </div>
 
           {/* 浄化効果の説明 */}
-          {selectedItem && purifiedLevel < log.contaminationLevel && (
+          {selectedItem && purifiedLevel < log.contamination_level && (
             <Alert>
               <Sparkles className="h-4 w-4" />
               <AlertDescription>
@@ -263,7 +273,7 @@ export function PurificationDialog({
                 <ul className="list-disc list-inside space-y-1 text-sm">
                   <li>
                     汚染度が
-                    {Math.round((log.contaminationLevel - purifiedLevel) * 100)}
+                    {Math.round((log.contamination_level - purifiedLevel) * 100)}
                     %減少します
                   </li>
                   {purifiedLevel === 0 && (
@@ -271,7 +281,7 @@ export function PurificationDialog({
                       完全浄化ボーナス: ログの力が50%強化されます
                     </li>
                   )}
-                  {purifiedLevel <= 0.2 && log.contaminationLevel > 0.8 && (
+                  {purifiedLevel <= 0.2 && log.contamination_level > 0.8 && (
                     <li className="text-purple-600">
                       汚染反転ボーナス: 「闇から光へ」の特殊称号を獲得
                     </li>
@@ -285,7 +295,7 @@ export function PurificationDialog({
           )}
 
           {/* 警告 */}
-          {log.contaminationLevel > 0.7 && (
+          {log.contamination_level > 0.7 && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>

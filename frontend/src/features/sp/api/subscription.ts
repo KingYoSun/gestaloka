@@ -59,7 +59,7 @@ export const spSubscriptionApi = {
     const response = await spSubscriptionsApi.cancelSubscriptionApiV1SpSubscriptionsCancelPost({
       sPSubscriptionCancel: data,
     })
-    return response.data
+    return response.data as { success: boolean; message: string }
   },
 
   /**
@@ -71,6 +71,6 @@ export const spSubscriptionApi = {
     const response = await spSubscriptionsApi.updateSubscriptionApiV1SpSubscriptionsUpdatePut({
       sPSubscriptionUpdate: data,
     })
-    return response.data
+    return response.data as { success: boolean; message: string }
   },
 }

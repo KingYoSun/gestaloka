@@ -30,7 +30,7 @@ import {
   useCurrentSubscription,
   useUpdateSubscription,
 } from '../hooks/useSubscription'
-import { SPSubscriptionType, SubscriptionStatus } from '../types/subscription'
+import { SPSubscriptionType } from '@/api/generated/models'
 import { formatDate } from '@/lib/utils'
 
 export const SubscriptionManagement = () => {
@@ -78,13 +78,13 @@ export const SubscriptionManagement = () => {
 
   const getStatusBadge = () => {
     switch (subscription.status) {
-      case SubscriptionStatus.ACTIVE:
+      case 'active':
         return <Badge className="bg-green-500">有効</Badge>
-      case SubscriptionStatus.CANCELLED:
+      case 'cancelled':
         return <Badge variant="secondary">キャンセル済み</Badge>
-      case SubscriptionStatus.EXPIRED:
+      case 'expired':
         return <Badge variant="destructive">期限切れ</Badge>
-      case SubscriptionStatus.PENDING:
+      case 'pending':
         return <Badge variant="outline">処理中</Badge>
       default:
         return <Badge variant="secondary">{subscription.status}</Badge>
@@ -100,7 +100,7 @@ export const SubscriptionManagement = () => {
             {getStatusBadge()}
           </div>
           <CardDescription>
-            {subscription.subscription_type === SPSubscriptionType.BASIC
+            {subscription.subscription_type === SPSubscriptionType.Basic
               ? 'ベーシックパス'
               : 'プレミアムパス'}
           </CardDescription>
@@ -129,7 +129,7 @@ export const SubscriptionManagement = () => {
               </span>
             </div>
 
-            {subscription.days_remaining !== undefined && (
+            {subscription.days_remaining !== undefined && subscription.days_remaining !== null && (
               <Alert
                 className={
                   subscription.days_remaining <= 7 ? 'border-yellow-500' : ''
@@ -143,7 +143,7 @@ export const SubscriptionManagement = () => {
           </div>
 
           {/* 自動更新設定 */}
-          {subscription.status === SubscriptionStatus.ACTIVE && (
+          {subscription.status === 'active' && (
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="auto-renew">自動更新</Label>
@@ -180,7 +180,7 @@ export const SubscriptionManagement = () => {
           )}
 
           {/* キャンセルボタン */}
-          {subscription.status === SubscriptionStatus.ACTIVE && (
+          {subscription.status === 'active' && (
             <Button
               variant="destructive"
               className="w-full"
@@ -192,7 +192,7 @@ export const SubscriptionManagement = () => {
           )}
 
           {/* キャンセル済みの場合 */}
-          {subscription.status === SubscriptionStatus.CANCELLED &&
+          {subscription.status === 'cancelled' &&
             subscription.cancelled_at && (
               <Alert>
                 <AlertDescription>

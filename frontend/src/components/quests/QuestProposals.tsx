@@ -34,9 +34,9 @@ const QuestProposalCard: React.FC<QuestProposalCardProps> = ({
 }) => {
   const getOriginIcon = (origin: QuestOrigin) => {
     switch (origin) {
-      case QuestOrigin.GM_PROPOSED:
+      case QuestOrigin.GmProposed:
         return <Sparkles className="h-4 w-4" />
-      case QuestOrigin.BEHAVIOR_INFERRED:
+      case QuestOrigin.BehaviorInferred:
         return <Target className="h-4 w-4" />
       default:
         return <BookOpen className="h-4 w-4" />
@@ -172,7 +172,7 @@ export const QuestProposals: React.FC = () => {
         // 自動生成された型に不足しているプロパティを追加
         const extendedProposal: QuestProposal = {
           ...proposal,
-          origin: QuestOrigin.GM_PROPOSED,
+          origin: QuestOrigin.GmProposed,
           rationale: proposal.reasoning || '',
           key_themes: proposal.suggested_rewards || [],
         }

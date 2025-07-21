@@ -172,7 +172,7 @@ export function AdvancedLogCompilationEditor({
     if (
       playerSP &&
       previewData &&
-      playerSP.currentSp < previewData.final_sp_cost
+      playerSP.current_sp < previewData.final_sp_cost
     ) {
       alert('SPが不足しています')
       return
@@ -200,7 +200,7 @@ export function AdvancedLogCompilationEditor({
   // SPコストの計算
   const canAfford =
     playerSP && previewData
-      ? playerSP.currentSp >= previewData.final_sp_cost
+      ? playerSP.current_sp >= previewData.final_sp_cost
       : true
 
   return (
@@ -391,7 +391,7 @@ export function AdvancedLogCompilationEditor({
                   {playerSP && (
                     <div className="flex justify-between text-sm text-muted-foreground">
                       <span>現在のSP</span>
-                      <span>{playerSP.currentSp} SP</span>
+                      <span>{playerSP.current_sp} SP</span>
                     </div>
                   )}
                 </div>

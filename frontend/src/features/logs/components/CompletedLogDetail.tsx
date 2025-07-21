@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CompletedLog } from '@/types/log'
+import { CompletedLogRead } from '@/api/logs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +12,7 @@ import { PurificationDialog } from './PurificationDialog'
 import { usePurificationItems } from '../hooks/usePurificationItems'
 
 interface CompletedLogDetailProps {
-  log: CompletedLog
+  log: CompletedLogRead
   onClose: () => void
   onPurify?: (logId: string) => void
 }
@@ -23,7 +23,7 @@ export function CompletedLogDetail({
   onPurify,
 }: CompletedLogDetailProps) {
   const [showPurificationDialog, setShowPurificationDialog] = useState(false)
-  const { data: purificationItems = [] } = usePurificationItems(log.creatorId)
+  const { data: purificationItems = [] } = usePurificationItems(log.creator_id)
 
   const handlePurification = () => {
     if (onPurify) {
@@ -59,7 +59,7 @@ export function CompletedLogDetail({
     }
   }
 
-  const contaminationStatus = getContaminationStatus(log.contaminationLevel)
+  const contaminationStatus = getContaminationStatus(log.contamination_level)
 
   return (
     <>
@@ -93,7 +93,7 @@ export function CompletedLogDetail({
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold flex items-center gap-2">
                 汚染度
-                {log.contaminationLevel > 0.5 && (
+                {log.contamination_level > 0.5 && (
                   <AlertTriangle className="h-4 w-4 text-yellow-500" />
                 )}
               </h3>
@@ -102,23 +102,23 @@ export function CompletedLogDetail({
               </Badge>
             </div>
             <Progress
-              value={log.contaminationLevel * 100}
+              value={log.contamination_level * 100}
               className={cn(
                 'h-3',
-                log.contaminationLevel > 0.7 && '[&>div]:bg-red-500',
-                log.contaminationLevel > 0.5 &&
-                  log.contaminationLevel <= 0.7 &&
+                log.contamination_level > 0.7 && '[&>div]:bg-red-500',
+                log.contamination_level > 0.5 &&
+                  log.contamination_level <= 0.7 &&
                   '[&>div]:bg-yellow-500',
-                log.contaminationLevel <= 0.5 && '[&>div]:bg-green-500'
+                log.contamination_level <= 0.5 && '[&>div]:bg-green-500'
               )}
             />
             <p className="text-sm text-muted-foreground mt-1">
-              {Math.round(log.contaminationLevel * 100)}%
+              {Math.round(log.contamination_level * 100)}%
             </p>
           </div>
 
           {/* 浄化ボタン */}
-          {log.contaminationLevel > 0 && purificationItems.length > 0 && (
+          {log.contamination_level > 0 && purificationItems.length > 0 && (
             <Alert>
               <Shield className="h-4 w-4" />
               <AlertTitle>浄化可能</AlertTitle>
@@ -156,11 +156,11 @@ export function CompletedLogDetail({
           )}
 
           {/* 性格特性 */}
-          {log.personalityTraits && log.personalityTraits.length > 0 && (
+          {log.personality_traits && log.personality_traits.length > 0 && (
             <div>
               <h3 className="font-semibold mb-2">性格特性</h3>
               <div className="flex flex-wrap gap-2">
-                {log.personalityTraits.map((trait, i) => (
+                {log.personality_traits.map((trait, i) => (
                   <Badge key={i} variant="outline">
                     {trait}
                   </Badge>
@@ -179,7 +179,7 @@ export function CompletedLogDetail({
 
           {/* 作成日時 */}
           <div className="text-sm text-muted-foreground">
-            作成日時: {new Date(log.createdAt).toLocaleString('ja-JP')}
+            作成日時: {new Date(log.created_at).toLocaleString('ja-JP')}
           </div>
         </CardContent>
       </Card>

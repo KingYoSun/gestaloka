@@ -4,27 +4,24 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { narrativeApi } from '@/api/narrativeApi'
-import { GameActionRequest } from '@/api/generated/models'
+import { ActionRequest } from '@/api/generated/models'
 import { toast } from 'sonner'
 
 export function useNarrativeActions(characterId: string) {
   // 行動実行
   const performActionMutation = useMutation({
-    mutationFn: async (action: GameActionRequest) => {
+    mutationFn: async (action: ActionRequest) => {
       return await narrativeApi.performAction(characterId, action)
     },
     onSuccess: data => {
-      // メタデータから追加情報を取得
-      if (data.metadata) {
-        // 場所が変わった場合の通知
-        if (data.metadata.location_changed && data.metadata.new_location_name) {
-          toast.success(`${data.metadata.new_location_name}へ移動しました`)
-        }
+      // 場所が変わった場合の通知
+      if (data.location_changed && data.new_location_name) {
+        toast.success(`${data.new_location_name}へ移動しました`)
+      }
 
-        // SP消費の通知
-        if (data.metadata.sp_consumed && data.metadata.sp_consumed > 0) {
-          toast.info(`SP -${data.metadata.sp_consumed}`)
-        }
+      // SP消費の通知
+      if (data.sp_consumed && data.sp_consumed > 0) {
+        toast.info(`SP -${data.sp_consumed}`)
       }
     },
     onError: (error: any) => {

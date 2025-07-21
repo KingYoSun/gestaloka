@@ -39,7 +39,7 @@ import { Coins, MapPin, Calendar, Target } from 'lucide-react'
 
 const dispatchFormSchema = z.object({
   objective_type: z.enum(
-    ['EXPLORE', 'INTERACT', 'COLLECT', 'GUARD', 'FREE'] as const,
+    ['explore', 'interact', 'collect', 'guard', 'free'] as const,
     {
       required_error: '派遣目的を選択してください',
     }
@@ -65,27 +65,27 @@ interface DispatchFormProps {
 
 const objectiveTypeOptions = [
   {
-    value: 'EXPLORE',
+    value: 'explore',
     label: '探索型',
     description: '新しい場所や情報を発見する',
   },
   {
-    value: 'INTERACT',
+    value: 'interact',
     label: '交流型',
     description: '他のキャラクターとの出会いを求める',
   },
   {
-    value: 'COLLECT',
+    value: 'collect',
     label: '収集型',
     description: '特定のアイテムや情報を収集する',
   },
   {
-    value: 'GUARD',
+    value: 'guard',
     label: '護衛型',
     description: '特定の場所や人物を守る',
   },
   {
-    value: 'FREE',
+    value: 'free',
     label: '自由型',
     description: 'ログの性格に任せて行動する',
   },
@@ -104,7 +104,7 @@ export function DispatchForm({
   const form = useForm<DispatchFormValues>({
     resolver: zodResolver(dispatchFormSchema),
     defaultValues: {
-      objective_type: 'EXPLORE' as const,
+      objective_type: 'explore' as const,
       objective_detail: '',
       initial_location: activeCharacter?.location || 'Starting Village',
       dispatch_duration_days: 1,
@@ -115,7 +115,7 @@ export function DispatchForm({
     mutationFn: (data: DispatchFormValues) =>
       dispatchApi.createDispatch({
         ...data,
-        objective_type: data.objective_type as keyof DispatchObjectiveType,
+        objective_type: data.objective_type as DispatchObjectiveType,
         completed_log_id: completedLog.id,
         dispatcher_id: activeCharacter!.id,
       }),
@@ -292,7 +292,7 @@ export function DispatchForm({
                 <p>ログ名: {completedLog.name}</p>
                 <p>称号: {completedLog.title || 'なし'}</p>
                 <p>
-                  汚染度: {(completedLog.contaminationLevel * 100).toFixed(0)}%
+                  汚染度: {(completedLog.contamination_level * 100).toFixed(0)}%
                 </p>
                 <p>消費SP: {spCost}</p>
               </div>

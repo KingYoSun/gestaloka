@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useCompletedLogs, useCreateCompletedLog, useUpdateCompletedLog } from '../hooks/useCompletedLogs'
 import * as logsApiModule from '@/api/logs'
 import * as useToastModule from '@/hooks/useToast'
+import type { CompletedLogRead } from '@/api/generated/models'
 
 // APIのモック
 vi.mock('@/api/logs', () => ({
@@ -14,28 +15,36 @@ vi.mock('@/api/logs', () => ({
   },
 }))
 
-const mockCompletedLogs = [
+const mockCompletedLogs: CompletedLogRead[] = [
   {
     id: 'log1',
-    creatorId: 'char1',
+    creator_id: 'char1',
+    core_fragment_id: 'frag1',
     name: '冒険の記録',
     title: '始まりの物語',
     description: '最初の冒険の記録',
     skills: ['探索', '交渉'],
-    personalityTraits: ['勇敢', '好奇心旺盛'],
-    behaviorPatterns: { exploration: 'active' },
-    createdAt: '2024-01-01T00:00:00Z',
+    personality_traits: ['勇敢', '好奇心旺盛'],
+    behavior_patterns: { exploration: 'active' },
+    contamination_level: 0.2,
+    status: 'completed',
+    created_at: new Date('2024-01-01T00:00:00Z'),
+    completed_at: new Date('2024-01-01T00:00:00Z'),
   },
   {
     id: 'log2',
-    creatorId: 'char1',
+    creator_id: 'char1',
+    core_fragment_id: 'frag2',
     name: '戦闘の記録',
     title: '戦いの日々',
     description: '激しい戦闘の記録',
     skills: ['戦闘', '防御'],
-    personalityTraits: ['勇敢', '戦略的'],
-    behaviorPatterns: { combat: 'aggressive' },
-    createdAt: '2024-01-02T00:00:00Z',
+    personality_traits: ['勇敢', '戦略的'],
+    behavior_patterns: { combat: 'aggressive' },
+    contamination_level: 0.6,
+    status: 'draft',
+    created_at: new Date('2024-01-02T00:00:00Z'),
+    completed_at: null,
   },
 ]
 
@@ -128,16 +137,19 @@ describe('useCreateCompletedLog', () => {
   it('should create completed log successfully', async () => {
     const newLog = {
       id: 'log3',
-      creatorId: 'char1',
-      coreFragmentId: 'fragment1',
-      subFragmentIds: ['fragment2', 'fragment3'],
+      creator_id: 'char1',
+      core_fragment_id: 'fragment1',
+      sub_fragment_ids: ['fragment2', 'fragment3'],
       name: '新しいログ',
       title: '新たな物語',
       description: '新しい冒険の記録',
       skills: ['探索'],
-      personalityTraits: ['好奇心旺盛'],
-      behaviorPatterns: {},
-      createdAt: '2024-01-03T00:00:00Z',
+      personality_traits: ['好奇心旺盛'],
+      behavior_patterns: {},
+      contamination_level: 0.1,
+      status: 'completed' as const,
+      created_at: new Date('2024-01-03T00:00:00Z'),
+      completed_at: new Date('2024-01-03T00:00:00Z'),
     }
 
     vi.spyOn(logsApiModule.logsApiWrapper, 'createCompletedLog').mockResolvedValue(newLog)
@@ -158,15 +170,15 @@ describe('useCreateCompletedLog', () => {
     const { result } = renderHook(() => useCreateCompletedLog(), { wrapper })
 
     const createData = {
-      creatorId: 'char1',
-      coreFragmentId: 'fragment1',
-      subFragmentIds: ['fragment2', 'fragment3'],
+      creator_id: 'char1',
+      core_fragment_id: 'fragment1',
+      sub_fragment_ids: ['fragment2', 'fragment3'],
       name: '新しいログ',
       title: '新たな物語',
       description: '新しい冒険の記録',
       skills: ['探索'],
-      personalityTraits: ['好奇心旺盛'],
-      behaviorPatterns: {},
+      personality_traits: ['好奇心旺盛'],
+      behavior_patterns: {},
     }
 
     await result.current.mutateAsync(createData)
@@ -202,14 +214,14 @@ describe('useCreateCompletedLog', () => {
     const { result } = renderHook(() => useCreateCompletedLog(), { wrapper })
 
     const createData = {
-      creatorId: 'char1',
-      coreFragmentId: 'fragment1',
-      subFragmentIds: [],
+      creator_id: 'char1',
+      core_fragment_id: 'fragment1',
+      sub_fragment_ids: [],
       name: '新しいログ',
       description: '新しい冒険の記録',
       skills: [],
-      personalityTraits: [],
-      behaviorPatterns: {},
+      personality_traits: [],
+      behavior_patterns: {},
     }
 
     try {

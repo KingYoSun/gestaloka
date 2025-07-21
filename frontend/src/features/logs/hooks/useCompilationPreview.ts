@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { logsApiWrapper } from '@/api/logs'
+// import { logsApiWrapper } from '@/api/logs' // TODO: API実装後に有効化
 import type {
   CompilationPreviewRequest,
   CompilationPreviewResponse,

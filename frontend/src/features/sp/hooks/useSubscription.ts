@@ -9,7 +9,7 @@ import type {
   SPSubscriptionCancel,
   SPSubscriptionCreate,
   SPSubscriptionUpdate,
-} from '../types/subscription'
+} from '@/api/generated/models'
 
 export const useSubscriptionPlans = () => {
   return useQuery({

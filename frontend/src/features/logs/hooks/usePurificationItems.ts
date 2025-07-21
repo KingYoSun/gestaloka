@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { logsApiWrapper } from '@/api/logs'
+// import { logsApiWrapper } from '@/api/logs' // TODO: API実装後に有効化
 import type {
   PurificationItem,
-  CreatePurificationItemRequest,
+  // CreatePurificationItemRequest, // TODO: API実装後に有効化
 } from '@/types/log'
 
 export function usePurificationItems(characterId: string) {

@@ -33,7 +33,7 @@ interface QuestHistoryItemProps {
 }
 
 const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
-  const isCompleted = quest.status === QuestStatus.COMPLETED
+  const isCompleted = quest.status === QuestStatus.Completed
   const StatusIcon = isCompleted ? CheckCircle2 : XCircle
 
   const getDuration = () => {
@@ -85,9 +85,9 @@ const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
             <div className="flex items-center gap-4 text-sm">
               <div className="flex items-center gap-1">
                 <Award className="h-3.5 w-3.5 text-yellow-500" />
-                <span>達成度: {quest.progress_percentage}%</span>
+                <span>達成度: {quest.progress_percentage ?? 0}%</span>
               </div>
-              {quest.narrative_completeness > 0 && (
+              {quest.narrative_completeness && quest.narrative_completeness > 0 && (
                 <div className="flex items-center gap-1">
                   <BookOpen className="h-3.5 w-3.5 text-blue-500" />
                   <span>
@@ -95,7 +95,7 @@ const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
                   </span>
                 </div>
               )}
-              {quest.emotional_satisfaction > 0 && (
+              {quest.emotional_satisfaction && quest.emotional_satisfaction > 0 && (
                 <div className="flex items-center gap-1">
                   <Heart className="h-3.5 w-3.5 text-red-500" />
                   <span>
@@ -107,11 +107,11 @@ const QuestHistoryItem: React.FC<QuestHistoryItemProps> = ({ quest }) => {
           )}
 
           {/* 感情的な流れ */}
-          {quest.emotional_arc && (
+          {quest.emotional_arc && quest.emotional_arc.length > 0 && (
             <div className="bg-muted/50 rounded p-2 text-xs">
               <span className="font-medium">感情の流れ: </span>
               <span className="text-muted-foreground">
-                {quest.emotional_arc}
+                {JSON.stringify(quest.emotional_arc)}
               </span>
             </div>
           )}
@@ -129,13 +129,13 @@ export const QuestHistory: React.FC = () => {
   const completedQuests = quests
     .filter(
       (quest: Quest) =>
-        quest.status === QuestStatus.COMPLETED ||
-        quest.status === QuestStatus.FAILED ||
-        quest.status === QuestStatus.ABANDONED
+        quest.status === QuestStatus.Completed ||
+        quest.status === QuestStatus.Failed ||
+        quest.status === QuestStatus.Abandoned
     )
     .sort((a: Quest, b: Quest) => {
-      const dateA = new Date(a.completed_at || a.updated_at || a.created_at)
-      const dateB = new Date(b.completed_at || b.updated_at || b.created_at)
+      const dateA = new Date(a.completed_at || a.last_progress_at || a.proposed_at || 0)
+      const dateB = new Date(b.completed_at || b.last_progress_at || b.proposed_at || 0)
       return dateB.getTime() - dateA.getTime()
     })
 

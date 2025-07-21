@@ -1,24 +1,27 @@
 import { dispatchApi } from '@/lib/api'
 import type {
   DispatchObjectiveType,
-  DispatchStatus,
   DispatchCreate,
   DispatchRead,
   DispatchEncounterRead,
   DispatchWithEncounters,
   DispatchReportRead,
 } from '@/api/generated/models'
+// DispatchStatusを型としてのみインポート
+import { DispatchStatus } from '@/api/generated/models'
 
 // 型の再エクスポート（互換性維持）
 export type {
   DispatchObjectiveType,
-  DispatchStatus,
   DispatchCreate,
   DispatchRead,
   DispatchEncounterRead,
   DispatchWithEncounters,
   DispatchReportRead,
 }
+
+// DispatchStatusも自動生成された型から再エクスポート
+export { DispatchStatus }
 
 export const dispatchApiWrapper = {
   // ログを派遣する

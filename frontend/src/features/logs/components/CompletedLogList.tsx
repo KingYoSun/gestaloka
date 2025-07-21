@@ -85,7 +85,7 @@ export function CompletedLogList({
       <div className="space-y-4">
         {completedLogs.map(log => {
           const isDispatchable = log.status === 'completed'
-          const contaminationPercent = (log.contaminationLevel * 100).toFixed(0)
+          const contaminationPercent = (log.contamination_level * 100).toFixed(0)
 
           return (
             <Card
@@ -124,11 +124,11 @@ export function CompletedLogList({
                 <div className="flex items-center gap-4 text-sm">
                   <div className="flex items-center gap-1">
                     <Sparkles className="h-4 w-4 text-muted-foreground" />
-                    <span>スキル: {log.skills.length || 0}</span>
+                    <span>スキル: {log.skills?.length || 0}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    <span>性格特性: {log.personalityTraits.length || 0}</span>
+                    <span>性格特性: {log.personality_traits?.length || 0}</span>
                   </div>
                   <div
                     className={cn(
@@ -159,7 +159,7 @@ export function CompletedLogList({
                       <Eye className="h-4 w-4" />
                       詳細
                     </Button>
-                    {log.contaminationLevel > 0 && (
+                    {log.contamination_level > 0 && (
                       <Button
                         size="sm"
                         variant="outline"

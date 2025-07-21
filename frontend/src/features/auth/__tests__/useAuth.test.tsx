@@ -3,7 +3,6 @@ import { renderHook, waitFor, act } from '@testing-library/react'
 import { useAuth } from '../useAuth'
 import { AuthProvider } from '../AuthProvider'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createMemoryRouter, RouterProvider } from '@tanstack/react-router'
 import { mockUser } from '@/mocks/fixtures/user'
 
 // APIモック
@@ -23,22 +22,9 @@ const createWrapper = () => {
     },
   })
 
-  const router = createMemoryRouter({
-    routeTree: {
-      id: 'root',
-      getRouteApi: () => ({} as any),
-      addChildren: () => {},
-      children: [],
-      options: {},
-    } as any,
-    defaultPreload: 'intent',
-  })
-
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router}>
-        <AuthProvider>{children}</AuthProvider>
-      </RouterProvider>
+      <AuthProvider>{children}</AuthProvider>
     </QueryClientProvider>
   )
 }

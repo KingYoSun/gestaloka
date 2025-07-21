@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { LogFragmentList } from '../components/LogFragmentList'
-import { LogFragment } from '@/types/log'
+import type { LogFragment } from '@/types/log'
 
 // LogFragmentCardのモック
 vi.mock('../components/LogFragmentCard', () => ({
@@ -27,33 +27,33 @@ const mockFragments: LogFragment[] = [
     actionDescription: '町の探索を行った',
     keywords: ['探索', '町'],
     emotionalValence: 'positive',
-    importanceScore: 80,
+    importanceScore: 0.8,
     rarity: 'rare',
-    contamination: 0,
+    contextData: {},
     createdAt: '2024-01-03T00:00:00Z',
   },
   {
     id: 'fragment2',
     characterId: 'char1',
-    sessionId: 'session1',
+    sessionId: 'session2',
     actionDescription: '商人と交渉した',
     keywords: ['交渉', '商人'],
     emotionalValence: 'neutral',
-    importanceScore: 60,
+    importanceScore: 0.6,
     rarity: 'common',
-    contamination: 10,
+    contextData: {},
     createdAt: '2024-01-02T00:00:00Z',
   },
   {
     id: 'fragment3',
     characterId: 'char1',
-    sessionId: 'session2',
+    sessionId: 'session3',
     actionDescription: '敵と戦闘した',
     keywords: ['戦闘', '敵'],
     emotionalValence: 'negative',
-    importanceScore: 90,
+    importanceScore: 0.9,
     rarity: 'epic',
-    contamination: 20,
+    contextData: {},
     createdAt: '2024-01-01T00:00:00Z',
   },
 ]

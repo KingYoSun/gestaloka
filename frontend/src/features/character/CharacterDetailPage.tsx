@@ -47,21 +47,24 @@ export function CharacterDetailPage() {
   const deactivateCharacterMutation = useDeactivateCharacter()
   const createSessionMutation = useCreateGameSession()
   const [isDeleting, setIsDeleting] = useState(false)
+  
+  // APIレスポンスからデータを取得
+  const characterData = character && 'data' in character ? character.data : character
 
   // セッション履歴を取得
   const { data: sessions } = useGameSessions()
 
   const handleDeleteCharacter = async () => {
-    if (!character) return
+    if (!characterData) return
 
     if (
       window.confirm(
-        `${character.name}を削除してもよろしいですか？この操作は取り消せません。`
+        `${characterData.name}を削除してもよろしいですか？この操作は取り消せません。`
       )
     ) {
       setIsDeleting(true)
       try {
-        await deleteCharacterMutation.mutateAsync(character.id)
+        await deleteCharacterMutation.mutateAsync(characterData.id)
         navigate({ to: '/characters' })
       } finally {
         setIsDeleting(false)
@@ -70,8 +73,8 @@ export function CharacterDetailPage() {
   }
 
   const handleActivateCharacter = async () => {
-    if (!character) return
-    await activateCharacterMutation.mutateAsync(character.id)
+    if (!characterData) return
+    await activateCharacterMutation.mutateAsync(characterData.id)
   }
 
   const handleDeactivateCharacter = async () => {
@@ -79,11 +82,11 @@ export function CharacterDetailPage() {
   }
 
   const handleStartSession = async () => {
-    if (!character) return
+    if (!characterData) return
 
     // アクティブセッションがある場合はそのセッションへ遷移
     const activeSession = sessions?.sessions?.find(
-      s => s.characterId === character.id && s.isActive
+      s => s.characterId === characterData.id && s.isActive
     )
     if (activeSession) {
       navigate({ to: `/game/${activeSession.id}` })
@@ -92,7 +95,7 @@ export function CharacterDetailPage() {
 
     try {
       const session = await createSessionMutation.mutateAsync({
-        characterId: character.id,
+        characterId: characterData.id,
       })
 
       toast.success('ゲームセッションを開始しました')
@@ -113,7 +116,7 @@ export function CharacterDetailPage() {
     )
   }
 
-  if (error || !character) {
+  if (error || !characterData) {
     return (
       <div className={`${containerStyles.pageAlt} p-6`}>
         <div className={containerStyles.maxWidth}>
@@ -139,7 +142,7 @@ export function CharacterDetailPage() {
   }
 
   // キャラクターデータが確実に存在する時点でisActiveを判定
-  const isActive = activeCharacter?.id === character.id
+  const isActive = activeCharacter?.id === characterData.id
 
   return (
     <div className={`${containerStyles.page} p-6`}>
@@ -155,15 +158,15 @@ export function CharacterDetailPage() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-3xl font-bold text-slate-800">
-                  {character.name}
+                  {characterData.name}
                 </h1>
                 <Badge variant="secondary" className="text-sm">
-                  Lv.{character.stats?.level || 1}
+                  Lv.{characterData.stats?.level || 1}
                 </Badge>
               </div>
               <div className="flex items-center text-slate-600 mt-1">
                 <MapPin className="h-4 w-4 mr-1" />
-                {character.location || '開始の村'}
+                {characterData.location || '開始の村'}
               </div>
             </div>
           </div>
@@ -184,7 +187,7 @@ export function CharacterDetailPage() {
                   <>
                     <Play className="mr-2 h-4 w-4" />
                     {sessions?.sessions?.find(
-                      s => s.characterId === character.id && s.isActive
+                      s => s.characterId === characterData.id && s.isActive
                     )
                       ? '冒険を再開'
                       : '冒険を始める'}
@@ -265,35 +268,35 @@ export function CharacterDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {character.description && (
+                {characterData.description && (
                   <div>
                     <h4 className="font-medium text-slate-700 mb-2">説明</h4>
                     <p className="text-slate-600 leading-relaxed">
-                      {character.description}
+                      {characterData.description}
                     </p>
                   </div>
                 )}
 
-                {character.appearance && (
+                {characterData.appearance && (
                   <div>
                     <h4 className="font-medium text-slate-700 mb-2 flex items-center gap-1">
                       <Eye className="h-4 w-4" />
                       外見
                     </h4>
                     <p className="text-slate-600 leading-relaxed">
-                      {character.appearance}
+                      {characterData.appearance}
                     </p>
                   </div>
                 )}
 
-                {character.personality && (
+                {characterData.personality && (
                   <div>
                     <h4 className="font-medium text-slate-700 mb-2 flex items-center gap-1">
                       <Sparkles className="h-4 w-4" />
                       性格
                     </h4>
                     <p className="text-slate-600 leading-relaxed">
-                      {character.personality}
+                      {characterData.personality}
                     </p>
                   </div>
                 )}
@@ -306,7 +309,7 @@ export function CharacterDetailPage() {
                     <div>
                       <div className="font-medium">作成日</div>
                       <div className="text-slate-600">
-                        {formatDate(character.createdAt)}
+                        {formatDate(characterData.created_at)}
                       </div>
                     </div>
                   </div>
@@ -315,7 +318,7 @@ export function CharacterDetailPage() {
                     <div>
                       <div className="font-medium">最終更新</div>
                       <div className="text-slate-600">
-                        {formatRelativeTime(character.updatedAt)}
+                        {formatRelativeTime(characterData.updated_at)}
                       </div>
                     </div>
                   </div>
@@ -324,7 +327,7 @@ export function CharacterDetailPage() {
             </Card>
 
             {/* スキル */}
-            {character.skills && character.skills.length > 0 && (
+            {characterData.skills && characterData.skills.length > 0 && (
               <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -334,7 +337,7 @@ export function CharacterDetailPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-3">
-                    {character.skills.map(skill => (
+                    {characterData.skills.map(skill => (
                       <div
                         key={skill.id}
                         className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
@@ -366,7 +369,7 @@ export function CharacterDetailPage() {
           {/* 右カラム - ステータス */}
           <div className="space-y-6">
             {/* ステータス */}
-            {character.stats && (
+            {characterData.stats && (
               <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -377,10 +380,10 @@ export function CharacterDetailPage() {
                 <CardContent className="space-y-4">
                   <div className="text-center mb-4">
                     <div className="text-2xl font-bold text-purple-600">
-                      レベル {character.stats.level}
+                      レベル {characterData.stats.level}
                     </div>
                     <div className="text-sm text-slate-600">
-                      EXP: {character.stats.experience}
+                      EXP: {characterData.stats.experience}
                     </div>
                   </div>
 
@@ -394,13 +397,13 @@ export function CharacterDetailPage() {
                       </div>
                       <div className="text-right">
                         <div className="font-bold">
-                          {character.stats.health} / {character.stats.maxHealth}
+                          {characterData.stats.health} / {characterData.stats.max_health}
                         </div>
                         <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-red-500 transition-all duration-300"
                             style={{
-                              width: `${(character.stats.health / character.stats.maxHealth) * 100}%`,
+                              width: `${((characterData.stats.health || 0) / (characterData.stats.max_health || 1)) * 100}%`,
                             }}
                           />
                         </div>
@@ -414,13 +417,13 @@ export function CharacterDetailPage() {
                       </div>
                       <div className="text-right">
                         <div className="font-bold">
-                          {character.stats.mp} / {character.stats.maxMp}
+                          {characterData.stats.mp} / {characterData.stats.max_mp}
                         </div>
                         <div className="w-20 h-2 bg-slate-200 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-blue-500 transition-all duration-300"
                             style={{
-                              width: `${(character.stats.mp / character.stats.maxMp) * 100}%`,
+                              width: `${((characterData.stats.mp || 0) / (characterData.stats.max_mp || 1)) * 100}%`,
                             }}
                           />
                         </div>

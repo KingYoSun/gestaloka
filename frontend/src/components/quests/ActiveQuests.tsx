@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { useActiveQuests, useUpdateQuestProgress } from '@/hooks/useQuests'
 import { useActiveCharacter } from '@/hooks/useActiveCharacter'
-import type { Quest, QuestStatus } from '@/api/generated/models'
+import { type Quest, QuestStatus } from '@/api/generated/models'
 import {
   QuestStatusDisplay,
   QuestOriginDisplay,
@@ -41,15 +41,15 @@ const QuestCard: React.FC<QuestCardProps> = ({
   onUpdateProgress,
   isUpdating,
 }) => {
-  const getStatusIcon = (status: QuestStatus) => {
+  const getStatusIcon = (status?: QuestStatus) => {
     switch (status) {
-      case QuestStatus.ACTIVE:
+      case QuestStatus.Active:
         return <Target className="h-4 w-4" />
-      case QuestStatus.PROGRESSING:
+      case QuestStatus.Progressing:
         return <TrendingUp className="h-4 w-4" />
-      case QuestStatus.NEAR_COMPLETION:
+      case QuestStatus.NearCompletion:
         return <AlertCircle className="h-4 w-4" />
-      case QuestStatus.COMPLETED:
+      case QuestStatus.Completed:
         return <CheckCircle2 className="h-4 w-4" />
       default:
         return <Activity className="h-4 w-4" />
@@ -57,14 +57,14 @@ const QuestCard: React.FC<QuestCardProps> = ({
   }
 
   const getStatusVariant = (
-    status: QuestStatus
+    status?: QuestStatus
   ): 'default' | 'secondary' | 'destructive' | 'outline' => {
     switch (status) {
-      case QuestStatus.ACTIVE:
+      case QuestStatus.Active:
         return 'default'
-      case QuestStatus.PROGRESSING:
+      case QuestStatus.Progressing:
         return 'secondary'
-      case QuestStatus.NEAR_COMPLETION:
+      case QuestStatus.NearCompletion:
         return 'destructive'
       default:
         return 'outline'
@@ -83,7 +83,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
                 className="flex items-center gap-1"
               >
                 {getStatusIcon(quest.status)}
-                <span>{QuestStatusDisplay[quest.status]}</span>
+                <span>{quest.status ? QuestStatusDisplay[quest.status] : ''}</span>
               </Badge>
               <Badge variant="outline" className="text-xs">
                 {QuestOriginDisplay[quest.origin]}
@@ -108,12 +108,12 @@ const QuestCard: React.FC<QuestCardProps> = ({
           <div>
             <div className="flex justify-between text-sm mb-1">
               <span>進行度</span>
-              <span className="font-medium">{quest.progress_percentage}%</span>
+              <span className="font-medium">{quest.progress_percentage ?? 0}%</span>
             </div>
-            <Progress value={quest.progress_percentage} className="h-2" />
+            <Progress value={quest.progress_percentage ?? 0} className="h-2" />
           </div>
 
-          {quest.narrative_completeness > 0 && (
+          {quest.narrative_completeness && quest.narrative_completeness > 0 && (
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span>物語的完結度</span>
@@ -128,7 +128,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
             </div>
           )}
 
-          {quest.emotional_satisfaction > 0 && (
+          {quest.emotional_satisfaction && quest.emotional_satisfaction > 0 && (
             <div>
               <div className="flex justify-between text-sm mb-1">
                 <span>感情的満足度</span>
@@ -153,7 +153,7 @@ const QuestCard: React.FC<QuestCardProps> = ({
                 {quest.key_events.map((event, index) => (
                   <li key={index} className="flex items-start gap-1">
                     <span className="text-primary">•</span>
-                    <span>{event}</span>
+                    <span>{JSON.stringify(event)}</span>
                   </li>
                 ))}
               </ul>
@@ -162,11 +162,11 @@ const QuestCard: React.FC<QuestCardProps> = ({
         )}
 
         {/* 進行状況の更新ボタン */}
-        {quest.status !== QuestStatus.COMPLETED && (
+        {quest.status !== QuestStatus.Completed && (
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onUpdateProgress(quest.id)}
+            onClick={() => quest.id && onUpdateProgress(quest.id)}
             disabled={isUpdating}
             className="w-full"
           >

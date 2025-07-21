@@ -12,18 +12,19 @@ import {
 } from 'lucide-react'
 import { useGameSessions } from '@/hooks/useGameSessions'
 import { useCharacters } from '@/hooks/useCharacters'
+import type { Character } from '@/api/generated/models'
 
 export function DashboardPage() {
   const navigate = useNavigate()
-  const { data: characters } = useCharacters()
+  const { data: charactersResponse } = useCharacters()
   const { data: sessions } = useGameSessions()
-
+  
   // アクティブなセッションを取得（削除されたキャラクターのセッションは除外）
   const activeSessions =
     sessions?.sessions?.filter(session => {
       if (!session.isActive) return false
       // キャラクターが存在するセッションのみ表示
-      const character = characters?.find(c => c.id === session.characterId)
+      const character = charactersResponse?.find((c: Character) => c.id === session.characterId)
       return !!character
     }) || []
 
@@ -81,8 +82,8 @@ export function DashboardPage() {
             {activeSessions.length > 0 ? (
               <div className="space-y-3">
                 {activeSessions.slice(0, 3).map(session => {
-                  const character = characters?.find(
-                    c => c.id === session.characterId
+                  const character = charactersResponse?.find(
+                    (c: Character) => c.id === session.characterId
                   )
                   // キャラクターが見つからない場合はスキップ（二重チェック）
                   if (!character) return null

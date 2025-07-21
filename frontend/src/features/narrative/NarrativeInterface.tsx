@@ -40,8 +40,8 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
   // 行動を実行
   const handleAction = async (action: ActionChoice) => {
     const response = await performAction({
-      actionText: action.text,
-      actionType: 'choice' as const,
+      text: action.text,
+      context: null,
     })
 
     if (response) {
@@ -49,18 +49,15 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
       setNarrativeHistory(prev => [...prev, response.narrative])
 
       // 新しい行動選択肢を設定
-      if (response.choices) {
-        setCurrentActions(response.choices)
+      if (response.action_choices) {
+        setCurrentActions(response.action_choices)
       }
 
-      // メタデータからイベント処理
-      if (
-        response.metadata?.events &&
-        Array.isArray(response.metadata.events)
-      ) {
-        response.metadata.events.forEach((event: any) => {
-          toast(event.title, {
-            description: event.description,
+      // イベント処理
+      if (response.events && Array.isArray(response.events)) {
+        response.events.forEach((event: any) => {
+          toast(event.title || 'イベント', {
+            description: event.description || '',
             icon: <Sparkles className="h-4 w-4" />,
           })
         })
@@ -119,14 +116,7 @@ export const NarrativeInterface: React.FC<NarrativeInterfaceProps> = ({
                   onClick={() => handleAction(action)}
                   disabled={isLoading}
                 >
-                  <div className="space-y-1">
-                    <p className="font-medium">{action.text}</p>
-                    {action.difficulty && (
-                      <p className="text-xs text-gray-400">
-                        難易度: {action.difficulty}
-                      </p>
-                    )}
-                  </div>
+                  <p className="font-medium">{action.text}</p>
                 </Button>
               ))}
             </div>

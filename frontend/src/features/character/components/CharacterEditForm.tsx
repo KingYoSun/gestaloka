@@ -53,10 +53,10 @@ export const CharacterEditForm: FC<CharacterEditFormProps> = ({
   const form = useForm<CharacterEditFormData>({
     resolver: zodResolver(characterEditSchema),
     defaultValues: {
-      name: character.name,
-      description: character.description,
-      appearance: character.appearance,
-      personality: character.personality,
+      name: character.name ?? '',
+      description: character.description ?? '',
+      appearance: character.appearance ?? '',
+      personality: character.personality ?? '',
     },
   })
 

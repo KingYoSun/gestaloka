@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { formatRelativeTime } from '@/lib/utils'
-import { dispatchApi, DispatchStatus } from '@/api/dispatch'
+import { dispatchApi } from '@/api/dispatch'
+import { DispatchStatus } from '@/api/generated/models'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,18 +25,12 @@ import {
 import { cn } from '@/lib/utils'
 import { DispatchDetail } from './DispatchDetail'
 
-const statusConfig: Record<
-  keyof DispatchStatus,
-  {
-    label: string
-    variant: 'default' | 'secondary' | 'destructive' | 'outline'
-  }
-> = {
-  PREPARING: { label: '準備中', variant: 'secondary' },
-  DISPATCHED: { label: '派遣中', variant: 'default' },
-  RETURNING: { label: '帰還中', variant: 'outline' },
-  COMPLETED: { label: '完了', variant: 'secondary' },
-  RECALLED: { label: '召還済', variant: 'destructive' },
+const statusConfig = {
+  [DispatchStatus.Preparing]: { label: '準備中', variant: 'secondary' as const },
+  [DispatchStatus.Dispatched]: { label: '派遣中', variant: 'default' as const },
+  [DispatchStatus.Returning]: { label: '帰還中', variant: 'outline' as const },
+  [DispatchStatus.Completed]: { label: '完了', variant: 'secondary' as const },
+  [DispatchStatus.Recalled]: { label: '召還済', variant: 'destructive' as const },
 }
 
 const objectiveTypeLabels: Record<string, string> = {
@@ -48,7 +43,7 @@ const objectiveTypeLabels: Record<string, string> = {
 
 export function DispatchList() {
   const [statusFilter, setStatusFilter] = useState<
-    keyof DispatchStatus | 'all'
+    DispatchStatus | 'all'
   >('all')
   const [selectedDispatchId, setSelectedDispatchId] = useState<string | null>(
     null
@@ -95,7 +90,7 @@ export function DispatchList() {
         <Select
           value={statusFilter}
           onValueChange={value =>
-            setStatusFilter(value as keyof DispatchStatus | 'all')
+            setStatusFilter(value as DispatchStatus | 'all')
           }
         >
           <SelectTrigger className="w-48">
@@ -103,16 +98,16 @@ export function DispatchList() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">すべて</SelectItem>
-            <SelectItem value="DISPATCHED">派遣中</SelectItem>
-            <SelectItem value="COMPLETED">完了</SelectItem>
-            <SelectItem value="RECALLED">召還済</SelectItem>
+            <SelectItem value={DispatchStatus.Dispatched}>派遣中</SelectItem>
+            <SelectItem value={DispatchStatus.Completed}>完了</SelectItem>
+            <SelectItem value={DispatchStatus.Recalled}>召還済</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div className="space-y-4">
         {dispatches.map((dispatch: any) => {
-          const isActive = dispatch.status === 'DISPATCHED'
+          const isActive = dispatch.status === DispatchStatus.Dispatched
           const achievementPercent = (dispatch.achievement_score * 100).toFixed(
             0
           )
@@ -132,13 +127,13 @@ export function DispatchList() {
                   </CardTitle>
                   <Badge
                     variant={
-                      statusConfig[dispatch.status as keyof DispatchStatus]
-                        .variant
+                      statusConfig[dispatch.status as DispatchStatus]
+                        ?.variant || 'default'
                     }
                   >
                     {
-                      statusConfig[dispatch.status as keyof DispatchStatus]
-                        .label
+                      statusConfig[dispatch.status as DispatchStatus]
+                        ?.label || dispatch.status
                     }
                   </Badge>
                 </div>
@@ -169,7 +164,7 @@ export function DispatchList() {
                   {dispatch.objective_detail}
                 </p>
 
-                {dispatch.status === 'COMPLETED' && (
+                {dispatch.status === DispatchStatus.Completed && (
                   <div className="flex items-center gap-4 pt-2 border-t">
                     <div className="flex items-center gap-2">
                       <Activity className="h-4 w-4 text-muted-foreground" />

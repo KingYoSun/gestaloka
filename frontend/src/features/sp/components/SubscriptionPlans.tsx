@@ -27,13 +27,13 @@ import {
   usePurchaseSubscription,
   useSubscriptionPlans,
 } from '../hooks/useSubscription'
-import { SPSubscriptionType } from '../types/subscription'
+import { SPSubscriptionType as GeneratedSPSubscriptionType } from '@/api/generated/models'
 import { formatNumber } from '@/lib/utils'
 
 export const SubscriptionPlans = () => {
   const { data, isLoading, error } = useSubscriptionPlans()
   const purchaseMutation = usePurchaseSubscription()
-  const [selectedPlan, setSelectedPlan] = useState<SPSubscriptionType | null>(
+  const [selectedPlan, setSelectedPlan] = useState<GeneratedSPSubscriptionType | null>(
     null
   )
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -59,7 +59,7 @@ export const SubscriptionPlans = () => {
     return null
   }
 
-  const handlePurchase = (subscriptionType: SPSubscriptionType) => {
+  const handlePurchase = (subscriptionType: GeneratedSPSubscriptionType) => {
     setSelectedPlan(subscriptionType)
     setShowConfirmDialog(true)
   }
@@ -87,8 +87,7 @@ export const SubscriptionPlans = () => {
             <CardContent>
               <div className="space-y-2">
                 <p className="text-lg font-semibold">
-                  {currentSubscription.subscription_type ===
-                  SPSubscriptionType.BASIC
+                  {currentSubscription.subscription_type === 'basic'
                     ? 'ベーシックパス'
                     : 'プレミアムパス'}
                 </p>
@@ -106,7 +105,7 @@ export const SubscriptionPlans = () => {
             const isCurrentPlan =
               currentSubscription?.subscription_type === plan.subscription_type
             const isPremium =
-              plan.subscription_type === SPSubscriptionType.PREMIUM
+              plan.subscription_type === 'premium'
 
             return (
               <Card
@@ -175,7 +174,7 @@ export const SubscriptionPlans = () => {
             <DialogDescription>
               {selectedPlan && (
                 <>
-                  {selectedPlan === SPSubscriptionType.BASIC
+                  {selectedPlan === 'basic'
                     ? 'ベーシックパス'
                     : 'プレミアムパス'}
                   を購入します。

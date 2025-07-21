@@ -31,8 +31,7 @@ import { toast } from 'sonner'
 
 export function CharacterListPage() {
   const navigate = useNavigate()
-  const { data: response, isLoading, error } = useCharacters()
-  const characters = response?.data || []
+  const { data: characters = [], isLoading, error } = useCharacters()
   const { activeCharacter } = useActiveCharacter()
   const deleteCharacterMutation = useDeleteCharacter()
   const activateCharacterMutation = useActivateCharacter()

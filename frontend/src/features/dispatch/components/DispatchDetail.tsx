@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ja } from 'date-fns/locale'
 import { dispatchApi } from '@/api/dispatch'
+import { DispatchStatus } from '@/api/generated/models'
 import { useToast } from '@/hooks/useToast'
 import {
   Dialog,
@@ -54,7 +55,7 @@ export function DispatchDetail({
   const { data: report } = useQuery({
     queryKey: ['dispatch-report', dispatchId],
     queryFn: () => dispatchApi.getDispatchReport(dispatchId),
-    enabled: open && dispatch?.status === 'COMPLETED',
+    enabled: open && dispatch?.status === DispatchStatus.Completed,
   })
 
   const recallMutation = useMutation({
@@ -96,7 +97,7 @@ export function DispatchDetail({
 
   if (!dispatch) return null
 
-  const isActive = dispatch.status === 'DISPATCHED'
+  const isActive = dispatch.status === DispatchStatus.Dispatched
   const recallCost = Math.floor(dispatch.sp_cost / 2)
 
   return (
@@ -309,7 +310,7 @@ export function DispatchDetail({
             </TabsContent>
 
             <TabsContent value="results" className="space-y-4">
-              {dispatch.status !== 'COMPLETED' ? (
+              {dispatch.status !== DispatchStatus.Completed ? (
                 <Alert>
                   <AlertDescription>
                     派遣が完了すると成果が表示されます

@@ -18,6 +18,9 @@ export const CharacterEditPage: FC = () => {
   const navigate = useNavigate()
   const { data: character, isLoading, error } = useCharacter(characterId)
   const updateCharacter = useUpdateCharacter()
+  
+  // APIレスポンスからデータを取得
+  const characterData = character && 'data' in character ? character.data : character
 
   const handleSubmit = async (data: {
     name: string
@@ -50,7 +53,7 @@ export const CharacterEditPage: FC = () => {
     return <LoadingState />
   }
 
-  if (error || !character) {
+  if (error || !characterData) {
     return (
       <Alert variant="destructive">
         <AlertDescription>
@@ -79,7 +82,7 @@ export const CharacterEditPage: FC = () => {
         </CardHeader>
         <CardContent>
           <CharacterEditForm
-            character={character}
+            character={characterData}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
             isLoading={updateCharacter.isPending}

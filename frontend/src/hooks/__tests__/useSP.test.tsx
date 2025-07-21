@@ -78,13 +78,19 @@ describe('useSP hooks', () => {
   describe('useSPBalance', () => {
     it('should fetch SP balance successfully', async () => {
       const mockBalance: PlayerSPRead = {
-        playerId: 'player-1',
-        currentSp: 1500,
-        activeSubscription: null,
-        subscriptionExpiresAt: null,
-        lastDailyRecoveryAt: '2025-07-20T00:00:00Z',
-        createdAt: '2025-07-01T00:00:00Z',
-        updatedAt: '2025-07-20T00:00:00Z',
+        id: 'sp-1',
+        user_id: 'player-1',
+        current_sp: 1500,
+        total_earned_sp: 2000,
+        total_consumed_sp: 500,
+        total_purchased_sp: 0,
+        total_purchase_amount: 0,
+        active_subscription: null,
+        subscription_expires_at: null,
+        consecutive_login_days: 5,
+        last_login_date: new Date('2025-07-20T00:00:00Z'),
+        created_at: new Date('2025-07-01T00:00:00Z'),
+        updated_at: new Date('2025-07-20T00:00:00Z'),
       }
 
       vi.mocked(spApi.getSpBalanceApiV1SpBalanceGet).mockResolvedValue({
@@ -110,9 +116,9 @@ describe('useSP hooks', () => {
   describe('useSPBalanceSummary', () => {
     it('should fetch SP balance summary successfully', async () => {
       const mockSummary: PlayerSPSummary = {
-        currentSp: 1500,
-        activeSubscription: 'premium',
-        subscriptionExpiresAt: '2025-08-20T00:00:00Z',
+        current_sp: 1500,
+        active_subscription: 'premium',
+        subscription_expires_at: new Date('2025-08-20T00:00:00Z'),
       }
 
       vi.mocked(spApi.getSpBalanceSummaryApiV1SpBalanceSummaryGet).mockResolvedValue({
@@ -140,14 +146,17 @@ describe('useSP hooks', () => {
       const request: SPConsumeRequest = {
         amount: 100,
         description: 'test_action',
+        transaction_type: 'free_action',
         related_entity_type: 'game_session',
         related_entity_id: 'session-1',
       }
 
       vi.mocked(spApi.consumeSpApiV1SpConsumePost).mockResolvedValue({
         data: {
+          success: true,
           message: '100 SPを消費しました',
-          remaining_sp: 1400,
+          balance_before: 1500,
+          balance_after: 1400,
           transaction_id: 'trans-1',
         },
         status: 200,
@@ -174,9 +183,10 @@ describe('useSP hooks', () => {
     it('should handle insufficient SP error', async () => {
       const request: SPConsumeRequest = {
         amount: 2000,
-        reason: 'test_action',
-        relatedEntityType: 'game_session',
-        relatedEntityId: 'session-1',
+        description: 'test_action',
+        transaction_type: 'free_action',
+        related_entity_type: 'game_session',
+        related_entity_id: 'session-1',
       }
 
       vi.mocked(spApi.consumeSpApiV1SpConsumePost).mockRejectedValue({
@@ -206,9 +216,10 @@ describe('useSP hooks', () => {
     it('should handle general error', async () => {
       const request: SPConsumeRequest = {
         amount: 100,
-        reason: 'test_action',
-        relatedEntityType: 'game_session', 
-        relatedEntityId: 'session-1',
+        description: 'test_action',
+        transaction_type: 'free_action',
+        related_entity_type: 'game_session', 
+        related_entity_id: 'session-1',
       }
 
       vi.mocked(spApi.consumeSpApiV1SpConsumePost).mockRejectedValue({
@@ -240,9 +251,13 @@ describe('useSP hooks', () => {
     it('should process daily recovery successfully', async () => {
       vi.mocked(spApi.processDailyRecoveryApiV1SpDailyRecoveryPost).mockResolvedValue({
         data: {
+          success: true,
           message: '日次回復が完了しました。+100 SP',
           recovered_amount: 100,
-          current_sp: 1600,
+          login_bonus: 0,
+          consecutive_days: 5,
+          total_amount: 100,
+          balance_after: 1600,
         },
         status: 200,
         headers: {},

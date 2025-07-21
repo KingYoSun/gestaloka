@@ -82,7 +82,7 @@ export const TitleCard = ({
             <Calendar className="h-3 w-3" />
             <span>
               獲得日:{' '}
-              {format(title.acquired_at, 'yyyy年MM月dd日', { locale: ja })}
+              {format(new Date(title.acquired_at), 'yyyy年MM月dd日', { locale: ja })}
             </span>
           </div>
         </div>

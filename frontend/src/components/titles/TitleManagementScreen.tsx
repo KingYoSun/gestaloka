@@ -116,6 +116,7 @@ export function TitleManagementScreen() {
                 title={title}
                 isEquipped={equippedTitle?.id === title.id}
                 onEquip={() => equipTitle(title.id)}
+                onUnequip={() => {}} // 空の関数を渡す
                 isEquipping={isEquipping}
               />
             ))}

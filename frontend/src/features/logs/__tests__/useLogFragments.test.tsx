@@ -13,32 +13,54 @@ vi.mock('@/api/logs', () => ({
   },
 }))
 
-const mockFragments = [
+const mockFragmentsList = [
   {
     id: 'fragment1',
-    characterId: 'char1',
-    sessionId: 'session1',
-    actionDescription: '町の探索を行った',
+    character_id: 'char1',
+    action_description: '町の探索を行った',
+    keyword: '探索',
     keywords: ['探索', '町'],
-    emotionalValence: 'positive',
-    importanceScore: 80,
-    rarity: 'rare',
-    contamination: 0,
-    createdAt: '2024-01-03T00:00:00Z',
+    emotional_valence: 'positive' as const,
+    importance_score: 0.8,
+    rarity: 'rare' as const,
+    backstory: '冒険者は初めて町を探索した',
+    context_data: {},
+    created_at: new Date('2024-01-03T00:00:00Z'),
   },
   {
     id: 'fragment2',
-    characterId: 'char1',
-    sessionId: 'session1',
-    actionDescription: '商人と交渉した',
+    character_id: 'char1',
+    action_description: '商人と交渉した',
+    keyword: '交渉',
     keywords: ['交渉', '商人'],
-    emotionalValence: 'neutral',
-    importanceScore: 60,
-    rarity: 'common',
-    contamination: 10,
-    createdAt: '2024-01-02T00:00:00Z',
+    emotional_valence: 'neutral' as const,
+    importance_score: 0.6,
+    rarity: 'common' as const,
+    backstory: '商人との交渉は難航した',
+    context_data: {},
+    created_at: new Date('2024-01-02T00:00:00Z'),
   },
 ]
+
+const mockFragmentResponse = {
+  fragments: mockFragmentsList,
+  total: 2,
+  statistics: {
+    total_fragments: 2,
+    by_rarity: {
+      common: 1,
+      uncommon: 0,
+      rare: 1,
+      epic: 0,
+      legendary: 0,
+      unique: 0,
+      architect: 0,
+    },
+    average_importance: 0.7,
+    average_contamination: 0.05,
+    unique_keywords: 4,
+  },
+}
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -63,7 +85,7 @@ describe('useLogFragments', () => {
   })
 
   it('should fetch log fragments successfully', async () => {
-    vi.spyOn(logsApiModule.logsApiWrapper, 'getFragments').mockResolvedValue(mockFragments)
+    vi.spyOn(logsApiModule.logsApiWrapper, 'getFragments').mockResolvedValue(mockFragmentResponse)
 
     const { result } = renderHook(() => useLogFragments('char1'), {
       wrapper: createWrapper(),
@@ -76,14 +98,14 @@ describe('useLogFragments', () => {
     // データ取得後
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
-      expect(result.current.data).toEqual(mockFragments)
+      expect(result.current.data).toEqual(mockFragmentResponse)
     })
 
     expect(logsApiModule.logsApiWrapper.getFragments).toHaveBeenCalledWith('char1')
   })
 
   it('should not fetch when characterId is empty', () => {
-    vi.spyOn(logsApiModule.logsApiWrapper, 'getFragments').mockResolvedValue([])
+    vi.spyOn(logsApiModule.logsApiWrapper, 'getFragments').mockResolvedValue(mockFragmentResponse)
     
     const { result } = renderHook(() => useLogFragments(''), {
       wrapper: createWrapper(),
@@ -129,15 +151,15 @@ describe('useCreateLogFragment', () => {
   it('should create log fragment successfully', async () => {
     const newFragment = {
       id: 'fragment3',
-      characterId: 'char1',
-      sessionId: 'session2',
-      actionDescription: '新しい行動',
+      character_id: 'char1',
+      session_id: 'session2',
+      action_description: '新しい行動',
       keywords: ['新規'],
-      emotionalValence: 'positive' as const,
-      importanceScore: 70,
+      emotional_valence: 'positive' as const,
+      importance_score: 0.7,
       rarity: 'uncommon' as const,
       contamination: 0,
-      createdAt: '2024-01-04T00:00:00Z',
+      created_at: new Date('2024-01-04T00:00:00Z'),
     }
 
     vi.spyOn(logsApiModule.logsApiWrapper, 'createFragment').mockResolvedValue(newFragment)
@@ -159,12 +181,12 @@ describe('useCreateLogFragment', () => {
     const { result } = renderHook(() => useCreateLogFragment(), { wrapper })
 
     const createData = {
-      characterId: 'char1',
-      sessionId: 'session2',
-      actionDescription: '新しい行動',
+      character_id: 'char1',
+      session_id: 'session2',
+      action_description: '新しい行動',
       keywords: ['新規'],
-      emotionalValence: 'positive' as const,
-      importanceScore: 70,
+      emotional_valence: 'positive' as const,
+      importance_score: 0.7,
     }
 
     await result.current.mutateAsync(createData)
@@ -199,12 +221,12 @@ describe('useCreateLogFragment', () => {
     const { result } = renderHook(() => useCreateLogFragment(), { wrapper })
 
     const createData = {
-      characterId: 'char1',
-      sessionId: 'session2',
-      actionDescription: '新しい行動',
+      character_id: 'char1',
+      session_id: 'session2',
+      action_description: '新しい行動',
       keywords: ['新規'],
-      emotionalValence: 'positive' as const,
-      importanceScore: 70,
+      emotional_valence: 'positive' as const,
+      importance_score: 0.7,
     }
 
     try {

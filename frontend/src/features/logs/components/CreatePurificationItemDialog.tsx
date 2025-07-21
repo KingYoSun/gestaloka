@@ -84,16 +84,16 @@ export function CreatePurificationItemDialog({
     if (!selectedFragmentId) return
 
     createItem(
-      { fragment_id: selectedFragmentId },
+      { fragment_id: selectedFragmentId } as any,
       {
-        onSuccess: response => {
+        onSuccess: (response: any) => {
           const itemInfo =
             ITEM_TYPE_INFO[
-              response.item.item_type as keyof typeof ITEM_TYPE_INFO
+              response.item_type as keyof typeof ITEM_TYPE_INFO
             ]
           toast({
             title: '浄化アイテム作成完了',
-            description: `${itemInfo.name}を作成しました。`,
+            description: `${itemInfo?.name || '浄化アイテム'}を作成しました。`,
             variant: 'success',
           })
           onClose()

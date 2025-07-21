@@ -28,7 +28,9 @@ export function useCharacters() {
     setLoading(query.isLoading)
 
     if (query.data) {
-      setCharacters(query.data.data as Character[])
+      // AxiosResponseの場合はdata、配列の場合はそのまま使用
+      const characters = Array.isArray(query.data) ? query.data : query.data.data
+      setCharacters(characters as Character[])
       clearError()
     }
 
@@ -49,7 +51,11 @@ export function useCharacters() {
     clearError,
   ])
 
-  return query
+  // 戻り値を調整して、dataがCharacter[]を返すようにする
+  return {
+    ...query,
+    data: query.data ? (Array.isArray(query.data) ? query.data : query.data.data) as Character[] : undefined
+  }
 }
 
 /**

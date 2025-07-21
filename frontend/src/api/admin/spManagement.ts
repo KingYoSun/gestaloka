@@ -10,6 +10,9 @@ import type {
   SPTransactionType,
 } from '@/api/generated/models'
 
+// Re-export types that are used in components
+export type { PlayerSPDetail, AdminSPAdjustment }
+
 export const adminSPManagementApi = {
   /**
    * Get all players' SP information
