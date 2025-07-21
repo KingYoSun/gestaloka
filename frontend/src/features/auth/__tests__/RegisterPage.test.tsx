@@ -126,7 +126,7 @@ describe('RegisterPage', () => {
           username: 'newuser',
           email: 'newuser@example.com',
           password: 'Password123!',
-          confirmPassword: 'Password123!',
+          confirm_password: 'Password123!',
         },
       })
     })

@@ -82,9 +82,10 @@ describe('CompletedLogList', () => {
   it('should show loading skeletons', () => {
     render(<CompletedLogList completedLogs={[]} isLoading={true} />)
 
-    // Skeletonコンポーネントが表示されることを確認（クラス名で判定）
-    const skeletons = document.querySelectorAll('.skeleton')
-    expect(skeletons.length).toBeGreaterThan(0)
+    // Skeletonコンポーネントが表示されることを確認
+    // Cardコンポーネントが3つ表示される
+    const cards = document.querySelectorAll('.rounded-xl.border.bg-card')
+    expect(cards.length).toBe(3)
   })
 
   it('should show empty state when no logs', () => {
@@ -131,11 +132,11 @@ describe('CompletedLogList', () => {
     render(<CompletedLogList completedLogs={mockCompletedLogs} isLoading={false} />)
 
     // 完成ログには派遣ボタンがある
-    const completedLogSection = screen.getByText('冒険の記録').closest('div')!
+    const completedLogSection = screen.getByText('冒険の記録').closest('article')!
     expect(within(completedLogSection).getByText('派遣')).toBeInTheDocument()
 
     // ドラフトログには派遣ボタンがない
-    const draftLogSection = screen.getByText('戦闘の記録').closest('div')!
+    const draftLogSection = screen.getByText('戦闘の記録').closest('article')!
     expect(within(draftLogSection).queryByText('派遣')).not.toBeInTheDocument()
   })
 
@@ -143,10 +144,10 @@ describe('CompletedLogList', () => {
     render(<CompletedLogList completedLogs={[mockCompletedLogs[0], mockCompletedLogs[1]]} isLoading={false} />)
     
     // 汚染度が0より大きいログには浄化ボタンがある
-    const adventureLogSection = screen.getByText('冒険の記録').closest('div')!
+    const adventureLogSection = screen.getByText('冒険の記録').closest('article')!
     expect(within(adventureLogSection).getByText('浄化')).toBeInTheDocument()
     
-    const battleLogSection = screen.getByText('戦闘の記録').closest('div')!
+    const battleLogSection = screen.getByText('戦闘の記録').closest('article')!
     expect(within(battleLogSection).getByText('浄化')).toBeInTheDocument()
   })
 
