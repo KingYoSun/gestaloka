@@ -31,7 +31,7 @@ class DispatchObjectiveType(str, Enum):
     TRADE = "trade"  # 商業型：アイテム売買、露店経営、行商
 
     # 世界維持系（フェーズ1）
-    MEMORY_PRESERVE = "memory_preserve"  # 記憶保存型：フェイディングから記憶を守る
+    MEMORY_PRESERVE = "memory_preserve"  # 記憶保存型：世界の劣化から記憶を守る
 
     # 学術・研究系（フェーズ1）
     RESEARCH = "research"  # 研究型：設計者の遺物調査、技術解明

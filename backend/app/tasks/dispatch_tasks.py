@@ -631,7 +631,7 @@ def generate_special_achievements(dispatch: LogDispatch) -> dict:
                 {"title": "Last Mayor's Speech", "rarity": "Legendary", "emotional_impact": "High"},
                 {"title": "Children's Lullaby", "rarity": "Rare", "emotional_impact": "Medium"},
             ],
-            "fading_delayed": f"{random.randint(3, 15)}%",
+            "degradation_delayed": f"{random.randint(3, 15)}%",
             "contribution_to_library": random.randint(1, 5),
         }
 

@@ -190,7 +190,7 @@ CREATE (world_state:World {
   npc_count: 2,
   active_sessions: 0,
   world_time: datetime(),
-  fading_level: 0.1,
+  contamination_level: 0.1,
   metadata: {
     creation_date: datetime(),
     last_major_event: null,
