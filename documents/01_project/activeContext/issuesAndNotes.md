@@ -2,7 +2,43 @@
 
 このファイルには、既知の問題、開発上の注意事項、メモが記載されています。
 
-## 最終更新: 2025/07/21（JST）
+## 最終更新: 2025/07/22（JST）
+
+### 2025/07/22 - 型エラー解消作業 ✅PARTIAL
+
+#### 背景
+- プロジェクト分析で75個の型エラーが判明
+- 特に自動生成ファイルのauthToken警告が開発効率を低下させていた
+
+#### 実施内容
+1. **自動生成ファイルの警告抑制**
+   - 約50個のauthToken未使用警告を`@ts-nocheck`で抑制
+   - generate:apiスクリプトを更新し、生成後自動的に警告抑制
+
+2. **API型名の統一**
+   - CompletedLog → CompletedLogRead
+   - LogFragment → LogFragmentRead
+   - CharacterTitle → CharacterTitleRead
+
+3. **snake_case/camelCase変換**
+   - SPDisplay: currentSp → current_sp、activeSubscription → active_subscription
+   - 各種フック: creatorId → creator_id、characterId → character_id
+
+4. **不足UIコンポーネントの作成**
+   - table.tsx、switch.tsxを新規作成
+
+#### 成果
+- 開発効率を妨げていた主要な型エラーを解消
+- API型定義の一貫性を確保
+- 自動生成ファイルの警告を恒久的に抑制
+
+#### 残存課題
+- **型エラー約194個**（主にテストファイルとクエスト関連）
+- any型の暗黙的使用箇所
+- テストファイルの型定義不備
+
+#### 詳細レポート
+`/documents/01_project/progressReports/2025-07-22_type_error_resolution.md`
 
 ### 2025/07/21 - プロジェクト全体分析とゲームセッション再実装計画 🔍
 

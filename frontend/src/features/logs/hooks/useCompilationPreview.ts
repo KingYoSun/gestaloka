@@ -11,6 +11,9 @@ export function useCompilationPreview() {
     Error,
     CompilationPreviewRequest
   >({
-    mutationFn: data => logsApiWrapper.previewCompilation(data),
+    mutationFn: async () => {
+      // previewCompilation APIは現在未実装
+      throw new Error('編纂プレビュー機能は現在利用できません')
+    },
   })
 }

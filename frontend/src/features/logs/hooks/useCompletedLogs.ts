@@ -23,7 +23,7 @@ export function useCreateCompletedLog() {
     onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
-        queryKey: ['completedLogs', data.creatorId],
+        queryKey: ['completedLogs', data.creator_id],
       })
       toast({
         title: 'ログを編纂しました',
@@ -58,7 +58,7 @@ export function useUpdateCompletedLog() {
     onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
-        queryKey: ['completedLogs', data.creatorId],
+        queryKey: ['completedLogs', data.creator_id],
       })
       toast({
         title: 'ログを更新しました',

@@ -24,7 +24,7 @@ export function useCreateLogFragment() {
     onSuccess: data => {
       // キャッシュを更新
       queryClient.invalidateQueries({
-        queryKey: ['logFragments', data.characterId],
+        queryKey: ['logFragments', data.character_id],
       })
       toast({
         title: 'ログフラグメントを作成しました',

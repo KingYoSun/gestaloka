@@ -13,24 +13,24 @@ interface MemoryInheritanceHistoryProps {
 }
 
 const typeIcons: Record<MemoryInheritanceType, React.ReactNode> = {
-  [MemoryInheritanceType.SKILL]: <Sword className="w-4 h-4" />,
-  [MemoryInheritanceType.TITLE]: <Crown className="w-4 h-4" />,
-  [MemoryInheritanceType.ITEM]: <Package className="w-4 h-4" />,
-  [MemoryInheritanceType.LOG_ENHANCEMENT]: <Zap className="w-4 h-4" />,
+  skill: <Sword className="w-4 h-4" />,
+  title: <Crown className="w-4 h-4" />,
+  item: <Package className="w-4 h-4" />,
+  log_enhancement: <Zap className="w-4 h-4" />,
 }
 
 const typeLabels: Record<MemoryInheritanceType, string> = {
-  [MemoryInheritanceType.SKILL]: 'スキル',
-  [MemoryInheritanceType.TITLE]: '称号',
-  [MemoryInheritanceType.ITEM]: 'アイテム',
-  [MemoryInheritanceType.LOG_ENHANCEMENT]: 'ログ強化',
+  skill: 'スキル',
+  title: '称号',
+  item: 'アイテム',
+  log_enhancement: 'ログ強化',
 }
 
 const typeColors: Record<MemoryInheritanceType, string> = {
-  [MemoryInheritanceType.SKILL]: 'bg-blue-500',
-  [MemoryInheritanceType.TITLE]: 'bg-purple-500',
-  [MemoryInheritanceType.ITEM]: 'bg-green-500',
-  [MemoryInheritanceType.LOG_ENHANCEMENT]: 'bg-orange-500',
+  skill: 'bg-blue-500',
+  title: 'bg-purple-500',
+  item: 'bg-green-500',
+  log_enhancement: 'bg-orange-500',
 }
 
 export function MemoryInheritanceHistory({
@@ -53,17 +53,17 @@ export function MemoryInheritanceHistory({
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`p-2 rounded-full ${typeColors[entry.inheritance_type]} bg-opacity-20`}
+                    className={`p-2 rounded-full ${typeColors[entry.inheritance_type as MemoryInheritanceType]} bg-opacity-20`}
                   >
-                    {typeIcons[entry.inheritance_type]}
+                    {typeIcons[entry.inheritance_type as MemoryInheritanceType]}
                   </div>
                   <div>
                     <p className="font-medium text-sm">
-                      {typeLabels[entry.inheritance_type]}継承
+                      {typeLabels[entry.inheritance_type as MemoryInheritanceType]}継承
                     </p>
                     <p className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      {format(entry.created_at, 'PPP HH:mm', {
+                      {format(new Date(entry.timestamp), 'PPP HH:mm', {
                         locale: ja,
                       })}
                     </p>
@@ -71,14 +71,14 @@ export function MemoryInheritanceHistory({
                 </div>
                 <div className="flex items-center gap-1 text-sm">
                   <Coins className="w-4 h-4 text-yellow-500" />
-                  <span>{entry.sp_consumed} SP</span>
+                  <span>{/* TODO: SP消費量の表示 */}</span>
                 </div>
               </div>
 
-              <p className="text-sm mb-2">{entry.result_summary}</p>
+              <p className="text-sm mb-2">{/* TODO: 結果サマリーの表示 */}</p>
 
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>使用フラグメント: {entry.fragments_used.length}個</span>
+                <span>使用フラグメント: {entry.fragment_ids.length}個</span>
               </div>
             </CardContent>
           </Card>

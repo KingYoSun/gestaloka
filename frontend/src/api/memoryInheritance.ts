@@ -4,14 +4,16 @@ import type {
   MemoryInheritanceRequest,
   MemoryInheritanceResult,
   InheritanceHistoryEntry,
+  MemoryInheritanceType,
 } from '@/api/generated/models'
 
-// 記憶継承タイプ（自動生成された型があるか確認が必要）
-export enum MemoryInheritanceType {
-  SKILL = 'skill',
-  TITLE = 'title',
-  ITEM = 'item',
-  LOG_ENHANCEMENT = 'log_enhancement',
+// 型をエクスポート
+export type {
+  MemoryCombinationPreview,
+  MemoryInheritanceRequest,
+  MemoryInheritanceResult,
+  InheritanceHistoryEntry,
+  MemoryInheritanceType,
 }
 
 // ログ強化情報（自動生成されていない場合は残す）

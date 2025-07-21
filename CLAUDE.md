@@ -31,6 +31,7 @@ docker-compose exec -T frontend npm run generate:api:clean
 2. **APIクライアントは`/lib/api.ts`から使用** - 例: `import { charactersApi } from '@/lib/api'`
 3. **snake_case/camelCase変換** - バックエンドはsnake_case、必要に応じて`/lib/type-adapters.ts`を使用
 4. **セッション関連の型** - 現在`/types/session-temp.ts`に一時保管（後で自動生成に移行予定）
+5. **自動生成ファイルの警告** - generate:api実行時に自動的に`@ts-nocheck`が追加される（2025/07/22更新）
 
 ### Alembicマイグレーション（必須）
 ```bash
@@ -126,7 +127,7 @@ make generate-api      # APIクライアントと型を再生成
 - `04_ai_agents/`: AI仕様
 - `05_implementation/`: 実装ガイド
 
-## 現在の環境（2025/07/20）
+## 現在の環境（2025/07/22）
 - langchain-google-genai 2.1.6
 - AIレスポンスキャッシュ実装（コスト20-30%削減）
 - バックエンドテスト100%成功（280/280）
@@ -137,6 +138,7 @@ make generate-api      # APIクライアントと型を再生成
 - **ノベルゲーム風UI実装済み**（Framer Motion導入、表示モード切り替え対応）
 - **フロントエンドテスト拡充**（2025/07/17 - 認証・キャラクター管理テスト追加）
 - **テストエラー完全解消**（2025/07/20 - 全テストファイル成功）
+- **型エラー大規模解消**（2025/07/22 - 自動生成ファイル警告抑制、API型統一）
 
 ## 詳細参照先
 - 環境情報: `documents/01_project/activeContext/current_environment.md`

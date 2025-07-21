@@ -37,18 +37,18 @@ export const SPDisplay = memo(function SPDisplay({
   // SP変更を検知してアニメーション
   useEffect(() => {
     if (
-      balance?.currentSp !== undefined &&
+      balance?.current_sp !== undefined &&
       previousBalance !== null &&
-      balance.currentSp !== previousBalance
+      balance.current_sp !== previousBalance
     ) {
       setIsAnimating(true)
       const timer = setTimeout(() => setIsAnimating(false), 1000)
       return () => clearTimeout(timer)
     }
-    if (balance?.currentSp !== undefined) {
-      setPreviousBalance(balance.currentSp)
+    if (balance?.current_sp !== undefined) {
+      setPreviousBalance(balance.current_sp)
     }
-  }, [balance?.currentSp, previousBalance])
+  }, [balance?.current_sp, previousBalance])
 
   if (isLoading) {
     return (
@@ -69,13 +69,13 @@ export const SPDisplay = memo(function SPDisplay({
     )
   }
 
-  const subscriptionInfo = balance.activeSubscription
-    ? SPSubscriptionInfo[balance.activeSubscription as SPSubscriptionType]
+  const subscriptionInfo = balance.active_subscription
+    ? SPSubscriptionInfo[balance.active_subscription as SPSubscriptionType]
     : null
 
-  const isLowBalance = balance.currentSp < lowBalanceThreshold
+  const isLowBalance = balance.current_sp < lowBalanceThreshold
   const balanceChange =
-    previousBalance !== null ? balance.currentSp - previousBalance : 0
+    previousBalance !== null ? balance.current_sp - previousBalance : 0
 
   if (variant === 'compact') {
     return (
@@ -94,7 +94,7 @@ export const SPDisplay = memo(function SPDisplay({
               : {}
           }
           transition={{ duration: 0.3 }}
-          title={`現在のSP: ${formatNumber(balance.currentSp)}${
+          title={`現在のSP: ${formatNumber(balance.current_sp)}${
             isLowBalance ? ' - SP残高が少なくなっています' : ''
           }${
             subscriptionInfo ? ` - ${subscriptionInfo.label} 加入中` : ''
@@ -112,7 +112,7 @@ export const SPDisplay = memo(function SPDisplay({
               isAnimating && balanceChange < 0 && 'text-red-500'
             )}
           >
-            {formatNumber(balance.currentSp)}
+            {formatNumber(balance.current_sp)}
           </span>
           <span className="text-xs text-muted-foreground">SP</span>
 
@@ -149,7 +149,7 @@ export const SPDisplay = memo(function SPDisplay({
         <div className="flex items-center gap-2">
           <Coins className="h-5 w-5 text-yellow-500" />
           <span className="text-lg font-bold">
-            {formatNumber(balance.currentSp)}
+            {formatNumber(balance.current_sp)}
           </span>
           <span className="text-sm text-muted-foreground">SP</span>
         </div>
@@ -163,12 +163,12 @@ export const SPDisplay = memo(function SPDisplay({
         )}
       </div>
 
-      {showSubscription && balance.subscriptionExpiresAt && (
+      {showSubscription && balance.subscription_expires_at && (
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Calendar className="h-3 w-3" />
           <span>
             有効期限:{' '}
-            {new Date(balance.subscriptionExpiresAt).toLocaleDateString(
+            {new Date(balance.subscription_expires_at).toLocaleDateString(
               'ja-JP'
             )}
           </span>

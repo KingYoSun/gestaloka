@@ -1,4 +1,3 @@
-export { QuestPanel } from './QuestPanel'
 export { ActiveQuests } from './ActiveQuests'
 export { QuestProposals } from './QuestProposals'
 export { QuestHistory } from './QuestHistory'

@@ -1,4 +1,4 @@
-import { LogFragment } from '@/api/generated/models'
+import { LogFragmentRead } from '@/api/generated/models'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { Sparkles, Star } from 'lucide-react'
 
 interface MemoryFragmentSelectorProps {
-  fragments: LogFragment[]
+  fragments: LogFragmentRead[]
   selectedIds: string[]
   onToggleSelection: (fragmentId: string) => void
 }
@@ -62,7 +62,7 @@ export function MemoryFragmentSelector({
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium flex items-center gap-2">
-                      {fragment.title}
+                      フラグメント #{fragment.id.slice(0, 8)}
                       {isArchitect && (
                         <Sparkles className="w-4 h-4 text-purple-500" />
                       )}
@@ -71,13 +71,13 @@ export function MemoryFragmentSelector({
                       variant="outline"
                       className={cn(
                         'text-xs',
-                        rarityTextColors[fragment.rarity]
+                        fragment.rarity && rarityTextColors[fragment.rarity]
                       )}
                     >
                       <Star
                         className={cn(
                           'w-3 h-3 mr-1',
-                          rarityColors[fragment.rarity]
+                          fragment.rarity && rarityColors[fragment.rarity]
                         )}
                       />
                       {fragment.rarity}
@@ -85,7 +85,7 @@ export function MemoryFragmentSelector({
                   </div>
 
                   <p className="text-sm text-muted-foreground line-clamp-2">
-                    {fragment.content}
+                    {fragment.action_description}
                   </p>
 
                   {fragment.keywords && fragment.keywords.length > 0 && (
