@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 class GameSessionCreate(BaseModel):
     """ゲームセッション作成リクエスト"""
 
-    character_id: str
+    current_scene: Optional[str] = Field("town_square", description="開始シーン（省略時はtown_square）")
 
 
 class GameSessionUpdate(BaseModel):
@@ -26,13 +26,17 @@ class GameSessionResponse(BaseModel):
 
     id: str
     character_id: str
-    character_name: str
+    session_number: int = Field(description="セッション番号")
     is_active: bool
+    session_status: str = Field(description="セッションステータス")
     current_scene: Optional[str] = None
-    session_data: Optional[dict[str, Any]] = None
+    turn_count: int = Field(0, description="ターン数")
+    word_count: int = Field(0, description="総単語数")
+    play_duration_minutes: int = Field(0, description="プレイ時間（分）")
+    is_first_session: bool = Field(False, description="初回セッションかどうか")
     created_at: datetime
     updated_at: datetime
-    turn_number: Optional[int] = 0
+    ended_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -188,3 +192,9 @@ class SessionResultResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EndSessionRequest(BaseModel):
+    """セッション終了リクエスト"""
+    
+    reason: Optional[str] = Field(None, max_length=500, description="終了理由（オプション）")
