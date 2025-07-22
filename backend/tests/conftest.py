@@ -174,3 +174,10 @@ def setup_test_environment() -> None:
 
 # 環境変数の設定を実行
 setup_test_environment()
+
+
+@pytest.fixture
+def location_service(session: Session):
+    """テスト用LocationServiceのfixture"""
+    from app.services.location_service import LocationService
+    return LocationService(db=session)

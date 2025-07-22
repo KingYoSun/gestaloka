@@ -196,5 +196,5 @@ class SessionResultResponse(BaseModel):
 
 class EndSessionRequest(BaseModel):
     """セッション終了リクエスト"""
-    
+
     reason: Optional[str] = Field(None, max_length=500, description="終了理由（オプション）")

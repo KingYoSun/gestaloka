@@ -100,19 +100,21 @@ describe('SPPage', () => {
 
   it('should render loading state initially', () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return new Promise(() => {}) // Never resolve to keep loading
       })
     )
 
-    renderWithProviders(<SPPage />)
+    const { container } = renderWithProviders(<SPPage />)
 
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    // Skeletonコンポーネントが表示されることを確認 - animate-pulseクラスを探す
+    const skeletons = container.querySelectorAll('.animate-pulse')
+    expect(skeletons.length).toBeGreaterThan(0)
   })
 
   it('should render error state when balance loading fails', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return new Response(null, { status: 500 })
       })
     )
@@ -126,7 +128,7 @@ describe('SPPage', () => {
 
   it('should render SP balance and statistics', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json(mockBalance)
       })
     )
@@ -147,7 +149,7 @@ describe('SPPage', () => {
 
   it('should calculate and display consumption rate', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json(mockBalance)
       })
     )
@@ -162,13 +164,13 @@ describe('SPPage', () => {
 
   it('should switch between tabs', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json(mockBalance)
       }),
-      http.get('/api/v1/sp/transactions', () => {
+      http.get('*/api/v1/sp/transactions', () => {
         return Response.json(mockTransactions)
       }),
-      http.get('/api/v1/sp/plans', () => {
+      http.get('*/api/v1/sp/plans', () => {
         return Response.json(mockPlans)
       }),
       http.get('/api/v1/sp/purchases', () => {
@@ -186,27 +188,31 @@ describe('SPPage', () => {
     })
 
     // 取引履歴タブ
-    fireEvent.click(screen.getByText('取引履歴'))
+    const transactionTab = screen.getByRole('tab', { name: '取引履歴' })
+    fireEvent.click(transactionTab)
     await waitFor(() => {
-      expect(screen.getByText('取引履歴')).toHaveAttribute('data-state', 'active')
+      expect(transactionTab).toHaveAttribute('data-state', 'active')
     })
 
     // SPショップタブ
-    fireEvent.click(screen.getByText('SPショップ'))
+    const shopTab = screen.getByRole('tab', { name: 'SPショップ' })
+    fireEvent.click(shopTab)
     await waitFor(() => {
-      expect(screen.getByText('SPショップ')).toHaveAttribute('data-state', 'active')
+      expect(shopTab).toHaveAttribute('data-state', 'active')
     })
 
     // 購入履歴タブ
-    fireEvent.click(screen.getByText('購入履歴'))
+    const purchaseTab = screen.getByRole('tab', { name: '購入履歴' })
+    fireEvent.click(purchaseTab)
     await waitFor(() => {
-      expect(screen.getByText('購入履歴')).toHaveAttribute('data-state', 'active')
+      expect(purchaseTab).toHaveAttribute('data-state', 'active')
     })
 
     // 月額パスタブ
-    fireEvent.click(screen.getByText('月額パス'))
+    const passTab = screen.getByRole('tab', { name: '月額パス' })
+    fireEvent.click(passTab)
     await waitFor(() => {
-      expect(screen.getByText('月額パス')).toHaveAttribute('data-state', 'active')
+      expect(passTab).toHaveAttribute('data-state', 'active')
     })
   })
 
@@ -218,10 +224,10 @@ describe('SPPage', () => {
     })
 
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json(mockBalance)
       }),
-      http.post('/api/v1/sp/daily-recovery', () => {
+      http.post('*/api/v1/sp/daily-recovery', () => {
         mockMutate()
         return Response.json({
           current_sp: 1600,
@@ -247,7 +253,7 @@ describe('SPPage', () => {
 
   it('should display SP usage information in overview tab', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json(mockBalance)
       })
     )
@@ -273,10 +279,10 @@ describe('SPPage', () => {
 
   it('should open purchase dialog when selecting a plan', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json(mockBalance)
       }),
-      http.get('/api/v1/sp/plans', () => {
+      http.get('*/api/v1/sp/plans', () => {
         return Response.json(mockPlans)
       })
     )
@@ -308,7 +314,7 @@ describe('SPPage', () => {
 
     for (const testCase of testCases) {
       server.use(
-        http.get('/api/v1/sp/balance', () => {
+        http.get('*/api/v1/sp/balance', () => {
           return Response.json({
             ...mockBalance,
             consecutive_login_days: testCase.days
@@ -329,7 +335,7 @@ describe('SPPage', () => {
 
   it('should handle zero earned SP gracefully', async () => {
     server.use(
-      http.get('/api/v1/sp/balance', () => {
+      http.get('*/api/v1/sp/balance', () => {
         return Response.json({
           ...mockBalance,
           total_earned_sp: 0,

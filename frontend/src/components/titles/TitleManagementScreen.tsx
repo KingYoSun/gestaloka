@@ -26,7 +26,7 @@ export function TitleManagementScreen() {
 
   if (isLoading) {
     return (
-      <div className="container max-w-6xl py-8 space-y-6">
+      <div className="container max-w-6xl py-8 space-y-6" role="status">
         <Skeleton className="h-8 w-48" />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[...Array(6)].map((_, i) => (

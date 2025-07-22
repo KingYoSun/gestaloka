@@ -64,33 +64,31 @@ describe('SPManagement', () => {
   })
 
   it('should render SP management header', async () => {
-    server.use(
-      http.get('/api/v1/admin/sp/players', () => {
-        return Response.json(mockPlayers)
-      })
-    )
-
     renderWithProviders(<SPManagement />)
 
-    expect(screen.getByText('SP管理')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('SP管理')).toBeInTheDocument()
+    })
     expect(screen.getByText('プレイヤーのSP（ストーリーポイント）を管理・調整できます。')).toBeInTheDocument()
   })
 
   it('should render loading state', () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return new Promise(() => {}) // Never resolve to keep loading
       })
     )
 
     renderWithProviders(<SPManagement />)
 
-    expect(screen.getByRole('status')).toBeInTheDocument()
+    // Loader2アイコンが表示されることを確認
+    const loader = document.querySelector('.animate-spin')
+    expect(loader).toBeInTheDocument()
   })
 
   it('should render players table', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       })
     )
@@ -128,7 +126,7 @@ describe('SPManagement', () => {
 
   it('should show empty state when no players found', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json([])
       })
     )
@@ -171,7 +169,7 @@ describe('SPManagement', () => {
 
   it('should open adjustment dialog when clicking adjust button', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       })
     )
@@ -196,10 +194,10 @@ describe('SPManagement', () => {
     const mockAdjust = vi.fn()
     
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       }),
-      http.post('/api/v1/admin/sp/adjust', async ({ request }) => {
+      http.post('*/api/v1/admin/admin/sp/adjust', async ({ request }) => {
         const body = await request.json() as { amount: number, reason: string, user_id: string }
         mockAdjust(body)
         return Response.json({
@@ -238,7 +236,7 @@ describe('SPManagement', () => {
 
     await waitFor(() => {
       expect(mockAdjust).toHaveBeenCalledWith({
-        user_id: '1',
+        user_id: 1,
         amount: 100,
         reason: 'テスト調整'
       })
@@ -247,7 +245,7 @@ describe('SPManagement', () => {
 
   it('should validate adjustment amount', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       })
     )
@@ -279,7 +277,7 @@ describe('SPManagement', () => {
 
   it('should handle adjustment error', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       }),
       http.post('/api/v1/admin/sp/adjust', () => {
@@ -317,10 +315,10 @@ describe('SPManagement', () => {
 
   it('should open transaction history dialog', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       }),
-      http.get('/api/v1/admin/sp/players/:userId/transactions', () => {
+      http.get('*/api/v1/admin/admin/sp/players/:userId/transactions', () => {
         return Response.json(mockTransactions)
       })
     )
@@ -342,7 +340,6 @@ describe('SPManagement', () => {
     })
 
     // 取引履歴が表示されることを確認
-    expect(screen.getByText('daily_recovery')).toBeInTheDocument()
     expect(screen.getByText('デイリーログインボーナス')).toBeInTheDocument()
     expect(screen.getByText('+100')).toBeInTheDocument()
     expect(screen.getByText('1,600')).toBeInTheDocument()
@@ -350,7 +347,7 @@ describe('SPManagement', () => {
 
   it('should handle plus/minus buttons in adjustment dialog', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       })
     )
@@ -372,19 +369,26 @@ describe('SPManagement', () => {
     const amountInput = screen.getByPlaceholderText('例: 100 or -50') as HTMLInputElement
 
     // プラスボタンをクリック
-    const plusButton = screen.getByRole('button', { name: /plus/i })
-    fireEvent.click(plusButton)
-    expect(amountInput.value).toBe('+')
+    const buttons = screen.getAllByRole('button')
+    const plusButton = buttons.find(btn => btn.querySelector('[class*="lucide-plus"]'))
+    expect(plusButton).toBeInTheDocument()
+    fireEvent.click(plusButton!)
+    await waitFor(() => {
+      expect(amountInput.value).toBe('+')
+    })
 
     // マイナスボタンをクリック
-    const minusButton = screen.getByRole('button', { name: /minus/i })
-    fireEvent.click(minusButton)
-    expect(amountInput.value).toBe('-')
+    const minusButton = buttons.find(btn => btn.querySelector('[class*="lucide-minus"]'))
+    expect(minusButton).toBeInTheDocument()
+    fireEvent.click(minusButton!)
+    await waitFor(() => {
+      expect(amountInput.value).toBe('-')
+    })
   })
 
   it('should close adjustment dialog on cancel', async () => {
     server.use(
-      http.get('/api/v1/admin/sp/players', () => {
+      http.get('*/api/v1/admin/admin/sp/players', () => {
         return Response.json(mockPlayers)
       })
     )

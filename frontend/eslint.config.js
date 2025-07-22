@@ -60,6 +60,6 @@ export default [
     },
   },
   {
-    ignores: ['dist', 'node_modules', '.eslintrc.cjs', 'vite.config.ts', '*.config.js', '*.config.ts'],
+    ignores: ['dist', 'node_modules', '.eslintrc.cjs', 'vite.config.ts', '*.config.js', '*.config.ts', 'src/api/generated/**'],
   },
 ];

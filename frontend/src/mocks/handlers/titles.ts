@@ -41,19 +41,26 @@ const mockTitles: CharacterTitleRead[] = [
 const API_BASE_URL = 'http://localhost:8000'
 
 export const titlesHandlers = [
-  // Get player titles
-  http.get(`${API_BASE_URL}/api/v1/titles`, () => {
-    return Response.json({ 
-      items: mockTitles, 
-      total: mockTitles.length, 
-      page: 1, 
-      size: 50, 
-      pages: 1 
-    })
+  // CORS preflight for equipped title
+  http.options(`${API_BASE_URL}/api/v1/titles/equipped`, () => {
+    return new Response(null, { status: 200 })
+  }),
+  // Get player titles (with wildcard and trailing slash support)
+  http.get('*/api/v1/titles', () => {
+    return Response.json(mockTitles)
+  }),
+  http.get('*/api/v1/titles/', () => {
+    return Response.json(mockTitles)
+  }),
+
+  // Get equipped title
+  http.get('*/api/v1/titles/equipped', () => {
+    const equippedTitle = mockTitles.find(title => title.is_equipped)
+    return Response.json(equippedTitle || null)
   }),
 
   // Equip title
-  http.put(`${API_BASE_URL}/api/v1/titles/:id/equip`, ({ params }) => {
+  http.put('*/api/v1/titles/:id/equip', ({ params }) => {
     const titleId = params.id as string
     
     // Update mock data
@@ -65,7 +72,7 @@ export const titlesHandlers = [
   }),
 
   // Unequip all titles
-  http.put(`${API_BASE_URL}/api/v1/titles/unequip-all`, () => {
+  http.put('*/api/v1/titles/unequip', () => {
     // Update mock data
     mockTitles.forEach(title => {
       title.is_equipped = false

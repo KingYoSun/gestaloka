@@ -21,9 +21,40 @@ const mockBalance: PlayerSPRead = {
 const API_BASE_URL = 'http://localhost:8000'
 
 export const spHandlers = [
+  // CORS preflight for balance summary
+  http.options(`${API_BASE_URL}/api/v1/sp/balance/summary`, () => {
+    return new Response(null, { status: 200 })
+  }),
   // Get SP balance
   http.get(`${API_BASE_URL}/api/v1/sp/balance`, () => {
     return Response.json(mockBalance)
+  }),
+
+  // Get SP balance summary
+  http.get(`${API_BASE_URL}/api/v1/sp/balance/summary`, () => {
+    return Response.json({
+      current_sp: 1500,
+      total_earned_sp: 5000,
+      total_consumed_sp: 3500,
+      recent_transactions: [
+        {
+          id: '1',
+          amount: 100,
+          type: 'earned',
+          description: 'デイリーログインボーナス',
+          created_at: new Date().toISOString()
+        },
+        {
+          id: '2',
+          amount: -10,
+          type: 'consumed',
+          description: '自由行動: 探索',
+          created_at: new Date().toISOString()
+        }
+      ],
+      daily_recovery_available: false,
+      consecutive_login_days: 15
+    })
   }),
 
   // Daily recovery

@@ -5,23 +5,17 @@
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Any
 
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models.user import User as UserModel
 from app.models.character import Character
 from app.models.game_session import GameSession, SessionStatus
-from app.models.sp import PlayerSP
 from app.models.location import Location
-from app.schemas.game_session import (
-    GameSessionCreate,
-    SessionContinueRequest,
-    EndSessionRequest,
-)
+from app.models.sp import PlayerSP
+from app.models.user import User as UserModel
 
 
 class TestGameSessionEndpoints:
@@ -113,7 +107,7 @@ class TestGameSessionEndpoints:
             updated_at=datetime.now(UTC),
         )
         session.add(character)
-        
+
         # PlayerSPも作成
         player_sp = PlayerSP(
             id=str(uuid.uuid4()),
@@ -124,7 +118,7 @@ class TestGameSessionEndpoints:
             updated_at=datetime.now(UTC),
         )
         session.add(player_sp)
-        
+
         session.commit()
         session.refresh(character)
         return character
@@ -167,7 +161,7 @@ class TestGameSessionEndpoints:
         mock_session.character_id = character.id
         mock_session.session_number = 1
         mock_session.is_active = True
-        mock_session.session_status = GameSessionStatus.ACTIVE
+        mock_session.session_status = SessionStatus.ACTIVE.value
         mock_session.current_scene = "town_square"
         mock_session.turn_count = 0
         mock_session.word_count = 0
@@ -176,7 +170,7 @@ class TestGameSessionEndpoints:
         mock_session.created_at = datetime.now(UTC)
         mock_session.updated_at = datetime.now(UTC)
         mock_session.ended_at = None
-        
+
         mock_create_session.return_value = mock_session
 
         # リクエスト実行
@@ -262,8 +256,8 @@ class TestGameSessionEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["total"] == 1
-        assert len(data["items"]) == 1
-        assert data["items"][0]["id"] == str(game_session.id)
+        assert len(data["sessions"]) == 1
+        assert data["sessions"][0]["id"] == str(game_session.id)
 
     def test_get_session_history_with_filters(
         self,
@@ -320,7 +314,7 @@ class TestGameSessionEndpoints:
             character_id=character.id,
             session_number=1,
             is_active=False,
-            session_status=SessionStatus.COMPLETED,
+            session_status=SessionStatus.COMPLETED.value,
             current_scene="town_square",
             turn_count=5,
             word_count=100,
@@ -338,7 +332,7 @@ class TestGameSessionEndpoints:
             json={},
             headers=auth_headers,
         )
-        
+
         # 非アクティブセッションへのアクセスは404を返すはず
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -356,21 +350,15 @@ class TestGameSessionEndpoints:
         mock_result = MagicMock()
         mock_result.id = str(uuid.uuid4())
         mock_result.session_id = game_session.id
-        mock_result.character_id = game_session.character_id
-        mock_result.session_number = game_session.session_number
-        mock_result.turn_count = 10
-        mock_result.word_count = 500
-        mock_result.play_duration_minutes = 45
-        mock_result.sp_consumed = 30
         mock_result.story_summary = "冒険の概要"
         mock_result.key_events = ["イベント1", "イベント2"]
-        mock_result.character_growth = {"strength": 1}
-        mock_result.acquired_items = []
-        mock_result.acquired_titles = []
-        mock_result.log_fragments_earned = 5
-        mock_result.ending_reason = "player_requested"
+        mock_result.experience_gained = 100
+        mock_result.skills_improved = {"strength": 1}
+        mock_result.items_acquired = []
+        mock_result.continuation_context = "player_requested"
+        mock_result.unresolved_plots = []
         mock_result.created_at = datetime.now(UTC)
-        
+
         mock_end_session.return_value = mock_result
 
         # リクエスト実行
@@ -384,8 +372,8 @@ class TestGameSessionEndpoints:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["session_id"] == str(game_session.id)
-        assert data["character_id"] == str(game_session.character_id)
-        assert data["ending_reason"] == "player_requested"
+        assert data["story_summary"] == "冒険の概要"
+        assert data["continuation_context"] == "player_requested"
 
     def test_end_session_already_ended(
         self,
@@ -402,7 +390,7 @@ class TestGameSessionEndpoints:
             character_id=character.id,
             session_number=1,
             is_active=False,
-            session_status=SessionStatus.COMPLETED,
+            session_status=SessionStatus.COMPLETED.value,
             current_scene="town_square",
             turn_count=5,
             word_count=100,
@@ -420,7 +408,7 @@ class TestGameSessionEndpoints:
             json={"reason": "player_requested"},
             headers=auth_headers,
         )
-        
+
         # 終了済みセッションへのアクセスは404を返すはず
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -475,10 +463,8 @@ class TestGameSessionEndpoints:
             headers=auth_headers,
         )
 
-        assert response.status_code == status.HTTP_200_OK
-        # レスポンスはnullまたは空のオブジェクトになるはず
-        data = response.json()
-        assert data is None
+        # キャラクターが存在しない、または権限がない場合は404を返す
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_get_active_session_other_user_character(
         self,
@@ -497,7 +483,7 @@ class TestGameSessionEndpoints:
             hashed_password="dummy",
         )
         session.add(other_user)
-        
+
         # 別ユーザーのキャラクターを作成
         other_character = Character(
             id=str(uuid.uuid4()),
@@ -544,5 +530,5 @@ class TestGameSessionEndpoints:
                 response = client.get(url)
             else:  # POST
                 response = client.post(url, json=json_data)
-            
+
             assert response.status_code == status.HTTP_401_UNAUTHORIZED, f"Failed for {method} {url}"
