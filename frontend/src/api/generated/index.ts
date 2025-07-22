@@ -1,5 +1,5 @@
 /* tslint:disable */
- 
+/* eslint-disable */
 /**
  * GESTALOKA API
  * マルチプレイ・テキストMMO - ゲスタロカ API

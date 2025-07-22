@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { SPDisplay } from '../SPDisplay'
-import { renderWithProviders as render } from '@/test/test-utils'
+import { renderWithProviders } from '@/test/test-utils'
 import { PlayerSPSummary } from '@/api/generated/models'
 
 // useSPBalanceSummaryのモック
@@ -59,7 +59,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay />)
+    renderWithProviders(<SPDisplay />)
 
     // Skeletonコンポーネントのクラス名で確認
     const skeleton = document.querySelector('.h-6.w-20')
@@ -73,7 +73,7 @@ describe('SPDisplay', () => {
       error: new Error('API Error'),
     })
 
-    render(<SPDisplay />)
+    renderWithProviders(<SPDisplay />)
 
     expect(screen.getByText('エラー')).toBeInTheDocument()
   })
@@ -91,7 +91,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay />)
+    renderWithProviders(<SPDisplay />)
 
     expect(screen.getByText('1,500')).toBeInTheDocument()
     expect(screen.getByText('SP')).toBeInTheDocument()
@@ -110,7 +110,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay />)
+    renderWithProviders(<SPDisplay />)
 
     expect(screen.getByText('2,000')).toBeInTheDocument()
     expect(screen.getByText(/プレミアムパス/)).toBeInTheDocument()
@@ -130,7 +130,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay variant="compact" />)
+    renderWithProviders(<SPDisplay variant="compact" />)
 
     // コンパクトバージョンではツールチップ内にテキストがあるので、別の方法で確認
     const spElement = screen.getByText('1,000')
@@ -153,7 +153,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay lowBalanceThreshold={100} />)
+    renderWithProviders(<SPDisplay lowBalanceThreshold={100} />)
 
     expect(screen.getByText('50')).toBeInTheDocument()
     // 低残高の場合はコンテナ全体が表示される
@@ -173,7 +173,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay showSubscription={false} />)
+    renderWithProviders(<SPDisplay showSubscription={false} />)
 
     expect(screen.getByText('1,500')).toBeInTheDocument()
     expect(screen.queryByText(/ベーシックプラン/)).not.toBeInTheDocument()
@@ -200,7 +200,7 @@ describe('SPDisplay', () => {
       error: null,
     })
 
-    render(<SPDisplay />)
+    renderWithProviders(<SPDisplay />)
     expect(screen.getByText('1,000')).toBeInTheDocument()
 
     // 残高を変更してコンポーネントを再レンダリング
@@ -211,7 +211,7 @@ describe('SPDisplay', () => {
     })
 
     // コンポーネントをアンマウントして再マウント
-    render(<SPDisplay key="updated" />)
+    renderWithProviders(<SPDisplay key="updated" />)
 
     await waitFor(() => {
       expect(screen.getByText('900')).toBeInTheDocument()

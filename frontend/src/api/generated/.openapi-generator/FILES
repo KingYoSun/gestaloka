@@ -8,6 +8,7 @@ api/characters-api.ts
 api/config-api.ts
 api/default-api.ts
 api/dispatch-api.ts
+api/game-api.ts
 api/log-fragments-api.ts
 api/logs-api.ts
 api/memory-inheritance-api.ts
@@ -50,8 +51,12 @@ docs/DispatchReportRead.md
 docs/DispatchStatus.md
 docs/DispatchWithEncounters.md
 docs/EmotionalValence.md
+docs/EndSessionRequest.md
+docs/GameApi.md
 docs/GameConfig.md
 docs/GameMechanicsConfig.md
+docs/GameSessionCreate.md
+docs/GameSessionResponse.md
 docs/HTTPValidationError.md
 docs/InheritanceHistoryEntry.md
 docs/LocationEvent.md
@@ -106,6 +111,10 @@ docs/SPTransaction.md
 docs/SPTransactionHistory.md
 docs/SPTransactionRead.md
 docs/SPTransactionType.md
+docs/SessionContinueRequest.md
+docs/SessionHistoryItem.md
+docs/SessionHistoryResponse.md
+docs/SessionResultResponse.md
 docs/Skill.md
 docs/SpApi.md
 docs/SpSubscriptionsApi.md
@@ -147,8 +156,11 @@ models/dispatch-report-read.ts
 models/dispatch-status.ts
 models/dispatch-with-encounters.ts
 models/emotional-valence.ts
+models/end-session-request.ts
 models/game-config.ts
 models/game-mechanics-config.ts
+models/game-session-create.ts
+models/game-session-response.ts
 models/httpvalidation-error.ts
 models/index.ts
 models/inheritance-history-entry.ts
@@ -178,6 +190,10 @@ models/quest-origin.ts
 models/quest-proposal.ts
 models/quest-status.ts
 models/quest.ts
+models/session-continue-request.ts
+models/session-history-item.ts
+models/session-history-response.ts
+models/session-result-response.ts
 models/skill.ts
 models/spconsume-request.ts
 models/spconsume-response.ts

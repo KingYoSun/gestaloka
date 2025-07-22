@@ -15,28 +15,22 @@
 
 
 /**
- * NPC位置更新
+ * セッション継続リクエスト
  * @export
- * @interface NPCLocationUpdate
+ * @interface SessionContinueRequest
  */
-export interface NPCLocationUpdate {
+export interface SessionContinueRequest {
     /**
-     * 
+     * キャラクターID
      * @type {string}
-     * @memberof NPCLocationUpdate
+     * @memberof SessionContinueRequest
      */
-    'npc_id': string;
+    'character_id': string;
     /**
-     * 
+     * 前回のセッションID
      * @type {string}
-     * @memberof NPCLocationUpdate
+     * @memberof SessionContinueRequest
      */
-    'new_location': string;
-    /**
-     * 
-     * @type {string}
-     * @memberof NPCLocationUpdate
-     */
-    'reason'?: string | null;
+    'previous_session_id': string;
 }
 

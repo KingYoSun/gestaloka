@@ -1,21 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders } from '@/test/test-utils'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
-import { QueryClient } from '@tanstack/react-query'
 import { http } from 'msw'
 import { server } from '@/mocks/server'
 import { SPPage } from '../../../routes/_authenticated/sp/index'
-import type { SPBalanceRead } from '@/api/generated'
+import type { PlayerSPRead } from '@/api/generated'
 
 // モックデータ
-const mockBalance: SPBalanceRead = {
+const mockBalance: PlayerSPRead = {
+  id: '1',
+  user_id: '1',
   current_sp: 1500,
   total_earned_sp: 5000,
   total_consumed_sp: 3500,
+  total_purchased_sp: 0,
+  total_purchase_amount: 0,
+  active_subscription: null,
+  subscription_expires_at: null,
   consecutive_login_days: 15,
-  has_active_subscription: false,
-  subscription_end_date: null,
-  subscription_type: null
+  last_login_date: new Date('2025-01-22'),
+  created_at: new Date('2025-01-01'),
+  updated_at: new Date('2025-01-22')
 }
 
 const mockTransactions = {
@@ -89,15 +94,8 @@ const mockSubscriptions = {
 }
 
 describe('SPPage', () => {
-  let queryClient: QueryClient
-
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false }
-      }
-    })
+    vi.clearAllMocks()
   })
 
   it('should render loading state initially', () => {
@@ -107,7 +105,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
@@ -119,7 +117,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       expect(screen.getByText('SP情報の読み込みに失敗しました')).toBeInTheDocument()
@@ -133,7 +131,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       expect(screen.getByText('ストーリーポイント (SP)')).toBeInTheDocument()
@@ -154,7 +152,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       // 消費率: 3500 / 5000 * 100 = 70%
@@ -181,7 +179,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       expect(screen.getByText('概要')).toBeInTheDocument()
@@ -233,7 +231,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       expect(screen.getByText('日次回復')).toBeInTheDocument()
@@ -254,7 +252,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       expect(screen.getByText('SPの使い道')).toBeInTheDocument()
@@ -283,7 +281,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       expect(screen.getByText('SPショップ')).toBeInTheDocument()
@@ -318,14 +316,14 @@ describe('SPPage', () => {
         })
       )
 
-      const { unmount } = renderWithProviders(<SPPage />, { queryClient })
+      const { unmount } = renderWithProviders(<SPPage />)
 
       await waitFor(() => {
         expect(screen.getByText(testCase.message)).toBeInTheDocument()
       })
 
       unmount()
-      queryClient.clear()
+      // Clear queries after test
     }
   })
 
@@ -340,7 +338,7 @@ describe('SPPage', () => {
       })
     )
 
-    renderWithProviders(<SPPage />, { queryClient })
+    renderWithProviders(<SPPage />)
 
     await waitFor(() => {
       // 0で除算してもエラーにならないことを確認

@@ -15,27 +15,15 @@
 
 
 /**
- * NPC位置更新
+ * セッション終了リクエスト
  * @export
- * @interface NPCLocationUpdate
+ * @interface EndSessionRequest
  */
-export interface NPCLocationUpdate {
+export interface EndSessionRequest {
     /**
      * 
      * @type {string}
-     * @memberof NPCLocationUpdate
-     */
-    'npc_id': string;
-    /**
-     * 
-     * @type {string}
-     * @memberof NPCLocationUpdate
-     */
-    'new_location': string;
-    /**
-     * 
-     * @type {string}
-     * @memberof NPCLocationUpdate
+     * @memberof EndSessionRequest
      */
     'reason'?: string | null;
 }

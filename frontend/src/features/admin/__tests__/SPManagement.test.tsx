@@ -1,33 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders } from '@/test/test-utils'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
-import { QueryClient } from '@tanstack/react-query'
 import { http } from 'msw'
 import { server } from '@/mocks/server'
 import { SPManagement } from '../SPManagement'
-import type { PlayerSPDetail } from '@/api/admin/spManagement'
+import type { PlayerSPDetail } from '@/api/generated'
 
 // モックデータ
 const mockPlayers: PlayerSPDetail[] = [
   {
-    user_id: '1',
+    user_id: 1,
     username: 'TestUser1',
     email: 'test1@example.com',
     current_sp: 1500,
     total_earned: 5000,
     total_consumed: 3500,
     consecutive_login_days: 15,
-    last_daily_recovery: new Date().toISOString()
+    last_daily_recovery: new Date(),
+    created_at: new Date(),
+    updated_at: new Date()
   },
   {
-    user_id: '2',
+    user_id: 2,
     username: 'TestUser2',
     email: 'test2@example.com',
     current_sp: 800,
     total_earned: 3000,
     total_consumed: 2200,
     consecutive_login_days: 7,
-    last_daily_recovery: null
+    last_daily_recovery: null,
+    created_at: new Date(),
+    updated_at: new Date()
   }
 ]
 
@@ -56,15 +59,8 @@ const mockTransactions = {
 }
 
 describe('SPManagement', () => {
-  let queryClient: QueryClient
-
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false }
-      }
-    })
+    vi.clearAllMocks()
   })
 
   it('should render SP management header', async () => {
@@ -74,7 +70,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     expect(screen.getByText('SP管理')).toBeInTheDocument()
     expect(screen.getByText('プレイヤーのSP（ストーリーポイント）を管理・調整できます。')).toBeInTheDocument()
@@ -87,7 +83,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
@@ -99,7 +95,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -137,7 +133,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('プレイヤーが見つかりません')).toBeInTheDocument()
@@ -157,7 +153,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -180,7 +176,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -204,7 +200,7 @@ describe('SPManagement', () => {
         return Response.json(mockPlayers)
       }),
       http.post('/api/v1/admin/sp/adjust', async ({ request }) => {
-        const body = await request.json()
+        const body = await request.json() as { amount: number, reason: string, user_id: string }
         mockAdjust(body)
         return Response.json({
           username: 'TestUser1',
@@ -214,7 +210,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -256,7 +252,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -294,7 +290,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -329,7 +325,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -359,7 +355,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()
@@ -393,7 +389,7 @@ describe('SPManagement', () => {
       })
     )
 
-    renderWithProviders(<SPManagement />, { queryClient })
+    renderWithProviders(<SPManagement />)
 
     await waitFor(() => {
       expect(screen.getByText('TestUser1')).toBeInTheDocument()

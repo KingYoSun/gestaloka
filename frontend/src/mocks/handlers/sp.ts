@@ -1,15 +1,21 @@
 import { http } from 'msw'
-import type { SPBalanceRead } from '@/api/generated'
+import type { PlayerSPRead } from '@/api/generated'
 
 // Mock SP data
-const mockBalance: SPBalanceRead = {
+const mockBalance: PlayerSPRead = {
+  id: '1',
+  user_id: '1',
   current_sp: 1500,
   total_earned_sp: 5000,
   total_consumed_sp: 3500,
+  total_purchased_sp: 0,
+  total_purchase_amount: 0,
+  active_subscription: null,
+  subscription_expires_at: null,
   consecutive_login_days: 15,
-  has_active_subscription: false,
-  subscription_end_date: null,
-  subscription_type: null
+  last_login_date: new Date('2025-01-22'),
+  created_at: new Date('2025-01-01'),
+  updated_at: new Date('2025-01-22')
 }
 
 const API_BASE_URL = 'http://localhost:8000'

@@ -1,53 +1,51 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderWithProviders } from '@/test/test-utils'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
-import { QueryClient } from '@tanstack/react-query'
 import { http } from 'msw'
 import { server } from '@/mocks/server'
 import { TitleManagementScreen } from '../TitleManagementScreen'
-import type { PlayerTitleRead } from '@/api/generated'
+import type { CharacterTitleRead } from '@/api/generated'
 
 // モックデータ
-const mockTitles: PlayerTitleRead[] = [
+const mockTitles: CharacterTitleRead[] = [
   {
     id: '1',
-    title_id: 'title_1',
-    player_id: 'player_1',
+    character_id: 'character_1',
     title: '冒険者',
     description: '最初の冒険を始めた証',
-    equipped: false,
-    obtained_at: new Date().toISOString()
+    is_equipped: false,
+    acquired_at: new Date().toISOString(),
+    effects: null,
+    created_at: new Date(),
+    updated_at: new Date()
   },
   {
     id: '2',
-    title_id: 'title_2',
-    player_id: 'player_1',
+    character_id: 'character_1',
     title: '探索者',
     description: '10回の探索を達成した証',
-    equipped: true,
-    obtained_at: new Date().toISOString()
+    is_equipped: true,
+    acquired_at: new Date().toISOString(),
+    effects: null,
+    created_at: new Date(),
+    updated_at: new Date()
   },
   {
     id: '3',
-    title_id: 'title_3',
-    player_id: 'player_1',
+    character_id: 'character_1',
     title: 'ログマスター',
     description: '100個のログフラグメントを収集した証',
-    equipped: false,
-    obtained_at: new Date().toISOString()
+    is_equipped: false,
+    acquired_at: new Date().toISOString(),
+    effects: null,
+    created_at: new Date(),
+    updated_at: new Date()
   }
 ]
 
 describe('TitleManagementScreen', () => {
-  let queryClient: QueryClient
-
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false }
-      }
-    })
+    vi.clearAllMocks()
   })
 
   it('should render loading state initially', () => {
@@ -57,7 +55,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     expect(screen.getByRole('status')).toBeInTheDocument()
   })
@@ -69,7 +67,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('称号の読み込みに失敗しました')).toBeInTheDocument()
@@ -83,7 +81,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('まだ称号を獲得していません')).toBeInTheDocument()
@@ -104,7 +102,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('称号管理')).toBeInTheDocument()
@@ -132,7 +130,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('装備中の称号')).toBeInTheDocument()
@@ -163,7 +161,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('外す')).toBeInTheDocument()
@@ -196,7 +194,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('称号管理')).toBeInTheDocument()
@@ -219,7 +217,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('称号について')).toBeInTheDocument()
@@ -253,7 +251,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('外す')).toBeInTheDocument()
@@ -284,7 +282,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    renderWithProviders(<TitleManagementScreen />, { queryClient })
+    renderWithProviders(<TitleManagementScreen />)
 
     await waitFor(() => {
       expect(screen.getByText('称号管理')).toBeInTheDocument()
@@ -301,7 +299,7 @@ describe('TitleManagementScreen', () => {
       })
     )
 
-    const { container } = renderWithProviders(<TitleManagementScreen />, { queryClient })
+    const { container } = renderWithProviders(<TitleManagementScreen />)
 
     // 6つのスケルトンが表示されることを確認
     const skeletons = container.querySelectorAll('[role="status"]')

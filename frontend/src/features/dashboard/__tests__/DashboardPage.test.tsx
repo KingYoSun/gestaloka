@@ -108,7 +108,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />)
 
     // アクティブで削除されていないキャラクターのセッション数
-    const sessionsTitle = await screen.findByText(/進行中のセッション/i)
+    await screen.findByText(/進行中のセッション/i)
     // Badge内の数字を確認
     expect(screen.getByText('3')).toBeInTheDocument()
   })

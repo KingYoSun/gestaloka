@@ -15,28 +15,16 @@
 
 
 /**
- * NPC位置更新
+ * ゲームセッション作成リクエスト
  * @export
- * @interface NPCLocationUpdate
+ * @interface GameSessionCreate
  */
-export interface NPCLocationUpdate {
+export interface GameSessionCreate {
     /**
      * 
      * @type {string}
-     * @memberof NPCLocationUpdate
+     * @memberof GameSessionCreate
      */
-    'npc_id': string;
-    /**
-     * 
-     * @type {string}
-     * @memberof NPCLocationUpdate
-     */
-    'new_location': string;
-    /**
-     * 
-     * @type {string}
-     * @memberof NPCLocationUpdate
-     */
-    'reason'?: string | null;
+    'current_scene'?: string | null;
 }
 

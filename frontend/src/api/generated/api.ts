@@ -1,5 +1,5 @@
 /* tslint:disable */
- 
+/* eslint-disable */
 /**
  * GESTALOKA API
  * マルチプレイ・テキストMMO - ゲスタロカ API
@@ -20,6 +20,7 @@ export * from './api/characters-api';
 export * from './api/config-api';
 export * from './api/default-api';
 export * from './api/dispatch-api';
+export * from './api/game-api';
 export * from './api/log-fragments-api';
 export * from './api/logs-api';
 export * from './api/memory-inheritance-api';

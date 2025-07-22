@@ -4,24 +4,28 @@ import type { PlayerSPDetail, AdminSPAdjustmentResponse } from '@/api/generated'
 // Mock admin data
 const mockAdminSPPlayers: PlayerSPDetail[] = [
   {
-    user_id: '1',
+    user_id: 1,
     username: 'TestUser1',
     email: 'test1@example.com',
     current_sp: 1500,
     total_earned: 5000,
     total_consumed: 3500,
     consecutive_login_days: 15,
-    last_daily_recovery: new Date().toISOString()
+    last_daily_recovery: new Date(),
+    created_at: new Date(),
+    updated_at: new Date()
   },
   {
-    user_id: '2',
+    user_id: 2,
     username: 'TestUser2',
     email: 'test2@example.com',
     current_sp: 800,
     total_earned: 3000,
     total_consumed: 2200,
     consecutive_login_days: 7,
-    last_daily_recovery: null
+    last_daily_recovery: null,
+    created_at: new Date(),
+    updated_at: new Date()
   }
 ]
 
@@ -47,7 +51,7 @@ export const adminHandlers = [
 
   // Get player SP detail
   http.get(`${API_BASE_URL}/api/v1/admin/admin/sp/players/:userId`, ({ params }) => {
-    const player = mockAdminSPPlayers.find(p => p.user_id === params.userId)
+    const player = mockAdminSPPlayers.find(p => p.user_id === Number(params.userId))
     
     if (!player) {
       return new Response(null, { status: 404 })
@@ -85,16 +89,17 @@ export const adminHandlers = [
 
   // Adjust player SP
   http.post(`${API_BASE_URL}/api/v1/admin/admin/sp/adjust`, async ({ request }) => {
-    const body = await request.json()
+    const body = await request.json() as { user_id: number; amount: number; reason: string }
     
     const response: AdminSPAdjustmentResponse = {
       user_id: body.user_id,
       username: 'TestUser1',
+      previous_sp: 1500,
+      current_sp: 1600,
       adjustment_amount: body.amount,
       reason: body.reason,
-      new_balance: 1600,
       adjusted_by: 'admin',
-      adjusted_at: new Date().toISOString()
+      adjusted_at: new Date()
     }
     
     return Response.json(response)

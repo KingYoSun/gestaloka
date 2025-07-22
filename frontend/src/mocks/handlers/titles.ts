@@ -1,34 +1,40 @@
 import { http } from 'msw'
-import type { PlayerTitleRead } from '@/api/generated'
+import type { CharacterTitleRead } from '@/api/generated'
 
 // Mock titles data
-const mockTitles: PlayerTitleRead[] = [
+const mockTitles: CharacterTitleRead[] = [
   {
     id: '1',
-    title_id: 'title_1',
-    player_id: 'player_1',
+    character_id: 'character_1',
     title: '冒険者',
     description: '最初の冒険を始めた証',
-    equipped: false,
-    obtained_at: new Date().toISOString()
+    is_equipped: false,
+    acquired_at: new Date().toISOString(),
+    effects: null,
+    created_at: new Date(),
+    updated_at: new Date()
   },
   {
     id: '2',
-    title_id: 'title_2',
-    player_id: 'player_1',
+    character_id: 'character_1',
     title: '探索者',
     description: '10回の探索を達成した証',
-    equipped: true,
-    obtained_at: new Date().toISOString()
+    is_equipped: true,
+    acquired_at: new Date().toISOString(),
+    effects: null,
+    created_at: new Date(),
+    updated_at: new Date()
   },
   {
     id: '3',
-    title_id: 'title_3',
-    player_id: 'player_1',
+    character_id: 'character_1',
     title: 'ログマスター',
     description: '100個のログフラグメントを収集した証',
-    equipped: false,
-    obtained_at: new Date().toISOString()
+    is_equipped: false,
+    acquired_at: new Date().toISOString(),
+    effects: null,
+    created_at: new Date(),
+    updated_at: new Date()
   }
 ]
 
@@ -52,7 +58,7 @@ export const titlesHandlers = [
     
     // Update mock data
     mockTitles.forEach(title => {
-      title.equipped = title.id === titleId
+      title.is_equipped = title.id === titleId
     })
     
     return Response.json({ success: true })
@@ -62,7 +68,7 @@ export const titlesHandlers = [
   http.put(`${API_BASE_URL}/api/v1/titles/unequip-all`, () => {
     // Update mock data
     mockTitles.forEach(title => {
-      title.equipped = false
+      title.is_equipped = false
     })
     
     return Response.json({ success: true })

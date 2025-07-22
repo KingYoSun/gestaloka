@@ -563,3 +563,9 @@
   - 認証済みユーザーがどのページでもSP残高を確認可能に
   - SPページへのアクセスポイントが2つに（ヘッダーとナビゲーション）
   - 詳細レポート: `progressReports/2025-07-22_sp_display_navigation_fixes.md`
+- **ゲームセッション機能フェーズ1完了**
+  - game.pyエンドポイント作成（5つのAPI実装）
+  - APIルーティング有効化（Swagger UIで動作確認）
+  - test_game.py作成（14個のテストケース）
+  - フロントエンド型更新（GameApi自動生成、型エラー修正）
+  - 詳細レポート: `progressReports/2025-07-22_game_session_phase1_complete.md`
