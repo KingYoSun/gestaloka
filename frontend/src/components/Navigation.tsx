@@ -8,6 +8,7 @@ import {
   LogOut,
   Target,
   Crown,
+  Coins,
 } from 'lucide-react'
 import { Button } from './ui/button'
 import { useAuth } from '@/features/auth/useAuth'
@@ -37,6 +38,11 @@ const navigationItems = [
     name: '称号',
     href: '/titles',
     icon: Crown,
+  },
+  {
+    name: 'SP',
+    href: '/sp',
+    icon: Coins,
   },
   {
     name: '設定',

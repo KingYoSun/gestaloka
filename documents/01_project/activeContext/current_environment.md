@@ -556,3 +556,10 @@
   - documents/04_ai_agents以下の全AI仕様を更新
   - バックエンド実装のプロンプトとコードを更新
   - 詳細レポート: `progressReports/2025-07-22_fading_removal_world_consistency.md`
+- **SPディスプレイとナビゲーション修正**
+  - ヘッダーのSP表示問題を修正（Layout.tsxにHeaderコンポーネントを追加）
+  - /spページは既に完全実装済みであることを確認
+  - ナビゲーションメニューにSPページへのリンクを追加（Coinsアイコン使用）
+  - 認証済みユーザーがどのページでもSP残高を確認可能に
+  - SPページへのアクセスポイントが2つに（ヘッダーとナビゲーション）
+  - 詳細レポート: `progressReports/2025-07-22_sp_display_navigation_fixes.md`
