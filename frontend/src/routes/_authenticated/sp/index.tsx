@@ -33,7 +33,7 @@ export const Route = createFileRoute('/_authenticated/sp/')({
   component: SPPage,
 })
 
-function SPPage() {
+export function SPPage() {
   const { data: balance, isLoading } = useSPBalance()
   const dailyRecovery = useDailyRecovery()
   const { data: plansData } = useSPPlans()
