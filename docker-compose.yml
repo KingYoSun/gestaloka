@@ -16,6 +16,64 @@ services:
       timeout: 5s
       retries: 5
 
+  nebula-metad:
+    image: vesoft/nebula-metad:v3.8.0
+    container_name: gestaloka-v2-nebula-metad
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-metad
+      - --ws_ip=nebula-metad
+      - --port=9559
+      - --data_path=/data/meta
+    volumes:
+      - nebula_meta_data:/data/meta
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/9559' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nebula-storaged:
+    image: vesoft/nebula-storaged:v3.8.0
+    container_name: gestaloka-v2-nebula-storaged
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-storaged
+      - --ws_ip=nebula-storaged
+      - --port=9779
+      - --data_path=/data/storage
+    depends_on:
+      nebula-metad:
+        condition: service_healthy
+    volumes:
+      - nebula_storage_data:/data/storage
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/9779' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nebula-graphd:
+    image: vesoft/nebula-graphd:v3.8.0
+    container_name: gestaloka-v2-nebula-graphd
+    command:
+      - --meta_server_addrs=nebula-metad:9559
+      - --local_ip=nebula-graphd
+      - --ws_ip=nebula-graphd
+      - --port=9669
+    ports:
+      - "9669:9669"
+    depends_on:
+      nebula-metad:
+        condition: service_healthy
+      nebula-storaged:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/9669' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.2
     container_name: gestaloka-v2-keycloak
@@ -48,6 +106,13 @@ services:
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
       PROMPT_DIR: /workspace/prompts
+      GRAPH_PROJECTION_BACKEND: nebula
+      NEBULA_HOST: nebula-graphd
+      NEBULA_PORT: 9669
+      NEBULA_SPACE: gestaloka_v2
+      NEBULA_USER: root
+      NEBULA_PASSWORD: nebula
+      OPS_ADMIN_SUBS: demo-player-sub
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
@@ -57,6 +122,8 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
+        condition: service_healthy
+      nebula-graphd:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
@@ -72,6 +139,12 @@ services:
       DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       PROMPT_DIR: /workspace/prompts
+      GRAPH_PROJECTION_BACKEND: nebula
+      NEBULA_HOST: nebula-graphd
+      NEBULA_PORT: 9669
+      NEBULA_SPACE: gestaloka_v2
+      NEBULA_USER: root
+      NEBULA_PASSWORD: nebula
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
@@ -80,6 +153,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
+      nebula-graphd:
+        condition: service_healthy
     command: python -m app.worker
 
   frontend:
@@ -123,3 +198,5 @@ services:
 
 volumes:
   postgres_data:
+  nebula_meta_data:
+  nebula_storage_data:

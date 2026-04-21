@@ -8,10 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
 from app.models.entities import Event, LLMRun, OutboxEvent, Session as GameSession, Turn
-from app.modules.actor.service import ensure_player_actor, get_or_create_guide_npc, get_player_actor_for_user
+from app.modules.actor.service import (
+    ensure_player_actor,
+    ensure_relationship,
+    get_or_create_guide_npc,
+    get_player_actor_for_user,
+    increment_relationship_strength,
+)
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import materialize_memories, search_memories
-from app.modules.world_state.service import ensure_world
+from app.modules.world_state.service import ensure_starter_location, ensure_world
 
 
 @dataclass
@@ -20,6 +26,7 @@ class SessionCreationResult:
     world: object
     player_actor: object
     guide_npc: object
+    starter_location: object
     websocket_url: str
 
 
@@ -46,18 +53,80 @@ def create_session_for_user(
     player_display_name: str | None,
 ) -> SessionCreationResult:
     world = ensure_world(db, world_id, world_name)
-    player_actor = ensure_player_actor(db, world_id, user.sub, player_display_name or user.name)
-    guide_npc = get_or_create_guide_npc(db, world_id)
+    starter_location = ensure_starter_location(db, world_id)
+    player_actor = ensure_player_actor(
+        db,
+        world_id,
+        user.sub,
+        player_display_name or user.name,
+        location_id=starter_location.id,
+    )
+    guide_npc = get_or_create_guide_npc(db, world_id, location_id=starter_location.id)
+    ensure_relationship(
+        db,
+        world_id=world_id,
+        from_actor_id=player_actor.id,
+        to_actor_id=guide_npc.id,
+        relationship_type="KNOWS",
+        strength=0.55,
+    )
+    ensure_relationship(
+        db,
+        world_id=world_id,
+        from_actor_id=guide_npc.id,
+        to_actor_id=player_actor.id,
+        relationship_type="KNOWS",
+        strength=0.55,
+    )
 
     session = GameSession(world_id=world.id, player_actor_id=player_actor.id, status="active")
     db.add(session)
     db.flush()
+    bootstrap_turn = Turn(
+        world_id=world.id,
+        session_id=session.id,
+        actor_id=player_actor.id,
+        input_text="[session started]",
+        resolved_output={"status": "system"},
+        model_lane="system",
+    )
+    db.add(bootstrap_turn)
+    db.flush()
+
+    bootstrap_event = Event(
+        world_id=world.id,
+        session_id=session.id,
+        turn_id=bootstrap_turn.id,
+        event_type="session.started",
+        source_actor_id=player_actor.id,
+        location_id=starter_location.id,
+        payload={
+            "session_id": session.id,
+            "world_id": world.id,
+            "npc_actor_id": guide_npc.id,
+            "location_id": starter_location.id,
+        },
+        narrative=f"{player_actor.display_name}は{starter_location.name}でセッションを開始し、{guide_npc.display_name}と接続した。",
+    )
+    db.add(bootstrap_event)
+    db.flush()
+    db.add(
+        OutboxEvent(
+            world_id=world.id,
+            event_id=bootstrap_event.id,
+            projection_type="world_graph.upsert",
+            payload={"reason": "session_started", "session_id": session.id},
+        )
+    )
+    db.flush()
+
     websocket_url = f"{container.settings.public_ws_base_url.rstrip('/')}/ws/sessions/{session.id}"
     return SessionCreationResult(
         session=session,
         world=world,
         player_actor=player_actor,
         guide_npc=guide_npc,
+        starter_location=starter_location,
         websocket_url=websocket_url,
     )
 
@@ -78,7 +147,12 @@ def resolve_turn_for_session(
     if player_actor is None or player_actor.id != game_session.player_actor_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
 
-    guide_npc = get_or_create_guide_npc(db, game_session.world_id)
+    current_location = ensure_starter_location(db, game_session.world_id)
+    if player_actor.current_location_id is None:
+        player_actor.current_location_id = current_location.id
+        db.flush()
+    guide_npc = get_or_create_guide_npc(db, game_session.world_id, location_id=player_actor.current_location_id)
+
     turn = Turn(
         world_id=game_session.world_id,
         session_id=game_session.id,
@@ -96,12 +170,20 @@ def resolve_turn_for_session(
         query=input_text,
         actor_id=guide_npc.id,
     )
+    graph_context = container.projection_service.resolve_relation_context(
+        db,
+        world_id=game_session.world_id,
+        primary_actor_id=guide_npc.id,
+        counterpart_actor_id=player_actor.id,
+        location_id=player_actor.current_location_id,
+    )
     resolution = container.model_router.resolve_turn(
         world_id=game_session.world_id,
         player_name=player_actor.display_name,
         npc_name=guide_npc.display_name,
         input_text=input_text,
         relevant_memories=[item.text for item in relevant_memories],
+        relation_context=graph_context.context.prompt_lines(),
     )
 
     for attempt in resolution.attempts:
@@ -114,6 +196,7 @@ def resolve_turn_for_session(
                 model_lane=attempt.model_lane,
                 input_hash=attempt.input_hash,
                 schema_version=attempt.schema_version,
+                graph_context_status=graph_context.status,
                 output_schema_status=attempt.output_schema_status,
                 output_payload=attempt.output_payload,
             )
@@ -131,10 +214,13 @@ def resolve_turn_for_session(
             turn_id=turn.id,
             event_type="player.turn.failed",
             source_actor_id=player_actor.id,
+            location_id=player_actor.current_location_id,
             payload={
                 "action": input_text,
                 "failure_reason": resolution.failure_reason,
                 "world_id": game_session.world_id,
+                "location_id": player_actor.current_location_id,
+                "graph_context_status": graph_context.status,
             },
             narrative=f"{player_actor.display_name}の行動『{input_text}』は監査対象として記録された。",
         )
@@ -145,7 +231,7 @@ def resolve_turn_for_session(
                 world_id=game_session.world_id,
                 event_id=failure_event.id,
                 projection_type="world_graph.audit",
-                payload={"turn_id": turn.id, "outcome": "failed"},
+                payload={"turn_id": turn.id, "outcome": "failed", "graph_context_status": graph_context.status},
             )
         )
         db.flush()
@@ -161,11 +247,25 @@ def resolve_turn_for_session(
     payload = resolution.final_payload
     assert payload is not None
 
+    increment_relationship_strength(
+        db,
+        world_id=game_session.world_id,
+        from_actor_id=guide_npc.id,
+        to_actor_id=player_actor.id,
+    )
+    increment_relationship_strength(
+        db,
+        world_id=game_session.world_id,
+        from_actor_id=player_actor.id,
+        to_actor_id=guide_npc.id,
+    )
+
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
         "status": "resolved",
         "narrative": payload.narrative,
         "npc_reaction": payload.npc_reaction,
+        "graph_context_status": graph_context.status,
     }
 
     event = Event(
@@ -174,7 +274,12 @@ def resolve_turn_for_session(
         turn_id=turn.id,
         event_type=payload.event_type,
         source_actor_id=player_actor.id,
-        payload=payload.event_payload,
+        location_id=player_actor.current_location_id,
+        payload={
+            **payload.event_payload,
+            "location_id": player_actor.current_location_id,
+            "graph_context_status": graph_context.status,
+        },
         narrative=payload.narrative,
     )
     db.add(event)
@@ -184,6 +289,7 @@ def resolve_turn_for_session(
         db,
         world_id=game_session.world_id,
         source_event_id=event.id,
+        location_id=player_actor.current_location_id,
         drafts=[
             {
                 **draft.model_dump(),
@@ -197,7 +303,12 @@ def resolve_turn_for_session(
             world_id=game_session.world_id,
             event_id=event.id,
             projection_type="world_graph.upsert",
-            payload={"turn_id": turn.id, "outcome": "resolved"},
+            payload={
+                "turn_id": turn.id,
+                "outcome": "resolved",
+                "location_id": player_actor.current_location_id,
+                "graph_context_status": graph_context.status,
+            },
         )
     )
     db.flush()
@@ -217,6 +328,7 @@ def _event_payload(event: Event) -> dict:
         "world_id": event.world_id,
         "event_type": event.event_type,
         "narrative": event.narrative,
+        "location_id": event.location_id,
         "payload": event.payload,
     }
 
@@ -229,4 +341,5 @@ def _memory_payload(memory) -> dict:
         "text": memory.text,
         "salience": memory.salience,
         "actor_id": memory.actor_id,
+        "location_id": memory.location_id,
     }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from uuid import uuid4
 
 from sqlalchemy import DateTime, Float, ForeignKey, ForeignKeyConstraint, JSON, String, Text, UniqueConstraint
@@ -14,6 +15,11 @@ def new_id() -> str:
     return str(uuid4())
 
 
+def starter_location_id(world_id: str) -> str:
+    digest = hashlib.sha1(world_id.encode("utf-8")).hexdigest()[:12]
+    return f"loc-{digest}-starter"
+
+
 class World(Base, TimestampMixin):
     __tablename__ = "worlds"
 
@@ -22,15 +28,28 @@ class World(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), default="active")
 
 
+class Location(Base, TimestampMixin):
+    __tablename__ = "locations"
+    __table_args__ = (UniqueConstraint("id", "world_id", name="uq_locations_id_world"),)
+
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class Actor(Base, TimestampMixin):
     __tablename__ = "actors"
     __table_args__ = (
         UniqueConstraint("id", "world_id", name="uq_actors_id_world"),
         UniqueConstraint("world_id", "user_sub", name="uq_actors_world_user_sub"),
+        ForeignKeyConstraint(["current_location_id", "world_id"], ["locations.id", "locations.world_id"]),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
+    current_location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     actor_type: Mapped[str] = mapped_column(String(16))
     user_sub: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_name: Mapped[str] = mapped_column(String(120))
@@ -94,6 +113,7 @@ class Event(Base, TimestampMixin):
         ForeignKeyConstraint(["session_id", "world_id"], ["sessions.id", "sessions.world_id"]),
         ForeignKeyConstraint(["turn_id", "world_id"], ["turns.id", "turns.world_id"]),
         ForeignKeyConstraint(["source_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -102,6 +122,7 @@ class Event(Base, TimestampMixin):
     turn_id: Mapped[str] = mapped_column(String(36))
     event_type: Mapped[str] = mapped_column(String(64))
     source_actor_id: Mapped[str] = mapped_column(String(36))
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     narrative: Mapped[str] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -112,12 +133,14 @@ class Memory(Base, TimestampMixin):
     __table_args__ = (
         ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
         ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     world_id: Mapped[str] = mapped_column(String(64))
     source_event_id: Mapped[str] = mapped_column(String(36))
     actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     scope: Mapped[str] = mapped_column(String(32))
     text: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(EmbeddingType(), nullable=True)
@@ -126,12 +149,17 @@ class Memory(Base, TimestampMixin):
 
 class Relationship(Base, TimestampMixin):
     __tablename__ = "relationships"
-    __table_args__ = (ForeignKeyConstraint(["from_actor_id", "world_id"], ["actors.id", "actors.world_id"]),)
+    __table_args__ = (
+        UniqueConstraint("world_id", "from_actor_id", "to_entity_id", "relationship_type", name="uq_relationships_world_pair"),
+        ForeignKeyConstraint(["from_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["to_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     world_id: Mapped[str] = mapped_column(String(64))
     from_actor_id: Mapped[str] = mapped_column(String(36))
     to_entity_id: Mapped[str] = mapped_column(String(64))
+    to_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     relationship_type: Mapped[str] = mapped_column(String(64))
     strength: Mapped[float] = mapped_column(Float, default=0.5)
 
@@ -148,6 +176,7 @@ class LLMRun(Base, TimestampMixin):
     model_lane: Mapped[str] = mapped_column(String(32))
     input_hash: Mapped[str] = mapped_column(String(128))
     schema_version: Mapped[str] = mapped_column(String(32))
+    graph_context_status: Mapped[str] = mapped_column(String(32), default="ready")
     output_schema_status: Mapped[str] = mapped_column(String(32))
     output_payload: Mapped[dict] = mapped_column(JSON, default=dict)
 

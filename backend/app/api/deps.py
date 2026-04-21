@@ -37,3 +37,14 @@ def require_bearer_token(authorization: str | None) -> str:
 
 def resolve_current_user_from_token(container: AppContainer, token: str) -> UserIdentity:
     return container.oidc_adapter.resolve_token(token)
+
+
+def get_current_ops_user(
+    user: UserIdentity = Depends(get_current_user),
+    container: AppContainer = Depends(get_container),
+) -> UserIdentity:
+    if container.settings.oidc_dev_mode:
+        return user
+    if user.sub in container.settings.ops_admin_sub_list:
+        return user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ops access is restricted")

@@ -34,8 +34,15 @@ password: demo-password
 - `GET /worlds/{world_id}/memories`
 - `WS /ws/sessions/{session_id}?token=<access_token>`
 
+## Internal ops interfaces
+
+- `GET /ops/projection/status`
+- `POST /ops/projection/rebuild`
+- `GET /ops/worlds/{world_id}/graph-summary`
+
 ## Notes
 
 - v1 assets are frozen under `legacy/v1/` and are not imported by v2.
-- The graph projection path is outbox-driven. The default development backend records projection emissions for verification while keeping the NebulaGraph adapter boundary in place.
-- The initial vertical slice proves: login, session creation, one turn, event persistence, memory materialization, outbox projection, and memory-aware NPC reaction on the next turn.
+- The graph projection path is outbox-driven. The standard compose stack now targets NebulaGraph, while lightweight test settings still use the recording backend.
+- Sessions start with a canonical starter location and a projected `KNOWS` relation between the player and guide NPC.
+- The hardened vertical slice proves: OIDC login, session creation, two turns, event persistence, memory materialization, graph projection, projection rebuild, and memory-plus-relation-aware NPC reaction on the next turn.

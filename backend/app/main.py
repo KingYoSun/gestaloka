@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from app.api import router as api_router
 from app.api.deps import resolve_current_user_from_token
 from app.core.container import AppContainer, build_container
 from app.core.realtime import realtime_hub
+from app.models.entities import Session as GameSession
+from app.modules.actor.service import get_player_actor_for_user
 
 
 def create_app(container: AppContainer | None = None) -> FastAPI:
@@ -31,10 +34,20 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
             return
 
         try:
-            resolve_current_user_from_token(resolved_container, token)
+            user = resolve_current_user_from_token(resolved_container, token)
         except Exception:
             await websocket.close(code=4401)
             return
+
+        with resolved_container.session_factory() as db:
+            game_session = db.execute(select(GameSession).where(GameSession.id == session_id)).scalar_one_or_none()
+            if game_session is None:
+                await websocket.close(code=4404)
+                return
+            player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
+            if player_actor is None or player_actor.id != game_session.player_actor_id:
+                await websocket.close(code=4403)
+                return
 
         await realtime_hub.connect(session_id, websocket)
         try:

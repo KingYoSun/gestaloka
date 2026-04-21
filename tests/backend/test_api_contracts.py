@@ -61,6 +61,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "world_id",
         "player_actor_id",
         "npc_actor_id",
+        "location_id",
         "websocket_url",
     }
 
@@ -93,4 +94,51 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "projection",
     ]
     assert messages[-1]["data"] == turn_payload
+    assert messages[-2]["data"]["world_id"] == session_payload["world_id"]
+    assert {"vertex_count", "edge_count"} <= set(messages[-2]["data"])
 
+
+def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+
+    status_response = client.get("/ops/projection/status", headers=auth_headers)
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert set(status_payload) == {
+        "backend",
+        "space",
+        "pending",
+        "failed",
+        "projected",
+        "last_error",
+        "graph_read_mode",
+    }
+
+    summary_response = client.get(f"/ops/worlds/{session_payload['world_id']}/graph-summary", headers=auth_headers)
+    assert summary_response.status_code == 200
+    summary_payload = summary_response.json()
+    assert summary_payload["world_id"] == session_payload["world_id"]
+    assert summary_payload["vertex_count"] >= 4
+    assert summary_payload["edge_count"] >= 4
+
+    rebuild_response = client.post(
+        "/ops/projection/rebuild",
+        json={"world_id": session_payload["world_id"]},
+        headers=auth_headers,
+    )
+    assert rebuild_response.status_code == 200
+    rebuild_payload = rebuild_response.json()
+    assert rebuild_payload["world_id"] == session_payload["world_id"]
+    assert rebuild_payload["records"] >= 1

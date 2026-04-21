@@ -44,6 +44,7 @@ def event_to_dict(item) -> dict:
         "event_type": item.event_type,
         "narrative": item.narrative,
         "occurred_at": item.occurred_at.isoformat(),
+        "location_id": item.location_id,
         "payload": item.payload,
     }
 
@@ -56,4 +57,5 @@ def memory_to_dict(item) -> dict:
         "text": item.text,
         "salience": item.salience,
         "actor_id": item.actor_id,
+        "location_id": item.location_id,
     }

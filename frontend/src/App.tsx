@@ -13,8 +13,13 @@ type HealthPayload = {
   database: string;
   projection: {
     backend: string;
+    space: string;
     pending_outbox: number;
+    failed_outbox: number;
+    projected_outbox: number;
     projection_records: number;
+    graph_read_mode: string;
+    last_error: string | null;
   };
   oidc_mode: string;
 };
@@ -24,6 +29,7 @@ type SessionInfo = {
   world_id: string;
   player_actor_id: string;
   npc_actor_id: string;
+  location_id: string;
   websocket_url: string;
 };
 
@@ -39,6 +45,7 @@ type EventItem = {
   id: string;
   narrative: string;
   event_type: string;
+  location_id: string | null;
   payload: Record<string, unknown>;
 };
 
@@ -47,7 +54,39 @@ type MemoryItem = {
   scope: string;
   text: string;
   actor_id: string | null;
+  location_id: string | null;
   salience: number;
+};
+
+type ProjectionStatus = {
+  backend: string;
+  space: string;
+  pending: number;
+  failed: number;
+  projected: number;
+  last_error: string | null;
+  graph_read_mode: string;
+};
+
+type GraphSummary = {
+  world_id: string;
+  vertex_count: number;
+  edge_count: number;
+  recent_records: Array<{
+    entity_key: string;
+    projection_type: string;
+    kind: string;
+    label: string;
+  }>;
+  neighborhood_summary: string[];
+};
+
+type RebuildSummary = {
+  world_id: string;
+  records: number;
+  completed_at: string;
+  vertex_count: number;
+  edge_count: number;
 };
 
 type ActivityMessage = {
@@ -69,7 +108,9 @@ async function apiFetch<T>(path: string, token: string, init?: RequestInit): Pro
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    const error = new Error(text || `Request failed: ${response.status}`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   return (await response.json()) as T;
@@ -89,8 +130,13 @@ function App() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [activity, setActivity] = useState<ActivityMessage[]>([]);
+  const [projectionStatus, setProjectionStatus] = useState<ProjectionStatus | null>(null);
+  const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null);
+  const [opsState, setOpsState] = useState("idle");
+  const [lastRebuild, setLastRebuild] = useState<RebuildSummary | null>(null);
   const [error, setError] = useState("");
   const [turnPending, setTurnPending] = useState(false);
+  const [rebuildPending, setRebuildPending] = useState(false);
   const [socketState, setSocketState] = useState("idle");
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -122,6 +168,9 @@ function App() {
   useEffect(() => {
     if (!authenticated || !token) {
       setMe(null);
+      setProjectionStatus(null);
+      setGraphSummary(null);
+      setOpsState("idle");
       return;
     }
 
@@ -145,7 +194,7 @@ function App() {
     socket.onopen = () => setSocketState("open");
     socket.onmessage = (message) => {
       const parsed = JSON.parse(message.data) as ActivityMessage;
-      setActivity((current) => [parsed, ...current].slice(0, 16));
+      setActivity((current) => [parsed, ...current].slice(0, 20));
       if (parsed.event === "turn.resolved") {
         const data = parsed.data as Partial<TurnResponse>;
         if (data.narrative) {
@@ -154,6 +203,9 @@ function App() {
         if (data.npc_reaction) {
           setLatestReaction(data.npc_reaction);
         }
+      }
+      if (parsed.event === "graph.projection.updated") {
+        void refreshOps(token, session.world_id);
       }
     };
     socket.onerror = () => {
@@ -192,6 +244,55 @@ function App() {
     setMemories(memoriesResponse.items);
   }
 
+  async function refreshOps(currentToken: string, currentWorldId?: string) {
+    if (!currentToken) {
+      setProjectionStatus(null);
+      setGraphSummary(null);
+      setOpsState("idle");
+      return;
+    }
+
+    try {
+      const statusPayload = await apiFetch<ProjectionStatus>("/ops/projection/status", currentToken);
+      setProjectionStatus(statusPayload);
+      setOpsState("ready");
+    } catch (requestError) {
+      const typedError = requestError as Error & { status?: number };
+      if (typedError.status === 403) {
+        setOpsState("restricted");
+        setProjectionStatus(null);
+        setGraphSummary(null);
+        return;
+      }
+      setOpsState("unavailable");
+      setProjectionStatus(null);
+      setGraphSummary(null);
+      return;
+    }
+
+    if (!currentWorldId) {
+      setGraphSummary(null);
+      return;
+    }
+
+    try {
+      const summaryPayload = await apiFetch<GraphSummary>(
+        `/ops/worlds/${currentWorldId}/graph-summary`,
+        currentToken,
+      );
+      setGraphSummary(summaryPayload);
+    } catch (requestError) {
+      const typedError = requestError as Error & { status?: number };
+      if (typedError.status === 403) {
+        setOpsState("restricted");
+        setGraphSummary(null);
+        return;
+      }
+      setOpsState("unavailable");
+      setGraphSummary(null);
+    }
+  }
+
   async function handleStartSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
@@ -204,6 +305,7 @@ function App() {
       setActivity([]);
       setLatestNarrative("");
       setLatestReaction("");
+      setLastRebuild(null);
       const created = await apiFetch<SessionInfo>("/sessions", token, {
         method: "POST",
         body: JSON.stringify({
@@ -213,6 +315,7 @@ function App() {
       });
       setSession(created);
       await refreshWorldState(created, token);
+      await refreshOps(token, created.world_id);
     } catch (requestError) {
       setError(String(requestError));
     }
@@ -238,10 +341,37 @@ function App() {
       setLatestNarrative(response.narrative);
       setLatestReaction(response.npc_reaction);
       await refreshWorldState(session, token);
+      await refreshOps(token, session.world_id);
     } catch (requestError) {
       setError(String(requestError));
     } finally {
       setTurnPending(false);
+    }
+  }
+
+  async function handleRebuildGraph() {
+    if (!token || !session) {
+      setError("Start a session before rebuilding the graph");
+      return;
+    }
+
+    try {
+      setRebuildPending(true);
+      setError("");
+      const rebuilt = await apiFetch<RebuildSummary>("/ops/projection/rebuild", token, {
+        method: "POST",
+        body: JSON.stringify({ world_id: session.world_id }),
+      });
+      setLastRebuild(rebuilt);
+      setActivity((current) => [
+        { event: "ops.projection.rebuild", data: rebuilt as unknown as Record<string, unknown> },
+        ...current,
+      ].slice(0, 20));
+      await refreshOps(token, session.world_id);
+    } catch (requestError) {
+      setError(String(requestError));
+    } finally {
+      setRebuildPending(false);
     }
   }
 
@@ -252,8 +382,7 @@ function App() {
         <h1>Same-world narrative rebuild</h1>
         <p className="lede">
           Log in through OIDC, open a world session, submit a turn, and verify that
-          events, memories, and projection audit records are all produced inside one
-          world namespace.
+          events, memories, and live graph projections remain inside one world namespace.
         </p>
       </header>
 
@@ -322,6 +451,10 @@ function App() {
                 <dt>Guide NPC</dt>
                 <dd>{session.npc_actor_id}</dd>
               </div>
+              <div>
+                <dt>Location</dt>
+                <dd data-testid="session-location">{session.location_id}</dd>
+              </div>
             </dl>
           ) : (
             <p>No session started yet.</p>
@@ -360,6 +493,7 @@ function App() {
               <li key={item.id}>
                 <strong>{item.event_type}</strong>
                 <span>{item.narrative}</span>
+                <span>location: {item.location_id ?? "none"}</span>
               </li>
             ))}
           </ul>
@@ -369,17 +503,64 @@ function App() {
               <li key={item.id}>
                 <strong>{item.scope}</strong>
                 <span>{item.text}</span>
+                <span>location: {item.location_id ?? "none"}</span>
               </li>
             ))}
           </ul>
         </article>
 
-        <article className="card">
+        <article className="card wide">
           <h2>Ops</h2>
+          <p data-testid="ops-status">Ops access: {opsState}</p>
           <p>
-            Projection backend: {health?.projection.backend ?? "unknown"} / Pending outbox:{" "}
-            {health?.projection.pending_outbox ?? "unknown"} / OIDC: {health?.oidc_mode ?? "unknown"}
+            Projection backend: {projectionStatus?.backend ?? health?.projection.backend ?? "unknown"} / Graph read:{" "}
+            {projectionStatus?.graph_read_mode ?? health?.projection.graph_read_mode ?? "unknown"} / Pending:{" "}
+            {projectionStatus?.pending ?? health?.projection.pending_outbox ?? "unknown"}
           </p>
+          <p>
+            Space: {projectionStatus?.space ?? health?.projection.space ?? "unknown"} / Failed:{" "}
+            {projectionStatus?.failed ?? health?.projection.failed_outbox ?? "unknown"} / Projected:{" "}
+            {projectionStatus?.projected ?? health?.projection.projected_outbox ?? "unknown"}
+          </p>
+          <p data-testid="graph-vertex-count">
+            Graph vertices: {graphSummary?.vertex_count ?? 0} / edges:{" "}
+            <span data-testid="graph-edge-count">{graphSummary?.edge_count ?? 0}</span>
+          </p>
+          <div className="actions">
+            <button
+              data-testid="rebuild-graph"
+              onClick={handleRebuildGraph}
+              disabled={!session || rebuildPending || opsState !== "ready"}
+            >
+              {rebuildPending ? "Rebuilding..." : "Rebuild graph"}
+            </button>
+          </div>
+          {lastRebuild ? (
+            <p data-testid="rebuild-result">
+              Rebuilt {lastRebuild.records} records at {lastRebuild.completed_at}
+            </p>
+          ) : null}
+          <h3>Neighborhood summary</h3>
+          <ul className="stream" data-testid="graph-summary-stream">
+            {(graphSummary?.neighborhood_summary ?? []).map((item) => (
+              <li key={item}>
+                <strong>context</strong>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+          <h3>Recent projection records</h3>
+          <ul className="stream" data-testid="ops-records-stream">
+            {(graphSummary?.recent_records ?? []).slice(0, 8).map((item) => (
+              <li key={item.entity_key}>
+                <strong>
+                  {item.kind}:{item.label}
+                </strong>
+                <span>{item.entity_key}</span>
+              </li>
+            ))}
+          </ul>
+          <h3>Realtime stream</h3>
           <ul className="stream" data-testid="ops-stream">
             {activity.map((item, index) => (
               <li key={`${item.event}-${index}`}>

@@ -13,6 +13,7 @@ test("login, start a world, submit two turns, and see same-world memory output",
   await expect(page.getByTestId("auth-status")).toContainText("authenticated");
   await page.getByTestId("start-session").click();
   await expect(page.getByTestId("socket-status")).toContainText("open");
+  await expect(page.getByTestId("ops-status")).toContainText("ready");
 
   await page.getByTestId("turn-input").fill("広場で灯をともす");
   await page.getByTestId("submit-turn").click();
@@ -20,11 +21,17 @@ test("login, start a world, submit two turns, and see same-world memory output",
   await expect(page.getByTestId("latest-narrative")).toContainText(/世界の事実として記録/i);
   await expect(page.getByTestId("ops-stream")).toContainText("turn.narrative.delta");
   await expect(page.getByTestId("memories-stream")).toContainText("広場で灯をともす");
+  await expect(page.getByTestId("graph-vertex-count")).toContainText(/\d+/);
 
   await page.getByTestId("turn-input").fill("広場を見回し、気配を探る");
   await page.getByTestId("submit-turn").click();
 
   await expect(page.getByTestId("latest-reaction")).toContainText("灯をともす");
   await expect(page.getByTestId("events-stream")).toContainText("player.turn.resolved");
+  await expect(page.getByTestId("graph-summary-stream")).toContainText("memory=");
   await expect(page.getByTestId("ops-stream")).toContainText("turn.resolved");
+
+  await page.getByTestId("rebuild-graph").click();
+  await expect(page.getByTestId("rebuild-result")).toContainText("Rebuilt");
+  await expect(page.getByTestId("ops-stream")).toContainText("ops.projection.rebuild");
 });

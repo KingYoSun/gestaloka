@@ -22,4 +22,14 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
 
     inspector = inspect(create_engine(sqlite_url))
     tables = set(inspector.get_table_names())
-    assert {"worlds", "actors", "sessions", "events", "memories", "llm_runs", "outbox_events"} <= tables
+    assert {
+        "worlds",
+        "locations",
+        "actors",
+        "sessions",
+        "events",
+        "memories",
+        "relationships",
+        "llm_runs",
+        "outbox_events",
+    } <= tables

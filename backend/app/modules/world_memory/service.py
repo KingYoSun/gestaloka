@@ -33,6 +33,7 @@ def materialize_memories(
     world_id: str,
     source_event_id: str,
     drafts: Iterable[dict],
+    location_id: str | None = None,
 ) -> list[Memory]:
     created: list[Memory] = []
     for draft in drafts:
@@ -40,6 +41,7 @@ def materialize_memories(
             world_id=world_id,
             source_event_id=source_event_id,
             actor_id=draft.get("actor_id"),
+            location_id=draft.get("location_id", location_id),
             scope=draft["scope"],
             text=draft["text"],
             salience=draft.get("salience", 0.7),
@@ -68,5 +70,7 @@ def search_memories(
 
 
 def list_world_memories(db: Session, world_id: str) -> list[Memory]:
-    stmt = select(Memory).where(Memory.world_id == world_id).order_by(Memory.created_at.desc())
+    stmt = select(Memory).where(Memory.world_id == world_id).order_by(
+        Memory.salience.desc(), Memory.created_at.desc(), Memory.id.desc()
+    )
     return list(db.execute(stmt).scalars())

@@ -34,7 +34,8 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     memories = client.get(f"/worlds/{session_payload['world_id']}/memories", headers=auth_headers)
     assert events.status_code == 200
     assert memories.status_code == 200
-    assert len(events.json()["items"]) == 2
+    assert len(events.json()["items"]) == 3
+    assert events.json()["items"][-1]["event_type"] == "session.started"
     assert any("灯をともす" in item["text"] for item in memories.json()["items"])
 
     with container.session_factory() as db:

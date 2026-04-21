@@ -48,7 +48,17 @@ async def resolve_turn(
     processed = container.projection_service.process_pending(db)
     db.commit()
 
-    await realtime_hub.emit(payload.session_id, "graph.projection.updated", {"records": processed})
+    projection_summary = container.projection_service.summarize_records(processed, world_id=result.event.world_id)
+    await realtime_hub.emit(
+        payload.session_id,
+        "graph.projection.updated",
+        {
+            "records": processed,
+            "world_id": projection_summary["world_id"],
+            "vertex_count": projection_summary["vertex_count"],
+            "edge_count": projection_summary["edge_count"],
+        },
+    )
 
     if not result.succeeded:
         return JSONResponse(

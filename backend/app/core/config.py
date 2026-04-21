@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./gestaloka.db"
     alembic_database_url: str = "sqlite:///./gestaloka.db"
     public_ws_base_url: str = "ws://localhost:8000"
+    graph_projection_backend: str = "recording"
+    nebula_host: str = "nebula-graphd"
+    nebula_port: int = 9669
+    nebula_space: str = "gestaloka_v2"
+    nebula_user: str = "root"
+    nebula_password: str = "nebula"
+    ops_admin_subs: str = ""
     oidc_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_public_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_client_id: str = "gestaloka-frontend"
@@ -25,10 +32,19 @@ class Settings(BaseSettings):
     model_lite_id: str = "gemini-3.1-flash-lite"
     model_main_id: str = "gemini-3-flash"
     model_pro_id: str = "gemini-3.1-pro"
-    graph_projection_backend: str = "recording"
     cors_origins: list[str] = ["http://localhost:5173"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def ops_admin_sub_list(self) -> list[str]:
+        return [item.strip() for item in self.ops_admin_subs.split(",") if item.strip()]
+
+    @model_validator(mode="after")
+    def normalize_paths(self) -> "Settings":
+        if not self.prompt_dir.exists() and self.prompt_dir == Path("/workspace/prompts"):
+            self.prompt_dir = Path(__file__).resolve().parents[3] / "prompts"
+        return self
 
 
 @lru_cache(maxsize=1)

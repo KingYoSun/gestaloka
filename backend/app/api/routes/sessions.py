@@ -26,11 +26,13 @@ def create_session(
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, str]:
     result = create_session_for_user(db, container, user, payload.world_id, payload.world_name, payload.player_display_name)
+    container.projection_service.process_pending(db)
     db.commit()
     return {
         "session_id": result.session.id,
         "world_id": result.world.id,
         "player_actor_id": result.player_actor.id,
         "npc_actor_id": result.guide_npc.id,
+        "location_id": result.starter_location.id,
         "websocket_url": result.websocket_url,
     }

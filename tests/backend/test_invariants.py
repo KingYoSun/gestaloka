@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models.entities import Actor, Memory, Session as GameSession, World
+from app.models.entities import Actor, Memory, Session as GameSession, World, starter_location_id
 
 
 def test_cross_world_session_reference_is_rejected(container):
@@ -41,5 +41,26 @@ def test_memory_without_source_event_is_rejected(container):
                 salience=0.8,
             )
         )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_actor_cannot_point_to_location_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        actor = Actor(
+            world_id="world-a",
+            actor_type="player",
+            user_sub="demo",
+            display_name="Demo",
+            current_location_id=starter_location_id("world-b"),
+        )
+        db.add(actor)
         with pytest.raises(IntegrityError):
             db.commit()

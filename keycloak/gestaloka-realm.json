@@ -26,6 +26,7 @@
   ],
   "users": [
     {
+      "id": "demo-player-sub",
       "username": "demo",
       "enabled": true,
       "emailVerified": true,

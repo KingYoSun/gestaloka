@@ -61,9 +61,12 @@ class ModelRouter:
         npc_name: str,
         input_text: str,
         relevant_memories: list[str],
+        relation_context: list[str],
     ) -> TurnResolutionOutcome:
         prompt = self.prompt_registry.get("session.turn_resolution")
-        input_hash = hashlib.sha256(f"{world_id}|{input_text}|{'|'.join(relevant_memories)}|{prompt.instructions}".encode()).hexdigest()
+        input_hash = hashlib.sha256(
+            f"{world_id}|{input_text}|{'|'.join(relevant_memories)}|{'|'.join(relation_context)}|{prompt.instructions}".encode()
+        ).hexdigest()
         attempts: list[TurnResolutionAttempt] = []
         failure_reason: str | None = None
 
@@ -75,6 +78,7 @@ class ModelRouter:
                 npc_name=npc_name,
                 input_text=input_text,
                 relevant_memories=relevant_memories,
+                relation_context=relation_context,
             )
             model_id = self._model_id_for_lane(lane)
             try:
@@ -145,6 +149,7 @@ class ModelRouter:
         npc_name: str,
         input_text: str,
         relevant_memories: list[str],
+        relation_context: list[str],
     ) -> dict:
         if "__force_invalid_all__" in input_text:
             return {"event_type": "player.turn.resolved"}
@@ -157,6 +162,7 @@ class ModelRouter:
             npc_name=npc_name,
             input_text=input_text,
             relevant_memories=relevant_memories,
+            relation_context=relation_context,
         )
 
     def _build_valid_output(
@@ -168,8 +174,10 @@ class ModelRouter:
         npc_name: str,
         input_text: str,
         relevant_memories: list[str],
+        relation_context: list[str],
     ) -> dict:
         joined_memories = " / ".join(relevant_memories[:2])
+        joined_relations = " / ".join(relation_context[:2])
         if joined_memories:
             npc_reaction = f"{npc_name}は同じ世界に沈殿した記憶をたどり、「{joined_memories}」を踏まえて応じた。"
         else:
@@ -183,6 +191,10 @@ class ModelRouter:
             narrative = f"{player_name}は『{input_text}』と行動し、{npc_name}はその出来事を記録した。"
         if lane == "pro_lane" and joined_memories:
             npc_reaction = f"{npc_name}は世界記憶「{joined_memories}」を参照し、整合した反応を返した。"
+        if joined_relations:
+            npc_reaction = f"{npc_reaction.rstrip('。')} 近傍文脈「{joined_relations}」も参照した。"
+        if joined_relations and lane != "lite_lane":
+            narrative = f"{narrative} 現在地と関係ネットワークも同じ world_id から参照された。"
 
         memory_text = f"{player_name}は{input_text}。{npc_reaction}"
         return {
@@ -194,6 +206,7 @@ class ModelRouter:
                 "npc_reaction": npc_reaction,
                 "world_id": world_id,
                 "lane": lane,
+                "relation_context": relation_context[:4],
             },
             "memories": [
                 {"scope": "world", "text": memory_text, "salience": 0.92},

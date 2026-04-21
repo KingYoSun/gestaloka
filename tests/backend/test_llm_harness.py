@@ -37,6 +37,7 @@ def test_model_router_falls_back_to_pro_lane(container):
         npc_name="Archivist Nera",
         input_text="__force_invalid_main__ 広場で灯をともす",
         relevant_memories=["以前の灯火を守った記憶"],
+        relation_context=["location=Founders Reach"],
     )
 
     assert outcome.succeeded is True
