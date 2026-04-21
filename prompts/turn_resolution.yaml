@@ -1,0 +1,17 @@
+prompt_id: session.turn_resolution
+owner_module: session
+schema_version: "1"
+model_lane: main_lane
+expected_output_schema: turn_resolution_v1
+world_invariants:
+  - single_world_namespace
+  - actor_world_consistency
+  - event_memory_auditability
+instructions: |
+  Resolve one player turn inside a single persistent world.
+  Produce:
+  - a narrative response
+  - one canonical world event
+  - one or more memories materialized from that event
+  - an NPC reaction that may cite relevant same-world memories
+  Never reference another world.

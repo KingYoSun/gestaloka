@@ -1,0 +1,1 @@
+"""Economy SP module."""

@@ -1,0 +1,346 @@
+version: '3.8'
+
+services:
+  # 統合PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: gestaloka-postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_root_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init/01_unified_init.sql:/docker-entrypoint-initdb.d/01_unified_init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - gestaloka-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.26
+    container_name: gestaloka-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/gestaloka_neo4j_password
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+      - neo4j_import:/var/lib/neo4j/import
+      - ./neo4j/schema:/tmp/neo4j-schema:ro
+      - ./neo4j/init-neo4j.sh:/tmp/init-neo4j.sh:ro
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    networks:
+      - gestaloka-network
+    entrypoint: >
+      bash -c "
+        echo 'Copying schema files...' &&
+        mkdir -p /var/lib/neo4j/import &&
+        cp -f /tmp/neo4j-schema/* /var/lib/neo4j/import/ 2>/dev/null || true &&
+        echo 'Schema files copied' &&
+        exec /startup/docker-entrypoint.sh neo4j
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p gestaloka_neo4j_password 'RETURN 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for Celery
+  redis:
+    image: redis:8-alpine
+    container_name: gestaloka-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - gestaloka-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # KeyCloak for Authentication
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: gestaloka-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin_password
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak_user
+      KC_DB_PASSWORD: keycloak_password
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gestaloka-network
+    command: start-dev
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/8080' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestaloka-backend
+    env_file:
+      - .env
+    environment:
+      # Override database URLs for Docker network
+      DATABASE_URL: postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gestaloka-network
+      - gestaloka-test-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestaloka-celery-worker
+    env_file:
+      - .env
+    environment:
+      # Override database URLs for Docker network
+      DATABASE_URL: postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - celery_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gestaloka-network
+    command: celery -A app.celery worker --loglevel=info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery inspect ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestaloka-celery-beat
+    env_file:
+      - .env
+    environment:
+      # Override database URLs for Docker network
+      DATABASE_URL: postgresql://gestaloka_user:gestaloka_password@postgres:5432/gestaloka
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - celery_beat_data:/app/celerybeat
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gestaloka-network
+    command: celery -A app.celery beat --loglevel=info -s /app/celerybeat/celerybeat-schedule.db
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /app/celerybeat/celerybeat-schedule.db || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gestaloka-frontend
+    env_file:
+      - .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Anonymous volume for node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - gestaloka-network
+    command: npm run dev -- --host 0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => { process.exit(1); });\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Flower (Monitoring)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestaloka-flower
+    env_file:
+      - .env
+    environment:
+      # Override for Docker network
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      FLOWER_UNAUTHENTICATED_API: "true"
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    networks:
+      - gestaloka-network
+    command: celery -A app.celery flower --port=5555
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5555/api/workers || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Test Neo4j（既存のまま）
+  neo4j-test:
+    image: neo4j:5.26-community
+    container_name: gestaloka-neo4j-test
+    environment:
+      - NEO4J_AUTH=neo4j/test_password
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,algo.*
+      - NEO4J_dbms_memory_heap_initial__size=512m
+      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_dbms_memory_pagecache_size=512m
+    ports:
+      - "7475:7474"  # Browser (test port)
+      - "7688:7687"  # Bolt (test port)
+    volumes:
+      - neo4j-test-data:/data
+      - neo4j-test-logs:/logs
+      - neo4j-test-plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gestaloka-test-network
+
+  # Test Redis（既存のまま）
+  redis-test:
+    image: redis:8-alpine
+    container_name: gestaloka-redis-test
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"  # Test port
+    volumes:
+      - redis-test-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gestaloka-test-network
+
+volumes:
+  postgres_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_import:
+    driver: local
+  neo4j_plugins:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+  celery_logs:
+    driver: local
+  celery_beat_data:
+    driver: local
+  # Test volumes
+  neo4j-test-data:
+    driver: local
+  neo4j-test-logs:
+    driver: local
+  neo4j-test-plugins:
+    driver: local
+  redis-test-data:
+    driver: local
+
+networks:
+  gestaloka-network:
+    driver: bridge
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+  gestaloka-test-network:
+    driver: bridge
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

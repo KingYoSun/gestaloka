@@ -1,0 +1,1 @@
+"""World memory module."""
