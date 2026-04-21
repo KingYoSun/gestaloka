@@ -25,7 +25,15 @@ def get_current_user(
     authorization: str | None = Header(default=None),
     container: AppContainer = Depends(get_container),
 ) -> UserIdentity:
+    token = require_bearer_token(authorization)
+    return resolve_current_user_from_token(container, token)
+
+
+def require_bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    token = authorization.removeprefix("Bearer ").strip()
+    return authorization.removeprefix("Bearer ").strip()
+
+
+def resolve_current_user_from_token(container: AppContainer, token: str) -> UserIdentity:
     return container.oidc_adapter.resolve_token(token)

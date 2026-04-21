@@ -55,6 +55,8 @@ class ProjectionService:
         processed: list[dict] = []
         sink = self._sink()
         for outbox_event in pending:
+            outbox_event.status = "processing"
+            db.flush()
             event = db.execute(
                 select(Event).where(Event.id == outbox_event.event_id, Event.world_id == outbox_event.world_id)
             ).scalar_one()
@@ -65,11 +67,11 @@ class ProjectionService:
             )
             try:
                 processed.extend(sink.record(db, outbox_event, event, memories))
-                outbox_event.status = "processed"
+                outbox_event.status = "projected"
                 outbox_event.attempts += 1
                 outbox_event.last_error = None
             except Exception as exc:
-                outbox_event.status = "error"
+                outbox_event.status = "failed"
                 outbox_event.attempts += 1
                 outbox_event.last_error = str(exc)
         db.flush()

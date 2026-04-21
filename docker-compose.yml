@@ -44,6 +44,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      PUBLIC_WS_BASE_URL: ws://localhost:8000
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
       PROMPT_DIR: /workspace/prompts
@@ -102,6 +103,23 @@ services:
       backend:
         condition: service_started
     command: npm run dev -- --host 0.0.0.0 --port 5173
+
+  frontend-e2e:
+    image: mcr.microsoft.com/playwright:v1.52.0-noble
+    container_name: gestaloka-v2-frontend-e2e
+    working_dir: /workspace/frontend
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:5173
+      CI: "1"
+    volumes:
+      - ./frontend:/workspace/frontend
+      - ./tests:/workspace/tests
+    depends_on:
+      frontend:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    command: sh -c "npm install && npm run test:e2e"
 
 volumes:
   postgres_data:

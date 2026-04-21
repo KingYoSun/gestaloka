@@ -25,14 +25,12 @@ def create_session(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, str]:
-    result = create_session_for_user(db, user, payload.world_id, payload.world_name, payload.player_display_name)
+    result = create_session_for_user(db, container, user, payload.world_id, payload.world_name, payload.player_display_name)
     db.commit()
     return {
         "session_id": result.session.id,
         "world_id": result.world.id,
-        "world_name": result.world.name,
         "player_actor_id": result.player_actor.id,
-        "guide_npc_id": result.guide_npc.id,
-        "player_display_name": result.player_actor.display_name,
-        "graph_backend": container.settings.graph_projection_backend,
+        "npc_actor_id": result.guide_npc.id,
+        "websocket_url": result.websocket_url,
     }

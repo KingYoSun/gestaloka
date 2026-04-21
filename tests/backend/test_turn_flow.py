@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.entities import OutboxEvent, ProjectionRecord
 
@@ -38,10 +38,16 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert any("灯をともす" in item["text"] for item in memories.json()["items"])
 
     with container.session_factory() as db:
-        pending = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "processed")).scalars())
+        pending = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "projected")).scalars())
         projected = list(db.execute(select(ProjectionRecord)).scalars())
         assert pending
         assert projected
+        projected_count = db.execute(select(func.count(ProjectionRecord.id))).scalar_one()
+
+        processed_again = container.projection_service.process_pending(db)
+        db.commit()
+        assert processed_again == []
+        assert db.execute(select(func.count(ProjectionRecord.id))).scalar_one() == projected_count
 
         rebuilt = container.projection_service.rebuild(db, session_payload["world_id"])
         db.commit()

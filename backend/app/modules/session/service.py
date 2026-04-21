@@ -20,17 +20,26 @@ class SessionCreationResult:
     world: object
     player_actor: object
     guide_npc: object
+    websocket_url: str
 
 
 @dataclass
 class TurnResolutionResult:
     turn: Turn
+    event: Event
+    memory_ids: list[str]
     event_payload: dict
     memories_payload: list[dict]
+    error_detail: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.error_detail is None
 
 
 def create_session_for_user(
     db: Session,
+    container: AppContainer,
     user: UserIdentity,
     world_id: str,
     world_name: str,
@@ -43,7 +52,14 @@ def create_session_for_user(
     session = GameSession(world_id=world.id, player_actor_id=player_actor.id, status="active")
     db.add(session)
     db.flush()
-    return SessionCreationResult(session=session, world=world, player_actor=player_actor, guide_npc=guide_npc)
+    websocket_url = f"{container.settings.public_ws_base_url.rstrip('/')}/ws/sessions/{session.id}"
+    return SessionCreationResult(
+        session=session,
+        world=world,
+        player_actor=player_actor,
+        guide_npc=guide_npc,
+        websocket_url=websocket_url,
+    )
 
 
 def resolve_turn_for_session(
@@ -60,10 +76,26 @@ def resolve_turn_for_session(
 
     player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
     if player_actor is None or player_actor.id != game_session.player_actor_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session does not belong to current user")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
 
     guide_npc = get_or_create_guide_npc(db, game_session.world_id)
-    relevant_memories = search_memories(db, world_id=game_session.world_id, query=input_text, actor_id=guide_npc.id)
+    turn = Turn(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        actor_id=player_actor.id,
+        input_text=input_text,
+        resolved_output={"status": "pending"},
+        model_lane="pending",
+    )
+    db.add(turn)
+    db.flush()
+
+    relevant_memories = search_memories(
+        db,
+        world_id=game_session.world_id,
+        query=input_text,
+        actor_id=guide_npc.id,
+    )
     resolution = container.model_router.resolve_turn(
         world_id=game_session.world_id,
         player_name=player_actor.display_name,
@@ -72,25 +104,78 @@ def resolve_turn_for_session(
         relevant_memories=[item.text for item in relevant_memories],
     )
 
-    turn = Turn(
-        world_id=game_session.world_id,
-        session_id=game_session.id,
-        actor_id=player_actor.id,
-        input_text=input_text,
-        resolved_output={"narrative": resolution.narrative, "npc_reaction": resolution.npc_reaction},
-        model_lane=resolution.model_lane,
-    )
-    db.add(turn)
-    db.flush()
+    for attempt in resolution.attempts:
+        db.add(
+            LLMRun(
+                world_id=game_session.world_id,
+                turn_id=turn.id,
+                prompt_id=attempt.prompt_id,
+                model_id=attempt.model_id,
+                model_lane=attempt.model_lane,
+                input_hash=attempt.input_hash,
+                schema_version=attempt.schema_version,
+                output_schema_status=attempt.output_schema_status,
+                output_payload=attempt.output_payload,
+            )
+        )
+
+    if not resolution.succeeded:
+        turn.model_lane = resolution.final_lane
+        turn.resolved_output = {
+            "status": "failed",
+            "error_detail": resolution.failure_reason,
+        }
+        failure_event = Event(
+            world_id=game_session.world_id,
+            session_id=game_session.id,
+            turn_id=turn.id,
+            event_type="player.turn.failed",
+            source_actor_id=player_actor.id,
+            payload={
+                "action": input_text,
+                "failure_reason": resolution.failure_reason,
+                "world_id": game_session.world_id,
+            },
+            narrative=f"{player_actor.display_name}の行動『{input_text}』は監査対象として記録された。",
+        )
+        db.add(failure_event)
+        db.flush()
+        db.add(
+            OutboxEvent(
+                world_id=game_session.world_id,
+                event_id=failure_event.id,
+                projection_type="world_graph.audit",
+                payload={"turn_id": turn.id, "outcome": "failed"},
+            )
+        )
+        db.flush()
+        return TurnResolutionResult(
+            turn=turn,
+            event=failure_event,
+            memory_ids=[],
+            event_payload=_event_payload(failure_event),
+            memories_payload=[],
+            error_detail=resolution.failure_reason or "Turn resolution failed",
+        )
+
+    payload = resolution.final_payload
+    assert payload is not None
+
+    turn.model_lane = resolution.final_lane
+    turn.resolved_output = {
+        "status": "resolved",
+        "narrative": payload.narrative,
+        "npc_reaction": payload.npc_reaction,
+    }
 
     event = Event(
         world_id=game_session.world_id,
         session_id=game_session.id,
         turn_id=turn.id,
-        event_type=resolution.event_type,
+        event_type=payload.event_type,
         source_actor_id=player_actor.id,
-        payload=resolution.event_payload,
-        narrative=resolution.narrative,
+        payload=payload.event_payload,
+        narrative=payload.narrative,
     )
     db.add(event)
     db.flush()
@@ -101,58 +186,47 @@ def resolve_turn_for_session(
         source_event_id=event.id,
         drafts=[
             {
-                **draft,
-                "actor_id": guide_npc.id if draft["scope"] == "actor" else None,
+                **draft.model_dump(),
+                "actor_id": guide_npc.id if draft.scope == "actor" else None,
             }
-            for draft in resolution.memories
+            for draft in payload.memories
         ],
-    )
-
-    db.add(
-        LLMRun(
-            world_id=game_session.world_id,
-            turn_id=turn.id,
-            prompt_id=resolution.prompt_id,
-            model_id=resolution.model_id,
-            model_lane=resolution.model_lane,
-            input_hash=resolution.input_hash,
-            schema_version=resolution.schema_version,
-            output_schema_status="valid",
-            output_payload={
-                "narrative": resolution.narrative,
-                "npc_reaction": resolution.npc_reaction,
-                "event_payload": resolution.event_payload,
-            },
-        )
     )
     db.add(
         OutboxEvent(
             world_id=game_session.world_id,
             event_id=event.id,
             projection_type="world_graph.upsert",
-            payload={"turn_id": turn.id},
+            payload={"turn_id": turn.id, "outcome": "resolved"},
         )
     )
     db.flush()
 
     return TurnResolutionResult(
         turn=turn,
-        event_payload={
-            "id": event.id,
-            "world_id": event.world_id,
-            "event_type": event.event_type,
-            "narrative": event.narrative,
-            "payload": event.payload,
-        },
-        memories_payload=[
-            {
-                "id": memory.id,
-                "world_id": memory.world_id,
-                "scope": memory.scope,
-                "text": memory.text,
-                "salience": memory.salience,
-                "actor_id": memory.actor_id,
-            }
-            for memory in memories
-        ],
+        event=event,
+        memory_ids=[memory.id for memory in memories],
+        event_payload=_event_payload(event),
+        memories_payload=[_memory_payload(memory) for memory in memories],
     )
+
+
+def _event_payload(event: Event) -> dict:
+    return {
+        "id": event.id,
+        "world_id": event.world_id,
+        "event_type": event.event_type,
+        "narrative": event.narrative,
+        "payload": event.payload,
+    }
+
+
+def _memory_payload(memory) -> dict:
+    return {
+        "id": memory.id,
+        "world_id": memory.world_id,
+        "scope": memory.scope,
+        "text": memory.text,
+        "salience": memory.salience,
+        "actor_id": memory.actor_id,
+    }

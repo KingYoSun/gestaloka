@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite:///./gestaloka.db"
     alembic_database_url: str = "sqlite:///./gestaloka.db"
+    public_ws_base_url: str = "ws://localhost:8000"
     oidc_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_public_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_client_id: str = "gestaloka-frontend"

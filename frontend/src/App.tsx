@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import keycloak from "./lib/keycloak";
 
 type AuthMe = {
@@ -8,14 +8,31 @@ type AuthMe = {
   preferred_username: string;
 };
 
+type HealthPayload = {
+  status: string;
+  database: string;
+  projection: {
+    backend: string;
+    pending_outbox: number;
+    projection_records: number;
+  };
+  oidc_mode: string;
+};
+
 type SessionInfo = {
   session_id: string;
   world_id: string;
-  world_name: string;
   player_actor_id: string;
-  guide_npc_id: string;
-  player_display_name: string;
-  graph_backend: string;
+  npc_actor_id: string;
+  websocket_url: string;
+};
+
+type TurnResponse = {
+  turn_id: string;
+  event_id: string;
+  memory_ids: string[];
+  narrative: string;
+  npc_reaction: string;
 };
 
 type EventItem = {
@@ -39,7 +56,6 @@ type ActivityMessage = {
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL;
 
 async function apiFetch<T>(path: string, token: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -62,9 +78,9 @@ async function apiFetch<T>(path: string, token: string, init?: RequestInit): Pro
 function App() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
-  const [token, setToken] = useState<string>("");
+  const [token, setToken] = useState("");
   const [me, setMe] = useState<AuthMe | null>(null);
-  const [health, setHealth] = useState("unknown");
+  const [health, setHealth] = useState<HealthPayload | null>(null);
   const [worldId, setWorldId] = useState("world-alpha");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [turnInput, setTurnInput] = useState("広場で旅人を助け、周囲の様子を確かめる");
@@ -73,32 +89,31 @@ function App() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [activity, setActivity] = useState<ActivityMessage[]>([]);
-  const [error, setError] = useState<string>("");
+  const [error, setError] = useState("");
+  const [turnPending, setTurnPending] = useState(false);
+  const [socketState, setSocketState] = useState("idle");
   const socketRef = useRef<WebSocket | null>(null);
 
-  const statusText = useMemo(() => {
-    if (!ready) {
-      return "initializing";
-    }
-    return authenticated ? "authenticated" : "signed-out";
-  }, [authenticated, ready]);
+  const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
 
   useEffect(() => {
     void fetch(`${apiBaseUrl}/health`)
       .then((response) => response.json())
-      .then((data: { status: string }) => setHealth(data.status))
-      .catch(() => setHealth("unreachable"));
+      .then((data: HealthPayload) => setHealth(data))
+      .catch(() => {
+        setHealth(null);
+      });
 
     keycloak
       .init({
         onLoad: "check-sso",
         pkceMethod: "S256",
       })
-      .then((isAuthenticated) => {
+      .then((isAuthenticated: boolean) => {
         setAuthenticated(isAuthenticated);
         setToken(keycloak.token ?? "");
       })
-      .catch((initError) => {
+      .catch((initError: unknown) => {
         setError(String(initError));
       })
       .finally(() => setReady(true));
@@ -121,18 +136,32 @@ function App() {
         socketRef.current.close();
         socketRef.current = null;
       }
+      setSocketState("idle");
       return;
     }
 
-    const socket = new WebSocket(
-      `${wsBaseUrl}/ws/sessions/${session.session_id}?token=${encodeURIComponent(token)}`,
-    );
+    setSocketState("connecting");
+    const socket = new WebSocket(`${session.websocket_url}?token=${encodeURIComponent(token)}`);
+    socket.onopen = () => setSocketState("open");
     socket.onmessage = (message) => {
       const parsed = JSON.parse(message.data) as ActivityMessage;
-      setActivity((current) => [parsed, ...current].slice(0, 12));
+      setActivity((current) => [parsed, ...current].slice(0, 16));
+      if (parsed.event === "turn.resolved") {
+        const data = parsed.data as Partial<TurnResponse>;
+        if (data.narrative) {
+          setLatestNarrative(data.narrative);
+        }
+        if (data.npc_reaction) {
+          setLatestReaction(data.npc_reaction);
+        }
+      }
     };
     socket.onerror = () => {
+      setSocketState("error");
       setError("WebSocket connection failed");
+    };
+    socket.onclose = () => {
+      setSocketState("closed");
     };
     socketRef.current = socket;
 
@@ -172,6 +201,9 @@ function App() {
 
     try {
       setError("");
+      setActivity([]);
+      setLatestNarrative("");
+      setLatestReaction("");
       const created = await apiFetch<SessionInfo>("/sessions", token, {
         method: "POST",
         body: JSON.stringify({
@@ -194,11 +226,9 @@ function App() {
     }
 
     try {
+      setTurnPending(true);
       setError("");
-      const response = await apiFetch<{
-        narrative: string;
-        npc_reaction: string;
-      }>("/turns", token, {
+      const response = await apiFetch<TurnResponse>("/turns", token, {
         method: "POST",
         body: JSON.stringify({
           session_id: session.session_id,
@@ -210,6 +240,8 @@ function App() {
       await refreshWorldState(session, token);
     } catch (requestError) {
       setError(String(requestError));
+    } finally {
+      setTurnPending(false);
     }
   }
 
@@ -228,8 +260,11 @@ function App() {
       <section className="grid">
         <article className="card">
           <h2>1. Login</h2>
-          <p>Status: {statusText}</p>
-          <p>API health: {health}</p>
+          <p data-testid="auth-status">Status: {statusText}</p>
+          <p data-testid="api-health">
+            API health: {health?.status ?? "unreachable"} / DB: {health?.database ?? "unknown"}
+          </p>
+          <p data-testid="socket-status">Socket: {socketState}</p>
           {me ? (
             <dl className="meta">
               <div>
@@ -249,10 +284,10 @@ function App() {
             <p>Use the demo Keycloak user to enter the v2 slice.</p>
           )}
           <div className="actions">
-            <button onClick={handleLogin} disabled={!ready || authenticated}>
+            <button data-testid="sign-in" onClick={handleLogin} disabled={!ready || authenticated}>
               Sign in
             </button>
-            <button onClick={handleLogout} disabled={!authenticated}>
+            <button data-testid="sign-out" onClick={handleLogout} disabled={!authenticated}>
               Sign out
             </button>
           </div>
@@ -263,9 +298,13 @@ function App() {
           <form onSubmit={handleStartSession} className="stack">
             <label>
               World ID
-              <input value={worldId} onChange={(event) => setWorldId(event.target.value)} />
+              <input
+                data-testid="world-id-input"
+                value={worldId}
+                onChange={(event) => setWorldId(event.target.value)}
+              />
             </label>
-            <button type="submit" disabled={!authenticated}>
+            <button data-testid="start-session" type="submit" disabled={!authenticated}>
               Start session
             </button>
           </form>
@@ -273,15 +312,15 @@ function App() {
             <dl className="meta">
               <div>
                 <dt>World</dt>
-                <dd>{session.world_name}</dd>
+                <dd>{session.world_id}</dd>
               </div>
               <div>
                 <dt>Session</dt>
                 <dd>{session.session_id}</dd>
               </div>
               <div>
-                <dt>Projection</dt>
-                <dd>{session.graph_backend}</dd>
+                <dt>Guide NPC</dt>
+                <dd>{session.npc_actor_id}</dd>
               </div>
             </dl>
           ) : (
@@ -295,27 +334,28 @@ function App() {
             <label>
               Player action
               <textarea
+                data-testid="turn-input"
                 rows={4}
                 value={turnInput}
                 onChange={(event) => setTurnInput(event.target.value)}
               />
             </label>
-            <button type="submit" disabled={!session}>
-              Submit turn
+            <button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
+              {turnPending ? "Submitting..." : "Submit turn"}
             </button>
           </form>
           <div className="result">
             <h3>Latest narrative</h3>
-            <p>{latestNarrative || "No turn resolved yet."}</p>
+            <p data-testid="latest-narrative">{latestNarrative || "No turn resolved yet."}</p>
             <h3>Latest NPC reaction</h3>
-            <p>{latestReaction || "No NPC reaction yet."}</p>
+            <p data-testid="latest-reaction">{latestReaction || "No NPC reaction yet."}</p>
           </div>
         </article>
 
         <article className="card">
           <h2>4. Results</h2>
           <h3>Events</h3>
-          <ul className="stream">
+          <ul className="stream" data-testid="events-stream">
             {events.map((item) => (
               <li key={item.id}>
                 <strong>{item.event_type}</strong>
@@ -324,7 +364,7 @@ function App() {
             ))}
           </ul>
           <h3>Memories</h3>
-          <ul className="stream">
+          <ul className="stream" data-testid="memories-stream">
             {memories.map((item) => (
               <li key={item.id}>
                 <strong>{item.scope}</strong>
@@ -336,8 +376,11 @@ function App() {
 
         <article className="card">
           <h2>Ops</h2>
-          <p>Realtime event stream for the active session.</p>
-          <ul className="stream">
+          <p>
+            Projection backend: {health?.projection.backend ?? "unknown"} / Pending outbox:{" "}
+            {health?.projection.pending_outbox ?? "unknown"} / OIDC: {health?.oidc_mode ?? "unknown"}
+          </p>
+          <ul className="stream" data-testid="ops-stream">
             {activity.map((item, index) => (
               <li key={`${item.event}-${index}`}>
                 <strong>{item.event}</strong>
@@ -348,7 +391,11 @@ function App() {
         </article>
       </section>
 
-      {error ? <aside className="error">{error}</aside> : null}
+      {error ? (
+        <aside className="error" data-testid="error-banner">
+          {error}
+        </aside>
+      ) : null}
     </main>
   );
 }

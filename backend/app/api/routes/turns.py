@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,33 +28,46 @@ async def resolve_turn(
 ) -> dict:
     await realtime_hub.emit(payload.session_id, "turn.accepted", {"session_id": payload.session_id})
     await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "routing"})
+    await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "memory_lookup"})
 
     result = resolve_turn_for_session(db, container, user, payload.session_id, payload.input_text)
     db.commit()
 
+    if result.succeeded:
+        await realtime_hub.emit(
+            payload.session_id,
+            "turn.narrative.delta",
+            {"delta": result.turn.resolved_output["narrative"], "final": True},
+        )
+
+    await realtime_hub.emit(payload.session_id, "world.event.created", result.event_payload)
+    if result.memories_payload:
+        await realtime_hub.emit(payload.session_id, "memory.materialized", {"memories": result.memories_payload})
+
+    await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "projection"})
     processed = container.projection_service.process_pending(db)
     db.commit()
 
-    await realtime_hub.emit(payload.session_id, "world.event.created", result.event_payload)
-    await realtime_hub.emit(payload.session_id, "memory.materialized", {"memories": result.memories_payload})
-    if processed:
-        await realtime_hub.emit(payload.session_id, "graph.projection.updated", {"records": processed})
-    await realtime_hub.emit(
-        payload.session_id,
-        "turn.resolved",
-        {
-            "turn_id": result.turn.id,
-            "narrative": result.turn.resolved_output["narrative"],
-            "npc_reaction": result.turn.resolved_output["npc_reaction"],
-        },
-    )
+    await realtime_hub.emit(payload.session_id, "graph.projection.updated", {"records": processed})
 
-    return {
+    if not result.succeeded:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": result.error_detail,
+                "turn_id": result.turn.id,
+                "event_id": result.event.id,
+                "memory_ids": [],
+            },
+        )
+
+    response = {
         "turn_id": result.turn.id,
-        "world_id": result.turn.world_id,
+        "event_id": result.event.id,
+        "memory_ids": result.memory_ids,
         "narrative": result.turn.resolved_output["narrative"],
         "npc_reaction": result.turn.resolved_output["npc_reaction"],
-        "event": result.event_payload,
-        "memories": result.memories_payload,
-        "projection_records": processed,
     }
+    await realtime_hub.emit(payload.session_id, "turn.resolved", response)
+
+    return response

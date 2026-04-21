@@ -4,6 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router as api_router
+from app.api.deps import resolve_current_user_from_token
 from app.core.container import AppContainer, build_container
 from app.core.realtime import realtime_hub
 
@@ -30,7 +31,7 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
             return
 
         try:
-            resolved_container.oidc_adapter.resolve_token(token)
+            resolve_current_user_from_token(resolved_container, token)
         except Exception:
             await websocket.close(code=4401)
             return

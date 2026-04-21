@@ -1,21 +1,30 @@
 import { expect, test } from "@playwright/test";
 
-test("login, start a world, submit a turn, and see same-world memory output", async ({ page }) => {
+test("login, start a world, submit two turns, and see same-world memory output", async ({ page }) => {
   test.setTimeout(120_000);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByTestId("sign-in").click();
 
   await page.locator("#username").fill("demo");
   await page.locator("#password").fill("demo-password");
   await page.getByRole("button", { name: /sign in/i }).click();
 
-  await expect(page.getByText("Status: authenticated")).toBeVisible();
-  await page.getByRole("button", { name: "Start session" }).click();
-  await page.getByRole("button", { name: "Submit turn" }).click();
+  await expect(page.getByTestId("auth-status")).toContainText("authenticated");
+  await page.getByTestId("start-session").click();
+  await expect(page.getByTestId("socket-status")).toContainText("open");
 
-  await expect(page.getByText("Latest narrative")).toBeVisible();
-  await expect(page.getByText(/世界の事実として記録/i)).toBeVisible();
-  await expect(page.getByText("player.turn.resolved")).toBeVisible();
-  await expect(page.getByText(/広場で旅人を助け/i)).toBeVisible();
+  await page.getByTestId("turn-input").fill("広場で灯をともす");
+  await page.getByTestId("submit-turn").click();
+
+  await expect(page.getByTestId("latest-narrative")).toContainText(/世界の事実として記録/i);
+  await expect(page.getByTestId("ops-stream")).toContainText("turn.narrative.delta");
+  await expect(page.getByTestId("memories-stream")).toContainText("広場で灯をともす");
+
+  await page.getByTestId("turn-input").fill("広場を見回し、気配を探る");
+  await page.getByTestId("submit-turn").click();
+
+  await expect(page.getByTestId("latest-reaction")).toContainText("灯をともす");
+  await expect(page.getByTestId("events-stream")).toContainText("player.turn.resolved");
+  await expect(page.getByTestId("ops-stream")).toContainText("turn.resolved");
 });

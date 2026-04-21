@@ -59,13 +59,12 @@ def search_memories(
     actor_id: str | None = None,
     limit: int = 5,
 ) -> list[Memory]:
+    del query
     stmt = select(Memory).where(Memory.world_id == world_id)
     if actor_id is not None:
         stmt = stmt.where(or_(Memory.actor_id.is_(None), Memory.actor_id == actor_id))
-    items = list(db.execute(stmt).scalars())
-    query_embedding = embed_text(query)
-    items.sort(key=lambda item: cosine_similarity(item.embedding, query_embedding) + (item.salience * 0.1), reverse=True)
-    return items[:limit]
+    stmt = stmt.order_by(Memory.salience.desc(), Memory.created_at.desc(), Memory.id.desc())
+    return list(db.execute(stmt.limit(limit)).scalars())
 
 
 def list_world_memories(db: Session, world_id: str) -> list[Memory]:

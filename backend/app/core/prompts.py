@@ -5,6 +5,11 @@ from pathlib import Path
 
 import yaml
 
+SUPPORTED_PROMPT_SCHEMAS = {
+    "turn_resolution_v1": "1",
+}
+SUPPORTED_MODEL_LANES = {"lite_lane", "main_lane", "pro_lane"}
+
 
 @dataclass(frozen=True)
 class PromptDefinition:
@@ -20,17 +25,50 @@ class PromptDefinition:
 class PromptRegistry:
     def __init__(self, prompt_dir: Path) -> None:
         self.prompt_dir = Path(prompt_dir)
-        self._cache: dict[str, PromptDefinition] = {}
+        self._cache = self._load_definitions()
 
     def get(self, prompt_id: str) -> PromptDefinition:
-        if prompt_id in self._cache:
+        try:
             return self._cache[prompt_id]
+        except KeyError as exc:
+            raise KeyError(f"Prompt not found: {prompt_id}") from exc
 
-        for prompt_file in self.prompt_dir.glob("*.yaml"):
+    def _load_definitions(self) -> dict[str, PromptDefinition]:
+        if not self.prompt_dir.exists():
+            raise FileNotFoundError(f"Prompt directory not found: {self.prompt_dir}")
+
+        definitions: dict[str, PromptDefinition] = {}
+        for prompt_file in sorted(self.prompt_dir.glob("*.yaml")):
             with prompt_file.open("r", encoding="utf-8") as handle:
-                raw = yaml.safe_load(handle)
-            if raw["prompt_id"] == prompt_id:
+                raw = yaml.safe_load(handle) or {}
+
+            try:
                 definition = PromptDefinition(**raw)
-                self._cache[prompt_id] = definition
-                return definition
-        raise KeyError(f"Prompt not found: {prompt_id}")
+            except TypeError as exc:
+                raise ValueError(f"Prompt file is missing required fields: {prompt_file.name}") from exc
+
+            if definition.prompt_id in definitions:
+                raise ValueError(f"Duplicate prompt_id detected: {definition.prompt_id}")
+
+            self._validate_definition(definition, prompt_file)
+            definitions[definition.prompt_id] = definition
+
+        if not definitions:
+            raise ValueError(f"No prompt definitions found in {self.prompt_dir}")
+        return definitions
+
+    def _validate_definition(self, definition: PromptDefinition, prompt_file: Path) -> None:
+        expected_version = SUPPORTED_PROMPT_SCHEMAS.get(definition.expected_output_schema)
+        if expected_version is None:
+            raise ValueError(
+                f"Prompt {definition.prompt_id} references unknown schema {definition.expected_output_schema}"
+            )
+        if definition.schema_version != expected_version:
+            raise ValueError(
+                f"Prompt {definition.prompt_id} uses schema_version {definition.schema_version}, "
+                f"expected {expected_version}"
+            )
+        if definition.model_lane not in SUPPORTED_MODEL_LANES:
+            raise ValueError(f"Prompt {definition.prompt_id} uses unsupported model lane {definition.model_lane}")
+        if not definition.instructions.strip():
+            raise ValueError(f"Prompt {definition.prompt_id} has empty instructions in {prompt_file.name}")
