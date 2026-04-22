@@ -12,6 +12,7 @@ from app.modules.eval_harness.service import EvalHarnessService
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult
+from app.modules.world_memory.service import MemoryService
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,11 +52,12 @@ def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
         eval_dataset_dir=dataset_dir,
         release_config_dir=REPO_ROOT / "config" / "release",
         oidc_dev_mode=True,
+        otel_metrics_port=0,
     )
     prompt_registry = PromptRegistry(settings.prompt_dir, settings.eval_dataset_dir)
 
     with pytest.raises(ValueError, match="duplicate case_id"):
-        EvalHarnessService(settings, prompt_registry, ProjectionService(settings))
+        EvalHarnessService(settings, prompt_registry, ProjectionService(settings), MemoryService(settings))
 
 
 def test_eval_runner_persists_current_and_candidate_results(container):

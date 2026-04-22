@@ -27,6 +27,7 @@ def test_settings(tmp_path: Path) -> Settings:
         prompt_dir=REPO_ROOT / "prompts",
         eval_dataset_dir=REPO_ROOT / "evals" / "datasets",
         release_config_dir=REPO_ROOT / "config" / "release",
+        otel_metrics_port=0,
         cors_origins=["http://testserver"],
     )
 

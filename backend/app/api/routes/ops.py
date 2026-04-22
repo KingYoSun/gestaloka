@@ -13,12 +13,15 @@ from app.models.entities import World
 from app.modules.admin_ops.service import (
     get_council_turn,
     list_council_turns,
+    memory_status,
     observability_summary,
     projection_status,
     rebuild_projection,
+    reindex_memories,
     recent_runtime_failures,
     sp_ledger,
     sp_overview,
+    world_memory_search,
     world_graph_summary,
 )
 from app.modules.economy_sp.service import InsufficientSPError
@@ -52,6 +55,11 @@ class ReleaseChecklistRequest(BaseModel):
     shadow_limit: int | None = Field(default=None, ge=1, le=50)
 
 
+class ReindexMemoriesRequest(BaseModel):
+    world_id: str | None = Field(default=None, max_length=64)
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
 @router.get("/projection/status")
 def get_projection_status(
     db: Session = Depends(get_db),
@@ -62,6 +70,34 @@ def get_projection_status(
     payload = projection_status(db, container.settings, container.projection_service)
     payload["recent_failures"] = recent_runtime_failures(db)
     return payload
+
+
+@router.get("/memories/status")
+def get_memory_status(
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return memory_status(db, container.memory_service)
+
+
+@router.post("/memories/reindex")
+def post_memory_reindex(
+    payload: ReindexMemoriesRequest,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    result = reindex_memories(
+        db,
+        container.memory_service,
+        world_id=payload.world_id,
+        limit=payload.limit,
+    )
+    db.commit()
+    return result
 
 
 @router.get("/observability/summary")
@@ -96,6 +132,29 @@ def get_world_graph_summary(
 ) -> dict[str, object]:
     del user
     return world_graph_summary(db, container.projection_service, world_id)
+
+
+@router.get("/worlds/{world_id}/memory-search")
+def get_world_memory_search(
+    world_id: str,
+    query: str = Query(min_length=1, max_length=2000),
+    actor_id: str | None = Query(default=None, max_length=36),
+    location_id: str | None = Query(default=None, max_length=96),
+    limit: int = Query(default=8, ge=1, le=50),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return world_memory_search(
+        db,
+        container.memory_service,
+        world_id=world_id,
+        query=query,
+        actor_id=actor_id,
+        location_id=location_id,
+        limit=limit,
+    )
 
 
 @router.get("/sp/overview")

@@ -18,6 +18,8 @@ cases:
     expect_final_lane: main_lane
     expect_fallback: false
     expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
     expected_world_tags:
       - aid_local
     quest_context:
@@ -46,6 +48,9 @@ cases:
     expect_final_lane: main_lane
     expect_fallback: false
     expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 1
+    expect_retrieval_hit_substring: 旅人を助け
     expected_world_tags:
       - investigate
       - promise_followup

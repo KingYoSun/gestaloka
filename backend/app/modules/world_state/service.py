@@ -50,6 +50,10 @@ def _seed_section(name: str) -> dict[str, Any]:
     return value
 
 
+def _world_scoped_seed_id(world_id: str, base_id: str) -> str:
+    return f"{world_id}:{base_id}"
+
+
 def ensure_world(db: Session, world_id: str, world_name: str) -> World:
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is not None:
@@ -107,10 +111,14 @@ def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> Charact
 
 def ensure_starter_faction(db: Session, world_id: str) -> Faction:
     faction_seed = _seed_section("faction")
-    faction_id = str(faction_seed.get("id") or "founders_watch")
+    faction_base_id = str(faction_seed.get("id") or "founders_watch")
+    faction_id = _world_scoped_seed_id(world_id, faction_base_id)
     faction = db.execute(
-        select(Faction).where(Faction.world_id == world_id, Faction.id == faction_id)
-    ).scalar_one_or_none()
+        select(Faction).where(
+            Faction.world_id == world_id,
+            Faction.id.in_([faction_id, faction_base_id]),
+        )
+    ).scalars().first()
     if faction is not None:
         return faction
 
@@ -158,10 +166,14 @@ def ensure_faction_standing(
 
 def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
     quest_seed = _seed_section("quest")
-    quest_id = str(quest_seed.get("id") or "starter_watch_request")
+    quest_base_id = str(quest_seed.get("id") or "starter_watch_request")
+    quest_id = _world_scoped_seed_id(world_id, quest_base_id)
     quest_template = db.execute(
-        select(QuestTemplate).where(QuestTemplate.world_id == world_id, QuestTemplate.id == quest_id)
-    ).scalar_one_or_none()
+        select(QuestTemplate).where(
+            QuestTemplate.world_id == world_id,
+            QuestTemplate.id.in_([quest_id, quest_base_id]),
+        )
+    ).scalars().first()
     if quest_template is not None:
         return quest_template
 

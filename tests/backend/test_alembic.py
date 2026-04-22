@@ -47,7 +47,9 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
 
     turn_columns = {column["name"] for column in inspector.get_columns("turns")}
     llm_run_columns = {column["name"] for column in inspector.get_columns("llm_runs")}
+    memory_columns = {column["name"] for column in inspector.get_columns("memories")}
     assert "resolution_mode" in turn_columns
+    assert {"embedding_status", "embedding_model", "embedded_at"} <= memory_columns
     assert {
         "workflow_name",
         "council_role",

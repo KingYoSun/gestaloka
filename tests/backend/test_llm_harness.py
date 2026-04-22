@@ -194,6 +194,7 @@ def test_live_gemini_council_structured_output_runs_when_api_key_present():
         release_config_dir=REPO_ROOT / "config" / "release",
         model_provider="gemini_developer_api",
         gemini_api_key=gemini_api_key,
+        otel_metrics_port=0,
     )
     prompt_registry = PromptRegistry(settings.prompt_dir, settings.eval_dataset_dir)
     router = ModelRouter(settings, prompt_registry)

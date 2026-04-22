@@ -156,7 +156,10 @@ class Memory(Base, TimestampMixin):
     location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
     scope: Mapped[str] = mapped_column(String(32))
     text: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float] | None] = mapped_column(EmbeddingType(), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(EmbeddingType(768), nullable=True)
+    embedding_status: Mapped[str] = mapped_column(String(32), default="pending")
+    embedding_model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     salience: Mapped[float] = mapped_column(Float, default=0.7)
 
 

@@ -9,8 +9,9 @@ def main() -> None:
     container = build_container()
     while True:
         with container.session_factory() as db:
-            processed = container.projection_service.process_pending(db)
-            if processed:
+            projected = container.projection_service.process_pending(db)
+            embedded = container.memory_service.process_pending(db)
+            if projected or embedded:
                 db.commit()
             else:
                 db.rollback()

@@ -18,6 +18,8 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["projection_runtime"]["graph_runtime_status"] == "recording"
     assert payload["sp"]["default_balance"] == 10
     assert payload["sp"]["turn_cost"] == 1
+    assert payload["embedding"]["dimension"] == 768
+    assert payload["embedding"]["runtime_status"] == "ready"
     assert {"projection_lag_seconds", "outbox_pending_count", "llm_schema_valid_rate"} <= set(payload["observability"])
     assert {"verdict", "blocked_reasons", "canary_promote_status"} <= set(payload["release_gate"])
     assert payload["oidc_mode"] == "development"
@@ -231,6 +233,58 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert council_detail_payload["turn_id"] == council_turn_id
     assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane"}
     assert "attempts" in council_detail_payload["roles"][-1]
+    assert council_detail_payload["resolved_output"]["retrieval_trace"]["status"] == "ready"
+
+
+def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    first_turn = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_text": "広場で旅人を助け、灯をともす"},
+        headers=auth_headers,
+    )
+    assert first_turn.status_code == 200
+
+    second_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+        },
+        headers=auth_headers,
+    )
+    assert second_turn.status_code == 200
+
+    status_response = client.get("/ops/memories/status", headers=auth_headers)
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert {"provider", "model", "dimension", "pending_count", "failed_count", "runtime_status"} <= set(status_payload)
+
+    search_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/memory-search?query=%E6%97%85%E4%BA%BA%E3%82%92%E5%8A%A9%E3%81%91%E3%81%9F&limit=4",
+        headers=auth_headers,
+    )
+    assert search_response.status_code == 200
+    search_payload = search_response.json()
+    assert search_payload["trace"]["status"] == "ready"
+    assert len(search_payload["hits"]) >= 1
+    assert any("旅人を助け" in item["text"] for item in search_payload["hits"])
+
+    reindex_response = client.post(
+        "/ops/memories/reindex",
+        json={"world_id": session_payload["world_id"], "limit": 10},
+        headers=auth_headers,
+    )
+    assert reindex_response.status_code == 200
+    reindex_payload = reindex_response.json()
+    assert reindex_payload["world_id"] == session_payload["world_id"]
+    assert reindex_payload["processed"] >= 1
 
 
 def test_ops_eval_contracts(client, container, auth_headers):

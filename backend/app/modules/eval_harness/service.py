@@ -26,7 +26,12 @@ from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
-from app.modules.world_memory.service import search_memories
+from app.modules.world_memory.service import (
+    MemoryRetrievalTrace,
+    MemoryService,
+    build_retrieval_query_text,
+    retrieval_trace_to_dict,
+)
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, normalize_world_tags
 
 
@@ -50,7 +55,12 @@ class EvalCaseInput:
     expect_progress_after: int | None = None
     expect_reward_issued: bool | None = None
     expect_standing_after: float | None = None
+    expect_retrieval_status: str | None = None
+    expect_retrieval_hit_substring: str | None = None
+    expect_retrieval_min_hits: int | None = None
     source_turn_id: str | None = None
+    precomputed_retrieved_memories: list[str] | None = None
+    precomputed_retrieval_trace: MemoryRetrievalTrace | None = None
 
 
 @dataclass(frozen=True)
@@ -102,11 +112,13 @@ class EvalHarnessService:
         settings: Settings,
         prompt_registry: PromptRegistry,
         projection_service: ProjectionService,
+        memory_service: MemoryService,
         observability_service: ObservabilityService | None = None,
     ) -> None:
         self.settings = settings
         self.prompt_registry = prompt_registry
         self.projection_service = projection_service
+        self.memory_service = memory_service
         self.observability_service = observability_service
         self.datasets = self._load_datasets(settings.eval_dataset_dir)
 
@@ -420,10 +432,14 @@ class EvalHarnessService:
                     "variant": item.variant,
                     "lane": item.lane,
                     "graph_context_status": item.graph_context_status,
+                    "retrieval_status": item.raw_output.get("retrieval_trace", {}).get("status"),
+                    "retrieval_hit_count": len(item.raw_output.get("retrieval_trace", {}).get("retrieved_memory_ids", [])),
                     "failure_reason": item.failure_reason,
                 }
                 for item in shadow_results
-                if not item.passed or item.graph_context_status != "ready"
+                if not item.passed
+                or item.graph_context_status != "ready"
+                or item.raw_output.get("retrieval_trace", {}).get("status") != "ready"
             ],
             "runbook": self._runbook(),
             "created_at": report.created_at.isoformat(),
@@ -492,6 +508,7 @@ class EvalHarnessService:
         case_payloads: list[dict[str, object]] = []
         for variant, council_service in routers.items():
             for case in cases:
+                retrieved_memories, retrieval_trace = self._resolve_case_retrieval(case)
                 outcome = council_service.resolve_turn(
                     CouncilRequest(
                         world_id=case.world_id,
@@ -499,7 +516,7 @@ class EvalHarnessService:
                         player_name=case.player_name,
                         npc_name=case.npc_name,
                         input_text=case.input_text,
-                        relevant_memories=case.relevant_memories,
+                        relevant_memories=retrieved_memories,
                         relation_context=case.relation_context,
                         graph_context_status=case.graph_context_status,
                         session_state=self._session_state_for_case(case),
@@ -512,6 +529,8 @@ class EvalHarnessService:
                     variant=variant,
                     case=case,
                     outcome=outcome,
+                    retrieved_memories=retrieved_memories,
+                    retrieval_trace=retrieval_trace,
                 )
                 case_payloads.append(payload)
 
@@ -529,6 +548,8 @@ class EvalHarnessService:
         variant: str,
         case: EvalCaseInput,
         outcome: TurnResolutionOutcome,
+        retrieved_memories: list[str],
+        retrieval_trace: MemoryRetrievalTrace,
     ) -> dict[str, object]:
         final_attempt = outcome.attempts[-1]
         final_payload = outcome.final_payload.model_dump() if outcome.final_payload is not None else None
@@ -544,11 +565,15 @@ class EvalHarnessService:
             schema_valid=schema_valid,
             same_world_invariant=same_world_invariant,
             domain_passed=bool(domain_evaluation["passed"]),
+            retrieval_trace=retrieval_trace,
+            retrieved_memories=retrieved_memories,
         )
         raw_output = {
             "source_turn_id": case.source_turn_id,
             "input_text": case.input_text,
             "relevant_memories": case.relevant_memories,
+            "retrieved_memories": retrieved_memories,
+            "retrieval_trace": retrieval_trace_to_dict(retrieval_trace),
             "relation_context": case.relation_context,
             "role_runs": [
                 {
@@ -617,6 +642,9 @@ class EvalHarnessService:
             "schema_valid": schema_valid,
             "same_world_invariant": same_world_invariant,
             "graph_context_status": case.graph_context_status,
+            "retrieval_status": retrieval_trace.status,
+            "retrieval_hit_count": len(retrieval_trace.retrieved_memory_ids),
+            "retrieval_required": bool(case.expect_retrieval_min_hits or case.expect_retrieval_hit_substring),
             "passed": passed,
             "failure_reason": outcome.failure_reason,
         }
@@ -629,14 +657,18 @@ class EvalHarnessService:
         schema_valid: bool,
         same_world_invariant: bool,
         domain_passed: bool,
+        retrieval_trace: MemoryRetrievalTrace,
+        retrieved_memories: list[str],
     ) -> bool:
         used_fallback = outcome.used_fallback
+        retrieval_passed = self._retrieval_passed(case, retrieval_trace, retrieved_memories)
         if case.expect_success:
             return (
                 outcome.succeeded
                 and schema_valid
                 and same_world_invariant
                 and domain_passed
+                and retrieval_passed
                 and case.graph_context_status == "ready"
                 and outcome.final_lane == case.expect_final_lane
                 and used_fallback == case.expect_fallback
@@ -648,6 +680,22 @@ class EvalHarnessService:
             and used_fallback == case.expect_fallback
             and outcome.failure_reason == case.expect_failure_reason
         )
+
+    @staticmethod
+    def _retrieval_passed(
+        case: EvalCaseInput,
+        retrieval_trace: MemoryRetrievalTrace,
+        retrieved_memories: list[str],
+    ) -> bool:
+        if case.expect_retrieval_status is not None and retrieval_trace.status != case.expect_retrieval_status:
+            return False
+        if case.expect_retrieval_min_hits is not None and len(retrieval_trace.retrieved_memory_ids) < case.expect_retrieval_min_hits:
+            return False
+        if case.expect_retrieval_hit_substring is not None and not any(
+            case.expect_retrieval_hit_substring in item for item in retrieved_memories
+        ):
+            return False
+        return True
 
     def _evaluate_domain_case(self, case: EvalCaseInput, final_payload: dict[str, object] | None) -> dict[str, object]:
         if final_payload is None:
@@ -721,6 +769,8 @@ class EvalHarnessService:
                 "passed": passed,
                 "failed": len(scoped) - passed,
                 "failed_case_ids": failed_case_ids,
+                "retrieval_ready": sum(1 for item in scoped if item["retrieval_status"] == "ready"),
+                "retrieval_degraded": sum(1 for item in scoped if item["retrieval_status"] != "ready"),
                 "gate_passed": gate_passed,
             }
 
@@ -739,7 +789,12 @@ class EvalHarnessService:
             return False
         if source_type == "shadow_replay":
             return all(
-                item["passed"] and item["schema_valid"] and item["same_world_invariant"] and item["graph_context_status"] == "ready"
+                item["passed"]
+                and item["schema_valid"]
+                and item["same_world_invariant"]
+                and item["graph_context_status"] == "ready"
+                and item["retrieval_status"] == "ready"
+                and (not item["retrieval_required"] or int(item["retrieval_hit_count"]) >= 1)
                 for item in scoped
             )
         if dataset_name == "turn_resolution_smoke":
@@ -899,6 +954,21 @@ class EvalHarnessService:
                             if raw_case.get("expect_standing_after") is not None
                             else None
                         ),
+                        expect_retrieval_status=(
+                            str(raw_case.get("expect_retrieval_status")).strip()
+                            if raw_case.get("expect_retrieval_status") is not None
+                            else None
+                        ),
+                        expect_retrieval_hit_substring=(
+                            str(raw_case.get("expect_retrieval_hit_substring")).strip()
+                            if raw_case.get("expect_retrieval_hit_substring") is not None
+                            else None
+                        ),
+                        expect_retrieval_min_hits=(
+                            int(raw_case.get("expect_retrieval_min_hits"))
+                            if raw_case.get("expect_retrieval_min_hits") is not None
+                            else None
+                        ),
                     )
                 )
             if not cases:
@@ -934,14 +1004,39 @@ class EvalHarnessService:
             ).scalar_one_or_none()
             if player_actor is None or npc_actor is None:
                 continue
-            relevant_memories = [
-                item.text for item in search_memories(db, world_id=turn.world_id, query=turn.input_text, actor_id=npc_actor.id)
-            ]
             graph_context = self.projection_service.resolve_relation_context(
                 db,
                 world_id=turn.world_id,
                 primary_actor_id=npc_actor.id,
                 counterpart_actor_id=player_actor.id,
+                location_id=player_actor.current_location_id,
+            )
+            query_text = build_retrieval_query_text(
+                turn.input_text,
+                session_state=self._session_state_for_case(
+                    EvalCaseInput(
+                        case_id="shadow-bootstrap",
+                        prompt_id="session.turn_resolution",
+                        world_id=turn.world_id,
+                        player_name=player_actor.display_name,
+                        npc_name=npc_actor.display_name,
+                        input_text=turn.input_text,
+                        relevant_memories=[],
+                        relation_context=graph_context.context.prompt_lines(),
+                        graph_context_status=graph_context.status,
+                        expect_success=True,
+                        expect_final_lane=turn.model_lane,
+                        expect_fallback=bool(turn.resolved_output.get("used_fallback", turn.model_lane == "pro_lane")),
+                        expect_failure_reason=None,
+                    )
+                ),
+                relation_context=graph_context.context.prompt_lines(),
+            )
+            retrieval = self.memory_service.search(
+                db,
+                world_id=turn.world_id,
+                query_text=query_text,
+                actor_id=npc_actor.id,
                 location_id=player_actor.current_location_id,
             )
             cases.append(
@@ -952,19 +1047,35 @@ class EvalHarnessService:
                     player_name=player_actor.display_name,
                     npc_name=npc_actor.display_name,
                     input_text=turn.input_text,
-                    relevant_memories=relevant_memories,
+                    relevant_memories=[item.text for item in retrieval.memories],
                     relation_context=graph_context.context.prompt_lines(),
                     graph_context_status=graph_context.status,
                     expect_success=True,
                     expect_final_lane=turn.model_lane,
                     expect_fallback=bool(turn.resolved_output.get("used_fallback", turn.model_lane == "pro_lane")),
                     expect_failure_reason=None,
+                    expect_retrieval_status="ready",
+                    expect_retrieval_min_hits=1 if retrieval.trace.retrieved_memory_ids else 0,
                     source_turn_id=turn.id,
+                    precomputed_retrieved_memories=[item.text for item in retrieval.memories],
+                    precomputed_retrieval_trace=retrieval.trace,
                 )
             )
             if len(cases) >= limit:
                 break
         return cases
+
+    def _resolve_case_retrieval(self, case: EvalCaseInput) -> tuple[list[str], MemoryRetrievalTrace]:
+        if case.precomputed_retrieval_trace is not None:
+            return case.precomputed_retrieved_memories or [], case.precomputed_retrieval_trace
+
+        query_text = build_retrieval_query_text(
+            case.input_text,
+            session_state=self._session_state_for_case(case),
+            relation_context=case.relation_context,
+        )
+        corpus = self.memory_service.search_corpus(query_text=query_text, texts=case.relevant_memories)
+        return corpus.texts, corpus.trace
 
     def _probe_canary_health(self) -> CanaryProbeResult:
         if self.observability_service is None:

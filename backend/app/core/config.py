@@ -37,12 +37,17 @@ class Settings(BaseSettings):
     release_scheduler_cron: str = "0 3 * * *"
     release_shadow_limit: int = 5
     model_provider: str = "stub"
+    embedding_provider: str = "stub"
     gemini_api_key: str = ""
     gemini_timeout_seconds: float = 30.0
     gemini_max_retries: int = 2
     gemini_temperature_lite: float = 0.2
     gemini_temperature_main: float = 0.3
     gemini_temperature_pro: float = 0.1
+    gemini_embedding_model: str = "gemini-embedding-001"
+    memory_embedding_dim: int = 768
+    memory_retrieval_limit: int = 8
+    memory_retrieval_min_score: float = 0.1
     model_lite_id: str = "gemini-2.5-flash-lite"
     model_main_id: str = "gemini-3-flash-preview"
     model_pro_id: str = "gemini-3.1-pro-preview"

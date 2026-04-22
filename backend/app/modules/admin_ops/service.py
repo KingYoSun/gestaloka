@@ -10,6 +10,7 @@ from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Se
 from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
+from app.modules.world_memory.service import MemoryService
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
@@ -185,6 +186,63 @@ def sp_ledger(
 ) -> dict[str, object]:
     return {
         "items": economy_service.list_ledger(db, user_sub=user_sub, world_id=world_id, limit=limit),
+    }
+
+
+def memory_status(db: Session, memory_service: MemoryService) -> dict[str, object]:
+    return memory_service.status_summary(db)
+
+
+def reindex_memories(
+    db: Session,
+    memory_service: MemoryService,
+    *,
+    world_id: str | None,
+    limit: int,
+) -> dict[str, object]:
+    return memory_service.reindex(db, world_id=world_id, limit=limit)
+
+
+def world_memory_search(
+    db: Session,
+    memory_service: MemoryService,
+    *,
+    world_id: str,
+    query: str,
+    actor_id: str | None,
+    location_id: str | None,
+    limit: int,
+) -> dict[str, object]:
+    result = memory_service.search(
+        db,
+        world_id=world_id,
+        query_text=query,
+        actor_id=actor_id,
+        location_id=location_id,
+        limit=limit,
+    )
+    return {
+        "world_id": world_id,
+        "query": query,
+        "hits": [
+            {
+                "id": item.id,
+                "text": item.text,
+                "scope": item.scope,
+                "actor_id": item.actor_id,
+                "location_id": item.location_id,
+                "salience": item.salience,
+                "score": item.score,
+            }
+            for item in result.hits
+        ],
+        "trace": {
+            "status": result.trace.status,
+            "query_text_hash": result.trace.query_text_hash,
+            "retrieved_memory_ids": result.trace.retrieved_memory_ids,
+            "top_scores": result.trace.top_scores,
+            "used_fallback": result.trace.used_fallback,
+        },
     }
 
 

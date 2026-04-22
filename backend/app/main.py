@@ -14,8 +14,14 @@ from app.modules.actor.service import get_player_actor_for_user
 
 def create_app(container: AppContainer | None = None) -> FastAPI:
     resolved_container = container or build_container()
-    if resolved_container.settings.model_provider == "gemini_developer_api" and not resolved_container.settings.gemini_api_key:
-        raise ValueError("GEMINI_API_KEY is required when MODEL_PROVIDER=gemini_developer_api")
+    if (
+        resolved_container.settings.model_provider == "gemini_developer_api"
+        or resolved_container.settings.embedding_provider == "gemini_developer_api"
+    ) and not resolved_container.settings.gemini_api_key:
+        raise ValueError(
+            "GEMINI_API_KEY is required when MODEL_PROVIDER=gemini_developer_api "
+            "or EMBEDDING_PROVIDER=gemini_developer_api"
+        )
     app = FastAPI(title="GESTALOKA v2 API", version="0.1.0")
     app.state.container = resolved_container
 

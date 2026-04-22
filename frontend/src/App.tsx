@@ -32,6 +32,14 @@ type HealthPayload = {
     turn_cost: number;
     economy_status: string;
   };
+  embedding: {
+    provider: string;
+    model: string;
+    dimension: number;
+    pending_count: number;
+    failed_count: number;
+    runtime_status: string;
+  };
   observability: {
     runtime_role: string;
     projection_lag_seconds: number;
@@ -186,6 +194,48 @@ type ProjectionStatus = {
   }>;
 };
 
+type EmbeddingStatus = {
+  provider: string;
+  model: string;
+  dimension: number;
+  ready_count: number;
+  pending_count: number;
+  failed_count: number;
+  runtime_status: string;
+  runtime_error: string | null;
+};
+
+type MemorySearchResponse = {
+  world_id: string;
+  query: string;
+  hits: Array<{
+    id: string;
+    text: string;
+    scope: string;
+    actor_id: string | null;
+    location_id: string | null;
+    salience: number;
+    score: number;
+  }>;
+  trace: {
+    status: string;
+    query_text_hash: string;
+    retrieved_memory_ids: string[];
+    top_scores: number[];
+    used_fallback: boolean;
+  };
+};
+
+type MemoryReindexResult = {
+  world_id: string | null;
+  queued: number;
+  processed: number;
+  processed_memory_ids: string[];
+  pending_count: number;
+  failed_count: number;
+  completed_at: string;
+};
+
 type GraphSummary = {
   world_id: string;
   vertex_count: number;
@@ -338,6 +388,8 @@ type ReleaseGateReport = {
     variant: string;
     lane: string;
     graph_context_status: string;
+    retrieval_status?: string;
+    retrieval_hit_count?: number;
     failure_reason: string | null;
   }>;
   runbook: {
@@ -509,6 +561,7 @@ function App() {
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [activity, setActivity] = useState<ActivityMessage[]>([]);
   const [projectionStatus, setProjectionStatus] = useState<ProjectionStatus | null>(null);
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null);
   const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
@@ -518,7 +571,10 @@ function App() {
   const [councilTurns, setCouncilTurns] = useState<CouncilTurnTrace[]>([]);
   const [opsState, setOpsState] = useState("idle");
   const [lastRebuild, setLastRebuild] = useState<RebuildSummary | null>(null);
+  const [lastMemoryReindex, setLastMemoryReindex] = useState<MemoryReindexResult | null>(null);
   const [lastAdjustment, setLastAdjustment] = useState<SPAdjustmentResponse | null>(null);
+  const [memorySearchQuery, setMemorySearchQuery] = useState("旅人を助けた");
+  const [memorySearchResult, setMemorySearchResult] = useState<MemorySearchResponse | null>(null);
   const [ledgerUserFilter, setLedgerUserFilter] = useState("");
   const [ledgerWorldFilter, setLedgerWorldFilter] = useState("");
   const [adjustUserSub, setAdjustUserSub] = useState("");
@@ -529,6 +585,8 @@ function App() {
   const [error, setError] = useState("");
   const [turnPending, setTurnPending] = useState(false);
   const [rebuildPending, setRebuildPending] = useState(false);
+  const [memorySearchPending, setMemorySearchPending] = useState(false);
+  const [memoryReindexPending, setMemoryReindexPending] = useState(false);
   const [adjustPending, setAdjustPending] = useState(false);
   const [evalPending, setEvalPending] = useState(false);
   const [checklistPending, setChecklistPending] = useState(false);
@@ -537,6 +595,15 @@ function App() {
 
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
   const activeWorldId = session?.world_id ?? worldId;
+  const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
+    | {
+        status?: string;
+        query_text_hash?: string;
+        retrieved_memory_ids?: string[];
+        top_scores?: number[];
+        used_fallback?: boolean;
+      }
+    | null;
 
   useEffect(() => {
     const handlePopState = () => setRoute(resolveRoute());
@@ -568,6 +635,7 @@ function App() {
       setWallet(null);
       setSessionState(null);
       setProjectionStatus(null);
+      setEmbeddingStatus(null);
       setGraphSummary(null);
       setObservability(null);
       setSpOverview(null);
@@ -575,6 +643,7 @@ function App() {
       setEvalRuns([]);
       setReleaseGate(null);
       setCouncilTurns([]);
+      setMemorySearchResult(null);
       setOpsState("idle");
       return;
     }
@@ -681,18 +750,21 @@ function App() {
   ) {
     if (!currentToken) {
       setProjectionStatus(null);
+      setEmbeddingStatus(null);
       setGraphSummary(null);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
       setCouncilTurns([]);
+      setMemorySearchResult(null);
       setOpsState("idle");
       return;
     }
 
     try {
-      const [statusPayload, observabilityPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload, councilPayload] = await Promise.all([
+      const [statusPayload, embeddingPayload, observabilityPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload, councilPayload] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
+        apiFetch<EmbeddingStatus>("/ops/memories/status", currentToken),
         apiFetch<ObservabilitySummary>("/ops/observability/summary", currentToken),
         apiFetch<SPOverview>("/ops/sp/overview", currentToken),
         apiFetch<{ items: SPLedgerItem[] }>(
@@ -707,6 +779,7 @@ function App() {
         ),
       ]);
       setProjectionStatus(statusPayload);
+      setEmbeddingStatus(embeddingPayload);
       setObservability(observabilityPayload);
       setSpOverview(overviewPayload);
       setLedgerEntries(ledgerPayload.items);
@@ -719,6 +792,7 @@ function App() {
       if (typedError.status === 403) {
         setOpsState("restricted");
         setProjectionStatus(null);
+        setEmbeddingStatus(null);
         setGraphSummary(null);
         setObservability(null);
         setSpOverview(null);
@@ -726,10 +800,12 @@ function App() {
         setEvalRuns([]);
         setReleaseGate(null);
         setCouncilTurns([]);
+        setMemorySearchResult(null);
         return;
       }
       setOpsState("unavailable");
       setProjectionStatus(null);
+      setEmbeddingStatus(null);
       setGraphSummary(null);
       setObservability(null);
       setSpOverview(null);
@@ -737,6 +813,7 @@ function App() {
       setEvalRuns([]);
       setReleaseGate(null);
       setCouncilTurns([]);
+      setMemorySearchResult(null);
       return;
     }
 
@@ -893,6 +970,56 @@ function App() {
     }
   }
 
+  async function runMemorySearch(currentToken: string, currentWorldId: string) {
+    const response = await apiFetch<MemorySearchResponse>(
+      `/ops/worlds/${currentWorldId}/memory-search?query=${encodeURIComponent(memorySearchQuery)}&limit=6`,
+      currentToken,
+    );
+    setMemorySearchResult(response);
+  }
+
+  async function handleMemorySearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !activeWorldId) {
+      setError("Choose a world before running memory search");
+      return;
+    }
+
+    try {
+      setMemorySearchPending(true);
+      setError("");
+      await runMemorySearch(token, activeWorldId);
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setMemorySearchPending(false);
+    }
+  }
+
+  async function handleMemoryReindex() {
+    if (!token || !activeWorldId) {
+      setError("Choose a world before reindexing memories");
+      return;
+    }
+
+    try {
+      setMemoryReindexPending(true);
+      setError("");
+      const response = await apiFetch<MemoryReindexResult>("/ops/memories/reindex", token, {
+        method: "POST",
+        body: JSON.stringify({ world_id: activeWorldId, limit: 100 }),
+      });
+      setLastMemoryReindex(response);
+      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
+      await runMemorySearch(token, activeWorldId);
+      await refreshHealth();
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setMemoryReindexPending(false);
+    }
+  }
+
   async function handleLedgerRefresh(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
@@ -999,6 +1126,9 @@ function App() {
       return;
     }
     void refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
+    if (activeWorldId) {
+      void runMemorySearch(token, activeWorldId);
+    }
   }, [route, token, activeWorldId, session?.session_id]);
 
   return (
@@ -1266,6 +1396,14 @@ function App() {
                 {observability?.canary.graph_runtime_status ?? health?.observability.canary_health.graph_runtime_status ?? "unknown"} /
                 Gate: {observability?.canary.release_gate_verdict ?? health?.observability.canary_health.release_gate_verdict ?? "unknown"}
               </p>
+              <p data-testid="embedding-status-summary">
+                Embedding: {embeddingStatus?.provider ?? health?.embedding.provider ?? "unknown"} / model:{" "}
+                {embeddingStatus?.model ?? health?.embedding.model ?? "unknown"} / dim:{" "}
+                {embeddingStatus?.dimension ?? health?.embedding.dimension ?? "unknown"} / pending:{" "}
+                {embeddingStatus?.pending_count ?? health?.embedding.pending_count ?? 0} / failed:{" "}
+                {embeddingStatus?.failed_count ?? health?.embedding.failed_count ?? 0} / status:{" "}
+                {embeddingStatus?.runtime_status ?? health?.embedding.runtime_status ?? "unknown"}
+              </p>
               <p data-testid="graph-vertex-count">
                 Graph vertices: {graphSummary?.vertex_count ?? 0} / edges:{" "}
                 <span data-testid="graph-edge-count">{graphSummary?.edge_count ?? 0}</span>
@@ -1355,6 +1493,54 @@ function App() {
                 ) : (
                   <li>No council turns recorded yet.</li>
                 )}
+              </ul>
+              <h3>Memory retrieval diagnostics</h3>
+              <div data-testid="memory-retrieval-trace">
+                <p>
+                  Latest retrieval: {latestRetrievalTrace?.status ?? "unknown"} / fallback:{" "}
+                  {String(latestRetrievalTrace?.used_fallback ?? false)}
+                </p>
+                <p>
+                  Hits: {(latestRetrievalTrace?.retrieved_memory_ids ?? []).join(", ") || "none"} / Scores:{" "}
+                  {(latestRetrievalTrace?.top_scores ?? []).join(", ") || "none"}
+                </p>
+              </div>
+              <form className="stack compact-form" onSubmit={handleMemorySearch}>
+                <label>
+                  Memory query
+                  <input
+                    data-testid="memory-search-query"
+                    value={memorySearchQuery}
+                    onChange={(event) => setMemorySearchQuery(event.target.value)}
+                  />
+                </label>
+                <div className="actions">
+                  <button data-testid="run-memory-search" type="submit" disabled={!token || memorySearchPending || opsState !== "ready"}>
+                    {memorySearchPending ? "Searching..." : "Search memory"}
+                  </button>
+                  <button
+                    data-testid="reindex-memories"
+                    type="button"
+                    onClick={() => void handleMemoryReindex()}
+                    disabled={!token || memoryReindexPending || opsState !== "ready"}
+                  >
+                    {memoryReindexPending ? "Reindexing..." : "Reindex memories"}
+                  </button>
+                </div>
+              </form>
+              {lastMemoryReindex ? (
+                <p data-testid="memory-reindex-result">
+                  Reindexed {lastMemoryReindex.processed}/{lastMemoryReindex.queued} memories at {lastMemoryReindex.completed_at}
+                </p>
+              ) : null}
+              <ul className="stream" data-testid="memory-search-stream">
+                {(memorySearchResult?.hits ?? []).map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.scope}</strong>
+                    <span>{item.text}</span>
+                    <span>score {item.score.toFixed(4)}</span>
+                  </li>
+                ))}
               </ul>
             </article>
 
@@ -1488,6 +1674,7 @@ function App() {
                     <strong>{item.case_id}</strong>
                     <span>{item.variant}</span>
                     <span>{item.graph_context_status}</span>
+                    <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>
                     <span>{item.failure_reason ?? "none"}</span>
                   </li>
                 ))}

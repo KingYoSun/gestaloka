@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_container, get_db
 from app.core.container import AppContainer
-from app.modules.admin_ops.service import observability_summary, runtime_snapshot
+from app.modules.admin_ops.service import memory_status, observability_summary, runtime_snapshot
 
 
 router = APIRouter()
@@ -25,6 +25,7 @@ def health(
         container.projection_service,
         container.observability_service,
     )
+    embedding = memory_status(db, container.memory_service)
     release_gate = container.eval_service.latest_release_checklist(db)
     return {
         "status": "ok",
@@ -47,6 +48,14 @@ def health(
             "default_balance": container.settings.sp_default_balance,
             "turn_cost": container.settings.turn_sp_cost,
             "economy_status": "ready",
+        },
+        "embedding": {
+            "provider": embedding["provider"],
+            "model": embedding["model"],
+            "dimension": embedding["dimension"],
+            "pending_count": embedding["pending_count"],
+            "failed_count": embedding["failed_count"],
+            "runtime_status": embedding["runtime_status"],
         },
         "observability": {
             "runtime_role": container.settings.app_runtime_role,

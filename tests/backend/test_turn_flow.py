@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from app.models.entities import Item, OutboxEvent, ProjectionRecord, QuestAssignment
+from app.models.entities import Item, Memory, OutboxEvent, ProjectionRecord, QuestAssignment, Turn
+from app.modules.world_memory.service import build_retrieval_query_text
 
 
 def test_turn_flow_materializes_memory_and_projection(client, container, auth_headers):
@@ -72,3 +73,80 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         rebuilt = container.projection_service.rebuild(db, session_payload["world_id"])
         db.commit()
         assert rebuilt
+
+
+def test_second_turn_uses_semantic_retrieval_trace_and_worker_backfill_can_recover(container, client, auth_headers, monkeypatch):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    first_turn = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_text": "広場で旅人を助け、灯をともす"},
+        headers=auth_headers,
+    )
+    assert first_turn.status_code == 200
+
+    second_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+        },
+        headers=auth_headers,
+    )
+    assert second_turn.status_code == 200
+
+    with container.session_factory() as db:
+        resolved_turn = db.execute(select(Turn).where(Turn.id == second_turn.json()["turn_id"])).scalar_one()
+        retrieval_trace = resolved_turn.resolved_output["retrieval_trace"]
+        assert retrieval_trace["status"] == "ready"
+        assert len(retrieval_trace["retrieved_memory_ids"]) >= 1
+        assert any(score >= container.settings.memory_retrieval_min_score for score in retrieval_trace["top_scores"])
+
+    original_embed_document = container.memory_service.provider.embed_document
+    original_embed_query = container.memory_service.provider.embed_query
+
+    def fail_embed_document(text: str) -> list[float]:
+        raise RuntimeError(f"embedding unavailable for {text}")
+
+    def fail_embed_query(text: str) -> list[float]:
+        raise RuntimeError(f"query embedding unavailable for {text}")
+
+    monkeypatch.setattr(container.memory_service.provider, "embed_document", fail_embed_document)
+    monkeypatch.setattr(container.memory_service.provider, "embed_query", fail_embed_query)
+    degraded_turn = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_text": "広場の灯についてさらに尋ねる"},
+        headers=auth_headers,
+    )
+    assert degraded_turn.status_code == 200
+
+    with container.session_factory() as db:
+        pending = list(db.execute(select(Memory).where(Memory.embedding_status == "pending")).scalars())
+        assert pending
+        degraded_turn_record = db.execute(select(Turn).where(Turn.id == degraded_turn.json()["turn_id"])).scalar_one()
+        assert degraded_turn_record.resolved_output["retrieval_trace"]["status"] == "degraded"
+        retrieval = container.memory_service.search(
+            db,
+            world_id=session_payload["world_id"],
+            query_text=build_retrieval_query_text("広場の灯についてさらに尋ねる"),
+        )
+        assert retrieval.trace.status == "degraded"
+
+    monkeypatch.setattr(container.memory_service.provider, "embed_document", original_embed_document)
+    monkeypatch.setattr(container.memory_service.provider, "embed_query", original_embed_query)
+    with container.session_factory() as db:
+        processed = container.memory_service.process_pending(db, world_id=session_payload["world_id"], limit=16)
+        db.commit()
+        assert processed
+        refreshed = container.memory_service.search(
+            db,
+            world_id=session_payload["world_id"],
+            query_text=build_retrieval_query_text("広場の灯についてさらに尋ねる"),
+        )
+        assert refreshed.trace.status == "ready"
+        assert refreshed.trace.retrieved_memory_ids

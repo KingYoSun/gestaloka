@@ -18,7 +18,7 @@ from app.modules.actor.service import (
 )
 from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.identity.oidc import UserIdentity
-from app.modules.world_memory.service import materialize_memories, search_memories
+from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
 from app.modules.world_state.service import (
     apply_world_tag_updates,
     build_session_state,
@@ -196,17 +196,22 @@ def resolve_turn_for_session(
         actor_id=player_actor.id,
         location_id=prepared.location_id,
     )
-    relevant_memories = search_memories(
-        db,
-        world_id=game_session.world_id,
-        query=input_text,
-        actor_id=guide_npc.id,
-    )
     graph_context = container.projection_service.resolve_relation_context(
         db,
         world_id=game_session.world_id,
         primary_actor_id=guide_npc.id,
         counterpart_actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    retrieval = container.memory_service.search(
+        db,
+        world_id=game_session.world_id,
+        query_text=build_retrieval_query_text(
+            input_text,
+            session_state=session_state,
+            relation_context=graph_context.context.prompt_lines(),
+        ),
+        actor_id=guide_npc.id,
         location_id=prepared.location_id,
     )
     resolution = container.council_service.resolve_turn(
@@ -216,7 +221,7 @@ def resolve_turn_for_session(
             player_name=player_actor.display_name,
             npc_name=guide_npc.display_name,
             input_text=input_text,
-            relevant_memories=[item.text for item in relevant_memories],
+            relevant_memories=[item.text for item in retrieval.memories],
             relation_context=graph_context.context.prompt_lines(),
             graph_context_status=graph_context.status,
             session_state=session_state,
@@ -258,6 +263,7 @@ def resolve_turn_for_session(
             "status": "failed",
             "resolution_mode": "gm_council",
             "used_fallback": resolution.used_fallback,
+            "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
             "error_detail": (
                 "council_rejected"
                 if resolution.rejection_role in {"rules_arbiter", "safety_guard"}
@@ -357,6 +363,7 @@ def resolve_turn_for_session(
         "status": "resolved",
         "resolution_mode": "gm_council",
         "used_fallback": resolution.used_fallback,
+        "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
         "narrative": payload.narrative,
         "npc_reaction": payload.npc_reaction,
         "graph_context_status": graph_context.status,
@@ -395,7 +402,7 @@ def resolve_turn_for_session(
     db.add(event)
     db.flush()
 
-    memories = materialize_memories(
+    memories = container.memory_service.materialize_memories(
         db,
         world_id=game_session.world_id,
         source_event_id=event.id,
