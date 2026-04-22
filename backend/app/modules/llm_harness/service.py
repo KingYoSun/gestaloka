@@ -183,6 +183,9 @@ class StubModelProvider(BaseModelProvider):
         quests = [item.get("title", "") for item in input_payload.get("quests") or [] if item.get("title")]
         factions = [item.get("name", "") for item in input_payload.get("factions") or [] if item.get("name")]
         inventory = [item.get("name", "") for item in input_payload.get("inventory") or [] if item.get("name")]
+        active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
+        usable_items = [item.get("name", "") for item in input_payload.get("usable_reward_items") or [] if item.get("name")]
+        used_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
         summary_parts = []
         if memories:
             summary_parts.append(f"memory={' / '.join(memories[:2])}")
@@ -190,27 +193,39 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"relation={' / '.join(relations[:2])}")
         if quests:
             summary_parts.append(f"quest={quests[0]}")
+        summary_parts.append(f"quest_stage={active_quest_stage}")
         if factions:
             summary_parts.append(f"faction={factions[0]}")
         if inventory:
             summary_parts.append(f"inventory={', '.join(inventory[:2])}")
+        if usable_items:
+            summary_parts.append(f"usable_reward={', '.join(usable_items[:2])}")
+        if used_items:
+            summary_parts.append(f"used_reward={', '.join(used_items[:2])}")
         summary = " | ".join(summary_parts) if summary_parts else "no prior context"
         return {
             "memory_summary": summary,
             "focus_memories": memories[:3],
             "relation_summary": " / ".join(relations[:3]) if relations else "same-world relation graph is quiet",
-            "state_summary": f"quests={len(quests)} factions={len(factions)} inventory={len(inventory)}",
+            "state_summary": (
+                f"quests={len(quests)} factions={len(factions)} inventory={len(inventory)} "
+                f"usable_reward_items={len(usable_items)} used_reward_items={len(used_items)}"
+            ),
         }
 
     def _npc_manager_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         npc_name = str(input_payload.get("npc_name") or "NPC")
         memory_summary = str(input_payload.get("memory_summary") or "no prior memory")
         focus_memories = [str(item) for item in input_payload.get("focus_memories") or []]
+        active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
         return {
             "npc_intent": f"{npc_name} keeps same-world continuity and responds to the latest player action.",
             "reaction_style": "measured",
             "focus_memories": focus_memories[:2],
-            "reaction_outline": f"{npc_name} references {memory_summary} and keeps the current quest/faction state in mind.",
+            "reaction_outline": (
+                f"{npc_name} references {memory_summary}, keeps quest stage {active_quest_stage}, "
+                "and factors in the current faction/inventory state."
+            ),
         }
 
     def _world_progress_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -255,7 +270,7 @@ class StubModelProvider(BaseModelProvider):
         world_tags = normalize_world_tags([str(item) for item in input_payload.get("world_tags") or []])
         risk_level = str(input_payload.get("risk_level") or "low")
         approval_status = "approved"
-        reason = "Quest/SP/faction rules are consistent."
+        reason = "Quest/faction/location rules are consistent and SP remains execution-only."
         if "__force_rules_reject__" in input_text:
             approval_status = "rejected"
             reason = "Rule arbiter rejected the turn."

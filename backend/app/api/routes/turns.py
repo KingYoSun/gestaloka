@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
@@ -16,7 +18,17 @@ router = APIRouter(tags=["turns"])
 
 class ResolveTurnRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=36)
-    input_text: str = Field(min_length=1, max_length=2000)
+    action_type: Literal["narrative", "use_reward_item"] = "narrative"
+    input_text: str | None = Field(default=None, min_length=1, max_length=2000)
+    item_id: str | None = Field(default=None, min_length=1, max_length=36)
+
+    @model_validator(mode="after")
+    def validate_action_payload(self) -> "ResolveTurnRequest":
+        if self.action_type == "narrative" and not self.input_text:
+            raise ValueError("input_text is required for narrative turns")
+        if self.action_type == "use_reward_item" and not self.item_id:
+            raise ValueError("item_id is required for use_reward_item turns")
+        return self
 
 
 @router.post("/turns")
@@ -35,18 +47,30 @@ async def resolve_turn(
         raise
 
     await realtime_hub.emit(payload.session_id, "turn.accepted", {"session_id": payload.session_id})
-    for phase in (
-        "memory_council",
-        "npc_council",
-        "world_progress",
-        "rules_arbiter",
-        "safety_guard",
-        "narrative",
-    ):
+    phases = (
+        (
+            "memory_council",
+            "npc_council",
+            "world_progress",
+            "rules_arbiter",
+            "safety_guard",
+            "narrative",
+        )
+        if payload.action_type == "narrative"
+        else ("item_use",)
+    )
+    for phase in phases:
         await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": phase})
 
     started_at = container.observability_service.timer()
-    result = resolve_turn_for_session(db, container, prepared, payload.input_text)
+    result = resolve_turn_for_session(
+        db,
+        container,
+        prepared,
+        action_type=payload.action_type,
+        input_text=payload.input_text,
+        item_id=payload.item_id,
+    )
     container.observability_service.record_turn_resolution(
         duration_seconds=container.observability_service.elapsed(started_at),
         world_id=result.turn.world_id,
@@ -61,7 +85,7 @@ async def resolve_turn(
         await realtime_hub.emit(
             payload.session_id,
             "turn.narrative.delta",
-            {"delta": result.turn.resolved_output["narrative"], "final": True},
+            {"delta": result.turn.resolved_output.get("narrative", ""), "final": True},
         )
 
     await realtime_hub.emit(payload.session_id, "world.event.created", result.event_payload)
@@ -91,7 +115,7 @@ async def resolve_turn(
 
     if not result.succeeded:
         return JSONResponse(
-            status_code=422,
+            status_code=result.status_code,
             content={
                 "detail": result.error_detail,
                 "turn_id": result.turn.id,
@@ -103,15 +127,17 @@ async def resolve_turn(
                 "quest_updates": [],
                 "faction_updates": [],
                 "inventory_updates": [],
+                "action_type": result.action_type,
             },
         )
 
     response = {
         "turn_id": result.turn.id,
+        "action_type": result.action_type,
         "event_id": result.event.id,
         "memory_ids": result.memory_ids,
-        "narrative": result.turn.resolved_output["narrative"],
-        "npc_reaction": result.turn.resolved_output["npc_reaction"],
+        "narrative": result.turn.resolved_output.get("narrative", ""),
+        "npc_reaction": result.turn.resolved_output.get("npc_reaction", ""),
         "sp_delta": result.sp_delta,
         "sp_balance": result.sp_balance,
         "sp_ledger_id": result.sp_ledger_id,

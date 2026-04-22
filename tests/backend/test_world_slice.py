@@ -32,6 +32,19 @@ def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
     assert second.should_issue_reward is True
     assert second.next_standing > 0.4
 
+    followup = QuestRuleEngine.evaluate(
+        QuestRuleInput(
+            world_tags=["promise_followup"],
+            current_progress=0,
+            progress_target=1,
+            current_standing=0.55,
+            reward_already_issued=False,
+            reward_enabled=False,
+        )
+    )
+    assert followup.next_progress == 1
+    assert followup.should_issue_reward is False
+
 
 def test_session_seed_is_idempotent_for_character_faction_and_quest(client, container, auth_headers):
     first = client.post(
@@ -50,7 +63,7 @@ def test_session_seed_is_idempotent_for_character_faction_and_quest(client, cont
 
     with container.session_factory() as db:
         assert db.execute(select(func.count(Faction.id))).scalar_one() == 1
-        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 1
+        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 2
         assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 1
         assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
         assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 1

@@ -9,6 +9,19 @@ from app.core.config import Settings
 from app.models.entities import SPAccount, SPLedgerEntry
 
 
+ALLOWED_SP_REASON_CODES = {
+    "wallet_seed",
+    "turn_cost",
+    "retry_cost",
+    "eval_cost",
+    "reindex_cost",
+    "turn_refund",
+    "request_refund",
+    "eval_refund",
+    "admin_adjustment",
+}
+
+
 class InsufficientSPError(Exception):
     def __init__(self, *, balance: int, required: int, detail: str = "Insufficient SP balance") -> None:
         super().__init__(detail)
@@ -35,6 +48,8 @@ class EconomyService:
             "user_sub": user_sub,
             "balance": account.balance,
             "turn_cost": self.settings.turn_sp_cost,
+            "budget_scope": "execution_only",
+            "usage_policy": "SP is external execution budget, not in-world currency.",
             "recent_entries": recent_entries,
         }
 
@@ -92,6 +107,8 @@ class EconomyService:
         created_by_sub: str,
         note: str | None,
     ) -> SPMutationResult:
+        if reason_code != "admin_adjustment":
+            raise ValueError("Admin adjustments must use reason_code=admin_adjustment")
         return self._apply_delta(
             db,
             user_sub=user_sub,
@@ -120,6 +137,7 @@ class EconomyService:
         return {
             "default_balance": self.settings.sp_default_balance,
             "turn_cost": self.settings.turn_sp_cost,
+            "budget_scope": "execution_only",
             "total_accounts": int(total_accounts),
             "total_ledger_entries": int(total_ledger_entries),
             "recent_adjustments": recent_adjustments,
@@ -145,6 +163,7 @@ class EconomyService:
         return {
             "default_balance": self.settings.sp_default_balance,
             "turn_cost": self.settings.turn_sp_cost,
+            "budget_scope": "execution_only",
             "economy_status": "ready",
         }
 
@@ -189,6 +208,8 @@ class EconomyService:
     ) -> SPMutationResult:
         if delta == 0:
             raise ValueError("SP delta must be non-zero")
+        if reason_code not in ALLOWED_SP_REASON_CODES:
+            raise ValueError("SP reason_code is reserved for execution-budget accounting only")
 
         account = self._ensure_account(db, user_sub=user_sub)
         next_balance = account.balance + delta

@@ -78,7 +78,6 @@ class CouncilRequest:
     relation_context: list[str]
     graph_context_status: str
     session_state: dict[str, Any]
-    sp_balance: int
 
 
 class GMCouncilService:
@@ -97,6 +96,11 @@ class GMCouncilService:
 
     def resolve_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
         role_runs: list[CouncilRoleRun] = []
+        quests = request.session_state.get("quests") or []
+        inventory = request.session_state.get("inventory") or []
+        active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else None)
+        usable_reward_items = [item for item in inventory if item.get("usable")]
+        used_reward_items = [item for item in inventory if item.get("status") == "used"]
 
         memory_input = {
             "world_id": request.world_id,
@@ -105,10 +109,13 @@ class GMCouncilService:
             "npc_name": request.npc_name,
             "relevant_memories": request.relevant_memories,
             "relation_context": request.relation_context,
-            "quests": request.session_state.get("quests") or [],
+            "quests": quests,
             "factions": request.session_state.get("factions") or [],
-            "inventory": request.session_state.get("inventory") or [],
+            "inventory": inventory,
             "location": request.session_state.get("location"),
+            "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
+            "usable_reward_items": usable_reward_items,
+            "used_reward_items": used_reward_items,
         }
         memory_result = self.model_router.execute_structured_prompt(
             prompt_id="council.memory_manager",
@@ -148,6 +155,10 @@ class GMCouncilService:
             "focus_memories": memory_payload.focus_memories,
             "relation_summary": memory_payload.relation_summary,
             "state_summary": memory_payload.state_summary,
+            "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
+            "usable_reward_items": usable_reward_items,
+            "used_reward_items": used_reward_items,
+            "factions": request.session_state.get("factions") or [],
         }
         npc_result = self.model_router.execute_structured_prompt(
             prompt_id="council.npc_manager",
@@ -224,10 +235,9 @@ class GMCouncilService:
             "input_text": request.input_text,
             "world_tags": world_progress_payload.world_tags,
             "risk_level": world_progress_payload.risk_level,
-            "sp_balance": request.sp_balance,
-            "quests": request.session_state.get("quests") or [],
+            "quests": quests,
             "factions": request.session_state.get("factions") or [],
-            "inventory": request.session_state.get("inventory") or [],
+            "inventory": inventory,
         }
         rules_result = self.model_router.execute_structured_prompt(
             prompt_id="council.rules_arbiter",

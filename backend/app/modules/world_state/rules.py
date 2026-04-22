@@ -69,6 +69,7 @@ class QuestRuleInput:
     progress_target: int
     current_standing: float
     reward_already_issued: bool
+    reward_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -107,7 +108,7 @@ class QuestRuleEngine:
         next_progress = min(rule_input.progress_target, rule_input.current_progress + progress_delta)
         next_standing = max(-1.0, min(1.0, round(rule_input.current_standing + standing_delta, 3)))
         completed = next_progress >= rule_input.progress_target
-        should_issue_reward = completed and not rule_input.reward_already_issued
+        should_issue_reward = completed and rule_input.reward_enabled and not rule_input.reward_already_issued
 
         summary_parts: list[str] = []
         if progress_delta:

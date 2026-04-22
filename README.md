@@ -51,4 +51,6 @@ password: demo-password
 - The graph projection path is outbox-driven. The standard compose stack now targets NebulaGraph, while lightweight test settings still use the recording backend.
 - Runtime stabilization for NebulaGraph includes an init step that registers the storage host before backend and projection worker start.
 - Sessions start with a canonical starter location and a projected `KNOWS` relation between the player and guide NPC.
-- Phase E adds an SP wallet and append-only ledger: successful turns consume SP, business-failed turns refund in-request, and `/admin` can inspect and adjust balances.
+- SP is an execution-budget ledger for API/runtime cost only. It is not an in-world currency and does not buy quest, faction, or item power.
+- Successful requests consume SP, business-failed requests refund in-request, and `/admin` inspects execution budget separately from world progression.
+- Reward items stay inside world progression: `Lantern Sigil` unlocks the next quest path through deterministic world rules instead of purchase mechanics.

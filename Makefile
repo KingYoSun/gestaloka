@@ -43,7 +43,7 @@ observability-down:
 	docker compose rm -sf otel-collector prometheus grafana
 
 scan-v1-terms:
-	@! rg -n "(Neo4j|neomodel|gemini-2\\.5|Socket\\.IO|他世界|NPC化|dispatch)" . \
+	@! rg -n "(Neo4j|neomodel|Socket\\.IO|他世界|NPC化|dispatch)" . \
 		--glob '!legacy/**' \
 		--glob '!Makefile' \
 		--glob '!AGENTS.md' \

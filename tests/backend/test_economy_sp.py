@@ -13,6 +13,7 @@ def test_sp_wallet_lazy_seed_only_once(client, container, auth_headers):
     assert second.status_code == 200
     assert first.json()["balance"] == 10
     assert second.json()["balance"] == 10
+    assert first.json()["budget_scope"] == "execution_only"
 
     with container.session_factory() as db:
         seed_count = db.execute(
@@ -106,6 +107,7 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
     overview_response = client.get("/ops/sp/overview", headers=auth_headers)
     assert overview_response.status_code == 200
     assert overview_response.json()["turn_cost"] == 1
+    assert overview_response.json()["budget_scope"] == "execution_only"
 
     session_response = client.post(
         "/sessions",
@@ -144,3 +146,19 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
 
     assert latest.created_by_sub == "local-player"
     assert latest.note == "bonus grant"
+
+
+def test_world_state_reason_codes_are_rejected_for_sp_adjustments(client, auth_headers):
+    response = client.post(
+        "/ops/sp/adjustments",
+        json={
+            "user_sub": "local-player",
+            "delta": 1,
+            "reason_code": "quest_reward",
+            "world_id": None,
+            "note": "should fail",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Admin adjustments must use reason_code=admin_adjustment"

@@ -25,7 +25,9 @@ def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id:
                 "template_key": "lantern_sigils",
                 "name": "Lantern Sigil",
                 "description": "A reward sigil from Founders Watch.",
-                "status": "owned",
+                "status": "active",
+                "usable": True,
+                "effect_kind": "unlock_followup_watch_path",
             }
         )
     return {
@@ -39,6 +41,8 @@ def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id:
                 "title": "First Watch Request",
                 "description": "Help the watch and report back.",
                 "status": "active" if progress < 2 else "completed",
+                "stage_key": "starter_watch",
+                "unlock_requirements": {},
                 "progress": progress,
                 "progress_target": 2,
                 "latest_summary": "",
@@ -113,7 +117,6 @@ def test_council_service_falls_back_to_pro_lane(container):
             relation_context=["location=Founders Reach"],
             graph_context_status="ready",
             session_state=_session_state(),
-            sp_balance=10,
         )
     )
 
@@ -216,7 +219,6 @@ def test_live_gemini_council_structured_output_runs_when_api_key_present():
             ],
             graph_context_status="ready",
             session_state=_session_state(),
-            sp_balance=10,
         )
     )
 

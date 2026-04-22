@@ -22,7 +22,7 @@
 - `legacy/v1/` からの import
 - cross-world 参照
 - Neo4j / neomodel の再導入
-- Gemini 2.5 系前提の復活
+- 廃止済み/存在しない固定 model ID への依存
 - Socket.IO 前提の復活
 - 「他世界」「NPC化」「dispatch」を v2 実装語彙として復活させること
 

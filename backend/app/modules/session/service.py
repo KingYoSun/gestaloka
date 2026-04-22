@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
-from app.modules.gm_council.service import CouncilRequest
 from app.models.entities import Actor, Event, LLMRun, OutboxEvent, Session as GameSession, Turn, new_id
 from app.modules.actor.service import (
     ensure_player_actor,
@@ -17,6 +16,7 @@ from app.modules.actor.service import (
     increment_relationship_strength,
 )
 from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
+from app.modules.gm_council.service import CouncilRequest
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
 from app.modules.world_state.service import (
@@ -25,6 +25,7 @@ from app.modules.world_state.service import (
     ensure_starter_location,
     ensure_world,
     ensure_world_slice_seed,
+    use_reward_item,
 )
 
 
@@ -52,7 +53,9 @@ class TurnResolutionResult:
     quest_updates: list[dict]
     faction_updates: list[dict]
     inventory_updates: list[dict]
+    action_type: str
     error_detail: str | None = None
+    status_code: int = 200
 
     @property
     def succeeded(self) -> bool:
@@ -120,6 +123,8 @@ def create_session_for_user(
         input_text="[session started]",
         resolved_output={"status": "system"},
         model_lane="system",
+        action_type="system",
+        resolution_mode="system",
     )
     db.add(bootstrap_turn)
     db.flush()
@@ -171,6 +176,35 @@ def resolve_turn_for_session(
     db: Session,
     container: AppContainer,
     prepared: PreparedTurnContext,
+    *,
+    action_type: str,
+    input_text: str | None = None,
+    item_id: str | None = None,
+) -> TurnResolutionResult:
+    if action_type == "use_reward_item":
+        if item_id is None:
+            raise ValueError("item_id is required for use_reward_item")
+        return _resolve_reward_item_turn_for_session(
+            db,
+            container,
+            prepared,
+            item_id=item_id,
+        )
+    if input_text is None:
+        raise ValueError("input_text is required for narrative turns")
+    return _resolve_narrative_turn_for_session(
+        db,
+        container,
+        prepared,
+        input_text=input_text,
+    )
+
+
+def _resolve_narrative_turn_for_session(
+    db: Session,
+    container: AppContainer,
+    prepared: PreparedTurnContext,
+    *,
     input_text: str,
 ) -> TurnResolutionResult:
     game_session = prepared.session
@@ -185,6 +219,7 @@ def resolve_turn_for_session(
         input_text=input_text,
         resolved_output={"status": "pending"},
         model_lane="pending",
+        action_type="narrative",
         resolution_mode="gm_council",
     )
     db.add(turn)
@@ -225,7 +260,6 @@ def resolve_turn_for_session(
             relation_context=graph_context.context.prompt_lines(),
             graph_context_status=graph_context.status,
             session_state=session_state,
-            sp_balance=prepared.debit.balance_after,
         )
     )
 
@@ -258,82 +292,36 @@ def resolve_turn_for_session(
             )
 
     if not resolution.succeeded:
-        turn.model_lane = resolution.final_lane
-        turn.resolved_output = {
-            "status": "failed",
-            "resolution_mode": "gm_council",
-            "used_fallback": resolution.used_fallback,
-            "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
-            "error_detail": (
-                "council_rejected"
-                if resolution.rejection_role in {"rules_arbiter", "safety_guard"}
-                else resolution.failure_reason
-            ),
-            "failure_reason": resolution.failure_reason,
-            "rejection_role": resolution.rejection_role,
-            "council_trace": [
-                {
-                    "role": item.council_role,
-                    "approval_status": item.approval_status,
-                    "final_lane": item.final_lane,
-                }
-                for item in resolution.role_runs
-            ],
-        }
-        failure_event = Event(
-            world_id=game_session.world_id,
-            session_id=game_session.id,
-            turn_id=turn.id,
-            event_type="player.turn.failed",
-            source_actor_id=player_actor.id,
-            location_id=prepared.location_id,
-            payload={
-                "action": input_text,
-                "failure_reason": resolution.failure_reason,
-                "world_id": game_session.world_id,
-                "location_id": prepared.location_id,
-                "graph_context_status": graph_context.status,
-                "rejection_role": resolution.rejection_role,
-            },
-            narrative=f"{player_actor.display_name}の行動『{input_text}』は監査対象として記録された。",
-        )
-        db.add(failure_event)
-        db.flush()
-        db.add(
-            OutboxEvent(
-                world_id=game_session.world_id,
-                event_id=failure_event.id,
-                projection_type="world_graph.audit",
-                payload={"turn_id": turn.id, "outcome": "failed", "graph_context_status": graph_context.status},
-            )
-        )
-        refund = container.economy_service.refund_turn_cost(
+        return _build_failed_turn_result(
             db,
-            user_sub=prepared.debit.ledger_entry.user_sub,
-            world_id=game_session.world_id,
-            actor_id=player_actor.id,
-            reference_id=turn.id,
-            note=resolution.failure_reason or resolution.rejection_role,
-        )
-        db.flush()
-        return TurnResolutionResult(
+            container,
+            prepared,
             turn=turn,
-            event=failure_event,
-            memory_ids=[],
-            event_payload=_event_payload(failure_event),
-            memories_payload=[],
+            action_type="narrative",
+            resolution_mode="gm_council",
+            action_label=input_text,
             graph_context_status=graph_context.status,
-            sp_delta=0,
-            sp_balance=refund.balance_after,
-            sp_ledger_id=prepared.debit.ledger_entry.id,
-            quest_updates=[],
-            faction_updates=[],
-            inventory_updates=[],
-            error_detail=(
+            failure_reason=(
                 "council_rejected"
                 if resolution.rejection_role in {"rules_arbiter", "safety_guard"}
                 else resolution.failure_reason or "Turn resolution failed"
             ),
+            model_lane=resolution.final_lane,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            failure_payload={
+                "used_fallback": resolution.used_fallback,
+                "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+                "failure_reason": resolution.failure_reason,
+                "rejection_role": resolution.rejection_role,
+                "council_trace": [
+                    {
+                        "role": item.council_role,
+                        "approval_status": item.approval_status,
+                        "final_lane": item.final_lane,
+                    }
+                    for item in resolution.role_runs
+                ],
+            },
         )
 
     payload = resolution.final_payload
@@ -361,6 +349,7 @@ def resolve_turn_for_session(
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
         "status": "resolved",
+        "action_type": "narrative",
         "resolution_mode": "gm_council",
         "used_fallback": resolution.used_fallback,
         "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
@@ -390,6 +379,7 @@ def resolve_turn_for_session(
         location_id=prepared.location_id,
         payload={
             **payload.event_payload,
+            "action_type": "narrative",
             "location_id": prepared.location_id,
             "graph_context_status": graph_context.status,
             "world_tags": payload.world_tags,
@@ -443,6 +433,231 @@ def resolve_turn_for_session(
         quest_updates=state_updates["quest_updates"],
         faction_updates=state_updates["faction_updates"],
         inventory_updates=state_updates["inventory_updates"],
+        action_type="narrative",
+    )
+
+
+def _resolve_reward_item_turn_for_session(
+    db: Session,
+    container: AppContainer,
+    prepared: PreparedTurnContext,
+    *,
+    item_id: str,
+) -> TurnResolutionResult:
+    game_session = prepared.session
+    player_actor = prepared.player_actor
+    guide_npc = prepared.guide_npc
+    action_label = f"[use_reward_item:{item_id}]"
+
+    turn = Turn(
+        id=prepared.turn_id,
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        actor_id=player_actor.id,
+        input_text=action_label,
+        resolved_output={"status": "pending"},
+        model_lane="deterministic",
+        action_type="use_reward_item",
+        resolution_mode="item_use_rule",
+    )
+    db.add(turn)
+    db.flush()
+
+    try:
+        outcome = use_reward_item(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            actor_name=player_actor.display_name,
+            location_id=prepared.location_id,
+            item_id=item_id,
+        )
+    except LookupError as exc:
+        return _build_failed_turn_result(
+            db,
+            container,
+            prepared,
+            turn=turn,
+            action_type="use_reward_item",
+            resolution_mode="item_use_rule",
+            action_label=action_label,
+            graph_context_status="deterministic",
+            failure_reason=str(exc),
+            model_lane="deterministic",
+            status_code=status.HTTP_404_NOT_FOUND,
+            failure_payload={"item_id": item_id},
+        )
+    except ValueError as exc:
+        return _build_failed_turn_result(
+            db,
+            container,
+            prepared,
+            turn=turn,
+            action_type="use_reward_item",
+            resolution_mode="item_use_rule",
+            action_label=action_label,
+            graph_context_status="deterministic",
+            failure_reason=str(exc),
+            model_lane="deterministic",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            failure_payload={"item_id": item_id},
+        )
+
+    npc_reaction = (
+        f"{guide_npc.display_name}はLantern Sigilを確かめ、次の watch path が正式に開いたと告げた。"
+    )
+    turn.model_lane = "deterministic"
+    turn.resolved_output = {
+        "status": "resolved",
+        "action_type": "use_reward_item",
+        "resolution_mode": "item_use_rule",
+        "narrative": outcome.event_narrative,
+        "npc_reaction": npc_reaction,
+        "graph_context_status": "deterministic",
+        "quest_updates": outcome.quest_updates,
+        "faction_updates": outcome.faction_updates,
+        "inventory_updates": outcome.inventory_updates,
+    }
+
+    event = Event(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        turn_id=turn.id,
+        event_type=outcome.event_type,
+        source_actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        payload={
+            **outcome.event_payload,
+            "action_type": "use_reward_item",
+            "quest_updates": outcome.quest_updates,
+            "faction_updates": outcome.faction_updates,
+            "inventory_updates": outcome.inventory_updates,
+        },
+        narrative=outcome.event_narrative,
+    )
+    db.add(event)
+    db.flush()
+
+    memories = container.memory_service.materialize_memories(
+        db,
+        world_id=game_session.world_id,
+        source_event_id=event.id,
+        location_id=prepared.location_id,
+        drafts=outcome.memory_drafts,
+    )
+    outcome.item.used_event_id = event.id
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={
+                "turn_id": turn.id,
+                "outcome": "resolved",
+                "location_id": prepared.location_id,
+                "graph_context_status": "deterministic",
+            },
+        )
+    )
+    db.flush()
+
+    return TurnResolutionResult(
+        turn=turn,
+        event=event,
+        memory_ids=[memory.id for memory in memories],
+        event_payload=_event_payload(event),
+        memories_payload=[_memory_payload(memory) for memory in memories],
+        graph_context_status="deterministic",
+        sp_delta=prepared.debit.delta,
+        sp_balance=prepared.debit.balance_after,
+        sp_ledger_id=prepared.debit.ledger_entry.id,
+        quest_updates=outcome.quest_updates,
+        faction_updates=outcome.faction_updates,
+        inventory_updates=outcome.inventory_updates,
+        action_type="use_reward_item",
+    )
+
+
+def _build_failed_turn_result(
+    db: Session,
+    container: AppContainer,
+    prepared: PreparedTurnContext,
+    *,
+    turn: Turn,
+    action_type: str,
+    resolution_mode: str,
+    action_label: str,
+    graph_context_status: str,
+    failure_reason: str,
+    model_lane: str,
+    status_code: int,
+    failure_payload: dict | None = None,
+) -> TurnResolutionResult:
+    game_session = prepared.session
+    player_actor = prepared.player_actor
+
+    turn.model_lane = model_lane
+    turn.resolved_output = {
+        "status": "failed",
+        "action_type": action_type,
+        "resolution_mode": resolution_mode,
+        "error_detail": failure_reason,
+        "graph_context_status": graph_context_status,
+        **(failure_payload or {}),
+    }
+    failure_event = Event(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        turn_id=turn.id,
+        event_type="player.turn.failed",
+        source_actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        payload={
+            "action": action_label,
+            "action_type": action_type,
+            "failure_reason": failure_reason,
+            "world_id": game_session.world_id,
+            "location_id": prepared.location_id,
+            "graph_context_status": graph_context_status,
+            **(failure_payload or {}),
+        },
+        narrative=f"{player_actor.display_name}の行動『{action_label}』は監査対象として記録された。",
+    )
+    db.add(failure_event)
+    db.flush()
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=failure_event.id,
+            projection_type="world_graph.audit",
+            payload={"turn_id": turn.id, "outcome": "failed", "graph_context_status": graph_context_status},
+        )
+    )
+    refund = container.economy_service.refund_turn_cost(
+        db,
+        user_sub=prepared.debit.ledger_entry.user_sub,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        reference_id=turn.id,
+        note=failure_reason,
+    )
+    db.flush()
+    return TurnResolutionResult(
+        turn=turn,
+        event=failure_event,
+        memory_ids=[],
+        event_payload=_event_payload(failure_event),
+        memories_payload=[],
+        graph_context_status=graph_context_status,
+        sp_delta=0,
+        sp_balance=refund.balance_after,
+        sp_ledger_id=prepared.debit.ledger_entry.id,
+        quest_updates=[],
+        faction_updates=[],
+        inventory_updates=[],
+        action_type=action_type,
+        error_detail=failure_reason,
+        status_code=status_code,
     )
 
 

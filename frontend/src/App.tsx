@@ -30,6 +30,7 @@ type HealthPayload = {
   sp: {
     default_balance: number;
     turn_cost: number;
+    budget_scope?: string;
     economy_status: string;
   };
   embedding: {
@@ -86,6 +87,8 @@ type QuestSummary = {
   title: string;
   description: string;
   status: string;
+  stage_key: string;
+  unlock_requirements: Record<string, unknown>;
   progress: number;
   progress_target: number;
   latest_summary: string;
@@ -107,6 +110,8 @@ type InventorySummary = {
   name: string;
   description: string;
   status: string;
+  usable: boolean;
+  effect_kind: string | null;
 };
 
 type SessionState = {
@@ -124,6 +129,7 @@ type SessionState = {
 
 type TurnResponse = {
   turn_id: string;
+  action_type: "narrative" | "use_reward_item";
   event_id: string;
   memory_ids: string[];
   narrative: string;
@@ -595,6 +601,7 @@ function App() {
 
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
   const activeWorldId = session?.world_id ?? worldId;
+  const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
         status?: string;
@@ -884,8 +891,9 @@ function App() {
     }
   }
 
-  async function handleTurnSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitTurnRequest(
+    payload: { action_type: "narrative"; input_text: string } | { action_type: "use_reward_item"; item_id: string },
+  ) {
     if (!token || !session) {
       setError("Start a session first");
       return;
@@ -898,7 +906,7 @@ function App() {
         method: "POST",
         body: JSON.stringify({
           session_id: session.session_id,
-          input_text: turnInput,
+          ...payload,
         }),
       });
       setLatestNarrative(response.narrative);
@@ -939,6 +947,15 @@ function App() {
     } finally {
       setTurnPending(false);
     }
+  }
+
+  async function handleTurnSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await submitTurnRequest({ action_type: "narrative", input_text: turnInput });
+  }
+
+  async function handleRewardItemUse(itemId: string) {
+    await submitTurnRequest({ action_type: "use_reward_item", item_id: itemId });
   }
 
   async function handleRebuildGraph() {
@@ -1165,6 +1182,9 @@ function App() {
           <p data-testid="sp-balance">
             SP balance: {wallet?.balance ?? "unknown"} / Turn cost: {wallet?.turn_cost ?? health?.sp.turn_cost ?? "?"}
           </p>
+          <p data-testid="sp-budget-note">
+            SP is execution budget only. It is not in-world currency and does not buy quest, faction, or item power.
+          </p>
           {me ? (
             <dl className="meta">
               <div>
@@ -1262,16 +1282,20 @@ function App() {
 
             <article className="card">
               <h2>4. Active quest</h2>
-              {sessionState?.quests.length ? (
+              {activeQuest ? (
                 <div data-testid="active-quest">
                   <p>
-                    <strong>{sessionState.quests[0].title}</strong>
+                    <strong>{activeQuest.title}</strong>
                   </p>
                   <p data-testid="quest-progress">
-                    Progress: {sessionState.quests[0].progress}/{sessionState.quests[0].progress_target}
+                    Progress: {activeQuest.progress}/{activeQuest.progress_target}
                   </p>
-                  <p>{sessionState.quests[0].latest_summary}</p>
-                  <p>Status: {sessionState.quests[0].status}</p>
+                  <p data-testid="quest-stage">Stage: {activeQuest.stage_key}</p>
+                  <p>{activeQuest.latest_summary}</p>
+                  <p>Status: {activeQuest.status}</p>
+                  <p data-testid="quest-unlock-requirements">
+                    Unlocks: {Object.keys(activeQuest.unlock_requirements).length ? JSON.stringify(activeQuest.unlock_requirements) : "starter"}
+                  </p>
                 </div>
               ) : (
                 <p>No active quest.</p>
@@ -1300,6 +1324,19 @@ function App() {
                     <li key={item.id}>
                       <strong>{item.name}</strong>
                       <span>{item.template_key}</span>
+                      <span>
+                        {item.status}
+                        {item.effect_kind ? ` / ${item.effect_kind}` : ""}
+                      </span>
+                      {item.usable ? (
+                        <button
+                          data-testid={`use-item-${item.id}`}
+                          onClick={() => void handleRewardItemUse(item.id)}
+                          disabled={turnPending}
+                        >
+                          {turnPending ? "Using..." : "Use"}
+                        </button>
+                      ) : null}
                     </li>
                   ))
                 ) : (
@@ -1404,6 +1441,9 @@ function App() {
                 {embeddingStatus?.failed_count ?? health?.embedding.failed_count ?? 0} / status:{" "}
                 {embeddingStatus?.runtime_status ?? health?.embedding.runtime_status ?? "unknown"}
               </p>
+              <p data-testid="sp-admin-separation-note">
+                SP execution ledger is separate from world progression. Reward item use and follow-up quest unlocks are tracked below, not as paid power.
+              </p>
               <p data-testid="graph-vertex-count">
                 Graph vertices: {graphSummary?.vertex_count ?? 0} / edges:{" "}
                 <span data-testid="graph-edge-count">{graphSummary?.edge_count ?? 0}</span>
@@ -1460,6 +1500,32 @@ function App() {
                     <span>{item.entity_key}</span>
                   </li>
                 ))}
+              </ul>
+              <h3>Current world progression</h3>
+              <ul className="stream" data-testid="progression-stream">
+                {sessionState ? (
+                  <>
+                    {sessionState.quests.map((item) => (
+                      <li key={item.assignment_id}>
+                        <strong>{item.title}</strong>
+                        <span>
+                          {item.stage_key} / {item.status} / {item.progress}/{item.progress_target}
+                        </span>
+                      </li>
+                    ))}
+                    {sessionState.inventory.map((item) => (
+                      <li key={item.id}>
+                        <strong>{item.name}</strong>
+                        <span>
+                          {item.status}
+                          {item.effect_kind ? ` / ${item.effect_kind}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </>
+                ) : (
+                  <li>No active world progression state loaded.</li>
+                )}
               </ul>
               <h3>Recent runtime failures</h3>
               <ul className="stream" data-testid="recent-failures-stream">

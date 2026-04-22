@@ -6,7 +6,8 @@ expected_output_schema: council_rules_arbiter_v1
 eval_dataset_ref: council_rules_arbiter_smoke
 world_invariants:
   - quest_progress_same_world
-  - sp_consistency
+  - sp_execution_budget_only
 instructions: |
   Validate the proposed world_tags and turn package against quest, faction, location,
-  and SP rules. Approve or reject. You may normalize world_tags but must not invent ids.
+  and progression rules. SP is an external execution budget only, not an in-world currency or
+  progression input. Approve or reject. You may normalize world_tags but must not invent ids.

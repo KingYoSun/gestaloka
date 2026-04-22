@@ -13,10 +13,30 @@ quest:
   id: starter_watch_request
   title: First Watch Request
   description: Help a local traveler, report back what you learned, and earn the watch's trust.
+  stage_key: starter_watch
+  unlock_requirements: {}
   completion_target: 2
   reward_template_key: lantern_sigils
   reward_name: Lantern Sigil
   reward_description: A stamped sigil from the watch that marks the bearer as a trusted helper.
+  state:
+    reward_enabled: true
+    reward_effect_kind: unlock_followup_watch_path
+    reward_effect_payload:
+      unlock_stage_key: watch_path_followup
+followup_quest:
+  id: followup_watch_path
+  title: Watch Path Unsealed
+  description: Carry the sigil's trust into the next watch path and steady the square for the watch.
+  stage_key: watch_path_followup
+  unlock_requirements:
+    starter_item_effect: unlock_followup_watch_path
+  completion_target: 1
+  reward_template_key: none
+  reward_name: ""
+  reward_description: ""
+  state:
+    reward_enabled: false
 character:
   rank: Wayfarer
   hp: 10

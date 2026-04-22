@@ -41,18 +41,55 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert second_payload["quest_updates"][0]["progress"] == 2
     assert second_payload["inventory_updates"][0]["template_key"] == "lantern_sigils"
 
+    state_after_reward = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state_after_reward.status_code == 200
+    reward_item = state_after_reward.json()["inventory"][0]
+    assert reward_item["usable"] is True
+    assert reward_item["effect_kind"] == "unlock_followup_watch_path"
+
+    use_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "use_reward_item",
+            "item_id": reward_item["id"],
+        },
+        headers=auth_headers,
+    )
+    assert use_turn.status_code == 200
+    use_payload = use_turn.json()
+    assert use_payload["action_type"] == "use_reward_item"
+    assert use_payload["sp_balance"] == 7
+    assert use_payload["quest_updates"][0]["stage_key"] == "watch_path_followup"
+    assert use_payload["inventory_updates"][0]["status"] == "used"
+    assert use_payload["faction_updates"][0]["delta"] == 0.1
+
+    third_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "narrative",
+            "input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+        },
+        headers=auth_headers,
+    )
+    assert third_turn.status_code == 200
+    third_payload = third_turn.json()
+    assert third_payload["sp_balance"] == 6
+    assert "Lantern Sigil" in third_payload["npc_reaction"]
+
     events = client.get(f"/worlds/{session_payload['world_id']}/events", headers=auth_headers)
     memories = client.get(f"/worlds/{session_payload['world_id']}/memories", headers=auth_headers)
     state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert events.status_code == 200
     assert memories.status_code == 200
     assert state.status_code == 200
-    assert len(events.json()["items"]) == 3
+    assert len(events.json()["items"]) == 5
     assert events.json()["items"][-1]["event_type"] == "session.started"
     assert any("旅人を助け" in item["text"] for item in memories.json()["items"])
-    assert state.json()["quests"][0]["status"] == "completed"
-    assert state.json()["quests"][0]["progress"] == 2
-    assert state.json()["inventory"][0]["template_key"] == "lantern_sigils"
+    assert any("Lantern Sigil" in item["text"] for item in memories.json()["items"])
+    assert state.json()["quests"][0]["stage_key"] == "watch_path_followup"
+    assert state.json()["inventory"][0]["status"] == "used"
 
     with container.session_factory() as db:
         pending = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "projected")).scalars())
@@ -61,8 +98,11 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         items = list(db.execute(select(Item)).scalars())
         assert pending
         assert projected
-        assert assignments[0].status == "completed"
+        assert {assignment.status for assignment in assignments} >= {"completed"}
+        assert any(assignment.status == "active" for assignment in assignments)
         assert items[0].template_key == "lantern_sigils"
+        assert items[0].status == "used"
+        assert items[0].used_event_id is not None
         projected_count = db.execute(select(func.count(ProjectionRecord.id))).scalar_one()
 
         processed_again = container.projection_service.process_pending(db)
@@ -75,7 +115,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         assert rebuilt
 
 
-def test_second_turn_uses_semantic_retrieval_trace_and_worker_backfill_can_recover(container, client, auth_headers, monkeypatch):
+def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_can_recover(container, client, auth_headers, monkeypatch):
     session_response = client.post(
         "/sessions",
         json={"world_id": "world-alpha", "world_name": "Founders Reach"},
@@ -100,12 +140,40 @@ def test_second_turn_uses_semantic_retrieval_trace_and_worker_backfill_can_recov
     )
     assert second_turn.status_code == 200
 
+    reward_item = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers).json()["inventory"][0]
+    use_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "use_reward_item",
+            "item_id": reward_item["id"],
+        },
+        headers=auth_headers,
+    )
+    assert use_turn.status_code == 200
+
+    followup_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "narrative",
+            "input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+        },
+        headers=auth_headers,
+    )
+    assert followup_turn.status_code == 200
+
     with container.session_factory() as db:
-        resolved_turn = db.execute(select(Turn).where(Turn.id == second_turn.json()["turn_id"])).scalar_one()
+        resolved_turn = db.execute(select(Turn).where(Turn.id == followup_turn.json()["turn_id"])).scalar_one()
         retrieval_trace = resolved_turn.resolved_output["retrieval_trace"]
         assert retrieval_trace["status"] == "ready"
         assert len(retrieval_trace["retrieved_memory_ids"]) >= 1
         assert any(score >= container.settings.memory_retrieval_min_score for score in retrieval_trace["top_scores"])
+        retrieved_texts = [
+            db.execute(select(Memory).where(Memory.id == memory_id)).scalar_one().text
+            for memory_id in retrieval_trace["retrieved_memory_ids"]
+        ]
+        assert any("Lantern Sigil" in text for text in retrieved_texts)
 
     original_embed_document = container.memory_service.provider.embed_document
     original_embed_query = container.memory_service.provider.embed_query
@@ -120,7 +188,11 @@ def test_second_turn_uses_semantic_retrieval_trace_and_worker_backfill_can_recov
     monkeypatch.setattr(container.memory_service.provider, "embed_query", fail_embed_query)
     degraded_turn = client.post(
         "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場の灯についてさらに尋ねる"},
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "narrative",
+            "input_text": "Lantern Sigilで開いた巡回路の様子をさらに確かめる",
+        },
         headers=auth_headers,
     )
     assert degraded_turn.status_code == 200
@@ -133,7 +205,7 @@ def test_second_turn_uses_semantic_retrieval_trace_and_worker_backfill_can_recov
         retrieval = container.memory_service.search(
             db,
             world_id=session_payload["world_id"],
-            query_text=build_retrieval_query_text("広場の灯についてさらに尋ねる"),
+            query_text=build_retrieval_query_text("Lantern Sigilで開いた巡回路の様子をさらに確かめる"),
         )
         assert retrieval.trace.status == "degraded"
 
@@ -146,7 +218,7 @@ def test_second_turn_uses_semantic_retrieval_trace_and_worker_backfill_can_recov
         refreshed = container.memory_service.search(
             db,
             world_id=session_payload["world_id"],
-            query_text=build_retrieval_query_text("広場の灯についてさらに尋ねる"),
+            query_text=build_retrieval_query_text("Lantern Sigilで開いた巡回路の様子をさらに確かめる"),
         )
         assert refreshed.trace.status == "ready"
         assert refreshed.trace.retrieved_memory_ids

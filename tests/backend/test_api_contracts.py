@@ -18,6 +18,7 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["projection_runtime"]["graph_runtime_status"] == "recording"
     assert payload["sp"]["default_balance"] == 10
     assert payload["sp"]["turn_cost"] == 1
+    assert payload["sp"]["budget_scope"] == "execution_only"
     assert payload["embedding"]["dimension"] == 768
     assert payload["embedding"]["runtime_status"] == "ready"
     assert {"projection_lag_seconds", "outbox_pending_count", "llm_schema_valid_rate"} <= set(payload["observability"])
@@ -103,17 +104,24 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.status_code == 200
     assert {"world_id", "location", "character", "quests", "factions", "inventory"} <= set(state_response.json())
     assert state_response.json()["quests"][0]["progress"] == 0
+    assert state_response.json()["quests"][0]["stage_key"] == "starter_watch"
+    assert state_response.json()["inventory"] == []
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
         turn_response = client.post(
             "/turns",
-            json={"session_id": session_payload["session_id"], "input_text": "広場で旅人を助け、灯をともす"},
+            json={
+                "session_id": session_payload["session_id"],
+                "action_type": "narrative",
+                "input_text": "広場で旅人を助け、灯をともす",
+            },
             headers=auth_headers,
         )
         assert turn_response.status_code == 200
         turn_payload = turn_response.json()
         assert set(turn_payload) == {
             "turn_id",
+            "action_type",
             "event_id",
             "memory_ids",
             "narrative",
@@ -125,6 +133,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "faction_updates",
             "inventory_updates",
         }
+        assert turn_payload["action_type"] == "narrative"
         assert turn_payload["sp_delta"] == -1
         assert turn_payload["sp_balance"] == 9
         assert turn_payload["quest_updates"][0]["progress"] == 1
@@ -159,6 +168,74 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert messages[-1]["data"] == turn_payload
     assert messages[-2]["data"]["world_id"] == session_payload["world_id"]
     assert {"vertex_count", "edge_count"} <= set(messages[-2]["data"])
+
+
+def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    first_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "narrative",
+            "input_text": "広場で旅人を助け、灯をともす",
+        },
+        headers=auth_headers,
+    )
+    assert first_turn.status_code == 200
+    second_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "action_type": "narrative",
+            "input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+        },
+        headers=auth_headers,
+    )
+    assert second_turn.status_code == 200
+
+    state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    item_id = state_response.json()["inventory"][0]["id"]
+
+    with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
+        use_response = client.post(
+            "/turns",
+            json={
+                "session_id": session_payload["session_id"],
+                "action_type": "use_reward_item",
+                "item_id": item_id,
+            },
+            headers=auth_headers,
+        )
+        assert use_response.status_code == 200
+        payload = use_response.json()
+        assert payload["action_type"] == "use_reward_item"
+        assert payload["quest_updates"][0]["stage_key"] == "watch_path_followup"
+        assert payload["inventory_updates"][0]["status"] == "used"
+        assert payload["inventory_updates"][0]["action"] == "used"
+        assert payload["faction_updates"][0]["delta"] == 0.1
+
+        messages = [websocket.receive_json() for _ in range(10)]
+
+    assert [message["event"] for message in messages] == [
+        "turn.accepted",
+        "turn.progress",
+        "turn.narrative.delta",
+        "world.event.created",
+        "memory.materialized",
+        "quest.updated",
+        "faction.standing.updated",
+        "inventory.changed",
+        "graph.projection.updated",
+        "turn.resolved",
+    ]
+    assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == ["item_use"]
+    assert messages[-1]["data"] == payload
 
 
 def test_ops_projection_status_and_rebuild_contract(client, auth_headers):

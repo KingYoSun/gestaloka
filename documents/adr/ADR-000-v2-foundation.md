@@ -12,6 +12,7 @@ Accepted
 - Graph updates are emitted through an outbox projection pipeline behind a NebulaGraph adapter boundary.
 - Identity is exposed to the app through an OIDC adapter. The initial development IdP is Keycloak.
 - Realtime messaging is unified behind one WebSocket-based gateway.
+- SP is reserved for external execution-budget accounting and is not used as an in-world currency.
 - Model execution is routed through lane-specific configuration:
   - `lite_lane`
   - `main_lane`

@@ -116,6 +116,7 @@ class Turn(Base, TimestampMixin):
     input_text: Mapped[str] = mapped_column(Text)
     resolved_output: Mapped[dict] = mapped_column(JSON, default=dict)
     model_lane: Mapped[str] = mapped_column(String(32))
+    action_type: Mapped[str] = mapped_column(String(32), default="narrative")
     resolution_mode: Mapped[str] = mapped_column(String(32), default="legacy")
 
 
@@ -228,6 +229,8 @@ class QuestTemplate(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(32), default="active")
+    stage_key: Mapped[str] = mapped_column(String(96), default="starter")
+    unlock_requirements: Mapped[dict] = mapped_column(JSON, default=dict)
     completion_target: Mapped[int] = mapped_column(Integer, default=2)
     reward_template_key: Mapped[str] = mapped_column(String(96))
     reward_name: Mapped[str] = mapped_column(String(120))
@@ -265,6 +268,7 @@ class Item(Base, TimestampMixin):
         UniqueConstraint("world_id", "source_quest_assignment_id", name="uq_items_source_assignment"),
         ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
         ForeignKeyConstraint(["source_quest_assignment_id", "world_id"], ["quest_assignments.id", "quest_assignments.world_id"]),
+        ForeignKeyConstraint(["used_event_id", "world_id"], ["events.id", "events.world_id"]),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -274,6 +278,10 @@ class Item(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(32), default="active")
+    effect_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    effect_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     source_quest_assignment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 

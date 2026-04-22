@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -25,13 +26,29 @@ from app.models.entities import (
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, WorldTag, standing_band
 
 
+FOLLOWUP_STANDING_DELTA = 0.10
+
+
 @dataclass(frozen=True)
 class WorldSliceSeed:
     faction: Faction
     standing: FactionStanding
     quest_template: QuestTemplate
     quest_assignment: QuestAssignment
+    followup_quest_template: QuestTemplate
     character_sheet: CharacterSheet
+
+
+@dataclass(frozen=True)
+class RewardItemUseOutcome:
+    item: Item
+    quest_updates: list[dict[str, Any]]
+    faction_updates: list[dict[str, Any]]
+    inventory_updates: list[dict[str, Any]]
+    event_type: str
+    event_narrative: str
+    event_payload: dict[str, Any]
+    memory_drafts: list[dict[str, Any]]
 
 
 def _seed_path() -> Path:
@@ -52,6 +69,11 @@ def _seed_section(name: str) -> dict[str, Any]:
 
 def _world_scoped_seed_id(world_id: str, base_id: str) -> str:
     return f"{world_id}:{base_id}"
+
+
+def _resolve_seeded_entity_id(world_id: str, base_id: str) -> tuple[str, list[str]]:
+    scoped_id = _world_scoped_seed_id(world_id, base_id)
+    return scoped_id, [scoped_id, base_id]
 
 
 def ensure_world(db: Session, world_id: str, world_name: str) -> World:
@@ -112,11 +134,11 @@ def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> Charact
 def ensure_starter_faction(db: Session, world_id: str) -> Faction:
     faction_seed = _seed_section("faction")
     faction_base_id = str(faction_seed.get("id") or "founders_watch")
-    faction_id = _world_scoped_seed_id(world_id, faction_base_id)
+    faction_id, candidates = _resolve_seeded_entity_id(world_id, faction_base_id)
     faction = db.execute(
         select(Faction).where(
             Faction.world_id == world_id,
-            Faction.id.in_([faction_id, faction_base_id]),
+            Faction.id.in_(candidates),
         )
     ).scalars().first()
     if faction is not None:
@@ -164,33 +186,144 @@ def ensure_faction_standing(
     return standing
 
 
-def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
-    quest_seed = _seed_section("quest")
-    quest_base_id = str(quest_seed.get("id") or "starter_watch_request")
-    quest_id = _world_scoped_seed_id(world_id, quest_base_id)
+def _ensure_seeded_quest_template(
+    db: Session,
+    *,
+    world_id: str,
+    section_name: str,
+    default_id: str,
+    default_title: str,
+    default_description: str,
+    default_completion_target: int,
+    default_reward_template_key: str,
+    default_reward_name: str,
+    default_reward_description: str,
+    default_stage_key: str,
+    default_unlock_requirements: dict[str, Any] | None = None,
+    default_state: dict[str, Any] | None = None,
+) -> QuestTemplate:
+    quest_seed = _seed_section(section_name)
+    quest_base_id = str(quest_seed.get("id") or default_id)
+    quest_id, candidates = _resolve_seeded_entity_id(world_id, quest_base_id)
     quest_template = db.execute(
         select(QuestTemplate).where(
             QuestTemplate.world_id == world_id,
-            QuestTemplate.id.in_([quest_id, quest_base_id]),
+            QuestTemplate.id.in_(candidates),
         )
     ).scalars().first()
     if quest_template is not None:
+        quest_template.title = str(quest_seed.get("title") or quest_template.title or default_title)
+        quest_template.description = str(quest_seed.get("description") or quest_template.description or default_description)
+        quest_template.stage_key = str(quest_seed.get("stage_key") or quest_template.stage_key or default_stage_key)
+        quest_template.unlock_requirements = dict(
+            quest_seed.get("unlock_requirements") or quest_template.unlock_requirements or default_unlock_requirements or {}
+        )
+        quest_template.completion_target = int(
+            quest_seed.get("completion_target") or quest_template.completion_target or default_completion_target
+        )
+        quest_template.reward_template_key = str(
+            quest_seed.get("reward_template_key") or quest_template.reward_template_key or default_reward_template_key
+        )
+        quest_template.reward_name = str(quest_seed.get("reward_name") or quest_template.reward_name or default_reward_name)
+        quest_template.reward_description = str(
+            quest_seed.get("reward_description") or quest_template.reward_description or default_reward_description
+        )
+        quest_template.state = dict(quest_seed.get("state") or quest_template.state or default_state or {})
+        db.flush()
         return quest_template
 
     quest_template = QuestTemplate(
         id=quest_id,
         world_id=world_id,
-        title=str(quest_seed.get("title") or "First Watch Request"),
-        description=str(quest_seed.get("description") or ""),
-        completion_target=int(quest_seed.get("completion_target") or 2),
-        reward_template_key=str(quest_seed.get("reward_template_key") or "lantern_sigils"),
-        reward_name=str(quest_seed.get("reward_name") or "Lantern Sigil"),
-        reward_description=str(quest_seed.get("reward_description") or ""),
-        state={},
+        title=str(quest_seed.get("title") or default_title),
+        description=str(quest_seed.get("description") or default_description),
+        status=str(quest_seed.get("status") or "active"),
+        stage_key=str(quest_seed.get("stage_key") or default_stage_key),
+        unlock_requirements=dict(quest_seed.get("unlock_requirements") or default_unlock_requirements or {}),
+        completion_target=int(quest_seed.get("completion_target") or default_completion_target),
+        reward_template_key=str(quest_seed.get("reward_template_key") or default_reward_template_key),
+        reward_name=str(quest_seed.get("reward_name") or default_reward_name),
+        reward_description=str(quest_seed.get("reward_description") or default_reward_description),
+        state=dict(quest_seed.get("state") or default_state or {}),
     )
     db.add(quest_template)
     db.flush()
     return quest_template
+
+
+def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
+    return _ensure_seeded_quest_template(
+        db,
+        world_id=world_id,
+        section_name="quest",
+        default_id="starter_watch_request",
+        default_title="First Watch Request",
+        default_description="Help a local traveler, report back what you learned, and earn the watch's trust.",
+        default_completion_target=2,
+        default_reward_template_key="lantern_sigils",
+        default_reward_name="Lantern Sigil",
+        default_reward_description="A stamped sigil from the watch that marks the bearer as a trusted helper.",
+        default_stage_key="starter_watch",
+        default_unlock_requirements={},
+        default_state={
+            "reward_enabled": True,
+            "reward_effect_kind": "unlock_followup_watch_path",
+            "reward_effect_payload": {"unlock_stage_key": "watch_path_followup"},
+        },
+    )
+
+
+def ensure_followup_quest_template(db: Session, world_id: str) -> QuestTemplate:
+    return _ensure_seeded_quest_template(
+        db,
+        world_id=world_id,
+        section_name="followup_quest",
+        default_id="followup_watch_path",
+        default_title="Watch Path Unsealed",
+        default_description="Carry the sigil's trust into the next watch path and steady the square.",
+        default_completion_target=1,
+        default_reward_template_key="none",
+        default_reward_name="",
+        default_reward_description="",
+        default_stage_key="watch_path_followup",
+        default_unlock_requirements={"starter_item_effect": "unlock_followup_watch_path"},
+        default_state={"reward_enabled": False},
+    )
+
+
+def _ensure_quest_assignment(
+    db: Session,
+    *,
+    world_id: str,
+    owner_actor_id: str,
+    quest_template: QuestTemplate,
+    status: str = "active",
+    latest_summary: str,
+    state_json: dict[str, Any] | None = None,
+) -> QuestAssignment:
+    existing = db.execute(
+        select(QuestAssignment).where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == owner_actor_id,
+            QuestAssignment.quest_template_id == quest_template.id,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    assignment = QuestAssignment(
+        world_id=world_id,
+        owner_actor_id=owner_actor_id,
+        quest_template_id=quest_template.id,
+        status=status,
+        progress=0,
+        progress_target=quest_template.completion_target,
+        latest_summary=latest_summary,
+        state_json=state_json or {},
+    )
+    db.add(assignment)
+    db.flush()
+    return assignment
 
 
 def ensure_starter_quest_assignment(
@@ -200,44 +333,50 @@ def ensure_starter_quest_assignment(
     owner_actor_id: str,
     quest_template_id: str,
 ) -> QuestAssignment:
+    quest_template = db.execute(
+        select(QuestTemplate).where(QuestTemplate.world_id == world_id, QuestTemplate.id == quest_template_id)
+    ).scalar_one()
+    return _ensure_quest_assignment(
+        db,
+        world_id=world_id,
+        owner_actor_id=owner_actor_id,
+        quest_template=quest_template,
+        latest_summary="Help a local and return with what you learned.",
+        state_json={"lore_progress": 0, "last_world_tags": [], "unlocked_by_item_id": None},
+    )
+
+
+def ensure_followup_quest_assignment(
+    db: Session,
+    *,
+    world_id: str,
+    owner_actor_id: str,
+    followup_template: QuestTemplate,
+    unlocked_by_item_id: str,
+) -> QuestAssignment:
     existing = db.execute(
         select(QuestAssignment).where(
             QuestAssignment.world_id == world_id,
             QuestAssignment.owner_actor_id == owner_actor_id,
-            QuestAssignment.quest_template_id == quest_template_id,
+            QuestAssignment.quest_template_id == followup_template.id,
         )
     ).scalar_one_or_none()
     if existing is not None:
         return existing
 
-    active = db.execute(
-        select(QuestAssignment)
-        .where(
-            QuestAssignment.world_id == world_id,
-            QuestAssignment.owner_actor_id == owner_actor_id,
-            QuestAssignment.status == "active",
-        )
-        .order_by(QuestAssignment.created_at.asc(), QuestAssignment.id.asc())
-    ).scalar_one_or_none()
-    if active is not None:
-        return active
-
-    quest_template = db.execute(
-        select(QuestTemplate).where(QuestTemplate.world_id == world_id, QuestTemplate.id == quest_template_id)
-    ).scalar_one()
-    assignment = QuestAssignment(
+    return _ensure_quest_assignment(
+        db,
         world_id=world_id,
         owner_actor_id=owner_actor_id,
-        quest_template_id=quest_template_id,
-        status="active",
-        progress=0,
-        progress_target=quest_template.completion_target,
-        latest_summary="Help a local and return with what you learned.",
-        state_json={"lore_progress": 0, "last_world_tags": []},
+        quest_template=followup_template,
+        latest_summary="The Lantern Sigil opened a follow-up watch path.",
+        state_json={
+            "lore_progress": 0,
+            "last_world_tags": [],
+            "unlocked_by_item_id": unlocked_by_item_id,
+            "unlock_source": "reward_item",
+        },
     )
-    db.add(assignment)
-    db.flush()
-    return assignment
 
 
 def ensure_membership_relationship(
@@ -293,11 +432,13 @@ def ensure_world_slice_seed(
         owner_actor_id=player_actor_id,
         quest_template_id=quest_template.id,
     )
+    followup_quest_template = ensure_followup_quest_template(db, world_id)
     return WorldSliceSeed(
         faction=faction,
         standing=standing,
         quest_template=quest_template,
         quest_assignment=quest_assignment,
+        followup_quest_template=followup_quest_template,
         character_sheet=character_sheet,
     )
 
@@ -349,9 +490,9 @@ def list_quest_summaries(db: Session, world_id: str, actor_id: str) -> list[dict
                 (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
             )
             .where(QuestAssignment.world_id == world_id, QuestAssignment.owner_actor_id == actor_id)
-            .order_by(QuestAssignment.created_at.asc(), QuestAssignment.id.asc())
         ).all()
     )
+    rows.sort(key=lambda item: (item[0].status != "active", item[0].created_at, item[0].id))
     return [quest_summary_to_dict(assignment, template) for assignment, template in rows]
 
 
@@ -383,6 +524,32 @@ def build_session_state(
     }
 
 
+def _active_progression_quest(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+) -> tuple[QuestAssignment, QuestTemplate] | None:
+    rows = list(
+        db.execute(
+            select(QuestAssignment, QuestTemplate)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(QuestAssignment.world_id == world_id, QuestAssignment.owner_actor_id == actor_id)
+        ).all()
+    )
+    rows.sort(key=lambda item: (item[0].status != "active", item[0].created_at, item[0].id))
+    for assignment, template in rows:
+        if assignment.status == "active":
+            return assignment, template
+    for assignment, template in rows:
+        if assignment.progress < assignment.progress_target:
+            return assignment, template
+    return None
+
+
 def apply_world_tag_updates(
     db: Session,
     *,
@@ -390,15 +557,17 @@ def apply_world_tag_updates(
     actor_id: str,
     world_tags: list[WorldTag],
 ) -> dict[str, list[dict[str, Any]]]:
+    active = _active_progression_quest(db, world_id=world_id, actor_id=actor_id)
+    if active is None:
+        return {
+            "quest_updates": [],
+            "faction_updates": [],
+            "inventory_updates": [],
+        }
+
+    assignment, quest_template = active
     faction = ensure_starter_faction(db, world_id)
     standing = ensure_faction_standing(db, world_id=world_id, actor_id=actor_id, faction_id=faction.id)
-    quest_template = ensure_starter_quest_template(db, world_id)
-    assignment = ensure_starter_quest_assignment(
-        db,
-        world_id=world_id,
-        owner_actor_id=actor_id,
-        quest_template_id=quest_template.id,
-    )
 
     rule = QuestRuleEngine.evaluate(
         QuestRuleInput(
@@ -407,6 +576,7 @@ def apply_world_tag_updates(
             progress_target=max(assignment.progress_target, quest_template.completion_target),
             current_standing=standing.standing,
             reward_already_issued=assignment.reward_item_id is not None,
+            reward_enabled=bool((quest_template.state or {}).get("reward_enabled", True)),
         )
     )
 
@@ -445,10 +615,19 @@ def apply_world_tag_updates(
                 template_key=quest_template.reward_template_key,
                 name=quest_template.reward_name,
                 description=quest_template.reward_description,
+                status="active",
+                effect_kind=(quest_template.state or {}).get("reward_effect_kind"),
+                effect_payload=dict((quest_template.state or {}).get("reward_effect_payload") or {}),
                 source_quest_assignment_id=assignment.id,
             )
             db.add(reward_item)
             db.flush()
+        else:
+            reward_item.status = reward_item.status or "active"
+            reward_item.effect_kind = reward_item.effect_kind or (quest_template.state or {}).get("reward_effect_kind")
+            reward_item.effect_payload = dict(
+                reward_item.effect_payload or (quest_template.state or {}).get("reward_effect_payload") or {}
+            )
         assignment.reward_item_id = reward_item.id
         inventory_updates.append(
             {
@@ -485,6 +664,132 @@ def apply_world_tag_updates(
     }
 
 
+def use_reward_item(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    actor_name: str,
+    location_id: str,
+    item_id: str,
+) -> RewardItemUseOutcome:
+    item = db.execute(
+        select(Item).where(Item.world_id == world_id, Item.id == item_id)
+    ).scalar_one_or_none()
+    if item is None or item.owner_actor_id != actor_id:
+        raise LookupError("Reward item not found")
+    if item.used_at is not None or item.status == "used":
+        raise ValueError("Reward item has already been used")
+    if item.effect_kind != "unlock_followup_watch_path":
+        raise ValueError("Reward item is not usable in the current progression slice")
+    if location_id != starter_location_id(world_id):
+        raise ValueError("Reward item can only be used at the starter location")
+
+    starter_template = ensure_starter_quest_template(db, world_id)
+    starter_assignment = ensure_starter_quest_assignment(
+        db,
+        world_id=world_id,
+        owner_actor_id=actor_id,
+        quest_template_id=starter_template.id,
+    )
+    if starter_assignment.status != "completed":
+        raise ValueError("Starter quest must be completed before using this reward item")
+
+    followup_template = ensure_followup_quest_template(db, world_id)
+    existing_followup = db.execute(
+        select(QuestAssignment).where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == actor_id,
+            QuestAssignment.quest_template_id == followup_template.id,
+        )
+    ).scalar_one_or_none()
+    if existing_followup is not None:
+        raise ValueError("Follow-up quest is already unlocked")
+
+    followup_assignment = ensure_followup_quest_assignment(
+        db,
+        world_id=world_id,
+        owner_actor_id=actor_id,
+        followup_template=followup_template,
+        unlocked_by_item_id=item.id,
+    )
+
+    faction = ensure_starter_faction(db, world_id)
+    standing = ensure_faction_standing(db, world_id=world_id, actor_id=actor_id, faction_id=faction.id)
+    next_standing = max(-1.0, min(1.0, round(standing.standing + FOLLOWUP_STANDING_DELTA, 3)))
+    standing.standing = next_standing
+    standing.band = standing_band(next_standing)
+
+    item.status = "used"
+    item.used_at = datetime.now(timezone.utc)
+    item.effect_payload = dict(item.effect_payload or {})
+    item.effect_payload["followup_quest_assignment_id"] = followup_assignment.id
+
+    quest_updates = [
+        {
+            **quest_summary_to_dict(followup_assignment, followup_template),
+            "summary": "Lantern Sigil unlocked the next watch path.",
+            "world_tags": ["collect_reward"],
+        }
+    ]
+    faction_updates = [
+        {
+            **faction_summary_to_dict(standing, faction),
+            "delta": FOLLOWUP_STANDING_DELTA,
+        }
+    ]
+    inventory_updates = [
+        {
+            **item_summary_to_dict(item),
+            "action": "used",
+        }
+    ]
+
+    event_payload = {
+        "world_id": world_id,
+        "item_id": item.id,
+        "template_key": item.template_key,
+        "effect_kind": item.effect_kind,
+        "effect_payload": item.effect_payload,
+        "location_id": location_id,
+        "followup_assignment_id": followup_assignment.id,
+        "followup_stage_key": followup_template.stage_key,
+        "faction_id": faction.id,
+        "standing_delta": FOLLOWUP_STANDING_DELTA,
+    }
+    event_narrative = (
+        f"{actor_name}はLantern Sigilを掲げ、Founders Watchに新しい巡回路の解放を認められた。"
+    )
+    memory_drafts = [
+        {
+            "scope": "location",
+            "text": "Founders ReachでLantern Sigilが使われ、新しい watch path が解放された。",
+            "salience": 0.95,
+            "location_id": location_id,
+            "actor_id": None,
+        },
+        {
+            "scope": "world",
+            "text": f"{actor_name}はLantern Sigilを使い、Founders Watchの次の依頼段階を開いた。",
+            "salience": 0.9,
+            "location_id": location_id,
+            "actor_id": None,
+        },
+    ]
+
+    db.flush()
+    return RewardItemUseOutcome(
+        item=item,
+        quest_updates=quest_updates,
+        faction_updates=faction_updates,
+        inventory_updates=inventory_updates,
+        event_type="item.used",
+        event_narrative=event_narrative,
+        event_payload=event_payload,
+        memory_drafts=memory_drafts,
+    )
+
+
 def faction_summary_to_dict(standing: FactionStanding, faction: Faction) -> dict[str, Any]:
     return {
         "faction_id": faction.id,
@@ -502,6 +807,8 @@ def quest_summary_to_dict(assignment: QuestAssignment, template: QuestTemplate) 
         "title": template.title,
         "description": template.description,
         "status": assignment.status,
+        "stage_key": template.stage_key,
+        "unlock_requirements": template.unlock_requirements,
         "progress": assignment.progress,
         "progress_target": assignment.progress_target,
         "latest_summary": assignment.latest_summary,
@@ -517,4 +824,6 @@ def item_summary_to_dict(item: Item) -> dict[str, Any]:
         "name": item.name,
         "description": item.description,
         "status": item.status,
+        "usable": bool(item.effect_kind and item.used_at is None and item.status == "active"),
+        "effect_kind": item.effect_kind,
     }

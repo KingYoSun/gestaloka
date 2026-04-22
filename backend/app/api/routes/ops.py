@@ -214,7 +214,7 @@ def post_sp_adjustment(
             },
         ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
     db.commit()
     return {
@@ -235,7 +235,7 @@ def post_eval_run(
     del user
     if payload.source == "dataset":
         if payload.dataset_name is None:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="dataset_name is required")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="dataset_name is required")
         result = container.eval_service.run_dataset(db, payload.dataset_name)
     else:
         result = container.eval_service.run_shadow_replay(db, limit=payload.limit)

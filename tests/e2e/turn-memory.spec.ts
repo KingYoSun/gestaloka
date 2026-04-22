@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("login, progress a starter quest, receive a reward item, and keep admin/SP flows working", async ({ page }) => {
+test("login, unlock follow-up progression with a reward item, and keep admin/SP flows separate", async ({ page }) => {
   test.setTimeout(240_000);
   const worldId = `e2e-memory-${Date.now()}`;
   const slowTimeout = 60_000;
@@ -20,6 +20,8 @@ test("login, progress a starter quest, receive a reward item, and keep admin/SP 
   await page.getByRole("button", { name: /sign in/i }).click();
 
   await expect(page.getByTestId("auth-status")).toContainText("authenticated");
+  await expect(page.getByTestId("sp-balance")).toContainText(/SP balance:\s*-?\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
   const currentBalance = await readBalance();
   if (currentBalance !== 10) {
     await page.getByTestId("nav-admin").click();
@@ -80,15 +82,32 @@ test("login, progress a starter quest, receive a reward item, and keep admin/SP 
   await expect(page.getByTestId("sp-balance")).toContainText("10", { timeout: slowTimeout });
   await expect(page.getByTestId("quest-progress")).toContainText("2/2", { timeout: slowTimeout });
   await expect(page.getByTestId("inventory-stream")).toContainText("Lantern Sigil", { timeout: slowTimeout });
+  await page.getByTestId("inventory-stream").getByRole("button", { name: "Use" }).click();
+  await expect(page.getByTestId("sp-balance")).toContainText("9", { timeout: slowTimeout });
+  await expect(page.getByTestId("active-quest")).toContainText("Watch Path Unsealed", { timeout: slowTimeout });
+  await expect(page.getByTestId("quest-stage")).toContainText("watch_path_followup", { timeout: slowTimeout });
+  await expect(page.getByTestId("inventory-stream")).toContainText("used", { timeout: slowTimeout });
+
+  await page.getByTestId("turn-input").fill("Lantern Sigilで開いた watch path の様子を観察する");
+  await page.getByTestId("submit-turn").click();
+  await expect(page.getByTestId("latest-reaction")).not.toContainText("No NPC reaction yet.", { timeout: slowTimeout });
+  await expect(page.getByTestId("latest-reaction")).toContainText(/Lantern|Sigil|watch|巡回|見回|灯/, { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-balance")).toContainText("8", { timeout: slowTimeout });
 
   await page.getByTestId("nav-admin").click();
+  await expect(page.getByTestId("sp-admin-separation-note")).toContainText("separate");
+  await expect(page.getByTestId("progression-stream")).toContainText("Watch Path Unsealed");
+  await expect(page.getByTestId("progression-stream")).toContainText("used");
+  await page.getByTestId("memory-search-query").fill("Lantern Sigil");
   await page.getByTestId("run-memory-search").click();
   await expect(page.getByTestId("memory-search-stream").locator("li").first()).toBeVisible({ timeout: slowTimeout });
+  await expect(page.getByTestId("memory-search-stream")).toContainText(/Lantern Sigil|watch path|巡回路/, { timeout: slowTimeout });
   await page.getByTestId("rebuild-graph").click();
-  await expect(page.getByTestId("rebuild-result")).toContainText("Rebuilt");
+  await expect(page.getByTestId("rebuild-result")).toContainText("Rebuilt", { timeout: slowTimeout });
   await page.getByTestId("reindex-memories").click();
-  await expect(page.getByTestId("memory-reindex-result")).toContainText("Reindexed");
-  await page.getByTestId("adjust-delta").fill("-10");
+  await expect(page.getByTestId("memory-reindex-result")).toContainText("Reindexed", { timeout: slowTimeout });
+  const adminBalance = await readBalance();
+  await page.getByTestId("adjust-delta").fill(String(-adminBalance));
   await page.getByTestId("submit-adjustment").click();
   await expect(page.getByTestId("last-adjustment")).toContainText("balance 0");
 

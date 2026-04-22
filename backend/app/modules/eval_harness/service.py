@@ -20,8 +20,10 @@ from app.models.entities import (
     OutboxEvent,
     ReleaseGateReport,
     Session as GameSession,
+    SPLedgerEntry,
     Turn,
 )
+from app.modules.economy_sp.service import ALLOWED_SP_REASON_CODES
 from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
@@ -58,6 +60,7 @@ class EvalCaseInput:
     expect_retrieval_status: str | None = None
     expect_retrieval_hit_substring: str | None = None
     expect_retrieval_min_hits: int | None = None
+    session_state_overrides: dict[str, object] | None = None
     source_turn_id: str | None = None
     precomputed_retrieved_memories: list[str] | None = None
     precomputed_retrieval_trace: MemoryRetrievalTrace | None = None
@@ -520,7 +523,6 @@ class EvalHarnessService:
                         relation_context=case.relation_context,
                         graph_context_status=case.graph_context_status,
                         session_state=self._session_state_for_case(case),
-                        sp_balance=10,
                     )
                 )
                 payload = self._persist_case_result(
@@ -716,6 +718,7 @@ class EvalHarnessService:
                     progress_target=progress_target,
                     current_standing=float(case.quest_context.get("current_standing", 0.0)),
                     reward_already_issued=bool(case.quest_context.get("reward_already_issued", False)),
+                    reward_enabled=bool(case.quest_context.get("reward_enabled", True)),
                 )
             )
             rule_outcome_payload = {
@@ -824,6 +827,8 @@ class EvalHarnessService:
             blocked.append("projection_lag_seconds > 5")
         if slo_snapshot["canary_health"]["status"] != "healthy":
             blocked.append("canary health != healthy")
+        if not bool(slo_snapshot["sp_reason_invariant_ok"]):
+            blocked.append("sp execution budget invariant failed")
         return blocked
 
     def _build_slo_snapshot(
@@ -862,7 +867,17 @@ class EvalHarnessService:
             "outbox_failed_count": failed_outbox_count,
             "llm_schema_valid_rate": (llm_valid / llm_total) if llm_total else 0.0,
             "llm_fallback_rate": (fallback_turns / turn_count) if turn_count else 0.0,
+            "sp_reason_invariant_ok": True,
+            "invalid_sp_reason_codes": [],
         }
+        reason_codes = {
+            row[0]
+            for row in db.execute(select(SPLedgerEntry.reason_code).distinct()).all()
+            if row[0] is not None
+        }
+        invalid_reason_codes = sorted(reason_codes - ALLOWED_SP_REASON_CODES)
+        snapshot["sp_reason_invariant_ok"] = not invalid_reason_codes
+        snapshot["invalid_sp_reason_codes"] = invalid_reason_codes
         if self.observability_service is not None:
             self.observability_service.sync_outbox_metrics(
                 pending_count=pending_outbox_count,
@@ -969,6 +984,7 @@ class EvalHarnessService:
                             if raw_case.get("expect_retrieval_min_hits") is not None
                             else None
                         ),
+                        session_state_overrides=dict(raw_case.get("session_state_overrides") or {}) or None,
                     )
                 )
             if not cases:
@@ -1093,7 +1109,7 @@ class EvalHarnessService:
         quest_progress = int((case.quest_context or {}).get("current_progress", 0))
         progress_target = int((case.quest_context or {}).get("progress_target", 2))
         current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
-        return {
+        base_state: dict[str, object] = {
             "world_id": case.world_id,
             "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
             "character": {"actor_id": "eval-actor", "rank": "Wayfarer", "hp": 10, "focus": 5, "status_json": {}},
@@ -1101,13 +1117,15 @@ class EvalHarnessService:
                 {
                     "assignment_id": "eval-quest",
                     "quest_template_id": "starter_watch_request",
-                    "title": "First Watch Request",
+                    "title": str((case.quest_context or {}).get("title") or "First Watch Request"),
                     "description": "Eval fixture quest",
-                    "status": "active",
+                    "status": str((case.quest_context or {}).get("status") or "active"),
+                    "stage_key": str((case.quest_context or {}).get("stage_key") or "starter_watch"),
+                    "unlock_requirements": dict((case.quest_context or {}).get("unlock_requirements") or {}),
                     "progress": quest_progress,
                     "progress_target": progress_target,
                     "latest_summary": "",
-                    "reward_item_id": None,
+                    "reward_item_id": (case.quest_context or {}).get("reward_item_id"),
                     "state_json": {},
                 }
             ],
@@ -1120,8 +1138,12 @@ class EvalHarnessService:
                     "band": "neutral",
                 }
             ],
-            "inventory": [],
+            "inventory": list((case.quest_context or {}).get("inventory_items") or []),
         }
+        overrides = case.session_state_overrides or {}
+        for key, value in overrides.items():
+            base_state[key] = value
+        return base_state
 
     @staticmethod
     def _git_sha() -> str:

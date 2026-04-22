@@ -46,9 +46,14 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     } <= tables
 
     turn_columns = {column["name"] for column in inspector.get_columns("turns")}
+    quest_template_columns = {column["name"] for column in inspector.get_columns("quest_templates")}
+    item_columns = {column["name"] for column in inspector.get_columns("items")}
     llm_run_columns = {column["name"] for column in inspector.get_columns("llm_runs")}
     memory_columns = {column["name"] for column in inspector.get_columns("memories")}
     assert "resolution_mode" in turn_columns
+    assert "action_type" in turn_columns
+    assert {"stage_key", "unlock_requirements"} <= quest_template_columns
+    assert {"effect_kind", "effect_payload", "used_at", "used_event_id"} <= item_columns
     assert {"embedding_status", "embedding_model", "embedded_at"} <= memory_columns
     assert {
         "workflow_name",

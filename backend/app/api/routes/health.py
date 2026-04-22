@@ -47,6 +47,7 @@ def health(
         "sp": {
             "default_balance": container.settings.sp_default_balance,
             "turn_cost": container.settings.turn_sp_cost,
+            "budget_scope": "execution_only",
             "economy_status": "ready",
         },
         "embedding": {
