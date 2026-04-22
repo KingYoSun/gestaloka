@@ -209,6 +209,56 @@ class ConsequenceThread(Base, TimestampMixin):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ChapterTrack(Base, TimestampMixin):
+    __tablename__ = "chapter_tracks"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_chapter_tracks_id_world"),
+        UniqueConstraint("world_id", "owner_actor_id", "chapter_key", name="uq_chapter_tracks_owner_key"),
+        ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["opening_event_id", "world_id"], ["events.id", "events.world_id"]),
+        ForeignKeyConstraint(["closing_event_id", "world_id"], ["events.id", "events.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
+    owner_actor_id: Mapped[str] = mapped_column(String(36))
+    chapter_key: Mapped[str] = mapped_column(String(96))
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    opening_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    closing_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SceneFrame(Base, TimestampMixin):
+    __tablename__ = "scene_frames"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_scene_frames_id_world"),
+        ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["chapter_track_id", "world_id"], ["chapter_tracks.id", "chapter_tracks.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
+        ForeignKeyConstraint(["focus_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["opening_event_id", "world_id"], ["events.id", "events.world_id"]),
+        ForeignKeyConstraint(["closing_event_id", "world_id"], ["events.id", "events.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
+    owner_actor_id: Mapped[str] = mapped_column(String(36))
+    chapter_track_id: Mapped[str] = mapped_column(String(36))
+    scene_phase: Mapped[str] = mapped_column(String(32), default="establish")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    focus_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    stakes_summary: Mapped[str] = mapped_column(Text, default="")
+    pressure_summary: Mapped[str] = mapped_column(Text, default="")
+    opening_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    closing_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class CharacterSheet(Base, TimestampMixin):
     __tablename__ = "character_sheets"
     __table_args__ = (ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),)

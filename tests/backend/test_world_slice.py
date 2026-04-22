@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from app.models.entities import CharacterSheet, Faction, FactionStanding, QuestAssignment, QuestTemplate
+from app.models.entities import ChapterTrack, CharacterSheet, Faction, FactionStanding, QuestAssignment, QuestTemplate, SceneFrame
 from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 
@@ -68,6 +68,8 @@ def test_session_seed_is_idempotent_for_character_faction_and_quest(client, cont
         assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 1
         assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
         assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 1
+        assert db.execute(select(func.count(ChapterTrack.id))).scalar_one() == 1
+        assert db.execute(select(func.count(SceneFrame.id))).scalar_one() == 1
 
 
 def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():

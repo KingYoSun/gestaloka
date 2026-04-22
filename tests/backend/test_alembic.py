@@ -37,6 +37,8 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "memories",
         "relationships",
         "consequence_threads",
+        "chapter_tracks",
+        "scene_frames",
         "sp_accounts",
         "sp_ledger",
         "llm_runs",

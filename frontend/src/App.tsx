@@ -75,6 +75,32 @@ type SessionInfo = {
   websocket_url: string;
 };
 
+type ChapterSummaryValue = {
+  id: string;
+  key: string;
+  status: string;
+  summary: string;
+};
+
+type ChapterSummary = ChapterSummaryValue | null;
+
+type SceneSummaryValue = {
+  id: string;
+  summary: string;
+  pressure_summary: string;
+  location: {
+    id: string;
+    name: string;
+    description: string;
+  } | null;
+  focus_actor: {
+    actor_id: string;
+    display_name: string;
+  } | null;
+};
+
+type CurrentSceneSummary = SceneSummaryValue | null;
+
 type CharacterSummary = {
   actor_id: string;
   rank: string;
@@ -154,6 +180,9 @@ type SessionState = {
   quests: QuestSummary[];
   factions: FactionSummary[];
   inventory: InventorySummary[];
+  chapter: ChapterSummary;
+  current_scene: CurrentSceneSummary;
+  recent_scene_history: string[];
   relationships: RelationshipSummary[];
   active_consequence_threads: ConsequenceThreadSummary[];
   recent_consequence_history: string[];
@@ -183,11 +212,14 @@ type TurnResponse = {
   next_choices: NarrativeChoice[];
   consequence_summary: string;
   scene_tone: string;
+  scene_summary: string;
   quest_updates: Array<QuestSummary & { world_tags?: string[]; summary?: string }>;
   faction_updates: Array<FactionSummary & { delta?: number }>;
   inventory_updates: Array<InventorySummary & { action?: string }>;
   relationship_updates: Array<RelationshipSummary & { delta?: number }>;
   consequence_updates: Array<ConsequenceThreadSummary & { action?: string }>;
+  scene_updates: Array<SceneSummaryValue & { action?: string }>;
+  chapter_updates: ChapterSummaryValue[];
 };
 
 type EventItem = {
@@ -338,6 +370,32 @@ type ConsequenceThreadOpsItem = {
   summary: string;
   updated_at: string;
   resolved_at: string | null;
+};
+
+type ChapterOpsItem = {
+  id: string;
+  world_id: string;
+  owner_actor_id: string;
+  owner_actor_name: string;
+  chapter_key: string;
+  status: string;
+  summary: string;
+  updated_at: string;
+  resolved_at: string | null;
+};
+
+type SceneOpsItem = {
+  id: string;
+  world_id: string;
+  owner_actor_id: string;
+  owner_actor_name: string;
+  chapter_track_id: string;
+  scene_phase: string;
+  status: string;
+  stakes_summary: string;
+  pressure_summary: string;
+  updated_at: string;
+  closed_at: string | null;
 };
 
 type RebuildSummary = {
@@ -648,12 +706,20 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
   const recentConsequenceHistory = response.consequence_summary
     ? [response.consequence_summary, ...current.recent_consequence_history.filter((item) => item !== response.consequence_summary)].slice(0, 3)
     : current.recent_consequence_history;
+  const recentSceneHistory = response.scene_summary
+    ? [response.scene_summary, ...current.recent_scene_history.filter((item) => item !== response.scene_summary)].slice(0, 3)
+    : current.recent_scene_history;
+  const currentScene = response.scene_updates.length ? response.scene_updates[response.scene_updates.length - 1] : current.current_scene;
+  const currentChapter = response.chapter_updates.length ? response.chapter_updates[response.chapter_updates.length - 1] : current.chapter;
 
   return {
     ...current,
     quests,
     factions,
     inventory,
+    chapter: currentChapter,
+    current_scene: currentScene,
+    recent_scene_history: recentSceneHistory,
     relationships,
     active_consequence_threads: Array.from(threadMap.values()),
     recent_consequence_history: recentConsequenceHistory,
@@ -746,6 +812,8 @@ function App() {
   const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null);
   const [relationshipOps, setRelationshipOps] = useState<RelationshipOpsItem[]>([]);
   const [consequenceThreadOps, setConsequenceThreadOps] = useState<ConsequenceThreadOpsItem[]>([]);
+  const [chapterOps, setChapterOps] = useState<ChapterOpsItem[]>([]);
+  const [sceneOps, setSceneOps] = useState<SceneOpsItem[]>([]);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
@@ -824,6 +892,8 @@ function App() {
       setGraphSummary(null);
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
+      setChapterOps([]);
+      setSceneOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -878,6 +948,9 @@ function App() {
         }
         if (data.consequence_summary) {
           setLatestConsequenceSummary(data.consequence_summary);
+        }
+        if (data.scene_summary && !latestConsequenceSummary) {
+          setLatestConsequenceSummary(data.scene_summary);
         }
       }
       if (parsed.event === "graph.projection.updated") {
@@ -944,6 +1017,8 @@ function App() {
       setGraphSummary(null);
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
+      setChapterOps([]);
+      setSceneOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -988,6 +1063,8 @@ function App() {
         setGraphSummary(null);
         setRelationshipOps([]);
         setConsequenceThreadOps([]);
+        setChapterOps([]);
+        setSceneOps([]);
         setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
@@ -1003,6 +1080,8 @@ function App() {
       setGraphSummary(null);
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
+      setChapterOps([]);
+      setSceneOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -1021,14 +1100,18 @@ function App() {
     }
 
     try {
-      const [summaryPayload, relationshipPayload, threadPayload] = await Promise.all([
+      const [summaryPayload, relationshipPayload, threadPayload, chapterPayload, scenePayload] = await Promise.all([
         apiFetch<GraphSummary>(`/ops/worlds/${currentWorldId}/graph-summary`, currentToken),
         apiFetch<{ items: RelationshipOpsItem[] }>(`/ops/worlds/${currentWorldId}/relationships`, currentToken),
         apiFetch<{ items: ConsequenceThreadOpsItem[] }>(`/ops/worlds/${currentWorldId}/consequence-threads`, currentToken),
+        apiFetch<{ items: ChapterOpsItem[] }>(`/ops/worlds/${currentWorldId}/chapters`, currentToken),
+        apiFetch<{ items: SceneOpsItem[] }>(`/ops/worlds/${currentWorldId}/scenes`, currentToken),
       ]);
       setGraphSummary(summaryPayload);
       setRelationshipOps(relationshipPayload.items);
       setConsequenceThreadOps(threadPayload.items);
+      setChapterOps(chapterPayload.items);
+      setSceneOps(scenePayload.items);
     } catch (requestError) {
       const typedError = requestError as APIError;
       if (typedError.status === 403) {
@@ -1039,6 +1122,8 @@ function App() {
       setGraphSummary(null);
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
+      setChapterOps([]);
+      setSceneOps([]);
     }
   }
 
@@ -1528,7 +1613,48 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>6. Relationship summary</h2>
+              <h2>6. Current scene</h2>
+              {sessionState?.chapter ? (
+                <div data-testid="current-chapter-summary">
+                  <p>
+                    <strong>{sessionState.chapter.summary}</strong>
+                  </p>
+                  <p>Chapter status: {sessionState.chapter.status}</p>
+                </div>
+              ) : (
+                <p>No chapter frame yet.</p>
+              )}
+              {sessionState?.current_scene ? (
+                <div data-testid="current-scene-summary">
+                  <p>
+                    <strong>{sessionState.current_scene.summary}</strong>
+                  </p>
+                  <p>{sessionState.current_scene.pressure_summary}</p>
+                  <p>
+                    Scene focus: {sessionState.current_scene.focus_actor?.display_name ?? "The square"} /{" "}
+                    {sessionState.current_scene.location?.name ?? "unknown location"}
+                  </p>
+                </div>
+              ) : (
+                <p>No active scene frame yet.</p>
+              )}
+              <h3>Recent scene echoes</h3>
+              <ul className="stream" data-testid="recent-scene-history">
+                {sessionState?.recent_scene_history.length ? (
+                  sessionState.recent_scene_history.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>echo</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No scene echoes are visible yet.</li>
+                )}
+              </ul>
+            </article>
+
+            <article className="card">
+              <h2>7. Relationship summary</h2>
               <ul className="stream" data-testid="relationship-summary">
                 {sessionState?.relationships.length ? (
                   sessionState.relationships.map((item) => (
@@ -1571,7 +1697,7 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>7. Inventory</h2>
+              <h2>8. Inventory</h2>
               <ul className="stream" data-testid="inventory-stream">
                 {sessionState?.inventory.length ? (
                   sessionState.inventory.map((item) => (
@@ -1605,7 +1731,7 @@ function App() {
             </article>
 
             <article className="card wide">
-              <h2>8. Suggested choices</h2>
+              <h2>9. Suggested choices</h2>
               <p data-testid="last-consequence-summary">
                 {latestConsequenceSummary || "The scene is waiting for your next line."}
               </p>
@@ -1675,7 +1801,7 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>9. Results</h2>
+              <h2>10. Results</h2>
               <h3>Events</h3>
               <ul className="stream" data-testid="events-stream">
                 {events.map((item) => (
@@ -1862,6 +1988,35 @@ function App() {
                   ))
                 ) : (
                   <li>No consequence thread data loaded.</li>
+                )}
+              </ul>
+              <h3>Chapter timeline</h3>
+              <ul className="stream" data-testid="chapter-timeline-stream">
+                {chapterOps.length ? (
+                  chapterOps.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.chapter_key}</strong>
+                      <span>{item.status}</span>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No chapter timeline data loaded.</li>
+                )}
+              </ul>
+              <h3>Scene timeline</h3>
+              <ul className="stream" data-testid="scene-timeline-stream">
+                {sceneOps.length ? (
+                  sceneOps.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.scene_phase}</strong>
+                      <span>{item.status}</span>
+                      <span>{item.stakes_summary}</span>
+                      <span>{item.pressure_summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No scene timeline data loaded.</li>
                 )}
               </ul>
               <h3>Recent runtime failures</h3>

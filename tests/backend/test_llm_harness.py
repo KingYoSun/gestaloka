@@ -33,6 +33,22 @@ def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id:
     return {
         "world_id": "world-alpha",
         "location": {"id": "starter", "name": "Founders Reach", "description": "Starter plaza"},
+        "chapter": {
+            "id": "chapter-open",
+            "key": "founders_watch_opening",
+            "status": "active",
+            "summary": "The opening chapter of Founders Reach is still gathering the square's first trust.",
+        },
+        "current_scene": {
+            "id": "scene-open",
+            "summary": "The square in Founders Reach is still establishing who can be trusted with the first request.",
+            "pressure_summary": "The scene has room to breathe, but it still remembers what was just set in motion.",
+            "location": {"id": "starter", "name": "Founders Reach", "description": "Starter plaza"},
+            "focus_actor": {"actor_id": "npc-nera", "display_name": "Archivist Nera"},
+        },
+        "recent_scene_history": [
+            "The square in Founders Reach is still establishing who can be trusted with the first request.",
+        ],
         "character": {"actor_id": "player-alpha", "rank": "Wayfarer", "hp": 10, "focus": 5, "status_json": {}},
         "quests": [
             {
@@ -173,6 +189,7 @@ def test_council_service_falls_back_to_pro_lane(container):
     assert outcome.role_runs[-1].approval_status == "approved"
     assert outcome.final_payload is not None
     assert outcome.final_payload.world_tags == ["aid_local"]
+    assert outcome.final_payload.scene_move in {"hold", "deepen", "pivot", "close"}
 
 
 def test_turn_council_reject_returns_422_and_persists_audit_records(client, container, auth_headers):

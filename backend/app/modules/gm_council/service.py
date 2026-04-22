@@ -43,6 +43,8 @@ class CouncilWorldProgressPayload(BaseModel):
     resolution_summary: str = Field(min_length=1)
     risk_level: Literal["low", "medium", "high"]
     next_choices: list[NarrativeChoiceDraft] = Field(min_length=3, max_length=3)
+    scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
+    scene_pressure: Literal["low", "medium", "high"] = "medium"
 
     @model_validator(mode="before")
     @classmethod
@@ -188,6 +190,9 @@ class GMCouncilService:
         relationship_summaries = request.session_state.get("relationships") or []
         active_consequence_threads = request.session_state.get("active_consequence_threads") or []
         recent_consequence_history = request.session_state.get("recent_consequence_history") or []
+        current_scene = request.session_state.get("current_scene") or {}
+        current_chapter = request.session_state.get("chapter") or {}
+        recent_scene_history = request.session_state.get("recent_scene_history") or []
 
         intent_input = {
             "world_id": request.world_id,
@@ -206,6 +211,9 @@ class GMCouncilService:
             "relationship_summaries": relationship_summaries,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
+            "current_scene": current_scene,
+            "current_chapter": current_chapter,
+            "recent_scene_history": recent_scene_history,
         }
         intent_result = self.model_router.execute_structured_prompt(
             prompt_id="council.intent_interpreter",
@@ -263,6 +271,9 @@ class GMCouncilService:
             "relationship_summaries": relationship_summaries,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
+            "current_scene": current_scene,
+            "current_chapter": current_chapter,
+            "recent_scene_history": recent_scene_history,
         }
         memory_result = self.model_router.execute_structured_prompt(
             prompt_id="council.memory_manager",
@@ -358,6 +369,10 @@ class GMCouncilService:
             "relationship_summaries": relationship_summaries,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
+            "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
+            "current_scene": current_scene,
+            "current_chapter": current_chapter,
+            "recent_scene_history": recent_scene_history,
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",
@@ -503,6 +518,8 @@ class GMCouncilService:
             "resolution_summary": world_progress_payload.resolution_summary,
             "consequence_summary": intent_payload.consequence_summary,
             "outcome_band": world_progress_payload.outcome_band,
+            "current_scene_summary": str(current_scene.get("summary") or ""),
+            "current_chapter_summary": str(current_chapter.get("summary") or ""),
         }
         narrative_result = self.model_router.execute_structured_prompt(
             prompt_id="council.narrative",
@@ -553,6 +570,8 @@ class GMCouncilService:
             consequence_tags=world_progress_payload.consequence_tags,
             outcome_band=world_progress_payload.outcome_band,
             scene_tone=narrative_payload.tone,
+            scene_move=world_progress_payload.scene_move,
+            scene_pressure=world_progress_payload.scene_pressure,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,

@@ -21,6 +21,7 @@ from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
 from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
 from app.modules.world_state.service import (
+    apply_scene_updates,
     apply_consequence_updates,
     apply_world_tag_updates,
     build_session_state,
@@ -59,12 +60,15 @@ class TurnResolutionResult:
     inventory_updates: list[dict]
     relationship_updates: list[dict]
     consequence_updates: list[dict]
+    scene_updates: list[dict]
+    chapter_updates: list[dict]
     action_type: str
     input_mode: str
     interpreted_intent: dict[str, Any]
     next_choices: list[dict[str, Any]]
     consequence_summary: str
     scene_tone: str
+    scene_summary: str
     progress_phases: list[str]
     error_detail: str | None = None
     status_code: int = 200
@@ -475,6 +479,25 @@ def _resolve_narrative_turn_for_session(
         fail_forward=bool(interpreted_intent.get("fail_forward")),
     )
 
+    pre_scene_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    scene_result = apply_scene_updates(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        focus_actor_id=guide_npc.id,
+        source_event_id=event.id,
+        action_kind="narrative",
+        session_state=pre_scene_state,
+        outcome_band=consequence_result.outcome_band,
+        scene_move=getattr(payload, "scene_move", None),
+        scene_pressure=getattr(payload, "scene_pressure", None),
+    )
     post_state = build_session_state(
         db,
         world_id=game_session.world_id,
@@ -505,12 +528,17 @@ def _resolve_narrative_turn_for_session(
         "outcome_band": consequence_result.outcome_band,
         "scene_tone": consequence_result.scene_tone,
         "consequence_summary": consequence_result.consequence_summary,
+        "scene_summary": scene_result["scene_summary"],
+        "scene_updates": scene_result["scene_updates"],
+        "chapter_updates": scene_result["chapter_updates"],
         "next_choices": next_choices,
         "quest_updates": state_updates["quest_updates"],
         "faction_updates": combined_faction_updates,
         "inventory_updates": state_updates["inventory_updates"],
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "scene_move": getattr(payload, "scene_move", None),
+        "scene_pressure": getattr(payload, "scene_pressure", None),
         "council_trace": [
             {
                 "role": item.council_role,
@@ -526,6 +554,9 @@ def _resolve_narrative_turn_for_session(
         "outcome_band": consequence_result.outcome_band,
         "scene_tone": consequence_result.scene_tone,
         "consequence_summary": consequence_result.consequence_summary,
+        "scene_summary": scene_result["scene_summary"],
+        "scene_updates": scene_result["scene_updates"],
+        "chapter_updates": scene_result["chapter_updates"],
         "faction_updates": combined_faction_updates,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
@@ -575,13 +606,16 @@ def _resolve_narrative_turn_for_session(
         inventory_updates=state_updates["inventory_updates"],
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
+        scene_updates=scene_result["scene_updates"],
+        chapter_updates=scene_result["chapter_updates"],
         action_type="narrative",
         input_mode=input_mode,
         interpreted_intent=interpreted_intent,
         next_choices=next_choices,
         consequence_summary=consequence_result.consequence_summary,
         scene_tone=consequence_result.scene_tone,
-        progress_phases=[*progress_phases, "consequence_resolution", "choice_generation"],
+        scene_summary=scene_result["scene_summary"],
+        progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "choice_generation"],
     )
 
 
@@ -758,6 +792,25 @@ def _resolve_reward_item_turn_for_session(
         fail_forward=False,
     )
     combined_faction_updates = [*outcome.faction_updates, *consequence_result.faction_updates]
+    pre_scene_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    scene_result = apply_scene_updates(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        focus_actor_id=guide_npc.id,
+        source_event_id=event.id,
+        action_kind="use_reward_item",
+        session_state=pre_scene_state,
+        outcome_band=consequence_result.outcome_band,
+        scene_move="pivot",
+        scene_pressure="medium",
+    )
     post_state = build_session_state(
         db,
         world_id=game_session.world_id,
@@ -796,6 +849,9 @@ def _resolve_reward_item_turn_for_session(
         "outcome_band": consequence_result.outcome_band,
         "scene_tone": consequence_result.scene_tone,
         "consequence_summary": consequence_result.consequence_summary,
+        "scene_summary": scene_result["scene_summary"],
+        "scene_updates": scene_result["scene_updates"],
+        "chapter_updates": scene_result["chapter_updates"],
         "faction_updates": combined_faction_updates,
     }
     event.payload = {
@@ -805,6 +861,9 @@ def _resolve_reward_item_turn_for_session(
         "outcome_band": consequence_result.outcome_band,
         "scene_tone": consequence_result.scene_tone,
         "consequence_summary": consequence_result.consequence_summary,
+        "scene_summary": scene_result["scene_summary"],
+        "scene_updates": scene_result["scene_updates"],
+        "chapter_updates": scene_result["chapter_updates"],
         "faction_updates": combined_faction_updates,
     }
 
@@ -823,15 +882,19 @@ def _resolve_reward_item_turn_for_session(
         inventory_updates=outcome.inventory_updates,
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
+        scene_updates=scene_result["scene_updates"],
+        chapter_updates=scene_result["chapter_updates"],
         action_type="use_reward_item",
         input_mode=input_mode,
         interpreted_intent=resolved_interpreted_intent,
         next_choices=next_choices,
         consequence_summary=consequence_result.consequence_summary,
         scene_tone=consequence_result.scene_tone,
+        scene_summary=scene_result["scene_summary"],
         progress_phases=[
             *(progress_phases or ["item_use"]),
             *([] if "consequence_resolution" in (progress_phases or []) else ["consequence_resolution"]),
+            *([] if "scene_framing" in (progress_phases or []) else ["scene_framing"]),
             *([] if "choice_generation" in (progress_phases or []) else ["choice_generation"]),
         ],
     )
@@ -871,8 +934,11 @@ def _build_failed_turn_result(
         "interpreted_intent": interpreted_intent,
         "next_choices": next_choices,
         "consequence_summary": consequence_summary,
+        "scene_summary": consequence_summary,
         "relationship_updates": [],
         "consequence_updates": [],
+        "scene_updates": [],
+        "chapter_updates": [],
         "scene_tone": scene_tone_for_band("setback"),
         "outcome_band": "setback",
         **(failure_payload or {}),
@@ -930,12 +996,15 @@ def _build_failed_turn_result(
         inventory_updates=[],
         relationship_updates=[],
         consequence_updates=[],
+        scene_updates=[],
+        chapter_updates=[],
         action_type=action_type,
         input_mode=input_mode,
         interpreted_intent=interpreted_intent,
         next_choices=next_choices,
         consequence_summary=consequence_summary,
         scene_tone=scene_tone_for_band("setback"),
+        scene_summary=consequence_summary,
         progress_phases=progress_phases,
         error_detail=failure_reason,
         status_code=status_code,

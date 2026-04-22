@@ -49,6 +49,8 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert reward_item["usable"] is True
     assert reward_item["effect_kind"] == "unlock_followup_watch_path"
     assert state_after_reward.json()["relationships"][0]["band"] == "warm"
+    assert state_after_reward.json()["chapter"]["key"] == "founders_watch_opening"
+    assert state_after_reward.json()["current_scene"]["summary"]
 
     assert state_after_reward.json()["next_choices"][1]["action_kind"] == "use_reward_item"
 
@@ -64,6 +66,8 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert use_payload["quest_updates"][0]["stage_key"] == "watch_path_followup"
     assert use_payload["inventory_updates"][0]["status"] == "used"
     assert use_payload["faction_updates"][0]["delta"] == 0.1
+    assert use_payload["chapter_updates"][-1]["key"] == "watch_path_followup"
+    assert use_payload["scene_updates"]
 
     third_turn = client.post(
         "/turns",
@@ -78,6 +82,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     third_payload = third_turn.json()
     assert third_payload["sp_balance"] == 4
     assert "Lantern Sigil" in third_payload["npc_reaction"]
+    assert third_payload["scene_summary"]
 
     events = client.get(f"/worlds/{session_payload['world_id']}/events", headers=auth_headers)
     memories = client.get(f"/worlds/{session_payload['world_id']}/memories", headers=auth_headers)
@@ -91,6 +96,9 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert any("Lantern Sigil" in item["text"] for item in memories.json()["items"])
     assert state.json()["quests"][0]["stage_key"] == "watch_path_followup"
     assert state.json()["inventory"][0]["status"] == "used"
+    assert state.json()["chapter"]["key"] == "watch_path_followup"
+    assert state.json()["recent_scene_history"]
+    assert "watch path" in state.json()["current_scene"]["summary"].lower()
 
     with container.session_factory() as db:
         pending = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "projected")).scalars())
@@ -165,6 +173,7 @@ def test_consequence_threads_affect_state_and_fail_forward_without_422(client, a
     assert impossible_payload["scene_tone"] == "tense"
     assert impossible_payload["consequence_updates"]
     assert impossible_payload["relationship_updates"][0]["band"] in {"wary", "neutral"}
+    assert impossible_payload["scene_summary"]
 
 
 def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_can_recover(container, client, auth_headers, monkeypatch):

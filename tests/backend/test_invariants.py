@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.models.entities import (
     Actor,
+    ChapterTrack,
     ConsequenceThread,
     Faction,
     FactionStanding,
@@ -12,6 +13,7 @@ from app.models.entities import (
     Memory,
     QuestAssignment,
     QuestTemplate,
+    SceneFrame,
     Session as GameSession,
     World,
     starter_location_id,
@@ -194,6 +196,70 @@ def test_consequence_thread_cannot_reference_counterpart_from_another_world(cont
                 pressure_band="medium",
                 title="A promise hangs in the square",
                 summary="A promise remains unresolved.",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_chapter_track_cannot_reference_owner_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        owner = Actor(world_id="world-a", actor_type="player", user_sub="demo", display_name="Owner")
+        db.add(owner)
+        db.flush()
+        db.add(
+            ChapterTrack(
+                world_id="world-b",
+                owner_actor_id=owner.id,
+                chapter_key="founders_watch_opening",
+                status="active",
+                summary="bad",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_scene_frame_cannot_reference_chapter_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        owner_a = Actor(world_id="world-a", actor_type="player", user_sub="demo-a", display_name="Owner A")
+        owner_b = Actor(world_id="world-b", actor_type="player", user_sub="demo-b", display_name="Owner B")
+        db.add_all([owner_a, owner_b])
+        db.flush()
+        chapter = ChapterTrack(
+            world_id="world-b",
+            owner_actor_id=owner_b.id,
+            chapter_key="founders_watch_opening",
+            status="active",
+            summary="chapter",
+        )
+        db.add(chapter)
+        db.flush()
+        db.add(
+            SceneFrame(
+                world_id="world-a",
+                owner_actor_id=owner_a.id,
+                chapter_track_id=chapter.id,
+                scene_phase="establish",
+                status="active",
+                location_id=None,
+                focus_actor_id=None,
+                stakes_summary="bad",
+                pressure_summary="bad",
             )
         )
         with pytest.raises(IntegrityError):

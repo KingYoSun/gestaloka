@@ -119,6 +119,8 @@ class TurnResolutionPayload(BaseModel):
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     scene_tone: str = Field(min_length=1)
+    scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
+    scene_pressure: Literal["low", "medium", "high"] = "medium"
 
 
 @dataclass(frozen=True)
@@ -293,6 +295,9 @@ class StubModelProvider(BaseModelProvider):
         relationship_summaries = [item.get("summary", "") for item in input_payload.get("relationship_summaries") or [] if item.get("summary")]
         consequence_threads = [item.get("summary", "") for item in input_payload.get("active_consequence_threads") or [] if item.get("summary")]
         recent_history = [str(item) for item in input_payload.get("recent_consequence_history") or [] if str(item)]
+        current_scene = input_payload.get("current_scene") or {}
+        current_chapter = input_payload.get("current_chapter") or {}
+        recent_scene_history = [str(item) for item in input_payload.get("recent_scene_history") or [] if str(item)]
         summary_parts = []
         if memories:
             summary_parts.append(f"memory={' / '.join(memories[:2])}")
@@ -317,6 +322,12 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"threads={consequence_threads[0]}")
         if recent_history:
             summary_parts.append(f"recent_consequence={recent_history[0]}")
+        if current_scene:
+            summary_parts.append(f"scene={str(current_scene.get('summary') or '')}")
+        if current_chapter:
+            summary_parts.append(f"chapter={str(current_chapter.get('summary') or '')}")
+        if recent_scene_history:
+            summary_parts.append(f"scene_echo={recent_scene_history[0]}")
         if consequence_flags:
             summary_parts.append(f"consequence_flags={', '.join(consequence_flags[:2])}")
         summary = " | ".join(summary_parts) if summary_parts else "no prior context"
@@ -340,13 +351,16 @@ class StubModelProvider(BaseModelProvider):
             (str(item.get("summary") or "") for item in input_payload.get("active_consequence_threads") or [] if item.get("summary")),
             "",
         )
+        current_scene_summary = str(((input_payload.get("current_scene") or {}) if isinstance(input_payload.get("current_scene"), dict) else {}).get("summary") or "")
+        current_chapter_summary = str(((input_payload.get("current_chapter") or {}) if isinstance(input_payload.get("current_chapter"), dict) else {}).get("summary") or "")
         return {
             "npc_intent": f"{npc_name} keeps same-world continuity and responds to the latest player action.",
             "reaction_style": "measured",
             "focus_memories": focus_memories[:2],
             "reaction_outline": (
                 f"{npc_name} references {memory_summary}, keeps quest stage {active_quest_stage}, "
-                f"and factors in the current faction/inventory state. {consequence_summary} {thread_summary}".strip()
+                f"the current scene {current_scene_summary}, and chapter pressure {current_chapter_summary}. "
+                f"{consequence_summary} {thread_summary}".strip()
             ),
         }
 
@@ -358,6 +372,9 @@ class StubModelProvider(BaseModelProvider):
         relation_summary = str(input_payload.get("relation_summary") or "")
         consequence_tags = normalize_consequence_tags([str(item) for item in input_payload.get("consequence_tags") or []])
         world_tags = normalize_world_tags(infer_world_tags(interpreted_intent))
+        active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
+        current_scene = input_payload.get("current_scene") or {}
+        current_chapter = input_payload.get("current_chapter") or {}
         if "__force_council_reject__" in input_text:
             world_tags = ["threaten_local"]
         if bool(input_payload.get("fail_forward")):
@@ -410,6 +427,23 @@ class StubModelProvider(BaseModelProvider):
             outcome_band = "setback"
         elif {"missed_timing", "public_attention"} & set(consequence_tags):
             outcome_band = "tangled"
+        scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
+        scene_pressure: Literal["low", "medium", "high"] = "medium"
+        if "sigil_respect" in consequence_tags:
+            scene_move = "pivot"
+            scene_pressure = "medium"
+        elif outcome_band == "setback":
+            scene_move = "deepen"
+            scene_pressure = "high"
+        elif outcome_band == "tangled":
+            scene_move = "deepen"
+            scene_pressure = "medium"
+        elif active_quest_stage == "watch_path_followup":
+            scene_move = "deepen" if "investigate" in world_tags else "hold"
+            scene_pressure = "medium"
+        elif current_chapter and str(current_chapter.get("key") or "") == "watch_path_followup":
+            scene_move = "hold"
+            scene_pressure = "medium"
         return {
             "event_type": "player.turn.resolved",
             "event_payload": {
@@ -417,6 +451,8 @@ class StubModelProvider(BaseModelProvider):
                 "world_tags": world_tags,
                 "npc_anchor": npc_anchor,
                 "relation_summary": relation_summary,
+                "scene_summary": str(current_scene.get("summary") or ""),
+                "chapter_summary": str(current_chapter.get("summary") or ""),
             },
             "memories": [
                 {
@@ -439,6 +475,8 @@ class StubModelProvider(BaseModelProvider):
             ),
             "risk_level": risk_level,
             "next_choices": next_choices,
+            "scene_move": scene_move,
+            "scene_pressure": scene_pressure,
         }
 
     def _rules_arbiter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -486,17 +524,23 @@ class StubModelProvider(BaseModelProvider):
         world_tags = normalize_world_tags([str(item) for item in input_payload.get("world_tags") or []])
         consequence_summary = str(input_payload.get("consequence_summary") or "")
         outcome_band = str(input_payload.get("outcome_band") or "steady")
+        current_scene_summary = str(input_payload.get("current_scene_summary") or "")
+        current_chapter_summary = str(input_payload.get("current_chapter_summary") or "")
         narrative = (
             f"{player_name}は『{input_text}』と行動した。"
             f"{npc_name}はその結果を同じ世界の事実として受け止めた。"
         )
         if world_tags != ["none"]:
             narrative = f"{narrative} world_tags={', '.join(world_tags)} が確定した。"
+        if current_scene_summary:
+            narrative = f"{narrative} Scene: {current_scene_summary}".strip()
         if consequence_summary:
             narrative = f"{narrative} {consequence_summary}".strip()
         npc_reaction = f"{npc_name}は{reaction_outline}"
         if memory_summary:
             npc_reaction = f"{npc_reaction.rstrip('。')} 記憶要約「{memory_summary}」も踏まえた。"
+        if current_chapter_summary:
+            npc_reaction = f"{npc_reaction.rstrip('。')} 章の流れとしては「{current_chapter_summary}」を意識している。"
         return {
             "narrative": narrative,
             "npc_reaction": npc_reaction,

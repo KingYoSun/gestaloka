@@ -45,6 +45,15 @@ from app.modules.world_state.consequence import (
     thread_summary,
     thread_title,
 )
+from app.modules.world_state.scene import (
+    SceneFrameEngine,
+    ensure_narrative_frame_seed,
+    get_current_chapter_summary,
+    get_current_scene_summary,
+    list_chapter_tracks_debug,
+    list_recent_scene_history,
+    list_scene_frames_debug,
+)
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, WorldTag, standing_band
 
 
@@ -466,6 +475,13 @@ def ensure_world_slice_seed(
         quest_template_id=quest_template.id,
     )
     followup_quest_template = ensure_followup_quest_template(db, world_id)
+    ensure_narrative_frame_seed(
+        db,
+        world_id=world_id,
+        actor_id=player_actor_id,
+        location_id=starter_location_id(world_id),
+        focus_actor_id=guide_actor_id,
+    )
     return WorldSliceSeed(
         faction=faction,
         standing=standing,
@@ -783,6 +799,10 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     primary_relationship = relationships[0] if relationships else {}
     relationship_band_name = str(primary_relationship.get("band") or "neutral")
     thread_types = {str(item.get("thread_type") or "") for item in active_threads}
+    current_scene = session_state.get("current_scene") or {}
+    scene_summary = str(current_scene.get("summary") or "").strip()
+    pressure_summary = str(current_scene.get("pressure_summary") or "").strip()
+    chapter_summary = str((session_state.get("chapter") or {}).get("summary") or "").strip()
 
     safe_choice = {
         "choice_id": "safe",
@@ -909,6 +929,10 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             "action_kind": "narrative",
         }
 
+    for choice in (safe_choice, progress_choice, explore_choice):
+        ambient_parts = [scene_summary, pressure_summary, chapter_summary, str(choice.get("summary") or "").strip()]
+        choice["summary"] = " ".join(part for part in ambient_parts if part).strip()
+
     return [safe_choice, progress_choice, explore_choice]
 
 
@@ -926,6 +950,9 @@ def build_session_state(
     relationships = list_relationship_summaries(db, world_id, actor_id)
     active_consequence_threads = list_active_consequence_threads(db, world_id, actor_id)
     recent_consequence_history = list_recent_consequence_history(db, world_id, actor_id)
+    chapter = get_current_chapter_summary(db, world_id, actor_id)
+    current_scene = get_current_scene_summary(db, world_id, actor_id)
+    recent_scene_history = list_recent_scene_history(db, world_id, actor_id)
     state = {
         "world_id": world_id,
         "location": get_location_summary(db, world_id, location_id),
@@ -933,6 +960,9 @@ def build_session_state(
         "quests": quests,
         "factions": factions,
         "inventory": inventory,
+        "chapter": chapter,
+        "current_scene": current_scene,
+        "recent_scene_history": recent_scene_history,
         "relationships": relationships,
         "active_consequence_threads": active_consequence_threads,
         "recent_consequence_history": recent_consequence_history,
@@ -941,6 +971,40 @@ def build_session_state(
     }
     state["next_choices"] = default_next_choices(state)
     return state
+
+
+def apply_scene_updates(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    location_id: str | None,
+    focus_actor_id: str | None,
+    source_event_id: str,
+    action_kind: str,
+    session_state: dict[str, Any],
+    outcome_band: str,
+    scene_move: str | None,
+    scene_pressure: str | None,
+) -> dict[str, Any]:
+    result = SceneFrameEngine.apply(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        location_id=location_id,
+        focus_actor_id=focus_actor_id,
+        source_event_id=source_event_id,
+        action_kind=action_kind,
+        session_state=session_state,
+        outcome_band=outcome_band,
+        requested_scene_move=scene_move if scene_move in {"hold", "deepen", "pivot", "close"} else None,
+        requested_scene_pressure=scene_pressure if scene_pressure in {"low", "medium", "high"} else None,
+    )
+    return {
+        "chapter_updates": result.chapter_updates,
+        "scene_updates": result.scene_updates,
+        "scene_summary": result.scene_summary,
+    }
 
 
 def _pressure_rank(pressure_band: PressureBand) -> int:

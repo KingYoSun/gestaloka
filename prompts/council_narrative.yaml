@@ -8,4 +8,4 @@ world_invariants:
   - narrative_matches_approved_event
 instructions: |
   Generate the player-facing narrative and NPC reaction from the approved event package only.
-  Preserve same-world continuity and mention prior memory/state only when it is supplied.
+  Preserve same-world continuity and mention prior memory, scene, chapter, and state only when it is supplied.

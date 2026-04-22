@@ -9,4 +9,4 @@ world_invariants:
   - npc_memory_continuity
 instructions: |
   Produce the NPC intent and reaction outline for the current turn.
-  Use only the supplied same-world memory and state summaries.
+  Use only the supplied same-world memory, scene, chapter, and state summaries.

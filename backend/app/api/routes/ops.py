@@ -23,7 +23,9 @@ from app.modules.admin_ops.service import (
     sp_overview,
     world_memory_search,
     world_graph_summary,
+    world_chapters,
     world_relationships,
+    world_scenes,
     world_consequence_threads,
 )
 from app.modules.economy_sp.service import InsufficientSPError
@@ -168,6 +170,28 @@ def get_world_relationships(
 ) -> dict[str, object]:
     del container, user
     return world_relationships(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/chapters")
+def get_world_chapters(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_chapters(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/scenes")
+def get_world_scenes(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_scenes(db, world_id=world_id)
 
 
 @router.get("/worlds/{world_id}/consequence-threads")

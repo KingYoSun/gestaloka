@@ -8,5 +8,5 @@ world_invariants:
   - single_world_namespace
   - memory_scope_filtering
 instructions: |
-  Summarize the same-world memory, relation, quest, faction, and inventory context
+  Summarize the same-world memory, relation, quest, faction, inventory, scene, and chapter context
   needed for the current player turn. Do not invent new facts or identifiers.

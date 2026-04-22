@@ -23,6 +23,7 @@ cases:
     expect_retrieval_status: ready
     expect_retrieval_min_hits: 0
     expect_outcome_band: steady
+    expect_scene_move: hold
     expect_consequence_tags:
       - earned_trust
     expected_world_tags:
@@ -55,6 +56,7 @@ cases:
     expect_retrieval_status: ready
     expect_retrieval_min_hits: 0
     expect_outcome_band: steady
+    expect_scene_move: hold
     expect_consequence_tags:
       - earned_trust
     expected_world_tags:
@@ -91,6 +93,7 @@ cases:
     expect_retrieval_min_hits: 1
     expect_retrieval_hit_substring: 旅人を助け
     expect_outcome_band: steady
+    expect_scene_move: hold
     expect_consequence_tags:
       - earned_trust
     expected_world_tags:
@@ -126,6 +129,7 @@ cases:
     expect_retrieval_min_hits: 1
     expect_retrieval_hit_substring: Lantern Sigil
     expect_outcome_band: steady
+    expect_scene_move: deepen
     expect_consequence_tags:
       - careful_observation
     expected_world_tags:

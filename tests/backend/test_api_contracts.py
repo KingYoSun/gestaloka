@@ -111,6 +111,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "quests",
         "factions",
         "inventory",
+        "chapter",
+        "current_scene",
+        "recent_scene_history",
         "relationships",
         "active_consequence_threads",
         "recent_consequence_history",
@@ -120,6 +123,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     } <= set(state_response.json())
     assert state_response.json()["quests"][0]["progress"] == 0
     assert state_response.json()["quests"][0]["stage_key"] == "starter_watch"
+    assert state_response.json()["chapter"]["key"] == "founders_watch_opening"
+    assert "Founders Reach" in state_response.json()["current_scene"]["summary"]
     assert state_response.json()["inventory"] == []
     assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["safe", "progress", "explore"]
 
@@ -155,6 +160,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "inventory_updates",
             "relationship_updates",
             "consequence_updates",
+            "scene_updates",
+            "chapter_updates",
+            "scene_summary",
         }
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"
@@ -165,10 +173,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = [websocket.receive_json() for _ in range(18)]
+        messages = [websocket.receive_json() for _ in range(21)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
+        "turn.progress",
         "turn.progress",
         "turn.progress",
         "turn.progress",
@@ -184,6 +193,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "quest.updated",
         "faction.standing.updated",
         "relationship.updated",
+        "scene.updated",
+        "chapter.updated",
         "graph.projection.updated",
         "turn.resolved",
     ]
@@ -196,6 +207,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "safety_guard",
         "narrative",
         "consequence_resolution",
+        "scene_framing",
         "choice_generation",
     ]
     assert messages[-1]["data"] == turn_payload
@@ -256,10 +268,11 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["faction_updates"][0]["delta"] == 0.1
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(20)]
+        messages = [websocket.receive_json() for _ in range(23)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
+        "turn.progress",
         "turn.progress",
         "turn.progress",
         "turn.progress",
@@ -277,6 +290,8 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "faction.standing.updated",
         "inventory.changed",
         "relationship.updated",
+        "scene.updated",
+        "chapter.updated",
         "graph.projection.updated",
         "turn.resolved",
     ]
@@ -290,9 +305,12 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "narrative",
         "item_use",
         "consequence_resolution",
+        "scene_framing",
         "choice_generation",
     ]
     assert messages[-1]["data"] == payload
+    assert payload["scene_updates"]
+    assert payload["chapter_updates"]
 
 
 def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
@@ -385,6 +403,20 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     assert threads_response.status_code == 200
     assert "items" in threads_response.json()
+
+    chapters_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/chapters",
+        headers=auth_headers,
+    )
+    assert chapters_response.status_code == 200
+    assert chapters_response.json()["items"]
+
+    scenes_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/scenes",
+        headers=auth_headers,
+    )
+    assert scenes_response.status_code == 200
+    assert scenes_response.json()["items"]
 
 
 def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):

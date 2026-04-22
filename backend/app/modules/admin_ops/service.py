@@ -11,6 +11,7 @@ from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_memory.service import MemoryService
+from app.modules.world_state.scene import list_chapter_tracks_debug, list_scene_frames_debug
 from app.modules.world_state.service import list_consequence_threads_debug, list_relationship_debug
 
 
@@ -258,6 +259,20 @@ def world_consequence_threads(db: Session, *, world_id: str) -> dict[str, object
     return {
         "world_id": world_id,
         "items": list_consequence_threads_debug(db, world_id),
+    }
+
+
+def world_chapters(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_chapter_tracks_debug(db, world_id),
+    }
+
+
+def world_scenes(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_scene_frames_debug(db, world_id),
     }
 
 

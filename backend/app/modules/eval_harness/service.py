@@ -64,6 +64,7 @@ class EvalCaseInput:
     expect_retrieval_hit_substring: str | None = None
     expect_retrieval_min_hits: int | None = None
     expect_outcome_band: str | None = None
+    expect_scene_move: str | None = None
     expect_consequence_tags: list[str] | None = None
     session_state_overrides: dict[str, object] | None = None
     source_turn_id: str | None = None
@@ -763,6 +764,9 @@ class EvalHarnessService:
         if case.expect_outcome_band is not None:
             checks["outcome_band_match"] = str(final_payload.get("outcome_band") or "") == case.expect_outcome_band
 
+        if case.expect_scene_move is not None:
+            checks["scene_move_match"] = str(final_payload.get("scene_move") or "") == case.expect_scene_move
+
         if case.expect_consequence_tags is not None:
             actual_tags = {str(item) for item in final_payload.get("consequence_tags") or []}
             checks["consequence_tags_match"] = set(case.expect_consequence_tags) <= actual_tags
@@ -1020,6 +1024,11 @@ class EvalHarnessService:
                         if raw_case.get("expect_outcome_band") is not None
                         else None
                     ),
+                    expect_scene_move=(
+                        str(raw_case.get("expect_scene_move")).strip()
+                        if raw_case.get("expect_scene_move") is not None
+                        else None
+                    ),
                     expect_consequence_tags=[
                         str(item)
                         for item in (raw_case.get("expect_consequence_tags") or [])
@@ -1151,9 +1160,25 @@ class EvalHarnessService:
         quest_progress = int((case.quest_context or {}).get("current_progress", 0))
         progress_target = int((case.quest_context or {}).get("progress_target", 2))
         current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
+        stage_key = str((case.quest_context or {}).get("stage_key") or "starter_watch")
+        chapter_key = "watch_path_followup" if stage_key == "watch_path_followup" else "founders_watch_opening"
         base_state: dict[str, object] = {
             "world_id": case.world_id,
             "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
+            "chapter": {
+                "id": "eval-chapter",
+                "key": chapter_key,
+                "status": "active",
+                "summary": "Eval chapter fixture",
+            },
+            "current_scene": {
+                "id": "eval-scene",
+                "summary": "Eval scene fixture around the current request.",
+                "pressure_summary": "Eval pressure fixture.",
+                "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
+                "focus_actor": {"actor_id": "eval-npc", "display_name": case.npc_name},
+            },
+            "recent_scene_history": ["Eval scene fixture around the current request."],
             "character": {"actor_id": "eval-actor", "rank": "Wayfarer", "hp": 10, "focus": 5, "status_json": {}},
             "quests": [
                 {
@@ -1162,7 +1187,7 @@ class EvalHarnessService:
                     "title": str((case.quest_context or {}).get("title") or "First Watch Request"),
                     "description": "Eval fixture quest",
                     "status": str((case.quest_context or {}).get("status") or "active"),
-                    "stage_key": str((case.quest_context or {}).get("stage_key") or "starter_watch"),
+                    "stage_key": stage_key,
                     "unlock_requirements": dict((case.quest_context or {}).get("unlock_requirements") or {}),
                     "progress": quest_progress,
                     "progress_target": progress_target,

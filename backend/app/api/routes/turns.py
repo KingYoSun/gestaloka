@@ -117,6 +117,10 @@ async def resolve_turn(
         await realtime_hub.emit(payload.session_id, "relationship.updated", {"items": result.relationship_updates})
     if result.consequence_updates:
         await realtime_hub.emit(payload.session_id, "consequence.updated", {"items": result.consequence_updates})
+    if result.scene_updates:
+        await realtime_hub.emit(payload.session_id, "scene.updated", {"items": result.scene_updates})
+    if result.chapter_updates:
+        await realtime_hub.emit(payload.session_id, "chapter.updated", {"items": result.chapter_updates})
 
     processed = container.projection_service.process_pending(db)
     db.commit()
@@ -149,12 +153,15 @@ async def resolve_turn(
                 "inventory_updates": [],
                 "relationship_updates": [],
                 "consequence_updates": [],
+                "scene_updates": [],
+                "chapter_updates": [],
                 "action_type": result.action_type,
                 "input_mode": result.input_mode,
                 "interpreted_intent": result.interpreted_intent,
                 "next_choices": result.next_choices,
                 "consequence_summary": result.consequence_summary,
                 "scene_tone": result.scene_tone,
+                "scene_summary": result.scene_summary,
             },
         )
 
@@ -178,6 +185,9 @@ async def resolve_turn(
         "inventory_updates": result.inventory_updates,
         "relationship_updates": result.relationship_updates,
         "consequence_updates": result.consequence_updates,
+        "scene_updates": result.scene_updates,
+        "chapter_updates": result.chapter_updates,
+        "scene_summary": result.scene_summary,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)
 
