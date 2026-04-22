@@ -31,7 +31,7 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             "CREATE SPACE IF NOT EXISTS "
             f"{self.settings.nebula_space}(partition_num=1, replica_factor=1, vid_type=FIXED_STRING(256))"
         )
-        for _ in range(10):
+        for _ in range(20):
             try:
                 self._execute_in_space(
                     """
@@ -104,12 +104,30 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                     CREATE EDGE IF NOT EXISTS AFFECTS(world_id string, standing double, band string);
                     """.strip()
                 )
+                self._wait_for_schema_ready()
                 self._bootstrapped = True
                 return
             except RuntimeError:
                 time.sleep(1)
-        self._execute_in_space("SHOW TAGS")
+        self._wait_for_schema_ready()
         self._bootstrapped = True
+
+    def _wait_for_schema_ready(self) -> None:
+        required_tags = ("Actor", "Location", "Event", "Memory", "Faction", "Quest", "Item")
+        required_edges = ("LOCATED_AT", "CAUSED", "REMEMBERS", "RUMORED_AT", "KNOWS", "MEMBER_OF", "PURSUES", "OWNS", "REWARDS", "AFFECTS")
+        last_error: RuntimeError | None = None
+        for _ in range(20):
+            try:
+                for tag in required_tags:
+                    self._execute_in_space(f"DESCRIBE TAG {tag}")
+                for edge in required_edges:
+                    self._execute_in_space(f"DESCRIBE EDGE {edge}")
+                return
+            except RuntimeError as exc:
+                last_error = exc
+                time.sleep(1)
+        if last_error is not None:
+            raise last_error
 
     def clear_world(self, *, world_id: str, entity_vids: list[str]) -> None:
         del world_id

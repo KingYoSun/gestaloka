@@ -44,3 +44,16 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "release_gate_reports",
         "outbox_events",
     } <= tables
+
+    turn_columns = {column["name"] for column in inspector.get_columns("turns")}
+    llm_run_columns = {column["name"] for column in inspector.get_columns("llm_runs")}
+    assert "resolution_mode" in turn_columns
+    assert {
+        "workflow_name",
+        "council_role",
+        "stage_index",
+        "approval_status",
+        "provider_name",
+        "provider_response_id",
+        "input_context_hash",
+    } <= llm_run_columns

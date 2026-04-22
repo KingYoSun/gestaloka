@@ -128,10 +128,14 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["quest_updates"][0]["progress"] == 1
         assert turn_payload["inventory_updates"] == []
 
-        messages = [websocket.receive_json() for _ in range(11)]
+        messages = [websocket.receive_json() for _ in range(14)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
+        "turn.progress",
+        "turn.progress",
+        "turn.progress",
+        "turn.progress",
         "turn.progress",
         "turn.progress",
         "turn.narrative.delta",
@@ -139,14 +143,16 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "memory.materialized",
         "quest.updated",
         "faction.standing.updated",
-        "turn.progress",
         "graph.projection.updated",
         "turn.resolved",
     ]
     assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == [
-        "routing",
-        "memory_lookup",
-        "projection",
+        "memory_council",
+        "npc_council",
+        "world_progress",
+        "rules_arbiter",
+        "safety_guard",
+        "narrative",
     ]
     assert messages[-1]["data"] == turn_payload
     assert messages[-2]["data"]["world_id"] == session_payload["world_id"]
@@ -201,6 +207,30 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     rebuild_payload = rebuild_response.json()
     assert rebuild_payload["world_id"] == session_payload["world_id"]
     assert rebuild_payload["records"] >= 1
+
+    council_turns_response = client.get(
+        f"/ops/council/turns?session_id={session_payload['session_id']}",
+        headers=auth_headers,
+    )
+    assert council_turns_response.status_code == 200
+    council_turns_payload = council_turns_response.json()
+    assert council_turns_payload["items"][0]["resolution_mode"] == "gm_council"
+    assert [item["council_role"] for item in council_turns_payload["items"][0]["roles"]] == [
+        "memory_manager",
+        "npc_manager",
+        "world_progress",
+        "rules_arbiter",
+        "safety_guard",
+        "narrative",
+    ]
+
+    council_turn_id = council_turns_payload["items"][0]["turn_id"]
+    council_detail_response = client.get(f"/ops/council/turns/{council_turn_id}", headers=auth_headers)
+    assert council_detail_response.status_code == 200
+    council_detail_payload = council_detail_response.json()
+    assert council_detail_payload["turn_id"] == council_turn_id
+    assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane"}
+    assert "attempts" in council_detail_payload["roles"][-1]
 
 
 def test_ops_eval_contracts(client, container, auth_headers):

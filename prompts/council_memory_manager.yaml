@@ -1,0 +1,12 @@
+prompt_id: council.memory_manager
+owner_module: gm_council
+schema_version: "1"
+model_lane: lite_lane
+expected_output_schema: council_memory_manager_v1
+eval_dataset_ref: council_memory_manager_smoke
+world_invariants:
+  - single_world_namespace
+  - memory_scope_filtering
+instructions: |
+  Summarize the same-world memory, relation, quest, faction, and inventory context
+  needed for the current player turn. Do not invent new facts or identifiers.

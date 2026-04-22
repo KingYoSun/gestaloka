@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
+from app.modules.gm_council.service import CouncilRequest
 from app.models.entities import Actor, Event, LLMRun, OutboxEvent, Session as GameSession, Turn, new_id
 from app.modules.actor.service import (
     ensure_player_actor,
@@ -184,10 +185,17 @@ def resolve_turn_for_session(
         input_text=input_text,
         resolved_output={"status": "pending"},
         model_lane="pending",
+        resolution_mode="gm_council",
     )
     db.add(turn)
     db.flush()
 
+    session_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
     relevant_memories = search_memories(
         db,
         world_id=game_session.world_id,
@@ -201,38 +209,70 @@ def resolve_turn_for_session(
         counterpart_actor_id=player_actor.id,
         location_id=prepared.location_id,
     )
-    resolution = container.model_router.resolve_turn(
-        world_id=game_session.world_id,
-        turn_id=turn.id,
-        player_name=player_actor.display_name,
-        npc_name=guide_npc.display_name,
-        input_text=input_text,
-        relevant_memories=[item.text for item in relevant_memories],
-        relation_context=graph_context.context.prompt_lines(),
-        graph_context_status=graph_context.status,
+    resolution = container.council_service.resolve_turn(
+        CouncilRequest(
+            world_id=game_session.world_id,
+            turn_id=turn.id,
+            player_name=player_actor.display_name,
+            npc_name=guide_npc.display_name,
+            input_text=input_text,
+            relevant_memories=[item.text for item in relevant_memories],
+            relation_context=graph_context.context.prompt_lines(),
+            graph_context_status=graph_context.status,
+            session_state=session_state,
+            sp_balance=prepared.debit.balance_after,
+        )
     )
 
-    for attempt in resolution.attempts:
-        db.add(
-            LLMRun(
-                world_id=game_session.world_id,
-                turn_id=turn.id,
-                prompt_id=attempt.prompt_id,
-                model_id=attempt.model_id,
-                model_lane=attempt.model_lane,
-                input_hash=attempt.input_hash,
-                schema_version=attempt.schema_version,
-                graph_context_status=graph_context.status,
-                output_schema_status=attempt.output_schema_status,
-                output_payload=attempt.output_payload,
+    for role_run in resolution.role_runs:
+        for attempt in role_run.attempts:
+            db.add(
+                LLMRun(
+                    world_id=game_session.world_id,
+                    turn_id=turn.id,
+                    prompt_id=attempt.prompt_id,
+                    workflow_name="gm_council",
+                    council_role=role_run.council_role,
+                    stage_index=role_run.stage_index,
+                    approval_status=(
+                        "schema_invalid"
+                        if attempt.output_schema_status != "valid"
+                        else role_run.approval_status
+                    ),
+                    model_id=attempt.model_id,
+                    model_lane=attempt.model_lane,
+                    provider_name=attempt.provider_name,
+                    provider_response_id=attempt.provider_response_id,
+                    input_hash=attempt.input_hash,
+                    input_context_hash=attempt.input_context_hash,
+                    schema_version=attempt.schema_version,
+                    graph_context_status=graph_context.status,
+                    output_schema_status=attempt.output_schema_status,
+                    output_payload=attempt.output_payload,
+                )
             )
-        )
 
     if not resolution.succeeded:
         turn.model_lane = resolution.final_lane
         turn.resolved_output = {
             "status": "failed",
-            "error_detail": resolution.failure_reason,
+            "resolution_mode": "gm_council",
+            "used_fallback": resolution.used_fallback,
+            "error_detail": (
+                "council_rejected"
+                if resolution.rejection_role in {"rules_arbiter", "safety_guard"}
+                else resolution.failure_reason
+            ),
+            "failure_reason": resolution.failure_reason,
+            "rejection_role": resolution.rejection_role,
+            "council_trace": [
+                {
+                    "role": item.council_role,
+                    "approval_status": item.approval_status,
+                    "final_lane": item.final_lane,
+                }
+                for item in resolution.role_runs
+            ],
         }
         failure_event = Event(
             world_id=game_session.world_id,
@@ -247,6 +287,7 @@ def resolve_turn_for_session(
                 "world_id": game_session.world_id,
                 "location_id": prepared.location_id,
                 "graph_context_status": graph_context.status,
+                "rejection_role": resolution.rejection_role,
             },
             narrative=f"{player_actor.display_name}の行動『{input_text}』は監査対象として記録された。",
         )
@@ -266,7 +307,7 @@ def resolve_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             reference_id=turn.id,
-            note=resolution.failure_reason,
+            note=resolution.failure_reason or resolution.rejection_role,
         )
         db.flush()
         return TurnResolutionResult(
@@ -282,7 +323,11 @@ def resolve_turn_for_session(
             quest_updates=[],
             faction_updates=[],
             inventory_updates=[],
-            error_detail=resolution.failure_reason or "Turn resolution failed",
+            error_detail=(
+                "council_rejected"
+                if resolution.rejection_role in {"rules_arbiter", "safety_guard"}
+                else resolution.failure_reason or "Turn resolution failed"
+            ),
         )
 
     payload = resolution.final_payload
@@ -310,6 +355,8 @@ def resolve_turn_for_session(
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
         "status": "resolved",
+        "resolution_mode": "gm_council",
+        "used_fallback": resolution.used_fallback,
         "narrative": payload.narrative,
         "npc_reaction": payload.npc_reaction,
         "graph_context_status": graph_context.status,
@@ -317,6 +364,14 @@ def resolve_turn_for_session(
         "quest_updates": state_updates["quest_updates"],
         "faction_updates": state_updates["faction_updates"],
         "inventory_updates": state_updates["inventory_updates"],
+        "council_trace": [
+            {
+                "role": item.council_role,
+                "approval_status": item.approval_status,
+                "final_lane": item.final_lane,
+            }
+            for item in resolution.role_runs
+        ],
     }
 
     event = Event(

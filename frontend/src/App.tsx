@@ -348,6 +348,42 @@ type ReleaseGateReport = {
   created_at: string | null;
 };
 
+type CouncilRoleSummary = {
+  council_role: string;
+  stage_index: number;
+  approval_status: string | null;
+  prompt_id: string;
+  model_id: string;
+  model_lane: string;
+  provider_name: string | null;
+  provider_response_id: string | null;
+  output_schema_status: string;
+  failure_reason: string | null;
+  attempts?: Array<{
+    id: string;
+    model_lane: string;
+    model_id: string;
+    provider_name: string | null;
+    provider_response_id: string | null;
+    approval_status: string | null;
+    output_schema_status: string;
+    output_payload: Record<string, unknown>;
+    created_at: string;
+  }>;
+};
+
+type CouncilTurnTrace = {
+  turn_id: string;
+  session_id: string;
+  world_id: string;
+  input_text: string;
+  model_lane: string;
+  resolution_mode: string;
+  resolved_output: Record<string, unknown>;
+  created_at: string;
+  roles: CouncilRoleSummary[];
+};
+
 type ObservabilitySummary = {
   primary: {
     runtime_role: string;
@@ -479,6 +515,7 @@ function App() {
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
   const [evalRuns, setEvalRuns] = useState<EvalRunItem[]>([]);
   const [releaseGate, setReleaseGate] = useState<ReleaseGateReport | null>(null);
+  const [councilTurns, setCouncilTurns] = useState<CouncilTurnTrace[]>([]);
   const [opsState, setOpsState] = useState("idle");
   const [lastRebuild, setLastRebuild] = useState<RebuildSummary | null>(null);
   const [lastAdjustment, setLastAdjustment] = useState<SPAdjustmentResponse | null>(null);
@@ -537,6 +574,7 @@ function App() {
       setLedgerEntries([]);
       setEvalRuns([]);
       setReleaseGate(null);
+      setCouncilTurns([]);
       setOpsState("idle");
       return;
     }
@@ -584,7 +622,13 @@ function App() {
         }
       }
       if (parsed.event === "graph.projection.updated") {
-        void refreshAdminData(token, session.world_id, ledgerUserFilter, ledgerWorldFilter || session.world_id);
+        void refreshAdminData(
+          token,
+          session.world_id,
+          ledgerUserFilter,
+          ledgerWorldFilter || session.world_id,
+          session.session_id,
+        );
       }
     };
     socket.onerror = () => {
@@ -633,6 +677,7 @@ function App() {
     currentWorldId?: string,
     currentLedgerUserFilter?: string,
     currentLedgerWorldFilter?: string,
+    currentSessionId?: string,
   ) {
     if (!currentToken) {
       setProjectionStatus(null);
@@ -640,12 +685,13 @@ function App() {
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
+      setCouncilTurns([]);
       setOpsState("idle");
       return;
     }
 
     try {
-      const [statusPayload, observabilityPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload] = await Promise.all([
+      const [statusPayload, observabilityPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload, councilPayload] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
         apiFetch<ObservabilitySummary>("/ops/observability/summary", currentToken),
         apiFetch<SPOverview>("/ops/sp/overview", currentToken),
@@ -655,6 +701,10 @@ function App() {
         ),
         apiFetch<{ items: EvalRunItem[] }>("/ops/evals/runs?limit=8", currentToken),
         apiFetch<ReleaseGateReport>("/ops/release/checklists/latest", currentToken),
+        apiFetch<{ items: CouncilTurnTrace[] }>(
+          `/ops/council/turns?limit=8${currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : ""}`,
+          currentToken,
+        ),
       ]);
       setProjectionStatus(statusPayload);
       setObservability(observabilityPayload);
@@ -662,6 +712,7 @@ function App() {
       setLedgerEntries(ledgerPayload.items);
       setEvalRuns(evalRunsPayload.items);
       setReleaseGate(gatePayload);
+      setCouncilTurns(councilPayload.items);
       setOpsState("ready");
     } catch (requestError) {
       const typedError = requestError as APIError;
@@ -674,6 +725,7 @@ function App() {
         setLedgerEntries([]);
         setEvalRuns([]);
         setReleaseGate(null);
+        setCouncilTurns([]);
         return;
       }
       setOpsState("unavailable");
@@ -684,6 +736,7 @@ function App() {
       setLedgerEntries([]);
       setEvalRuns([]);
       setReleaseGate(null);
+      setCouncilTurns([]);
       return;
     }
 
@@ -746,7 +799,7 @@ function App() {
       await Promise.all([
         refreshWorldState(created, token),
         refreshWallet(token),
-        refreshAdminData(token, created.world_id, ledgerUserFilter || me?.sub, created.world_id),
+        refreshAdminData(token, created.world_id, ledgerUserFilter || me?.sub, created.world_id, created.session_id),
         refreshHealth(),
       ]);
     } catch (requestError) {
@@ -784,14 +837,26 @@ function App() {
       await Promise.all([
         refreshWorldState(session, token),
         refreshWallet(token),
-        refreshAdminData(token, session.world_id, ledgerUserFilter || me?.sub, ledgerWorldFilter || session.world_id),
+        refreshAdminData(
+          token,
+          session.world_id,
+          ledgerUserFilter || me?.sub,
+          ledgerWorldFilter || session.world_id,
+          session.session_id,
+        ),
         refreshHealth(),
       ]);
     } catch (requestError) {
       setError(formatError(requestError));
       await Promise.all([
         refreshWallet(token),
-        refreshAdminData(token, session.world_id, ledgerUserFilter || me?.sub, ledgerWorldFilter || session.world_id),
+        refreshAdminData(
+          token,
+          session.world_id,
+          ledgerUserFilter || me?.sub,
+          ledgerWorldFilter || session.world_id,
+          session.session_id,
+        ),
         refreshHealth(),
       ]);
     } finally {
@@ -818,7 +883,7 @@ function App() {
         ...current,
       ].slice(0, 20));
       await Promise.all([
-        refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId),
+        refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
         refreshHealth(),
       ]);
     } catch (requestError) {
@@ -835,7 +900,7 @@ function App() {
     }
     try {
       setError("");
-      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter);
+      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter, session?.session_id);
     } catch (requestError) {
       setError(formatError(requestError));
     }
@@ -865,7 +930,13 @@ function App() {
       setLastAdjustment(response);
       await Promise.all([
         refreshWallet(token),
-        refreshAdminData(token, activeWorldId, ledgerUserFilter || adjustUserSub, ledgerWorldFilter || adjustWorldId),
+        refreshAdminData(
+          token,
+          activeWorldId,
+          ledgerUserFilter || adjustUserSub,
+          ledgerWorldFilter || adjustWorldId,
+          session?.session_id,
+        ),
         refreshHealth(),
       ]);
     } catch (requestError) {
@@ -884,7 +955,7 @@ function App() {
     try {
       setEvalPending(true);
       setError("");
-      await apiFetch<Record<string, unknown>>("/ops/evals/run", token, {
+      const run = await apiFetch<EvalRunItem & { results?: unknown[] }>("/ops/evals/run", token, {
         method: "POST",
         body: JSON.stringify(
           source === "dataset"
@@ -892,7 +963,8 @@ function App() {
             : { source, limit: 5 },
         ),
       });
-      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId);
+      setEvalRuns((current) => [run, ...current.filter((item) => item.id !== run.id)].slice(0, 8));
+      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
     } catch (requestError) {
       setError(formatError(requestError));
     } finally {
@@ -913,7 +985,7 @@ function App() {
         method: "POST",
         body: JSON.stringify({ trigger_type: "manual" }),
       });
-      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId);
+      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
       await refreshHealth();
     } catch (requestError) {
       setError(formatError(requestError));
@@ -926,8 +998,8 @@ function App() {
     if (route !== "admin" || !token) {
       return;
     }
-    void refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId);
-  }, [route, token, activeWorldId]);
+    void refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
+  }, [route, token, activeWorldId, session?.session_id]);
 
   return (
     <main className="shell">
@@ -1206,7 +1278,15 @@ function App() {
               <div className="actions">
                 <button
                   data-testid="refresh-admin"
-                  onClick={() => void refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId)}
+                  onClick={() =>
+                    void refreshAdminData(
+                      token,
+                      activeWorldId,
+                      ledgerUserFilter,
+                      ledgerWorldFilter || activeWorldId,
+                      session?.session_id,
+                    )
+                  }
                   disabled={!token}
                 >
                   Refresh admin
@@ -1252,6 +1332,29 @@ function App() {
                     <span>{item.last_error ?? "no error text"}</span>
                   </li>
                 ))}
+              </ul>
+              <h3>Council trace</h3>
+              <ul className="stream" data-testid="council-trace-stream">
+                {councilTurns.length ? (
+                  councilTurns.map((item) => (
+                    <li key={item.turn_id}>
+                      <strong>{item.input_text}</strong>
+                      <span>
+                        {item.resolution_mode} / final lane {item.model_lane}
+                      </span>
+                      <span>
+                        {item.roles
+                          .map(
+                            (role) =>
+                              `${role.stage_index}.${role.council_role}:${role.approval_status ?? "unknown"}/${role.model_lane}/${role.output_schema_status}`,
+                          )
+                          .join(" | ")}
+                      </span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No council turns recorded yet.</li>
+                )}
               </ul>
             </article>
 

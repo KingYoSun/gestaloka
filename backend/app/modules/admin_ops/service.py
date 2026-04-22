@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Session as GameSession
+from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Session as GameSession, Turn
 from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
@@ -214,17 +214,11 @@ def _llm_rates(db: Session) -> dict[str, float]:
     llm_total = int(db.execute(select(func.count(LLMRun.id))).scalar_one())
     llm_valid = int(db.execute(select(func.count(LLMRun.id)).where(LLMRun.output_schema_status == "valid")).scalar_one())
     turn_count = int(db.execute(select(func.count(func.distinct(LLMRun.turn_id)))).scalar_one())
-    fallback_turns = int(
-        db.execute(
-            select(func.count())
-            .select_from(
-                select(LLMRun.turn_id)
-                .group_by(LLMRun.turn_id)
-                .having(func.count(LLMRun.id) > 1)
-                .subquery()
-            )
-        ).scalar_one()
-    )
+    fallback_groups = db.execute(
+        select(LLMRun.turn_id, LLMRun.stage_index, LLMRun.council_role, func.count(LLMRun.id))
+        .group_by(LLMRun.turn_id, LLMRun.stage_index, LLMRun.council_role)
+    ).all()
+    fallback_turns = len({row[0] for row in fallback_groups if int(row[3]) > 1})
     return {
         "llm_schema_valid_rate": (llm_valid / llm_total) if llm_total else 0.0,
         "llm_fallback_rate": (fallback_turns / turn_count) if turn_count else 0.0,
@@ -244,4 +238,84 @@ def _canary_probe_dict(probe: CanaryProbeResult) -> dict[str, object]:
         "outbox_failed_count": probe.outbox_failed_count,
         "llm_schema_valid_rate": probe.llm_schema_valid_rate,
         "llm_fallback_rate": probe.llm_fallback_rate,
+    }
+
+
+def list_council_turns(
+    db: Session,
+    *,
+    limit: int,
+    session_id: str | None = None,
+) -> dict[str, object]:
+    stmt = select(Turn).where(Turn.resolution_mode == "gm_council").order_by(Turn.created_at.desc(), Turn.id.desc())
+    if session_id is not None:
+        stmt = stmt.where(Turn.session_id == session_id)
+    turns = list(db.execute(stmt.limit(limit)).scalars())
+    return {"items": [_turn_trace(db, turn, include_attempts=False) for turn in turns]}
+
+
+def get_council_turn(db: Session, turn_id: str) -> dict[str, object]:
+    turn = db.execute(select(Turn).where(Turn.id == turn_id)).scalar_one()
+    return _turn_trace(db, turn, include_attempts=True)
+
+
+def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str, object]:
+    llm_runs = list(
+        db.execute(
+            select(LLMRun)
+            .where(LLMRun.turn_id == turn.id, LLMRun.world_id == turn.world_id)
+            .order_by(LLMRun.stage_index.asc(), LLMRun.created_at.asc(), LLMRun.id.asc())
+        ).scalars()
+    )
+    grouped: dict[tuple[int | None, str | None], list[LLMRun]] = {}
+    for item in llm_runs:
+        grouped.setdefault((item.stage_index, item.council_role), []).append(item)
+
+    roles = []
+    for key in sorted(grouped, key=lambda item: ((item[0] or 0), item[1] or "")):
+        runs = grouped[key]
+        final_run = runs[-1]
+        role_payload = {
+            "council_role": final_run.council_role,
+            "stage_index": final_run.stage_index,
+            "approval_status": final_run.approval_status,
+            "prompt_id": final_run.prompt_id,
+            "model_id": final_run.model_id,
+            "model_lane": final_run.model_lane,
+            "provider_name": final_run.provider_name,
+            "provider_response_id": final_run.provider_response_id,
+            "output_schema_status": final_run.output_schema_status,
+            "failure_reason": (
+                final_run.output_payload.get("reason")
+                if isinstance(final_run.output_payload, dict)
+                else None
+            ),
+        }
+        if include_attempts:
+            role_payload["attempts"] = [
+                {
+                    "id": item.id,
+                    "model_lane": item.model_lane,
+                    "model_id": item.model_id,
+                    "provider_name": item.provider_name,
+                    "provider_response_id": item.provider_response_id,
+                    "approval_status": item.approval_status,
+                    "output_schema_status": item.output_schema_status,
+                    "output_payload": item.output_payload,
+                    "created_at": item.created_at.isoformat(),
+                }
+                for item in runs
+            ]
+        roles.append(role_payload)
+
+    return {
+        "turn_id": turn.id,
+        "session_id": turn.session_id,
+        "world_id": turn.world_id,
+        "input_text": turn.input_text,
+        "model_lane": turn.model_lane,
+        "resolution_mode": turn.resolution_mode,
+        "resolved_output": turn.resolved_output,
+        "created_at": turn.created_at.isoformat(),
+        "roles": roles,
     }

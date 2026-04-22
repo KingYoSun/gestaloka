@@ -11,6 +11,8 @@ from app.api.deps import get_container, get_current_ops_user, get_db
 from app.core.container import AppContainer
 from app.models.entities import World
 from app.modules.admin_ops.service import (
+    get_council_turn,
+    list_council_turns,
     observability_summary,
     projection_status,
     rebuild_projection,
@@ -250,3 +252,26 @@ def get_release_checklist_detail(
 ) -> dict[str, object]:
     del user
     return container.eval_service.get_release_checklist(db, report_id)
+
+
+@router.get("/council/turns")
+def get_council_turn_list(
+    limit: int = Query(default=12, ge=1, le=50),
+    session_id: str | None = Query(default=None, max_length=36),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return list_council_turns(db, limit=limit, session_id=session_id)
+
+
+@router.get("/council/turns/{turn_id}")
+def get_council_turn_detail(
+    turn_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return get_council_turn(db, turn_id)

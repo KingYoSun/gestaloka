@@ -153,6 +153,13 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-gemini_developer_api}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      GEMINI_TEMPERATURE_LITE: ${GEMINI_TEMPERATURE_LITE:-0.2}
+      GEMINI_TEMPERATURE_MAIN: ${GEMINI_TEMPERATURE_MAIN:-0.3}
+      GEMINI_TEMPERATURE_PRO: ${GEMINI_TEMPERATURE_PRO:-0.1}
       OTEL_SERVICE_NAME: gestaloka-backend
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
@@ -181,9 +188,18 @@ services:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/openapi.json').getcode() == 200 else sys.exit(1)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     command: >
       sh -c "alembic upgrade head &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"
 
   projection-worker:
     build:
@@ -218,7 +234,7 @@ services:
       postgres:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
       nebula-init:
         condition: service_completed_successfully
       otel-collector:
@@ -244,7 +260,7 @@ services:
       - /app/node_modules
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     command: npm run dev -- --host 0.0.0.0 --port 5173
 
   backend-canary:
@@ -264,6 +280,13 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: candidate
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-gemini_developer_api}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      GEMINI_TEMPERATURE_LITE: ${GEMINI_TEMPERATURE_LITE:-0.2}
+      GEMINI_TEMPERATURE_MAIN: ${GEMINI_TEMPERATURE_MAIN:-0.3}
+      GEMINI_TEMPERATURE_PRO: ${GEMINI_TEMPERATURE_PRO:-0.1}
       OTEL_SERVICE_NAME: gestaloka-backend-canary
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
@@ -284,17 +307,20 @@ services:
     ports:
       - "8001:8000"
     depends_on:
-      postgres:
+      backend:
         condition: service_healthy
-      keycloak:
-        condition: service_healthy
-      nebula-init:
-        condition: service_completed_successfully
-      otel-collector:
-        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/openapi.json').getcode() == 200 else sys.exit(1)\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     command: >
       sh -c "alembic upgrade head &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"
 
   release-scheduler:
     build:
@@ -312,6 +338,13 @@ services:
       RELEASE_RUNTIME_CONFIG_NAME: current
       RELEASE_SCHEDULER_CRON: "0 3 * * *"
       RELEASE_SHADOW_LIMIT: 5
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-gemini_developer_api}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      GEMINI_TEMPERATURE_LITE: ${GEMINI_TEMPERATURE_LITE:-0.2}
+      GEMINI_TEMPERATURE_MAIN: ${GEMINI_TEMPERATURE_MAIN:-0.3}
+      GEMINI_TEMPERATURE_PRO: ${GEMINI_TEMPERATURE_PRO:-0.1}
       OTEL_SERVICE_NAME: gestaloka-release-scheduler
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
@@ -353,6 +386,8 @@ services:
     depends_on:
       frontend:
         condition: service_started
+      backend:
+        condition: service_healthy
       keycloak:
         condition: service_healthy
     command: sh -c "npm install && ln -sfn /workspace/frontend/node_modules /workspace/node_modules && npm run test:e2e"

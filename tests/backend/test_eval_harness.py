@@ -20,14 +20,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
     dataset_dir = tmp_path / "datasets"
     dataset_dir.mkdir()
-    smoke_source = REPO_ROOT / "evals" / "datasets" / "turn_resolution_smoke.yaml"
-    (dataset_dir / "turn_resolution_smoke.yaml").write_text(smoke_source.read_text(encoding="utf-8"), encoding="utf-8")
+    for source_path in (REPO_ROOT / "evals" / "datasets").glob("*.yaml"):
+        (dataset_dir / source_path.name).write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
     (dataset_dir / "broken.yaml").write_text(
         "\n".join(
             [
                 "dataset_id: broken_dataset",
                 "prompt_id: session.turn_resolution",
-                "expected_output_schema: turn_resolution_v2",
+                "expected_output_schema: council_turn_resolution_v1",
                 "cases:",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
@@ -150,7 +150,12 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["checks"]["failure_injection"]["candidate_passed"] is True
     assert gate["checks"]["shadow_replay"]["candidate_passed"] is True
     assert gate["canary_promote_status"] == "ready"
-    assert gate["diff_summary"][0]["route_id"] == "session.turn_resolution"
+    assert {item["route_id"] for item in gate["diff_summary"]} == {
+        "council.world_progress",
+        "council.rules_arbiter",
+        "council.safety_guard",
+        "council.narrative",
+    }
     assert report_count == 1
 
 

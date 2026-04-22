@@ -22,6 +22,7 @@ from app.models.entities import (
     Session as GameSession,
     Turn,
 )
+from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
@@ -466,35 +467,44 @@ class EvalHarnessService:
             )
 
         routers = {
-            "current": ModelRouter(
+            "current": GMCouncilService(
                 self.settings,
-                self.prompt_registry,
-                route_overrides=current_config.routes,
-                config_name=current_config.name,
-                observability_service=self.observability_service,
+                ModelRouter(
+                    self.settings,
+                    self.prompt_registry,
+                    route_overrides=current_config.routes,
+                    config_name=current_config.name,
+                    observability_service=self.observability_service,
+                ),
             ),
-            "candidate": ModelRouter(
+            "candidate": GMCouncilService(
                 self.settings,
-                self.prompt_registry,
-                route_overrides=candidate_config.routes,
-                config_name=candidate_config.name,
-                observability_service=self.observability_service,
+                ModelRouter(
+                    self.settings,
+                    self.prompt_registry,
+                    route_overrides=candidate_config.routes,
+                    config_name=candidate_config.name,
+                    observability_service=self.observability_service,
+                ),
             ),
         }
 
         case_payloads: list[dict[str, object]] = []
-        for variant, router in routers.items():
+        for variant, council_service in routers.items():
             for case in cases:
-                outcome = router.resolve_turn(
-                    world_id=case.world_id,
-                    turn_id=case.source_turn_id,
-                    player_name=case.player_name,
-                    npc_name=case.npc_name,
-                    input_text=case.input_text,
-                    relevant_memories=case.relevant_memories,
-                    relation_context=case.relation_context,
-                    graph_context_status=case.graph_context_status,
-                    prompt_id=case.prompt_id,
+                outcome = council_service.resolve_turn(
+                    CouncilRequest(
+                        world_id=case.world_id,
+                        turn_id=case.source_turn_id,
+                        player_name=case.player_name,
+                        npc_name=case.npc_name,
+                        input_text=case.input_text,
+                        relevant_memories=case.relevant_memories,
+                        relation_context=case.relation_context,
+                        graph_context_status=case.graph_context_status,
+                        session_state=self._session_state_for_case(case),
+                        sp_balance=10,
+                    )
                 )
                 payload = self._persist_case_result(
                     db,
@@ -522,7 +532,7 @@ class EvalHarnessService:
     ) -> dict[str, object]:
         final_attempt = outcome.attempts[-1]
         final_payload = outcome.final_payload.model_dump() if outcome.final_payload is not None else None
-        used_fallback = len(outcome.attempts) > 1
+        used_fallback = outcome.used_fallback
         schema_valid = outcome.succeeded
         same_world_invariant = bool(
             final_payload is not None and final_payload.get("event_payload", {}).get("world_id") == case.world_id
@@ -540,12 +550,38 @@ class EvalHarnessService:
             "input_text": case.input_text,
             "relevant_memories": case.relevant_memories,
             "relation_context": case.relation_context,
+            "role_runs": [
+                {
+                    "council_role": role_run.council_role,
+                    "stage_index": role_run.stage_index,
+                    "approval_status": role_run.approval_status,
+                    "final_lane": role_run.final_lane,
+                    "failure_reason": role_run.failure_reason,
+                    "attempts": [
+                        {
+                            "prompt_id": attempt.prompt_id,
+                            "schema_version": attempt.schema_version,
+                            "model_lane": attempt.model_lane,
+                            "model_id": attempt.model_id,
+                            "provider_name": attempt.provider_name,
+                            "provider_response_id": attempt.provider_response_id,
+                            "status": attempt.status,
+                            "output_schema_status": attempt.output_schema_status,
+                            "output_payload": attempt.output_payload,
+                        }
+                        for attempt in role_run.attempts
+                    ],
+                }
+                for role_run in outcome.role_runs
+            ],
             "attempts": [
                 {
                     "prompt_id": attempt.prompt_id,
                     "schema_version": attempt.schema_version,
                     "model_lane": attempt.model_lane,
                     "model_id": attempt.model_id,
+                    "provider_name": attempt.provider_name,
+                    "provider_response_id": attempt.provider_response_id,
                     "status": attempt.status,
                     "output_schema_status": attempt.output_schema_status,
                     "output_payload": attempt.output_payload,
@@ -560,7 +596,7 @@ class EvalHarnessService:
             eval_run_id=run_id,
             variant=variant,
             case_id=case.case_id,
-            prompt_id=final_attempt.prompt_id,
+            prompt_id=case.prompt_id,
             model_id=final_attempt.model_id,
             lane=outcome.final_lane,
             used_fallback=used_fallback,
@@ -594,7 +630,7 @@ class EvalHarnessService:
         same_world_invariant: bool,
         domain_passed: bool,
     ) -> bool:
-        used_fallback = len(outcome.attempts) > 1
+        used_fallback = outcome.used_fallback
         if case.expect_success:
             return (
                 outcome.succeeded
@@ -757,17 +793,11 @@ class EvalHarnessService:
         llm_total = int(db.execute(select(func.count(LLMRun.id))).scalar_one())
         llm_valid = int(db.execute(select(func.count(LLMRun.id)).where(LLMRun.output_schema_status == "valid")).scalar_one())
         turn_count = int(db.execute(select(func.count(func.distinct(LLMRun.turn_id)))).scalar_one())
-        fallback_turns = int(
-            db.execute(
-                select(func.count())
-                .select_from(
-                    select(LLMRun.turn_id)
-                    .group_by(LLMRun.turn_id)
-                    .having(func.count(LLMRun.id) > 1)
-                    .subquery()
-                )
-            ).scalar_one()
-        )
+        fallback_groups = db.execute(
+            select(LLMRun.turn_id, LLMRun.stage_index, LLMRun.council_role, func.count(LLMRun.id))
+            .group_by(LLMRun.turn_id, LLMRun.stage_index, LLMRun.council_role)
+        ).all()
+        fallback_turns = len({row[0] for row in fallback_groups if int(row[3]) > 1})
 
         snapshot = {
             "runtime_role": runtime_role,
@@ -927,7 +957,7 @@ class EvalHarnessService:
                     graph_context_status=graph_context.status,
                     expect_success=True,
                     expect_final_lane=turn.model_lane,
-                    expect_fallback=turn.model_lane == "pro_lane",
+                    expect_fallback=bool(turn.resolved_output.get("used_fallback", turn.model_lane == "pro_lane")),
                     expect_failure_reason=None,
                     source_turn_id=turn.id,
                 )
@@ -946,6 +976,41 @@ class EvalHarnessService:
             return self.datasets[dataset_name]
         except KeyError as exc:
             raise KeyError(f"Unknown eval dataset: {dataset_name}") from exc
+
+    @staticmethod
+    def _session_state_for_case(case: EvalCaseInput) -> dict[str, object]:
+        quest_progress = int((case.quest_context or {}).get("current_progress", 0))
+        progress_target = int((case.quest_context or {}).get("progress_target", 2))
+        current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
+        return {
+            "world_id": case.world_id,
+            "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
+            "character": {"actor_id": "eval-actor", "rank": "Wayfarer", "hp": 10, "focus": 5, "status_json": {}},
+            "quests": [
+                {
+                    "assignment_id": "eval-quest",
+                    "quest_template_id": "starter_watch_request",
+                    "title": "First Watch Request",
+                    "description": "Eval fixture quest",
+                    "status": "active",
+                    "progress": quest_progress,
+                    "progress_target": progress_target,
+                    "latest_summary": "",
+                    "reward_item_id": None,
+                    "state_json": {},
+                }
+            ],
+            "factions": [
+                {
+                    "faction_id": "founders_watch",
+                    "name": "Founders Watch",
+                    "description": "Eval fixture faction",
+                    "standing": current_standing,
+                    "band": "neutral",
+                }
+            ],
+            "inventory": [],
+        }
 
     @staticmethod
     def _git_sha() -> str:

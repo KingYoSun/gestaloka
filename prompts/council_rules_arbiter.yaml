@@ -1,0 +1,12 @@
+prompt_id: council.rules_arbiter
+owner_module: gm_council
+schema_version: "1"
+model_lane: main_lane
+expected_output_schema: council_rules_arbiter_v1
+eval_dataset_ref: council_rules_arbiter_smoke
+world_invariants:
+  - quest_progress_same_world
+  - sp_consistency
+instructions: |
+  Validate the proposed world_tags and turn package against quest, faction, location,
+  and SP rules. Approve or reject. You may normalize world_tags but must not invent ids.

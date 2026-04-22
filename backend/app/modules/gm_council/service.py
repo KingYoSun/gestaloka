@@ -1,0 +1,393 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.config import Settings
+from app.modules.llm_harness.service import (
+    CouncilRoleRun,
+    MemoryDraft,
+    ModelRouter,
+    TurnResolutionOutcome,
+    TurnResolutionPayload,
+)
+from app.modules.world_state.rules import WorldTag
+
+
+class CouncilMemoryManagerPayload(BaseModel):
+    memory_summary: str = Field(min_length=1)
+    focus_memories: list[str] = Field(default_factory=list)
+    relation_summary: str = Field(min_length=1)
+    state_summary: str = Field(min_length=1)
+
+
+class CouncilNPCManagerPayload(BaseModel):
+    npc_intent: str = Field(min_length=1)
+    reaction_style: str = Field(min_length=1)
+    focus_memories: list[str] = Field(default_factory=list)
+    reaction_outline: str = Field(min_length=1)
+
+
+class CouncilWorldProgressPayload(BaseModel):
+    event_type: Literal["player.turn.resolved"]
+    event_payload: dict[str, Any]
+    memories: list[MemoryDraft] = Field(min_length=1)
+    world_tags: list[WorldTag] = Field(min_length=1)
+    resolution_summary: str = Field(min_length=1)
+    risk_level: Literal["low", "medium", "high"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_canonical_event_type(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            normalized = dict(value)
+            normalized["event_type"] = "player.turn.resolved"
+            return normalized
+        return value
+
+
+class CouncilRulesArbiterPayload(BaseModel):
+    approval_status: Literal["approved", "rejected"]
+    normalized_world_tags: list[WorldTag] = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    risk_level: Literal["low", "medium", "high"]
+
+
+class CouncilSafetyGuardPayload(BaseModel):
+    approval_status: Literal["approved", "rejected"]
+    reason: str = Field(min_length=1)
+    violations: list[str] = Field(default_factory=list)
+
+
+class CouncilNarrativePayload(BaseModel):
+    narrative: str = Field(min_length=1)
+    npc_reaction: str = Field(min_length=1)
+    tone: str = Field(min_length=1)
+
+
+@dataclass(frozen=True)
+class CouncilRequest:
+    world_id: str
+    turn_id: str | None
+    player_name: str
+    npc_name: str
+    input_text: str
+    relevant_memories: list[str]
+    relation_context: list[str]
+    graph_context_status: str
+    session_state: dict[str, Any]
+    sp_balance: int
+
+
+class GMCouncilService:
+    ROLE_ORDER = [
+        ("memory_manager", 1, "council.memory_manager", False),
+        ("npc_manager", 2, "council.npc_manager", False),
+        ("world_progress", 3, "council.world_progress", False),
+        ("rules_arbiter", 4, "council.rules_arbiter", True),
+        ("safety_guard", 5, "council.safety_guard", True),
+        ("narrative", 6, "council.narrative", True),
+    ]
+
+    def __init__(self, settings: Settings, model_router: ModelRouter) -> None:
+        self.settings = settings
+        self.model_router = model_router
+
+    def resolve_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
+        role_runs: list[CouncilRoleRun] = []
+
+        memory_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "npc_name": request.npc_name,
+            "relevant_memories": request.relevant_memories,
+            "relation_context": request.relation_context,
+            "quests": request.session_state.get("quests") or [],
+            "factions": request.session_state.get("factions") or [],
+            "inventory": request.session_state.get("inventory") or [],
+            "location": request.session_state.get("location"),
+        }
+        memory_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.memory_manager",
+            response_model=CouncilMemoryManagerPayload,
+            input_payload=memory_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="memory_manager",
+                stage_index=1,
+                prompt_id="council.memory_manager",
+                approval_status="prepared" if memory_result.succeeded else "failed",
+                result=memory_result,
+            )
+        )
+        if not memory_result.succeeded:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=memory_result.final_lane,
+                final_payload=None,
+                failure_reason=memory_result.failure_reason,
+                rejection_role="memory_manager",
+            )
+
+        memory_payload = memory_result.final_payload
+        assert memory_payload is not None
+
+        npc_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "npc_name": request.npc_name,
+            "memory_summary": memory_payload.memory_summary,
+            "focus_memories": memory_payload.focus_memories,
+            "relation_summary": memory_payload.relation_summary,
+            "state_summary": memory_payload.state_summary,
+        }
+        npc_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.npc_manager",
+            response_model=CouncilNPCManagerPayload,
+            input_payload=npc_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="npc_manager",
+                stage_index=2,
+                prompt_id="council.npc_manager",
+                approval_status="prepared" if npc_result.succeeded else "failed",
+                result=npc_result,
+            )
+        )
+        if not npc_result.succeeded:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=npc_result.final_lane,
+                final_payload=None,
+                failure_reason=npc_result.failure_reason,
+                rejection_role="npc_manager",
+            )
+
+        npc_payload = npc_result.final_payload
+        assert npc_payload is not None
+
+        world_progress_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "npc_name": request.npc_name,
+            "memory_summary": memory_payload.memory_summary,
+            "relation_summary": memory_payload.relation_summary,
+            "state_summary": memory_payload.state_summary,
+            "reaction_outline": npc_payload.reaction_outline,
+            "focus_memories": npc_payload.focus_memories,
+        }
+        world_progress_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.world_progress",
+            response_model=CouncilWorldProgressPayload,
+            input_payload=world_progress_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="world_progress",
+                stage_index=3,
+                prompt_id="council.world_progress",
+                approval_status="prepared" if world_progress_result.succeeded else "failed",
+                result=world_progress_result,
+            )
+        )
+        if not world_progress_result.succeeded:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=world_progress_result.final_lane,
+                final_payload=None,
+                failure_reason=world_progress_result.failure_reason,
+                rejection_role="world_progress",
+            )
+
+        world_progress_payload = world_progress_result.final_payload
+        assert world_progress_payload is not None
+        high_risk = world_progress_payload.risk_level == "high"
+
+        rules_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "world_tags": world_progress_payload.world_tags,
+            "risk_level": world_progress_payload.risk_level,
+            "sp_balance": request.sp_balance,
+            "quests": request.session_state.get("quests") or [],
+            "factions": request.session_state.get("factions") or [],
+            "inventory": request.session_state.get("inventory") or [],
+        }
+        rules_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.rules_arbiter",
+            response_model=CouncilRulesArbiterPayload,
+            input_payload=rules_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+            allow_pro_fallback=True,
+            force_pro_after_success=high_risk,
+        )
+        rules_approval = (
+            rules_result.final_payload.approval_status if rules_result.final_payload is not None else "failed"
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="rules_arbiter",
+                stage_index=4,
+                prompt_id="council.rules_arbiter",
+                approval_status=rules_approval,
+                result=rules_result,
+            )
+        )
+        if not rules_result.succeeded or rules_approval == "rejected":
+            final_payload = rules_result.final_payload
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=rules_result.final_lane,
+                final_payload=None,
+                failure_reason=(
+                    final_payload.reason
+                    if final_payload is not None and final_payload.approval_status == "rejected"
+                    else rules_result.failure_reason
+                ),
+                rejection_role="rules_arbiter",
+            )
+
+        rules_payload = rules_result.final_payload
+        assert rules_payload is not None
+
+        safety_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "event_world_id": request.world_id,
+            "event_payload": world_progress_payload.event_payload,
+            "world_tags": rules_payload.normalized_world_tags,
+            "risk_level": rules_payload.risk_level,
+        }
+        safety_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.safety_guard",
+            response_model=CouncilSafetyGuardPayload,
+            input_payload=safety_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+            allow_pro_fallback=True,
+            force_pro_after_success=high_risk,
+        )
+        safety_approval = (
+            safety_result.final_payload.approval_status if safety_result.final_payload is not None else "failed"
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="safety_guard",
+                stage_index=5,
+                prompt_id="council.safety_guard",
+                approval_status=safety_approval,
+                result=safety_result,
+            )
+        )
+        if not safety_result.succeeded or safety_approval == "rejected":
+            final_payload = safety_result.final_payload
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=safety_result.final_lane,
+                final_payload=None,
+                failure_reason=(
+                    final_payload.reason
+                    if final_payload is not None and final_payload.approval_status == "rejected"
+                    else safety_result.failure_reason
+                ),
+                rejection_role="safety_guard",
+            )
+
+        narrative_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "npc_name": request.npc_name,
+            "memory_summary": memory_payload.memory_summary,
+            "reaction_outline": npc_payload.reaction_outline,
+            "world_tags": rules_payload.normalized_world_tags,
+            "resolution_summary": world_progress_payload.resolution_summary,
+        }
+        narrative_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.narrative",
+            response_model=CouncilNarrativePayload,
+            input_payload=narrative_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+            allow_pro_fallback=True,
+            force_pro_after_success=high_risk,
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="narrative",
+                stage_index=6,
+                prompt_id="council.narrative",
+                approval_status="approved" if narrative_result.succeeded else "failed",
+                result=narrative_result,
+            )
+        )
+        if not narrative_result.succeeded:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=narrative_result.final_lane,
+                final_payload=None,
+                failure_reason=narrative_result.failure_reason,
+                rejection_role="narrative",
+            )
+
+        narrative_payload = narrative_result.final_payload
+        assert narrative_payload is not None
+
+        final_payload = TurnResolutionPayload(
+            narrative=narrative_payload.narrative,
+            npc_reaction=narrative_payload.npc_reaction,
+            event_type=world_progress_payload.event_type,
+            event_payload={
+                **world_progress_payload.event_payload,
+                "world_id": request.world_id,
+                "risk_level": rules_payload.risk_level,
+                "resolution_summary": world_progress_payload.resolution_summary,
+            },
+            memories=world_progress_payload.memories,
+            world_tags=rules_payload.normalized_world_tags,
+        )
+        return TurnResolutionOutcome(
+            role_runs=role_runs,
+            final_lane=narrative_result.final_lane,
+            final_payload=final_payload,
+        )
+
+    @staticmethod
+    def _role_run(
+        *,
+        council_role: str,
+        stage_index: int,
+        prompt_id: str,
+        approval_status: str,
+        result,
+    ) -> CouncilRoleRun:
+        return CouncilRoleRun(
+            council_role=council_role,
+            stage_index=stage_index,
+            prompt_id=prompt_id,
+            approval_status=approval_status,
+            attempts=result.attempts,
+            final_lane=result.final_lane,
+            final_payload=result.final_payload.model_dump() if result.final_payload is not None else None,
+            failure_reason=result.failure_reason,
+        )

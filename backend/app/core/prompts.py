@@ -8,6 +8,13 @@ import yaml
 SUPPORTED_PROMPT_SCHEMAS = {
     "turn_resolution_v1": "1",
     "turn_resolution_v2": "2",
+    "council_turn_resolution_v1": "1",
+    "council_memory_manager_v1": "1",
+    "council_npc_manager_v1": "1",
+    "council_world_progress_v1": "1",
+    "council_rules_arbiter_v1": "1",
+    "council_safety_guard_v1": "1",
+    "council_narrative_v1": "1",
 }
 SUPPORTED_MODEL_LANES = {"lite_lane", "main_lane", "pro_lane"}
 

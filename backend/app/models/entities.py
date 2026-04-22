@@ -116,6 +116,7 @@ class Turn(Base, TimestampMixin):
     input_text: Mapped[str] = mapped_column(Text)
     resolved_output: Mapped[dict] = mapped_column(JSON, default=dict)
     model_lane: Mapped[str] = mapped_column(String(32))
+    resolution_mode: Mapped[str] = mapped_column(String(32), default="legacy")
 
 
 class Event(Base, TimestampMixin):
@@ -311,9 +312,16 @@ class LLMRun(Base, TimestampMixin):
     world_id: Mapped[str] = mapped_column(String(64))
     turn_id: Mapped[str] = mapped_column(String(36))
     prompt_id: Mapped[str] = mapped_column(String(120))
+    workflow_name: Mapped[str] = mapped_column(String(64), default="single_prompt")
+    council_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stage_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    approval_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model_id: Mapped[str] = mapped_column(String(120))
     model_lane: Mapped[str] = mapped_column(String(32))
+    provider_name: Mapped[str] = mapped_column(String(64), default="stub")
+    provider_response_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     input_hash: Mapped[str] = mapped_column(String(128))
+    input_context_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     schema_version: Mapped[str] = mapped_column(String(32))
     graph_context_status: Mapped[str] = mapped_column(String(32), default="ready")
     output_schema_status: Mapped[str] = mapped_column(String(32))

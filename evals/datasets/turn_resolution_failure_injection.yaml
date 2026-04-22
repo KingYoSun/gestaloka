@@ -1,6 +1,6 @@
 dataset_id: turn_resolution_failure_injection
 prompt_id: session.turn_resolution
-expected_output_schema: turn_resolution_v2
+expected_output_schema: council_turn_resolution_v1
 cases:
   - case_id: fallback-main-to-pro
     world_id: world-alpha
@@ -17,11 +17,11 @@ cases:
     expect_final_lane: pro_lane
     expect_fallback: true
     expect_failure_reason: null
-  - case_id: business-failure-422
+  - case_id: council-rejected-422
     world_id: world-alpha
     player_name: Demo Player
     npc_name: Archivist Nera
-    input_text: __force_invalid_all__ 広場で灯をともす
+    input_text: __force_safety_reject__ 広場で灯をともす
     relevant_memories:
       - Demo Playerは以前にも広場の灯を守った。
     relation_context:
@@ -29,6 +29,6 @@ cases:
       - active_quest=First Watch Request [active 0/2]
     graph_context_status: ready
     expect_success: false
-    expect_final_lane: pro_lane
-    expect_fallback: true
-    expect_failure_reason: pro_lane output failed schema validation
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: forced safety rejection

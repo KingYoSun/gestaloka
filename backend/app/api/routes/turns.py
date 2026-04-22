@@ -35,8 +35,15 @@ async def resolve_turn(
         raise
 
     await realtime_hub.emit(payload.session_id, "turn.accepted", {"session_id": payload.session_id})
-    await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "routing"})
-    await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "memory_lookup"})
+    for phase in (
+        "memory_council",
+        "npc_council",
+        "world_progress",
+        "rules_arbiter",
+        "safety_guard",
+        "narrative",
+    ):
+        await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": phase})
 
     started_at = container.observability_service.timer()
     result = resolve_turn_for_session(db, container, prepared, payload.input_text)
@@ -67,7 +74,6 @@ async def resolve_turn(
     if result.inventory_updates:
         await realtime_hub.emit(payload.session_id, "inventory.changed", {"items": result.inventory_updates})
 
-    await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "projection"})
     processed = container.projection_service.process_pending(db)
     db.commit()
 

@@ -22,7 +22,11 @@ def test_settings(tmp_path: Path) -> Settings:
         database_url=sqlite_url,
         alembic_database_url=sqlite_url,
         oidc_dev_mode=True,
+        graph_projection_backend="recording",
+        model_provider="stub",
         prompt_dir=REPO_ROOT / "prompts",
+        eval_dataset_dir=REPO_ROOT / "evals" / "datasets",
+        release_config_dir=REPO_ROOT / "config" / "release",
         cors_origins=["http://testserver"],
     )
 

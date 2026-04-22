@@ -1,0 +1,9 @@
+dataset_id: council_npc_manager_smoke
+prompt_id: council.npc_manager
+expected_output_schema: council_npc_manager_v1
+cases:
+  - case_id: council-npc-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Archivist Nera
+    input_text: 広場で旅人を助け、灯をともす

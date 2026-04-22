@@ -23,6 +23,8 @@ test("login, progress a starter quest, receive a reward item, and keep admin/SP 
 
   await expect(page.getByTestId("latest-narrative")).toContainText(/world_tags=/i);
   await expect(page.getByTestId("memories-stream")).toContainText("旅人を助け");
+  await expect(page.getByTestId("ops-stream")).toContainText("memory_council");
+  await expect(page.getByTestId("ops-stream")).toContainText("narrative");
   await expect(page.getByTestId("sp-balance")).toContainText("9");
   await expect(page.getByTestId("quest-progress")).toContainText("1/2");
   await expect(page.getByTestId("faction-standing")).toContainText("Founders Watch");
@@ -33,6 +35,8 @@ test("login, progress a starter quest, receive a reward item, and keep admin/SP 
   await expect(page.getByTestId("graph-faction-count")).toContainText("1");
   await expect(page.getByTestId("graph-quest-count")).toContainText("1");
   await expect(page.getByTestId("admin-ledger")).toContainText("turn_cost");
+  await expect(page.getByTestId("council-trace-stream")).toContainText("memory_manager");
+  await expect(page.getByTestId("council-trace-stream")).toContainText("narrative");
   await page.getByTestId("run-eval-smoke").click();
   await expect(page.getByTestId("eval-runs-stream")).toContainText("turn_resolution_smoke");
   await expect(page.getByTestId("observability-summary")).toContainText("Lag:");

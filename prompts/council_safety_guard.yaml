@@ -1,0 +1,12 @@
+prompt_id: council.safety_guard
+owner_module: gm_council
+schema_version: "1"
+model_lane: main_lane
+expected_output_schema: council_safety_guard_v1
+eval_dataset_ref: council_safety_guard_smoke
+world_invariants:
+  - single_world_namespace
+  - actor_world_consistency
+instructions: |
+  Perform the final same-world, actor, and payload safety check.
+  Reject any turn package that violates world_id, actor continuity, or forbidden-id rules.

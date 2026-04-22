@@ -9,6 +9,7 @@ from app.core.db import create_session_factory
 from app.core.prompts import PromptRegistry
 from app.modules.economy_sp.service import EconomyService
 from app.modules.eval_harness.service import EvalHarnessService
+from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.identity.oidc import BaseOIDCAdapter, build_oidc_adapter
 from app.modules.llm_harness.service import ModelRouter
@@ -22,6 +23,7 @@ class AppContainer:
     oidc_adapter: BaseOIDCAdapter
     prompt_registry: PromptRegistry
     model_router: ModelRouter
+    council_service: GMCouncilService
     eval_service: EvalHarnessService
     economy_service: EconomyService
     projection_service: ProjectionService
@@ -38,6 +40,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     prompt_registry = PromptRegistry(resolved_settings.prompt_dir, resolved_settings.eval_dataset_dir)
     eval_service = EvalHarnessService(resolved_settings, prompt_registry, projection_service, observability_service)
     model_router = eval_service.runtime_router()
+    council_service = GMCouncilService(resolved_settings, model_router)
     economy_service = EconomyService(resolved_settings)
     return AppContainer(
         settings=resolved_settings,
@@ -45,6 +48,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         oidc_adapter=build_oidc_adapter(resolved_settings),
         prompt_registry=prompt_registry,
         model_router=model_router,
+        council_service=council_service,
         eval_service=eval_service,
         economy_service=economy_service,
         projection_service=projection_service,
