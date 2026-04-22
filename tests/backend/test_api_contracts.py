@@ -65,9 +65,13 @@ def test_ops_routes_require_admin_when_dev_mode_disabled(client, container):
 
     forbidden = client.get("/ops/projection/status", headers={"Authorization": "Bearer user-token"})
     allowed = client.get("/ops/projection/status", headers={"Authorization": "Bearer admin-token"})
+    forbidden_eval = client.get("/ops/evals/runs", headers={"Authorization": "Bearer user-token"})
+    allowed_eval = client.get("/ops/evals/runs", headers={"Authorization": "Bearer admin-token"})
 
     assert forbidden.status_code == 403
     assert allowed.status_code == 200
+    assert forbidden_eval.status_code == 403
+    assert allowed_eval.status_code == 200
 
 
 def test_session_and_turn_contract_and_websocket_event_order(client, auth_headers):
@@ -181,3 +185,42 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     rebuild_payload = rebuild_response.json()
     assert rebuild_payload["world_id"] == session_payload["world_id"]
     assert rebuild_payload["records"] >= 1
+
+
+def test_ops_eval_contracts(client, auth_headers):
+    run_response = client.post(
+        "/ops/evals/run",
+        json={"source": "dataset", "dataset_name": "turn_resolution_smoke"},
+        headers=auth_headers,
+    )
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["dataset_name"] == "turn_resolution_smoke"
+    assert run_payload["summary"]["variants"]["current"]["gate_passed"] is True
+
+    runs_response = client.get("/ops/evals/runs", headers=auth_headers)
+    assert runs_response.status_code == 200
+    runs_payload = runs_response.json()
+    assert runs_payload["items"][0]["id"] == run_payload["id"]
+
+    detail_response = client.get(f"/ops/evals/runs/{run_payload['id']}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    assert len(detail_response.json()["results"]) >= 2
+
+    gate_response = client.get("/ops/release/gates/latest", headers=auth_headers)
+    assert gate_response.status_code == 200
+    gate_payload = gate_response.json()
+    assert {"verdict", "checks", "diff_summary", "runbook"} <= set(gate_payload)
+
+
+def test_canary_runtime_blocks_gameplay_writes(client, container, auth_headers):
+    container.settings.app_runtime_role = "canary"
+
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+
+    assert session_response.status_code == 403
+    assert session_response.json()["detail"] == "This runtime only accepts eval and ops traffic"

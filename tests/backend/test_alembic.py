@@ -33,5 +33,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "sp_accounts",
         "sp_ledger",
         "llm_runs",
+        "eval_runs",
+        "eval_case_results",
         "outbox_events",
     } <= tables

@@ -48,3 +48,11 @@ def get_current_ops_user(
     if user.sub in container.settings.ops_admin_sub_list:
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ops access is restricted")
+
+
+def ensure_primary_runtime(container: AppContainer) -> None:
+    if container.settings.app_runtime_role != "primary":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This runtime only accepts eval and ops traffic",
+        )

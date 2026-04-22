@@ -22,6 +22,13 @@ class TurnResolutionAttempt:
     output_payload: dict
 
 
+@dataclass(frozen=True)
+class PromptRouteOverride:
+    prompt_id: str
+    default_lane: str
+    model_ids: dict[str, str]
+
+
 class MemoryDraft(BaseModel):
     scope: Literal["world", "actor"]
     text: str = Field(min_length=1)
@@ -49,9 +56,18 @@ class TurnResolutionOutcome:
 
 
 class ModelRouter:
-    def __init__(self, settings: Settings, prompt_registry: PromptRegistry) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        prompt_registry: PromptRegistry,
+        *,
+        route_overrides: dict[str, PromptRouteOverride] | None = None,
+        config_name: str = "settings",
+    ) -> None:
         self.settings = settings
         self.prompt_registry = prompt_registry
+        self.route_overrides = route_overrides or {}
+        self.config_name = config_name
 
     def resolve_turn(
         self,
@@ -62,15 +78,19 @@ class ModelRouter:
         input_text: str,
         relevant_memories: list[str],
         relation_context: list[str],
+        prompt_id: str = "session.turn_resolution",
     ) -> TurnResolutionOutcome:
-        prompt = self.prompt_registry.get("session.turn_resolution")
+        route = self.route_overrides.get(prompt_id)
+        resolved_prompt_id = route.prompt_id if route is not None else prompt_id
+        requested_lane = route.default_lane if route is not None else None
+        prompt = self.prompt_registry.get(resolved_prompt_id)
         input_hash = hashlib.sha256(
             f"{world_id}|{input_text}|{'|'.join(relevant_memories)}|{'|'.join(relation_context)}|{prompt.instructions}".encode()
         ).hexdigest()
         attempts: list[TurnResolutionAttempt] = []
         failure_reason: str | None = None
 
-        for lane in self._lane_sequence(prompt.model_lane):
+        for lane in self._lane_sequence(requested_lane or prompt.model_lane):
             raw_output = self._generate_output(
                 lane=lane,
                 world_id=world_id,
@@ -80,7 +100,7 @@ class ModelRouter:
                 relevant_memories=relevant_memories,
                 relation_context=relation_context,
             )
-            model_id = self._model_id_for_lane(lane)
+            model_id = self._model_id_for_lane(lane, route)
             try:
                 payload = TurnResolutionPayload.model_validate(raw_output)
             except ValidationError as exc:
@@ -133,7 +153,9 @@ class ModelRouter:
             return ["pro_lane"]
         return [requested_lane, "pro_lane"]
 
-    def _model_id_for_lane(self, lane: str) -> str:
+    def _model_id_for_lane(self, lane: str, route: PromptRouteOverride | None) -> str:
+        if route is not None and lane in route.model_ids:
+            return route.model_ids[lane]
         if lane == "lite_lane":
             return self.settings.model_lite_id
         if lane == "pro_lane":

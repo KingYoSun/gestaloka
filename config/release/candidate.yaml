@@ -1,0 +1,9 @@
+name: candidate
+routes:
+  session.turn_resolution:
+    prompt_id: session.turn_resolution
+    default_lane: main_lane
+    model_ids:
+      lite_lane: gemini-3.1-flash-lite
+      main_lane: gemini-3-flash-canary
+      pro_lane: gemini-3.1-pro

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -34,6 +36,12 @@ class SPAdjustmentRequest(BaseModel):
     world_id: str | None = Field(default=None, max_length=64)
     actor_id: str | None = Field(default=None, max_length=36)
     note: str | None = Field(default=None, max_length=500)
+
+
+class EvalRunRequest(BaseModel):
+    source: Literal["dataset", "shadow_replay"]
+    dataset_name: str | None = Field(default=None, max_length=128)
+    limit: int = Field(default=5, ge=1, le=50)
 
 
 @router.get("/projection/status")
@@ -138,3 +146,53 @@ def post_sp_adjustment(
         "delta": result.delta,
         "balance": result.balance_after,
     }
+
+
+@router.post("/evals/run")
+def post_eval_run(
+    payload: EvalRunRequest,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    if payload.source == "dataset":
+        if payload.dataset_name is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="dataset_name is required")
+        result = container.eval_service.run_dataset(db, payload.dataset_name)
+    else:
+        result = container.eval_service.run_shadow_replay(db, limit=payload.limit)
+    db.commit()
+    return result
+
+
+@router.get("/evals/runs")
+def get_eval_runs(
+    limit: int = Query(default=12, ge=1, le=50),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.list_runs(db, limit=limit)
+
+
+@router.get("/evals/runs/{run_id}")
+def get_eval_run_detail(
+    run_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.get_run_detail(db, run_id)
+
+
+@router.get("/release/gates/latest")
+def get_latest_release_gate(
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.latest_gate_report(db)

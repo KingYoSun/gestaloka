@@ -108,6 +108,9 @@ services:
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
       PROMPT_DIR: /workspace/prompts
+      EVAL_DATASET_DIR: /workspace/evals/datasets
+      RELEASE_CONFIG_DIR: /workspace/config/release
+      RELEASE_RUNTIME_CONFIG_NAME: current
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
       NEBULA_PORT: 9669
@@ -118,6 +121,8 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./evals:/workspace/evals
+      - ./config:/workspace/config
     ports:
       - "8000:8000"
     depends_on:
@@ -141,6 +146,9 @@ services:
       DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       PROMPT_DIR: /workspace/prompts
+      EVAL_DATASET_DIR: /workspace/evals/datasets
+      RELEASE_CONFIG_DIR: /workspace/config/release
+      RELEASE_RUNTIME_CONFIG_NAME: current
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
       NEBULA_PORT: 9669
@@ -150,6 +158,8 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./evals:/workspace/evals
+      - ./config:/workspace/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -180,6 +190,49 @@ services:
       backend:
         condition: service_started
     command: npm run dev -- --host 0.0.0.0 --port 5173
+
+  backend-canary:
+    profiles: ["canary"]
+    build:
+      context: ./backend
+    container_name: gestaloka-v2-backend-canary
+    env_file:
+      - .env
+    environment:
+      APP_RUNTIME_ROLE: canary
+      DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      PUBLIC_WS_BASE_URL: ws://localhost:8001
+      OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
+      OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
+      PROMPT_DIR: /workspace/prompts
+      EVAL_DATASET_DIR: /workspace/evals/datasets
+      RELEASE_CONFIG_DIR: /workspace/config/release
+      RELEASE_RUNTIME_CONFIG_NAME: candidate
+      GRAPH_PROJECTION_BACKEND: nebula
+      NEBULA_HOST: nebula-graphd
+      NEBULA_PORT: 9669
+      NEBULA_SPACE: gestaloka_v2
+      NEBULA_USER: root
+      NEBULA_PASSWORD: nebula
+      OPS_ADMIN_SUBS: demo-player-sub
+    volumes:
+      - ./backend:/app
+      - ./prompts:/workspace/prompts
+      - ./evals:/workspace/evals
+      - ./config:/workspace/config
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      nebula-init:
+        condition: service_completed_successfully
+    command: >
+      sh -c "alembic upgrade head &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend-e2e:
     image: mcr.microsoft.com/playwright:v1.52.0-noble

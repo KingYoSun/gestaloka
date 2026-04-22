@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_env: str = "development"
+    app_runtime_role: str = "primary"
     database_url: str = "sqlite:///./gestaloka.db"
     alembic_database_url: str = "sqlite:///./gestaloka.db"
     public_ws_base_url: str = "ws://localhost:8000"
@@ -30,6 +31,9 @@ class Settings(BaseSettings):
     dev_oidc_email: str = "demo@example.com"
     dev_oidc_name: str = "Demo Player"
     prompt_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "prompts")
+    eval_dataset_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "evals" / "datasets")
+    release_config_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "config" / "release")
+    release_runtime_config_name: str = "current"
     model_provider: str = "stub"
     model_lite_id: str = "gemini-3.1-flash-lite"
     model_main_id: str = "gemini-3-flash"
@@ -46,6 +50,10 @@ class Settings(BaseSettings):
     def normalize_paths(self) -> "Settings":
         if not self.prompt_dir.exists() and self.prompt_dir == Path("/workspace/prompts"):
             self.prompt_dir = Path(__file__).resolve().parents[3] / "prompts"
+        if not self.eval_dataset_dir.exists() and self.eval_dataset_dir == Path("/workspace/evals/datasets"):
+            self.eval_dataset_dir = Path(__file__).resolve().parents[3] / "evals" / "datasets"
+        if not self.release_config_dir.exists() and self.release_config_dir == Path("/workspace/config/release"):
+            self.release_config_dir = Path(__file__).resolve().parents[3] / "config" / "release"
         return self
 
 

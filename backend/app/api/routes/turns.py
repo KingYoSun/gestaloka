@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_container, get_current_user, get_db
+from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub
 from app.modules.identity.oidc import UserIdentity
@@ -26,6 +26,7 @@ async def resolve_turn(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict:
+    ensure_primary_runtime(container)
     try:
         prepared = prepare_turn_for_session(db, container, user, payload.session_id)
     except HTTPException as exc:

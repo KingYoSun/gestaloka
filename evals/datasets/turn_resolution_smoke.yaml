@@ -1,0 +1,34 @@
+dataset_id: turn_resolution_smoke
+prompt_id: session.turn_resolution
+expected_output_schema: turn_resolution_v1
+cases:
+  - case_id: smoke-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Archivist Nera
+    input_text: 広場で灯をともす
+    relevant_memories: []
+    relation_context:
+      - location=Founders Reach
+      - relationship=Archivist Nera KNOWS Demo Player (0.55)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+  - case_id: smoke-memory-aware
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Archivist Nera
+    input_text: 広場を見回し、気配を探る
+    relevant_memories:
+      - Demo Playerは広場で灯をともした。
+    relation_context:
+      - location=Founders Reach
+      - memory=Demo Playerは広場で灯をともした。
+      - relationship=Archivist Nera KNOWS Demo Player (0.65)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null

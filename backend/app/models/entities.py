@@ -5,6 +5,7 @@ import hashlib
 from uuid import uuid4
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -246,3 +247,40 @@ class ProjectionRecord(Base, TimestampMixin):
     projection_type: Mapped[str] = mapped_column(String(64))
     entity_key: Mapped[str] = mapped_column(String(255))
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class EvalRun(Base, TimestampMixin):
+    __tablename__ = "eval_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    source_type: Mapped[str] = mapped_column(String(32))
+    dataset_name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    current_config_name: Mapped[str] = mapped_column(String(64))
+    current_config_hash: Mapped[str] = mapped_column(String(128))
+    candidate_config_name: Mapped[str] = mapped_column(String(64))
+    candidate_config_hash: Mapped[str] = mapped_column(String(128))
+    git_sha: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="running")
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EvalCaseResult(Base, TimestampMixin):
+    __tablename__ = "eval_case_results"
+    __table_args__ = (ForeignKeyConstraint(["eval_run_id"], ["eval_runs.id"], ondelete="CASCADE"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    eval_run_id: Mapped[str] = mapped_column(String(36), index=True)
+    variant: Mapped[str] = mapped_column(String(32))
+    case_id: Mapped[str] = mapped_column(String(128), index=True)
+    prompt_id: Mapped[str] = mapped_column(String(120))
+    model_id: Mapped[str] = mapped_column(String(120))
+    lane: Mapped[str] = mapped_column(String(32))
+    used_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
+    schema_valid: Mapped[bool] = mapped_column(Boolean, default=False)
+    same_world_invariant: Mapped[bool] = mapped_column(Boolean, default=False)
+    graph_context_status: Mapped[str] = mapped_column(String(32), default="ready")
+    passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_output: Mapped[dict] = mapped_column(JSON, default=dict)

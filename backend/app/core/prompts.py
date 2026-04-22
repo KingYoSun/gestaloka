@@ -18,13 +18,15 @@ class PromptDefinition:
     schema_version: str
     model_lane: str
     expected_output_schema: str
+    eval_dataset_ref: str
     world_invariants: list[str]
     instructions: str
 
 
 class PromptRegistry:
-    def __init__(self, prompt_dir: Path) -> None:
+    def __init__(self, prompt_dir: Path, eval_dataset_dir: Path) -> None:
         self.prompt_dir = Path(prompt_dir)
+        self.eval_dataset_dir = Path(eval_dataset_dir)
         self._cache = self._load_definitions()
 
     def get(self, prompt_id: str) -> PromptDefinition:
@@ -70,5 +72,12 @@ class PromptRegistry:
             )
         if definition.model_lane not in SUPPORTED_MODEL_LANES:
             raise ValueError(f"Prompt {definition.prompt_id} uses unsupported model lane {definition.model_lane}")
+        if not definition.eval_dataset_ref.strip():
+            raise ValueError(f"Prompt {definition.prompt_id} is missing eval_dataset_ref in {prompt_file.name}")
+        dataset_path = self.eval_dataset_dir / f"{definition.eval_dataset_ref}.yaml"
+        if not dataset_path.exists():
+            raise ValueError(
+                f"Prompt {definition.prompt_id} references missing eval dataset {definition.eval_dataset_ref}"
+            )
         if not definition.instructions.strip():
             raise ValueError(f"Prompt {definition.prompt_id} has empty instructions in {prompt_file.name}")

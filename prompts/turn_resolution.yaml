@@ -3,6 +3,7 @@ owner_module: session
 schema_version: "1"
 model_lane: main_lane
 expected_output_schema: turn_resolution_v1
+eval_dataset_ref: turn_resolution_smoke
 world_invariants:
   - single_world_namespace
   - actor_world_consistency

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_container, get_current_user, get_db
+from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import create_session_for_user
@@ -25,6 +25,7 @@ def create_session(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, str]:
+    ensure_primary_runtime(container)
     result = create_session_for_user(db, container, user, payload.world_id, payload.world_name, payload.player_display_name)
     container.projection_service.process_pending(db)
     db.commit()

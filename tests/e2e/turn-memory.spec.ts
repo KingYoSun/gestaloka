@@ -27,6 +27,9 @@ test("login, spend SP on turns, adjust balance in admin, and block turns at zero
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByTestId("ops-status")).toContainText("ready");
   await expect(page.getByTestId("admin-ledger")).toContainText("turn_cost");
+  await page.getByTestId("run-eval-smoke").click();
+  await expect(page.getByTestId("eval-runs-stream")).toContainText("turn_resolution_smoke");
+  await expect(page.getByTestId("release-gate-verdict")).toContainText(/blocked|passed/);
 
   await page.getByTestId("adjust-delta").fill("2");
   await page.getByTestId("submit-adjustment").click();

@@ -149,6 +149,92 @@ type SPAdjustmentResponse = {
   balance: number;
 };
 
+type EvalRunVariantSummary = {
+  total: number;
+  passed: number;
+  failed: number;
+  failed_case_ids: string[];
+  gate_passed: boolean;
+};
+
+type EvalRunItem = {
+  id: string;
+  source_type: string;
+  dataset_name: string | null;
+  status: string;
+  summary: {
+    case_count: number;
+    variants?: {
+      current?: EvalRunVariantSummary;
+      candidate?: EvalRunVariantSummary;
+    };
+    comparison?: {
+      passed_delta: number;
+      current_failed_case_ids: string[];
+      candidate_failed_case_ids: string[];
+    };
+  };
+  started_at: string;
+  completed_at: string | null;
+};
+
+type RouteDiff = {
+  route_id: string;
+  current: {
+    prompt_id: string;
+    default_lane: string;
+    model_ids: Record<string, string>;
+  } | null;
+  candidate: {
+    prompt_id: string;
+    default_lane: string;
+    model_ids: Record<string, string>;
+  } | null;
+};
+
+type ReleaseGateReport = {
+  verdict: string;
+  canary_promote_status: string;
+  checks: {
+    smoke: {
+      present: boolean;
+      current_passed: boolean;
+      candidate_passed: boolean;
+      run_id: string | null;
+    };
+    failure_injection: {
+      present: boolean;
+      current_passed: boolean;
+      candidate_passed: boolean;
+      run_id: string | null;
+    };
+    shadow_replay: {
+      present: boolean;
+      current_passed: boolean;
+      candidate_passed: boolean;
+      run_id: string | null;
+    };
+  };
+  latest_runs: {
+    smoke: string | null;
+    failure_injection: string | null;
+    shadow_replay: string | null;
+  };
+  diff_summary: RouteDiff[];
+  shadow_failures: Array<{
+    case_id: string;
+    variant: string;
+    lane: string;
+    graph_context_status: string;
+    failure_reason: string | null;
+  }>;
+  runbook: {
+    canary_up: string;
+    rollback: string;
+    promote: string;
+  };
+};
+
 type ActivityMessage = {
   event: string;
   data: Record<string, unknown>;
@@ -245,6 +331,8 @@ function App() {
   const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
+  const [evalRuns, setEvalRuns] = useState<EvalRunItem[]>([]);
+  const [releaseGate, setReleaseGate] = useState<ReleaseGateReport | null>(null);
   const [opsState, setOpsState] = useState("idle");
   const [lastRebuild, setLastRebuild] = useState<RebuildSummary | null>(null);
   const [lastAdjustment, setLastAdjustment] = useState<SPAdjustmentResponse | null>(null);
@@ -259,6 +347,7 @@ function App() {
   const [turnPending, setTurnPending] = useState(false);
   const [rebuildPending, setRebuildPending] = useState(false);
   const [adjustPending, setAdjustPending] = useState(false);
+  const [evalPending, setEvalPending] = useState(false);
   const [socketState, setSocketState] = useState("idle");
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -297,6 +386,8 @@ function App() {
       setGraphSummary(null);
       setSpOverview(null);
       setLedgerEntries([]);
+      setEvalRuns([]);
+      setReleaseGate(null);
       setOpsState("idle");
       return;
     }
@@ -399,17 +490,21 @@ function App() {
     }
 
     try {
-      const [statusPayload, overviewPayload, ledgerPayload] = await Promise.all([
+      const [statusPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
         apiFetch<SPOverview>("/ops/sp/overview", currentToken),
         apiFetch<{ items: SPLedgerItem[] }>(
           `/ops/sp/ledger?limit=20${currentLedgerUserFilter ? `&user_sub=${encodeURIComponent(currentLedgerUserFilter)}` : ""}${currentLedgerWorldFilter ? `&world_id=${encodeURIComponent(currentLedgerWorldFilter)}` : ""}`,
           currentToken,
         ),
+        apiFetch<{ items: EvalRunItem[] }>("/ops/evals/runs?limit=8", currentToken),
+        apiFetch<ReleaseGateReport>("/ops/release/gates/latest", currentToken),
       ]);
       setProjectionStatus(statusPayload);
       setSpOverview(overviewPayload);
       setLedgerEntries(ledgerPayload.items);
+      setEvalRuns(evalRunsPayload.items);
+      setReleaseGate(gatePayload);
       setOpsState("ready");
     } catch (requestError) {
       const typedError = requestError as APIError;
@@ -419,6 +514,8 @@ function App() {
         setGraphSummary(null);
         setSpOverview(null);
         setLedgerEntries([]);
+        setEvalRuns([]);
+        setReleaseGate(null);
         return;
       }
       setOpsState("unavailable");
@@ -426,6 +523,8 @@ function App() {
       setGraphSummary(null);
       setSpOverview(null);
       setLedgerEntries([]);
+      setEvalRuns([]);
+      setReleaseGate(null);
       return;
     }
 
@@ -617,6 +716,31 @@ function App() {
     }
   }
 
+  async function handleEvalRun(source: "dataset" | "shadow_replay", datasetName?: string) {
+    if (!token) {
+      setError("Sign in before running evals");
+      return;
+    }
+
+    try {
+      setEvalPending(true);
+      setError("");
+      await apiFetch<Record<string, unknown>>("/ops/evals/run", token, {
+        method: "POST",
+        body: JSON.stringify(
+          source === "dataset"
+            ? { source, dataset_name: datasetName }
+            : { source, limit: 5 },
+        ),
+      });
+      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId);
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setEvalPending(false);
+    }
+  }
+
   useEffect(() => {
     if (route !== "admin" || !token) {
       return;
@@ -630,10 +754,10 @@ function App() {
         <div className="hero-top">
           <div>
             <p className="eyebrow">GESTALOKA v2</p>
-            <h1>Same-world runtime stabilization</h1>
+            <h1>Same-world release gate runtime</h1>
             <p className="lede">
-              OIDC login, one-world turn play, SP debit and refund rules, Nebula projection monitoring, and
-              admin adjustments now live in the same v2 runtime.
+              OIDC login, one-world turn play, SP debit rules, Nebula projection monitoring, and eval-driven
+              release gating now share the same v2 runtime surface.
             </p>
           </div>
           <nav className="route-nav">
@@ -848,6 +972,116 @@ function App() {
                     <span>{item.last_error ?? "no error text"}</span>
                   </li>
                 ))}
+              </ul>
+            </article>
+
+            <article className="card wide">
+              <h2>Eval harness and release gate</h2>
+              <p data-testid="release-gate-verdict">
+                Gate verdict: {releaseGate?.verdict ?? "unknown"} / Canary promote:{" "}
+                {releaseGate?.canary_promote_status ?? "unknown"}
+              </p>
+              <div className="actions">
+                <button
+                  data-testid="run-eval-smoke"
+                  onClick={() => void handleEvalRun("dataset", "turn_resolution_smoke")}
+                  disabled={!token || evalPending || opsState !== "ready"}
+                >
+                  {evalPending ? "Running..." : "Run smoke"}
+                </button>
+                <button
+                  data-testid="run-eval-failure"
+                  onClick={() => void handleEvalRun("dataset", "turn_resolution_failure_injection")}
+                  disabled={!token || evalPending || opsState !== "ready"}
+                >
+                  {evalPending ? "Running..." : "Run failure injection"}
+                </button>
+                <button
+                  data-testid="run-eval-shadow"
+                  onClick={() => void handleEvalRun("shadow_replay")}
+                  disabled={!token || evalPending || opsState !== "ready"}
+                >
+                  {evalPending ? "Running..." : "Run shadow replay"}
+                </button>
+              </div>
+              <h3>Latest checks</h3>
+              <ul className="stream" data-testid="release-checks-stream">
+                <li>
+                  <strong>smoke</strong>
+                  <span>
+                    present={String(releaseGate?.checks.smoke.present ?? false)} / current=
+                    {String(releaseGate?.checks.smoke.current_passed ?? false)} / candidate=
+                    {String(releaseGate?.checks.smoke.candidate_passed ?? false)}
+                  </span>
+                </li>
+                <li>
+                  <strong>failure_injection</strong>
+                  <span>
+                    present={String(releaseGate?.checks.failure_injection.present ?? false)} / current=
+                    {String(releaseGate?.checks.failure_injection.current_passed ?? false)} / candidate=
+                    {String(releaseGate?.checks.failure_injection.candidate_passed ?? false)}
+                  </span>
+                </li>
+                <li>
+                  <strong>shadow_replay</strong>
+                  <span>
+                    present={String(releaseGate?.checks.shadow_replay.present ?? false)} / current=
+                    {String(releaseGate?.checks.shadow_replay.current_passed ?? false)} / candidate=
+                    {String(releaseGate?.checks.shadow_replay.candidate_passed ?? false)}
+                  </span>
+                </li>
+              </ul>
+              <h3>Current vs candidate diff</h3>
+              <ul className="stream" data-testid="release-diff-stream">
+                {(releaseGate?.diff_summary ?? []).map((item) => (
+                  <li key={item.route_id}>
+                    <strong>{item.route_id}</strong>
+                    <span>current: {item.current?.model_ids.main_lane ?? "none"}</span>
+                    <span>candidate: {item.candidate?.model_ids.main_lane ?? "none"}</span>
+                  </li>
+                ))}
+              </ul>
+              <h3>Latest eval runs</h3>
+              <ul className="stream" data-testid="eval-runs-stream">
+                {evalRuns.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.dataset_name ?? item.source_type}</strong>
+                    <span>{item.status}</span>
+                    <span>
+                      current {item.summary.variants?.current?.passed ?? 0}/{item.summary.variants?.current?.total ?? 0}
+                    </span>
+                    <span>
+                      candidate {item.summary.variants?.candidate?.passed ?? 0}/
+                      {item.summary.variants?.candidate?.total ?? 0}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <h3>Shadow replay failures</h3>
+              <ul className="stream" data-testid="shadow-failures-stream">
+                {(releaseGate?.shadow_failures ?? []).map((item) => (
+                  <li key={`${item.case_id}-${item.variant}`}>
+                    <strong>{item.case_id}</strong>
+                    <span>{item.variant}</span>
+                    <span>{item.graph_context_status}</span>
+                    <span>{item.failure_reason ?? "none"}</span>
+                  </li>
+                ))}
+              </ul>
+              <h3>Runbook</h3>
+              <ul className="stream" data-testid="release-runbook">
+                <li>
+                  <strong>canary up</strong>
+                  <span>{releaseGate?.runbook.canary_up ?? "docker compose --profile canary up --build backend-canary"}</span>
+                </li>
+                <li>
+                  <strong>rollback</strong>
+                  <span>{releaseGate?.runbook.rollback ?? "docker compose --profile canary down"}</span>
+                </li>
+                <li>
+                  <strong>promote</strong>
+                  <span>{releaseGate?.runbook.promote ?? "blocked until gate passes"}</span>
+                </li>
               </ul>
             </article>
 

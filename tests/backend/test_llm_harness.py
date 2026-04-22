@@ -8,6 +8,24 @@ from app.models.entities import LLMRun, OutboxEvent
 
 
 def test_prompt_registry_rejects_unknown_schema(tmp_path):
+    dataset_dir = tmp_path / "datasets"
+    dataset_dir.mkdir()
+    (dataset_dir / "smoke.yaml").write_text(
+        "\n".join(
+            [
+                "dataset_id: smoke",
+                "prompt_id: broken.prompt",
+                "expected_output_schema: turn_resolution_v1",
+                "cases:",
+                "  - case_id: smoke-case",
+                "    world_id: world-alpha",
+                "    player_name: Demo Player",
+                "    npc_name: Archivist Nera",
+                "    input_text: test",
+            ]
+        ),
+        encoding="utf-8",
+    )
     prompt_file = tmp_path / "broken.yaml"
     prompt_file.write_text(
         "\n".join(
@@ -17,6 +35,7 @@ def test_prompt_registry_rejects_unknown_schema(tmp_path):
                 'schema_version: "1"',
                 "model_lane: main_lane",
                 "expected_output_schema: missing_schema",
+                "eval_dataset_ref: smoke",
                 "world_invariants:",
                 "  - single_world_namespace",
                 "instructions: |",
@@ -27,7 +46,7 @@ def test_prompt_registry_rejects_unknown_schema(tmp_path):
     )
 
     with pytest.raises(ValueError, match="unknown schema"):
-        PromptRegistry(tmp_path)
+        PromptRegistry(tmp_path, dataset_dir)
 
 
 def test_model_router_falls_back_to_pro_lane(container):
