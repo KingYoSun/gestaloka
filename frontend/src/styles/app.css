@@ -56,6 +56,13 @@ textarea {
   margin-bottom: 2rem;
 }
 
+.hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .eyebrow {
   margin: 0 0 0.4rem;
   letter-spacing: 0.24em;
@@ -79,6 +86,22 @@ textarea {
   gap: 1rem;
 }
 
+.route-nav {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.nav-pill {
+  background: rgba(247, 243, 232, 0.12);
+  color: #f7f3e8;
+}
+
+.nav-pill.active {
+  background: #dc8e49;
+  color: #111;
+}
+
 .card {
   border: 1px solid rgba(247, 243, 232, 0.12);
   border-radius: 26px;
@@ -94,6 +117,11 @@ textarea {
 .stack {
   display: grid;
   gap: 1rem;
+}
+
+.compact-form {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
 }
 
 .actions {
@@ -148,6 +176,10 @@ textarea {
 }
 
 @media (max-width: 860px) {
+  .hero-top {
+    flex-direction: column;
+  }
+
   .card.wide {
     grid-column: span 1;
   }

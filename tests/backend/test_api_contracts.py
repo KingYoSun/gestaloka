@@ -14,6 +14,9 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["database"] == "ok"
     assert payload["projection"]["backend"] == "recording"
     assert payload["projection"]["pending_outbox"] == 0
+    assert payload["projection_runtime"]["graph_runtime_status"] == "recording"
+    assert payload["sp"]["default_balance"] == 10
+    assert payload["sp"]["turn_cost"] == 1
     assert payload["oidc_mode"] == "development"
 
 
@@ -48,7 +51,30 @@ def test_world_membership_mismatch_returns_404(client, container):
     assert access_response.status_code == 404
 
 
+def test_ops_routes_require_admin_when_dev_mode_disabled(client, container):
+    def resolve_token(token: str) -> UserIdentity:
+        if token == "admin-token":
+            return UserIdentity(sub="admin-sub", name="Admin")
+        if token == "user-token":
+            return UserIdentity(sub="user-sub", name="User")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    container.settings.oidc_dev_mode = False
+    container.settings.ops_admin_subs = "admin-sub"
+    container.oidc_adapter.resolve_token = resolve_token  # type: ignore[method-assign]
+
+    forbidden = client.get("/ops/projection/status", headers={"Authorization": "Bearer user-token"})
+    allowed = client.get("/ops/projection/status", headers={"Authorization": "Bearer admin-token"})
+
+    assert forbidden.status_code == 403
+    assert allowed.status_code == 200
+
+
 def test_session_and_turn_contract_and_websocket_event_order(client, auth_headers):
+    wallet_response = client.get("/economy/sp/me", headers=auth_headers)
+    assert wallet_response.status_code == 200
+    assert wallet_response.json()["balance"] == 10
+
     session_response = client.post(
         "/sessions",
         json={"world_id": "world-alpha", "world_name": "Founders Reach"},
@@ -73,7 +99,18 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         )
         assert turn_response.status_code == 200
         turn_payload = turn_response.json()
-        assert set(turn_payload) == {"turn_id", "event_id", "memory_ids", "narrative", "npc_reaction"}
+        assert set(turn_payload) == {
+            "turn_id",
+            "event_id",
+            "memory_ids",
+            "narrative",
+            "npc_reaction",
+            "sp_delta",
+            "sp_balance",
+            "sp_ledger_id",
+        }
+        assert turn_payload["sp_delta"] == -1
+        assert turn_payload["sp_balance"] == 9
 
         messages = [websocket.receive_json() for _ in range(9)]
 
@@ -116,7 +153,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     status_response = client.get("/ops/projection/status", headers=auth_headers)
     assert status_response.status_code == 200
     status_payload = status_response.json()
-    assert set(status_payload) == {
+    assert {
         "backend",
         "space",
         "pending",
@@ -124,7 +161,9 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "projected",
         "last_error",
         "graph_read_mode",
-    }
+        "graph_runtime_status",
+        "recent_failures",
+    } <= set(status_payload)
 
     summary_response = client.get(f"/ops/worlds/{session_payload['world_id']}/graph-summary", headers=auth_headers)
     assert summary_response.status_code == 200

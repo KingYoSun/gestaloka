@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -9,7 +9,7 @@ from app.api.deps import get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub
 from app.modules.identity.oidc import UserIdentity
-from app.modules.session.service import resolve_turn_for_session
+from app.modules.session.service import prepare_turn_for_session, resolve_turn_for_session
 
 router = APIRouter(tags=["turns"])
 
@@ -26,11 +26,18 @@ async def resolve_turn(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict:
+    try:
+        prepared = prepare_turn_for_session(db, container, user, payload.session_id)
+    except HTTPException as exc:
+        if exc.status_code == 409 and isinstance(exc.detail, dict):
+            return JSONResponse(status_code=409, content=exc.detail)
+        raise
+
     await realtime_hub.emit(payload.session_id, "turn.accepted", {"session_id": payload.session_id})
     await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "routing"})
     await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "memory_lookup"})
 
-    result = resolve_turn_for_session(db, container, user, payload.session_id, payload.input_text)
+    result = resolve_turn_for_session(db, container, prepared, payload.input_text)
     db.commit()
 
     if result.succeeded:
@@ -68,6 +75,9 @@ async def resolve_turn(
                 "turn_id": result.turn.id,
                 "event_id": result.event.id,
                 "memory_ids": [],
+                "sp_delta": result.sp_delta,
+                "sp_balance": result.sp_balance,
+                "sp_ledger_id": result.sp_ledger_id,
             },
         )
 
@@ -77,6 +87,9 @@ async def resolve_turn(
         "memory_ids": result.memory_ids,
         "narrative": result.turn.resolved_output["narrative"],
         "npc_reaction": result.turn.resolved_output["npc_reaction"],
+        "sp_delta": result.sp_delta,
+        "sp_balance": result.sp_balance,
+        "sp_ledger_id": result.sp_ledger_id,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)
 

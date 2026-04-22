@@ -32,5 +32,14 @@ def health(
             "graph_read_mode": snapshot["graph_read_mode"],
             "last_error": snapshot["last_error"],
         },
+        "projection_runtime": {
+            "graph_runtime_status": snapshot["graph_runtime_status"],
+            "graph_runtime_error": snapshot["graph_runtime_error"],
+        },
+        "sp": {
+            "default_balance": container.settings.sp_default_balance,
+            "turn_cost": container.settings.turn_sp_cost,
+            "economy_status": "ready",
+        },
         "oidc_mode": "development" if container.settings.oidc_dev_mode else "keycloak",
     }

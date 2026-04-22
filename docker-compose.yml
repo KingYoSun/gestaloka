@@ -32,6 +32,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
 
   nebula-storaged:
     image: vesoft/nebula-storaged:v3.8.0
@@ -47,11 +48,6 @@ services:
         condition: service_healthy
     volumes:
       - nebula_storage_data:/data/storage
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/9779' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   nebula-graphd:
     image: vesoft/nebula-graphd:v3.8.0
@@ -67,12 +63,18 @@ services:
       nebula-metad:
         condition: service_healthy
       nebula-storaged:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/9669' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+        condition: service_started
+
+  nebula-init:
+    image: vesoft/nebula-console:v3.8.0
+    container_name: gestaloka-v2-nebula-init
+    entrypoint: ["/bin/sh", "/usr/local/bin/nebula-init.sh"]
+    depends_on:
+      nebula-graphd:
+        condition: service_started
+    restart: "no"
+    volumes:
+      - ./docker/nebula-init.sh:/usr/local/bin/nebula-init.sh:ro
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.2
@@ -123,8 +125,8 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-      nebula-graphd:
-        condition: service_healthy
+      nebula-init:
+        condition: service_completed_successfully
     command: >
       sh -c "alembic upgrade head &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -153,8 +155,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
-      nebula-graphd:
-        condition: service_healthy
+      nebula-init:
+        condition: service_completed_successfully
     command: python -m app.worker
 
   frontend:

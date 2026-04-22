@@ -4,7 +4,18 @@ from datetime import datetime, timezone
 import hashlib
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, ForeignKey, ForeignKeyConstraint, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -162,6 +173,36 @@ class Relationship(Base, TimestampMixin):
     to_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     relationship_type: Mapped[str] = mapped_column(String(64))
     strength: Mapped[float] = mapped_column(Float, default=0.5)
+
+
+class SPAccount(Base, TimestampMixin):
+    __tablename__ = "sp_accounts"
+    __table_args__ = (CheckConstraint("balance >= 0", name="ck_sp_accounts_balance_nonnegative"),)
+
+    user_sub: Mapped[str] = mapped_column(String(128), primary_key=True)
+    balance: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SPLedgerEntry(Base, TimestampMixin):
+    __tablename__ = "sp_ledger"
+    __table_args__ = (
+        CheckConstraint("delta != 0", name="ck_sp_ledger_nonzero_delta"),
+        CheckConstraint("actor_id IS NULL OR world_id IS NOT NULL", name="ck_sp_ledger_actor_requires_world"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="SET NULL"),
+        ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_sub: Mapped[str] = mapped_column(String(128), index=True)
+    world_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    delta: Mapped[int] = mapped_column(Integer)
+    reason_code: Mapped[str] = mapped_column(String(64))
+    reference_type: Mapped[str] = mapped_column(String(64))
+    reference_id: Mapped[str] = mapped_column(String(96))
+    balance_after: Mapped[int] = mapped_column(Integer)
+    created_by_sub: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class LLMRun(Base, TimestampMixin):

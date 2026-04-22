@@ -66,6 +66,8 @@ def test_turn_failure_returns_422_and_persists_audit_records(client, container, 
     payload = turn_response.json()
     assert payload["detail"] == "pro_lane output failed schema validation"
     assert payload["memory_ids"] == []
+    assert payload["sp_delta"] == 0
+    assert payload["sp_balance"] == 10
 
     with container.session_factory() as db:
         llm_runs = list(db.execute(select(LLMRun).order_by(LLMRun.created_at.asc())).scalars())

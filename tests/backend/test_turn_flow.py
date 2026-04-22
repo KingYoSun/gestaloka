@@ -20,6 +20,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         headers=auth_headers,
     )
     assert first_turn.status_code == 200
+    assert first_turn.json()["sp_balance"] == 9
 
     second_turn = client.post(
         "/turns",
@@ -29,6 +30,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert second_turn.status_code == 200
     second_payload = second_turn.json()
     assert "灯をともす" in second_payload["npc_reaction"]
+    assert second_payload["sp_balance"] == 8
 
     events = client.get(f"/worlds/{session_payload['world_id']}/events", headers=auth_headers)
     memories = client.get(f"/worlds/{session_payload['world_id']}/memories", headers=auth_headers)

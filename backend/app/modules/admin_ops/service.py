@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.models.entities import Actor, OutboxEvent, ProjectionRecord, Session as GameSession
+from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
+    projection_runtime = projection_service.probe_runtime()
     active_sessions = db.execute(select(func.count(GameSession.id)).where(GameSession.status == "active")).scalar_one()
     pending_outbox = db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "pending")).scalar_one()
     failed_outbox = db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "failed")).scalar_one()
@@ -34,6 +36,8 @@ def runtime_snapshot(db: Session, settings: Settings, projection_service: Projec
         "backend": settings.graph_projection_backend,
         "space": settings.nebula_space,
         "graph_read_mode": projection_service.graph_read_mode,
+        "graph_runtime_status": projection_runtime["graph_runtime_status"],
+        "graph_runtime_error": projection_runtime["last_runtime_error"],
     }
 
 
@@ -47,6 +51,7 @@ def projection_status(db: Session, settings: Settings, projection_service: Proje
         "projected": snapshot["projected_outbox"],
         "last_error": snapshot["last_error"],
         "graph_read_mode": snapshot["graph_read_mode"],
+        "graph_runtime_status": snapshot["graph_runtime_status"],
     }
 
 
@@ -104,3 +109,42 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
         "recent_records": recent_records,
         "neighborhood_summary": neighborhood_summary,
     }
+
+
+def sp_overview(db: Session, economy_service: EconomyService) -> dict[str, object]:
+    return economy_service.overview(db)
+
+
+def sp_ledger(
+    db: Session,
+    economy_service: EconomyService,
+    *,
+    user_sub: str | None,
+    world_id: str | None,
+    limit: int,
+) -> dict[str, object]:
+    return {
+        "items": economy_service.list_ledger(db, user_sub=user_sub, world_id=world_id, limit=limit),
+    }
+
+
+def recent_runtime_failures(db: Session) -> list[dict[str, object]]:
+    failed_outbox = list(
+        db.execute(
+            select(OutboxEvent)
+            .where(OutboxEvent.status == "failed")
+            .order_by(OutboxEvent.updated_at.desc(), OutboxEvent.id.desc())
+            .limit(8)
+        ).scalars()
+    )
+    return [
+        {
+            "id": item.id,
+            "event_id": item.event_id,
+            "world_id": item.world_id,
+            "projection_type": item.projection_type,
+            "last_error": item.last_error,
+            "attempts": item.attempts,
+        }
+        for item in failed_outbox
+    ]

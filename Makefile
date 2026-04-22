@@ -13,7 +13,7 @@ build-frontend:
 	cd frontend && npm run build
 
 scan-v1-terms:
-	@rg -n "(Neo4j|neomodel|gemini-2\\.5|Socket\\.IO|他世界|NPC化|dispatch)" . \
+	@! rg -n "(Neo4j|neomodel|gemini-2\\.5|Socket\\.IO|他世界|NPC化|dispatch)" . \
 		--glob '!legacy/**' \
 		--glob '!Makefile' \
 		--glob '!AGENTS.md' \

@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     nebula_user: str = "root"
     nebula_password: str = "nebula"
     ops_admin_subs: str = ""
+    sp_default_balance: int = 10
+    turn_sp_cost: int = 1
     oidc_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_public_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_client_id: str = "gestaloka-frontend"

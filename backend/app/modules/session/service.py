@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
-from app.models.entities import Event, LLMRun, OutboxEvent, Session as GameSession, Turn
+from app.models.entities import Actor, Event, LLMRun, OutboxEvent, Session as GameSession, Turn, new_id
 from app.modules.actor.service import (
     ensure_player_actor,
     ensure_relationship,
@@ -15,6 +15,7 @@ from app.modules.actor.service import (
     get_player_actor_for_user,
     increment_relationship_strength,
 )
+from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import materialize_memories, search_memories
 from app.modules.world_state.service import ensure_starter_location, ensure_world
@@ -37,11 +38,24 @@ class TurnResolutionResult:
     memory_ids: list[str]
     event_payload: dict
     memories_payload: list[dict]
+    sp_delta: int
+    sp_balance: int
+    sp_ledger_id: str
     error_detail: str | None = None
 
     @property
     def succeeded(self) -> bool:
         return self.error_detail is None
+
+
+@dataclass
+class PreparedTurnContext:
+    session: GameSession
+    player_actor: Actor
+    guide_npc: Actor
+    location_id: str
+    turn_id: str
+    debit: SPMutationResult
 
 
 def create_session_for_user(
@@ -134,26 +148,15 @@ def create_session_for_user(
 def resolve_turn_for_session(
     db: Session,
     container: AppContainer,
-    user: UserIdentity,
-    session_id: str,
+    prepared: PreparedTurnContext,
     input_text: str,
 ) -> TurnResolutionResult:
-    stmt = select(GameSession).where(GameSession.id == session_id)
-    game_session = db.execute(stmt).scalar_one_or_none()
-    if game_session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-
-    player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
-    if player_actor is None or player_actor.id != game_session.player_actor_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
-
-    current_location = ensure_starter_location(db, game_session.world_id)
-    if player_actor.current_location_id is None:
-        player_actor.current_location_id = current_location.id
-        db.flush()
-    guide_npc = get_or_create_guide_npc(db, game_session.world_id, location_id=player_actor.current_location_id)
+    game_session = prepared.session
+    player_actor = prepared.player_actor
+    guide_npc = prepared.guide_npc
 
     turn = Turn(
+        id=prepared.turn_id,
         world_id=game_session.world_id,
         session_id=game_session.id,
         actor_id=player_actor.id,
@@ -175,7 +178,7 @@ def resolve_turn_for_session(
         world_id=game_session.world_id,
         primary_actor_id=guide_npc.id,
         counterpart_actor_id=player_actor.id,
-        location_id=player_actor.current_location_id,
+        location_id=prepared.location_id,
     )
     resolution = container.model_router.resolve_turn(
         world_id=game_session.world_id,
@@ -214,12 +217,12 @@ def resolve_turn_for_session(
             turn_id=turn.id,
             event_type="player.turn.failed",
             source_actor_id=player_actor.id,
-            location_id=player_actor.current_location_id,
+            location_id=prepared.location_id,
             payload={
                 "action": input_text,
                 "failure_reason": resolution.failure_reason,
                 "world_id": game_session.world_id,
-                "location_id": player_actor.current_location_id,
+                "location_id": prepared.location_id,
                 "graph_context_status": graph_context.status,
             },
             narrative=f"{player_actor.display_name}の行動『{input_text}』は監査対象として記録された。",
@@ -234,6 +237,14 @@ def resolve_turn_for_session(
                 payload={"turn_id": turn.id, "outcome": "failed", "graph_context_status": graph_context.status},
             )
         )
+        refund = container.economy_service.refund_turn_cost(
+            db,
+            user_sub=prepared.debit.ledger_entry.user_sub,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            reference_id=turn.id,
+            note=resolution.failure_reason,
+        )
         db.flush()
         return TurnResolutionResult(
             turn=turn,
@@ -241,6 +252,9 @@ def resolve_turn_for_session(
             memory_ids=[],
             event_payload=_event_payload(failure_event),
             memories_payload=[],
+            sp_delta=0,
+            sp_balance=refund.balance_after,
+            sp_ledger_id=prepared.debit.ledger_entry.id,
             error_detail=resolution.failure_reason or "Turn resolution failed",
         )
 
@@ -274,10 +288,10 @@ def resolve_turn_for_session(
         turn_id=turn.id,
         event_type=payload.event_type,
         source_actor_id=player_actor.id,
-        location_id=player_actor.current_location_id,
+        location_id=prepared.location_id,
         payload={
             **payload.event_payload,
-            "location_id": player_actor.current_location_id,
+            "location_id": prepared.location_id,
             "graph_context_status": graph_context.status,
         },
         narrative=payload.narrative,
@@ -289,7 +303,7 @@ def resolve_turn_for_session(
         db,
         world_id=game_session.world_id,
         source_event_id=event.id,
-        location_id=player_actor.current_location_id,
+        location_id=prepared.location_id,
         drafts=[
             {
                 **draft.model_dump(),
@@ -306,7 +320,7 @@ def resolve_turn_for_session(
             payload={
                 "turn_id": turn.id,
                 "outcome": "resolved",
-                "location_id": player_actor.current_location_id,
+                "location_id": prepared.location_id,
                 "graph_context_status": graph_context.status,
             },
         )
@@ -319,6 +333,59 @@ def resolve_turn_for_session(
         memory_ids=[memory.id for memory in memories],
         event_payload=_event_payload(event),
         memories_payload=[_memory_payload(memory) for memory in memories],
+        sp_delta=prepared.debit.delta,
+        sp_balance=prepared.debit.balance_after,
+        sp_ledger_id=prepared.debit.ledger_entry.id,
+    )
+
+
+def prepare_turn_for_session(
+    db: Session,
+    container: AppContainer,
+    user: UserIdentity,
+    session_id: str,
+) -> PreparedTurnContext:
+    stmt = select(GameSession).where(GameSession.id == session_id)
+    game_session = db.execute(stmt).scalar_one_or_none()
+    if game_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
+    if player_actor is None or player_actor.id != game_session.player_actor_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
+
+    current_location = ensure_starter_location(db, game_session.world_id)
+    if player_actor.current_location_id is None:
+        player_actor.current_location_id = current_location.id
+        db.flush()
+    guide_npc = get_or_create_guide_npc(db, game_session.world_id, location_id=player_actor.current_location_id)
+    planned_turn_id = new_id()
+    try:
+        debit = container.economy_service.debit_turn_cost(
+            db,
+            user_sub=user.sub,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            reference_id=planned_turn_id,
+        )
+    except InsufficientSPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "detail": exc.detail,
+                "balance": exc.balance,
+                "required": exc.required,
+                "turn_cost": container.settings.turn_sp_cost,
+            },
+        ) from exc
+
+    return PreparedTurnContext(
+        session=game_session,
+        player_actor=player_actor,
+        guide_npc=guide_npc,
+        location_id=player_actor.current_location_id or current_location.id,
+        turn_id=planned_turn_id,
+        debit=debit,
     )
 
 

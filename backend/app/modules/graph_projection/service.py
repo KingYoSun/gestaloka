@@ -33,7 +33,9 @@ class ProjectionService:
             if settings.graph_projection_backend == "nebula"
             else self.recording_repository
         )
-        self.repository.bootstrap()
+        self._graph_runtime_status = "ready" if settings.graph_projection_backend != "nebula" else "pending"
+        self._last_runtime_error: str | None = None
+        self.probe_runtime()
 
     @property
     def backend(self) -> str:
@@ -42,6 +44,35 @@ class ProjectionService:
     @property
     def graph_read_mode(self) -> str:
         return "nebula" if self.settings.graph_projection_backend == "nebula" else "recording"
+
+    @property
+    def graph_runtime_status(self) -> str:
+        return self._graph_runtime_status
+
+    @property
+    def last_runtime_error(self) -> str | None:
+        return self._last_runtime_error
+
+    def probe_runtime(self) -> dict[str, str | None]:
+        if self.settings.graph_projection_backend != "nebula":
+            self._graph_runtime_status = "recording"
+            self._last_runtime_error = None
+            return {
+                "graph_runtime_status": self._graph_runtime_status,
+                "last_runtime_error": self._last_runtime_error,
+            }
+
+        try:
+            self.repository.bootstrap()
+            self._graph_runtime_status = "ready"
+            self._last_runtime_error = None
+        except Exception as exc:
+            self._graph_runtime_status = "degraded"
+            self._last_runtime_error = str(exc)
+        return {
+            "graph_runtime_status": self._graph_runtime_status,
+            "last_runtime_error": self._last_runtime_error,
+        }
 
     def resolve_relation_context(
         self,
@@ -67,6 +98,7 @@ class ProjectionService:
             )
 
         try:
+            self.probe_runtime()
             context = self.repository.read_relation_context(
                 db,
                 world_id=world_id,
@@ -95,6 +127,7 @@ class ProjectionService:
             outbox_event.status = "processing"
             db.flush()
             try:
+                self.probe_runtime()
                 bundle = self._load_bundle(db, outbox_event)
                 result = self.repository.project_bundle(bundle)
                 self._persist_projection_records(db, outbox_event, bundle.event, result.records)
@@ -112,6 +145,7 @@ class ProjectionService:
     def rebuild(self, db: Session, world_id: str) -> list[dict]:
         db.execute(delete(ProjectionRecord).where(ProjectionRecord.world_id == world_id))
         db.flush()
+        self.probe_runtime()
         self.repository.clear_world(world_id=world_id, entity_vids=self._world_vids(db, world_id))
 
         created: list[dict] = []

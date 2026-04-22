@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import Settings, get_settings
 from app.core.db import create_session_factory
 from app.core.prompts import PromptRegistry
+from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.identity.oidc import BaseOIDCAdapter, build_oidc_adapter
 from app.modules.llm_harness.service import ModelRouter
@@ -19,6 +20,7 @@ class AppContainer:
     oidc_adapter: BaseOIDCAdapter
     prompt_registry: PromptRegistry
     model_router: ModelRouter
+    economy_service: EconomyService
     projection_service: ProjectionService
 
 
@@ -27,6 +29,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     session_factory = create_session_factory(resolved_settings)
     prompt_registry = PromptRegistry(resolved_settings.prompt_dir)
     model_router = ModelRouter(resolved_settings, prompt_registry)
+    economy_service = EconomyService(resolved_settings)
     projection_service = ProjectionService(resolved_settings)
     return AppContainer(
         settings=resolved_settings,
@@ -34,5 +37,6 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         oidc_adapter=build_oidc_adapter(resolved_settings),
         prompt_registry=prompt_registry,
         model_router=model_router,
+        economy_service=economy_service,
         projection_service=projection_service,
     )
