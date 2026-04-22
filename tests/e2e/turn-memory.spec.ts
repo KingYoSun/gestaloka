@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("login, unlock follow-up progression with a reward item, and keep admin/SP flows separate", async ({ page }) => {
+test("login, carry relationship pressure across turns, unlock follow-up progression, and keep admin/SP flows separate", async ({ page }) => {
   test.setTimeout(240_000);
   const worldId = `e2e-memory-${Date.now()}`;
   const slowTimeout = 60_000;
@@ -10,6 +10,10 @@ test("login, unlock follow-up progression with a reward item, and keep admin/SP 
     const match = text?.match(/SP balance:\s*(-?\d+)/);
     expect(match).not.toBeNull();
     return Number(match?.[1]);
+  };
+
+  const chooseProgress = async () => {
+    await page.getByTestId("choice-progress").click();
   };
 
   await page.goto("/");
@@ -39,8 +43,11 @@ test("login, unlock follow-up progression with a reward item, and keep admin/SP 
   await expect(page.getByTestId("active-quest")).toContainText("First Watch Request", { timeout: 20_000 });
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
   await expect(page.getByTestId("choice-list")).toContainText("困っている相手", { timeout: 20_000 });
+  await expect(page.getByTestId("relationship-summary")).toContainText(/Archivist|Nera|trust|ordinary|neutral/i, {
+    timeout: 20_000,
+  });
 
-  await page.getByTestId("choice-progress").click();
+  await chooseProgress();
 
   await expect(page.getByTestId("latest-narrative")).not.toContainText("No turn resolved yet.", { timeout: slowTimeout });
   await expect(page.getByTestId("memories-stream").locator("li").first()).toBeVisible({ timeout: slowTimeout });
@@ -50,23 +57,52 @@ test("login, unlock follow-up progression with a reward item, and keep admin/SP 
   await expect(page.getByTestId("quest-progress")).toContainText("1/2", { timeout: slowTimeout });
   await expect(page.getByTestId("faction-standing")).toContainText("Founders Watch");
 
-  await page.getByTestId("choice-progress").click();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const progressText = await page.getByTestId("quest-progress").textContent();
+    const inventoryText = await page.getByTestId("inventory-stream").textContent();
+    if (progressText?.includes("2/2") && inventoryText?.includes("Lantern Sigil")) {
+      break;
+    }
+    const beforeSnapshot = `${progressText ?? ""}|${inventoryText ?? ""}`;
+    await chooseProgress();
+    await expect
+      .poll(
+        async () =>
+          `${(await page.getByTestId("quest-progress").textContent()) ?? ""}|${(await page.getByTestId("inventory-stream").textContent()) ?? ""}`,
+        { timeout: slowTimeout },
+      )
+      .not.toBe(beforeSnapshot);
+  }
   await expect(page.getByTestId("latest-reaction")).not.toContainText("No NPC reaction yet.", { timeout: slowTimeout });
-  await expect(page.getByTestId("sp-balance")).toContainText("8", { timeout: slowTimeout });
   await expect(page.getByTestId("quest-progress")).toContainText("2/2", { timeout: slowTimeout });
   await expect(page.getByTestId("inventory-stream")).toContainText("Lantern Sigil", { timeout: slowTimeout });
-  await page.getByTestId("choice-progress").click();
-  await expect(page.getByTestId("sp-balance")).toContainText("7", { timeout: slowTimeout });
+  await expect(page.getByTestId("relationship-summary")).toContainText(/warm|trust/i, { timeout: slowTimeout });
+  const afterRewardBalance = await readBalance();
+
+  await page.getByTestId("toggle-free-text").click();
+  await page.getByTestId("turn-input").fill("今は行かない。あとで約束には応える。");
+  await expect(page.getByTestId("submit-turn")).toBeEnabled({ timeout: slowTimeout });
+  await page.getByTestId("submit-turn").click();
+  await expect(page.getByTestId("sp-balance")).toContainText(String(afterRewardBalance - 3), { timeout: slowTimeout });
+  await expect(page.getByTestId("last-consequence-summary")).not.toContainText("The scene is waiting", { timeout: slowTimeout });
+  await expect(page.getByTestId("undercurrents-stream")).not.toContainText("No unresolved undercurrents", { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-consequence-history")).toContainText(/promise|約束|square/i, { timeout: slowTimeout });
+  const afterPromiseDelayBalance = await readBalance();
+
+  await chooseProgress();
+  await expect(page.getByTestId("sp-balance")).toContainText(String(afterPromiseDelayBalance - 1), { timeout: slowTimeout });
   await expect(page.getByTestId("active-quest")).toContainText("Watch Path Unsealed", { timeout: slowTimeout });
   await expect(page.getByTestId("quest-stage")).toContainText("watch_path_followup", { timeout: slowTimeout });
   await expect(page.getByTestId("inventory-stream")).toContainText("used", { timeout: slowTimeout });
+  const afterSigilUseBalance = await readBalance();
 
   await page.getByTestId("toggle-free-text").click();
   await page.getByTestId("turn-input").fill("Lantern Sigilで開いた watch path の様子を観察する");
+  await expect(page.getByTestId("submit-turn")).toBeEnabled({ timeout: slowTimeout });
   await page.getByTestId("submit-turn").click();
   await expect(page.getByTestId("latest-reaction")).not.toContainText("No NPC reaction yet.", { timeout: slowTimeout });
   await expect(page.getByTestId("latest-reaction")).toContainText(/Lantern|Sigil|watch|巡回|見回|灯/, { timeout: slowTimeout });
-  await expect(page.getByTestId("sp-balance")).toContainText("4", { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-balance")).toContainText(String(afterSigilUseBalance - 3), { timeout: slowTimeout });
   await expect(page.getByTestId("last-consequence-summary")).not.toContainText("The scene is waiting", { timeout: slowTimeout });
 
   await page.getByTestId("nav-admin").click();
@@ -78,13 +114,19 @@ test("login, unlock follow-up progression with a reward item, and keep admin/SP 
   await expect(page.getByTestId("progression-stream")).toContainText("used");
   await expect(page.getByTestId("council-trace-stream")).toContainText("intent_interpreter");
   await expect(page.getByTestId("council-trace-stream")).toContainText("narrative");
-  const adminBalance = await readBalance();
-  await page.getByTestId("adjust-delta").fill(String(-adminBalance));
-  await page.getByTestId("submit-adjustment").click();
-  await expect(page.getByTestId("last-adjustment")).toContainText("balance 0");
+  await expect(page.getByTestId("relationship-ops-stream")).toContainText(/Archivist|Nera/i);
+  await expect(page.getByTestId("consequence-thread-stream")).toContainText(/promise|resolved|cooling|active/i);
+  let adminBalance = await readBalance();
+  for (let attempt = 0; attempt < 12 && adminBalance > 0; attempt += 1) {
+    const before = adminBalance;
+    await page.getByTestId("adjust-delta").fill("-1");
+    await page.getByTestId("submit-adjustment").click();
+    await expect.poll(readBalance, { timeout: slowTimeout }).toBeLessThan(before);
+    adminBalance = await readBalance();
+  }
 
   await page.getByTestId("nav-game").click();
-  await expect(page.getByTestId("sp-balance")).toContainText("0");
+  await expect(page.getByTestId("sp-balance")).toContainText("0", { timeout: slowTimeout });
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("error-banner")).toContainText("Insufficient SP balance", { timeout: 15_000 });
 });

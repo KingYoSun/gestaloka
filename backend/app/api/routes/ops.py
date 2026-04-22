@@ -23,6 +23,8 @@ from app.modules.admin_ops.service import (
     sp_overview,
     world_memory_search,
     world_graph_summary,
+    world_relationships,
+    world_consequence_threads,
 )
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
@@ -155,6 +157,28 @@ def get_world_memory_search(
         location_id=location_id,
         limit=limit,
     )
+
+
+@router.get("/worlds/{world_id}/relationships")
+def get_world_relationships(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_relationships(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/consequence-threads")
+def get_world_consequence_threads(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_consequence_threads(db, world_id=world_id)
 
 
 @router.get("/sp/overview")

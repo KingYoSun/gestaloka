@@ -113,6 +113,10 @@ async def resolve_turn(
         await realtime_hub.emit(payload.session_id, "faction.standing.updated", {"items": result.faction_updates})
     if result.inventory_updates:
         await realtime_hub.emit(payload.session_id, "inventory.changed", {"items": result.inventory_updates})
+    if result.relationship_updates:
+        await realtime_hub.emit(payload.session_id, "relationship.updated", {"items": result.relationship_updates})
+    if result.consequence_updates:
+        await realtime_hub.emit(payload.session_id, "consequence.updated", {"items": result.consequence_updates})
 
     processed = container.projection_service.process_pending(db)
     db.commit()
@@ -143,11 +147,14 @@ async def resolve_turn(
                 "quest_updates": [],
                 "faction_updates": [],
                 "inventory_updates": [],
+                "relationship_updates": [],
+                "consequence_updates": [],
                 "action_type": result.action_type,
                 "input_mode": result.input_mode,
                 "interpreted_intent": result.interpreted_intent,
                 "next_choices": result.next_choices,
                 "consequence_summary": result.consequence_summary,
+                "scene_tone": result.scene_tone,
             },
         )
 
@@ -165,9 +172,12 @@ async def resolve_turn(
         "interpreted_intent": result.interpreted_intent,
         "next_choices": result.next_choices,
         "consequence_summary": result.consequence_summary,
+        "scene_tone": result.scene_tone,
         "quest_updates": result.quest_updates,
         "faction_updates": result.faction_updates,
         "inventory_updates": result.inventory_updates,
+        "relationship_updates": result.relationship_updates,
+        "consequence_updates": result.consequence_updates,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)
 

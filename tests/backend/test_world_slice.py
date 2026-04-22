@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.models.entities import CharacterSheet, Faction, FactionStanding, QuestAssignment, QuestTemplate
+from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 
 
@@ -67,3 +68,41 @@ def test_session_seed_is_idempotent_for_character_faction_and_quest(client, cont
         assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 1
         assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
         assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 1
+
+
+def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():
+    steady = ConsequenceRuleEngine.evaluate(
+        ConsequenceRuleInput(
+            world_tags=["aid_local"],
+            consequence_tags=["earned_trust"],
+            relationship_strength=0.55,
+            active_threads=[],
+        )
+    )
+    assert steady.outcome_band == "steady"
+    assert steady.relationship_delta > 0
+    assert steady.thread_action == "none"
+
+    tangled = ConsequenceRuleEngine.evaluate(
+        ConsequenceRuleInput(
+            world_tags=["promise_followup"],
+            consequence_tags=["missed_timing"],
+            relationship_strength=0.6,
+            active_threads=[],
+        )
+    )
+    assert tangled.outcome_band == "tangled"
+    assert tangled.thread_type == "promise"
+    assert tangled.thread_action == "opened"
+
+    setback = ConsequenceRuleEngine.evaluate(
+        ConsequenceRuleInput(
+            world_tags=["none"],
+            consequence_tags=["overreach"],
+            relationship_strength=0.6,
+            active_threads=[],
+        )
+    )
+    assert setback.outcome_band == "setback"
+    assert setback.thread_type == "scrutiny"
+    assert setback.relationship_delta < 0

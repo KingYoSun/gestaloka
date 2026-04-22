@@ -14,13 +14,14 @@ from app.modules.actor.service import (
     ensure_relationship,
     get_or_create_guide_npc,
     get_player_actor_for_user,
-    increment_relationship_strength,
 )
 from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.gm_council.service import CouncilRequest
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
+from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
 from app.modules.world_state.service import (
+    apply_consequence_updates,
     apply_world_tag_updates,
     build_session_state,
     ensure_starter_location,
@@ -56,11 +57,14 @@ class TurnResolutionResult:
     quest_updates: list[dict]
     faction_updates: list[dict]
     inventory_updates: list[dict]
+    relationship_updates: list[dict]
+    consequence_updates: list[dict]
     action_type: str
     input_mode: str
     interpreted_intent: dict[str, Any]
     next_choices: list[dict[str, Any]]
     consequence_summary: str
+    scene_tone: str
     progress_phases: list[str]
     error_detail: str | None = None
     status_code: int = 200
@@ -402,7 +406,7 @@ def _resolve_narrative_turn_for_session(
                 item_id=resolved_item_id,
                 input_mode=input_mode,
                 interpreted_intent=interpreted_intent,
-                progress_phases=[*progress_phases, "item_use", "choice_generation"],
+                progress_phases=[*progress_phases, "item_use"],
                 existing_turn=turn,
                 action_label=input_text,
                 model_lane=resolution.final_lane,
@@ -423,63 +427,12 @@ def _resolve_narrative_turn_for_session(
                 },
             )
 
-    increment_relationship_strength(
-        db,
-        world_id=game_session.world_id,
-        from_actor_id=guide_npc.id,
-        to_actor_id=player_actor.id,
-    )
-    increment_relationship_strength(
-        db,
-        world_id=game_session.world_id,
-        from_actor_id=player_actor.id,
-        to_actor_id=guide_npc.id,
-    )
     state_updates = apply_world_tag_updates(
         db,
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         world_tags=payload.world_tags,
     )
-    post_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-    )
-    next_choices = _canonicalize_next_choices(
-        [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
-        post_state.get("next_choices") or [],
-    )
-
-    turn.model_lane = resolution.final_lane
-    turn.resolved_output = {
-        "status": "resolved",
-        "action_type": "narrative",
-        "resolution_mode": "gm_council",
-        "input_mode": input_mode,
-        "selected_choice_id": selected_choice.get("choice_id") if selected_choice else None,
-        "used_fallback": resolution.used_fallback,
-        "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
-        "narrative": payload.narrative,
-        "npc_reaction": payload.npc_reaction,
-        "graph_context_status": graph_context.status,
-        "world_tags": payload.world_tags,
-        "interpreted_intent": interpreted_intent,
-        "consequence_summary": payload.consequence_summary,
-        "next_choices": next_choices,
-        "quest_updates": state_updates["quest_updates"],
-        "faction_updates": state_updates["faction_updates"],
-        "inventory_updates": state_updates["inventory_updates"],
-        "council_trace": [
-            {
-                "role": item.council_role,
-                "approval_status": item.approval_status,
-                "final_lane": item.final_lane,
-            }
-            for item in resolution.role_runs
-        ],
-    }
 
     event = Event(
         world_id=game_session.world_id,
@@ -503,6 +456,81 @@ def _resolve_narrative_turn_for_session(
     db.add(event)
     db.flush()
 
+    consequence_result = apply_consequence_updates(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        counterpart_actor_id=guide_npc.id,
+        counterpart_name=guide_npc.display_name,
+        location_id=prepared.location_id,
+        source_event_id=event.id,
+        world_tags=payload.world_tags,
+        consequence_tags=payload.consequence_tags
+        or fallback_consequence_tags(
+            world_tags=payload.world_tags,
+            action_kind="narrative",
+            fail_forward=bool(interpreted_intent.get("fail_forward")),
+        ),
+        action_kind="narrative",
+        fail_forward=bool(interpreted_intent.get("fail_forward")),
+    )
+
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    combined_faction_updates = [*state_updates["faction_updates"], *consequence_result.faction_updates]
+    next_choices = _canonicalize_next_choices(
+        [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
+        post_state.get("next_choices") or [],
+    )
+
+    turn.model_lane = resolution.final_lane
+    turn.resolved_output = {
+        "status": "resolved",
+        "action_type": "narrative",
+        "resolution_mode": "gm_council",
+        "input_mode": input_mode,
+        "selected_choice_id": selected_choice.get("choice_id") if selected_choice else None,
+        "used_fallback": resolution.used_fallback,
+        "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+        "narrative": payload.narrative,
+        "npc_reaction": payload.npc_reaction,
+        "graph_context_status": graph_context.status,
+        "world_tags": payload.world_tags,
+        "interpreted_intent": interpreted_intent,
+        "consequence_tags": payload.consequence_tags,
+        "outcome_band": consequence_result.outcome_band,
+        "scene_tone": consequence_result.scene_tone,
+        "consequence_summary": consequence_result.consequence_summary,
+        "next_choices": next_choices,
+        "quest_updates": state_updates["quest_updates"],
+        "faction_updates": combined_faction_updates,
+        "inventory_updates": state_updates["inventory_updates"],
+        "relationship_updates": consequence_result.relationship_updates,
+        "consequence_updates": consequence_result.consequence_updates,
+        "council_trace": [
+            {
+                "role": item.council_role,
+                "approval_status": item.approval_status,
+                "final_lane": item.final_lane,
+            }
+            for item in resolution.role_runs
+        ],
+    }
+    event.payload = {
+        **event.payload,
+        "consequence_tags": payload.consequence_tags,
+        "outcome_band": consequence_result.outcome_band,
+        "scene_tone": consequence_result.scene_tone,
+        "consequence_summary": consequence_result.consequence_summary,
+        "faction_updates": combined_faction_updates,
+        "relationship_updates": consequence_result.relationship_updates,
+        "consequence_updates": consequence_result.consequence_updates,
+    }
+
     memories = container.memory_service.materialize_memories(
         db,
         world_id=game_session.world_id,
@@ -514,7 +542,8 @@ def _resolve_narrative_turn_for_session(
                 "actor_id": guide_npc.id if draft.scope == "actor" else None,
             }
             for draft in payload.memories
-        ],
+        ]
+        + consequence_result.additional_memory_drafts,
     )
     db.add(
         OutboxEvent(
@@ -542,14 +571,17 @@ def _resolve_narrative_turn_for_session(
         sp_balance=prepared.debit.balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
         quest_updates=state_updates["quest_updates"],
-        faction_updates=state_updates["faction_updates"],
+        faction_updates=combined_faction_updates,
         inventory_updates=state_updates["inventory_updates"],
+        relationship_updates=consequence_result.relationship_updates,
+        consequence_updates=consequence_result.consequence_updates,
         action_type="narrative",
         input_mode=input_mode,
         interpreted_intent=interpreted_intent,
         next_choices=next_choices,
-        consequence_summary=payload.consequence_summary,
-        progress_phases=[*progress_phases, "choice_generation"],
+        consequence_summary=consequence_result.consequence_summary,
+        scene_tone=consequence_result.scene_tone,
+        progress_phases=[*progress_phases, "consequence_resolution", "choice_generation"],
     )
 
 
@@ -663,13 +695,6 @@ def _resolve_reward_item_turn_for_session(
     npc_reaction = (
         f"{guide_npc.display_name}はLantern Sigilを確かめ、次の watch path が正式に開いたと告げた。"
     )
-    post_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-    )
-    next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
     resolved_interpreted_intent = interpreted_intent or {
         "input_mode": input_mode,
         "canonical_action_kind": "use_reward_item",
@@ -691,7 +716,7 @@ def _resolve_reward_item_turn_for_session(
         "graph_context_status": graph_context_status,
         "interpreted_intent": resolved_interpreted_intent,
         "consequence_summary": resolved_consequence_summary,
-        "next_choices": next_choices,
+        "next_choices": [],
         "quest_updates": outcome.quest_updates,
         "faction_updates": outcome.faction_updates,
         "inventory_updates": outcome.inventory_updates,
@@ -718,12 +743,35 @@ def _resolve_reward_item_turn_for_session(
     db.add(event)
     db.flush()
 
+    consequence_result = apply_consequence_updates(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        counterpart_actor_id=guide_npc.id,
+        counterpart_name=guide_npc.display_name,
+        location_id=prepared.location_id,
+        source_event_id=event.id,
+        world_tags=["collect_reward"],
+        consequence_tags=(resolved_interpreted_intent.get("consequence_tags") if isinstance(resolved_interpreted_intent, dict) else None)
+        or ["sigil_respect", "kept_promise"],
+        action_kind="use_reward_item",
+        fail_forward=False,
+    )
+    combined_faction_updates = [*outcome.faction_updates, *consequence_result.faction_updates]
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
+
     memories = container.memory_service.materialize_memories(
         db,
         world_id=game_session.world_id,
         source_event_id=event.id,
         location_id=prepared.location_id,
-        drafts=outcome.memory_drafts,
+        drafts=outcome.memory_drafts + consequence_result.additional_memory_drafts,
     )
     outcome.item.used_event_id = event.id
     db.add(
@@ -741,6 +789,25 @@ def _resolve_reward_item_turn_for_session(
     )
     db.flush()
 
+    turn.resolved_output = {
+        **turn.resolved_output,
+        "relationship_updates": consequence_result.relationship_updates,
+        "consequence_updates": consequence_result.consequence_updates,
+        "outcome_band": consequence_result.outcome_band,
+        "scene_tone": consequence_result.scene_tone,
+        "consequence_summary": consequence_result.consequence_summary,
+        "faction_updates": combined_faction_updates,
+    }
+    event.payload = {
+        **event.payload,
+        "relationship_updates": consequence_result.relationship_updates,
+        "consequence_updates": consequence_result.consequence_updates,
+        "outcome_band": consequence_result.outcome_band,
+        "scene_tone": consequence_result.scene_tone,
+        "consequence_summary": consequence_result.consequence_summary,
+        "faction_updates": combined_faction_updates,
+    }
+
     return TurnResolutionResult(
         turn=turn,
         event=event,
@@ -752,14 +819,21 @@ def _resolve_reward_item_turn_for_session(
         sp_balance=prepared.debit.balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
         quest_updates=outcome.quest_updates,
-        faction_updates=outcome.faction_updates,
+        faction_updates=combined_faction_updates,
         inventory_updates=outcome.inventory_updates,
+        relationship_updates=consequence_result.relationship_updates,
+        consequence_updates=consequence_result.consequence_updates,
         action_type="use_reward_item",
         input_mode=input_mode,
         interpreted_intent=resolved_interpreted_intent,
         next_choices=next_choices,
-        consequence_summary=resolved_consequence_summary,
-        progress_phases=progress_phases or ["item_use"],
+        consequence_summary=consequence_result.consequence_summary,
+        scene_tone=consequence_result.scene_tone,
+        progress_phases=[
+            *(progress_phases or ["item_use"]),
+            *([] if "consequence_resolution" in (progress_phases or []) else ["consequence_resolution"]),
+            *([] if "choice_generation" in (progress_phases or []) else ["choice_generation"]),
+        ],
     )
 
 
@@ -797,6 +871,10 @@ def _build_failed_turn_result(
         "interpreted_intent": interpreted_intent,
         "next_choices": next_choices,
         "consequence_summary": consequence_summary,
+        "relationship_updates": [],
+        "consequence_updates": [],
+        "scene_tone": scene_tone_for_band("setback"),
+        "outcome_band": "setback",
         **(failure_payload or {}),
     }
     failure_event = Event(
@@ -850,11 +928,14 @@ def _build_failed_turn_result(
         quest_updates=[],
         faction_updates=[],
         inventory_updates=[],
+        relationship_updates=[],
+        consequence_updates=[],
         action_type=action_type,
         input_mode=input_mode,
         interpreted_intent=interpreted_intent,
         next_choices=next_choices,
         consequence_summary=consequence_summary,
+        scene_tone=scene_tone_for_band("setback"),
         progress_phases=progress_phases,
         error_detail=failure_reason,
         status_code=status_code,
@@ -1051,32 +1132,21 @@ def _canonicalize_next_choices(
         if fallback_action_kind == "use_reward_item":
             action_kind = "use_reward_item"
         label = str(
-            (
-                fallback.get("label")
-                if action_kind == "use_reward_item"
-                else current.get("label")
-            )
-            or fallback.get("label")
+            fallback.get("label")
+            or current.get("label")
             or fallback.get("canonical_input_text")
             or posture
         ).strip()
         canonical_input_text = str(
-            (
-                fallback.get("canonical_input_text")
-                if action_kind == "use_reward_item"
-                else current.get("canonical_input_text") or current.get("intent_summary")
-            )
-            or fallback.get("canonical_input_text")
+            fallback.get("canonical_input_text")
+            or current.get("canonical_input_text")
+            or current.get("intent_summary")
             or label
         ).strip()
         summary = str(
-            (
-                fallback.get("summary")
-                if action_kind == "use_reward_item"
-                else current.get("summary")
-            )
+            fallback.get("summary")
+            or current.get("summary")
             or current.get("intent_summary")
-            or fallback.get("summary")
             or label
         ).strip()
         normalized.append(

@@ -115,6 +115,59 @@ def ensure_relationship(
     return relationship
 
 
+def get_relationship(
+    db: Session,
+    *,
+    world_id: str,
+    from_actor_id: str,
+    to_actor_id: str,
+    relationship_type: str,
+) -> Relationship | None:
+    return db.execute(
+        select(Relationship).where(
+            Relationship.world_id == world_id,
+            Relationship.from_actor_id == from_actor_id,
+            Relationship.to_entity_id == to_actor_id,
+            Relationship.relationship_type == relationship_type,
+        )
+    ).scalar_one_or_none()
+
+
+def adjust_relationship_strength(
+    db: Session,
+    *,
+    world_id: str,
+    from_actor_id: str,
+    to_actor_id: str,
+    relationship_type: str = "KNOWS",
+    delta: float = 0.0,
+    default_strength: float = 0.55,
+) -> Relationship:
+    relationship = get_relationship(
+        db,
+        world_id=world_id,
+        from_actor_id=from_actor_id,
+        to_actor_id=to_actor_id,
+        relationship_type=relationship_type,
+    )
+    if relationship is None:
+        relationship = Relationship(
+            world_id=world_id,
+            from_actor_id=from_actor_id,
+            to_entity_id=to_actor_id,
+            to_actor_id=to_actor_id,
+            relationship_type=relationship_type,
+            strength=default_strength,
+        )
+        db.add(relationship)
+        db.flush()
+
+    relationship.to_actor_id = to_actor_id
+    relationship.strength = max(0.0, min(1.0, round(float(relationship.strength) + delta, 3)))
+    db.flush()
+    return relationship
+
+
 def increment_relationship_strength(
     db: Session,
     *,
@@ -124,14 +177,13 @@ def increment_relationship_strength(
     relationship_type: str = "KNOWS",
     increment: float = 0.08,
 ) -> Relationship:
-    relationship = ensure_relationship(
+    relationship = adjust_relationship_strength(
         db,
         world_id=world_id,
         from_actor_id=from_actor_id,
         to_actor_id=to_actor_id,
         relationship_type=relationship_type,
-        strength=0.55,
+        delta=increment,
+        default_strength=0.55,
     )
-    relationship.strength = min(1.0, round(relationship.strength + increment, 3))
-    db.flush()
     return relationship

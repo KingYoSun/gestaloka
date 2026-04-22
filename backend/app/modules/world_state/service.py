@@ -8,10 +8,13 @@ from typing import Any
 
 import yaml
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.models.entities import (
+    Actor,
     CharacterSheet,
+    ConsequenceThread,
+    Event,
     Faction,
     FactionStanding,
     Item,
@@ -19,9 +22,28 @@ from app.models.entities import (
     QuestAssignment,
     QuestTemplate,
     Relationship,
+    Turn,
     World,
     new_id,
     starter_location_id,
+)
+from app.modules.actor.service import adjust_relationship_strength, get_relationship
+from app.modules.world_state.consequence import (
+    ConsequenceRuleEngine,
+    ConsequenceRuleInput,
+    ConsequenceTag,
+    ConsequenceThreadSnapshot,
+    OutcomeBand,
+    PressureBand,
+    ThreadStatus,
+    ThreadType,
+    fallback_consequence_tags,
+    normalize_consequence_tags,
+    relationship_band,
+    relationship_summary,
+    scene_tone_for_band,
+    thread_summary,
+    thread_title,
 )
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, WorldTag, standing_band
 
@@ -49,6 +71,17 @@ class RewardItemUseOutcome:
     event_narrative: str
     event_payload: dict[str, Any]
     memory_drafts: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class ConsequenceApplicationOutcome:
+    relationship_updates: list[dict[str, Any]]
+    consequence_updates: list[dict[str, Any]]
+    faction_updates: list[dict[str, Any]]
+    additional_memory_drafts: list[dict[str, Any]]
+    outcome_band: OutcomeBand
+    scene_tone: str
+    consequence_summary: str
 
 
 def _seed_path() -> Path:
@@ -507,6 +540,190 @@ def list_inventory_summaries(db: Session, world_id: str, actor_id: str) -> list[
     return [item_summary_to_dict(item) for item in items]
 
 
+def _relationship_rows(db: Session, world_id: str, actor_id: str) -> list[tuple[Relationship, Actor]]:
+    rows = list(
+        db.execute(
+            select(Relationship, Actor)
+            .join(Actor, (Actor.id == Relationship.to_actor_id) & (Actor.world_id == Relationship.world_id))
+            .where(
+                Relationship.world_id == world_id,
+                Relationship.from_actor_id == actor_id,
+                Relationship.to_actor_id.is_not(None),
+                Relationship.relationship_type == "KNOWS",
+            )
+            .order_by(Relationship.updated_at.desc(), Actor.display_name.asc())
+        ).all()
+    )
+    return rows
+
+
+def list_relationship_summaries(db: Session, world_id: str, actor_id: str) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    active_threads = list_active_consequence_threads(db, world_id, actor_id)
+    thread_by_counterpart_id = {
+        item.get("counterpart_actor_id"): item
+        for item in active_threads
+        if item.get("counterpart_actor_id") is not None
+    }
+    for relationship, counterpart in _relationship_rows(db, world_id, actor_id):
+        band = relationship_band(float(relationship.strength))
+        active_thread = thread_by_counterpart_id.get(counterpart.id)
+        summaries.append(
+            {
+                "actor_id": counterpart.id,
+                "display_name": counterpart.display_name,
+                "band": band,
+                "summary": relationship_summary(
+                    counterpart.display_name,
+                    band,
+                    thread_summary_text=str(active_thread.get("summary")) if active_thread is not None else None,
+                ),
+            }
+        )
+    return summaries
+
+
+def list_active_consequence_threads(db: Session, world_id: str, actor_id: str) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(ConsequenceThread, Actor)
+            .join(
+                Actor,
+                (Actor.id == ConsequenceThread.counterpart_actor_id) & (Actor.world_id == ConsequenceThread.world_id),
+                isouter=True,
+            )
+            .where(
+                ConsequenceThread.world_id == world_id,
+                ConsequenceThread.owner_actor_id == actor_id,
+                ConsequenceThread.status.in_(("active", "cooling")),
+            )
+            .order_by(ConsequenceThread.updated_at.desc(), ConsequenceThread.id.desc())
+        ).all()
+    )
+    return [
+        {
+            "id": thread.id,
+            "counterpart_actor_id": thread.counterpart_actor_id,
+            "counterpart_name": counterpart.display_name if counterpart is not None else None,
+            "thread_type": thread.thread_type,
+            "status": thread.status,
+            "pressure_band": thread.pressure_band,
+            "title": thread.title,
+            "summary": thread.summary,
+        }
+        for thread, counterpart in rows
+    ]
+
+
+def list_recent_consequence_history(db: Session, world_id: str, actor_id: str) -> list[str]:
+    turns = list(
+        db.execute(
+            select(Turn)
+            .where(Turn.world_id == world_id, Turn.actor_id == actor_id)
+            .order_by(Turn.created_at.desc(), Turn.id.desc())
+            .limit(12)
+        ).scalars()
+    )
+    summaries: list[str] = []
+    for turn in turns:
+        summary = str((turn.resolved_output or {}).get("consequence_summary") or "").strip()
+        if not summary:
+            continue
+        summaries.append(summary)
+        if len(summaries) >= 3:
+            break
+    return summaries
+
+
+def list_relationship_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
+    from_actor = aliased(Actor)
+    to_actor = aliased(Actor)
+    rows = list(
+        db.execute(
+            select(Relationship, from_actor, to_actor)
+            .join(
+                from_actor,
+                (from_actor.id == Relationship.from_actor_id) & (from_actor.world_id == Relationship.world_id),
+            )
+            .join(
+                to_actor,
+                (to_actor.id == Relationship.to_actor_id) & (to_actor.world_id == Relationship.world_id),
+            )
+            .where(
+                Relationship.world_id == world_id,
+                Relationship.relationship_type == "KNOWS",
+                Relationship.to_actor_id.is_not(None),
+            )
+            .order_by(Relationship.updated_at.desc(), Relationship.id.desc())
+        ).all()
+    )
+    payload: list[dict[str, Any]] = []
+    for relationship, from_actor_row, to_actor_row in rows:
+        payload.append(
+            {
+                "world_id": world_id,
+                "relationship_id": relationship.id,
+                "from_actor_id": from_actor_row.id,
+                "from_actor_name": from_actor_row.display_name,
+                "to_actor_id": to_actor_row.id,
+                "to_actor_name": to_actor_row.display_name,
+                "relationship_type": relationship.relationship_type,
+                "strength": round(float(relationship.strength), 3),
+                "band": relationship_band(float(relationship.strength)),
+            }
+        )
+    return payload
+
+
+def list_consequence_threads_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
+    owner_alias = Actor.__table__.alias("owner_actor")
+    counterpart_alias = Actor.__table__.alias("counterpart_actor")
+    rows = list(
+        db.execute(
+            select(
+                ConsequenceThread,
+                owner_alias.c.id,
+                owner_alias.c.display_name,
+                counterpart_alias.c.id,
+                counterpart_alias.c.display_name,
+            )
+            .select_from(ConsequenceThread)
+            .join(
+                owner_alias,
+                (owner_alias.c.id == ConsequenceThread.owner_actor_id) & (owner_alias.c.world_id == ConsequenceThread.world_id),
+            )
+            .join(
+                counterpart_alias,
+                (counterpart_alias.c.id == ConsequenceThread.counterpart_actor_id)
+                & (counterpart_alias.c.world_id == ConsequenceThread.world_id),
+                isouter=True,
+            )
+            .where(ConsequenceThread.world_id == world_id)
+            .order_by(ConsequenceThread.updated_at.desc(), ConsequenceThread.id.desc())
+        ).all()
+    )
+    payload: list[dict[str, Any]] = []
+    for thread, owner_id, owner_name, counterpart_id, counterpart_name in rows:
+        payload.append(
+            {
+                "id": thread.id,
+                "world_id": world_id,
+                "owner_actor_id": owner_id,
+                "owner_actor_name": owner_name,
+                "counterpart_actor_id": counterpart_id,
+                "counterpart_actor_name": counterpart_name,
+                "thread_type": thread.thread_type,
+                "status": thread.status,
+                "pressure_band": thread.pressure_band,
+                "title": thread.title,
+                "summary": thread.summary,
+                "updated_at": thread.updated_at.isoformat(),
+                "resolved_at": thread.resolved_at.isoformat() if thread.resolved_at is not None else None,
+            }
+        )
+    return payload
+
+
 def narrative_state_bands(character: dict[str, Any], factions: list[dict[str, Any]]) -> dict[str, str]:
     hp = int(character.get("hp") or 0)
     focus = int(character.get("focus") or 0)
@@ -557,10 +774,15 @@ def important_inventory_affordances(inventory: list[dict[str, Any]]) -> list[dic
 def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     quests = session_state.get("quests") or []
     inventory = session_state.get("inventory") or []
+    relationships = session_state.get("relationships") or []
+    active_threads = session_state.get("active_consequence_threads") or []
     active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else {})
     stage_key = str(active_quest.get("stage_key") or "starter_watch")
     progress = int(active_quest.get("progress") or 0)
     usable_item = next((item for item in inventory if item.get("usable")), None)
+    primary_relationship = relationships[0] if relationships else {}
+    relationship_band_name = str(primary_relationship.get("band") or "neutral")
+    thread_types = {str(item.get("thread_type") or "") for item in active_threads}
 
     safe_choice = {
         "choice_id": "safe",
@@ -586,6 +808,52 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         "canonical_input_text": "広場の空気や旅人の事情を探り、何が起きているか確かめる",
         "action_kind": "narrative",
     }
+
+    if "promise" in thread_types:
+        safe_choice = {
+            **safe_choice,
+            "label": "急がず場を保ちつつ、宙に浮いた約束の手触りを確かめる",
+            "summary": "約束を悪化させず、まず場を落ち着かせる。",
+            "canonical_input_text": "場を保ちつつ、宙に浮いた約束をどう受け止めるか静かに確かめる",
+        }
+        progress_choice = {
+            **progress_choice,
+            "label": "まだ宙に浮く約束へきちんと応え、次の進展を作る",
+            "summary": "約束の圧力へ正面から応え、関係と依頼を前に進める。",
+            "canonical_input_text": "宙に浮いた約束へ応え、見回りの次の段取りをきちんと進める",
+        }
+        explore_choice = {
+            **explore_choice,
+            "label": "約束がどう噂や視線に残っているかを探る",
+            "summary": "物語のしこりの広がり方を探る。",
+            "canonical_input_text": "約束が広場の噂や視線にどう残っているかを探る",
+        }
+    elif "scrutiny" in thread_types:
+        safe_choice = {
+            **safe_choice,
+            "label": "見張りの視線を刺激しないよう、慎重に場の空気を読む",
+            "summary": "警戒をこれ以上高めずに場を保つ。",
+            "canonical_input_text": "見張りの視線を刺激しないよう慎重に場の空気を読む",
+        }
+        progress_choice = {
+            **progress_choice,
+            "label": "見られていることを受け止めたまま、着実に前へ進む",
+            "summary": "警戒下でも進展を作る。",
+            "canonical_input_text": "見られていることを受け止めたまま着実に前へ進む",
+        }
+        explore_choice = {
+            **explore_choice,
+            "label": "誰がどこまで見ているのか、視線の流れを探る",
+            "summary": "警戒の源を見極める。",
+            "canonical_input_text": "誰がどこまで見ているのか、広場の視線の流れを探る",
+        }
+    elif relationship_band_name in {"warm", "trusted"}:
+        progress_choice = {
+            **progress_choice,
+            "label": "差し出された信頼を受け止め、そのまま次の進展へ踏み込む",
+            "summary": "関係の追い風を受けて進める。",
+            "canonical_input_text": "差し出された信頼を受け止め、そのまま次の進展へ踏み込む",
+        }
 
     if stage_key == "starter_watch" and progress >= 1:
         progress_choice = {
@@ -655,6 +923,9 @@ def build_session_state(
     quests = list_quest_summaries(db, world_id, actor_id)
     factions = list_faction_summaries(db, world_id, actor_id)
     inventory = list_inventory_summaries(db, world_id, actor_id)
+    relationships = list_relationship_summaries(db, world_id, actor_id)
+    active_consequence_threads = list_active_consequence_threads(db, world_id, actor_id)
+    recent_consequence_history = list_recent_consequence_history(db, world_id, actor_id)
     state = {
         "world_id": world_id,
         "location": get_location_summary(db, world_id, location_id),
@@ -662,11 +933,272 @@ def build_session_state(
         "quests": quests,
         "factions": factions,
         "inventory": inventory,
+        "relationships": relationships,
+        "active_consequence_threads": active_consequence_threads,
+        "recent_consequence_history": recent_consequence_history,
         "narrative_state_bands": narrative_state_bands(character, factions),
         "important_inventory_affordances": important_inventory_affordances(inventory),
     }
     state["next_choices"] = default_next_choices(state)
     return state
+
+
+def _pressure_rank(pressure_band: PressureBand) -> int:
+    return {"low": 1, "medium": 2, "high": 3}[pressure_band]
+
+
+def _thread_snapshots(db: Session, world_id: str, actor_id: str) -> list[ConsequenceThreadSnapshot]:
+    rows = list(
+        db.execute(
+            select(ConsequenceThread)
+            .where(
+                ConsequenceThread.world_id == world_id,
+                ConsequenceThread.owner_actor_id == actor_id,
+                ConsequenceThread.status.in_(("active", "cooling")),
+            )
+            .order_by(ConsequenceThread.updated_at.desc(), ConsequenceThread.id.desc())
+        ).scalars()
+    )
+    return [
+        ConsequenceThreadSnapshot(
+            thread_type=str(thread.thread_type),  # type: ignore[arg-type]
+            status=str(thread.status),  # type: ignore[arg-type]
+            pressure_band=str(thread.pressure_band),  # type: ignore[arg-type]
+        )
+        for thread in rows
+    ]
+
+
+def _matching_thread(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    thread_type: ThreadType,
+    counterpart_actor_id: str | None,
+    location_id: str | None,
+) -> ConsequenceThread | None:
+    rows = list(
+        db.execute(
+            select(ConsequenceThread)
+            .where(
+                ConsequenceThread.world_id == world_id,
+                ConsequenceThread.owner_actor_id == actor_id,
+                ConsequenceThread.thread_type == thread_type,
+            )
+            .order_by(ConsequenceThread.updated_at.desc(), ConsequenceThread.id.desc())
+        ).scalars()
+    )
+    for thread in rows:
+        if thread.counterpart_actor_id == counterpart_actor_id and thread.location_id == location_id:
+            return thread
+    return rows[0] if rows else None
+
+
+def _enforce_active_thread_cap(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    keep_thread_id: str | None,
+) -> None:
+    active_rows = list(
+        db.execute(
+            select(ConsequenceThread)
+            .where(
+                ConsequenceThread.world_id == world_id,
+                ConsequenceThread.owner_actor_id == actor_id,
+                ConsequenceThread.status == "active",
+            )
+            .order_by(ConsequenceThread.updated_at.asc(), ConsequenceThread.id.asc())
+        ).scalars()
+    )
+    while len(active_rows) > 3:
+        oldest = next((row for row in active_rows if row.id != keep_thread_id), active_rows[0])
+        oldest.status = "cooling"
+        oldest.pressure_band = "low"
+        oldest.summary = thread_summary(
+            oldest.thread_type,  # type: ignore[arg-type]
+            "low",
+            counterpart_name=None,
+        )
+        oldest.updated_at = datetime.now(timezone.utc)
+        active_rows.remove(oldest)
+    db.flush()
+
+
+def apply_consequence_updates(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    counterpart_actor_id: str | None,
+    counterpart_name: str | None,
+    location_id: str | None,
+    source_event_id: str,
+    world_tags: list[WorldTag],
+    consequence_tags: list[str] | None,
+    action_kind: str,
+    fail_forward: bool = False,
+) -> ConsequenceApplicationOutcome:
+    relationship_updates: list[dict[str, Any]] = []
+    consequence_updates: list[dict[str, Any]] = []
+    faction_updates: list[dict[str, Any]] = []
+    additional_memory_drafts: list[dict[str, Any]] = []
+
+    normalized_consequence_tags = normalize_consequence_tags(consequence_tags) or fallback_consequence_tags(
+        world_tags=world_tags,
+        action_kind=action_kind,
+        fail_forward=fail_forward,
+    )
+    relationship = None
+    if counterpart_actor_id is not None:
+        relationship = get_relationship(
+            db,
+            world_id=world_id,
+            from_actor_id=actor_id,
+            to_actor_id=counterpart_actor_id,
+            relationship_type="KNOWS",
+        )
+    current_strength = float(relationship.strength) if relationship is not None else 0.55
+    outcome = ConsequenceRuleEngine.evaluate(
+        ConsequenceRuleInput(
+            world_tags=world_tags,
+            consequence_tags=normalized_consequence_tags,
+            relationship_strength=current_strength,
+            active_threads=_thread_snapshots(db, world_id, actor_id),
+        )
+    )
+
+    if counterpart_actor_id is not None and outcome.relationship_delta != 0.0:
+        updated_relationship = adjust_relationship_strength(
+            db,
+            world_id=world_id,
+            from_actor_id=actor_id,
+            to_actor_id=counterpart_actor_id,
+            relationship_type="KNOWS",
+            delta=outcome.relationship_delta,
+            default_strength=0.55,
+        )
+        band = relationship_band(float(updated_relationship.strength))
+        relationship_updates.append(
+            {
+                "actor_id": counterpart_actor_id,
+                "display_name": counterpart_name or "Unknown counterpart",
+                "band": band,
+                "summary": relationship_summary(counterpart_name or "The square", band),
+                "delta": round(outcome.relationship_delta, 3),
+            }
+        )
+
+    if outcome.faction_delta != 0.0:
+        faction = ensure_starter_faction(db, world_id)
+        standing = ensure_faction_standing(db, world_id=world_id, actor_id=actor_id, faction_id=faction.id)
+        next_standing = max(-1.0, min(1.0, round(standing.standing + outcome.faction_delta, 3)))
+        standing.standing = next_standing
+        standing.band = standing_band(next_standing)
+        faction_updates.append(
+            {
+                **faction_summary_to_dict(standing, faction),
+                "delta": round(outcome.faction_delta, 3),
+            }
+        )
+        db.flush()
+
+    consequence_summary_text = outcome.summary
+    if outcome.thread_action != "none" and outcome.thread_type is not None:
+        thread = _matching_thread(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            thread_type=outcome.thread_type,
+            counterpart_actor_id=counterpart_actor_id,
+            location_id=location_id,
+        )
+        now = datetime.now(timezone.utc)
+        if thread is None and outcome.thread_action in {"opened", "raised"}:
+            thread = ConsequenceThread(
+                world_id=world_id,
+                owner_actor_id=actor_id,
+                counterpart_actor_id=counterpart_actor_id,
+                location_id=location_id,
+                thread_type=outcome.thread_type,
+                status=outcome.thread_status or "active",
+                pressure_band=outcome.pressure_band or "low",
+                title=thread_title(outcome.thread_type),
+                summary=thread_summary(
+                    outcome.thread_type,
+                    outcome.pressure_band or "low",
+                    counterpart_name=counterpart_name,
+                ),
+                source_event_id=source_event_id,
+                last_event_id=source_event_id,
+                opened_at=now,
+                updated_at=now,
+                resolved_at=now if outcome.thread_status == "resolved" else None,
+            )
+            db.add(thread)
+            db.flush()
+        elif thread is not None:
+            pressure_band = outcome.pressure_band or thread.pressure_band  # type: ignore[assignment]
+            if outcome.thread_action == "raised":
+                current_rank = _pressure_rank(str(thread.pressure_band))  # type: ignore[arg-type]
+                next_rank = max(current_rank, _pressure_rank(pressure_band))
+                pressure_band = {1: "low", 2: "medium", 3: "high"}[next_rank]  # type: ignore[assignment]
+            thread.status = outcome.thread_status or thread.status
+            thread.pressure_band = pressure_band
+            thread.title = thread_title(outcome.thread_type)
+            thread.summary = thread_summary(outcome.thread_type, pressure_band, counterpart_name=counterpart_name)
+            thread.last_event_id = source_event_id
+            thread.updated_at = now
+            if outcome.thread_action == "resolved":
+                thread.resolved_at = now
+            db.flush()
+        if thread is not None:
+            if thread.status == "active":
+                _enforce_active_thread_cap(db, world_id=world_id, actor_id=actor_id, keep_thread_id=thread.id)
+            consequence_summary_text = thread.summary
+            consequence_updates.append(
+                {
+                    "id": thread.id,
+                    "title": thread.title,
+                    "summary": thread.summary,
+                    "pressure_band": thread.pressure_band,
+                    "status": thread.status,
+                    "action": outcome.thread_action,
+                }
+            )
+            additional_memory_drafts.append(
+                {
+                    "scope": "world",
+                    "text": thread.summary,
+                    "salience": 0.84 if outcome.outcome_band == "steady" else 0.9,
+                    "location_id": location_id,
+                    "actor_id": None,
+                }
+            )
+
+    if relationship_updates:
+        additional_memory_drafts.append(
+            {
+                "scope": "actor",
+                "text": f"{counterpart_name or 'Someone'} now reads the scene with a {relationship_updates[0]['band']} edge toward the player.",
+                "salience": 0.79,
+                "location_id": location_id,
+                "actor_id": counterpart_actor_id,
+            }
+        )
+
+    db.flush()
+    return ConsequenceApplicationOutcome(
+        relationship_updates=relationship_updates,
+        consequence_updates=consequence_updates,
+        faction_updates=faction_updates,
+        additional_memory_drafts=additional_memory_drafts,
+        outcome_band=outcome.outcome_band,
+        scene_tone=outcome.scene_tone,
+        consequence_summary=consequence_summary_text,
+    )
 
 
 def _active_progression_quest(

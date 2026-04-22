@@ -8,6 +8,8 @@ world_invariants:
   - single_world_namespace
   - no_direct_ids
 instructions: |
-  Produce a canonical event draft, memory drafts, world_tags, and the next three diegetic player choices.
+  Produce a canonical event draft, memory drafts, world_tags, consequence_tags, outcome_band, and the next three diegetic player choices.
   Return exactly one safe choice, one forward-progress choice, and one exploration/relationship choice.
   Never emit quest ids, faction ids, or item ids. Keep all payloads in the same world.
+  Use outcome_band to describe whether the turn lands as steady, tangled, or setback.
+  Fail-forward turns must remain same-world and should create consequence pressure instead of hard rejection.

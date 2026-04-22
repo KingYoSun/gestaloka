@@ -11,6 +11,7 @@ from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_memory.service import MemoryService
+from app.modules.world_state.service import list_consequence_threads_debug, list_relationship_debug
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
@@ -243,6 +244,20 @@ def world_memory_search(
             "top_scores": result.trace.top_scores,
             "used_fallback": result.trace.used_fallback,
         },
+    }
+
+
+def world_relationships(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_relationship_debug(db, world_id),
+    }
+
+
+def world_consequence_threads(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_consequence_threads_debug(db, world_id),
     }
 
 

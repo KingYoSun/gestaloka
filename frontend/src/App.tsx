@@ -125,6 +125,24 @@ type InventorySummary = {
   effect_kind: string | null;
 };
 
+type RelationshipSummary = {
+  actor_id: string;
+  display_name: string;
+  band: string;
+  summary: string;
+};
+
+type ConsequenceThreadSummary = {
+  id: string;
+  title: string;
+  summary: string;
+  pressure_band: string;
+  counterpart_actor_id?: string | null;
+  counterpart_name?: string | null;
+  thread_type?: string;
+  status?: string;
+};
+
 type SessionState = {
   world_id: string;
   location: {
@@ -136,6 +154,9 @@ type SessionState = {
   quests: QuestSummary[];
   factions: FactionSummary[];
   inventory: InventorySummary[];
+  relationships: RelationshipSummary[];
+  active_consequence_threads: ConsequenceThreadSummary[];
+  recent_consequence_history: string[];
   next_choices: NarrativeChoice[];
   narrative_state_bands: Record<string, string>;
   important_inventory_affordances: Array<{
@@ -161,9 +182,12 @@ type TurnResponse = {
   interpreted_intent: Record<string, unknown>;
   next_choices: NarrativeChoice[];
   consequence_summary: string;
+  scene_tone: string;
   quest_updates: Array<QuestSummary & { world_tags?: string[]; summary?: string }>;
   faction_updates: Array<FactionSummary & { delta?: number }>;
   inventory_updates: Array<InventorySummary & { action?: string }>;
+  relationship_updates: Array<RelationshipSummary & { delta?: number }>;
+  consequence_updates: Array<ConsequenceThreadSummary & { action?: string }>;
 };
 
 type EventItem = {
@@ -286,6 +310,34 @@ type GraphSummary = {
     kind: string;
   }>;
   neighborhood_summary: string[];
+};
+
+type RelationshipOpsItem = {
+  world_id: string;
+  relationship_id: string;
+  from_actor_id: string;
+  from_actor_name: string;
+  to_actor_id: string;
+  to_actor_name: string;
+  relationship_type: string;
+  strength: number;
+  band: string;
+};
+
+type ConsequenceThreadOpsItem = {
+  id: string;
+  world_id: string;
+  owner_actor_id: string;
+  owner_actor_name: string;
+  counterpart_actor_id: string | null;
+  counterpart_actor_name: string | null;
+  thread_type: string;
+  status: string;
+  pressure_band: string;
+  title: string;
+  summary: string;
+  updated_at: string;
+  resolved_at: string | null;
 };
 
 type RebuildSummary = {
@@ -518,6 +570,98 @@ function resolveRoute(): AppRoute {
   return window.location.pathname.startsWith("/admin") ? "admin" : "game";
 }
 
+function deriveImportantInventoryAffordances(inventory: InventorySummary[]): SessionState["important_inventory_affordances"] {
+  return inventory
+    .filter((item) => item.effect_kind)
+    .map((item) => ({
+      item_id: item.id,
+      name: item.name,
+      usable: item.usable,
+      effect_kind: item.effect_kind,
+      summary:
+        item.effect_kind === "unlock_followup_watch_path"
+          ? `${item.name} can unlock the next watch path.`
+          : `${item.name} carries a special affordance.`,
+    }));
+}
+
+function mergeTurnResponseIntoSessionState(current: SessionState | null, response: TurnResponse): SessionState | null {
+  if (!current) {
+    return current;
+  }
+
+  const quests = [...current.quests];
+  for (const update of response.quest_updates) {
+    const index = quests.findIndex((item) => item.assignment_id === update.assignment_id);
+    if (index >= 0) {
+      quests[index] = { ...quests[index], ...update };
+    } else {
+      quests.push(update);
+    }
+  }
+
+  const factions = [...current.factions];
+  for (const update of response.faction_updates) {
+    const index = factions.findIndex((item) => item.faction_id === update.faction_id);
+    if (index >= 0) {
+      factions[index] = { ...factions[index], ...update };
+    } else {
+      factions.push(update);
+    }
+  }
+
+  const inventory = [...current.inventory];
+  for (const update of response.inventory_updates) {
+    const index = inventory.findIndex((item) => item.id === update.id);
+    if (index >= 0) {
+      inventory[index] = { ...inventory[index], ...update };
+    } else {
+      inventory.push(update);
+    }
+  }
+
+  const relationships = [...current.relationships];
+  for (const update of response.relationship_updates) {
+    const index = relationships.findIndex((item) => item.actor_id === update.actor_id);
+    if (index >= 0) {
+      relationships[index] = { ...relationships[index], ...update };
+    } else {
+      relationships.push(update);
+    }
+  }
+
+  const threadMap = new Map(current.active_consequence_threads.map((item) => [item.id, item]));
+  for (const update of response.consequence_updates) {
+    if (update.status === "resolved") {
+      threadMap.delete(update.id);
+      continue;
+    }
+    threadMap.set(update.id, {
+      counterpart_actor_id: null,
+      counterpart_name: null,
+      thread_type: undefined,
+      ...threadMap.get(update.id),
+      ...update,
+    });
+  }
+
+  const recentConsequenceHistory = response.consequence_summary
+    ? [response.consequence_summary, ...current.recent_consequence_history.filter((item) => item !== response.consequence_summary)].slice(0, 3)
+    : current.recent_consequence_history;
+
+  return {
+    ...current,
+    quests,
+    factions,
+    inventory,
+    relationships,
+    active_consequence_threads: Array.from(threadMap.values()),
+    recent_consequence_history: recentConsequenceHistory,
+    next_choices: response.next_choices.length ? response.next_choices : current.next_choices,
+    important_inventory_affordances: deriveImportantInventoryAffordances(inventory),
+  };
+}
+
 async function apiFetch<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? undefined);
   if (!headers.has("Content-Type") && init?.body) {
@@ -600,6 +744,8 @@ function App() {
   const [projectionStatus, setProjectionStatus] = useState<ProjectionStatus | null>(null);
   const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null);
   const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null);
+  const [relationshipOps, setRelationshipOps] = useState<RelationshipOpsItem[]>([]);
+  const [consequenceThreadOps, setConsequenceThreadOps] = useState<ConsequenceThreadOpsItem[]>([]);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
@@ -676,6 +822,8 @@ function App() {
       setProjectionStatus(null);
       setEmbeddingStatus(null);
       setGraphSummary(null);
+      setRelationshipOps([]);
+      setConsequenceThreadOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -794,6 +942,8 @@ function App() {
       setProjectionStatus(null);
       setEmbeddingStatus(null);
       setGraphSummary(null);
+      setRelationshipOps([]);
+      setConsequenceThreadOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -836,6 +986,8 @@ function App() {
         setProjectionStatus(null);
         setEmbeddingStatus(null);
         setGraphSummary(null);
+        setRelationshipOps([]);
+        setConsequenceThreadOps([]);
         setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
@@ -849,6 +1001,8 @@ function App() {
       setProjectionStatus(null);
       setEmbeddingStatus(null);
       setGraphSummary(null);
+      setRelationshipOps([]);
+      setConsequenceThreadOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -861,12 +1015,20 @@ function App() {
 
     if (!currentWorldId) {
       setGraphSummary(null);
+      setRelationshipOps([]);
+      setConsequenceThreadOps([]);
       return;
     }
 
     try {
-      const summaryPayload = await apiFetch<GraphSummary>(`/ops/worlds/${currentWorldId}/graph-summary`, currentToken);
+      const [summaryPayload, relationshipPayload, threadPayload] = await Promise.all([
+        apiFetch<GraphSummary>(`/ops/worlds/${currentWorldId}/graph-summary`, currentToken),
+        apiFetch<{ items: RelationshipOpsItem[] }>(`/ops/worlds/${currentWorldId}/relationships`, currentToken),
+        apiFetch<{ items: ConsequenceThreadOpsItem[] }>(`/ops/worlds/${currentWorldId}/consequence-threads`, currentToken),
+      ]);
       setGraphSummary(summaryPayload);
+      setRelationshipOps(relationshipPayload.items);
+      setConsequenceThreadOps(threadPayload.items);
     } catch (requestError) {
       const typedError = requestError as APIError;
       if (typedError.status === 403) {
@@ -875,6 +1037,8 @@ function App() {
         setOpsState("unavailable");
       }
       setGraphSummary(null);
+      setRelationshipOps([]);
+      setConsequenceThreadOps([]);
     }
   }
 
@@ -951,6 +1115,7 @@ function App() {
       setLatestReaction(response.npc_reaction);
       setLatestConsequenceSummary(response.consequence_summary);
       setTurnInputMode("choice");
+      setSessionState((current) => mergeTurnResponseIntoSessionState(current, response));
       setWallet((current) =>
         current
           ? {
@@ -959,7 +1124,8 @@ function App() {
             }
           : current,
       );
-      await Promise.all([
+      setTurnPending(false);
+      const backgroundRefresh = Promise.all([
         refreshWorldState(session, token),
         refreshWallet(token),
         refreshAdminData(
@@ -970,7 +1136,11 @@ function App() {
           session.session_id,
         ),
         refreshHealth(),
-      ]);
+      ]).catch((requestError: unknown) => {
+        setError(formatError(requestError));
+      });
+      void backgroundRefresh;
+      return;
     } catch (requestError) {
       setError(formatError(requestError));
       await Promise.all([
@@ -984,9 +1154,8 @@ function App() {
         ),
         refreshHealth(),
       ]);
-    } finally {
-      setTurnPending(false);
     }
+    setTurnPending(false);
   }
 
   async function handleTurnSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1359,7 +1528,50 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>6. Inventory</h2>
+              <h2>6. Relationship summary</h2>
+              <ul className="stream" data-testid="relationship-summary">
+                {sessionState?.relationships.length ? (
+                  sessionState.relationships.map((item) => (
+                    <li key={item.actor_id}>
+                      <strong>{item.display_name}</strong>
+                      <span>{item.summary}</span>
+                      <span>{item.band}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No relationship pressure is visible yet.</li>
+                )}
+              </ul>
+              <h3>Undercurrents</h3>
+              <ul className="stream" data-testid="undercurrents-stream">
+                {sessionState?.active_consequence_threads.length ? (
+                  sessionState.active_consequence_threads.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.title}</strong>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No unresolved undercurrents are pulling at the scene.</li>
+                )}
+              </ul>
+              <h3>Recent consequence history</h3>
+              <ul className="stream" data-testid="recent-consequence-history">
+                {sessionState?.recent_consequence_history.length ? (
+                  sessionState.recent_consequence_history.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>recent</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No recent consequence history yet.</li>
+                )}
+              </ul>
+            </article>
+
+            <article className="card">
+              <h2>7. Inventory</h2>
               <ul className="stream" data-testid="inventory-stream">
                 {sessionState?.inventory.length ? (
                   sessionState.inventory.map((item) => (
@@ -1393,7 +1605,7 @@ function App() {
             </article>
 
             <article className="card wide">
-              <h2>7. Suggested choices</h2>
+              <h2>8. Suggested choices</h2>
               <p data-testid="last-consequence-summary">
                 {latestConsequenceSummary || "The scene is waiting for your next line."}
               </p>
@@ -1463,7 +1675,7 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>8. Results</h2>
+              <h2>9. Results</h2>
               <h3>Events</h3>
               <ul className="stream" data-testid="events-stream">
                 {events.map((item) => (
@@ -1618,6 +1830,38 @@ function App() {
                   </>
                 ) : (
                   <li>No active world progression state loaded.</li>
+                )}
+              </ul>
+              <h3>Relationship ops</h3>
+              <ul className="stream" data-testid="relationship-ops-stream">
+                {relationshipOps.length ? (
+                  relationshipOps.map((item) => (
+                    <li key={item.relationship_id}>
+                      <strong>
+                        {`${item.from_actor_name} -> ${item.to_actor_name}`}
+                      </strong>
+                      <span>{item.relationship_type}</span>
+                      <span>{item.strength.toFixed(2)} / {item.band}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No relationship ops data loaded.</li>
+                )}
+              </ul>
+              <h3>Consequence threads</h3>
+              <ul className="stream" data-testid="consequence-thread-stream">
+                {consequenceThreadOps.length ? (
+                  consequenceThreadOps.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {item.thread_type} / {item.status} / {item.pressure_band}
+                      </span>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No consequence thread data loaded.</li>
                 )}
               </ul>
               <h3>Recent runtime failures</h3>

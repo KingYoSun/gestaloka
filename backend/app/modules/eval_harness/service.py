@@ -63,6 +63,8 @@ class EvalCaseInput:
     expect_retrieval_status: str | None = None
     expect_retrieval_hit_substring: str | None = None
     expect_retrieval_min_hits: int | None = None
+    expect_outcome_band: str | None = None
+    expect_consequence_tags: list[str] | None = None
     session_state_overrides: dict[str, object] | None = None
     source_turn_id: str | None = None
     precomputed_retrieved_memories: list[str] | None = None
@@ -758,6 +760,13 @@ class EvalHarnessService:
             if not reward_precondition:
                 checks["no_premature_reward"] = not rule_outcome.should_issue_reward
 
+        if case.expect_outcome_band is not None:
+            checks["outcome_band_match"] = str(final_payload.get("outcome_band") or "") == case.expect_outcome_band
+
+        if case.expect_consequence_tags is not None:
+            actual_tags = {str(item) for item in final_payload.get("consequence_tags") or []}
+            checks["consequence_tags_match"] = set(case.expect_consequence_tags) <= actual_tags
+
         return {
             "passed": all(checks.values()) if checks else True,
             "checks": checks,
@@ -1001,12 +1010,23 @@ class EvalHarnessService:
                             if raw_case.get("expect_retrieval_hit_substring") is not None
                             else None
                         ),
-                        expect_retrieval_min_hits=(
-                            int(raw_case.get("expect_retrieval_min_hits"))
-                            if raw_case.get("expect_retrieval_min_hits") is not None
-                            else None
-                        ),
-                        session_state_overrides=dict(raw_case.get("session_state_overrides") or {}) or None,
+                    expect_retrieval_min_hits=(
+                        int(raw_case.get("expect_retrieval_min_hits"))
+                        if raw_case.get("expect_retrieval_min_hits") is not None
+                        else None
+                    ),
+                    expect_outcome_band=(
+                        str(raw_case.get("expect_outcome_band")).strip()
+                        if raw_case.get("expect_outcome_band") is not None
+                        else None
+                    ),
+                    expect_consequence_tags=[
+                        str(item)
+                        for item in (raw_case.get("expect_consequence_tags") or [])
+                        if str(item)
+                    ]
+                    or None,
+                    session_state_overrides=dict(raw_case.get("session_state_overrides") or {}) or None,
                     )
                 )
             if not cases:

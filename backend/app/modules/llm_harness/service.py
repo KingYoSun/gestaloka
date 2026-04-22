@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.core.config import Settings
 from app.core.prompts import PromptDefinition, PromptRegistry
 from app.modules.observability.service import ObservabilityService
+from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
 
 try:
@@ -101,6 +102,7 @@ class CouncilIntentInterpreterPayload(BaseModel):
     requested_choice_posture: Literal["safe", "progress", "explore", "none"] = "none"
     fail_forward: bool = False
     consequence_flags: list[str] = Field(default_factory=list)
+    consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
     consequence_summary: str = Field(min_length=1)
 
 
@@ -114,6 +116,9 @@ class TurnResolutionPayload(BaseModel):
     interpreted_intent: dict[str, Any] = Field(default_factory=dict)
     next_choices: list[NarrativeChoiceDraft] = Field(min_length=3)
     consequence_summary: str = Field(min_length=1)
+    consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    outcome_band: OutcomeBand = "steady"
+    scene_tone: str = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -211,33 +216,53 @@ class StubModelProvider(BaseModelProvider):
         intent_summary = str(selected_choice.get("intent_summary") or selected_choice.get("canonical_input_text") or input_text)
         fail_forward = False
         consequence_flags: list[str] = []
+        consequence_tags: list[str] = []
         consequence_summary = "The world accepts the player's chosen line of action."
         used_reward_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
 
         normalized = input_text.lower()
+        if input_mode == "choice":
+            if selected_posture == "progress":
+                consequence_tags.append("earned_trust")
+            elif selected_posture in {"safe", "explore"}:
+                consequence_tags.append("careful_observation")
         if input_mode == "free_text":
             if any(token in normalized for token in ("lantern", "sigil", "灯印", "印章", "sigil")):
                 if usable_items:
                     action_kind = "use_reward_item"
                     intent_summary = intent_summary or "Lantern Sigilを掲げて次の巡回路を開く"
+                    consequence_tags.extend(["sigil_respect", "kept_promise"])
                     consequence_summary = "The watch recognizes the sigil and prepares to answer the request."
                 elif used_reward_items:
                     action_kind = "narrative"
                     intent_summary = input_text or "The player follows the watch path opened by the sigil."
+                    consequence_tags.append("careful_observation")
                     consequence_summary = "The scene proceeds through the path the sigil already opened."
                 else:
                     action_kind = "narrative"
                     fail_forward = True
                     consequence_flags = ["premature_reward_item_request"]
+                    consequence_tags.extend(["overreach", "public_attention"])
                     intent_summary = input_text or "The player reaches for power that is not yet available."
                     consequence_summary = "The attempt runs ahead of the world's current affordances and turns into a visible hesitation."
+            elif any(token in normalized for token in ("後で", "あとで", "later", "そのうち", "待って", "今は行かない", "また今度")):
+                consequence_tags.append("missed_timing")
+                consequence_summary = "The scene moves on, but a promise is left hanging in the square."
             elif any(token in normalized for token in ("無理", "impossible", "空を飛", "teleport", "爆破")):
                 action_kind = "narrative"
                 fail_forward = True
                 consequence_flags = ["overreach"]
+                consequence_tags.extend(["overreach", "public_attention"])
                 consequence_summary = "The world bends the request into a costly misunderstanding rather than allowing an impossible leap."
+            elif any(token in normalized for token in ("約束", "promise", "引き受ける", "応える")):
+                consequence_tags.append("kept_promise")
+            elif any(token in normalized for token in ("探", "observe", "watch path", "巡回路")):
+                consequence_tags.append("careful_observation")
+            elif any(token in normalized for token in ("助け", "help", "灯", "light")):
+                consequence_tags.append("earned_trust")
 
         if input_mode == "choice" and action_kind == "use_reward_item":
+            consequence_tags.extend(["sigil_respect", "kept_promise"])
             consequence_summary = "The selected choice invokes an important reward-item affordance."
 
         if not intent_summary:
@@ -250,6 +275,7 @@ class StubModelProvider(BaseModelProvider):
             "requested_choice_posture": selected_posture if selected_posture in {"safe", "progress", "explore"} else "none",
             "fail_forward": fail_forward,
             "consequence_flags": consequence_flags,
+            "consequence_tags": normalize_consequence_tags(consequence_tags),
             "consequence_summary": consequence_summary,
         }
 
@@ -264,6 +290,9 @@ class StubModelProvider(BaseModelProvider):
         used_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
         consequence_flags = [str(item) for item in input_payload.get("consequence_flags") or [] if str(item)]
         important_affordances = [str(item) for item in input_payload.get("important_inventory_affordances") or [] if str(item)]
+        relationship_summaries = [item.get("summary", "") for item in input_payload.get("relationship_summaries") or [] if item.get("summary")]
+        consequence_threads = [item.get("summary", "") for item in input_payload.get("active_consequence_threads") or [] if item.get("summary")]
+        recent_history = [str(item) for item in input_payload.get("recent_consequence_history") or [] if str(item)]
         summary_parts = []
         if memories:
             summary_parts.append(f"memory={' / '.join(memories[:2])}")
@@ -282,6 +311,12 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"used_reward={', '.join(used_items[:2])}")
         if important_affordances:
             summary_parts.append(f"affordances={', '.join(important_affordances[:2])}")
+        if relationship_summaries:
+            summary_parts.append(f"relationships={relationship_summaries[0]}")
+        if consequence_threads:
+            summary_parts.append(f"threads={consequence_threads[0]}")
+        if recent_history:
+            summary_parts.append(f"recent_consequence={recent_history[0]}")
         if consequence_flags:
             summary_parts.append(f"consequence_flags={', '.join(consequence_flags[:2])}")
         summary = " | ".join(summary_parts) if summary_parts else "no prior context"
@@ -301,13 +336,17 @@ class StubModelProvider(BaseModelProvider):
         focus_memories = [str(item) for item in input_payload.get("focus_memories") or []]
         active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
         consequence_summary = str(input_payload.get("consequence_summary") or "")
+        thread_summary = next(
+            (str(item.get("summary") or "") for item in input_payload.get("active_consequence_threads") or [] if item.get("summary")),
+            "",
+        )
         return {
             "npc_intent": f"{npc_name} keeps same-world continuity and responds to the latest player action.",
             "reaction_style": "measured",
             "focus_memories": focus_memories[:2],
             "reaction_outline": (
                 f"{npc_name} references {memory_summary}, keeps quest stage {active_quest_stage}, "
-                f"and factors in the current faction/inventory state. {consequence_summary}".strip()
+                f"and factors in the current faction/inventory state. {consequence_summary} {thread_summary}".strip()
             ),
         }
 
@@ -317,6 +356,7 @@ class StubModelProvider(BaseModelProvider):
         input_text = str(input_payload.get("input_text") or "")
         interpreted_intent = str(input_payload.get("intent_summary") or input_text)
         relation_summary = str(input_payload.get("relation_summary") or "")
+        consequence_tags = normalize_consequence_tags([str(item) for item in input_payload.get("consequence_tags") or []])
         world_tags = normalize_world_tags(infer_world_tags(interpreted_intent))
         if "__force_council_reject__" in input_text:
             world_tags = ["threaten_local"]
@@ -365,6 +405,11 @@ class StubModelProvider(BaseModelProvider):
                     "action_kind": "narrative",
                 },
             ]
+        outcome_band: OutcomeBand = "steady"
+        if "overreach" in consequence_tags:
+            outcome_band = "setback"
+        elif {"missed_timing", "public_attention"} & set(consequence_tags):
+            outcome_band = "tangled"
         return {
             "event_type": "player.turn.resolved",
             "event_payload": {
@@ -386,6 +431,8 @@ class StubModelProvider(BaseModelProvider):
                 },
             ],
             "world_tags": world_tags,
+            "consequence_tags": consequence_tags,
+            "outcome_band": outcome_band,
             "resolution_summary": (
                 str(input_payload.get("consequence_summary") or "").strip()
                 or f"{player_name} acted with tags {', '.join(world_tags)}."
@@ -438,6 +485,7 @@ class StubModelProvider(BaseModelProvider):
         reaction_outline = str(input_payload.get("reaction_outline") or "")
         world_tags = normalize_world_tags([str(item) for item in input_payload.get("world_tags") or []])
         consequence_summary = str(input_payload.get("consequence_summary") or "")
+        outcome_band = str(input_payload.get("outcome_band") or "steady")
         narrative = (
             f"{player_name}は『{input_text}』と行動した。"
             f"{npc_name}はその結果を同じ世界の事実として受け止めた。"
@@ -452,7 +500,7 @@ class StubModelProvider(BaseModelProvider):
         return {
             "narrative": narrative,
             "npc_reaction": npc_reaction,
-            "tone": "measured",
+            "tone": "tense" if outcome_band == "setback" else "uneasy" if outcome_band == "tangled" else "measured",
         }
 
 

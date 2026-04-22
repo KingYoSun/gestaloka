@@ -181,6 +181,34 @@ class Relationship(Base, TimestampMixin):
     strength: Mapped[float] = mapped_column(Float, default=0.5)
 
 
+class ConsequenceThread(Base, TimestampMixin):
+    __tablename__ = "consequence_threads"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_consequence_threads_id_world"),
+        ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["counterpart_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+        ForeignKeyConstraint(["last_event_id", "world_id"], ["events.id", "events.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    owner_actor_id: Mapped[str] = mapped_column(String(36))
+    counterpart_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    thread_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    pressure_band: Mapped[str] = mapped_column(String(16), default="low")
+    title: Mapped[str] = mapped_column(String(160))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    last_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class CharacterSheet(Base, TimestampMixin):
     __tablename__ = "character_sheets"
     __table_args__ = (ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),)

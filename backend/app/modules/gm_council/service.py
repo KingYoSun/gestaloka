@@ -15,7 +15,8 @@ from app.modules.llm_harness.service import (
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
-from app.modules.world_state.rules import WorldTag
+from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
+from app.modules.world_state.rules import WorldTag, normalize_world_tags
 
 
 class CouncilMemoryManagerPayload(BaseModel):
@@ -37,6 +38,8 @@ class CouncilWorldProgressPayload(BaseModel):
     event_payload: dict[str, Any]
     memories: list[MemoryDraft] = Field(min_length=1)
     world_tags: list[WorldTag] = Field(min_length=1)
+    consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    outcome_band: OutcomeBand = "steady"
     resolution_summary: str = Field(min_length=1)
     risk_level: Literal["low", "medium", "high"]
     next_choices: list[NarrativeChoiceDraft] = Field(min_length=3, max_length=3)
@@ -100,15 +103,91 @@ class GMCouncilService:
         self.settings = settings
         self.model_router = model_router
 
+    @staticmethod
+    def _active_quest(session_state: dict[str, Any]) -> dict[str, Any]:
+        quests = session_state.get("quests") or []
+        return next((item for item in quests if item.get("status") == "active"), quests[0] if quests else {})
+
+    @staticmethod
+    def _choice_world_tags(
+        *,
+        session_state: dict[str, Any],
+        selected_choice: dict[str, Any] | None,
+        action_kind: str,
+        raw_world_tags: list[str] | None,
+    ) -> list[WorldTag]:
+        normalized = normalize_world_tags(raw_world_tags)
+        if action_kind != "narrative":
+            return normalized
+        posture = str((selected_choice or {}).get("posture") or "")
+        if posture != "progress":
+            return normalized
+
+        active_quest = GMCouncilService._active_quest(session_state)
+        stage_key = str(active_quest.get("stage_key") or "starter_watch")
+        progress = int(active_quest.get("progress") or 0)
+
+        if stage_key == "starter_watch":
+            return ["aid_local"] if progress < 1 else ["promise_followup"]
+        if stage_key == "watch_path_followup":
+            return ["investigate"]
+        return normalized
+
+    @staticmethod
+    def _outcome_band_from_tags(consequence_tags: list[str]) -> OutcomeBand:
+        normalized = set(normalize_consequence_tags(consequence_tags))
+        if "overreach" in normalized:
+            return "setback"
+        if {"missed_timing", "public_attention"} & normalized:
+            return "tangled"
+        return "steady"
+
+    @staticmethod
+    def _canonical_intent_consequence_tags(
+        *,
+        input_mode: Literal["choice", "free_text"],
+        input_text: str,
+        selected_choice: dict[str, Any] | None,
+        action_kind: str,
+        raw_tags: list[str] | None,
+    ) -> list[ConsequenceTag]:
+        normalized_text = input_text.lower()
+        canonical = list(normalize_consequence_tags(raw_tags))
+
+        if input_mode == "choice":
+            posture = str((selected_choice or {}).get("posture") or "")
+            if posture == "progress" and "earned_trust" not in canonical:
+                canonical.append("earned_trust")
+            elif posture in {"safe", "explore"} and "careful_observation" not in canonical:
+                canonical.append("careful_observation")
+            return normalize_consequence_tags(canonical)
+
+        if any(token in input_text or token in normalized_text for token in ("後で", "あとで", "later", "そのうち", "待って", "今は行かない", "また今度")):
+            return ["missed_timing"]
+        if any(token in input_text or token in normalized_text for token in ("無理", "impossible", "空を飛", "teleport", "爆破")):
+            return ["overreach", "public_attention"]
+        if action_kind == "use_reward_item":
+            return ["sigil_respect", "kept_promise"]
+        if any(token in input_text or token in normalized_text for token in ("約束", "promise", "引き受ける", "応える")):
+            canonical.append("kept_promise")
+        if any(token in input_text or token in normalized_text for token in ("探", "observe", "watch path", "巡回路")):
+            canonical.append("careful_observation")
+        if any(token in input_text or token in normalized_text for token in ("助け", "help", "灯", "light")):
+            canonical.append("earned_trust")
+        return normalize_consequence_tags(canonical)
+
     def resolve_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
         role_runs: list[CouncilRoleRun] = []
         quests = request.session_state.get("quests") or []
         inventory = request.session_state.get("inventory") or []
-        active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else None)
+        active_quest = self._active_quest(request.session_state)
         usable_reward_items = [item for item in inventory if item.get("usable")]
         used_reward_items = [item for item in inventory if item.get("status") == "used"]
         important_inventory_affordances = request.session_state.get("important_inventory_affordances") or []
         default_choice_templates = request.session_state.get("next_choices") or []
+        relationship_summaries = request.session_state.get("relationships") or []
+        active_consequence_threads = request.session_state.get("active_consequence_threads") or []
+        recent_consequence_history = request.session_state.get("recent_consequence_history") or []
 
         intent_input = {
             "world_id": request.world_id,
@@ -124,6 +203,9 @@ class GMCouncilService:
             "used_reward_items": used_reward_items,
             "important_inventory_affordances": important_inventory_affordances,
             "default_choice_templates": default_choice_templates,
+            "relationship_summaries": relationship_summaries,
+            "active_consequence_threads": active_consequence_threads,
+            "recent_consequence_history": recent_consequence_history,
         }
         intent_result = self.model_router.execute_structured_prompt(
             prompt_id="council.intent_interpreter",
@@ -153,6 +235,13 @@ class GMCouncilService:
 
         intent_payload = intent_result.final_payload
         assert intent_payload is not None
+        intent_payload.consequence_tags = self._canonical_intent_consequence_tags(
+            input_mode=request.input_mode,
+            input_text=request.input_text,
+            selected_choice=request.selected_choice,
+            action_kind=intent_payload.canonical_action_kind,
+            raw_tags=list(intent_payload.consequence_tags),
+        )
 
         memory_input = {
             "world_id": request.world_id,
@@ -171,6 +260,9 @@ class GMCouncilService:
             "used_reward_items": used_reward_items,
             "important_inventory_affordances": [item.get("summary", "") for item in important_inventory_affordances if item.get("summary")],
             "consequence_flags": intent_payload.consequence_flags,
+            "relationship_summaries": relationship_summaries,
+            "active_consequence_threads": active_consequence_threads,
+            "recent_consequence_history": recent_consequence_history,
         }
         memory_result = self.model_router.execute_structured_prompt(
             prompt_id="council.memory_manager",
@@ -215,6 +307,9 @@ class GMCouncilService:
             "used_reward_items": used_reward_items,
             "factions": request.session_state.get("factions") or [],
             "consequence_summary": intent_payload.consequence_summary,
+            "relationship_summaries": relationship_summaries,
+            "active_consequence_threads": active_consequence_threads,
+            "recent_consequence_history": recent_consequence_history,
         }
         npc_result = self.model_router.execute_structured_prompt(
             prompt_id="council.npc_manager",
@@ -258,7 +353,11 @@ class GMCouncilService:
             "intent_summary": intent_payload.intent_summary,
             "fail_forward": intent_payload.fail_forward,
             "consequence_summary": intent_payload.consequence_summary,
+            "consequence_tags": intent_payload.consequence_tags,
             "default_choice_templates": default_choice_templates,
+            "relationship_summaries": relationship_summaries,
+            "active_consequence_threads": active_consequence_threads,
+            "recent_consequence_history": recent_consequence_history,
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",
@@ -288,6 +387,14 @@ class GMCouncilService:
 
         world_progress_payload = world_progress_result.final_payload
         assert world_progress_payload is not None
+        world_progress_payload.consequence_tags = normalize_consequence_tags(list(world_progress_payload.consequence_tags))
+        world_progress_payload.world_tags = self._choice_world_tags(
+            session_state=request.session_state,
+            selected_choice=request.selected_choice,
+            action_kind=intent_payload.canonical_action_kind,
+            raw_world_tags=list(world_progress_payload.world_tags),
+        )
+        world_progress_payload.outcome_band = self._outcome_band_from_tags(list(world_progress_payload.consequence_tags))
         high_risk = world_progress_payload.risk_level == "high"
 
         rules_input = {
@@ -395,6 +502,7 @@ class GMCouncilService:
             "world_tags": rules_payload.normalized_world_tags,
             "resolution_summary": world_progress_payload.resolution_summary,
             "consequence_summary": intent_payload.consequence_summary,
+            "outcome_band": world_progress_payload.outcome_band,
         }
         narrative_result = self.model_router.execute_structured_prompt(
             prompt_id="council.narrative",
@@ -442,6 +550,9 @@ class GMCouncilService:
             interpreted_intent=intent_payload.model_dump(),
             next_choices=world_progress_payload.next_choices,
             consequence_summary=intent_payload.consequence_summary,
+            consequence_tags=world_progress_payload.consequence_tags,
+            outcome_band=world_progress_payload.outcome_band,
+            scene_tone=narrative_payload.tone,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,

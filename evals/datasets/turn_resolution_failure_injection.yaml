@@ -50,6 +50,9 @@ cases:
     expect_fallback: false
     expect_failure_reason: null
     expect_retrieval_status: ready
+    expect_outcome_band: setback
+    expect_consequence_tags:
+      - overreach
     expected_world_tags:
       - none
     quest_context:

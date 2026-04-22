@@ -41,12 +41,14 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert second_payload["sp_balance"] == 8
     assert second_payload["quest_updates"][0]["progress"] == 2
     assert second_payload["inventory_updates"][0]["template_key"] == "lantern_sigils"
+    assert second_payload["relationship_updates"][0]["band"] == "warm"
 
     state_after_reward = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_after_reward.status_code == 200
     reward_item = state_after_reward.json()["inventory"][0]
     assert reward_item["usable"] is True
     assert reward_item["effect_kind"] == "unlock_followup_watch_path"
+    assert state_after_reward.json()["relationships"][0]["band"] == "warm"
 
     assert state_after_reward.json()["next_choices"][1]["action_kind"] == "use_reward_item"
 
@@ -112,6 +114,57 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         rebuilt = container.projection_service.rebuild(db, session_payload["world_id"])
         db.commit()
         assert rebuilt
+
+
+def test_consequence_threads_affect_state_and_fail_forward_without_422(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-threads", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    progress = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert progress.status_code == 200
+
+    promise_delay = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_mode": "free_text",
+            "input_text": "今は行かない。あとで約束には応える。",
+        },
+        headers=auth_headers,
+    )
+    assert promise_delay.status_code == 200
+    promise_payload = promise_delay.json()
+    assert promise_payload["scene_tone"] == "uneasy"
+    assert promise_payload["consequence_updates"]
+    assert promise_payload["consequence_updates"][0]["status"] == "active"
+
+    state_after_delay = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state_after_delay.status_code == 200
+    assert state_after_delay.json()["active_consequence_threads"]
+    assert any("約束" in item["summary"] or "promise" in item["summary"].lower() for item in state_after_delay.json()["active_consequence_threads"])
+
+    impossible = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_mode": "free_text",
+            "input_text": "空を飛んで塔の上に瞬間移動する",
+        },
+        headers=auth_headers,
+    )
+    assert impossible.status_code == 200
+    impossible_payload = impossible.json()
+    assert impossible_payload["scene_tone"] == "tense"
+    assert impossible_payload["consequence_updates"]
+    assert impossible_payload["relationship_updates"][0]["band"] in {"wary", "neutral"}
 
 
 def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_can_recover(container, client, auth_headers, monkeypatch):

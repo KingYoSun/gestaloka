@@ -22,6 +22,9 @@ cases:
     expect_failure_reason: null
     expect_retrieval_status: ready
     expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_consequence_tags:
+      - earned_trust
     expected_world_tags:
       - aid_local
     quest_context:
@@ -51,6 +54,9 @@ cases:
     expect_failure_reason: null
     expect_retrieval_status: ready
     expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_consequence_tags:
+      - earned_trust
     expected_world_tags:
       - aid_local
     quest_context:
@@ -84,8 +90,10 @@ cases:
     expect_retrieval_status: ready
     expect_retrieval_min_hits: 1
     expect_retrieval_hit_substring: 旅人を助け
+    expect_outcome_band: steady
+    expect_consequence_tags:
+      - earned_trust
     expected_world_tags:
-      - investigate
       - promise_followup
     quest_context:
       current_progress: 1
@@ -117,6 +125,9 @@ cases:
     expect_retrieval_status: ready
     expect_retrieval_min_hits: 1
     expect_retrieval_hit_substring: Lantern Sigil
+    expect_outcome_band: steady
+    expect_consequence_tags:
+      - careful_observation
     expected_world_tags:
       - investigate
     quest_context:

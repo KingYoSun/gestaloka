@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.models.entities import (
     Actor,
+    ConsequenceThread,
     Faction,
     FactionStanding,
     Item,
@@ -163,6 +164,36 @@ def test_item_cannot_reference_owner_from_another_world(container):
                 name="Lantern Sigil",
                 description="desc",
                 status="active",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_consequence_thread_cannot_reference_counterpart_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        owner = Actor(world_id="world-a", actor_type="player", user_sub="demo", display_name="Owner")
+        counterpart = Actor(world_id="world-b", actor_type="npc", display_name="Counterpart")
+        db.add_all([owner, counterpart])
+        db.flush()
+        db.add(
+            ConsequenceThread(
+                world_id="world-a",
+                owner_actor_id=owner.id,
+                counterpart_actor_id=counterpart.id,
+                location_id=None,
+                thread_type="promise",
+                status="active",
+                pressure_band="medium",
+                title="A promise hangs in the square",
+                summary="A promise remains unresolved.",
             )
         )
         with pytest.raises(IntegrityError):

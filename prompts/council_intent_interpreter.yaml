@@ -12,3 +12,5 @@ instructions: |
   You may select either a narrative action or an internal reward-item use affordance when one is supplied.
   Never invent world ids, actor ids, quest ids, faction ids, or item ids.
   If the request exceeds current affordances, convert it into a fail-forward narrative consequence instead of a hard rejection.
+  Emit consequence_tags that capture trust, promise pressure, public attention, or overreach.
+  For same-intent choice and free-text inputs, keep consequence_tags equivalent so paid bandwidth does not improve outcome quality.
