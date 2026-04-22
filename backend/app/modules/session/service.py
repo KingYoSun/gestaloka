@@ -38,6 +38,7 @@ class TurnResolutionResult:
     memory_ids: list[str]
     event_payload: dict
     memories_payload: list[dict]
+    graph_context_status: str
     sp_delta: int
     sp_balance: int
     sp_ledger_id: str
@@ -182,11 +183,13 @@ def resolve_turn_for_session(
     )
     resolution = container.model_router.resolve_turn(
         world_id=game_session.world_id,
+        turn_id=turn.id,
         player_name=player_actor.display_name,
         npc_name=guide_npc.display_name,
         input_text=input_text,
         relevant_memories=[item.text for item in relevant_memories],
         relation_context=graph_context.context.prompt_lines(),
+        graph_context_status=graph_context.status,
     )
 
     for attempt in resolution.attempts:
@@ -252,6 +255,7 @@ def resolve_turn_for_session(
             memory_ids=[],
             event_payload=_event_payload(failure_event),
             memories_payload=[],
+            graph_context_status=graph_context.status,
             sp_delta=0,
             sp_balance=refund.balance_after,
             sp_ledger_id=prepared.debit.ledger_entry.id,
@@ -333,6 +337,7 @@ def resolve_turn_for_session(
         memory_ids=[memory.id for memory in memories],
         event_payload=_event_payload(event),
         memories_payload=[_memory_payload(memory) for memory in memories],
+        graph_context_status=graph_context.status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,

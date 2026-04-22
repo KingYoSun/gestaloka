@@ -12,6 +12,7 @@ from app.modules.eval_harness.service import EvalHarnessService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.identity.oidc import BaseOIDCAdapter, build_oidc_adapter
 from app.modules.llm_harness.service import ModelRouter
+from app.modules.observability.service import ObservabilityService
 
 
 @dataclass
@@ -24,14 +25,18 @@ class AppContainer:
     eval_service: EvalHarnessService
     economy_service: EconomyService
     projection_service: ProjectionService
+    observability_service: ObservabilityService
 
 
 def build_container(settings: Settings | None = None) -> AppContainer:
     resolved_settings = settings or get_settings()
     session_factory = create_session_factory(resolved_settings)
-    projection_service = ProjectionService(resolved_settings)
+    observability_service = ObservabilityService(resolved_settings)
+    engine = session_factory.kw["bind"]
+    observability_service.instrument_sqlalchemy(engine)
+    projection_service = ProjectionService(resolved_settings, observability_service)
     prompt_registry = PromptRegistry(resolved_settings.prompt_dir, resolved_settings.eval_dataset_dir)
-    eval_service = EvalHarnessService(resolved_settings, prompt_registry, projection_service)
+    eval_service = EvalHarnessService(resolved_settings, prompt_registry, projection_service, observability_service)
     model_router = eval_service.runtime_router()
     economy_service = EconomyService(resolved_settings)
     return AppContainer(
@@ -43,4 +48,5 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         eval_service=eval_service,
         economy_service=economy_service,
         projection_service=projection_service,
+        observability_service=observability_service,
     )

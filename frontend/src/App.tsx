@@ -32,6 +32,26 @@ type HealthPayload = {
     turn_cost: number;
     economy_status: string;
   };
+  observability: {
+    runtime_role: string;
+    projection_lag_seconds: number;
+    outbox_pending_count: number;
+    outbox_failed_count: number;
+    llm_schema_valid_rate: number;
+    llm_fallback_rate: number;
+    canary_health: {
+      status: string;
+      graph_runtime_status: string | null;
+      release_gate_verdict: string | null;
+    };
+  };
+  release_gate: {
+    report_id: string | null;
+    verdict: string;
+    blocked_reasons: string[];
+    created_at: string | null;
+    canary_promote_status: string;
+  };
   oidc_mode: string;
 };
 
@@ -161,6 +181,8 @@ type EvalRunItem = {
   id: string;
   source_type: string;
   dataset_name: string | null;
+  trigger_type: string;
+  runtime_role: string;
   status: string;
   summary: {
     case_count: number;
@@ -178,6 +200,28 @@ type EvalRunItem = {
   completed_at: string | null;
 };
 
+type ReleaseSLOSnapshot = {
+  runtime_role: string;
+  canary_health: {
+    status: string;
+    url: string | null;
+    http_status: number | null;
+    detail: string | null;
+    graph_runtime_status: string | null;
+    release_gate_verdict: string | null;
+    projection_lag_seconds: number | null;
+    outbox_pending_count: number | null;
+    outbox_failed_count: number | null;
+    llm_schema_valid_rate: number | null;
+    llm_fallback_rate: number | null;
+  };
+  projection_lag_seconds: number;
+  outbox_pending_count: number;
+  outbox_failed_count: number;
+  llm_schema_valid_rate: number;
+  llm_fallback_rate: number;
+};
+
 type RouteDiff = {
   route_id: string;
   current: {
@@ -193,7 +237,10 @@ type RouteDiff = {
 };
 
 type ReleaseGateReport = {
+  report_id: string | null;
   verdict: string;
+  blocked_reasons: string[];
+  trigger_type: string;
   canary_promote_status: string;
   checks: {
     smoke: {
@@ -215,11 +262,17 @@ type ReleaseGateReport = {
       run_id: string | null;
     };
   };
-  latest_runs: {
+  runs: {
     smoke: string | null;
     failure_injection: string | null;
     shadow_replay: string | null;
   };
+  latest_runs?: {
+    smoke: string | null;
+    failure_injection: string | null;
+    shadow_replay: string | null;
+  };
+  slo_snapshot: ReleaseSLOSnapshot;
   diff_summary: RouteDiff[];
   shadow_failures: Array<{
     case_id: string;
@@ -233,6 +286,38 @@ type ReleaseGateReport = {
     rollback: string;
     promote: string;
   };
+  created_at: string | null;
+};
+
+type ObservabilitySummary = {
+  primary: {
+    runtime_role: string;
+    graph_runtime_status: string;
+    graph_read_mode: string;
+    projection_lag_seconds: number;
+    outbox_pending_count: number;
+    outbox_failed_count: number;
+    llm_schema_valid_rate: number;
+    llm_fallback_rate: number;
+  };
+  canary: {
+    status: string;
+    url: string | null;
+    http_status: number | null;
+    detail: string | null;
+    graph_runtime_status: string | null;
+    release_gate_verdict: string | null;
+    projection_lag_seconds: number | null;
+    outbox_pending_count: number | null;
+    outbox_failed_count: number | null;
+    llm_schema_valid_rate: number | null;
+    llm_fallback_rate: number | null;
+  };
+  recent_traces: Array<{
+    name: string;
+    attributes: Record<string, unknown>;
+  }>;
+  metrics: Record<string, number>;
 };
 
 type ActivityMessage = {
@@ -329,6 +414,7 @@ function App() {
   const [activity, setActivity] = useState<ActivityMessage[]>([]);
   const [projectionStatus, setProjectionStatus] = useState<ProjectionStatus | null>(null);
   const [graphSummary, setGraphSummary] = useState<GraphSummary | null>(null);
+  const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
   const [evalRuns, setEvalRuns] = useState<EvalRunItem[]>([]);
@@ -348,6 +434,7 @@ function App() {
   const [rebuildPending, setRebuildPending] = useState(false);
   const [adjustPending, setAdjustPending] = useState(false);
   const [evalPending, setEvalPending] = useState(false);
+  const [checklistPending, setChecklistPending] = useState(false);
   const [socketState, setSocketState] = useState("idle");
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -384,6 +471,7 @@ function App() {
       setWallet(null);
       setProjectionStatus(null);
       setGraphSummary(null);
+      setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
       setEvalRuns([]);
@@ -483,6 +571,7 @@ function App() {
     if (!currentToken) {
       setProjectionStatus(null);
       setGraphSummary(null);
+      setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
       setOpsState("idle");
@@ -490,17 +579,19 @@ function App() {
     }
 
     try {
-      const [statusPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload] = await Promise.all([
+      const [statusPayload, observabilityPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
+        apiFetch<ObservabilitySummary>("/ops/observability/summary", currentToken),
         apiFetch<SPOverview>("/ops/sp/overview", currentToken),
         apiFetch<{ items: SPLedgerItem[] }>(
           `/ops/sp/ledger?limit=20${currentLedgerUserFilter ? `&user_sub=${encodeURIComponent(currentLedgerUserFilter)}` : ""}${currentLedgerWorldFilter ? `&world_id=${encodeURIComponent(currentLedgerWorldFilter)}` : ""}`,
           currentToken,
         ),
         apiFetch<{ items: EvalRunItem[] }>("/ops/evals/runs?limit=8", currentToken),
-        apiFetch<ReleaseGateReport>("/ops/release/gates/latest", currentToken),
+        apiFetch<ReleaseGateReport>("/ops/release/checklists/latest", currentToken),
       ]);
       setProjectionStatus(statusPayload);
+      setObservability(observabilityPayload);
       setSpOverview(overviewPayload);
       setLedgerEntries(ledgerPayload.items);
       setEvalRuns(evalRunsPayload.items);
@@ -512,6 +603,7 @@ function App() {
         setOpsState("restricted");
         setProjectionStatus(null);
         setGraphSummary(null);
+        setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
         setEvalRuns([]);
@@ -521,6 +613,7 @@ function App() {
       setOpsState("unavailable");
       setProjectionStatus(null);
       setGraphSummary(null);
+      setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
       setEvalRuns([]);
@@ -741,6 +834,28 @@ function App() {
     }
   }
 
+  async function handleReleaseChecklistRun() {
+    if (!token) {
+      setError("Sign in before running release checklists");
+      return;
+    }
+
+    try {
+      setChecklistPending(true);
+      setError("");
+      await apiFetch<ReleaseGateReport>("/ops/release/checklists/run", token, {
+        method: "POST",
+        body: JSON.stringify({ trigger_type: "manual" }),
+      });
+      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId);
+      await refreshHealth();
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setChecklistPending(false);
+    }
+  }
+
   useEffect(() => {
     if (route !== "admin" || !token) {
       return;
@@ -929,6 +1044,16 @@ function App() {
                 {projectionStatus?.failed ?? health?.projection.failed_outbox ?? "unknown"} / Projected:{" "}
                 {projectionStatus?.projected ?? health?.projection.projected_outbox ?? "unknown"}
               </p>
+              <p data-testid="observability-summary">
+                Lag: {observability?.primary.projection_lag_seconds ?? health?.observability.projection_lag_seconds ?? 0}s / Schema valid:{" "}
+                {((observability?.primary.llm_schema_valid_rate ?? health?.observability.llm_schema_valid_rate ?? 0) * 100).toFixed(0)}% /
+                Fallback: {((observability?.primary.llm_fallback_rate ?? health?.observability.llm_fallback_rate ?? 0) * 100).toFixed(0)}%
+              </p>
+              <p data-testid="canary-health-status">
+                Canary: {observability?.canary.status ?? health?.observability.canary_health.status ?? "unknown"} / Graph:{" "}
+                {observability?.canary.graph_runtime_status ?? health?.observability.canary_health.graph_runtime_status ?? "unknown"} /
+                Gate: {observability?.canary.release_gate_verdict ?? health?.observability.canary_health.release_gate_verdict ?? "unknown"}
+              </p>
               <p data-testid="graph-vertex-count">
                 Graph vertices: {graphSummary?.vertex_count ?? 0} / edges:{" "}
                 <span data-testid="graph-edge-count">{graphSummary?.edge_count ?? 0}</span>
@@ -981,6 +1106,9 @@ function App() {
                 Gate verdict: {releaseGate?.verdict ?? "unknown"} / Canary promote:{" "}
                 {releaseGate?.canary_promote_status ?? "unknown"}
               </p>
+              <p>
+                Trigger: {releaseGate?.trigger_type ?? "unknown"} / Created: {releaseGate?.created_at ?? "not yet run"}
+              </p>
               <div className="actions">
                 <button
                   data-testid="run-eval-smoke"
@@ -1003,7 +1131,23 @@ function App() {
                 >
                   {evalPending ? "Running..." : "Run shadow replay"}
                 </button>
+                <button
+                  data-testid="run-release-checklist"
+                  onClick={() => void handleReleaseChecklistRun()}
+                  disabled={!token || checklistPending || opsState !== "ready"}
+                >
+                  {checklistPending ? "Running..." : "Run release checklist"}
+                </button>
               </div>
+              <h3>Blocked reasons</h3>
+              <ul className="stream" data-testid="release-blocked-reasons">
+                {(releaseGate?.blocked_reasons ?? []).map((item) => (
+                  <li key={item}>
+                    <strong>blocked</strong>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
               <h3>Latest checks</h3>
               <ul className="stream" data-testid="release-checks-stream">
                 <li>
@@ -1041,12 +1185,34 @@ function App() {
                   </li>
                 ))}
               </ul>
+              <h3>SLO snapshot</h3>
+              <ul className="stream" data-testid="release-slo-stream">
+                <li>
+                  <strong>primary</strong>
+                  <span>lag {releaseGate?.slo_snapshot.projection_lag_seconds ?? 0}s</span>
+                  <span>pending {releaseGate?.slo_snapshot.outbox_pending_count ?? 0}</span>
+                  <span>failed {releaseGate?.slo_snapshot.outbox_failed_count ?? 0}</span>
+                </li>
+                <li>
+                  <strong>llm</strong>
+                  <span>schema {(((releaseGate?.slo_snapshot.llm_schema_valid_rate ?? 0) as number) * 100).toFixed(0)}%</span>
+                  <span>fallback {(((releaseGate?.slo_snapshot.llm_fallback_rate ?? 0) as number) * 100).toFixed(0)}%</span>
+                </li>
+                <li>
+                  <strong>canary</strong>
+                  <span>{releaseGate?.slo_snapshot.canary_health.status ?? "unknown"}</span>
+                  <span>{releaseGate?.slo_snapshot.canary_health.detail ?? "no detail"}</span>
+                </li>
+              </ul>
               <h3>Latest eval runs</h3>
               <ul className="stream" data-testid="eval-runs-stream">
                 {evalRuns.map((item) => (
                   <li key={item.id}>
                     <strong>{item.dataset_name ?? item.source_type}</strong>
                     <span>{item.status}</span>
+                    <span>
+                      {item.trigger_type} / {item.runtime_role}
+                    </span>
                     <span>
                       current {item.summary.variants?.current?.passed ?? 0}/{item.summary.variants?.current?.total ?? 0}
                     </span>
@@ -1082,6 +1248,15 @@ function App() {
                   <strong>promote</strong>
                   <span>{releaseGate?.runbook.promote ?? "blocked until gate passes"}</span>
                 </li>
+              </ul>
+              <h3>Recent traces</h3>
+              <ul className="stream" data-testid="observability-traces-stream">
+                {(observability?.recent_traces ?? []).slice(0, 8).map((item, index) => (
+                  <li key={`${item.name}-${index}`}>
+                    <strong>{item.name}</strong>
+                    <span>{JSON.stringify(item.attributes)}</span>
+                  </li>
+                ))}
               </ul>
             </article>
 

@@ -95,6 +95,48 @@ services:
       timeout: 5s
       retries: 10
 
+  otel-collector:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector:0.150.1
+    container_name: gestaloka-v2-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4318:4318"
+
+  prometheus:
+    image: prom/prometheus:v3.3.1
+    container_name: gestaloka-v2-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      backend:
+        condition: service_started
+      backend-canary:
+        condition: service_started
+      projection-worker:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: gestaloka-v2-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+
   backend:
     build:
       context: ./backend
@@ -111,6 +153,11 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
+      OTEL_SERVICE_NAME: gestaloka-backend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_METRICS_HOST: 0.0.0.0
+      OTEL_METRICS_PORT: 9464
+      CANARY_HEALTH_URL: http://backend-canary:8000/health
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
       NEBULA_PORT: 9669
@@ -132,6 +179,8 @@ services:
         condition: service_healthy
       nebula-init:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     command: >
       sh -c "alembic upgrade head &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -149,6 +198,11 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
+      OTEL_SERVICE_NAME: gestaloka-projection-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_METRICS_HOST: 0.0.0.0
+      OTEL_METRICS_PORT: 9466
+      CANARY_HEALTH_URL: http://backend-canary:8000/health
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
       NEBULA_PORT: 9669
@@ -167,6 +221,8 @@ services:
         condition: service_started
       nebula-init:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     command: python -m app.worker
 
   frontend:
@@ -192,7 +248,6 @@ services:
     command: npm run dev -- --host 0.0.0.0 --port 5173
 
   backend-canary:
-    profiles: ["canary"]
     build:
       context: ./backend
     container_name: gestaloka-v2-backend-canary
@@ -209,6 +264,11 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: candidate
+      OTEL_SERVICE_NAME: gestaloka-backend-canary
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_METRICS_HOST: 0.0.0.0
+      OTEL_METRICS_PORT: 9465
+      CANARY_HEALTH_URL: ""
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
       NEBULA_PORT: 9669
@@ -230,9 +290,54 @@ services:
         condition: service_healthy
       nebula-init:
         condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     command: >
       sh -c "alembic upgrade head &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  release-scheduler:
+    build:
+      context: ./backend
+    container_name: gestaloka-v2-release-scheduler
+    env_file:
+      - .env
+    environment:
+      APP_RUNTIME_ROLE: primary
+      DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      PROMPT_DIR: /workspace/prompts
+      EVAL_DATASET_DIR: /workspace/evals/datasets
+      RELEASE_CONFIG_DIR: /workspace/config/release
+      RELEASE_RUNTIME_CONFIG_NAME: current
+      RELEASE_SCHEDULER_CRON: "0 3 * * *"
+      RELEASE_SHADOW_LIMIT: 5
+      OTEL_SERVICE_NAME: gestaloka-release-scheduler
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_METRICS_HOST: 0.0.0.0
+      OTEL_METRICS_PORT: 9467
+      CANARY_HEALTH_URL: http://backend-canary:8000/health
+      GRAPH_PROJECTION_BACKEND: nebula
+      NEBULA_HOST: nebula-graphd
+      NEBULA_PORT: 9669
+      NEBULA_SPACE: gestaloka_v2
+      NEBULA_USER: root
+      NEBULA_PASSWORD: nebula
+    volumes:
+      - ./backend:/app
+      - ./prompts:/workspace/prompts
+      - ./evals:/workspace/evals
+      - ./config:/workspace/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      backend-canary:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    command: python -m app.modules.eval_harness.scheduler loop
 
   frontend-e2e:
     image: mcr.microsoft.com/playwright:v1.52.0-noble

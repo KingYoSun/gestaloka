@@ -35,5 +35,6 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "llm_runs",
         "eval_runs",
         "eval_case_results",
+        "release_gate_reports",
         "outbox_events",
     } <= tables

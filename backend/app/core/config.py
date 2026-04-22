@@ -34,10 +34,17 @@ class Settings(BaseSettings):
     eval_dataset_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "evals" / "datasets")
     release_config_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "config" / "release")
     release_runtime_config_name: str = "current"
+    release_scheduler_cron: str = "0 3 * * *"
+    release_shadow_limit: int = 5
     model_provider: str = "stub"
     model_lite_id: str = "gemini-3.1-flash-lite"
     model_main_id: str = "gemini-3-flash"
     model_pro_id: str = "gemini-3.1-pro"
+    otel_service_name: str = "gestaloka-backend"
+    otel_exporter_otlp_endpoint: str = ""
+    otel_metrics_host: str = "0.0.0.0"
+    otel_metrics_port: int = 0
+    canary_health_url: str = ""
     cors_origins: list[str] = ["http://localhost:5173"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

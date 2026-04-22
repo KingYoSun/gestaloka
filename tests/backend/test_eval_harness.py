@@ -7,9 +7,11 @@ from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry
-from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, SPLedgerEntry
+from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry
 from app.modules.eval_harness.service import EvalHarnessService
+from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
 from app.modules.graph_projection.service import ProjectionService
+from app.modules.observability.service import CanaryProbeResult
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -66,6 +68,8 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     assert payload["summary"]["variants"]["current"]["gate_passed"] is True
     assert payload["summary"]["variants"]["candidate"]["gate_passed"] is True
     assert len(runs) == 1
+    assert runs[0].trigger_type == "manual"
+    assert runs[0].runtime_role == "primary"
     assert len(case_results) == payload["summary"]["case_count"] * 2
     assert {item.variant for item in case_results} == {"current", "candidate"}
 
@@ -122,12 +126,24 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     )
     assert turn_response.status_code == 200
 
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+        graph_runtime_status="ready",
+        release_gate_verdict="passed",
+        projection_lag_seconds=0.0,
+        outbox_pending_count=0,
+        outbox_failed_count=0,
+        llm_schema_valid_rate=1.0,
+        llm_fallback_rate=0.0,
+    )
+
     with container.session_factory() as db:
-        container.eval_service.run_dataset(db, "turn_resolution_smoke")
-        container.eval_service.run_dataset(db, "turn_resolution_failure_injection")
-        container.eval_service.run_shadow_replay(db, limit=3)
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=3)
         db.commit()
-        gate = container.eval_service.latest_gate_report(db)
+        report_count = db.execute(select(func.count(ReleaseGateReport.id))).scalar_one()
 
     assert gate["verdict"] == "passed"
     assert gate["checks"]["smoke"]["candidate_passed"] is True
@@ -135,3 +151,71 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["checks"]["shadow_replay"]["candidate_passed"] is True
     assert gate["canary_promote_status"] == "ready"
     assert gate["diff_summary"][0]["route_id"] == "session.turn_resolution"
+    assert report_count == 1
+
+
+def test_release_gate_blocks_when_canary_is_unhealthy(container):
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="unhealthy",
+        url="http://backend-canary:8000/health",
+        http_status=503,
+        detail="down",
+    )
+
+    with container.session_factory() as db:
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=1)
+        db.commit()
+
+    assert gate["verdict"] == "blocked"
+    assert "canary health != healthy" in gate["blocked_reasons"]
+
+
+def test_scheduler_helpers_only_persist_eval_and_release_tables(client, container, auth_headers, monkeypatch):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+    )
+
+    with container.session_factory() as db:
+        before = {
+            "events": db.execute(select(func.count(Event.id))).scalar_one(),
+            "memories": db.execute(select(func.count(Memory.id))).scalar_one(),
+            "outbox": db.execute(select(func.count(OutboxEvent.id))).scalar_one(),
+            "sp_ledger": db.execute(select(func.count(SPLedgerEntry.id))).scalar_one(),
+        }
+
+    container.settings.release_scheduler_cron = "0 3 * * *"
+    monkeypatch.setattr("app.modules.eval_harness.scheduler.build_container", lambda: container)
+    payload = run_once(trigger_type="nightly", shadow_limit=2)
+
+    with container.session_factory() as db:
+        after = {
+            "events": db.execute(select(func.count(Event.id))).scalar_one(),
+            "memories": db.execute(select(func.count(Memory.id))).scalar_one(),
+            "outbox": db.execute(select(func.count(OutboxEvent.id))).scalar_one(),
+            "sp_ledger": db.execute(select(func.count(SPLedgerEntry.id))).scalar_one(),
+            "eval_runs": db.execute(select(func.count(EvalRun.id))).scalar_one(),
+            "eval_case_results": db.execute(select(func.count(EvalCaseResult.id))).scalar_one(),
+            "release_gate_reports": db.execute(select(func.count(ReleaseGateReport.id))).scalar_one(),
+        }
+
+    assert payload["trigger_type"] == "nightly"
+    assert before == {key: after[key] for key in before}
+    assert after["eval_runs"] == 3
+    assert after["release_gate_reports"] == 1
+    assert seconds_until_next_run("0 3 * * *") >= 0.0

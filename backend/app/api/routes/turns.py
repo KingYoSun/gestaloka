@@ -38,7 +38,16 @@ async def resolve_turn(
     await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "routing"})
     await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "memory_lookup"})
 
+    started_at = container.observability_service.timer()
     result = resolve_turn_for_session(db, container, prepared, payload.input_text)
+    container.observability_service.record_turn_resolution(
+        duration_seconds=container.observability_service.elapsed(started_at),
+        world_id=result.turn.world_id,
+        session_id=result.turn.session_id,
+        turn_id=result.turn.id,
+        final_lane=result.turn.model_lane,
+        graph_context_status=result.graph_context_status,
+    )
     db.commit()
 
     if result.succeeded:

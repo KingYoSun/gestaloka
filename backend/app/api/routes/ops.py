@@ -11,6 +11,7 @@ from app.api.deps import get_container, get_current_ops_user, get_db
 from app.core.container import AppContainer
 from app.models.entities import World
 from app.modules.admin_ops.service import (
+    observability_summary,
     projection_status,
     rebuild_projection,
     recent_runtime_failures,
@@ -44,6 +45,11 @@ class EvalRunRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=50)
 
 
+class ReleaseChecklistRequest(BaseModel):
+    trigger_type: Literal["manual", "nightly", "pre_promote"] = "manual"
+    shadow_limit: int | None = Field(default=None, ge=1, le=50)
+
+
 @router.get("/projection/status")
 def get_projection_status(
     db: Session = Depends(get_db),
@@ -54,6 +60,16 @@ def get_projection_status(
     payload = projection_status(db, container.settings, container.projection_service)
     payload["recent_failures"] = recent_runtime_failures(db)
     return payload
+
+
+@router.get("/observability/summary")
+def get_observability_summary(
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return observability_summary(db, container.settings, container.projection_service, container.observability_service)
 
 
 @router.post("/projection/rebuild")
@@ -166,6 +182,23 @@ def post_eval_run(
     return result
 
 
+@router.post("/release/checklists/run")
+def post_release_checklist_run(
+    payload: ReleaseChecklistRequest,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    result = container.eval_service.run_release_checklist(
+        db,
+        trigger_type=payload.trigger_type,
+        shadow_limit=payload.shadow_limit,
+    )
+    db.commit()
+    return result
+
+
 @router.get("/evals/runs")
 def get_eval_runs(
     limit: int = Query(default=12, ge=1, le=50),
@@ -196,3 +229,24 @@ def get_latest_release_gate(
 ) -> dict[str, object]:
     del user
     return container.eval_service.latest_gate_report(db)
+
+
+@router.get("/release/checklists/latest")
+def get_latest_release_checklist(
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.latest_release_checklist(db)
+
+
+@router.get("/release/checklists/{report_id}")
+def get_release_checklist_detail(
+    report_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.get_release_checklist(db, report_id)

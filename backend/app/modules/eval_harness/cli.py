@@ -8,7 +8,7 @@ from app.core.container import build_container
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GESTALOKA v2 eval harness")
-    parser.add_argument("command", choices=["smoke", "failure", "shadow", "gate"])
+    parser.add_argument("command", choices=["smoke", "failure", "shadow", "gate", "nightly", "canary-probe"])
     parser.add_argument("--limit", type=int, default=5)
     args = parser.parse_args()
 
@@ -20,11 +20,20 @@ def main() -> None:
             payload = container.eval_service.run_dataset(db, "turn_resolution_failure_injection")
         elif args.command == "shadow":
             payload = container.eval_service.run_shadow_replay(db, limit=args.limit)
+        elif args.command == "gate":
+            payload = container.eval_service.run_release_checklist(
+                db,
+                trigger_type="pre_promote",
+                shadow_limit=args.limit,
+            )
+        elif args.command == "nightly":
+            payload = container.eval_service.run_release_checklist(
+                db,
+                trigger_type="nightly",
+                shadow_limit=args.limit,
+            )
         else:
-            container.eval_service.run_dataset(db, "turn_resolution_smoke")
-            container.eval_service.run_dataset(db, "turn_resolution_failure_injection")
-            container.eval_service.run_shadow_replay(db, limit=args.limit)
-            payload = container.eval_service.latest_gate_report(db)
+            payload = container.observability_service.probe_canary_health().__dict__
         db.commit()
 
     print(json.dumps(payload, ensure_ascii=False, indent=2))

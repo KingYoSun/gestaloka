@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 
 from app.modules.identity.oidc import UserIdentity
+from app.modules.observability.service import CanaryProbeResult
 
 
 def test_health_reports_database_projection_and_oidc(client):
@@ -17,6 +18,8 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["projection_runtime"]["graph_runtime_status"] == "recording"
     assert payload["sp"]["default_balance"] == 10
     assert payload["sp"]["turn_cost"] == 1
+    assert {"projection_lag_seconds", "outbox_pending_count", "llm_schema_valid_rate"} <= set(payload["observability"])
+    assert {"verdict", "blocked_reasons", "canary_promote_status"} <= set(payload["release_gate"])
     assert payload["oidc_mode"] == "development"
 
 
@@ -187,7 +190,34 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert rebuild_payload["records"] >= 1
 
 
-def test_ops_eval_contracts(client, auth_headers):
+def test_ops_eval_contracts(client, container, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+        graph_runtime_status="ready",
+        release_gate_verdict="passed",
+        projection_lag_seconds=0.0,
+        outbox_pending_count=0,
+        outbox_failed_count=0,
+        llm_schema_valid_rate=1.0,
+        llm_fallback_rate=0.0,
+    )
+
     run_response = client.post(
         "/ops/evals/run",
         json={"source": "dataset", "dataset_name": "turn_resolution_smoke"},
@@ -207,10 +237,34 @@ def test_ops_eval_contracts(client, auth_headers):
     assert detail_response.status_code == 200
     assert len(detail_response.json()["results"]) >= 2
 
-    gate_response = client.get("/ops/release/gates/latest", headers=auth_headers)
-    assert gate_response.status_code == 200
-    gate_payload = gate_response.json()
-    assert {"verdict", "checks", "diff_summary", "runbook"} <= set(gate_payload)
+    observability_response = client.get("/ops/observability/summary", headers=auth_headers)
+    assert observability_response.status_code == 200
+    observability_payload = observability_response.json()
+    assert {"primary", "canary", "recent_traces", "metrics"} <= set(observability_payload)
+
+    checklist_run_response = client.post(
+        "/ops/release/checklists/run",
+        json={"trigger_type": "manual", "shadow_limit": 3},
+        headers=auth_headers,
+    )
+    assert checklist_run_response.status_code == 200
+    checklist_payload = checklist_run_response.json()
+    assert {"report_id", "verdict", "checks", "diff_summary", "runbook", "slo_snapshot"} <= set(checklist_payload)
+
+    latest_response = client.get("/ops/release/checklists/latest", headers=auth_headers)
+    assert latest_response.status_code == 200
+    assert latest_response.json()["report_id"] == checklist_payload["report_id"]
+
+    detail_gate_response = client.get(
+        f"/ops/release/checklists/{checklist_payload['report_id']}",
+        headers=auth_headers,
+    )
+    assert detail_gate_response.status_code == 200
+    assert detail_gate_response.json()["report_id"] == checklist_payload["report_id"]
+
+    gate_alias_response = client.get("/ops/release/gates/latest", headers=auth_headers)
+    assert gate_alias_response.status_code == 200
+    assert gate_alias_response.json()["report_id"] == checklist_payload["report_id"]
 
 
 def test_canary_runtime_blocks_gameplay_writes(client, container, auth_headers):

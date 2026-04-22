@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -16,6 +17,7 @@ from app.modules.graph_projection.repository import (
     RecordingWorldGraphRepository,
     nebula_vid,
 )
+from app.modules.observability.service import ObservabilityService
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,9 @@ class GraphContextResolution:
 
 
 class ProjectionService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, observability_service: ObservabilityService | None = None) -> None:
         self.settings = settings
+        self.observability_service = observability_service
         self.recording_repository = RecordingWorldGraphRepository()
         self.repository = (
             NebulaWorldGraphRepository(settings)
@@ -120,6 +123,7 @@ class ProjectionService:
             return GraphContextResolution(status="degraded", context=fallback)
 
     def process_pending(self, db: Session) -> list[dict]:
+        started_at = self.observability_service.timer() if self.observability_service is not None else None
         stmt = select(OutboxEvent).where(OutboxEvent.status == "pending").order_by(OutboxEvent.created_at.asc())
         pending = list(db.execute(stmt).scalars())
         processed: list[dict] = []
@@ -140,9 +144,18 @@ class ProjectionService:
                 outbox_event.attempts += 1
                 outbox_event.last_error = str(exc)
         db.flush()
+        if self.observability_service is not None and started_at is not None:
+            self.observability_service.record_projection_processing(
+                duration_seconds=self.observability_service.elapsed(started_at),
+                pending_count=int(db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "pending")).scalar_one()),
+                failed_count=int(db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "failed")).scalar_one()),
+                lag_seconds=self._projection_lag_seconds(db),
+                processed_count=len(processed),
+            )
         return processed
 
     def rebuild(self, db: Session, world_id: str) -> list[dict]:
+        started_at = self.observability_service.timer() if self.observability_service is not None else None
         db.execute(delete(ProjectionRecord).where(ProjectionRecord.world_id == world_id))
         db.flush()
         self.probe_runtime()
@@ -165,6 +178,14 @@ class ProjectionService:
             self._persist_projection_records(db, synthetic_outbox, event, result.records)
             created.extend(self._records_to_dicts(result, world_id))
         db.flush()
+        if self.observability_service is not None and started_at is not None:
+            self.observability_service.record_projection_processing(
+                duration_seconds=self.observability_service.elapsed(started_at),
+                pending_count=int(db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "pending")).scalar_one()),
+                failed_count=int(db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "failed")).scalar_one()),
+                lag_seconds=self._projection_lag_seconds(db),
+                processed_count=len(created),
+            )
         return created
 
     def _load_bundle(
@@ -294,3 +315,15 @@ class ProjectionService:
             for item in db.execute(select(Memory).where(Memory.world_id == world_id)).scalars()
         )
         return vids
+
+    @staticmethod
+    def _projection_lag_seconds(db: Session) -> float:
+        oldest_pending = db.execute(
+            select(OutboxEvent.created_at)
+            .where(OutboxEvent.status == "pending")
+            .order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if oldest_pending is None:
+            return 0.0
+        return max((datetime.now(timezone.utc) - oldest_pending).total_seconds(), 0.0)

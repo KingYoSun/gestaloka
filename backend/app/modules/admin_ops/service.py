@@ -6,9 +6,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.entities import Actor, OutboxEvent, ProjectionRecord, Session as GameSession
+from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Session as GameSession
 from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
+from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
@@ -26,18 +27,21 @@ def runtime_snapshot(db: Session, settings: Settings, projection_service: Projec
         .order_by(OutboxEvent.updated_at.desc(), OutboxEvent.id.desc())
         .limit(1)
     ).scalar_one_or_none()
+    llm_rates = _llm_rates(db)
     return {
         "active_sessions": int(active_sessions),
         "pending_outbox": int(pending_outbox),
         "failed_outbox": int(failed_outbox),
         "projected_outbox": int(projected_outbox),
         "projection_records": int(projection_records),
+        "projection_lag_seconds": ProjectionService._projection_lag_seconds(db),
         "last_error": last_error,
         "backend": settings.graph_projection_backend,
         "space": settings.nebula_space,
         "graph_read_mode": projection_service.graph_read_mode,
         "graph_runtime_status": projection_runtime["graph_runtime_status"],
         "graph_runtime_error": projection_runtime["last_runtime_error"],
+        **llm_rates,
     }
 
 
@@ -52,6 +56,41 @@ def projection_status(db: Session, settings: Settings, projection_service: Proje
         "last_error": snapshot["last_error"],
         "graph_read_mode": snapshot["graph_read_mode"],
         "graph_runtime_status": snapshot["graph_runtime_status"],
+        "projection_lag_seconds": snapshot["projection_lag_seconds"],
+    }
+
+
+def observability_summary(
+    db: Session,
+    settings: Settings,
+    projection_service: ProjectionService,
+    observability_service: ObservabilityService,
+) -> dict[str, object]:
+    snapshot = runtime_snapshot(db, settings, projection_service)
+    observability_service.sync_outbox_metrics(
+        pending_count=int(snapshot["pending_outbox"]),
+        failed_count=int(snapshot["failed_outbox"]),
+        lag_seconds=float(snapshot["projection_lag_seconds"]),
+    )
+    observability_service.sync_llm_rates(
+        schema_valid_rate=float(snapshot["llm_schema_valid_rate"]),
+        fallback_rate=float(snapshot["llm_fallback_rate"]),
+    )
+    canary = observability_service.probe_canary_health()
+    return {
+        "primary": {
+            "runtime_role": settings.app_runtime_role,
+            "graph_runtime_status": snapshot["graph_runtime_status"],
+            "graph_read_mode": snapshot["graph_read_mode"],
+            "projection_lag_seconds": snapshot["projection_lag_seconds"],
+            "outbox_pending_count": snapshot["pending_outbox"],
+            "outbox_failed_count": snapshot["failed_outbox"],
+            "llm_schema_valid_rate": snapshot["llm_schema_valid_rate"],
+            "llm_fallback_rate": snapshot["llm_fallback_rate"],
+        },
+        "canary": _canary_probe_dict(canary),
+        "recent_traces": observability_service.recent_trace_attributes(),
+        "metrics": observability_service.metric_snapshot(),
     }
 
 
@@ -148,3 +187,40 @@ def recent_runtime_failures(db: Session) -> list[dict[str, object]]:
         }
         for item in failed_outbox
     ]
+
+
+def _llm_rates(db: Session) -> dict[str, float]:
+    llm_total = int(db.execute(select(func.count(LLMRun.id))).scalar_one())
+    llm_valid = int(db.execute(select(func.count(LLMRun.id)).where(LLMRun.output_schema_status == "valid")).scalar_one())
+    turn_count = int(db.execute(select(func.count(func.distinct(LLMRun.turn_id)))).scalar_one())
+    fallback_turns = int(
+        db.execute(
+            select(func.count())
+            .select_from(
+                select(LLMRun.turn_id)
+                .group_by(LLMRun.turn_id)
+                .having(func.count(LLMRun.id) > 1)
+                .subquery()
+            )
+        ).scalar_one()
+    )
+    return {
+        "llm_schema_valid_rate": (llm_valid / llm_total) if llm_total else 0.0,
+        "llm_fallback_rate": (fallback_turns / turn_count) if turn_count else 0.0,
+    }
+
+
+def _canary_probe_dict(probe: CanaryProbeResult) -> dict[str, object]:
+    return {
+        "status": probe.status,
+        "url": probe.url,
+        "http_status": probe.http_status,
+        "detail": probe.detail,
+        "graph_runtime_status": probe.graph_runtime_status,
+        "release_gate_verdict": probe.release_gate_verdict,
+        "projection_lag_seconds": probe.projection_lag_seconds,
+        "outbox_pending_count": probe.outbox_pending_count,
+        "outbox_failed_count": probe.outbox_failed_count,
+        "llm_schema_valid_rate": probe.llm_schema_valid_rate,
+        "llm_fallback_rate": probe.llm_fallback_rate,
+    }

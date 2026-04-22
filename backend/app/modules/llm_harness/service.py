@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry
+from app.modules.observability.service import ObservabilityService
 
 
 @dataclass(frozen=True)
@@ -63,21 +65,25 @@ class ModelRouter:
         *,
         route_overrides: dict[str, PromptRouteOverride] | None = None,
         config_name: str = "settings",
+        observability_service: ObservabilityService | None = None,
     ) -> None:
         self.settings = settings
         self.prompt_registry = prompt_registry
         self.route_overrides = route_overrides or {}
         self.config_name = config_name
+        self.observability_service = observability_service
 
     def resolve_turn(
         self,
         *,
         world_id: str,
+        turn_id: str | None = None,
         player_name: str,
         npc_name: str,
         input_text: str,
         relevant_memories: list[str],
         relation_context: list[str],
+        graph_context_status: str = "ready",
         prompt_id: str = "session.turn_resolution",
     ) -> TurnResolutionOutcome:
         route = self.route_overrides.get(prompt_id)
@@ -89,24 +95,37 @@ class ModelRouter:
         ).hexdigest()
         attempts: list[TurnResolutionAttempt] = []
         failure_reason: str | None = None
+        span_attributes = {
+            "world_id": world_id,
+            "turn_id": turn_id,
+            "prompt_id": prompt.prompt_id,
+            "graph_context_status": graph_context_status,
+            "config_name": self.config_name,
+            "runtime_role": self.settings.app_runtime_role,
+        }
+        context_manager = (
+            self.observability_service.span("model_router.resolve_turn", attributes=span_attributes)
+            if self.observability_service is not None
+            else _null_span()
+        )
 
-        for lane in self._lane_sequence(requested_lane or prompt.model_lane):
-            raw_output = self._generate_output(
-                lane=lane,
-                world_id=world_id,
-                player_name=player_name,
-                npc_name=npc_name,
-                input_text=input_text,
-                relevant_memories=relevant_memories,
-                relation_context=relation_context,
-            )
-            model_id = self._model_id_for_lane(lane, route)
-            try:
-                payload = TurnResolutionPayload.model_validate(raw_output)
-            except ValidationError as exc:
-                failure_reason = f"{lane} output failed schema validation"
-                attempts.append(
-                    TurnResolutionAttempt(
+        with context_manager:
+            for lane in self._lane_sequence(requested_lane or prompt.model_lane):
+                raw_output = self._generate_output(
+                    lane=lane,
+                    world_id=world_id,
+                    player_name=player_name,
+                    npc_name=npc_name,
+                    input_text=input_text,
+                    relevant_memories=relevant_memories,
+                    relation_context=relation_context,
+                )
+                model_id = self._model_id_for_lane(lane, route)
+                try:
+                    payload = TurnResolutionPayload.model_validate(raw_output)
+                except ValidationError as exc:
+                    failure_reason = f"{lane} output failed schema validation"
+                    attempt = TurnResolutionAttempt(
                         prompt_id=prompt.prompt_id,
                         schema_version=prompt.schema_version,
                         model_lane=lane,
@@ -121,11 +140,20 @@ class ModelRouter:
                             "raw_output": raw_output,
                         },
                     )
-                )
-                continue
+                    attempts.append(attempt)
+                    self._record_attempt(
+                        world_id,
+                        turn_id,
+                        lane,
+                        prompt.prompt_id,
+                        model_id,
+                        graph_context_status,
+                        False,
+                        len(attempts) > 1,
+                    )
+                    continue
 
-            attempts.append(
-                TurnResolutionAttempt(
+                attempt = TurnResolutionAttempt(
                     prompt_id=prompt.prompt_id,
                     schema_version=prompt.schema_version,
                     model_lane=lane,
@@ -138,15 +166,25 @@ class ModelRouter:
                         "raw_output": payload.model_dump(),
                     },
                 )
-            )
-            return TurnResolutionOutcome(attempts=attempts, final_lane=lane, final_payload=payload)
+                attempts.append(attempt)
+                self._record_attempt(
+                    world_id,
+                    turn_id,
+                    lane,
+                    prompt.prompt_id,
+                    model_id,
+                    graph_context_status,
+                    True,
+                    len(attempts) > 1,
+                )
+                return TurnResolutionOutcome(attempts=attempts, final_lane=lane, final_payload=payload)
 
-        return TurnResolutionOutcome(
-            attempts=attempts,
-            final_lane=attempts[-1].model_lane if attempts else prompt.model_lane,
-            final_payload=None,
-            failure_reason=failure_reason or "No LLM lane executed",
-        )
+            return TurnResolutionOutcome(
+                attempts=attempts,
+                final_lane=attempts[-1].model_lane if attempts else prompt.model_lane,
+                final_payload=None,
+                failure_reason=failure_reason or "No LLM lane executed",
+            )
 
     def _lane_sequence(self, requested_lane: str) -> list[str]:
         if requested_lane == "pro_lane":
@@ -235,3 +273,32 @@ class ModelRouter:
                 {"scope": "actor", "text": f"{npc_name} remembers: {memory_text}", "salience": 0.88},
             ],
         }
+
+    def _record_attempt(
+        self,
+        world_id: str,
+        turn_id: str | None,
+        lane: str,
+        prompt_id: str,
+        model_id: str,
+        graph_context_status: str,
+        schema_valid: bool,
+        used_fallback: bool,
+    ) -> None:
+        if self.observability_service is None:
+            return
+        self.observability_service.record_llm_attempt(
+            world_id=world_id,
+            turn_id=turn_id,
+            prompt_id=prompt_id,
+            model_id=model_id,
+            lane=lane,
+            graph_context_status=graph_context_status,
+            schema_valid=schema_valid,
+            used_fallback=used_fallback,
+        )
+
+
+@contextmanager
+def _null_span():
+    yield None

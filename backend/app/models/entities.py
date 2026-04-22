@@ -255,6 +255,8 @@ class EvalRun(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     source_type: Mapped[str] = mapped_column(String(32))
     dataset_name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    trigger_type: Mapped[str] = mapped_column(String(32), default="manual")
+    runtime_role: Mapped[str] = mapped_column(String(32), default="primary")
     current_config_name: Mapped[str] = mapped_column(String(64))
     current_config_hash: Mapped[str] = mapped_column(String(128))
     candidate_config_name: Mapped[str] = mapped_column(String(64))
@@ -284,3 +286,21 @@ class EvalCaseResult(Base, TimestampMixin):
     passed: Mapped[bool] = mapped_column(Boolean, default=False)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_output: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ReleaseGateReport(Base, TimestampMixin):
+    __tablename__ = "release_gate_reports"
+    __table_args__ = (
+        ForeignKeyConstraint(["smoke_run_id"], ["eval_runs.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["failure_run_id"], ["eval_runs.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["shadow_run_id"], ["eval_runs.id"], ondelete="CASCADE"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    smoke_run_id: Mapped[str] = mapped_column(String(36), index=True)
+    failure_run_id: Mapped[str] = mapped_column(String(36), index=True)
+    shadow_run_id: Mapped[str] = mapped_column(String(36), index=True)
+    verdict: Mapped[str] = mapped_column(String(32))
+    blocked_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
+    slo_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    trigger_type: Mapped[str] = mapped_column(String(32), default="manual")

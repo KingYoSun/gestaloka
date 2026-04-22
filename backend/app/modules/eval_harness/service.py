@@ -3,19 +3,28 @@ from __future__ import annotations
 import hashlib
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry, SUPPORTED_MODEL_LANES, SUPPORTED_PROMPT_SCHEMAS
-from app.models.entities import Actor, EvalCaseResult, EvalRun, Session as GameSession, Turn
+from app.models.entities import (
+    Actor,
+    EvalCaseResult,
+    EvalRun,
+    LLMRun,
+    OutboxEvent,
+    ReleaseGateReport,
+    Session as GameSession,
+    Turn,
+)
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
+from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_memory.service import search_memories
 
 
@@ -86,10 +95,12 @@ class EvalHarnessService:
         settings: Settings,
         prompt_registry: PromptRegistry,
         projection_service: ProjectionService,
+        observability_service: ObservabilityService | None = None,
     ) -> None:
         self.settings = settings
         self.prompt_registry = prompt_registry
         self.projection_service = projection_service
+        self.observability_service = observability_service
         self.datasets = self._load_datasets(settings.eval_dataset_dir)
 
     def router_for_config(self, config_name: str) -> ModelRouter:
@@ -99,6 +110,7 @@ class EvalHarnessService:
             self.prompt_registry,
             route_overrides=release_config.routes,
             config_name=release_config.name,
+            observability_service=self.observability_service,
         )
 
     def runtime_router(self) -> ModelRouter:
@@ -145,13 +157,103 @@ class EvalHarnessService:
             routes=routes,
         )
 
-    def run_dataset(self, db: Session, dataset_name: str) -> dict[str, object]:
+    def run_dataset(
+        self,
+        db: Session,
+        dataset_name: str,
+        *,
+        trigger_type: Literal["manual", "nightly", "pre_promote"] = "manual",
+        runtime_role: str | None = None,
+    ) -> dict[str, object]:
         dataset = self._require_dataset(dataset_name)
-        return self._run_cases(db, source_type="dataset", dataset_name=dataset_name, cases=dataset.cases)
+        return self._run_cases(
+            db,
+            source_type="dataset",
+            dataset_name=dataset_name,
+            cases=dataset.cases,
+            trigger_type=trigger_type,
+            runtime_role=runtime_role or self.settings.app_runtime_role,
+        )
 
-    def run_shadow_replay(self, db: Session, limit: int = 5) -> dict[str, object]:
+    def run_shadow_replay(
+        self,
+        db: Session,
+        *,
+        limit: int = 5,
+        trigger_type: Literal["manual", "nightly", "pre_promote"] = "manual",
+        runtime_role: str | None = None,
+    ) -> dict[str, object]:
         cases = self._shadow_replay_cases(db, limit=limit)
-        return self._run_cases(db, source_type="shadow_replay", dataset_name=None, cases=cases)
+        return self._run_cases(
+            db,
+            source_type="shadow_replay",
+            dataset_name=None,
+            cases=cases,
+            trigger_type=trigger_type,
+            runtime_role=runtime_role or self.settings.app_runtime_role,
+        )
+
+    def run_release_checklist(
+        self,
+        db: Session,
+        *,
+        trigger_type: Literal["manual", "nightly", "pre_promote"] = "manual",
+        runtime_role: str | None = None,
+        shadow_limit: int | None = None,
+    ) -> dict[str, object]:
+        resolved_runtime_role = runtime_role or self.settings.app_runtime_role
+        smoke = self.run_dataset(
+            db,
+            "turn_resolution_smoke",
+            trigger_type=trigger_type,
+            runtime_role=resolved_runtime_role,
+        )
+        failure = self.run_dataset(
+            db,
+            "turn_resolution_failure_injection",
+            trigger_type=trigger_type,
+            runtime_role=resolved_runtime_role,
+        )
+        shadow = self.run_shadow_replay(
+            db,
+            limit=shadow_limit or self.settings.release_shadow_limit,
+            trigger_type=trigger_type,
+            runtime_role=resolved_runtime_role,
+        )
+
+        current_config = self.load_release_config("current")
+        candidate_config = self.load_release_config("candidate")
+        canary_probe = self._probe_canary_health()
+        slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
+        blocked_reasons = self._blocked_reasons(
+            smoke_summary=smoke["summary"],
+            failure_summary=failure["summary"],
+            shadow_summary=shadow["summary"],
+            slo_snapshot=slo_snapshot,
+        )
+        verdict = "passed" if not blocked_reasons else "blocked"
+
+        report = ReleaseGateReport(
+            smoke_run_id=smoke["id"],
+            failure_run_id=failure["id"],
+            shadow_run_id=shadow["id"],
+            verdict=verdict,
+            blocked_reasons=blocked_reasons,
+            slo_snapshot=slo_snapshot,
+            trigger_type=trigger_type,
+        )
+        db.add(report)
+        db.flush()
+
+        if self.observability_service is not None:
+            self.observability_service.record_release_gate(
+                report_id=report.id,
+                verdict=verdict,
+                blocked_reasons=blocked_reasons,
+                trigger_type=trigger_type,
+            )
+
+        return self._report_to_dict(db, report, current_config=current_config, candidate_config=candidate_config)
 
     def list_runs(self, db: Session, limit: int = 12) -> dict[str, object]:
         runs = list(
@@ -163,6 +265,8 @@ class EvalHarnessService:
                     "id": run.id,
                     "source_type": run.source_type,
                     "dataset_name": run.dataset_name,
+                    "trigger_type": run.trigger_type,
+                    "runtime_role": run.runtime_role,
                     "status": run.status,
                     "summary": run.summary,
                     "started_at": run.started_at.isoformat(),
@@ -185,6 +289,8 @@ class EvalHarnessService:
             "id": run.id,
             "source_type": run.source_type,
             "dataset_name": run.dataset_name,
+            "trigger_type": run.trigger_type,
+            "runtime_role": run.runtime_role,
             "status": run.status,
             "summary": run.summary,
             "started_at": run.started_at.isoformat(),
@@ -209,40 +315,99 @@ class EvalHarnessService:
             ],
         }
 
-    def latest_gate_report(self, db: Session) -> dict[str, object]:
-        latest_runs = list(
-            db.execute(select(EvalRun).where(EvalRun.status == "completed").order_by(EvalRun.started_at.desc())).scalars()
+    def get_release_checklist(self, db: Session, report_id: str) -> dict[str, object]:
+        report = db.execute(select(ReleaseGateReport).where(ReleaseGateReport.id == report_id)).scalar_one()
+        return self._report_to_dict(
+            db,
+            report,
+            current_config=self.load_release_config("current"),
+            candidate_config=self.load_release_config("candidate"),
         )
-        latest_by_key: dict[str, EvalRun] = {}
-        for run in latest_runs:
-            key = run.dataset_name or run.source_type
-            latest_by_key.setdefault(key, run)
 
-        smoke = latest_by_key.get("turn_resolution_smoke")
-        failure_injection = latest_by_key.get("turn_resolution_failure_injection")
-        shadow = latest_by_key.get("shadow_replay")
-        current_config = self.load_release_config("current")
-        candidate_config = self.load_release_config("candidate")
+    def latest_release_checklist(self, db: Session) -> dict[str, object]:
+        report = db.execute(
+            select(ReleaseGateReport).order_by(ReleaseGateReport.created_at.desc(), ReleaseGateReport.id.desc()).limit(1)
+        ).scalar_one_or_none()
+        if report is None:
+            return {
+                "report_id": None,
+                "verdict": "blocked",
+                "blocked_reasons": ["No release checklist report exists"],
+                "trigger_type": "manual",
+                "checks": {
+                    "smoke": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                    "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                    "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                },
+                "runs": {"smoke": None, "failure_injection": None, "shadow_replay": None},
+                "latest_runs": {"smoke": None, "failure_injection": None, "shadow_replay": None},
+                "slo_snapshot": {
+                    "runtime_role": self.settings.app_runtime_role,
+                    "canary_health": self._probe_canary_health().__dict__,
+                    "projection_lag_seconds": 0.0,
+                    "outbox_pending_count": 0,
+                    "outbox_failed_count": 0,
+                    "llm_schema_valid_rate": 0.0,
+                    "llm_fallback_rate": 0.0,
+                },
+                "diff_summary": self.load_release_config("current").diff(self.load_release_config("candidate")),
+                "shadow_failures": [],
+                "runbook": self._runbook(),
+                "created_at": None,
+                "canary_promote_status": "blocked",
+            }
+        return self._report_to_dict(
+            db,
+            report,
+            current_config=self.load_release_config("current"),
+            candidate_config=self.load_release_config("candidate"),
+        )
+
+    def latest_gate_report(self, db: Session) -> dict[str, object]:
+        return self.latest_release_checklist(db)
+
+    def _report_to_dict(
+        self,
+        db: Session,
+        report: ReleaseGateReport,
+        *,
+        current_config: ReleaseConfig,
+        candidate_config: ReleaseConfig,
+    ) -> dict[str, object]:
+        smoke = db.execute(select(EvalRun).where(EvalRun.id == report.smoke_run_id)).scalar_one()
+        failure = db.execute(select(EvalRun).where(EvalRun.id == report.failure_run_id)).scalar_one()
+        shadow = db.execute(select(EvalRun).where(EvalRun.id == report.shadow_run_id)).scalar_one()
+        shadow_results = list(
+            db.execute(
+                select(EvalCaseResult)
+                .where(EvalCaseResult.eval_run_id == shadow.id)
+                .order_by(EvalCaseResult.case_id.asc(), EvalCaseResult.variant.asc())
+            ).scalars()
+        )
         checks = {
             "smoke": self._extract_gate_check(smoke),
-            "failure_injection": self._extract_gate_check(failure_injection),
+            "failure_injection": self._extract_gate_check(failure),
             "shadow_replay": self._extract_gate_check(shadow),
         }
-        verdict = (
-            "passed"
-            if all(item["present"] and item["current_passed"] and item["candidate_passed"] for item in checks.values())
-            else "blocked"
-        )
-        shadow_failures: list[dict[str, object]] = []
-        if shadow is not None:
-            shadow_results = list(
-                db.execute(
-                    select(EvalCaseResult)
-                    .where(EvalCaseResult.eval_run_id == shadow.id)
-                    .order_by(EvalCaseResult.case_id.asc(), EvalCaseResult.variant.asc())
-                ).scalars()
-            )
-            shadow_failures = [
+        return {
+            "report_id": report.id,
+            "verdict": report.verdict,
+            "blocked_reasons": report.blocked_reasons,
+            "trigger_type": report.trigger_type,
+            "checks": checks,
+            "runs": {
+                "smoke": smoke.id,
+                "failure_injection": failure.id,
+                "shadow_replay": shadow.id,
+            },
+            "latest_runs": {
+                "smoke": smoke.id,
+                "failure_injection": failure.id,
+                "shadow_replay": shadow.id,
+            },
+            "slo_snapshot": report.slo_snapshot,
+            "diff_summary": current_config.diff(candidate_config),
+            "shadow_failures": [
                 {
                     "case_id": item.case_id,
                     "variant": item.variant,
@@ -252,38 +417,10 @@ class EvalHarnessService:
                 }
                 for item in shadow_results
                 if not item.passed or item.graph_context_status != "ready"
-            ]
-
-        return {
-            "verdict": verdict,
-            "canary_promote_status": "ready" if verdict == "passed" else "blocked",
-            "checks": checks,
-            "latest_runs": {
-                "smoke": smoke.id if smoke is not None else None,
-                "failure_injection": failure_injection.id if failure_injection is not None else None,
-                "shadow_replay": shadow.id if shadow is not None else None,
-            },
-            "diff_summary": current_config.diff(candidate_config),
-            "shadow_failures": shadow_failures,
-            "runbook": {
-                "canary_up": "docker compose --profile canary up --build backend-canary",
-                "rollback": "docker compose --profile canary rm -sf backend-canary",
-                "promote": "cp config/release/candidate.yaml config/release/current.yaml && docker compose up -d --build backend",
-            },
-        }
-
-    def _extract_gate_check(self, run: EvalRun | None) -> dict[str, object]:
-        if run is None:
-            return {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None}
-        summary = run.summary or {}
-        variants = summary.get("variants", {})
-        current = variants.get("current", {})
-        candidate = variants.get("candidate", {})
-        return {
-            "present": True,
-            "current_passed": bool(current.get("gate_passed")),
-            "candidate_passed": bool(candidate.get("gate_passed")),
-            "run_id": run.id,
+            ],
+            "runbook": self._runbook(),
+            "created_at": report.created_at.isoformat(),
+            "canary_promote_status": "ready" if report.verdict == "passed" else "blocked",
         }
 
     def _run_cases(
@@ -293,12 +430,16 @@ class EvalHarnessService:
         source_type: Literal["dataset", "shadow_replay"],
         dataset_name: str | None,
         cases: list[EvalCaseInput],
+        trigger_type: Literal["manual", "nightly", "pre_promote"],
+        runtime_role: str,
     ) -> dict[str, object]:
         current_config = self.load_release_config("current")
         candidate_config = self.load_release_config("candidate")
         run = EvalRun(
             source_type=source_type,
             dataset_name=dataset_name,
+            trigger_type=trigger_type,
+            runtime_role=runtime_role,
             current_config_name=current_config.name,
             current_config_hash=current_config.content_hash,
             candidate_config_name=candidate_config.name,
@@ -306,10 +447,17 @@ class EvalHarnessService:
             git_sha=self._git_sha(),
             status="running",
             summary={},
-            started_at=datetime.now(timezone.utc),
         )
         db.add(run)
         db.flush()
+
+        if self.observability_service is not None:
+            self.observability_service.record_eval_run(
+                eval_run_id=run.id,
+                dataset_name=dataset_name,
+                trigger_type=trigger_type,
+                runtime_role=runtime_role,
+            )
 
         routers = {
             "current": ModelRouter(
@@ -317,12 +465,14 @@ class EvalHarnessService:
                 self.prompt_registry,
                 route_overrides=current_config.routes,
                 config_name=current_config.name,
+                observability_service=self.observability_service,
             ),
             "candidate": ModelRouter(
                 self.settings,
                 self.prompt_registry,
                 route_overrides=candidate_config.routes,
                 config_name=candidate_config.name,
+                observability_service=self.observability_service,
             ),
         }
 
@@ -331,11 +481,13 @@ class EvalHarnessService:
             for case in cases:
                 outcome = router.resolve_turn(
                     world_id=case.world_id,
+                    turn_id=case.source_turn_id,
                     player_name=case.player_name,
                     npc_name=case.npc_name,
                     input_text=case.input_text,
                     relevant_memories=case.relevant_memories,
                     relation_context=case.relation_context,
+                    graph_context_status=case.graph_context_status,
                     prompt_id=case.prompt_id,
                 )
                 payload = self._persist_case_result(
@@ -349,7 +501,7 @@ class EvalHarnessService:
 
         run.summary = self._build_run_summary(source_type, dataset_name, cases, case_payloads)
         run.status = "completed"
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = run.updated_at
         db.flush()
         return self.get_run_detail(db, run.id)
 
@@ -496,6 +648,98 @@ class EvalHarnessService:
             return all(item["passed"] for item in scoped)
         return all(item["passed"] for item in scoped)
 
+    def _blocked_reasons(
+        self,
+        *,
+        smoke_summary: dict[str, object],
+        failure_summary: dict[str, object],
+        shadow_summary: dict[str, object],
+        slo_snapshot: dict[str, object],
+    ) -> list[str]:
+        blocked: list[str] = []
+        if not bool(smoke_summary["variants"]["current"]["gate_passed"]) or not bool(smoke_summary["variants"]["candidate"]["gate_passed"]):
+            blocked.append("smoke gate failed")
+        if not bool(failure_summary["variants"]["current"]["gate_passed"]) or not bool(failure_summary["variants"]["candidate"]["gate_passed"]):
+            blocked.append("failure injection gate failed")
+        if not bool(shadow_summary["variants"]["current"]["gate_passed"]) or not bool(shadow_summary["variants"]["candidate"]["gate_passed"]):
+            blocked.append("shadow replay gate failed")
+        if int(slo_snapshot["outbox_failed_count"]) > 0:
+            blocked.append("failed_outbox > 0")
+        if float(slo_snapshot["projection_lag_seconds"]) > 5.0:
+            blocked.append("projection_lag_seconds > 5")
+        if slo_snapshot["canary_health"]["status"] != "healthy":
+            blocked.append("canary health != healthy")
+        return blocked
+
+    def _build_slo_snapshot(
+        self,
+        db: Session,
+        *,
+        runtime_role: str,
+        canary_probe: CanaryProbeResult,
+    ) -> dict[str, object]:
+        failed_outbox_count = int(db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "failed")).scalar_one())
+        pending_outbox_count = int(db.execute(select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "pending")).scalar_one())
+        oldest_pending = db.execute(
+            select(OutboxEvent.created_at)
+            .where(OutboxEvent.status == "pending")
+            .order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc())
+            .limit(1)
+        ).scalar_one_or_none()
+        projection_lag_seconds = 0.0
+        if oldest_pending is not None:
+            projection_lag_seconds = max((self._now() - oldest_pending).total_seconds(), 0.0)
+
+        llm_total = int(db.execute(select(func.count(LLMRun.id))).scalar_one())
+        llm_valid = int(db.execute(select(func.count(LLMRun.id)).where(LLMRun.output_schema_status == "valid")).scalar_one())
+        turn_count = int(db.execute(select(func.count(func.distinct(LLMRun.turn_id)))).scalar_one())
+        fallback_turns = int(
+            db.execute(
+                select(func.count())
+                .select_from(
+                    select(LLMRun.turn_id)
+                    .group_by(LLMRun.turn_id)
+                    .having(func.count(LLMRun.id) > 1)
+                    .subquery()
+                )
+            ).scalar_one()
+        )
+
+        snapshot = {
+            "runtime_role": runtime_role,
+            "canary_health": canary_probe.__dict__,
+            "projection_lag_seconds": projection_lag_seconds,
+            "outbox_pending_count": pending_outbox_count,
+            "outbox_failed_count": failed_outbox_count,
+            "llm_schema_valid_rate": (llm_valid / llm_total) if llm_total else 0.0,
+            "llm_fallback_rate": (fallback_turns / turn_count) if turn_count else 0.0,
+        }
+        if self.observability_service is not None:
+            self.observability_service.sync_outbox_metrics(
+                pending_count=pending_outbox_count,
+                failed_count=failed_outbox_count,
+                lag_seconds=projection_lag_seconds,
+            )
+            self.observability_service.sync_llm_rates(
+                schema_valid_rate=float(snapshot["llm_schema_valid_rate"]),
+                fallback_rate=float(snapshot["llm_fallback_rate"]),
+            )
+        return snapshot
+
+    def _extract_gate_check(self, run: EvalRun | None) -> dict[str, object]:
+        if run is None:
+            return {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None}
+        summary = run.summary or {}
+        variants = summary.get("variants", {})
+        current = variants.get("current", {})
+        candidate = variants.get("candidate", {})
+        return {
+            "present": True,
+            "current_passed": bool(current.get("gate_passed")),
+            "candidate_passed": bool(candidate.get("gate_passed")),
+            "run_id": run.id,
+        }
+
     def _load_datasets(self, dataset_dir: Path) -> dict[str, EvalDataset]:
         if not dataset_dir.exists():
             raise FileNotFoundError(f"Eval dataset directory not found: {dataset_dir}")
@@ -611,6 +855,11 @@ class EvalHarnessService:
                 break
         return cases
 
+    def _probe_canary_health(self) -> CanaryProbeResult:
+        if self.observability_service is None:
+            return CanaryProbeResult(status="not_configured", url=None, http_status=None, detail="Observability disabled")
+        return self.observability_service.probe_canary_health()
+
     def _require_dataset(self, dataset_name: str) -> EvalDataset:
         try:
             return self.datasets[dataset_name]
@@ -626,3 +875,17 @@ class EvalHarnessService:
             )
         except Exception:
             return "unknown"
+
+    @staticmethod
+    def _runbook() -> dict[str, str]:
+        return {
+            "canary_up": "docker compose up --build backend-canary",
+            "rollback": "docker compose rm -sf backend-canary",
+            "promote": "cp config/release/candidate.yaml config/release/current.yaml && docker compose up -d --build backend",
+        }
+
+    @staticmethod
+    def _now():
+        from datetime import datetime, timezone
+
+        return datetime.now(timezone.utc)

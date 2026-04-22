@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test build-frontend scan-v1-terms check-legacy eval-smoke eval-shadow release-gate canary-up canary-down
+.PHONY: compose-up compose-down backend-test build-frontend scan-v1-terms check-legacy eval-smoke eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 compose-up:
 	docker compose up --build
@@ -21,11 +21,26 @@ eval-shadow:
 release-gate:
 	PYTHONPATH=backend python -m app.modules.eval_harness gate
 
+nightly-eval:
+	PYTHONPATH=backend python -m app.modules.eval_harness nightly
+
+release-checklist:
+	PYTHONPATH=backend python -m app.modules.eval_harness gate
+
 canary-up:
-	docker compose --profile canary up --build backend-canary
+	docker compose up --build backend-canary
 
 canary-down:
-	docker compose --profile canary rm -sf backend-canary
+	docker compose rm -sf backend-canary
+
+canary-probe:
+	PYTHONPATH=backend python -m app.modules.eval_harness canary-probe
+
+observability-up:
+	docker compose up -d otel-collector prometheus grafana
+
+observability-down:
+	docker compose rm -sf otel-collector prometheus grafana
 
 scan-v1-terms:
 	@! rg -n "(Neo4j|neomodel|gemini-2\\.5|Socket\\.IO|他世界|NPC化|dispatch)" . \
