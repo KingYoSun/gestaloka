@@ -4,7 +4,7 @@ import hashlib
 import json
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -87,6 +87,23 @@ class MemoryDraft(BaseModel):
     salience: float = Field(ge=0.0, le=1.0)
 
 
+class NarrativeChoiceDraft(BaseModel):
+    posture: Literal["safe", "progress", "explore"]
+    label: str = Field(min_length=1)
+    intent_summary: str = Field(min_length=1)
+    action_kind: Literal["narrative", "use_reward_item"] = "narrative"
+
+
+class CouncilIntentInterpreterPayload(BaseModel):
+    input_mode: Literal["choice", "free_text"]
+    canonical_action_kind: Literal["narrative", "use_reward_item"]
+    intent_summary: str = Field(min_length=1)
+    requested_choice_posture: Literal["safe", "progress", "explore", "none"] = "none"
+    fail_forward: bool = False
+    consequence_flags: list[str] = Field(default_factory=list)
+    consequence_summary: str = Field(min_length=1)
+
+
 class TurnResolutionPayload(BaseModel):
     narrative: str = Field(min_length=1)
     npc_reaction: str = Field(min_length=1)
@@ -94,6 +111,9 @@ class TurnResolutionPayload(BaseModel):
     event_payload: dict[str, Any]
     memories: list[MemoryDraft] = Field(min_length=1)
     world_tags: list[WorldTag] = Field(min_length=1)
+    interpreted_intent: dict[str, Any] = Field(default_factory=dict)
+    next_choices: list[NarrativeChoiceDraft] = Field(min_length=3)
+    consequence_summary: str = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -165,6 +185,8 @@ class StubModelProvider(BaseModelProvider):
 
         if prompt_id == "council.memory_manager":
             return self._memory_manager_output(input_payload)
+        if prompt_id == "council.intent_interpreter":
+            return self._intent_interpreter_output(input_payload)
         if prompt_id == "council.npc_manager":
             return self._npc_manager_output(input_payload)
         if prompt_id == "council.world_progress":
@@ -177,6 +199,60 @@ class StubModelProvider(BaseModelProvider):
             return self._narrative_output(input_payload)
         raise KeyError(f"Unsupported stub prompt: {prompt_id}")
 
+    def _intent_interpreter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        input_mode = str(input_payload.get("input_mode") or "choice")
+        selected_choice = input_payload.get("selected_choice") or {}
+        if not isinstance(selected_choice, dict):
+            selected_choice = {}
+        usable_items = [item.get("name", "") for item in input_payload.get("usable_reward_items") or [] if item.get("name")]
+        input_text = str(input_payload.get("input_text") or "")
+        selected_posture = str(selected_choice.get("posture") or "none")
+        action_kind = str(selected_choice.get("action_kind") or "narrative")
+        intent_summary = str(selected_choice.get("intent_summary") or selected_choice.get("canonical_input_text") or input_text)
+        fail_forward = False
+        consequence_flags: list[str] = []
+        consequence_summary = "The world accepts the player's chosen line of action."
+        used_reward_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
+
+        normalized = input_text.lower()
+        if input_mode == "free_text":
+            if any(token in normalized for token in ("lantern", "sigil", "灯印", "印章", "sigil")):
+                if usable_items:
+                    action_kind = "use_reward_item"
+                    intent_summary = intent_summary or "Lantern Sigilを掲げて次の巡回路を開く"
+                    consequence_summary = "The watch recognizes the sigil and prepares to answer the request."
+                elif used_reward_items:
+                    action_kind = "narrative"
+                    intent_summary = input_text or "The player follows the watch path opened by the sigil."
+                    consequence_summary = "The scene proceeds through the path the sigil already opened."
+                else:
+                    action_kind = "narrative"
+                    fail_forward = True
+                    consequence_flags = ["premature_reward_item_request"]
+                    intent_summary = input_text or "The player reaches for power that is not yet available."
+                    consequence_summary = "The attempt runs ahead of the world's current affordances and turns into a visible hesitation."
+            elif any(token in normalized for token in ("無理", "impossible", "空を飛", "teleport", "爆破")):
+                action_kind = "narrative"
+                fail_forward = True
+                consequence_flags = ["overreach"]
+                consequence_summary = "The world bends the request into a costly misunderstanding rather than allowing an impossible leap."
+
+        if input_mode == "choice" and action_kind == "use_reward_item":
+            consequence_summary = "The selected choice invokes an important reward-item affordance."
+
+        if not intent_summary:
+            intent_summary = input_text or str(selected_choice.get("label") or "The player presses forward.")
+
+        return {
+            "input_mode": input_mode if input_mode in {"choice", "free_text"} else "choice",
+            "canonical_action_kind": action_kind if action_kind in {"narrative", "use_reward_item"} else "narrative",
+            "intent_summary": intent_summary,
+            "requested_choice_posture": selected_posture if selected_posture in {"safe", "progress", "explore"} else "none",
+            "fail_forward": fail_forward,
+            "consequence_flags": consequence_flags,
+            "consequence_summary": consequence_summary,
+        }
+
     def _memory_manager_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         memories = [str(item) for item in input_payload.get("relevant_memories") or []]
         relations = [str(item) for item in input_payload.get("relation_context") or []]
@@ -186,6 +262,8 @@ class StubModelProvider(BaseModelProvider):
         active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
         usable_items = [item.get("name", "") for item in input_payload.get("usable_reward_items") or [] if item.get("name")]
         used_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
+        consequence_flags = [str(item) for item in input_payload.get("consequence_flags") or [] if str(item)]
+        important_affordances = [str(item) for item in input_payload.get("important_inventory_affordances") or [] if str(item)]
         summary_parts = []
         if memories:
             summary_parts.append(f"memory={' / '.join(memories[:2])}")
@@ -202,6 +280,10 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"usable_reward={', '.join(usable_items[:2])}")
         if used_items:
             summary_parts.append(f"used_reward={', '.join(used_items[:2])}")
+        if important_affordances:
+            summary_parts.append(f"affordances={', '.join(important_affordances[:2])}")
+        if consequence_flags:
+            summary_parts.append(f"consequence_flags={', '.join(consequence_flags[:2])}")
         summary = " | ".join(summary_parts) if summary_parts else "no prior context"
         return {
             "memory_summary": summary,
@@ -218,13 +300,14 @@ class StubModelProvider(BaseModelProvider):
         memory_summary = str(input_payload.get("memory_summary") or "no prior memory")
         focus_memories = [str(item) for item in input_payload.get("focus_memories") or []]
         active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
+        consequence_summary = str(input_payload.get("consequence_summary") or "")
         return {
             "npc_intent": f"{npc_name} keeps same-world continuity and responds to the latest player action.",
             "reaction_style": "measured",
             "focus_memories": focus_memories[:2],
             "reaction_outline": (
                 f"{npc_name} references {memory_summary}, keeps quest stage {active_quest_stage}, "
-                "and factors in the current faction/inventory state."
+                f"and factors in the current faction/inventory state. {consequence_summary}".strip()
             ),
         }
 
@@ -232,18 +315,60 @@ class StubModelProvider(BaseModelProvider):
         player_name = str(input_payload.get("player_name") or "Player")
         npc_name = str(input_payload.get("npc_name") or "NPC")
         input_text = str(input_payload.get("input_text") or "")
+        interpreted_intent = str(input_payload.get("intent_summary") or input_text)
         relation_summary = str(input_payload.get("relation_summary") or "")
-        world_tags = normalize_world_tags(infer_world_tags(input_text))
+        world_tags = normalize_world_tags(infer_world_tags(interpreted_intent))
         if "__force_council_reject__" in input_text:
             world_tags = ["threaten_local"]
+        if bool(input_payload.get("fail_forward")):
+            world_tags = ["none"]
         risk_level = "high" if any(tag in {"threaten_local", "collect_reward"} for tag in world_tags) else "medium"
         if world_tags == ["none"]:
             risk_level = "low"
         npc_anchor = str(input_payload.get("reaction_outline") or f"{npc_name} responds to the new event.")
+        default_choice_templates = input_payload.get("default_choice_templates") or []
+        if not isinstance(default_choice_templates, list):
+            default_choice_templates = []
+        next_choices: list[dict[str, Any]] = []
+        for template in default_choice_templates[:3]:
+            if not isinstance(template, dict):
+                continue
+            posture = str(template.get("posture") or "progress")
+            label = str(template.get("label") or template.get("canonical_input_text") or "Continue through the scene.")
+            action_kind = str(template.get("action_kind") or "narrative")
+            next_choices.append(
+                {
+                    "posture": posture if posture in {"safe", "progress", "explore"} else "progress",
+                    "label": label,
+                    "intent_summary": str(template.get("canonical_input_text") or label),
+                    "action_kind": action_kind if action_kind in {"narrative", "use_reward_item"} else "narrative",
+                }
+            )
+        if len(next_choices) < 3:
+            next_choices = [
+                {
+                    "posture": "safe",
+                    "label": "一歩退いて広場の気配を見守る",
+                    "intent_summary": "広場の気配を見守り、場を乱さず状況を確かめる",
+                    "action_kind": "narrative",
+                },
+                {
+                    "posture": "progress",
+                    "label": "困っている相手へ手を差し伸べ、次の進展を作る",
+                    "intent_summary": "困っている相手へ手を差し伸べ、次の進展を作る",
+                    "action_kind": "narrative",
+                },
+                {
+                    "posture": "explore",
+                    "label": "周囲の噂や視線を探り、関係の糸口を拾う",
+                    "intent_summary": "周囲の噂や視線を探り、関係の糸口を拾う",
+                    "action_kind": "narrative",
+                },
+            ]
         return {
             "event_type": "player.turn.resolved",
             "event_payload": {
-                "action": input_text,
+                "action": interpreted_intent,
                 "world_tags": world_tags,
                 "npc_anchor": npc_anchor,
                 "relation_summary": relation_summary,
@@ -251,18 +376,22 @@ class StubModelProvider(BaseModelProvider):
             "memories": [
                 {
                     "scope": "world",
-                    "text": f"{player_name}は{input_text}。{npc_anchor}",
+                    "text": f"{player_name}は{interpreted_intent}。{npc_anchor}",
                     "salience": 0.92,
                 },
                 {
                     "scope": "actor",
-                    "text": f"{npc_name} remembers: {player_name}は{input_text}。",
+                    "text": f"{npc_name} remembers: {player_name}は{interpreted_intent}。",
                     "salience": 0.88,
                 },
             ],
             "world_tags": world_tags,
-            "resolution_summary": f"{player_name} acted with tags {', '.join(world_tags)}.",
+            "resolution_summary": (
+                str(input_payload.get("consequence_summary") or "").strip()
+                or f"{player_name} acted with tags {', '.join(world_tags)}."
+            ),
             "risk_level": risk_level,
+            "next_choices": next_choices,
         }
 
     def _rules_arbiter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -308,12 +437,15 @@ class StubModelProvider(BaseModelProvider):
         memory_summary = str(input_payload.get("memory_summary") or "")
         reaction_outline = str(input_payload.get("reaction_outline") or "")
         world_tags = normalize_world_tags([str(item) for item in input_payload.get("world_tags") or []])
+        consequence_summary = str(input_payload.get("consequence_summary") or "")
         narrative = (
             f"{player_name}は『{input_text}』と行動した。"
             f"{npc_name}はその結果を同じ世界の事実として受け止めた。"
         )
         if world_tags != ["none"]:
             narrative = f"{narrative} world_tags={', '.join(world_tags)} が確定した。"
+        if consequence_summary:
+            narrative = f"{narrative} {consequence_summary}".strip()
         npc_reaction = f"{npc_name}は{reaction_outline}"
         if memory_summary:
             npc_reaction = f"{npc_reaction.rstrip('。')} 記憶要約「{memory_summary}」も踏まえた。"

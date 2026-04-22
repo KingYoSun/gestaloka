@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     ops_admin_subs: str = ""
     sp_default_balance: int = 10
     turn_sp_cost: int = 1
+    choice_turn_sp_cost: int = 1
+    free_text_turn_sp_cost: int = 3
     oidc_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_public_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_client_id: str = "gestaloka-frontend"

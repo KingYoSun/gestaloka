@@ -30,6 +30,8 @@ type HealthPayload = {
   sp: {
     default_balance: number;
     turn_cost: number;
+    choice_turn_cost: number;
+    free_text_turn_cost: number;
     budget_scope?: string;
     economy_status: string;
   };
@@ -81,6 +83,15 @@ type CharacterSummary = {
   status_json: Record<string, unknown>;
 };
 
+type NarrativeChoice = {
+  choice_id: "safe" | "progress" | "explore";
+  posture: "safe" | "progress" | "explore";
+  label: string;
+  summary: string;
+  canonical_input_text: string;
+  action_kind: "narrative" | "use_reward_item";
+};
+
 type QuestSummary = {
   assignment_id: string;
   quest_template_id: string;
@@ -125,11 +136,21 @@ type SessionState = {
   quests: QuestSummary[];
   factions: FactionSummary[];
   inventory: InventorySummary[];
+  next_choices: NarrativeChoice[];
+  narrative_state_bands: Record<string, string>;
+  important_inventory_affordances: Array<{
+    item_id: string;
+    name: string;
+    usable: boolean;
+    effect_kind: string | null;
+    summary: string;
+  }>;
 };
 
 type TurnResponse = {
   turn_id: string;
   action_type: "narrative" | "use_reward_item";
+  input_mode: "choice" | "free_text";
   event_id: string;
   memory_ids: string[];
   narrative: string;
@@ -137,6 +158,9 @@ type TurnResponse = {
   sp_delta: number;
   sp_balance: number;
   sp_ledger_id: string;
+  interpreted_intent: Record<string, unknown>;
+  next_choices: NarrativeChoice[];
+  consequence_summary: string;
   quest_updates: Array<QuestSummary & { world_tags?: string[]; summary?: string }>;
   faction_updates: Array<FactionSummary & { delta?: number }>;
   inventory_updates: Array<InventorySummary & { action?: string }>;
@@ -178,6 +202,9 @@ type SPWallet = {
   user_sub: string;
   balance: number;
   turn_cost: number;
+  choice_turn_cost: number;
+  free_text_turn_cost: number;
+  budget_scope?: string;
   recent_entries: SPLedgerItem[];
 };
 
@@ -272,6 +299,8 @@ type RebuildSummary = {
 type SPOverview = {
   default_balance: number;
   turn_cost: number;
+  choice_turn_cost: number;
+  free_text_turn_cost: number;
   total_accounts: number;
   total_ledger_entries: number;
   recent_adjustments: SPLedgerItem[];
@@ -560,9 +589,11 @@ function App() {
   const [worldId, setWorldId] = useState("world-alpha");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
-  const [turnInput, setTurnInput] = useState("広場で旅人を助け、周囲の様子を確かめる");
+  const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
+  const [freeTextInput, setFreeTextInput] = useState("広場で旅人を助け、周囲の様子を確かめる");
   const [latestNarrative, setLatestNarrative] = useState("");
   const [latestReaction, setLatestReaction] = useState("");
+  const [latestConsequenceSummary, setLatestConsequenceSummary] = useState("");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [activity, setActivity] = useState<ActivityMessage[]>([]);
@@ -602,6 +633,7 @@ function App() {
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
   const activeWorldId = session?.world_id ?? worldId;
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
+  const suggestedChoices = sessionState?.next_choices ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
         status?: string;
@@ -695,6 +727,9 @@ function App() {
         }
         if (data.npc_reaction) {
           setLatestReaction(data.npc_reaction);
+        }
+        if (data.consequence_summary) {
+          setLatestConsequenceSummary(data.consequence_summary);
         }
       }
       if (parsed.event === "graph.projection.updated") {
@@ -869,6 +904,7 @@ function App() {
       setActivity([]);
       setLatestNarrative("");
       setLatestReaction("");
+      setLatestConsequenceSummary("");
       setLastRebuild(null);
       const created = await apiFetch<SessionInfo>("/sessions", token, {
         method: "POST",
@@ -892,7 +928,9 @@ function App() {
   }
 
   async function submitTurnRequest(
-    payload: { action_type: "narrative"; input_text: string } | { action_type: "use_reward_item"; item_id: string },
+    payload:
+      | { input_mode: "choice"; choice_id: "safe" | "progress" | "explore" }
+      | { input_mode: "free_text"; input_text: string },
   ) {
     if (!token || !session) {
       setError("Start a session first");
@@ -911,6 +949,8 @@ function App() {
       });
       setLatestNarrative(response.narrative);
       setLatestReaction(response.npc_reaction);
+      setLatestConsequenceSummary(response.consequence_summary);
+      setTurnInputMode("choice");
       setWallet((current) =>
         current
           ? {
@@ -951,11 +991,11 @@ function App() {
 
   async function handleTurnSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await submitTurnRequest({ action_type: "narrative", input_text: turnInput });
+    await submitTurnRequest({ input_mode: "free_text", input_text: freeTextInput });
   }
 
-  async function handleRewardItemUse(itemId: string) {
-    await submitTurnRequest({ action_type: "use_reward_item", item_id: itemId });
+  async function handleChoiceSubmit(choiceId: "safe" | "progress" | "explore") {
+    await submitTurnRequest({ input_mode: "choice", choice_id: choiceId });
   }
 
   async function handleRebuildGraph() {
@@ -1180,7 +1220,9 @@ function App() {
           </p>
           <p data-testid="socket-status">Socket: {socketState}</p>
           <p data-testid="sp-balance">
-            SP balance: {wallet?.balance ?? "unknown"} / Turn cost: {wallet?.turn_cost ?? health?.sp.turn_cost ?? "?"}
+            SP balance: {wallet?.balance ?? "unknown"} / Choice cost:{" "}
+            {wallet?.choice_turn_cost ?? health?.sp.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp.turn_cost ?? "?"} / Free text cost:{" "}
+            {wallet?.free_text_turn_cost ?? health?.sp.free_text_turn_cost ?? "?"}
           </p>
           <p data-testid="sp-budget-note">
             SP is execution budget only. It is not in-world currency and does not buy quest, faction, or item power.
@@ -1263,16 +1305,16 @@ function App() {
                     <dd>{sessionState.character.rank}</dd>
                   </div>
                   <div>
-                    <dt>HP</dt>
-                    <dd>{sessionState.character.hp}</dd>
+                    <dt>Vitality</dt>
+                    <dd data-testid="state-band-vitality">{sessionState.narrative_state_bands.vitality}</dd>
                   </div>
                   <div>
-                    <dt>Focus</dt>
-                    <dd>{sessionState.character.focus}</dd>
+                    <dt>Clarity</dt>
+                    <dd data-testid="state-band-clarity">{sessionState.narrative_state_bands.clarity}</dd>
                   </div>
                   <div>
-                    <dt>Origin</dt>
-                    <dd>{String(sessionState.character.status_json.origin ?? "unknown")}</dd>
+                    <dt>Standing tone</dt>
+                    <dd data-testid="state-band-standing">{sessionState.narrative_state_bands.standing}</dd>
                   </div>
                 </dl>
               ) : (
@@ -1328,39 +1370,90 @@ function App() {
                         {item.status}
                         {item.effect_kind ? ` / ${item.effect_kind}` : ""}
                       </span>
-                      {item.usable ? (
-                        <button
-                          data-testid={`use-item-${item.id}`}
-                          onClick={() => void handleRewardItemUse(item.id)}
-                          disabled={turnPending}
-                        >
-                          {turnPending ? "Using..." : "Use"}
-                        </button>
-                      ) : null}
                     </li>
                   ))
                 ) : (
                   <li>No reward items yet.</li>
                 )}
               </ul>
+              <h3>Important affordances</h3>
+              <ul className="stream" data-testid="inventory-affordances">
+                {sessionState?.important_inventory_affordances.length ? (
+                  sessionState.important_inventory_affordances.map((item) => (
+                    <li key={item.item_id}>
+                      <strong>{item.name}</strong>
+                      <span>{item.summary}</span>
+                      <span>{item.usable ? "usable" : "spent"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No major item affordances are visible yet.</li>
+                )}
+              </ul>
             </article>
 
             <article className="card wide">
-              <h2>7. Turn submission</h2>
-              <form onSubmit={handleTurnSubmit} className="stack">
-                <label>
-                  Player action
-                  <textarea
-                    data-testid="turn-input"
-                    rows={4}
-                    value={turnInput}
-                    onChange={(event) => setTurnInput(event.target.value)}
-                  />
-                </label>
-                <button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
-                  {turnPending ? "Submitting..." : "Submit turn"}
-                </button>
-              </form>
+              <h2>7. Suggested choices</h2>
+              <p data-testid="last-consequence-summary">
+                {latestConsequenceSummary || "The scene is waiting for your next line."}
+              </p>
+              <div className="stack">
+                <div className="actions">
+                  <button
+                    type="button"
+                    data-testid="toggle-choice-mode"
+                    onClick={() => setTurnInputMode("choice")}
+                    disabled={!session}
+                  >
+                    Choice mode
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="toggle-free-text"
+                    onClick={() => setTurnInputMode("free_text")}
+                    disabled={!session}
+                  >
+                    Free text mode
+                  </button>
+                </div>
+                <ul className="stream" data-testid="choice-list">
+                  {suggestedChoices.length ? (
+                    suggestedChoices.map((choice) => (
+                      <li key={choice.choice_id}>
+                        <strong>{choice.label}</strong>
+                        <span>{choice.summary}</span>
+                        <span>{choice.posture}</span>
+                        <button
+                          type="button"
+                          data-testid={`choice-${choice.choice_id}`}
+                          onClick={() => void handleChoiceSubmit(choice.choice_id)}
+                          disabled={!session || turnPending}
+                        >
+                          {turnPending ? "Submitting..." : "Choose"}
+                        </button>
+                      </li>
+                    ))
+                  ) : (
+                    <li>No suggested choices yet.</li>
+                  )}
+                </ul>
+              </div>
+              {turnInputMode === "free_text" ? (
+                <form onSubmit={handleTurnSubmit} className="stack">
+                  <label>
+                    Free text action
+                    <textarea
+                      data-testid="turn-input"
+                      rows={4}
+                      value={freeTextInput}
+                      onChange={(event) => setFreeTextInput(event.target.value)}
+                    />
+                  </label>
+                  <button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
+                    {turnPending ? "Submitting..." : "Submit free text turn"}
+                  </button>
+                </form>
+              ) : null}
               <div className="result">
                 <h3>Latest narrative</h3>
                 <p data-testid="latest-narrative">{latestNarrative || "No turn resolved yet."}</p>
@@ -1777,8 +1870,11 @@ function App() {
                 Accounts: {spOverview?.total_accounts ?? 0} / Ledger rows: {spOverview?.total_ledger_entries ?? 0}
               </p>
               <p>
-                Default balance: {spOverview?.default_balance ?? health?.sp.default_balance ?? "?"} / Turn cost:{" "}
-                <span data-testid="turn-cost">{spOverview?.turn_cost ?? health?.sp.turn_cost ?? "?"}</span>
+                Default balance: {spOverview?.default_balance ?? health?.sp.default_balance ?? "?"} / Choice cost:{" "}
+                <span data-testid="turn-cost">
+                  {spOverview?.choice_turn_cost ?? health?.sp.choice_turn_cost ?? spOverview?.turn_cost ?? health?.sp.turn_cost ?? "?"}
+                </span>{" "}
+                / Free text cost: {spOverview?.free_text_turn_cost ?? health?.sp.free_text_turn_cost ?? "?"}
               </p>
               {lastAdjustment ? (
                 <p data-testid="last-adjustment">

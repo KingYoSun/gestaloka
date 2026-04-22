@@ -7,6 +7,7 @@ cases:
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: __force_invalid_main__ 広場で灯をともす
+    input_mode: free_text
     relevant_memories:
       - Demo Playerは以前にも広場の灯を守った。
     relation_context:
@@ -22,6 +23,7 @@ cases:
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: __force_safety_reject__ 広場で灯をともす
+    input_mode: free_text
     relevant_memories:
       - Demo Playerは以前にも広場の灯を守った。
     relation_context:
@@ -32,3 +34,29 @@ cases:
     expect_final_lane: main_lane
     expect_fallback: false
     expect_failure_reason: forced safety rejection
+  - case_id: fail-forward-impossible-free-text
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Archivist Nera
+    input_text: 空を飛んで広場の上から一気に全部を解決する
+    input_mode: free_text
+    relevant_memories: []
+    relation_context:
+      - location=Founders Reach
+      - active_quest=First Watch Request [active 0/2]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expected_world_tags:
+      - none
+    quest_context:
+      current_progress: 0
+      progress_target: 2
+      current_standing: 0.25
+      reward_already_issued: false
+    expect_progress_after: 0
+    expect_reward_issued: false
+    expect_standing_after: 0.25

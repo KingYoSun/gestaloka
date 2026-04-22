@@ -17,7 +17,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
 
     first_turn = client.post(
         "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で旅人を助け、灯をともす"},
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
         headers=auth_headers,
     )
     assert first_turn.status_code == 200
@@ -30,7 +30,8 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         "/turns",
         json={
             "session_id": session_payload["session_id"],
-            "input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+            "input_mode": "choice",
+            "choice_id": "progress",
         },
         headers=auth_headers,
     )
@@ -47,13 +48,11 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert reward_item["usable"] is True
     assert reward_item["effect_kind"] == "unlock_followup_watch_path"
 
+    assert state_after_reward.json()["next_choices"][1]["action_kind"] == "use_reward_item"
+
     use_turn = client.post(
         "/turns",
-        json={
-            "session_id": session_payload["session_id"],
-            "action_type": "use_reward_item",
-            "item_id": reward_item["id"],
-        },
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
         headers=auth_headers,
     )
     assert use_turn.status_code == 200
@@ -68,14 +67,14 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
         "/turns",
         json={
             "session_id": session_payload["session_id"],
-            "action_type": "narrative",
+            "input_mode": "free_text",
             "input_text": "Lantern Sigilで開いた watch path の様子を観察する",
         },
         headers=auth_headers,
     )
     assert third_turn.status_code == 200
     third_payload = third_turn.json()
-    assert third_payload["sp_balance"] == 6
+    assert third_payload["sp_balance"] == 4
     assert "Lantern Sigil" in third_payload["npc_reaction"]
 
     events = client.get(f"/worlds/{session_payload['world_id']}/events", headers=auth_headers)
@@ -125,7 +124,7 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
 
     first_turn = client.post(
         "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で旅人を助け、灯をともす"},
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
         headers=auth_headers,
     )
     assert first_turn.status_code == 200
@@ -134,20 +133,18 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
         "/turns",
         json={
             "session_id": session_payload["session_id"],
-            "input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+            "input_mode": "choice",
+            "choice_id": "progress",
         },
         headers=auth_headers,
     )
     assert second_turn.status_code == 200
 
-    reward_item = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers).json()["inventory"][0]
+    reward_item_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers).json()
+    reward_item = reward_item_state["inventory"][0]
     use_turn = client.post(
         "/turns",
-        json={
-            "session_id": session_payload["session_id"],
-            "action_type": "use_reward_item",
-            "item_id": reward_item["id"],
-        },
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
         headers=auth_headers,
     )
     assert use_turn.status_code == 200
@@ -156,7 +153,7 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
         "/turns",
         json={
             "session_id": session_payload["session_id"],
-            "action_type": "narrative",
+            "input_mode": "free_text",
             "input_text": "Lantern Sigilで開いた watch path の様子を観察する",
         },
         headers=auth_headers,
@@ -190,7 +187,7 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
         "/turns",
         json={
             "session_id": session_payload["session_id"],
-            "action_type": "narrative",
+            "input_mode": "free_text",
             "input_text": "Lantern Sigilで開いた巡回路の様子をさらに確かめる",
         },
         headers=auth_headers,

@@ -60,6 +60,43 @@ def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id:
             }
         ],
         "inventory": inventory,
+        "narrative_state_bands": {"vitality": "grounded", "clarity": "sharp", "standing": "neutral"},
+        "important_inventory_affordances": [
+            {
+                "item_id": reward_item_id,
+                "name": "Lantern Sigil",
+                "usable": True,
+                "effect_kind": "unlock_followup_watch_path",
+                "summary": "Lantern Sigil can unlock the next watch path.",
+            }
+            for _ in ([] if reward_item_id is None else [reward_item_id])
+        ],
+        "next_choices": [
+            {
+                "choice_id": "safe",
+                "posture": "safe",
+                "label": "一歩退いて広場の気配を落ち着いて見守る",
+                "summary": "場の流れを乱さず、まず気配と視線を確かめる。",
+                "canonical_input_text": "広場の流れを乱さず、周囲の気配と旅人の様子を見守る",
+                "action_kind": "narrative",
+            },
+            {
+                "choice_id": "progress",
+                "posture": "progress",
+                "label": "困っている相手に手を差し伸べ、次の進展を作る",
+                "summary": "もっとも前進寄りの行動で、依頼や関係を進める。",
+                "canonical_input_text": "広場で旅人を助け、灯をともす",
+                "action_kind": "narrative",
+            },
+            {
+                "choice_id": "explore",
+                "posture": "explore",
+                "label": "噂と視線をたどり、場の裏側を探る",
+                "summary": "探索や関係変化に寄せた行動で、状況理解を広げる。",
+                "canonical_input_text": "広場の空気や旅人の事情を探り、何が起きているか確かめる",
+                "action_kind": "narrative",
+            },
+        ],
     }
 
 
@@ -124,6 +161,7 @@ def test_council_service_falls_back_to_pro_lane(container):
     assert outcome.final_lane == "pro_lane"
     assert outcome.used_fallback is True
     assert [role_run.council_role for role_run in outcome.role_runs] == [
+        "intent_interpreter",
         "memory_manager",
         "npc_manager",
         "world_progress",
@@ -131,7 +169,7 @@ def test_council_service_falls_back_to_pro_lane(container):
         "safety_guard",
         "narrative",
     ]
-    assert [len(role_run.attempts) for role_run in outcome.role_runs] == [1, 1, 1, 2, 2, 2]
+    assert [len(role_run.attempts) for role_run in outcome.role_runs] == [1, 1, 1, 1, 2, 2, 2]
     assert outcome.role_runs[-1].approval_status == "approved"
     assert outcome.final_payload is not None
     assert outcome.final_payload.world_tags == ["aid_local"]
@@ -170,6 +208,7 @@ def test_turn_council_reject_returns_422_and_persists_audit_records(client, cont
         outbox_events = list(db.execute(select(OutboxEvent).order_by(OutboxEvent.created_at.asc())).scalars())
 
     assert [run.council_role for run in llm_runs if run.turn_id == payload["turn_id"]] == [
+        "intent_interpreter",
         "memory_manager",
         "npc_manager",
         "world_progress",
@@ -223,7 +262,7 @@ def test_live_gemini_council_structured_output_runs_when_api_key_present():
     )
 
     assert outcome.succeeded is True
-    assert len(outcome.role_runs) == 6
+    assert len(outcome.role_runs) == 7
     assert all(role_run.attempts[-1].output_schema_status == "valid" for role_run in outcome.role_runs)
     assert all(role_run.attempts[-1].provider_name == "gemini_developer_api" for role_run in outcome.role_runs)
     assert outcome.final_payload is not None

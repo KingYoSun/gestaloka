@@ -47,7 +47,9 @@ class EconomyService:
         return {
             "user_sub": user_sub,
             "balance": account.balance,
-            "turn_cost": self.settings.turn_sp_cost,
+            "turn_cost": self.settings.choice_turn_sp_cost,
+            "choice_turn_cost": self.settings.choice_turn_sp_cost,
+            "free_text_turn_cost": self.settings.free_text_turn_sp_cost,
             "budget_scope": "execution_only",
             "usage_policy": "SP is external execution budget, not in-world currency.",
             "recent_entries": recent_entries,
@@ -61,11 +63,13 @@ class EconomyService:
         world_id: str,
         actor_id: str,
         reference_id: str,
+        cost: int | None = None,
     ) -> SPMutationResult:
+        resolved_cost = self.settings.choice_turn_sp_cost if cost is None else cost
         return self._apply_delta(
             db,
             user_sub=user_sub,
-            delta=-self.settings.turn_sp_cost,
+            delta=-resolved_cost,
             world_id=world_id,
             actor_id=actor_id,
             reason_code="turn_cost",
@@ -82,11 +86,13 @@ class EconomyService:
         actor_id: str,
         reference_id: str,
         note: str | None,
+        cost: int | None = None,
     ) -> SPMutationResult:
+        resolved_cost = self.settings.choice_turn_sp_cost if cost is None else cost
         return self._apply_delta(
             db,
             user_sub=user_sub,
-            delta=self.settings.turn_sp_cost,
+            delta=resolved_cost,
             world_id=world_id,
             actor_id=actor_id,
             reason_code="turn_refund",
@@ -136,7 +142,9 @@ class EconomyService:
         ]
         return {
             "default_balance": self.settings.sp_default_balance,
-            "turn_cost": self.settings.turn_sp_cost,
+            "turn_cost": self.settings.choice_turn_sp_cost,
+            "choice_turn_cost": self.settings.choice_turn_sp_cost,
+            "free_text_turn_cost": self.settings.free_text_turn_sp_cost,
             "budget_scope": "execution_only",
             "total_accounts": int(total_accounts),
             "total_ledger_entries": int(total_ledger_entries),
@@ -162,7 +170,9 @@ class EconomyService:
     def health_snapshot(self) -> dict[str, object]:
         return {
             "default_balance": self.settings.sp_default_balance,
-            "turn_cost": self.settings.turn_sp_cost,
+            "turn_cost": self.settings.choice_turn_sp_cost,
+            "choice_turn_cost": self.settings.choice_turn_sp_cost,
+            "free_text_turn_cost": self.settings.free_text_turn_sp_cost,
             "budget_scope": "execution_only",
             "economy_status": "ready",
         }

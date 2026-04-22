@@ -13,10 +13,12 @@ world_invariants:
 instructions: |
   This is the workflow anchor for the GM council turn-resolution pipeline.
   The runtime must resolve a player turn through:
+  - council.intent_interpreter
   - council.memory_manager
   - council.npc_manager
   - council.world_progress
   - council.rules_arbiter
   - council.safety_guard
   - council.narrative
-  Final world updates must still be determined by backend rule engines from approved world_tags.
+  Final world updates must still be determined by backend rule engines from approved world_tags,
+  while the next turn's three suggested choices are returned to the client.

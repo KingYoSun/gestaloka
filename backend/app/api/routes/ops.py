@@ -210,7 +210,9 @@ def post_sp_adjustment(
                 "detail": exc.detail,
                 "balance": exc.balance,
                 "required": exc.required,
-                "turn_cost": container.settings.turn_sp_cost,
+                "turn_cost": container.settings.choice_turn_sp_cost,
+                "choice_turn_cost": container.settings.choice_turn_sp_cost,
+                "free_text_turn_cost": container.settings.free_text_turn_sp_cost,
             },
         ) from exc
     except ValueError as exc:

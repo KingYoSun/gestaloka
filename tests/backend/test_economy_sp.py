@@ -14,6 +14,8 @@ def test_sp_wallet_lazy_seed_only_once(client, container, auth_headers):
     assert first.json()["balance"] == 10
     assert second.json()["balance"] == 10
     assert first.json()["budget_scope"] == "execution_only"
+    assert first.json()["choice_turn_cost"] == 1
+    assert first.json()["free_text_turn_cost"] == 3
 
     with container.session_factory() as db:
         seed_count = db.execute(
@@ -35,6 +37,7 @@ def test_failed_turn_refunds_sp_and_records_ledger(client, container, auth_heade
         "/turns",
         json={
             "session_id": session_payload["session_id"],
+            "input_mode": "free_text",
             "input_text": "__force_invalid_all__ 広場で灯をともす",
         },
         headers=auth_headers,
@@ -78,7 +81,7 @@ def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, a
 
     turn_response = client.post(
         "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
         headers=auth_headers,
     )
     assert turn_response.status_code == 409
@@ -87,6 +90,8 @@ def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, a
         "balance": 0,
         "required": 1,
         "turn_cost": 1,
+        "choice_turn_cost": 1,
+        "free_text_turn_cost": 3,
     }
 
     with container.session_factory() as db:
@@ -107,6 +112,8 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
     overview_response = client.get("/ops/sp/overview", headers=auth_headers)
     assert overview_response.status_code == 200
     assert overview_response.json()["turn_cost"] == 1
+    assert overview_response.json()["choice_turn_cost"] == 1
+    assert overview_response.json()["free_text_turn_cost"] == 3
     assert overview_response.json()["budget_scope"] == "execution_only"
 
     session_response = client.post(

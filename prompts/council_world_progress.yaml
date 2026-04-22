@@ -1,12 +1,13 @@
 prompt_id: council.world_progress
 owner_module: gm_council
-schema_version: "1"
+schema_version: "2"
 model_lane: main_lane
-expected_output_schema: council_world_progress_v1
+expected_output_schema: council_world_progress_v2
 eval_dataset_ref: council_world_progress_smoke
 world_invariants:
   - single_world_namespace
   - no_direct_ids
 instructions: |
-  Produce a canonical event draft, memory drafts, and world_tags for the turn.
+  Produce a canonical event draft, memory drafts, world_tags, and the next three diegetic player choices.
+  Return exactly one safe choice, one forward-progress choice, and one exploration/relationship choice.
   Never emit quest ids, faction ids, or item ids. Keep all payloads in the same world.

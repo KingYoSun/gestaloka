@@ -35,6 +35,7 @@ from app.modules.world_memory.service import (
     retrieval_trace_to_dict,
 )
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, normalize_world_tags
+from app.modules.world_state.service import default_next_choices, important_inventory_affordances, narrative_state_bands
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,8 @@ class EvalCaseInput:
     expect_final_lane: str
     expect_fallback: bool
     expect_failure_reason: str | None
+    input_mode: Literal["choice", "free_text"] = "free_text"
+    choice_id: str | None = None
     expected_world_tags: list[str] | None = None
     quest_context: dict[str, object] | None = None
     expect_progress_after: int | None = None
@@ -519,10 +522,23 @@ class EvalHarnessService:
                         player_name=case.player_name,
                         npc_name=case.npc_name,
                         input_text=case.input_text,
+                        input_mode=case.input_mode,
                         relevant_memories=retrieved_memories,
                         relation_context=case.relation_context,
                         graph_context_status=case.graph_context_status,
                         session_state=self._session_state_for_case(case),
+                        selected_choice=(
+                            next(
+                                (
+                                    item
+                                    for item in (self._session_state_for_case(case).get("next_choices") or [])
+                                    if isinstance(item, dict) and item.get("choice_id") == case.choice_id
+                                ),
+                                None,
+                            )
+                            if case.input_mode == "choice" and case.choice_id is not None
+                            else None
+                        ),
                     )
                 )
                 payload = self._persist_case_result(
@@ -941,6 +957,12 @@ class EvalHarnessService:
                         player_name=str(raw_case.get("player_name", "")).strip(),
                         npc_name=str(raw_case.get("npc_name", "")).strip(),
                         input_text=str(raw_case.get("input_text", "")).strip(),
+                        input_mode=str(raw_case.get("input_mode", "free_text")).strip() or "free_text",
+                        choice_id=(
+                            str(raw_case.get("choice_id")).strip()
+                            if raw_case.get("choice_id") is not None
+                            else None
+                        ),
                         relevant_memories=[str(item) for item in raw_case.get("relevant_memories") or []],
                         relation_context=[str(item) for item in raw_case.get("relation_context") or []],
                         graph_context_status=str(raw_case.get("graph_context_status", "ready")).strip() or "ready",
@@ -1143,6 +1165,12 @@ class EvalHarnessService:
         overrides = case.session_state_overrides or {}
         for key, value in overrides.items():
             base_state[key] = value
+        character = base_state.get("character") or {}
+        factions = list(base_state.get("factions") or [])
+        inventory = list(base_state.get("inventory") or [])
+        base_state["narrative_state_bands"] = narrative_state_bands(character, factions)
+        base_state["important_inventory_affordances"] = important_inventory_affordances(inventory)
+        base_state["next_choices"] = default_next_choices(base_state)
         return base_state
 
     @staticmethod

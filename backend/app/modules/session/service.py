@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -28,6 +29,8 @@ from app.modules.world_state.service import (
     use_reward_item,
 )
 
+CHOICE_ORDER = ("safe", "progress", "explore")
+
 
 @dataclass
 class SessionCreationResult:
@@ -54,6 +57,11 @@ class TurnResolutionResult:
     faction_updates: list[dict]
     inventory_updates: list[dict]
     action_type: str
+    input_mode: str
+    interpreted_intent: dict[str, Any]
+    next_choices: list[dict[str, Any]]
+    consequence_summary: str
+    progress_phases: list[str]
     error_detail: str | None = None
     status_code: int = 200
 
@@ -70,6 +78,7 @@ class PreparedTurnContext:
     location_id: str
     turn_id: str
     debit: SPMutationResult
+    input_mode: str
 
 
 def create_session_for_user(
@@ -112,6 +121,12 @@ def create_session_for_user(
         player_actor_id=player_actor.id,
         guide_actor_id=guide_npc.id,
     )
+    bootstrap_state = build_session_state(
+        db,
+        world_id=world.id,
+        actor_id=player_actor.id,
+        location_id=starter_location.id,
+    )
 
     session = GameSession(world_id=world.id, player_actor_id=player_actor.id, status="active")
     db.add(session)
@@ -121,7 +136,13 @@ def create_session_for_user(
         session_id=session.id,
         actor_id=player_actor.id,
         input_text="[session started]",
-        resolved_output={"status": "system"},
+        resolved_output={
+            "status": "system",
+            "action_type": "system",
+            "input_mode": "choice",
+            "next_choices": bootstrap_state["next_choices"],
+            "consequence_summary": "The watch waits for your first move.",
+        },
         model_lane="system",
         action_type="system",
         resolution_mode="system",
@@ -177,7 +198,9 @@ def resolve_turn_for_session(
     container: AppContainer,
     prepared: PreparedTurnContext,
     *,
-    action_type: str,
+    action_type: str | None = None,
+    input_mode: str = "choice",
+    choice_id: str | None = None,
     input_text: str | None = None,
     item_id: str | None = None,
 ) -> TurnResolutionResult:
@@ -189,13 +212,42 @@ def resolve_turn_for_session(
             container,
             prepared,
             item_id=item_id,
+            input_mode=input_mode,
+        )
+    if input_mode == "choice":
+        if choice_id is None:
+            raise ValueError("choice_id is required for choice turns")
+        session_state = _session_state_with_latest_choices(
+            db,
+            session_id=prepared.session.id,
+            world_id=prepared.session.world_id,
+            actor_id=prepared.player_actor.id,
+            location_id=prepared.location_id,
+        )
+        selected_choice = _select_choice(session_state.get("next_choices") or [], choice_id)
+        if selected_choice is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Unknown choice_id: {choice_id}",
+            )
+        input_text = str(selected_choice.get("canonical_input_text") or selected_choice.get("label") or "").strip()
+        if not input_text:
+            raise ValueError("Selected choice is missing canonical_input_text")
+        return _resolve_narrative_turn_for_session(
+            db,
+            container,
+            prepared,
+            input_mode="choice",
+            input_text=input_text,
+            selected_choice=selected_choice,
         )
     if input_text is None:
-        raise ValueError("input_text is required for narrative turns")
+        raise ValueError("input_text is required for free_text turns")
     return _resolve_narrative_turn_for_session(
         db,
         container,
         prepared,
+        input_mode=input_mode,
         input_text=input_text,
     )
 
@@ -205,7 +257,9 @@ def _resolve_narrative_turn_for_session(
     container: AppContainer,
     prepared: PreparedTurnContext,
     *,
+    input_mode: str,
     input_text: str,
+    selected_choice: dict[str, Any] | None = None,
 ) -> TurnResolutionResult:
     game_session = prepared.session
     player_actor = prepared.player_actor
@@ -225,8 +279,9 @@ def _resolve_narrative_turn_for_session(
     db.add(turn)
     db.flush()
 
-    session_state = build_session_state(
+    session_state = _session_state_with_latest_choices(
         db,
+        session_id=game_session.id,
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
@@ -256,6 +311,8 @@ def _resolve_narrative_turn_for_session(
             player_name=player_actor.display_name,
             npc_name=guide_npc.display_name,
             input_text=input_text,
+            input_mode=input_mode if input_mode in {"choice", "free_text"} else "choice",
+            selected_choice=selected_choice,
             relevant_memories=[item.text for item in retrieval.memories],
             relation_context=graph_context.context.prompt_lines(),
             graph_context_status=graph_context.status,
@@ -292,6 +349,7 @@ def _resolve_narrative_turn_for_session(
             )
 
     if not resolution.succeeded:
+        progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
         return _build_failed_turn_result(
             db,
             container,
@@ -308,6 +366,11 @@ def _resolve_narrative_turn_for_session(
             ),
             model_lane=resolution.final_lane,
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            input_mode=input_mode,
+            interpreted_intent={},
+            next_choices=session_state.get("next_choices") or [],
+            consequence_summary="The world rejects the attempted line and keeps the scene moving elsewhere.",
+            progress_phases=progress_phases,
             failure_payload={
                 "used_fallback": resolution.used_fallback,
                 "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
@@ -326,6 +389,39 @@ def _resolve_narrative_turn_for_session(
 
     payload = resolution.final_payload
     assert payload is not None
+    progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
+
+    interpreted_intent = dict(payload.interpreted_intent or {})
+    if interpreted_intent.get("canonical_action_kind") == "use_reward_item":
+        resolved_item_id = _resolve_usable_reward_item_id(session_state)
+        if resolved_item_id is not None:
+            return _resolve_reward_item_turn_for_session(
+                db,
+                container,
+                prepared,
+                item_id=resolved_item_id,
+                input_mode=input_mode,
+                interpreted_intent=interpreted_intent,
+                progress_phases=[*progress_phases, "item_use", "choice_generation"],
+                existing_turn=turn,
+                action_label=input_text,
+                model_lane=resolution.final_lane,
+                resolution_mode="gm_council_item_use",
+                graph_context_status=graph_context.status,
+                extra_resolved_output={
+                    "used_fallback": resolution.used_fallback,
+                    "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+                    "graph_context_status": graph_context.status,
+                    "council_trace": [
+                        {
+                            "role": item.council_role,
+                            "approval_status": item.approval_status,
+                            "final_lane": item.final_lane,
+                        }
+                        for item in resolution.role_runs
+                    ],
+                },
+            )
 
     increment_relationship_strength(
         db,
@@ -345,18 +441,33 @@ def _resolve_narrative_turn_for_session(
         actor_id=player_actor.id,
         world_tags=payload.world_tags,
     )
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    next_choices = _canonicalize_next_choices(
+        [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
+        post_state.get("next_choices") or [],
+    )
 
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
         "status": "resolved",
         "action_type": "narrative",
         "resolution_mode": "gm_council",
+        "input_mode": input_mode,
+        "selected_choice_id": selected_choice.get("choice_id") if selected_choice else None,
         "used_fallback": resolution.used_fallback,
         "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
         "narrative": payload.narrative,
         "npc_reaction": payload.npc_reaction,
         "graph_context_status": graph_context.status,
         "world_tags": payload.world_tags,
+        "interpreted_intent": interpreted_intent,
+        "consequence_summary": payload.consequence_summary,
+        "next_choices": next_choices,
         "quest_updates": state_updates["quest_updates"],
         "faction_updates": state_updates["faction_updates"],
         "inventory_updates": state_updates["inventory_updates"],
@@ -434,6 +545,11 @@ def _resolve_narrative_turn_for_session(
         faction_updates=state_updates["faction_updates"],
         inventory_updates=state_updates["inventory_updates"],
         action_type="narrative",
+        input_mode=input_mode,
+        interpreted_intent=interpreted_intent,
+        next_choices=next_choices,
+        consequence_summary=payload.consequence_summary,
+        progress_phases=[*progress_phases, "choice_generation"],
     )
 
 
@@ -443,25 +559,42 @@ def _resolve_reward_item_turn_for_session(
     prepared: PreparedTurnContext,
     *,
     item_id: str,
+    input_mode: str = "choice",
+    interpreted_intent: dict[str, Any] | None = None,
+    progress_phases: list[str] | None = None,
+    existing_turn: Turn | None = None,
+    action_label: str | None = None,
+    model_lane: str = "deterministic",
+    resolution_mode: str = "item_use_rule",
+    graph_context_status: str = "deterministic",
+    extra_resolved_output: dict[str, Any] | None = None,
 ) -> TurnResolutionResult:
     game_session = prepared.session
     player_actor = prepared.player_actor
     guide_npc = prepared.guide_npc
-    action_label = f"[use_reward_item:{item_id}]"
-
-    turn = Turn(
-        id=prepared.turn_id,
-        world_id=game_session.world_id,
-        session_id=game_session.id,
-        actor_id=player_actor.id,
-        input_text=action_label,
-        resolved_output={"status": "pending"},
-        model_lane="deterministic",
-        action_type="use_reward_item",
-        resolution_mode="item_use_rule",
-    )
-    db.add(turn)
-    db.flush()
+    resolved_action_label = action_label or f"[use_reward_item:{item_id}]"
+    turn = existing_turn
+    if turn is None:
+        turn = Turn(
+            id=prepared.turn_id,
+            world_id=game_session.world_id,
+            session_id=game_session.id,
+            actor_id=player_actor.id,
+            input_text=resolved_action_label,
+            resolved_output={"status": "pending"},
+            model_lane=model_lane,
+            action_type="use_reward_item",
+            resolution_mode=resolution_mode,
+        )
+        db.add(turn)
+        db.flush()
+    else:
+        turn.input_text = resolved_action_label
+        turn.model_lane = model_lane
+        turn.action_type = "use_reward_item"
+        turn.resolution_mode = resolution_mode
+        turn.resolved_output = {"status": "pending"}
+        db.flush()
 
     try:
         outcome = use_reward_item(
@@ -479,12 +612,24 @@ def _resolve_reward_item_turn_for_session(
             prepared,
             turn=turn,
             action_type="use_reward_item",
-            resolution_mode="item_use_rule",
-            action_label=action_label,
-            graph_context_status="deterministic",
+            resolution_mode=resolution_mode,
+            action_label=resolved_action_label,
+            graph_context_status=graph_context_status,
             failure_reason=str(exc),
-            model_lane="deterministic",
+            model_lane=model_lane,
             status_code=status.HTTP_404_NOT_FOUND,
+            input_mode=input_mode,
+            interpreted_intent=interpreted_intent or {"canonical_action_kind": "use_reward_item"},
+            next_choices=_session_state_with_latest_choices(
+                db,
+                session_id=game_session.id,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                location_id=prepared.location_id,
+            ).get("next_choices")
+            or [],
+            consequence_summary="The reward item cannot take effect in the scene's current state.",
+            progress_phases=progress_phases or ["item_use"],
             failure_payload={"item_id": item_id},
         )
     except ValueError as exc:
@@ -494,29 +639,63 @@ def _resolve_reward_item_turn_for_session(
             prepared,
             turn=turn,
             action_type="use_reward_item",
-            resolution_mode="item_use_rule",
-            action_label=action_label,
-            graph_context_status="deterministic",
+            resolution_mode=resolution_mode,
+            action_label=resolved_action_label,
+            graph_context_status=graph_context_status,
             failure_reason=str(exc),
-            model_lane="deterministic",
+            model_lane=model_lane,
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            input_mode=input_mode,
+            interpreted_intent=interpreted_intent or {"canonical_action_kind": "use_reward_item"},
+            next_choices=_session_state_with_latest_choices(
+                db,
+                session_id=game_session.id,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                location_id=prepared.location_id,
+            ).get("next_choices")
+            or [],
+            consequence_summary="The reward item's path is not yet open, so the world holds the scene in place.",
+            progress_phases=progress_phases or ["item_use"],
             failure_payload={"item_id": item_id},
         )
 
     npc_reaction = (
         f"{guide_npc.display_name}はLantern Sigilを確かめ、次の watch path が正式に開いたと告げた。"
     )
-    turn.model_lane = "deterministic"
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
+    resolved_interpreted_intent = interpreted_intent or {
+        "input_mode": input_mode,
+        "canonical_action_kind": "use_reward_item",
+        "intent_summary": "Lantern Sigilを掲げて次の watch path を開く",
+    }
+    resolved_consequence_summary = (
+        str(resolved_interpreted_intent.get("consequence_summary") or "").strip()
+        or "The sigil changes what the world will now allow."
+    )
+
+    turn.model_lane = model_lane
     turn.resolved_output = {
         "status": "resolved",
         "action_type": "use_reward_item",
-        "resolution_mode": "item_use_rule",
+        "resolution_mode": resolution_mode,
+        "input_mode": input_mode,
         "narrative": outcome.event_narrative,
         "npc_reaction": npc_reaction,
-        "graph_context_status": "deterministic",
+        "graph_context_status": graph_context_status,
+        "interpreted_intent": resolved_interpreted_intent,
+        "consequence_summary": resolved_consequence_summary,
+        "next_choices": next_choices,
         "quest_updates": outcome.quest_updates,
         "faction_updates": outcome.faction_updates,
         "inventory_updates": outcome.inventory_updates,
+        **(extra_resolved_output or {}),
     }
 
     event = Event(
@@ -529,6 +708,7 @@ def _resolve_reward_item_turn_for_session(
         payload={
             **outcome.event_payload,
             "action_type": "use_reward_item",
+            "input_mode": input_mode,
             "quest_updates": outcome.quest_updates,
             "faction_updates": outcome.faction_updates,
             "inventory_updates": outcome.inventory_updates,
@@ -567,7 +747,7 @@ def _resolve_reward_item_turn_for_session(
         memory_ids=[memory.id for memory in memories],
         event_payload=_event_payload(event),
         memories_payload=[_memory_payload(memory) for memory in memories],
-        graph_context_status="deterministic",
+        graph_context_status=graph_context_status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
@@ -575,6 +755,11 @@ def _resolve_reward_item_turn_for_session(
         faction_updates=outcome.faction_updates,
         inventory_updates=outcome.inventory_updates,
         action_type="use_reward_item",
+        input_mode=input_mode,
+        interpreted_intent=resolved_interpreted_intent,
+        next_choices=next_choices,
+        consequence_summary=resolved_consequence_summary,
+        progress_phases=progress_phases or ["item_use"],
     )
 
 
@@ -591,6 +776,11 @@ def _build_failed_turn_result(
     failure_reason: str,
     model_lane: str,
     status_code: int,
+    input_mode: str,
+    interpreted_intent: dict[str, Any],
+    next_choices: list[dict[str, Any]],
+    consequence_summary: str,
+    progress_phases: list[str],
     failure_payload: dict | None = None,
 ) -> TurnResolutionResult:
     game_session = prepared.session
@@ -603,6 +793,10 @@ def _build_failed_turn_result(
         "resolution_mode": resolution_mode,
         "error_detail": failure_reason,
         "graph_context_status": graph_context_status,
+        "input_mode": input_mode,
+        "interpreted_intent": interpreted_intent,
+        "next_choices": next_choices,
+        "consequence_summary": consequence_summary,
         **(failure_payload or {}),
     }
     failure_event = Event(
@@ -640,6 +834,7 @@ def _build_failed_turn_result(
         actor_id=player_actor.id,
         reference_id=turn.id,
         note=failure_reason,
+        cost=abs(prepared.debit.delta),
     )
     db.flush()
     return TurnResolutionResult(
@@ -656,6 +851,11 @@ def _build_failed_turn_result(
         faction_updates=[],
         inventory_updates=[],
         action_type=action_type,
+        input_mode=input_mode,
+        interpreted_intent=interpreted_intent,
+        next_choices=next_choices,
+        consequence_summary=consequence_summary,
+        progress_phases=progress_phases,
         error_detail=failure_reason,
         status_code=status_code,
     )
@@ -666,6 +866,7 @@ def prepare_turn_for_session(
     container: AppContainer,
     user: UserIdentity,
     session_id: str,
+    input_mode: str = "choice",
 ) -> PreparedTurnContext:
     stmt = select(GameSession).where(GameSession.id == session_id)
     game_session = db.execute(stmt).scalar_one_or_none()
@@ -682,6 +883,7 @@ def prepare_turn_for_session(
         db.flush()
     guide_npc = get_or_create_guide_npc(db, game_session.world_id, location_id=player_actor.current_location_id)
     planned_turn_id = new_id()
+    turn_cost = _turn_cost_for_mode(container.settings, input_mode)
     try:
         debit = container.economy_service.debit_turn_cost(
             db,
@@ -689,6 +891,7 @@ def prepare_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             reference_id=planned_turn_id,
+            cost=turn_cost,
         )
     except InsufficientSPError as exc:
         raise HTTPException(
@@ -697,7 +900,9 @@ def prepare_turn_for_session(
                 "detail": exc.detail,
                 "balance": exc.balance,
                 "required": exc.required,
-                "turn_cost": container.settings.turn_sp_cost,
+                "turn_cost": turn_cost,
+                "choice_turn_cost": container.settings.choice_turn_sp_cost,
+                "free_text_turn_cost": container.settings.free_text_turn_sp_cost,
             },
         ) from exc
 
@@ -708,6 +913,7 @@ def prepare_turn_for_session(
         location_id=player_actor.current_location_id or current_location.id,
         turn_id=planned_turn_id,
         debit=debit,
+        input_mode=input_mode,
     )
 
 
@@ -736,8 +942,9 @@ def get_session_state_for_user(
         player_actor_id=player_actor.id,
         guide_actor_id=guide_npc.id,
     )
-    return build_session_state(
+    return _session_state_with_latest_choices(
         db,
+        session_id=game_session.id,
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=player_actor.current_location_id or current_location.id,
@@ -765,3 +972,164 @@ def _memory_payload(memory) -> dict:
         "actor_id": memory.actor_id,
         "location_id": memory.location_id,
     }
+
+
+def _turn_cost_for_mode(settings, input_mode: str) -> int:
+    if input_mode == "free_text":
+        return settings.free_text_turn_sp_cost
+    return settings.choice_turn_sp_cost
+
+
+def _session_state_with_latest_choices(
+    db: Session,
+    *,
+    session_id: str,
+    world_id: str,
+    actor_id: str,
+    location_id: str | None,
+) -> dict[str, Any]:
+    state = build_session_state(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        location_id=location_id,
+    )
+    fallback_choices = state.get("next_choices") or []
+    state["next_choices"] = _latest_session_choices(db, session_id=session_id, fallback_choices=fallback_choices)
+    return state
+
+
+def _latest_session_choices(
+    db: Session,
+    *,
+    session_id: str,
+    fallback_choices: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    turns = list(
+        db.execute(
+            select(Turn)
+            .where(Turn.session_id == session_id)
+            .order_by(Turn.created_at.desc(), Turn.id.desc())
+            .limit(16)
+        ).scalars()
+    )
+    for turn in turns:
+        resolved_output = turn.resolved_output or {}
+        raw_choices = resolved_output.get("next_choices")
+        if isinstance(raw_choices, list) and raw_choices:
+            return _canonicalize_next_choices(raw_choices, fallback_choices)
+    return _canonicalize_next_choices(fallback_choices, fallback_choices)
+
+
+def _canonicalize_next_choices(
+    raw_choices: list[dict[str, Any]] | list[Any],
+    fallback_choices: list[dict[str, Any]] | list[Any],
+) -> list[dict[str, Any]]:
+    fallback_by_posture: dict[str, dict[str, Any]] = {}
+    for raw_choice in fallback_choices:
+        if not isinstance(raw_choice, dict):
+            continue
+        posture = str(raw_choice.get("posture") or "")
+        if posture in CHOICE_ORDER:
+            fallback_by_posture[posture] = dict(raw_choice)
+
+    raw_by_posture: dict[str, dict[str, Any]] = {}
+    for raw_choice in raw_choices:
+        if not isinstance(raw_choice, dict):
+            continue
+        posture = str(raw_choice.get("posture") or "")
+        if posture in CHOICE_ORDER:
+            raw_by_posture[posture] = dict(raw_choice)
+
+    normalized: list[dict[str, Any]] = []
+    for posture in CHOICE_ORDER:
+        fallback = fallback_by_posture.get(posture, {})
+        current = raw_by_posture.get(posture, fallback)
+        fallback_action_kind = str(fallback.get("action_kind") or "narrative")
+        requested_action_kind = str(current.get("action_kind") or fallback_action_kind or "narrative")
+        action_kind = requested_action_kind if requested_action_kind in {"narrative", "use_reward_item"} else "narrative"
+        if fallback_action_kind == "use_reward_item":
+            action_kind = "use_reward_item"
+        label = str(
+            (
+                fallback.get("label")
+                if action_kind == "use_reward_item"
+                else current.get("label")
+            )
+            or fallback.get("label")
+            or fallback.get("canonical_input_text")
+            or posture
+        ).strip()
+        canonical_input_text = str(
+            (
+                fallback.get("canonical_input_text")
+                if action_kind == "use_reward_item"
+                else current.get("canonical_input_text") or current.get("intent_summary")
+            )
+            or fallback.get("canonical_input_text")
+            or label
+        ).strip()
+        summary = str(
+            (
+                fallback.get("summary")
+                if action_kind == "use_reward_item"
+                else current.get("summary")
+            )
+            or current.get("intent_summary")
+            or fallback.get("summary")
+            or label
+        ).strip()
+        normalized.append(
+            {
+                "choice_id": str(fallback.get("choice_id") or posture),
+                "posture": posture,
+                "label": label,
+                "summary": summary,
+                "canonical_input_text": canonical_input_text,
+                "action_kind": action_kind,
+            }
+        )
+    return normalized
+
+
+def _select_choice(choices: list[dict[str, Any]], choice_id: str) -> dict[str, Any] | None:
+    for choice in choices:
+        if str(choice.get("choice_id") or "") == choice_id:
+            return dict(choice)
+    return None
+
+
+def _resolve_usable_reward_item_id(session_state: dict[str, Any]) -> str | None:
+    for affordance in session_state.get("important_inventory_affordances") or []:
+        if not isinstance(affordance, dict):
+            continue
+        if affordance.get("usable") and affordance.get("effect_kind") == "unlock_followup_watch_path":
+            item_id = str(affordance.get("item_id") or "").strip()
+            if item_id:
+                return item_id
+    for item in session_state.get("inventory") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("usable") and item.get("effect_kind") == "unlock_followup_watch_path":
+            item_id = str(item.get("id") or "").strip()
+            if item_id:
+                return item_id
+    return None
+
+
+def _progress_phases_from_role_runs(role_runs: list[Any]) -> list[str]:
+    phase_map = {
+        "intent_interpreter": "intent_interpretation",
+        "memory_manager": "memory_council",
+        "npc_manager": "npc_council",
+        "world_progress": "world_progress",
+        "rules_arbiter": "rules_arbiter",
+        "safety_guard": "safety_guard",
+        "narrative": "narrative",
+    }
+    phases: list[str] = []
+    for role_run in role_runs:
+        phase = phase_map.get(getattr(role_run, "council_role", ""))
+        if phase and phase not in phases:
+            phases.append(phase)
+    return phases

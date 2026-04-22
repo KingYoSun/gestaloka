@@ -507,6 +507,143 @@ def list_inventory_summaries(db: Session, world_id: str, actor_id: str) -> list[
     return [item_summary_to_dict(item) for item in items]
 
 
+def narrative_state_bands(character: dict[str, Any], factions: list[dict[str, Any]]) -> dict[str, str]:
+    hp = int(character.get("hp") or 0)
+    focus = int(character.get("focus") or 0)
+    if hp <= 2:
+        vitality = "strained"
+    elif hp <= 5:
+        vitality = "steady"
+    else:
+        vitality = "grounded"
+
+    if focus <= 1:
+        clarity = "frayed"
+    elif focus <= 3:
+        clarity = "steady"
+    else:
+        clarity = "sharp"
+
+    primary_faction = factions[0]["band"] if factions else "unknown"
+    return {
+        "vitality": vitality,
+        "clarity": clarity,
+        "standing": str(primary_faction),
+    }
+
+
+def important_inventory_affordances(inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    affordances: list[dict[str, Any]] = []
+    for item in inventory:
+        effect_kind = item.get("effect_kind")
+        if not effect_kind:
+            continue
+        affordances.append(
+            {
+                "item_id": item["id"],
+                "name": item["name"],
+                "usable": bool(item.get("usable")),
+                "effect_kind": effect_kind,
+                "summary": (
+                    f"{item['name']} can unlock the next watch path."
+                    if effect_kind == "unlock_followup_watch_path"
+                    else f"{item['name']} carries a special affordance."
+                ),
+            }
+        )
+    return affordances
+
+
+def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
+    quests = session_state.get("quests") or []
+    inventory = session_state.get("inventory") or []
+    active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else {})
+    stage_key = str(active_quest.get("stage_key") or "starter_watch")
+    progress = int(active_quest.get("progress") or 0)
+    usable_item = next((item for item in inventory if item.get("usable")), None)
+
+    safe_choice = {
+        "choice_id": "safe",
+        "posture": "safe",
+        "label": "一歩退いて広場の気配を落ち着いて見守る",
+        "summary": "場の流れを乱さず、まず気配と視線を確かめる。",
+        "canonical_input_text": "広場の流れを乱さず、周囲の気配と旅人の様子を見守る",
+        "action_kind": "narrative",
+    }
+    progress_choice = {
+        "choice_id": "progress",
+        "posture": "progress",
+        "label": "困っている相手に手を差し伸べ、次の進展を作る",
+        "summary": "もっとも前進寄りの行動で、依頼や関係を進める。",
+        "canonical_input_text": "広場で旅人を助け、灯をともす",
+        "action_kind": "narrative",
+    }
+    explore_choice = {
+        "choice_id": "explore",
+        "posture": "explore",
+        "label": "噂と視線をたどり、場の裏側を探る",
+        "summary": "探索や関係変化に寄せた行動で、状況理解を広げる。",
+        "canonical_input_text": "広場の空気や旅人の事情を探り、何が起きているか確かめる",
+        "action_kind": "narrative",
+    }
+
+    if stage_key == "starter_watch" and progress >= 1:
+        progress_choice = {
+            **progress_choice,
+            "label": "旅人に報告を促し、次の見回りを引き受ける",
+            "summary": "依頼を締め、watch から次の信頼を引き出す。",
+            "canonical_input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+        }
+        safe_choice = {
+            **safe_choice,
+            "label": "急がず旅人の落ち着きを確かめ、広場の気配を保つ",
+            "canonical_input_text": "急がず旅人の落ち着きを確かめ、広場の気配を保つ",
+        }
+        explore_choice = {
+            **explore_choice,
+            "label": "広場の視線や噂を探り、次の手掛かりを拾う",
+            "canonical_input_text": "広場の視線や噂を探り、次の手掛かりを拾う",
+        }
+
+    if usable_item is not None and usable_item.get("effect_kind") == "unlock_followup_watch_path":
+        progress_choice = {
+            "choice_id": "progress",
+            "posture": "progress",
+            "label": "Lantern Sigilを掲げ、次の watch path を正式に開く",
+            "summary": "重要アイテムを使って次の物語段階を解放する。",
+            "canonical_input_text": "Lantern Sigilを掲げ、次の watch path を開く",
+            "action_kind": "use_reward_item",
+        }
+
+    if stage_key == "watch_path_followup":
+        progress_choice = {
+            "choice_id": "progress",
+            "posture": "progress",
+            "label": "開いた watch path を辿り、そこで見つかる異変を確かめる",
+            "summary": "follow-up quest を前へ進める選択。",
+            "canonical_input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+            "action_kind": "narrative",
+        }
+        safe_choice = {
+            "choice_id": "safe",
+            "posture": "safe",
+            "label": "巡回路の灯を整え、場を静かに安定させる",
+            "summary": "危険を抑えつつ、場の安定を優先する。",
+            "canonical_input_text": "開いた巡回路の灯を整え、場を静かに安定させる",
+            "action_kind": "narrative",
+        }
+        explore_choice = {
+            "choice_id": "explore",
+            "posture": "explore",
+            "label": "巡回路の痕跡や見張りの記憶を集め、関係の糸口を探る",
+            "summary": "探索と関係変化に寄せた選択。",
+            "canonical_input_text": "Lantern Sigilで開いた巡回路の痕跡や見張りの記憶を集める",
+            "action_kind": "narrative",
+        }
+
+    return [safe_choice, progress_choice, explore_choice]
+
+
 def build_session_state(
     db: Session,
     *,
@@ -514,14 +651,22 @@ def build_session_state(
     actor_id: str,
     location_id: str | None,
 ) -> dict[str, Any]:
-    return {
+    character = get_character_summary(db, world_id, actor_id)
+    quests = list_quest_summaries(db, world_id, actor_id)
+    factions = list_faction_summaries(db, world_id, actor_id)
+    inventory = list_inventory_summaries(db, world_id, actor_id)
+    state = {
         "world_id": world_id,
         "location": get_location_summary(db, world_id, location_id),
-        "character": get_character_summary(db, world_id, actor_id),
-        "quests": list_quest_summaries(db, world_id, actor_id),
-        "factions": list_faction_summaries(db, world_id, actor_id),
-        "inventory": list_inventory_summaries(db, world_id, actor_id),
+        "character": character,
+        "quests": quests,
+        "factions": factions,
+        "inventory": inventory,
+        "narrative_state_bands": narrative_state_bands(character, factions),
+        "important_inventory_affordances": important_inventory_affordances(inventory),
     }
+    state["next_choices"] = default_next_choices(state)
+    return state
 
 
 def _active_progression_quest(

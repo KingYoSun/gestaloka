@@ -7,9 +7,11 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.core.config import Settings
 from app.modules.llm_harness.service import (
+    CouncilIntentInterpreterPayload,
     CouncilRoleRun,
     MemoryDraft,
     ModelRouter,
+    NarrativeChoiceDraft,
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
@@ -37,6 +39,7 @@ class CouncilWorldProgressPayload(BaseModel):
     world_tags: list[WorldTag] = Field(min_length=1)
     resolution_summary: str = Field(min_length=1)
     risk_level: Literal["low", "medium", "high"]
+    next_choices: list[NarrativeChoiceDraft] = Field(min_length=3, max_length=3)
 
     @model_validator(mode="before")
     @classmethod
@@ -78,16 +81,19 @@ class CouncilRequest:
     relation_context: list[str]
     graph_context_status: str
     session_state: dict[str, Any]
+    input_mode: Literal["choice", "free_text"] = "choice"
+    selected_choice: dict[str, Any] | None = None
 
 
 class GMCouncilService:
     ROLE_ORDER = [
-        ("memory_manager", 1, "council.memory_manager", False),
-        ("npc_manager", 2, "council.npc_manager", False),
-        ("world_progress", 3, "council.world_progress", False),
-        ("rules_arbiter", 4, "council.rules_arbiter", True),
-        ("safety_guard", 5, "council.safety_guard", True),
-        ("narrative", 6, "council.narrative", True),
+        ("intent_interpreter", 1, "council.intent_interpreter", False),
+        ("memory_manager", 2, "council.memory_manager", False),
+        ("npc_manager", 3, "council.npc_manager", False),
+        ("world_progress", 4, "council.world_progress", False),
+        ("rules_arbiter", 5, "council.rules_arbiter", True),
+        ("safety_guard", 6, "council.safety_guard", True),
+        ("narrative", 7, "council.narrative", True),
     ]
 
     def __init__(self, settings: Settings, model_router: ModelRouter) -> None:
@@ -101,10 +107,57 @@ class GMCouncilService:
         active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else None)
         usable_reward_items = [item for item in inventory if item.get("usable")]
         used_reward_items = [item for item in inventory if item.get("status") == "used"]
+        important_inventory_affordances = request.session_state.get("important_inventory_affordances") or []
+        default_choice_templates = request.session_state.get("next_choices") or []
+
+        intent_input = {
+            "world_id": request.world_id,
+            "input_mode": request.input_mode,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "npc_name": request.npc_name,
+            "selected_choice": request.selected_choice or {},
+            "quests": quests,
+            "factions": request.session_state.get("factions") or [],
+            "inventory": inventory,
+            "usable_reward_items": usable_reward_items,
+            "used_reward_items": used_reward_items,
+            "important_inventory_affordances": important_inventory_affordances,
+            "default_choice_templates": default_choice_templates,
+        }
+        intent_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.intent_interpreter",
+            response_model=CouncilIntentInterpreterPayload,
+            input_payload=intent_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="intent_interpreter",
+                stage_index=1,
+                prompt_id="council.intent_interpreter",
+                approval_status="prepared" if intent_result.succeeded else "failed",
+                result=intent_result,
+            )
+        )
+        if not intent_result.succeeded:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=intent_result.final_lane,
+                final_payload=None,
+                failure_reason=intent_result.failure_reason,
+                rejection_role="intent_interpreter",
+            )
+
+        intent_payload = intent_result.final_payload
+        assert intent_payload is not None
 
         memory_input = {
             "world_id": request.world_id,
             "input_text": request.input_text,
+            "intent_summary": intent_payload.intent_summary,
             "player_name": request.player_name,
             "npc_name": request.npc_name,
             "relevant_memories": request.relevant_memories,
@@ -116,6 +169,8 @@ class GMCouncilService:
             "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
             "usable_reward_items": usable_reward_items,
             "used_reward_items": used_reward_items,
+            "important_inventory_affordances": [item.get("summary", "") for item in important_inventory_affordances if item.get("summary")],
+            "consequence_flags": intent_payload.consequence_flags,
         }
         memory_result = self.model_router.execute_structured_prompt(
             prompt_id="council.memory_manager",
@@ -128,7 +183,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="memory_manager",
-                stage_index=1,
+                stage_index=2,
                 prompt_id="council.memory_manager",
                 approval_status="prepared" if memory_result.succeeded else "failed",
                 result=memory_result,
@@ -159,6 +214,7 @@ class GMCouncilService:
             "usable_reward_items": usable_reward_items,
             "used_reward_items": used_reward_items,
             "factions": request.session_state.get("factions") or [],
+            "consequence_summary": intent_payload.consequence_summary,
         }
         npc_result = self.model_router.execute_structured_prompt(
             prompt_id="council.npc_manager",
@@ -171,7 +227,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="npc_manager",
-                stage_index=2,
+                stage_index=3,
                 prompt_id="council.npc_manager",
                 approval_status="prepared" if npc_result.succeeded else "failed",
                 result=npc_result,
@@ -199,6 +255,10 @@ class GMCouncilService:
             "state_summary": memory_payload.state_summary,
             "reaction_outline": npc_payload.reaction_outline,
             "focus_memories": npc_payload.focus_memories,
+            "intent_summary": intent_payload.intent_summary,
+            "fail_forward": intent_payload.fail_forward,
+            "consequence_summary": intent_payload.consequence_summary,
+            "default_choice_templates": default_choice_templates,
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",
@@ -211,7 +271,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="world_progress",
-                stage_index=3,
+                stage_index=4,
                 prompt_id="council.world_progress",
                 approval_status="prepared" if world_progress_result.succeeded else "failed",
                 result=world_progress_result,
@@ -238,6 +298,8 @@ class GMCouncilService:
             "quests": quests,
             "factions": request.session_state.get("factions") or [],
             "inventory": inventory,
+            "input_mode": request.input_mode,
+            "consequence_flags": intent_payload.consequence_flags,
         }
         rules_result = self.model_router.execute_structured_prompt(
             prompt_id="council.rules_arbiter",
@@ -255,7 +317,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="rules_arbiter",
-                stage_index=4,
+                stage_index=5,
                 prompt_id="council.rules_arbiter",
                 approval_status=rules_approval,
                 result=rules_result,
@@ -285,6 +347,7 @@ class GMCouncilService:
             "event_payload": world_progress_payload.event_payload,
             "world_tags": rules_payload.normalized_world_tags,
             "risk_level": rules_payload.risk_level,
+            "input_mode": request.input_mode,
         }
         safety_result = self.model_router.execute_structured_prompt(
             prompt_id="council.safety_guard",
@@ -302,7 +365,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="safety_guard",
-                stage_index=5,
+                stage_index=6,
                 prompt_id="council.safety_guard",
                 approval_status=safety_approval,
                 result=safety_result,
@@ -331,6 +394,7 @@ class GMCouncilService:
             "reaction_outline": npc_payload.reaction_outline,
             "world_tags": rules_payload.normalized_world_tags,
             "resolution_summary": world_progress_payload.resolution_summary,
+            "consequence_summary": intent_payload.consequence_summary,
         }
         narrative_result = self.model_router.execute_structured_prompt(
             prompt_id="council.narrative",
@@ -345,7 +409,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="narrative",
-                stage_index=6,
+                stage_index=7,
                 prompt_id="council.narrative",
                 approval_status="approved" if narrative_result.succeeded else "failed",
                 result=narrative_result,
@@ -375,6 +439,9 @@ class GMCouncilService:
             },
             memories=world_progress_payload.memories,
             world_tags=rules_payload.normalized_world_tags,
+            interpreted_intent=intent_payload.model_dump(),
+            next_choices=world_progress_payload.next_choices,
+            consequence_summary=intent_payload.consequence_summary,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,
