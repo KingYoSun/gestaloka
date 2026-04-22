@@ -3,7 +3,18 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models.entities import Actor, Memory, Session as GameSession, World, starter_location_id
+from app.models.entities import (
+    Actor,
+    Faction,
+    FactionStanding,
+    Item,
+    Memory,
+    QuestAssignment,
+    QuestTemplate,
+    Session as GameSession,
+    World,
+    starter_location_id,
+)
 
 
 def test_cross_world_session_reference_is_rejected(container):
@@ -62,5 +73,97 @@ def test_actor_cannot_point_to_location_from_another_world(container):
             current_location_id=starter_location_id("world-b"),
         )
         db.add(actor)
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_faction_standing_cannot_reference_faction_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        actor = Actor(world_id="world-a", actor_type="player", user_sub="demo", display_name="Demo")
+        faction = Faction(id="faction-b", world_id="world-b", name="Faction B", description="desc", status="active", state={})
+        db.add_all([actor, faction])
+        db.flush()
+        db.add(
+            FactionStanding(
+                actor_id=actor.id,
+                world_id="world-a",
+                faction_id=faction.id,
+                standing=0.2,
+                band="neutral",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_quest_assignment_cannot_reference_template_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        actor = Actor(world_id="world-a", actor_type="player", user_sub="demo", display_name="Demo")
+        template = QuestTemplate(
+            id="quest-b",
+            world_id="world-b",
+            title="Quest B",
+            description="desc",
+            status="active",
+            completion_target=2,
+            reward_template_key="reward",
+            reward_name="Reward",
+            reward_description="desc",
+            state={},
+        )
+        db.add_all([actor, template])
+        db.flush()
+        db.add(
+            QuestAssignment(
+                world_id="world-a",
+                owner_actor_id=actor.id,
+                quest_template_id=template.id,
+                status="active",
+                progress=0,
+                progress_target=2,
+                latest_summary="bad",
+                state_json={},
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_item_cannot_reference_owner_from_another_world(container):
+    with container.session_factory() as db:
+        db.add_all(
+            [
+                World(id="world-a", name="World A", status="active"),
+                World(id="world-b", name="World B", status="active"),
+            ]
+        )
+        db.flush()
+        actor = Actor(world_id="world-a", actor_type="player", user_sub="demo", display_name="Demo")
+        db.add(actor)
+        db.flush()
+        db.add(
+            Item(
+                world_id="world-b",
+                owner_actor_id=actor.id,
+                template_key="lantern_sigils",
+                name="Lantern Sigil",
+                description="desc",
+                status="active",
+            )
+        )
         with pytest.raises(IntegrityError):
             db.commit()

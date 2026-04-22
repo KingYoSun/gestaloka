@@ -97,11 +97,15 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "location_id",
         "websocket_url",
     }
+    state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state_response.status_code == 200
+    assert {"world_id", "location", "character", "quests", "factions", "inventory"} <= set(state_response.json())
+    assert state_response.json()["quests"][0]["progress"] == 0
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
         turn_response = client.post(
             "/turns",
-            json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
+            json={"session_id": session_payload["session_id"], "input_text": "広場で旅人を助け、灯をともす"},
             headers=auth_headers,
         )
         assert turn_response.status_code == 200
@@ -115,11 +119,16 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "sp_delta",
             "sp_balance",
             "sp_ledger_id",
+            "quest_updates",
+            "faction_updates",
+            "inventory_updates",
         }
         assert turn_payload["sp_delta"] == -1
         assert turn_payload["sp_balance"] == 9
+        assert turn_payload["quest_updates"][0]["progress"] == 1
+        assert turn_payload["inventory_updates"] == []
 
-        messages = [websocket.receive_json() for _ in range(9)]
+        messages = [websocket.receive_json() for _ in range(11)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
@@ -128,6 +137,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "turn.narrative.delta",
         "world.event.created",
         "memory.materialized",
+        "quest.updated",
+        "faction.standing.updated",
         "turn.progress",
         "graph.projection.updated",
         "turn.resolved",
@@ -176,8 +187,10 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert summary_response.status_code == 200
     summary_payload = summary_response.json()
     assert summary_payload["world_id"] == session_payload["world_id"]
-    assert summary_payload["vertex_count"] >= 4
-    assert summary_payload["edge_count"] >= 4
+    assert summary_payload["vertex_count"] >= 6
+    assert summary_payload["edge_count"] >= 6
+    assert summary_payload["label_counts"]["Faction"] >= 1
+    assert summary_payload["label_counts"]["Quest"] >= 1
 
     rebuild_response = client.post(
         "/ops/projection/rebuild",

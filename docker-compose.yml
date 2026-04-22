@@ -340,11 +340,12 @@ services:
     command: python -m app.modules.eval_harness.scheduler loop
 
   frontend-e2e:
-    image: mcr.microsoft.com/playwright:v1.52.0-noble
+    image: mcr.microsoft.com/playwright:v1.59.1-noble
     container_name: gestaloka-v2-frontend-e2e
     working_dir: /workspace/frontend
+    network_mode: host
     environment:
-      PLAYWRIGHT_BASE_URL: http://frontend:5173
+      PLAYWRIGHT_BASE_URL: http://localhost:5173
       CI: "1"
     volumes:
       - ./frontend:/workspace/frontend
@@ -354,7 +355,7 @@ services:
         condition: service_started
       keycloak:
         condition: service_healthy
-    command: sh -c "npm install && npm run test:e2e"
+    command: sh -c "npm install && ln -sfn /workspace/frontend/node_modules /workspace/node_modules && npm run test:e2e"
 
 volumes:
   postgres_data:

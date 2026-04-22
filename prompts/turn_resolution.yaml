@@ -1,13 +1,15 @@
 prompt_id: session.turn_resolution
 owner_module: session
-schema_version: "1"
+schema_version: "2"
 model_lane: main_lane
-expected_output_schema: turn_resolution_v1
+expected_output_schema: turn_resolution_v2
 eval_dataset_ref: turn_resolution_smoke
 world_invariants:
   - single_world_namespace
   - actor_world_consistency
   - event_memory_auditability
+  - quest_progress_same_world
+  - reward_after_completion_only
 instructions: |
   Resolve one player turn inside a single persistent world.
   Produce:
@@ -15,4 +17,6 @@ instructions: |
   - one canonical world event
   - one or more memories materialized from that event
   - an NPC reaction that may cite relevant same-world memories
+  - world_tags from the closed set aid_local / investigate / promise_followup / threaten_local / collect_reward / none
+  Never emit quest ids, faction ids, or item ids.
   Never reference another world.

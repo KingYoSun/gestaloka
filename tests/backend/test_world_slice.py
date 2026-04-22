@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+from sqlalchemy import func, select
+
+from app.models.entities import CharacterSheet, Faction, FactionStanding, QuestAssignment, QuestTemplate
+from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
+
+
+def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
+    first = QuestRuleEngine.evaluate(
+        QuestRuleInput(
+            world_tags=["aid_local"],
+            current_progress=0,
+            progress_target=2,
+            current_standing=0.25,
+            reward_already_issued=False,
+        )
+    )
+    second = QuestRuleEngine.evaluate(
+        QuestRuleInput(
+            world_tags=["investigate", "promise_followup"],
+            current_progress=1,
+            progress_target=2,
+            current_standing=0.4,
+            reward_already_issued=False,
+        )
+    )
+
+    assert first.next_progress == 1
+    assert first.should_issue_reward is False
+    assert second.next_progress == 2
+    assert second.should_issue_reward is True
+    assert second.next_standing > 0.4
+
+
+def test_session_seed_is_idempotent_for_character_faction_and_quest(client, container, auth_headers):
+    first = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    second = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    with container.session_factory() as db:
+        assert db.execute(select(func.count(Faction.id))).scalar_one() == 1
+        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 1
+        assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 1
+        assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
+        assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 1

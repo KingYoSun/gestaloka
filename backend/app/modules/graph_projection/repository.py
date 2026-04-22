@@ -6,7 +6,18 @@ from typing import Any, Protocol
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.models.entities import Actor, Event, Location, Memory, Relationship
+from app.models.entities import (
+    Actor,
+    Event,
+    Faction,
+    FactionStanding,
+    Item,
+    Location,
+    Memory,
+    QuestAssignment,
+    QuestTemplate,
+    Relationship,
+)
 
 
 def nebula_vid(world_id: str, entity_type: str, entity_id: str) -> str:
@@ -29,6 +40,11 @@ class GraphProjectionBundle:
     actors: list[Actor]
     location: Location | None
     relationships: list[Relationship]
+    factions: list[Faction]
+    faction_standings: list[FactionStanding]
+    quest_assignments: list[QuestAssignment]
+    quest_templates: list[QuestTemplate]
+    items: list[Item]
 
 
 @dataclass(frozen=True)
@@ -46,6 +62,9 @@ class GraphRelationContext:
     relationships: list[dict[str, Any]]
     related_events: list[dict[str, Any]]
     related_memories: list[dict[str, Any]]
+    active_quests: list[dict[str, Any]]
+    faction_standings: list[dict[str, Any]]
+    inventory_items: list[dict[str, Any]]
 
     def prompt_lines(self) -> list[str]:
         lines: list[str] = []
@@ -60,6 +79,16 @@ class GraphRelationContext:
             lines.append(f"memory={item['text']}")
         for item in self.related_events[:1]:
             lines.append(f"event={item['narrative']}")
+        for item in self.active_quests[:1]:
+            lines.append(
+                "active_quest="
+                f"{item['title']} [{item['status']} {item['progress']}/{item['progress_target']}]"
+            )
+        for item in self.faction_standings[:2]:
+            lines.append(f"faction={item['name']} standing={item['standing']:.2f} ({item['band']})")
+        if self.inventory_items:
+            names = ", ".join(item["name"] for item in self.inventory_items[:3])
+            lines.append(f"inventory={names}")
         return lines
 
 
@@ -92,6 +121,8 @@ class RecordingWorldGraphRepository:
 
     def project_bundle(self, bundle: GraphProjectionBundle) -> GraphProjectionResult:
         actor_map = {actor.id: actor for actor in bundle.actors}
+        faction_map = {faction.id: faction for faction in bundle.factions}
+        quest_template_map = {template.id: template for template in bundle.quest_templates}
         records: list[ProjectedArtifact] = []
 
         for actor in actor_map.values():
@@ -109,6 +140,26 @@ class RecordingWorldGraphRepository:
                             "display_name": actor.display_name,
                             "actor_type": actor.actor_type,
                             "status": actor.status,
+                        },
+                    },
+                )
+            )
+
+        for faction in faction_map.values():
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:vertex:Faction:{faction.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "vertex",
+                        "label": "Faction",
+                        "vid": nebula_vid(bundle.world_id, "faction", faction.id),
+                        "properties": {
+                            "world_id": faction.world_id,
+                            "faction_id": faction.id,
+                            "name": faction.name,
+                            "description": faction.description,
+                            "status": faction.status,
                         },
                     },
                 )
@@ -150,6 +201,53 @@ class RecordingWorldGraphRepository:
                 },
             )
         )
+
+        for assignment in bundle.quest_assignments:
+            template = quest_template_map.get(assignment.quest_template_id)
+            if template is None:
+                continue
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:vertex:Quest:{assignment.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "vertex",
+                        "label": "Quest",
+                        "vid": nebula_vid(bundle.world_id, "quest", assignment.id),
+                        "properties": {
+                            "world_id": assignment.world_id,
+                            "quest_id": assignment.id,
+                            "quest_template_id": template.id,
+                            "title": template.title,
+                            "status": assignment.status,
+                            "progress": assignment.progress,
+                            "progress_target": assignment.progress_target,
+                            "latest_summary": assignment.latest_summary,
+                        },
+                    },
+                )
+            )
+
+        for item in bundle.items:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:vertex:Item:{item.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "vertex",
+                        "label": "Item",
+                        "vid": nebula_vid(bundle.world_id, "item", item.id),
+                        "properties": {
+                            "world_id": item.world_id,
+                            "item_id": item.id,
+                            "template_key": item.template_key,
+                            "name": item.name,
+                            "description": item.description,
+                            "status": item.status,
+                        },
+                    },
+                )
+            )
 
         for memory in bundle.memories:
             records.append(
@@ -201,6 +299,80 @@ class RecordingWorldGraphRepository:
                 },
             )
         )
+
+        for standing in bundle.faction_standings:
+            if standing.faction_id not in faction_map:
+                continue
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:edge:AFFECTS:{standing.actor_id}:{standing.faction_id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "edge",
+                        "label": "AFFECTS",
+                        "source_vid": nebula_vid(bundle.world_id, "actor", standing.actor_id),
+                        "target_vid": nebula_vid(bundle.world_id, "faction", standing.faction_id),
+                        "properties": {
+                            "world_id": bundle.world_id,
+                            "standing": standing.standing,
+                            "band": standing.band,
+                        },
+                    },
+                )
+            )
+
+        for assignment in bundle.quest_assignments:
+            template = quest_template_map.get(assignment.quest_template_id)
+            if template is None:
+                continue
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:edge:PURSUES:{assignment.owner_actor_id}:{assignment.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "edge",
+                        "label": "PURSUES",
+                        "source_vid": nebula_vid(bundle.world_id, "actor", assignment.owner_actor_id),
+                        "target_vid": nebula_vid(bundle.world_id, "quest", assignment.id),
+                        "properties": {
+                            "world_id": bundle.world_id,
+                            "status": assignment.status,
+                            "progress": assignment.progress,
+                            "progress_target": assignment.progress_target,
+                            "title": template.title,
+                        },
+                    },
+                )
+            )
+
+        for item in bundle.items:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:edge:OWNS:{item.owner_actor_id}:{item.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "edge",
+                        "label": "OWNS",
+                        "source_vid": nebula_vid(bundle.world_id, "actor", item.owner_actor_id),
+                        "target_vid": nebula_vid(bundle.world_id, "item", item.id),
+                        "properties": {"world_id": bundle.world_id},
+                    },
+                )
+            )
+            if item.source_quest_assignment_id is not None:
+                records.append(
+                    ProjectedArtifact(
+                        entity_key=f"{bundle.world_id}:edge:REWARDS:{item.source_quest_assignment_id}:{item.id}",
+                        projection_type=bundle.projection_type,
+                        payload={
+                            "kind": "edge",
+                            "label": "REWARDS",
+                            "source_vid": nebula_vid(bundle.world_id, "quest", item.source_quest_assignment_id),
+                            "target_vid": nebula_vid(bundle.world_id, "item", item.id),
+                            "properties": {"world_id": bundle.world_id},
+                        },
+                    )
+                )
 
         for memory in bundle.memories:
             records.append(
@@ -260,7 +432,33 @@ class RecordingWorldGraphRepository:
                 )
             )
 
-        for relationship in sorted(bundle.relationships, key=lambda item: (item.relationship_type, item.from_actor_id, item.to_entity_id)):
+        for relationship in sorted(
+            bundle.relationships,
+            key=lambda item: (item.relationship_type, item.from_actor_id, item.to_entity_id),
+        ):
+            if relationship.relationship_type == "MEMBER_OF":
+                if relationship.to_entity_id not in faction_map:
+                    continue
+                records.append(
+                    ProjectedArtifact(
+                        entity_key=(
+                            f"{bundle.world_id}:edge:MEMBER_OF:"
+                            f"{relationship.from_actor_id}:{relationship.to_entity_id}"
+                        ),
+                        projection_type=bundle.projection_type,
+                        payload={
+                            "kind": "edge",
+                            "label": "MEMBER_OF",
+                            "source_vid": nebula_vid(bundle.world_id, "actor", relationship.from_actor_id),
+                            "target_vid": nebula_vid(bundle.world_id, "faction", relationship.to_entity_id),
+                            "properties": {
+                                "world_id": bundle.world_id,
+                                "strength": relationship.strength,
+                            },
+                        },
+                    )
+                )
+                continue
             if relationship.to_actor_id is None:
                 continue
             records.append(
@@ -359,6 +557,57 @@ class RecordingWorldGraphRepository:
             if item.to_actor_id is not None
         ]
 
+        state_actor_id = counterpart_actor_id or primary_actor_id
+        active_quests = [
+            {
+                "assignment_id": assignment.id,
+                "title": template.title,
+                "status": assignment.status,
+                "progress": assignment.progress,
+                "progress_target": assignment.progress_target,
+                "latest_summary": assignment.latest_summary,
+            }
+            for assignment, template in db.execute(
+                select(QuestAssignment, QuestTemplate)
+                .join(
+                    QuestTemplate,
+                    (QuestTemplate.id == QuestAssignment.quest_template_id)
+                    & (QuestTemplate.world_id == QuestAssignment.world_id),
+                )
+                .where(QuestAssignment.world_id == world_id, QuestAssignment.owner_actor_id == state_actor_id)
+                .order_by(QuestAssignment.created_at.asc(), QuestAssignment.id.asc())
+                .limit(limit)
+            ).all()
+        ]
+        faction_standings = [
+            {
+                "faction_id": faction.id,
+                "name": faction.name,
+                "standing": standing.standing,
+                "band": standing.band,
+            }
+            for standing, faction in db.execute(
+                select(FactionStanding, Faction)
+                .join(Faction, (Faction.id == FactionStanding.faction_id) & (Faction.world_id == FactionStanding.world_id))
+                .where(FactionStanding.world_id == world_id, FactionStanding.actor_id == state_actor_id)
+                .order_by(FactionStanding.updated_at.desc(), Faction.id.asc())
+                .limit(limit)
+            ).all()
+        ]
+        inventory_items = [
+            {
+                "id": item.id,
+                "template_key": item.template_key,
+                "name": item.name,
+            }
+            for item in db.execute(
+                select(Item)
+                .where(Item.world_id == world_id, Item.owner_actor_id == state_actor_id)
+                .order_by(Item.created_at.asc(), Item.id.asc())
+                .limit(limit)
+            ).scalars()
+        ]
+
         event_filters = [Event.world_id == world_id]
         if location_id is not None:
             event_filters.append(Event.location_id == location_id)
@@ -409,4 +658,7 @@ class RecordingWorldGraphRepository:
             relationships=relationships,
             related_events=related_events,
             related_memories=related_memories,
+            active_quests=active_quests,
+            faction_standings=faction_standings,
+            inventory_items=inventory_items,
         )

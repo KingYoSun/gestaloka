@@ -7,6 +7,7 @@ import yaml
 
 SUPPORTED_PROMPT_SCHEMAS = {
     "turn_resolution_v1": "1",
+    "turn_resolution_v2": "2",
 }
 SUPPORTED_MODEL_LANES = {"lite_lane", "main_lane", "pro_lane"}
 

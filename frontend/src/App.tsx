@@ -64,6 +64,56 @@ type SessionInfo = {
   websocket_url: string;
 };
 
+type CharacterSummary = {
+  actor_id: string;
+  rank: string;
+  hp: number;
+  focus: number;
+  status_json: Record<string, unknown>;
+};
+
+type QuestSummary = {
+  assignment_id: string;
+  quest_template_id: string;
+  title: string;
+  description: string;
+  status: string;
+  progress: number;
+  progress_target: number;
+  latest_summary: string;
+  reward_item_id: string | null;
+  state_json: Record<string, unknown>;
+};
+
+type FactionSummary = {
+  faction_id: string;
+  name: string;
+  description: string;
+  standing: number;
+  band: string;
+};
+
+type InventorySummary = {
+  id: string;
+  template_key: string;
+  name: string;
+  description: string;
+  status: string;
+};
+
+type SessionState = {
+  world_id: string;
+  location: {
+    id: string;
+    name: string;
+    description: string;
+  } | null;
+  character: CharacterSummary;
+  quests: QuestSummary[];
+  factions: FactionSummary[];
+  inventory: InventorySummary[];
+};
+
 type TurnResponse = {
   turn_id: string;
   event_id: string;
@@ -73,6 +123,9 @@ type TurnResponse = {
   sp_delta: number;
   sp_balance: number;
   sp_ledger_id: string;
+  quest_updates: Array<QuestSummary & { world_tags?: string[]; summary?: string }>;
+  faction_updates: Array<FactionSummary & { delta?: number }>;
+  inventory_updates: Array<InventorySummary & { action?: string }>;
 };
 
 type EventItem = {
@@ -137,11 +190,17 @@ type GraphSummary = {
   world_id: string;
   vertex_count: number;
   edge_count: number;
+  label_counts: Record<string, number>;
   recent_records: Array<{
     entity_key: string;
     projection_type: string;
     kind: string;
     label: string;
+  }>;
+  state_changes: Array<{
+    entity_key: string;
+    label: string;
+    kind: string;
   }>;
   neighborhood_summary: string[];
 };
@@ -406,6 +465,7 @@ function App() {
   const [wallet, setWallet] = useState<SPWallet | null>(null);
   const [worldId, setWorldId] = useState("world-alpha");
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInput, setTurnInput] = useState("広場で旅人を助け、周囲の様子を確かめる");
   const [latestNarrative, setLatestNarrative] = useState("");
   const [latestReaction, setLatestReaction] = useState("");
@@ -469,6 +529,7 @@ function App() {
     if (!authenticated || !token) {
       setMe(null);
       setWallet(null);
+      setSessionState(null);
       setProjectionStatus(null);
       setGraphSummary(null);
       setObservability(null);
@@ -499,6 +560,9 @@ function App() {
       if (socketRef.current) {
         socketRef.current.close();
         socketRef.current = null;
+      }
+      if (!session) {
+        setSessionState(null);
       }
       setSocketState("idle");
       return;
@@ -554,12 +618,14 @@ function App() {
   }
 
   async function refreshWorldState(currentSession: SessionInfo, currentToken: string) {
-    const [eventsResponse, memoriesResponse] = await Promise.all([
+    const [eventsResponse, memoriesResponse, stateResponse] = await Promise.all([
       apiFetch<{ items: EventItem[] }>(`/worlds/${currentSession.world_id}/events`, currentToken),
       apiFetch<{ items: MemoryItem[] }>(`/worlds/${currentSession.world_id}/memories`, currentToken),
+      apiFetch<SessionState>(`/sessions/${currentSession.session_id}/state`, currentToken),
     ]);
     setEvents(eventsResponse.items);
     setMemories(memoriesResponse.items);
+    setSessionState(stateResponse);
   }
 
   async function refreshAdminData(
@@ -966,8 +1032,82 @@ function App() {
 
         {route === "game" ? (
           <>
+            <article className="card">
+              <h2>3. Character summary</h2>
+              {sessionState ? (
+                <dl className="meta" data-testid="character-summary">
+                  <div>
+                    <dt>Rank</dt>
+                    <dd>{sessionState.character.rank}</dd>
+                  </div>
+                  <div>
+                    <dt>HP</dt>
+                    <dd>{sessionState.character.hp}</dd>
+                  </div>
+                  <div>
+                    <dt>Focus</dt>
+                    <dd>{sessionState.character.focus}</dd>
+                  </div>
+                  <div>
+                    <dt>Origin</dt>
+                    <dd>{String(sessionState.character.status_json.origin ?? "unknown")}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <p>No character sheet yet.</p>
+              )}
+            </article>
+
+            <article className="card">
+              <h2>4. Active quest</h2>
+              {sessionState?.quests.length ? (
+                <div data-testid="active-quest">
+                  <p>
+                    <strong>{sessionState.quests[0].title}</strong>
+                  </p>
+                  <p data-testid="quest-progress">
+                    Progress: {sessionState.quests[0].progress}/{sessionState.quests[0].progress_target}
+                  </p>
+                  <p>{sessionState.quests[0].latest_summary}</p>
+                  <p>Status: {sessionState.quests[0].status}</p>
+                </div>
+              ) : (
+                <p>No active quest.</p>
+              )}
+            </article>
+
+            <article className="card">
+              <h2>5. Faction standing</h2>
+              <ul className="stream" data-testid="faction-standing">
+                {sessionState?.factions.map((item) => (
+                  <li key={item.faction_id}>
+                    <strong>{item.name}</strong>
+                    <span>
+                      {item.standing.toFixed(2)} / {item.band}
+                    </span>
+                  </li>
+                )) ?? <li>Faction standing unavailable.</li>}
+              </ul>
+            </article>
+
+            <article className="card">
+              <h2>6. Inventory</h2>
+              <ul className="stream" data-testid="inventory-stream">
+                {sessionState?.inventory.length ? (
+                  sessionState.inventory.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.name}</strong>
+                      <span>{item.template_key}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No reward items yet.</li>
+                )}
+              </ul>
+            </article>
+
             <article className="card wide">
-              <h2>3. Turn submission</h2>
+              <h2>7. Turn submission</h2>
               <form onSubmit={handleTurnSubmit} className="stack">
                 <label>
                   Player action
@@ -991,7 +1131,7 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>4. Results</h2>
+              <h2>8. Results</h2>
               <h3>Events</h3>
               <ul className="stream" data-testid="events-stream">
                 {events.map((item) => (
@@ -1058,6 +1198,11 @@ function App() {
                 Graph vertices: {graphSummary?.vertex_count ?? 0} / edges:{" "}
                 <span data-testid="graph-edge-count">{graphSummary?.edge_count ?? 0}</span>
               </p>
+              <p>
+                Factions: <span data-testid="graph-faction-count">{graphSummary?.label_counts?.Faction ?? 0}</span> / Quests:{" "}
+                <span data-testid="graph-quest-count">{graphSummary?.label_counts?.Quest ?? 0}</span> / Items:{" "}
+                <span data-testid="graph-item-count">{graphSummary?.label_counts?.Item ?? 0}</span>
+              </p>
               <div className="actions">
                 <button
                   data-testid="refresh-admin"
@@ -1085,6 +1230,16 @@ function App() {
                   <li key={item}>
                     <strong>context</strong>
                     <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <h3>Quest and faction projection changes</h3>
+              <ul className="stream" data-testid="quest-state-changes-stream">
+                {(graphSummary?.state_changes ?? []).map((item) => (
+                  <li key={item.entity_key}>
+                    <strong>{item.label}</strong>
+                    <span>{item.kind}</span>
+                    <span>{item.entity_key}</span>
                   </li>
                 ))}
               </ul>

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.modules.identity.oidc import UserIdentity
-from app.modules.session.service import create_session_for_user
+from app.modules.session.service import create_session_for_user, get_session_state_for_user
 
 router = APIRouter(tags=["sessions"])
 
@@ -37,3 +37,12 @@ def create_session(
         "location_id": result.starter_location.id,
         "websocket_url": result.websocket_url,
     }
+
+
+@router.get("/sessions/{session_id}/state")
+def get_session_state(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: UserIdentity = Depends(get_current_user),
+) -> dict:
+    return get_session_state_for_user(db, user=user, session_id=session_id)

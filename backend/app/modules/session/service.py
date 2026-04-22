@@ -18,7 +18,13 @@ from app.modules.actor.service import (
 from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import materialize_memories, search_memories
-from app.modules.world_state.service import ensure_starter_location, ensure_world
+from app.modules.world_state.service import (
+    apply_world_tag_updates,
+    build_session_state,
+    ensure_starter_location,
+    ensure_world,
+    ensure_world_slice_seed,
+)
 
 
 @dataclass
@@ -42,6 +48,9 @@ class TurnResolutionResult:
     sp_delta: int
     sp_balance: int
     sp_ledger_id: str
+    quest_updates: list[dict]
+    faction_updates: list[dict]
+    inventory_updates: list[dict]
     error_detail: str | None = None
 
     @property
@@ -93,6 +102,12 @@ def create_session_for_user(
         relationship_type="KNOWS",
         strength=0.55,
     )
+    seeded = ensure_world_slice_seed(
+        db,
+        world_id=world_id,
+        player_actor_id=player_actor.id,
+        guide_actor_id=guide_npc.id,
+    )
 
     session = GameSession(world_id=world.id, player_actor_id=player_actor.id, status="active")
     db.add(session)
@@ -120,8 +135,13 @@ def create_session_for_user(
             "world_id": world.id,
             "npc_actor_id": guide_npc.id,
             "location_id": starter_location.id,
+            "faction_id": seeded.faction.id,
+            "quest_assignment_id": seeded.quest_assignment.id,
         },
-        narrative=f"{player_actor.display_name}は{starter_location.name}でセッションを開始し、{guide_npc.display_name}と接続した。",
+        narrative=(
+            f"{player_actor.display_name}は{starter_location.name}でセッションを開始し、"
+            f"{guide_npc.display_name}から{seeded.faction.name}の最初の依頼を受けた。"
+        ),
     )
     db.add(bootstrap_event)
     db.flush()
@@ -259,6 +279,9 @@ def resolve_turn_for_session(
             sp_delta=0,
             sp_balance=refund.balance_after,
             sp_ledger_id=prepared.debit.ledger_entry.id,
+            quest_updates=[],
+            faction_updates=[],
+            inventory_updates=[],
             error_detail=resolution.failure_reason or "Turn resolution failed",
         )
 
@@ -277,6 +300,12 @@ def resolve_turn_for_session(
         from_actor_id=player_actor.id,
         to_actor_id=guide_npc.id,
     )
+    state_updates = apply_world_tag_updates(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        world_tags=payload.world_tags,
+    )
 
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
@@ -284,6 +313,10 @@ def resolve_turn_for_session(
         "narrative": payload.narrative,
         "npc_reaction": payload.npc_reaction,
         "graph_context_status": graph_context.status,
+        "world_tags": payload.world_tags,
+        "quest_updates": state_updates["quest_updates"],
+        "faction_updates": state_updates["faction_updates"],
+        "inventory_updates": state_updates["inventory_updates"],
     }
 
     event = Event(
@@ -297,6 +330,10 @@ def resolve_turn_for_session(
             **payload.event_payload,
             "location_id": prepared.location_id,
             "graph_context_status": graph_context.status,
+            "world_tags": payload.world_tags,
+            "quest_updates": state_updates["quest_updates"],
+            "faction_updates": state_updates["faction_updates"],
+            "inventory_updates": state_updates["inventory_updates"],
         },
         narrative=payload.narrative,
     )
@@ -341,6 +378,9 @@ def resolve_turn_for_session(
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
+        quest_updates=state_updates["quest_updates"],
+        faction_updates=state_updates["faction_updates"],
+        inventory_updates=state_updates["inventory_updates"],
     )
 
 
@@ -391,6 +431,39 @@ def prepare_turn_for_session(
         location_id=player_actor.current_location_id or current_location.id,
         turn_id=planned_turn_id,
         debit=debit,
+    )
+
+
+def get_session_state_for_user(
+    db: Session,
+    *,
+    user: UserIdentity,
+    session_id: str,
+) -> dict:
+    game_session = db.execute(select(GameSession).where(GameSession.id == session_id)).scalar_one_or_none()
+    if game_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
+    if player_actor is None or player_actor.id != game_session.player_actor_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
+
+    current_location = ensure_starter_location(db, game_session.world_id)
+    if player_actor.current_location_id is None:
+        player_actor.current_location_id = current_location.id
+        db.flush()
+    guide_npc = get_or_create_guide_npc(db, game_session.world_id, location_id=player_actor.current_location_id)
+    ensure_world_slice_seed(
+        db,
+        world_id=game_session.world_id,
+        player_actor_id=player_actor.id,
+        guide_actor_id=guide_npc.id,
+    )
+    return build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=player_actor.current_location_id or current_location.id,
     )
 
 

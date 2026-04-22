@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("login, spend SP on turns, adjust balance in admin, and block turns at zero balance", async ({ page }) => {
+test("login, progress a starter quest, receive a reward item, and keep admin/SP flows working", async ({ page }) => {
   test.setTimeout(120_000);
 
   await page.goto("/");
@@ -15,17 +15,23 @@ test("login, spend SP on turns, adjust balance in admin, and block turns at zero
 
   await page.getByTestId("start-session").click();
   await expect(page.getByTestId("socket-status")).toContainText("open");
+  await expect(page.getByTestId("active-quest")).toContainText("First Watch Request");
+  await expect(page.getByTestId("quest-progress")).toContainText("0/2");
 
-  await page.getByTestId("turn-input").fill("広場で灯をともす");
+  await page.getByTestId("turn-input").fill("広場で旅人を助け、灯をともす");
   await page.getByTestId("submit-turn").click();
 
-  await expect(page.getByTestId("latest-narrative")).toContainText(/世界の事実として記録/i);
-  await expect(page.getByTestId("memories-stream")).toContainText("広場で灯をともす");
+  await expect(page.getByTestId("latest-narrative")).toContainText(/world_tags=/i);
+  await expect(page.getByTestId("memories-stream")).toContainText("旅人を助け");
   await expect(page.getByTestId("sp-balance")).toContainText("9");
+  await expect(page.getByTestId("quest-progress")).toContainText("1/2");
+  await expect(page.getByTestId("faction-standing")).toContainText("Founders Watch");
 
   await page.getByTestId("nav-admin").click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByTestId("ops-status")).toContainText("ready");
+  await expect(page.getByTestId("graph-faction-count")).toContainText("1");
+  await expect(page.getByTestId("graph-quest-count")).toContainText("1");
   await expect(page.getByTestId("admin-ledger")).toContainText("turn_cost");
   await page.getByTestId("run-eval-smoke").click();
   await expect(page.getByTestId("eval-runs-stream")).toContainText("turn_resolution_smoke");
@@ -43,10 +49,12 @@ test("login, spend SP on turns, adjust balance in admin, and block turns at zero
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("sp-balance")).toContainText("11");
 
-  await page.getByTestId("turn-input").fill("広場を見回し、気配を探る");
+  await page.getByTestId("turn-input").fill("旅人へ報告し、広場を見回して次の見回りを約束する");
   await page.getByTestId("submit-turn").click();
-  await expect(page.getByTestId("latest-reaction")).toContainText("灯をともす");
+  await expect(page.getByTestId("latest-reaction")).toContainText("旅人を助け");
   await expect(page.getByTestId("sp-balance")).toContainText("10");
+  await expect(page.getByTestId("quest-progress")).toContainText("2/2");
+  await expect(page.getByTestId("inventory-stream")).toContainText("Lantern Sigil");
 
   await page.getByTestId("nav-admin").click();
   await page.getByTestId("rebuild-graph").click();

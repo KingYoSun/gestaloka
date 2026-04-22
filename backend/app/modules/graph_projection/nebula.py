@@ -61,11 +61,47 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                       text string,
                       salience double
                     );
+                    CREATE TAG IF NOT EXISTS Faction(
+                      world_id string,
+                      faction_id string,
+                      name string,
+                      description string,
+                      status string
+                    );
+                    CREATE TAG IF NOT EXISTS Quest(
+                      world_id string,
+                      quest_id string,
+                      quest_template_id string,
+                      title string,
+                      status string,
+                      progress int,
+                      progress_target int,
+                      latest_summary string
+                    );
+                    CREATE TAG IF NOT EXISTS Item(
+                      world_id string,
+                      item_id string,
+                      template_key string,
+                      name string,
+                      description string,
+                      status string
+                    );
                     CREATE EDGE IF NOT EXISTS LOCATED_AT(world_id string);
                     CREATE EDGE IF NOT EXISTS CAUSED(world_id string);
                     CREATE EDGE IF NOT EXISTS REMEMBERS(world_id string, scope string);
                     CREATE EDGE IF NOT EXISTS RUMORED_AT(world_id string);
                     CREATE EDGE IF NOT EXISTS KNOWS(world_id string, strength double);
+                    CREATE EDGE IF NOT EXISTS MEMBER_OF(world_id string, strength double);
+                    CREATE EDGE IF NOT EXISTS PURSUES(
+                      world_id string,
+                      status string,
+                      progress int,
+                      progress_target int,
+                      title string
+                    );
+                    CREATE EDGE IF NOT EXISTS OWNS(world_id string);
+                    CREATE EDGE IF NOT EXISTS REWARDS(world_id string);
+                    CREATE EDGE IF NOT EXISTS AFFECTS(world_id string, standing double, band string);
                     """.strip()
                 )
                 self._bootstrapped = True
@@ -140,6 +176,8 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             )
 
         primary_vid = nebula_vid(world_id, "actor", primary_actor_id)
+        primary_actor_rows = self._fetch_actor_rows([primary_vid], limit=1)
+        primary_actor_name = primary_actor_rows[0]["display_name"] if primary_actor_rows else primary_actor_id
         relationship_rows = self._query_rows(
             "GO FROM "
             f"{self._quote(primary_vid)} OVER KNOWS "
@@ -159,7 +197,7 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             relationships.append(
                 {
                     "from_actor_id": primary_actor_id,
-                    "from_actor_name": actor_row_map.get(primary_vid, {}).get("display_name", primary_actor_id),
+                    "from_actor_name": primary_actor_name,
                     "to_actor_id": actor["actor_id"],
                     "to_actor_name": actor["display_name"],
                     "relationship_type": "KNOWS",
@@ -173,13 +211,80 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                 relationships.append(
                     {
                         "from_actor_id": primary_actor_id,
-                        "from_actor_name": primary_actor_id,
+                        "from_actor_name": primary_actor_name,
                         "to_actor_id": counterpart_rows[0]["actor_id"],
                         "to_actor_name": counterpart_rows[0]["display_name"],
                         "relationship_type": "KNOWS",
                         "strength": 0.0,
                     }
                 )
+
+        state_actor_id = counterpart_actor_id or primary_actor_id
+        state_actor_vid = nebula_vid(world_id, "actor", state_actor_id)
+        active_quests: list[dict[str, Any]] = []
+        quest_rows = self._query_rows(
+            "GO FROM "
+            f"{self._quote(state_actor_vid)} OVER PURSUES "
+            "YIELD dst(edge) AS quest_vid, "
+            "properties(edge).status AS status, "
+            "properties(edge).progress AS progress, "
+            "properties(edge).progress_target AS progress_target"
+        )
+        quest_vertex_rows = self._fetch_quest_rows(
+            [row["quest_vid"] for row in quest_rows if row.get("quest_vid")],
+            limit=limit,
+        )
+        quest_row_map = {row["vid"]: row for row in quest_vertex_rows}
+        for row in quest_rows[:limit]:
+            quest_vid = row.get("quest_vid")
+            quest = quest_row_map.get(quest_vid)
+            if quest is None:
+                continue
+            active_quests.append(
+                {
+                    "assignment_id": quest["quest_id"],
+                    "title": quest["title"],
+                    "status": row.get("status") or quest.get("status"),
+                    "progress": int(row.get("progress") or quest.get("progress") or 0),
+                    "progress_target": int(row.get("progress_target") or quest.get("progress_target") or 0),
+                    "latest_summary": quest.get("latest_summary"),
+                }
+            )
+
+        faction_standings: list[dict[str, Any]] = []
+        faction_rows = self._query_rows(
+            "GO FROM "
+            f"{self._quote(state_actor_vid)} OVER AFFECTS "
+            "YIELD dst(edge) AS faction_vid, "
+            "properties(edge).standing AS standing, "
+            "properties(edge).band AS band"
+        )
+        faction_vertex_rows = self._fetch_faction_rows(
+            [row["faction_vid"] for row in faction_rows if row.get("faction_vid")],
+            limit=limit,
+        )
+        faction_row_map = {row["vid"]: row for row in faction_vertex_rows}
+        for row in faction_rows[:limit]:
+            faction_vid = row.get("faction_vid")
+            faction = faction_row_map.get(faction_vid)
+            if faction is None:
+                continue
+            faction_standings.append(
+                {
+                    "faction_id": faction["faction_id"],
+                    "name": faction["name"],
+                    "standing": float(row.get("standing") or 0.0),
+                    "band": row.get("band") or "neutral",
+                }
+            )
+
+        inventory_edges = self._query_rows(
+            f"GO FROM {self._quote(state_actor_vid)} OVER OWNS YIELD dst(edge) AS item_vid"
+        )
+        inventory_items = self._fetch_item_rows(
+            [row["item_vid"] for row in inventory_edges if row.get("item_vid")],
+            limit=limit,
+        )
 
         related_events: list[dict[str, Any]] = []
         related_memories: list[dict[str, Any]] = []
@@ -200,6 +305,9 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             relationships=relationships,
             related_events=related_events,
             related_memories=related_memories,
+            active_quests=active_quests,
+            faction_standings=faction_standings,
+            inventory_items=inventory_items,
         )
 
     def _fetch_actor_rows(self, vids: list[str], *, limit: int) -> list[dict[str, Any]]:
@@ -227,6 +335,50 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             "properties(vertex).event_type AS event_type, "
             "properties(vertex).narrative AS narrative"
         )
+        return rows[:limit]
+
+    def _fetch_faction_rows(self, vids: list[str], *, limit: int) -> list[dict[str, Any]]:
+        if not vids:
+            return []
+        rows = self._query_rows(
+            "FETCH PROP ON Faction "
+            + ", ".join(self._quote(item) for item in list(dict.fromkeys(vids))[:limit])
+            + " YIELD id(vertex) AS vid, "
+            "properties(vertex).faction_id AS faction_id, "
+            "properties(vertex).name AS name, "
+            "properties(vertex).description AS description"
+        )
+        rows.sort(key=lambda item: (str(item.get("name")), str(item.get("faction_id"))))
+        return rows[:limit]
+
+    def _fetch_quest_rows(self, vids: list[str], *, limit: int) -> list[dict[str, Any]]:
+        if not vids:
+            return []
+        rows = self._query_rows(
+            "FETCH PROP ON Quest "
+            + ", ".join(self._quote(item) for item in list(dict.fromkeys(vids))[:limit])
+            + " YIELD id(vertex) AS vid, "
+            "properties(vertex).quest_id AS quest_id, "
+            "properties(vertex).title AS title, "
+            "properties(vertex).status AS status, "
+            "properties(vertex).progress AS progress, "
+            "properties(vertex).progress_target AS progress_target, "
+            "properties(vertex).latest_summary AS latest_summary"
+        )
+        rows.sort(key=lambda item: (str(item.get("title")), str(item.get("quest_id"))))
+        return rows[:limit]
+
+    def _fetch_item_rows(self, vids: list[str], *, limit: int) -> list[dict[str, Any]]:
+        if not vids:
+            return []
+        rows = self._query_rows(
+            "FETCH PROP ON Item "
+            + ", ".join(self._quote(item) for item in list(dict.fromkeys(vids))[:limit])
+            + " YIELD properties(vertex).item_id AS id, "
+            "properties(vertex).template_key AS template_key, "
+            "properties(vertex).name AS name"
+        )
+        rows.sort(key=lambda item: (str(item.get("name")), str(item.get("id"))))
         return rows[:limit]
 
     def _fetch_memory_rows(self, vids: list[str], *, limit: int) -> list[dict[str, Any]]:

@@ -7,7 +7,21 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.entities import Actor, Event, Location, Memory, OutboxEvent, ProjectionRecord, Relationship, new_id
+from app.models.entities import (
+    Actor,
+    Event,
+    Faction,
+    FactionStanding,
+    Item,
+    Location,
+    Memory,
+    OutboxEvent,
+    ProjectionRecord,
+    QuestAssignment,
+    QuestTemplate,
+    Relationship,
+    new_id,
+)
 from app.modules.graph_projection.nebula import NebulaWorldGraphRepository
 from app.modules.graph_projection.repository import (
     GraphProjectionBundle,
@@ -243,6 +257,52 @@ class ProjectionService:
                 .order_by(Actor.created_at.asc(), Actor.id.asc())
             ).scalars()
         )
+        quest_assignments = list(
+            db.execute(
+                select(QuestAssignment)
+                .where(QuestAssignment.world_id == resolved_event.world_id, QuestAssignment.owner_actor_id.in_(actor_ids))
+                .order_by(QuestAssignment.created_at.asc(), QuestAssignment.id.asc())
+            ).scalars()
+        )
+        quest_template_ids = {item.quest_template_id for item in quest_assignments}
+        quest_templates = (
+            list(
+                db.execute(
+                    select(QuestTemplate)
+                    .where(QuestTemplate.world_id == resolved_event.world_id, QuestTemplate.id.in_(quest_template_ids))
+                    .order_by(QuestTemplate.created_at.asc(), QuestTemplate.id.asc())
+                ).scalars()
+            )
+            if quest_template_ids
+            else []
+        )
+        faction_standings = list(
+            db.execute(
+                select(FactionStanding)
+                .where(FactionStanding.world_id == resolved_event.world_id, FactionStanding.actor_id.in_(actor_ids))
+                .order_by(FactionStanding.updated_at.desc(), FactionStanding.faction_id.asc())
+            ).scalars()
+        )
+        faction_ids = {item.to_entity_id for item in relationships if item.relationship_type == "MEMBER_OF"}
+        faction_ids.update(item.faction_id for item in faction_standings)
+        factions = (
+            list(
+                db.execute(
+                    select(Faction)
+                    .where(Faction.world_id == resolved_event.world_id, Faction.id.in_(faction_ids))
+                    .order_by(Faction.created_at.asc(), Faction.id.asc())
+                ).scalars()
+            )
+            if faction_ids
+            else []
+        )
+        items = list(
+            db.execute(
+                select(Item)
+                .where(Item.world_id == resolved_event.world_id, Item.owner_actor_id.in_(actor_ids))
+                .order_by(Item.created_at.asc(), Item.id.asc())
+            ).scalars()
+        )
 
         return GraphProjectionBundle(
             world_id=resolved_event.world_id,
@@ -252,6 +312,11 @@ class ProjectionService:
             actors=actors,
             location=location,
             relationships=relationships,
+            factions=factions,
+            faction_standings=faction_standings,
+            quest_assignments=quest_assignments,
+            quest_templates=quest_templates,
+            items=items,
         )
 
     @staticmethod
@@ -313,6 +378,18 @@ class ProjectionService:
         vids.extend(
             nebula_vid(world_id, "memory", item.id)
             for item in db.execute(select(Memory).where(Memory.world_id == world_id)).scalars()
+        )
+        vids.extend(
+            nebula_vid(world_id, "faction", item.id)
+            for item in db.execute(select(Faction).where(Faction.world_id == world_id)).scalars()
+        )
+        vids.extend(
+            nebula_vid(world_id, "quest", item.id)
+            for item in db.execute(select(QuestAssignment).where(QuestAssignment.world_id == world_id)).scalars()
+        )
+        vids.extend(
+            nebula_vid(world_id, "item", item.id)
+            for item in db.execute(select(Item).where(Item.world_id == world_id)).scalars()
         )
         return vids
 

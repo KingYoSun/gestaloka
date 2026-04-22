@@ -352,7 +352,7 @@ class ObservabilityService:
             return dict(self._metric_state)
 
     def recent_trace_attributes(self, limit: int = 12) -> list[dict[str, object]]:
-        spans = self._span_exporter.get_finished_spans()
+        spans = [span for span in self._span_exporter.get_finished_spans() if span.name != "sql.query"]
         recent = spans[-limit:]
         return [
             {

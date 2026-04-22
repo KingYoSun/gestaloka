@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry
 from app.modules.observability.service import ObservabilityService
+from app.modules.world_state.rules import WorldTag, infer_world_tags
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class TurnResolutionPayload(BaseModel):
     event_type: Literal["player.turn.resolved"]
     event_payload: dict
     memories: list[MemoryDraft] = Field(min_length=1)
+    world_tags: list[WorldTag] = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -238,6 +240,8 @@ class ModelRouter:
     ) -> dict:
         joined_memories = " / ".join(relevant_memories[:2])
         joined_relations = " / ".join(relation_context[:2])
+        world_tags = infer_world_tags(input_text)
+        joined_tags = ", ".join(world_tags)
         if joined_memories:
             npc_reaction = f"{npc_name}は同じ世界に沈殿した記憶をたどり、「{joined_memories}」を踏まえて応じた。"
         else:
@@ -255,6 +259,10 @@ class ModelRouter:
             npc_reaction = f"{npc_reaction.rstrip('。')} 近傍文脈「{joined_relations}」も参照した。"
         if joined_relations and lane != "lite_lane":
             narrative = f"{narrative} 現在地と関係ネットワークも同じ world_id から参照された。"
+        if world_tags != ["none"]:
+            narrative = f"{narrative} world_tags={joined_tags} が確定し、quest/faction/item 更新は backend 側で決定された。"
+        if any(line.startswith("active_quest=") or line.startswith("faction=") or line.startswith("inventory=") for line in relation_context):
+            npc_reaction = f"{npc_reaction.rstrip('。')} quest/faction/inventory の現在状態も考慮した。"
 
         memory_text = f"{player_name}は{input_text}。{npc_reaction}"
         return {
@@ -267,11 +275,13 @@ class ModelRouter:
                 "world_id": world_id,
                 "lane": lane,
                 "relation_context": relation_context[:4],
+                "world_tags": world_tags,
             },
             "memories": [
                 {"scope": "world", "text": memory_text, "salience": 0.92},
                 {"scope": "actor", "text": f"{npc_name} remembers: {memory_text}", "salience": 0.88},
             ],
+            "world_tags": world_tags,
         }
 
     def _record_attempt(

@@ -27,7 +27,7 @@ def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
             [
                 "dataset_id: broken_dataset",
                 "prompt_id: session.turn_resolution",
-                "expected_output_schema: turn_resolution_v1",
+                "expected_output_schema: turn_resolution_v2",
                 "cases:",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",

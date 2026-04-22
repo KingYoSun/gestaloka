@@ -114,6 +114,16 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
     )
     vertex_keys = {record.entity_key for record in records if record.payload.get("kind") == "vertex"}
     edge_keys = {record.entity_key for record in records if record.payload.get("kind") == "edge"}
+    label_counts: dict[str, int] = {}
+    seen_vertex_keys: set[str] = set()
+    for record in records:
+        if record.payload.get("kind") != "vertex":
+            continue
+        if record.entity_key in seen_vertex_keys:
+            continue
+        seen_vertex_keys.add(record.entity_key)
+        label = str(record.payload.get("label") or "unknown")
+        label_counts[label] = label_counts.get(label, 0) + 1
     recent_records = [
         {
             "entity_key": record.entity_key,
@@ -123,6 +133,15 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
         }
         for record in records[:12]
     ]
+    state_changes = [
+        {
+            "entity_key": record.entity_key,
+            "label": str(record.payload.get("label") or "unknown"),
+            "kind": str(record.payload.get("kind") or "unknown"),
+        }
+        for record in records
+        if str(record.payload.get("label") or "") in {"Faction", "Quest", "Item", "AFFECTS", "PURSUES", "REWARDS"}
+    ][:12]
 
     primary_actor = db.execute(
         select(Actor).where(Actor.world_id == world_id, Actor.actor_type == "npc").order_by(Actor.created_at.asc())
@@ -145,7 +164,9 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
         "world_id": world_id,
         "vertex_count": len(vertex_keys),
         "edge_count": len(edge_keys),
+        "label_counts": label_counts,
         "recent_records": recent_records,
+        "state_changes": state_changes,
         "neighborhood_summary": neighborhood_summary,
     }
 

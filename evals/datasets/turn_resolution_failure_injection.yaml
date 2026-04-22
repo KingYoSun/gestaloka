@@ -1,6 +1,6 @@
 dataset_id: turn_resolution_failure_injection
 prompt_id: session.turn_resolution
-expected_output_schema: turn_resolution_v1
+expected_output_schema: turn_resolution_v2
 cases:
   - case_id: fallback-main-to-pro
     world_id: world-alpha
@@ -11,6 +11,7 @@ cases:
       - Demo Playerは以前にも広場の灯を守った。
     relation_context:
       - location=Founders Reach
+      - active_quest=First Watch Request [active 0/2]
     graph_context_status: ready
     expect_success: true
     expect_final_lane: pro_lane
@@ -25,6 +26,7 @@ cases:
       - Demo Playerは以前にも広場の灯を守った。
     relation_context:
       - location=Founders Reach
+      - active_quest=First Watch Request [active 0/2]
     graph_context_status: ready
     expect_success: false
     expect_final_lane: pro_lane

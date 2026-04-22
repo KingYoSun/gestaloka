@@ -1,0 +1,26 @@
+world:
+  default_name: Founders Reach
+location:
+  name: Founders Reach
+  description: The public square where new sessions begin and the watch keeps first contact with newcomers.
+faction:
+  id: founders_watch
+  name: Founders Watch
+  description: Wardens who keep the plaza calm and turn first impressions into standing.
+  state:
+    doctrine: protect the reach and reward reliable help
+quest:
+  id: starter_watch_request
+  title: First Watch Request
+  description: Help a local traveler, report back what you learned, and earn the watch's trust.
+  completion_target: 2
+  reward_template_key: lantern_sigils
+  reward_name: Lantern Sigil
+  reward_description: A stamped sigil from the watch that marks the bearer as a trusted helper.
+character:
+  rank: Wayfarer
+  hp: 10
+  focus: 5
+  status_json:
+    origin: founders_reach
+    onboarding: starter_slice

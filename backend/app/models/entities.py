@@ -176,6 +176,103 @@ class Relationship(Base, TimestampMixin):
     strength: Mapped[float] = mapped_column(Float, default=0.5)
 
 
+class CharacterSheet(Base, TimestampMixin):
+    __tablename__ = "character_sheets"
+    __table_args__ = (ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),)
+
+    actor_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    world_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    rank: Mapped[str] = mapped_column(String(64), default="wayfarer")
+    hp: Mapped[int] = mapped_column(Integer, default=10)
+    focus: Mapped[int] = mapped_column(Integer, default=5)
+    status_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Faction(Base, TimestampMixin):
+    __tablename__ = "factions"
+    __table_args__ = (UniqueConstraint("id", "world_id", name="uq_factions_id_world"),)
+
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class FactionStanding(Base, TimestampMixin):
+    __tablename__ = "faction_standings"
+    __table_args__ = (
+        ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["faction_id", "world_id"], ["factions.id", "factions.world_id"]),
+        CheckConstraint("standing >= -1.0 AND standing <= 1.0", name="ck_faction_standings_range"),
+    )
+
+    actor_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    world_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    faction_id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    standing: Mapped[float] = mapped_column(Float, default=0.0)
+    band: Mapped[str] = mapped_column(String(32), default="neutral")
+
+
+class QuestTemplate(Base, TimestampMixin):
+    __tablename__ = "quest_templates"
+    __table_args__ = (UniqueConstraint("id", "world_id", name="uq_quest_templates_id_world"),)
+
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    completion_target: Mapped[int] = mapped_column(Integer, default=2)
+    reward_template_key: Mapped[str] = mapped_column(String(96))
+    reward_name: Mapped[str] = mapped_column(String(120))
+    reward_description: Mapped[str] = mapped_column(Text, default="")
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class QuestAssignment(Base, TimestampMixin):
+    __tablename__ = "quest_assignments"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_quest_assignments_id_world"),
+        UniqueConstraint("world_id", "owner_actor_id", "quest_template_id", name="uq_quest_assignments_owner_template"),
+        ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["quest_template_id", "world_id"], ["quest_templates.id", "quest_templates.world_id"]),
+        CheckConstraint("progress >= 0", name="ck_quest_assignments_progress_nonnegative"),
+        CheckConstraint("progress_target >= 1", name="ck_quest_assignments_progress_target_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    owner_actor_id: Mapped[str] = mapped_column(String(36))
+    quest_template_id: Mapped[str] = mapped_column(String(96))
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    progress_target: Mapped[int] = mapped_column(Integer, default=2)
+    latest_summary: Mapped[str] = mapped_column(Text, default="")
+    reward_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    state_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Item(Base, TimestampMixin):
+    __tablename__ = "items"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_items_id_world"),
+        UniqueConstraint("world_id", "source_quest_assignment_id", name="uq_items_source_assignment"),
+        ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["source_quest_assignment_id", "world_id"], ["quest_assignments.id", "quest_assignments.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    owner_actor_id: Mapped[str] = mapped_column(String(36))
+    template_key: Mapped[str] = mapped_column(String(96))
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    source_quest_assignment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
 class SPAccount(Base, TimestampMixin):
     __tablename__ = "sp_accounts"
     __table_args__ = (CheckConstraint("balance >= 0", name="ck_sp_accounts_balance_nonnegative"),)

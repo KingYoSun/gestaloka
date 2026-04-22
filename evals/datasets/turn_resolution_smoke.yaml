@@ -1,34 +1,59 @@
 dataset_id: turn_resolution_smoke
 prompt_id: session.turn_resolution
-expected_output_schema: turn_resolution_v1
+expected_output_schema: turn_resolution_v2
 cases:
   - case_id: smoke-basic
     world_id: world-alpha
     player_name: Demo Player
     npc_name: Archivist Nera
-    input_text: 広場で灯をともす
+    input_text: 広場で旅人を助け、灯をともす
     relevant_memories: []
     relation_context:
       - location=Founders Reach
       - relationship=Archivist Nera KNOWS Demo Player (0.55)
+      - active_quest=First Watch Request [active 0/2]
+      - faction=Founders Watch standing=0.25 (neutral)
     graph_context_status: ready
     expect_success: true
     expect_final_lane: main_lane
     expect_fallback: false
     expect_failure_reason: null
+    expected_world_tags:
+      - aid_local
+    quest_context:
+      current_progress: 0
+      progress_target: 2
+      current_standing: 0.25
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: false
+    expect_standing_after: 0.4
   - case_id: smoke-memory-aware
     world_id: world-alpha
     player_name: Demo Player
     npc_name: Archivist Nera
-    input_text: 広場を見回し、気配を探る
+    input_text: 旅人へ報告し、広場を見回して次の見回りを約束する
     relevant_memories:
-      - Demo Playerは広場で灯をともした。
+      - Demo Playerは広場で旅人を助け、灯をともした。
     relation_context:
       - location=Founders Reach
-      - memory=Demo Playerは広場で灯をともした。
+      - memory=Demo Playerは広場で旅人を助け、灯をともした。
       - relationship=Archivist Nera KNOWS Demo Player (0.65)
+      - active_quest=First Watch Request [active 1/2]
+      - faction=Founders Watch standing=0.40 (favored)
     graph_context_status: ready
     expect_success: true
     expect_final_lane: main_lane
     expect_fallback: false
     expect_failure_reason: null
+    expected_world_tags:
+      - investigate
+      - promise_followup
+    quest_context:
+      current_progress: 1
+      progress_target: 2
+      current_standing: 0.4
+      reward_already_issued: false
+    expect_progress_after: 2
+    expect_reward_issued: true
+    expect_standing_after: 0.55

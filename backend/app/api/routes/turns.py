@@ -60,6 +60,12 @@ async def resolve_turn(
     await realtime_hub.emit(payload.session_id, "world.event.created", result.event_payload)
     if result.memories_payload:
         await realtime_hub.emit(payload.session_id, "memory.materialized", {"memories": result.memories_payload})
+    if result.quest_updates:
+        await realtime_hub.emit(payload.session_id, "quest.updated", {"items": result.quest_updates})
+    if result.faction_updates:
+        await realtime_hub.emit(payload.session_id, "faction.standing.updated", {"items": result.faction_updates})
+    if result.inventory_updates:
+        await realtime_hub.emit(payload.session_id, "inventory.changed", {"items": result.inventory_updates})
 
     await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": "projection"})
     processed = container.projection_service.process_pending(db)
@@ -88,6 +94,9 @@ async def resolve_turn(
                 "sp_delta": result.sp_delta,
                 "sp_balance": result.sp_balance,
                 "sp_ledger_id": result.sp_ledger_id,
+                "quest_updates": [],
+                "faction_updates": [],
+                "inventory_updates": [],
             },
         )
 
@@ -100,6 +109,9 @@ async def resolve_turn(
         "sp_delta": result.sp_delta,
         "sp_balance": result.sp_balance,
         "sp_ledger_id": result.sp_ledger_id,
+        "quest_updates": result.quest_updates,
+        "faction_updates": result.faction_updates,
+        "inventory_updates": result.inventory_updates,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)
 

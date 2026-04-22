@@ -26,6 +26,7 @@ from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_memory.service import search_memories
+from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, normalize_world_tags
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,11 @@ class EvalCaseInput:
     expect_final_lane: str
     expect_fallback: bool
     expect_failure_reason: str | None
+    expected_world_tags: list[str] | None = None
+    quest_context: dict[str, object] | None = None
+    expect_progress_after: int | None = None
+    expect_reward_issued: bool | None = None
+    expect_standing_after: float | None = None
     source_turn_id: str | None = None
 
 
@@ -521,7 +527,14 @@ class EvalHarnessService:
         same_world_invariant = bool(
             final_payload is not None and final_payload.get("event_payload", {}).get("world_id") == case.world_id
         )
-        passed = self._case_passed(case, outcome, schema_valid=schema_valid, same_world_invariant=same_world_invariant)
+        domain_evaluation = self._evaluate_domain_case(case, final_payload)
+        passed = self._case_passed(
+            case,
+            outcome,
+            schema_valid=schema_valid,
+            same_world_invariant=same_world_invariant,
+            domain_passed=bool(domain_evaluation["passed"]),
+        )
         raw_output = {
             "source_turn_id": case.source_turn_id,
             "input_text": case.input_text,
@@ -541,6 +554,7 @@ class EvalHarnessService:
             ],
             "final_payload": final_payload,
             "failure_reason": outcome.failure_reason,
+            "domain_evaluation": domain_evaluation,
         }
         result = EvalCaseResult(
             eval_run_id=run_id,
@@ -578,6 +592,7 @@ class EvalHarnessService:
         *,
         schema_valid: bool,
         same_world_invariant: bool,
+        domain_passed: bool,
     ) -> bool:
         used_fallback = len(outcome.attempts) > 1
         if case.expect_success:
@@ -585,6 +600,7 @@ class EvalHarnessService:
                 outcome.succeeded
                 and schema_valid
                 and same_world_invariant
+                and domain_passed
                 and case.graph_context_status == "ready"
                 and outcome.final_lane == case.expect_final_lane
                 and used_fallback == case.expect_fallback
@@ -596,6 +612,54 @@ class EvalHarnessService:
             and used_fallback == case.expect_fallback
             and outcome.failure_reason == case.expect_failure_reason
         )
+
+    def _evaluate_domain_case(self, case: EvalCaseInput, final_payload: dict[str, object] | None) -> dict[str, object]:
+        if final_payload is None:
+            return {"passed": True, "checks": {}, "rule_outcome": None}
+
+        world_tags = normalize_world_tags([str(item) for item in final_payload.get("world_tags") or []])
+        checks: dict[str, bool] = {}
+        if case.expected_world_tags is not None:
+            checks["world_tags_match"] = world_tags == normalize_world_tags(case.expected_world_tags)
+
+        rule_outcome_payload: dict[str, object] | None = None
+        if case.quest_context is not None:
+            progress_target = int(case.quest_context.get("progress_target", 2))
+            rule_outcome = QuestRuleEngine.evaluate(
+                QuestRuleInput(
+                    world_tags=world_tags,
+                    current_progress=int(case.quest_context.get("current_progress", 0)),
+                    progress_target=progress_target,
+                    current_standing=float(case.quest_context.get("current_standing", 0.0)),
+                    reward_already_issued=bool(case.quest_context.get("reward_already_issued", False)),
+                )
+            )
+            rule_outcome_payload = {
+                "world_tags": rule_outcome.world_tags,
+                "quest_progress_delta": rule_outcome.quest_progress_delta,
+                "next_progress": rule_outcome.next_progress,
+                "standing_delta": rule_outcome.standing_delta,
+                "next_standing": rule_outcome.next_standing,
+                "completed": rule_outcome.completed,
+                "should_issue_reward": rule_outcome.should_issue_reward,
+                "summary": rule_outcome.summary,
+            }
+            if case.expect_progress_after is not None:
+                checks["quest_progress_after"] = rule_outcome.next_progress == case.expect_progress_after
+            if case.expect_reward_issued is not None:
+                checks["reward_after_completion_only"] = rule_outcome.should_issue_reward == case.expect_reward_issued
+            if case.expect_standing_after is not None:
+                checks["standing_after"] = abs(rule_outcome.next_standing - case.expect_standing_after) < 1e-6
+            current_progress = int(case.quest_context.get("current_progress", 0))
+            reward_precondition = current_progress + rule_outcome.quest_progress_delta >= progress_target
+            if not reward_precondition:
+                checks["no_premature_reward"] = not rule_outcome.should_issue_reward
+
+        return {
+            "passed": all(checks.values()) if checks else True,
+            "checks": checks,
+            "rule_outcome": rule_outcome_payload,
+        }
 
     def _build_run_summary(
         self,
@@ -786,6 +850,23 @@ class EvalHarnessService:
                         expect_failure_reason=(
                             str(raw_case.get("expect_failure_reason")).strip()
                             if raw_case.get("expect_failure_reason") is not None
+                            else None
+                        ),
+                        expected_world_tags=[str(item) for item in raw_case.get("expected_world_tags") or []] or None,
+                        quest_context=dict(raw_case.get("quest_context") or {}) or None,
+                        expect_progress_after=(
+                            int(raw_case.get("expect_progress_after"))
+                            if raw_case.get("expect_progress_after") is not None
+                            else None
+                        ),
+                        expect_reward_issued=(
+                            bool(raw_case.get("expect_reward_issued"))
+                            if raw_case.get("expect_reward_issued") is not None
+                            else None
+                        ),
+                        expect_standing_after=(
+                            float(raw_case.get("expect_standing_after"))
+                            if raw_case.get("expect_standing_after") is not None
                             else None
                         ),
                     )
