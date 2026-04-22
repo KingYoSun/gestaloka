@@ -92,13 +92,15 @@ class NarrativeChoiceDraft(BaseModel):
     posture: Literal["safe", "progress", "explore"]
     label: str = Field(min_length=1)
     intent_summary: str = Field(min_length=1)
-    action_kind: Literal["narrative", "use_reward_item"] = "narrative"
+    action_kind: Literal["narrative", "use_reward_item", "travel"] = "narrative"
+    travel_target_key: Literal["square", "archive_steps", "watch_path", "none"] = "none"
 
 
 class CouncilIntentInterpreterPayload(BaseModel):
     input_mode: Literal["choice", "free_text"]
-    canonical_action_kind: Literal["narrative", "use_reward_item"]
+    canonical_action_kind: Literal["narrative", "use_reward_item", "travel"]
     intent_summary: str = Field(min_length=1)
+    travel_target_key: Literal["square", "archive_steps", "watch_path", "none"] = "none"
     requested_choice_posture: Literal["safe", "progress", "explore", "none"] = "none"
     fail_forward: bool = False
     consequence_flags: list[str] = Field(default_factory=list)
@@ -226,6 +228,7 @@ class StubModelProvider(BaseModelProvider):
         input_text = str(input_payload.get("input_text") or "")
         selected_posture = str(selected_choice.get("posture") or "none")
         action_kind = str(selected_choice.get("action_kind") or "narrative")
+        travel_target_key = str(selected_choice.get("travel_target_key") or "none")
         intent_summary = str(selected_choice.get("intent_summary") or selected_choice.get("canonical_input_text") or input_text)
         fail_forward = False
         consequence_flags: list[str] = []
@@ -235,11 +238,19 @@ class StubModelProvider(BaseModelProvider):
 
         normalized = input_text.lower()
         if input_mode == "choice":
+            if action_kind == "travel" and travel_target_key in {"square", "archive_steps", "watch_path"}:
+                consequence_tags.append("careful_observation")
+                consequence_summary = "The player follows a route the current scene actually affords."
             if selected_posture == "progress":
                 consequence_tags.append("earned_trust")
             elif selected_posture in {"safe", "explore"}:
                 consequence_tags.append("careful_observation")
         if input_mode == "free_text":
+            wants_archive_steps = any(token in normalized for token in ("archive steps", "archive", "石段", "記録庫"))
+            wants_watch_path = any(token in normalized for token in ("watch path", "watchpath", "巡回路", "見回り路"))
+            wants_square_return = any(token in normalized for token in ("founders square", "square", "plaza", "広場", "戻る", "帰る"))
+            travel_verbs = ("向か", "行く", "進む", "移動", "赴", "go to", "head to", "walk to", "toward", "towards")
+            return_verbs = ("戻る", "帰る", "back to", "return to", "head back", "go back")
             if any(token in normalized for token in ("lantern", "sigil", "灯印", "印章", "sigil")):
                 if usable_items:
                     action_kind = "use_reward_item"
@@ -260,13 +271,28 @@ class StubModelProvider(BaseModelProvider):
                     consequence_summary = "The attempt runs ahead of the world's current affordances and turns into a visible hesitation."
             elif any(token in normalized for token in ("後で", "あとで", "later", "そのうち", "待って", "今は行かない", "また今度")):
                 consequence_tags.append("missed_timing")
-                consequence_summary = "The scene moves on, but a promise is left hanging in the square."
+                consequence_summary = "The scene moves on, but a promise is left hanging in the current district."
             elif any(token in normalized for token in ("無理", "impossible", "空を飛", "teleport", "爆破")):
                 action_kind = "narrative"
                 fail_forward = True
                 consequence_flags = ["overreach"]
                 consequence_tags.extend(["overreach", "public_attention"])
                 consequence_summary = "The world bends the request into a costly misunderstanding rather than allowing an impossible leap."
+            elif wants_archive_steps and any(token in normalized for token in travel_verbs):
+                action_kind = "travel"
+                travel_target_key = "archive_steps"
+                consequence_tags.append("careful_observation")
+                consequence_summary = "The player tries to follow the scene into the archive steps."
+            elif wants_watch_path and any(token in normalized for token in travel_verbs):
+                action_kind = "travel"
+                travel_target_key = "watch_path"
+                consequence_tags.append("careful_observation")
+                consequence_summary = "The player tries to follow the newly significant watch path."
+            elif wants_square_return and any(token in normalized for token in return_verbs):
+                action_kind = "travel"
+                travel_target_key = "square"
+                consequence_tags.append("careful_observation")
+                consequence_summary = "The player turns back toward the square to read the scene there again."
             elif any(token in normalized for token in ("約束", "promise", "引き受ける", "応える")):
                 consequence_tags.append("kept_promise")
             elif any(token in normalized for token in ("探", "observe", "watch path", "巡回路")):
@@ -283,8 +309,9 @@ class StubModelProvider(BaseModelProvider):
 
         return {
             "input_mode": input_mode if input_mode in {"choice", "free_text"} else "choice",
-            "canonical_action_kind": action_kind if action_kind in {"narrative", "use_reward_item"} else "narrative",
+            "canonical_action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
             "intent_summary": intent_summary,
+            "travel_target_key": travel_target_key if travel_target_key in {"square", "archive_steps", "watch_path"} else "none",
             "requested_choice_posture": selected_posture if selected_posture in {"safe", "progress", "explore"} else "none",
             "fail_forward": fail_forward,
             "consequence_flags": consequence_flags,
@@ -309,6 +336,10 @@ class StubModelProvider(BaseModelProvider):
         current_scene = input_payload.get("current_scene") or {}
         current_chapter = input_payload.get("current_chapter") or {}
         recent_scene_history = [str(item) for item in input_payload.get("recent_scene_history") or [] if str(item)]
+        current_location = input_payload.get("current_location") or {}
+        nearby_routes = [item for item in input_payload.get("nearby_routes") or [] if isinstance(item, dict)]
+        local_figures = [item for item in input_payload.get("local_figures") or [] if isinstance(item, dict)]
+        recent_travel_history = [str(item) for item in input_payload.get("recent_travel_history") or [] if str(item)]
         summary_parts = []
         if memories:
             summary_parts.append(f"memory={' / '.join(memories[:2])}")
@@ -337,6 +368,14 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"scene={str(current_scene.get('summary') or '')}")
         if current_chapter:
             summary_parts.append(f"chapter={str(current_chapter.get('summary') or '')}")
+        if current_location:
+            summary_parts.append(f"location={str(current_location.get('name') or '')}")
+        if nearby_routes:
+            summary_parts.append(f"route={str((nearby_routes[0].get('summary') or ''))}")
+        if local_figures:
+            summary_parts.append(f"local_figure={str((local_figures[0].get('summary') or ''))}")
+        if recent_travel_history:
+            summary_parts.append(f"travel_echo={recent_travel_history[0]}")
         if recent_scene_history:
             summary_parts.append(f"scene_echo={recent_scene_history[0]}")
         if consequence_flags:
@@ -409,7 +448,8 @@ class StubModelProvider(BaseModelProvider):
                     "posture": posture if posture in {"safe", "progress", "explore"} else "progress",
                     "label": label,
                     "intent_summary": str(template.get("canonical_input_text") or label),
-                    "action_kind": action_kind if action_kind in {"narrative", "use_reward_item"} else "narrative",
+                    "action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
+                    "travel_target_key": str(template.get("travel_target_key") or "none"),
                 }
             )
         if len(next_choices) < 3:
@@ -419,18 +459,21 @@ class StubModelProvider(BaseModelProvider):
                     "label": "一歩退いて広場の気配を見守る",
                     "intent_summary": "広場の気配を見守り、場を乱さず状況を確かめる",
                     "action_kind": "narrative",
+                    "travel_target_key": "none",
                 },
                 {
                     "posture": "progress",
                     "label": "困っている相手へ手を差し伸べ、次の進展を作る",
                     "intent_summary": "困っている相手へ手を差し伸べ、次の進展を作る",
                     "action_kind": "narrative",
+                    "travel_target_key": "none",
                 },
                 {
                     "posture": "explore",
                     "label": "周囲の噂や視線を探り、関係の糸口を拾う",
                     "intent_summary": "周囲の噂や視線を探り、関係の糸口を拾う",
                     "action_kind": "narrative",
+                    "travel_target_key": "none",
                 },
             ]
         outcome_band: OutcomeBand = "steady"
@@ -561,11 +604,13 @@ class StubModelProvider(BaseModelProvider):
     def _ambient_memory_manager_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         npc_name = str(input_payload.get("npc_name") or "An onlooker")
         routine_state = input_payload.get("routine_state") or {}
-        rumor_focus = str(routine_state.get("rumor_focus") or "the square")
+        rumor_focus = str(routine_state.get("rumor_focus") or "the current place")
         relevant_memories = [str(item) for item in input_payload.get("relevant_memories") or [] if str(item)]
         current_scene = input_payload.get("current_scene") or {}
+        current_location = input_payload.get("current_location") or input_payload.get("location") or {}
+        current_location_name = str(current_location.get("name") or "the current place")
         recent_world_beats = [str(item) for item in input_payload.get("recent_world_beats") or [] if str(item)]
-        summary_parts = [f"{npc_name} keeps the square in mind through {rumor_focus}."]
+        summary_parts = [f"{npc_name} keeps {current_location_name} in mind through {rumor_focus}."]
         if relevant_memories:
             summary_parts.append(f"Recent memory: {relevant_memories[0]}")
         if recent_world_beats:
@@ -573,7 +618,7 @@ class StubModelProvider(BaseModelProvider):
         return {
             "memory_summary": " ".join(summary_parts).strip(),
             "focus_memories": relevant_memories[:2],
-            "scene_summary": str(current_scene.get("summary") or "The square listens to itself."),
+            "scene_summary": str(current_scene.get("summary") or f"{current_location_name} listens to itself."),
             "rumor_focus": rumor_focus,
         }
 
@@ -587,27 +632,29 @@ class StubModelProvider(BaseModelProvider):
         }
         recent_world_beats = [str(item) for item in input_payload.get("recent_world_beats") or [] if str(item)]
         role = str(routine_state.get("routine_role") or "watcher")
-        rumor_focus = str(input_payload.get("rumor_focus") or routine_state.get("rumor_focus") or "the square")
+        rumor_focus = str(input_payload.get("rumor_focus") or routine_state.get("rumor_focus") or "the current place")
+        current_location = input_payload.get("current_location") or input_payload.get("location") or {}
+        current_location_name = str(current_location.get("name") or "the current place")
 
         if "promise" in thread_types:
             beat_kind = "murmur"
-            summary = f"{npc_name} lets a rumor move through the square about {rumor_focus}, as if a promise were still hanging there."
+            summary = f"{npc_name} lets a rumor move through {current_location_name} about {rumor_focus}, as if a promise were still hanging there."
             tension_band = "medium"
         elif "scrutiny" in thread_types:
             beat_kind = "question"
-            summary = f"{npc_name} turns a sharper question over the plaza, making its scrutiny more visible."
+            summary = f"{npc_name} turns a sharper question over {current_location_name}, making its scrutiny more visible."
             tension_band = "high"
         elif role == "lamplighter":
             beat_kind = "reassure"
-            summary = f"{npc_name} trims the light around the square and eases the scene without making a show of it."
+            summary = f"{npc_name} trims the light around {current_location_name} and eases the scene without making a show of it."
             tension_band = "low"
         elif role == "courier" and recent_world_beats:
             beat_kind = "murmur"
-            summary = f"{npc_name} carries the latest plaza murmur a little further, letting it circulate under the open sky."
+            summary = f"{npc_name} carries the latest local murmur a little further, letting it circulate under the open sky."
             tension_band = "medium"
         else:
             beat_kind = "observe"
-            summary = f"{npc_name} watches the square as the {role}, measuring what the last turn left behind."
+            summary = f"{npc_name} watches {current_location_name} as the {role}, measuring what the last turn left behind."
             tension_band = str(routine_state.get("tension_band") or "medium")
         return {
             "beat_kind": beat_kind,
@@ -623,7 +670,7 @@ class StubModelProvider(BaseModelProvider):
         approval_status = "approved" if not violations else "rejected"
         return {
             "approval_status": approval_status,
-            "reason": "ambient beat stays inside same-world plaza constraints" if approval_status == "approved" else "; ".join(violations),
+            "reason": "ambient beat stays inside same-world local constraints" if approval_status == "approved" else "; ".join(violations),
             "violations": violations,
         }
 

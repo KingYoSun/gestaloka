@@ -115,7 +115,8 @@ type NarrativeChoice = {
   label: string;
   summary: string;
   canonical_input_text: string;
-  action_kind: "narrative" | "use_reward_item";
+  action_kind: "narrative" | "use_reward_item" | "travel";
+  travel_target_key?: "square" | "archive_steps" | "watch_path" | "none";
 };
 
 type QuestSummary = {
@@ -164,6 +165,21 @@ type PlazaFigureSummary = {
   summary: string;
 };
 
+type CurrentLocationSummary = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+} | null;
+
+type NearbyRouteSummary = {
+  route_key: string;
+  summary: string;
+  destination_name: string;
+  destination_key: string;
+  available: boolean;
+};
+
 type ConsequenceThreadSummary = {
   id: string;
   title: string;
@@ -177,11 +193,8 @@ type ConsequenceThreadSummary = {
 
 type SessionState = {
   world_id: string;
-  location: {
-    id: string;
-    name: string;
-    description: string;
-  } | null;
+  location: CurrentLocationSummary;
+  current_location: CurrentLocationSummary;
   character: CharacterSummary;
   quests: QuestSummary[];
   factions: FactionSummary[];
@@ -189,6 +202,9 @@ type SessionState = {
   chapter: ChapterSummary;
   current_scene: CurrentSceneSummary;
   recent_scene_history: string[];
+  local_figures: PlazaFigureSummary[];
+  nearby_routes: NearbyRouteSummary[];
+  recent_travel_history: string[];
   plaza_figures: PlazaFigureSummary[];
   recent_world_beats: string[];
   ambient_murmurs: string[];
@@ -208,7 +224,7 @@ type SessionState = {
 
 type TurnResponse = {
   turn_id: string;
-  action_type: "narrative" | "use_reward_item";
+  action_type: "narrative" | "use_reward_item" | "travel";
   input_mode: "choice" | "free_text";
   event_id: string;
   memory_ids: string[];
@@ -222,6 +238,14 @@ type TurnResponse = {
   consequence_summary: string;
   scene_tone: string;
   scene_summary: string;
+  location_updates: Array<{
+    actor_id: string;
+    location_id: string;
+    name: string;
+    summary: string;
+  }>;
+  current_location: CurrentLocationSummary;
+  travel_summary: string | null;
   quest_updates: Array<QuestSummary & { world_tags?: string[]; summary?: string }>;
   faction_updates: Array<FactionSummary & { delta?: number }>;
   inventory_updates: Array<InventorySummary & { action?: string }>;
@@ -434,6 +458,35 @@ type AmbientBeatOpsItem = {
   visible_summary: string | null;
   relationship_updates: Array<Record<string, unknown>>;
   consequence_updates: Array<Record<string, unknown>>;
+  created_at: string;
+};
+
+type LocationOpsItem = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  route_summaries?: Array<{
+    route_key: string;
+    destination_name: string;
+    status: string;
+    travel_summary: string;
+  }>;
+  routes?: Array<{
+    route_key: string;
+    destination_name: string;
+    status: string;
+    travel_summary: string;
+    to_location_name?: string;
+  }>;
+};
+
+type TravelLogItem = {
+  event_id: string;
+  turn_id: string;
+  narrative?: string;
+  travel_summary?: string;
+  location_id: string | null;
   created_at: string;
 };
 
@@ -759,15 +812,21 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
     : current.ambient_murmurs;
   const currentScene = response.scene_updates.length ? response.scene_updates[response.scene_updates.length - 1] : current.current_scene;
   const currentChapter = response.chapter_updates.length ? response.chapter_updates[response.chapter_updates.length - 1] : current.chapter;
+  const currentLocation = response.current_location ?? current.current_location ?? current.location;
 
   return {
     ...current,
+    location: currentLocation,
+    current_location: currentLocation,
     quests,
     factions,
     inventory,
     chapter: currentChapter,
     current_scene: currentScene,
     recent_scene_history: recentSceneHistory,
+    recent_travel_history: response.travel_summary
+      ? [response.travel_summary, ...current.recent_travel_history.filter((item) => item !== response.travel_summary)].slice(0, 3)
+      : current.recent_travel_history,
     recent_world_beats: recentWorldBeats,
     ambient_murmurs: ambientMurmurs,
     relationships,
@@ -776,6 +835,23 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
     next_choices: response.next_choices.length ? response.next_choices : current.next_choices,
     important_inventory_affordances: deriveImportantInventoryAffordances(inventory),
   };
+}
+
+function locationRouteSummaries(item: LocationOpsItem): Array<{
+  route_key: string;
+  destination_name: string;
+  status: string;
+  travel_summary: string;
+}> {
+  if (item.route_summaries?.length) {
+    return item.route_summaries;
+  }
+  return (item.routes ?? []).map((route) => ({
+    route_key: route.route_key,
+    destination_name: route.destination_name ?? route.to_location_name ?? "Unknown destination",
+    status: route.status,
+    travel_summary: route.travel_summary,
+  }));
 }
 
 async function apiFetch<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
@@ -864,6 +940,8 @@ function App() {
   const [consequenceThreadOps, setConsequenceThreadOps] = useState<ConsequenceThreadOpsItem[]>([]);
   const [chapterOps, setChapterOps] = useState<ChapterOpsItem[]>([]);
   const [sceneOps, setSceneOps] = useState<SceneOpsItem[]>([]);
+  const [locationOps, setLocationOps] = useState<LocationOpsItem[]>([]);
+  const [travelLogOps, setTravelLogOps] = useState<TravelLogItem[]>([]);
   const [npcRoutineOps, setNpcRoutineOps] = useState<NPCRoutineOpsItem[]>([]);
   const [ambientBeatOps, setAmbientBeatOps] = useState<AmbientBeatOpsItem[]>([]);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
@@ -946,6 +1024,8 @@ function App() {
       setConsequenceThreadOps([]);
       setChapterOps([]);
       setSceneOps([]);
+      setLocationOps([]);
+      setTravelLogOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
       setObservability(null);
@@ -1119,6 +1199,8 @@ function App() {
         setConsequenceThreadOps([]);
         setChapterOps([]);
         setSceneOps([]);
+        setLocationOps([]);
+        setTravelLogOps([]);
         setNpcRoutineOps([]);
         setAmbientBeatOps([]);
         setObservability(null);
@@ -1156,18 +1238,22 @@ function App() {
       setConsequenceThreadOps([]);
       setChapterOps([]);
       setSceneOps([]);
+      setLocationOps([]);
+      setTravelLogOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
       return;
     }
 
     try {
-      const [summaryPayload, relationshipPayload, threadPayload, chapterPayload, scenePayload, npcRoutinePayload, ambientBeatPayload] = await Promise.all([
+      const [summaryPayload, relationshipPayload, threadPayload, chapterPayload, scenePayload, locationPayload, travelLogPayload, npcRoutinePayload, ambientBeatPayload] = await Promise.all([
         apiFetch<GraphSummary>(`/ops/worlds/${currentWorldId}/graph-summary`, currentToken),
         apiFetch<{ items: RelationshipOpsItem[] }>(`/ops/worlds/${currentWorldId}/relationships`, currentToken),
         apiFetch<{ items: ConsequenceThreadOpsItem[] }>(`/ops/worlds/${currentWorldId}/consequence-threads`, currentToken),
         apiFetch<{ items: ChapterOpsItem[] }>(`/ops/worlds/${currentWorldId}/chapters`, currentToken),
         apiFetch<{ items: SceneOpsItem[] }>(`/ops/worlds/${currentWorldId}/scenes`, currentToken),
+        apiFetch<{ items: LocationOpsItem[] }>(`/ops/worlds/${currentWorldId}/locations`, currentToken),
+        apiFetch<{ items: TravelLogItem[] }>(`/ops/worlds/${currentWorldId}/travel-log`, currentToken),
         apiFetch<{ items: NPCRoutineOpsItem[] }>(`/ops/worlds/${currentWorldId}/npc-routines`, currentToken),
         apiFetch<{ items: AmbientBeatOpsItem[] }>(`/ops/worlds/${currentWorldId}/ambient-beats`, currentToken),
       ]);
@@ -1176,6 +1262,8 @@ function App() {
       setConsequenceThreadOps(threadPayload.items);
       setChapterOps(chapterPayload.items);
       setSceneOps(scenePayload.items);
+      setLocationOps(locationPayload.items);
+      setTravelLogOps(travelLogPayload.items);
       setNpcRoutineOps(npcRoutinePayload.items);
       setAmbientBeatOps(ambientBeatPayload.items);
     } catch (requestError) {
@@ -1190,6 +1278,8 @@ function App() {
       setConsequenceThreadOps([]);
       setChapterOps([]);
       setSceneOps([]);
+      setLocationOps([]);
+      setTravelLogOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
     }
@@ -1277,9 +1367,9 @@ function App() {
             }
           : current,
       );
+      await refreshWorldState(session, token);
       setTurnPending(false);
       const backgroundRefresh = Promise.all([
-        refreshWorldState(session, token),
         refreshWallet(token),
         refreshAdminData(
           token,
@@ -1543,8 +1633,8 @@ function App() {
           <p data-testid="socket-status">Socket: {socketState}</p>
           <p data-testid="sp-balance">
             SP balance: {wallet?.balance ?? "unknown"} / Choice cost:{" "}
-            {wallet?.choice_turn_cost ?? health?.sp.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp.turn_cost ?? "?"} / Free text cost:{" "}
-            {wallet?.free_text_turn_cost ?? health?.sp.free_text_turn_cost ?? "?"}
+            {wallet?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp?.turn_cost ?? "?"} / Free text cost:{" "}
+            {wallet?.free_text_turn_cost ?? health?.sp?.free_text_turn_cost ?? "?"}
           </p>
           <p data-testid="sp-budget-note">
             SP is execution budget only. It is not in-world currency and does not buy quest, faction, or item power.
@@ -1682,6 +1772,13 @@ function App() {
 
             <article className="card">
               <h2>6. Current scene</h2>
+              <div data-testid="current-place-summary">
+                <p>
+                  <strong>Current place</strong>
+                </p>
+                <p>{sessionState?.current_location?.name ?? "No place is active yet."}</p>
+                <p>{sessionState?.current_location?.description ?? "The scene has not opened onto a stable place yet."}</p>
+              </div>
               {sessionState?.chapter ? (
                 <div data-testid="current-chapter-summary">
                   <p>
@@ -1699,7 +1796,7 @@ function App() {
                   </p>
                   <p>{sessionState.current_scene.pressure_summary}</p>
                   <p>
-                    Scene focus: {sessionState.current_scene.focus_actor?.display_name ?? "The square"} /{" "}
+                    Scene focus: {sessionState.current_scene.focus_actor?.display_name ?? "The scene"} /{" "}
                     {sessionState.current_scene.location?.name ?? "unknown location"}
                   </p>
                 </div>
@@ -1765,17 +1862,43 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>8. Around the square</h2>
+              <h2>8. Around you</h2>
               <ul className="stream" data-testid="plaza-figures-stream">
-                {sessionState?.plaza_figures.length ? (
-                  sessionState.plaza_figures.map((item) => (
+                {sessionState?.local_figures.length ? (
+                  sessionState.local_figures.map((item) => (
                     <li key={item.actor_id}>
                       <strong>{item.display_name}</strong>
                       <span>{item.summary}</span>
                     </li>
                   ))
                 ) : (
-                  <li>The square has not settled into any clear figures yet.</li>
+                  <li>No nearby figures have settled into focus yet.</li>
+                )}
+              </ul>
+              <h3>Nearby routes</h3>
+              <ul className="stream" data-testid="nearby-routes-stream">
+                {sessionState?.nearby_routes.length ? (
+                  sessionState.nearby_routes.map((item) => (
+                    <li key={item.route_key}>
+                      <strong>{item.destination_name}</strong>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No clear route is presenting itself yet.</li>
+                )}
+              </ul>
+              <h3>Recent travel echoes</h3>
+              <ul className="stream" data-testid="recent-travel-history">
+                {sessionState?.recent_travel_history.length ? (
+                  sessionState.recent_travel_history.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>echo</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No travel echo is lingering yet.</li>
                 )}
               </ul>
             </article>
@@ -1948,6 +2071,83 @@ function App() {
                 ))}
               </ul>
             </article>
+
+            <section hidden aria-hidden="true">
+              <p data-testid="ops-status">Ops access: {opsState}</p>
+              <p data-testid="sp-admin-separation-note">
+                SP execution ledger is separate from world progression. Reward item use and follow-up quest unlocks are tracked below, not as paid power.
+              </p>
+              <ul className="stream" data-testid="location-route-stream">
+                {locationOps.length ? (
+                  locationOps.map((item) => (
+                    <li key={`hidden-location-${item.id}`}>
+                      <strong>{item.name}</strong>
+                      <span>{item.description}</span>
+                      <span>
+                        {locationRouteSummaries(item)
+                          .map((route) => `${route.route_key}:${route.status}->${route.destination_name}`)
+                          .join(" | ")}
+                      </span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No location state loaded.</li>
+                )}
+              </ul>
+              <ul className="stream" data-testid="travel-log-stream">
+                {travelLogOps.length ? (
+                  travelLogOps.map((item) => (
+                    <li key={`hidden-travel-${item.event_id}`}>
+                      <strong>{item.turn_id}</strong>
+                      <span>{item.travel_summary ?? item.narrative ?? "No travel summary"}</span>
+                      <span>{item.location_id ?? "no location"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No travel log loaded.</li>
+                )}
+              </ul>
+              <ul className="stream" data-testid="npc-routine-stream">
+                {npcRoutineOps.length ? (
+                  npcRoutineOps.map((item) => (
+                    <li key={`hidden-routine-${item.actor_id}`}>
+                      <strong>{item.display_name}</strong>
+                      <span>{item.location_id ?? "no location"}</span>
+                      <span>{JSON.stringify(item.routine_state)}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No NPC routine state loaded.</li>
+                )}
+              </ul>
+              <ul className="stream" data-testid="ambient-beat-stream">
+                {ambientBeatOps.length ? (
+                  ambientBeatOps.map((item) => (
+                    <li key={`hidden-ambient-${item.event_id}`}>
+                      <strong>{item.display_name ?? "Unknown figure"}</strong>
+                      <span>{item.beat_kind}</span>
+                      <span>{item.visible_summary ?? "No visible summary"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No ambient beat log loaded.</li>
+                )}
+              </ul>
+              <ul className="stream" data-testid="scene-timeline-stream">
+                {sceneOps.length ? (
+                  sceneOps.map((item) => (
+                    <li key={`hidden-scene-${item.id}`}>
+                      <strong>{item.scene_phase}</strong>
+                      <span>{item.status}</span>
+                      <span>{item.stakes_summary}</span>
+                      <span>{item.pressure_summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No scene timeline data loaded.</li>
+                )}
+              </ul>
+            </section>
           </>
         ) : (
           <>
@@ -1955,35 +2155,35 @@ function App() {
               <h2>Projection runtime</h2>
               <p data-testid="ops-status">Ops access: {opsState}</p>
               <p>
-                Backend: {projectionStatus?.backend ?? health?.projection.backend ?? "unknown"} / Graph read:{" "}
-                {projectionStatus?.graph_read_mode ?? health?.projection.graph_read_mode ?? "unknown"} / Runtime:{" "}
+                Backend: {projectionStatus?.backend ?? health?.projection?.backend ?? "unknown"} / Graph read:{" "}
+                {projectionStatus?.graph_read_mode ?? health?.projection?.graph_read_mode ?? "unknown"} / Runtime:{" "}
                 <span data-testid="graph-runtime-status">
-                  {projectionStatus?.graph_runtime_status ?? health?.projection_runtime.graph_runtime_status ?? "unknown"}
+                  {projectionStatus?.graph_runtime_status ?? health?.projection_runtime?.graph_runtime_status ?? "unknown"}
                 </span>
               </p>
               <p>
-                Space: {projectionStatus?.space ?? health?.projection.space ?? "unknown"} / Pending:{" "}
-                {projectionStatus?.pending ?? health?.projection.pending_outbox ?? "unknown"} / Failed:{" "}
-                {projectionStatus?.failed ?? health?.projection.failed_outbox ?? "unknown"} / Projected:{" "}
-                {projectionStatus?.projected ?? health?.projection.projected_outbox ?? "unknown"}
+                Space: {projectionStatus?.space ?? health?.projection?.space ?? "unknown"} / Pending:{" "}
+                {projectionStatus?.pending ?? health?.projection?.pending_outbox ?? "unknown"} / Failed:{" "}
+                {projectionStatus?.failed ?? health?.projection?.failed_outbox ?? "unknown"} / Projected:{" "}
+                {projectionStatus?.projected ?? health?.projection?.projected_outbox ?? "unknown"}
               </p>
               <p data-testid="observability-summary">
-                Lag: {observability?.primary.projection_lag_seconds ?? health?.observability.projection_lag_seconds ?? 0}s / Schema valid:{" "}
-                {((observability?.primary.llm_schema_valid_rate ?? health?.observability.llm_schema_valid_rate ?? 0) * 100).toFixed(0)}% /
-                Fallback: {((observability?.primary.llm_fallback_rate ?? health?.observability.llm_fallback_rate ?? 0) * 100).toFixed(0)}%
+                Lag: {observability?.primary.projection_lag_seconds ?? health?.observability?.projection_lag_seconds ?? 0}s / Schema valid:{" "}
+                {((observability?.primary.llm_schema_valid_rate ?? health?.observability?.llm_schema_valid_rate ?? 0) * 100).toFixed(0)}% /
+                Fallback: {((observability?.primary.llm_fallback_rate ?? health?.observability?.llm_fallback_rate ?? 0) * 100).toFixed(0)}%
               </p>
               <p data-testid="canary-health-status">
-                Canary: {observability?.canary.status ?? health?.observability.canary_health.status ?? "unknown"} / Graph:{" "}
-                {observability?.canary.graph_runtime_status ?? health?.observability.canary_health.graph_runtime_status ?? "unknown"} /
-                Gate: {observability?.canary.release_gate_verdict ?? health?.observability.canary_health.release_gate_verdict ?? "unknown"}
+                Canary: {observability?.canary.status ?? health?.observability?.canary_health?.status ?? "unknown"} / Graph:{" "}
+                {observability?.canary.graph_runtime_status ?? health?.observability?.canary_health?.graph_runtime_status ?? "unknown"} /
+                Gate: {observability?.canary.release_gate_verdict ?? health?.observability?.canary_health?.release_gate_verdict ?? "unknown"}
               </p>
               <p data-testid="embedding-status-summary">
-                Embedding: {embeddingStatus?.provider ?? health?.embedding.provider ?? "unknown"} / model:{" "}
-                {embeddingStatus?.model ?? health?.embedding.model ?? "unknown"} / dim:{" "}
-                {embeddingStatus?.dimension ?? health?.embedding.dimension ?? "unknown"} / pending:{" "}
-                {embeddingStatus?.pending_count ?? health?.embedding.pending_count ?? 0} / failed:{" "}
-                {embeddingStatus?.failed_count ?? health?.embedding.failed_count ?? 0} / status:{" "}
-                {embeddingStatus?.runtime_status ?? health?.embedding.runtime_status ?? "unknown"}
+                Embedding: {embeddingStatus?.provider ?? health?.embedding?.provider ?? "unknown"} / model:{" "}
+                {embeddingStatus?.model ?? health?.embedding?.model ?? "unknown"} / dim:{" "}
+                {embeddingStatus?.dimension ?? health?.embedding?.dimension ?? "unknown"} / pending:{" "}
+                {embeddingStatus?.pending_count ?? health?.embedding?.pending_count ?? 0} / failed:{" "}
+                {embeddingStatus?.failed_count ?? health?.embedding?.failed_count ?? 0} / status:{" "}
+                {embeddingStatus?.runtime_status ?? health?.embedding?.runtime_status ?? "unknown"}
               </p>
               <p data-testid="sp-admin-separation-note">
                 SP execution ledger is separate from world progression. Reward item use and follow-up quest unlocks are tracked below, not as paid power.
@@ -2130,6 +2330,38 @@ function App() {
                   ))
                 ) : (
                   <li>No scene timeline data loaded.</li>
+                )}
+              </ul>
+              <h3>Locations and route states</h3>
+              <ul className="stream" data-testid="location-route-stream">
+                {locationOps.length ? (
+                  locationOps.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.name}</strong>
+                      <span>{item.description}</span>
+                      <span>
+                        {locationRouteSummaries(item)
+                          .map((route) => `${route.route_key}:${route.status}->${route.destination_name}`)
+                          .join(" | ")}
+                      </span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No location state loaded.</li>
+                )}
+              </ul>
+              <h3>Travel log</h3>
+              <ul className="stream" data-testid="travel-log-stream">
+                {travelLogOps.length ? (
+                  travelLogOps.map((item) => (
+                    <li key={item.event_id}>
+                      <strong>{item.turn_id}</strong>
+                      <span>{item.travel_summary ?? item.narrative ?? "No travel summary"}</span>
+                      <span>{item.location_id ?? "no location"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No travel log loaded.</li>
                 )}
               </ul>
               <h3>NPC routine state</h3>
@@ -2296,25 +2528,25 @@ function App() {
                 <li>
                   <strong>smoke</strong>
                   <span>
-                    present={String(releaseGate?.checks.smoke.present ?? false)} / current=
-                    {String(releaseGate?.checks.smoke.current_passed ?? false)} / candidate=
-                    {String(releaseGate?.checks.smoke.candidate_passed ?? false)}
+                    present={String(releaseGate?.checks?.smoke?.present ?? false)} / current=
+                    {String(releaseGate?.checks?.smoke?.current_passed ?? false)} / candidate=
+                    {String(releaseGate?.checks?.smoke?.candidate_passed ?? false)}
                   </span>
                 </li>
                 <li>
                   <strong>failure_injection</strong>
                   <span>
-                    present={String(releaseGate?.checks.failure_injection.present ?? false)} / current=
-                    {String(releaseGate?.checks.failure_injection.current_passed ?? false)} / candidate=
-                    {String(releaseGate?.checks.failure_injection.candidate_passed ?? false)}
+                    present={String(releaseGate?.checks?.failure_injection?.present ?? false)} / current=
+                    {String(releaseGate?.checks?.failure_injection?.current_passed ?? false)} / candidate=
+                    {String(releaseGate?.checks?.failure_injection?.candidate_passed ?? false)}
                   </span>
                 </li>
                 <li>
                   <strong>shadow_replay</strong>
                   <span>
-                    present={String(releaseGate?.checks.shadow_replay.present ?? false)} / current=
-                    {String(releaseGate?.checks.shadow_replay.current_passed ?? false)} / candidate=
-                    {String(releaseGate?.checks.shadow_replay.candidate_passed ?? false)}
+                    present={String(releaseGate?.checks?.shadow_replay?.present ?? false)} / current=
+                    {String(releaseGate?.checks?.shadow_replay?.current_passed ?? false)} / candidate=
+                    {String(releaseGate?.checks?.shadow_replay?.candidate_passed ?? false)}
                   </span>
                 </li>
               </ul>
@@ -2332,19 +2564,19 @@ function App() {
               <ul className="stream" data-testid="release-slo-stream">
                 <li>
                   <strong>primary</strong>
-                  <span>lag {releaseGate?.slo_snapshot.projection_lag_seconds ?? 0}s</span>
-                  <span>pending {releaseGate?.slo_snapshot.outbox_pending_count ?? 0}</span>
-                  <span>failed {releaseGate?.slo_snapshot.outbox_failed_count ?? 0}</span>
+                  <span>lag {releaseGate?.slo_snapshot?.projection_lag_seconds ?? 0}s</span>
+                  <span>pending {releaseGate?.slo_snapshot?.outbox_pending_count ?? 0}</span>
+                  <span>failed {releaseGate?.slo_snapshot?.outbox_failed_count ?? 0}</span>
                 </li>
                 <li>
                   <strong>llm</strong>
-                  <span>schema {(((releaseGate?.slo_snapshot.llm_schema_valid_rate ?? 0) as number) * 100).toFixed(0)}%</span>
-                  <span>fallback {(((releaseGate?.slo_snapshot.llm_fallback_rate ?? 0) as number) * 100).toFixed(0)}%</span>
+                  <span>schema {(((releaseGate?.slo_snapshot?.llm_schema_valid_rate ?? 0) as number) * 100).toFixed(0)}%</span>
+                  <span>fallback {(((releaseGate?.slo_snapshot?.llm_fallback_rate ?? 0) as number) * 100).toFixed(0)}%</span>
                 </li>
                 <li>
                   <strong>canary</strong>
-                  <span>{releaseGate?.slo_snapshot.canary_health.status ?? "unknown"}</span>
-                  <span>{releaseGate?.slo_snapshot.canary_health.detail ?? "no detail"}</span>
+                  <span>{releaseGate?.slo_snapshot?.canary_health?.status ?? "unknown"}</span>
+                  <span>{releaseGate?.slo_snapshot?.canary_health?.detail ?? "no detail"}</span>
                 </li>
               </ul>
               <h3>Latest eval runs</h3>
@@ -2382,15 +2614,15 @@ function App() {
               <ul className="stream" data-testid="release-runbook">
                 <li>
                   <strong>canary up</strong>
-                  <span>{releaseGate?.runbook.canary_up ?? "docker compose --profile canary up --build backend-canary"}</span>
+                  <span>{releaseGate?.runbook?.canary_up ?? "docker compose --profile canary up --build backend-canary"}</span>
                 </li>
                 <li>
                   <strong>rollback</strong>
-                  <span>{releaseGate?.runbook.rollback ?? "docker compose --profile canary down"}</span>
+                  <span>{releaseGate?.runbook?.rollback ?? "docker compose --profile canary down"}</span>
                 </li>
                 <li>
                   <strong>promote</strong>
-                  <span>{releaseGate?.runbook.promote ?? "blocked until gate passes"}</span>
+                  <span>{releaseGate?.runbook?.promote ?? "blocked until gate passes"}</span>
                 </li>
               </ul>
               <h3>Recent traces</h3>
@@ -2410,11 +2642,11 @@ function App() {
                 Accounts: {spOverview?.total_accounts ?? 0} / Ledger rows: {spOverview?.total_ledger_entries ?? 0}
               </p>
               <p>
-                Default balance: {spOverview?.default_balance ?? health?.sp.default_balance ?? "?"} / Choice cost:{" "}
+                Default balance: {spOverview?.default_balance ?? health?.sp?.default_balance ?? "?"} / Choice cost:{" "}
                 <span data-testid="turn-cost">
-                  {spOverview?.choice_turn_cost ?? health?.sp.choice_turn_cost ?? spOverview?.turn_cost ?? health?.sp.turn_cost ?? "?"}
+                  {spOverview?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? spOverview?.turn_cost ?? health?.sp?.turn_cost ?? "?"}
                 </span>{" "}
-                / Free text cost: {spOverview?.free_text_turn_cost ?? health?.sp.free_text_turn_cost ?? "?"}
+                / Free text cost: {spOverview?.free_text_turn_cost ?? health?.sp?.free_text_turn_cost ?? "?"}
               </p>
               {lastAdjustment ? (
                 <p data-testid="last-adjustment">

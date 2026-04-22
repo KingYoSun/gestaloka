@@ -19,17 +19,27 @@ from app.models.entities import (
     FactionStanding,
     Item,
     Location,
+    LocationRoute,
     QuestAssignment,
     QuestTemplate,
     Relationship,
     Turn,
     World,
+    archive_steps_location_id,
     new_id,
+    route_id,
     starter_location_id,
+    watch_path_location_id,
 )
-from app.modules.actor.service import adjust_relationship_strength, ensure_founders_reach_npcs, get_relationship
+from app.modules.actor.service import (
+    adjust_relationship_strength,
+    ensure_founders_reach_npcs,
+    get_guide_npc_for_location,
+    get_relationship,
+)
 from app.modules.world_state.ambient import (
     list_ambient_murmurs,
+    list_local_figures,
     list_plaza_figures,
     list_recent_world_beats,
 )
@@ -63,6 +73,8 @@ from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, World
 
 
 FOLLOWUP_STANDING_DELTA = 0.10
+ROUTE_STATUS_OPEN = "open"
+ROUTE_STATUS_LOCKED = "locked"
 
 
 @dataclass(frozen=True)
@@ -85,6 +97,17 @@ class RewardItemUseOutcome:
     event_narrative: str
     event_payload: dict[str, Any]
     memory_drafts: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class TravelOutcome:
+    destination: Location
+    location_updates: list[dict[str, Any]]
+    event_type: str
+    event_narrative: str
+    event_payload: dict[str, Any]
+    memory_drafts: list[dict[str, Any]]
+    travel_summary: str
 
 
 @dataclass(frozen=True)
@@ -123,38 +146,131 @@ def _resolve_seeded_entity_id(world_id: str, base_id: str) -> tuple[str, list[st
     return scoped_id, [scoped_id, base_id]
 
 
+def _seed_locations() -> dict[str, dict[str, Any]]:
+    locations = _load_seed().get("locations") or {}
+    if not isinstance(locations, dict) or not locations:
+        raise ValueError("World seed is missing locations")
+    return {str(key): dict(value or {}) for key, value in locations.items()}
+
+
+def _seed_routes() -> list[dict[str, Any]]:
+    routes = _load_seed().get("routes") or []
+    if not isinstance(routes, list):
+        raise ValueError("World seed routes must be a list")
+    return [dict(item or {}) for item in routes]
+
+
+def _location_id_for_key(world_id: str, location_key: str, base_id: str | None = None) -> str:
+    if location_key == "square":
+        return starter_location_id(world_id)
+    if location_key == "archive_steps":
+        return archive_steps_location_id(world_id)
+    if location_key == "watch_path":
+        return watch_path_location_id(world_id)
+    return _world_scoped_seed_id(world_id, base_id or location_key)
+
+
+def location_key_for_id(world_id: str, location_id: str | None) -> str | None:
+    if location_id is None:
+        return None
+    if location_id == starter_location_id(world_id):
+        return "square"
+    if location_id == archive_steps_location_id(world_id):
+        return "archive_steps"
+    if location_id == watch_path_location_id(world_id):
+        return "watch_path"
+    return None
+
+
+def ensure_seeded_locations(db: Session, world_id: str) -> dict[str, Location]:
+    seeded: dict[str, Location] = {}
+    for location_key, payload in _seed_locations().items():
+        location_id = _location_id_for_key(world_id, location_key, str(payload.get("id") or location_key))
+        location = db.execute(
+            select(Location).where(Location.world_id == world_id, Location.id == location_id)
+        ).scalar_one_or_none()
+        state = dict(location.state or {}) if location is not None else {}
+        state.update(
+            {
+                "kind": "starter" if bool(payload.get("starter")) else "district",
+                "key": location_key,
+            }
+        )
+        if location is None:
+            location = Location(
+                id=location_id,
+                world_id=world_id,
+                name=str(payload.get("name") or location_key.replace("_", " ").title()),
+                description=str(payload.get("description") or ""),
+                state=state,
+            )
+            db.add(location)
+            db.flush()
+        else:
+            location.name = str(payload.get("name") or location.name)
+            location.description = str(payload.get("description") or location.description)
+            location.state = state
+            db.flush()
+        seeded[location_key] = location
+    return seeded
+
+
+def ensure_location_routes(db: Session, world_id: str, *, locations_by_key: dict[str, Location] | None = None) -> dict[str, LocationRoute]:
+    resolved_locations = locations_by_key or ensure_seeded_locations(db, world_id)
+    routes: dict[str, LocationRoute] = {}
+    for payload in _seed_routes():
+        route_key_name = str(payload.get("route_key") or "").strip()
+        from_key = str(payload.get("from") or "").strip()
+        to_key = str(payload.get("to") or "").strip()
+        if not route_key_name or from_key not in resolved_locations or to_key not in resolved_locations:
+            continue
+        route = db.execute(
+            select(LocationRoute).where(LocationRoute.world_id == world_id, LocationRoute.route_key == route_key_name)
+        ).scalar_one_or_none()
+        default_status = str(payload.get("status") or ROUTE_STATUS_OPEN)
+        if route is None:
+            route = LocationRoute(
+                id=route_id(world_id, route_key_name),
+                world_id=world_id,
+                from_location_id=resolved_locations[from_key].id,
+                to_location_id=resolved_locations[to_key].id,
+                route_key=route_key_name,
+                status=default_status,
+                travel_summary=str(payload.get("travel_summary") or ""),
+                unlock_requirements_json=dict(payload.get("unlock_requirements") or {}),
+            )
+            db.add(route)
+            db.flush()
+        else:
+            route.from_location_id = resolved_locations[from_key].id
+            route.to_location_id = resolved_locations[to_key].id
+            route.travel_summary = str(payload.get("travel_summary") or route.travel_summary or "")
+            route.unlock_requirements_json = dict(payload.get("unlock_requirements") or route.unlock_requirements_json or {})
+            if route.status not in {ROUTE_STATUS_OPEN, ROUTE_STATUS_LOCKED}:
+                route.status = default_status
+            db.flush()
+        routes[route_key_name] = route
+    return routes
+
+
 def ensure_world(db: Session, world_id: str, world_name: str) -> World:
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is not None:
-        ensure_starter_location(db, world_id)
+        locations = ensure_seeded_locations(db, world_id)
+        ensure_location_routes(db, world_id, locations_by_key=locations)
         return world
 
     fallback_name = str(_seed_section("world").get("default_name") or "Founders Reach")
     world = World(id=world_id, name=world_name or fallback_name, status="active")
     db.add(world)
     db.flush()
-    ensure_starter_location(db, world_id)
+    locations = ensure_seeded_locations(db, world_id)
+    ensure_location_routes(db, world_id, locations_by_key=locations)
     return world
 
 
 def ensure_starter_location(db: Session, world_id: str) -> Location:
-    location = db.execute(
-        select(Location).where(Location.id == starter_location_id(world_id), Location.world_id == world_id)
-    ).scalar_one_or_none()
-    if location is not None:
-        return location
-
-    location_seed = _seed_section("location")
-    location = Location(
-        id=starter_location_id(world_id),
-        world_id=world_id,
-        name=str(location_seed.get("name") or "Founders Reach"),
-        description=str(location_seed.get("description") or ""),
-        state={"kind": "starter"},
-    )
-    db.add(location)
-    db.flush()
-    return location
+    return ensure_seeded_locations(db, world_id)["square"]
 
 
 def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> CharacterSheet:
@@ -465,12 +581,18 @@ def ensure_world_slice_seed(
     *,
     world_id: str,
     player_actor_id: str,
-    guide_actor_id: str,
 ) -> WorldSliceSeed:
-    ensure_starter_location(db, world_id)
-    ensure_founders_reach_npcs(db, world_id, location_id=starter_location_id(world_id))
+    locations_by_key = ensure_seeded_locations(db, world_id)
+    ensure_location_routes(db, world_id, locations_by_key=locations_by_key)
+    ensure_founders_reach_npcs(
+        db,
+        world_id,
+        location_ids_by_key={key: location.id for key, location in locations_by_key.items()},
+    )
+    guide_actor = get_guide_npc_for_location(db, world_id, location_id=locations_by_key["square"].id)
     faction = ensure_starter_faction(db, world_id)
-    ensure_membership_relationship(db, world_id=world_id, from_actor_id=guide_actor_id, faction_id=faction.id)
+    if guide_actor is not None:
+        ensure_membership_relationship(db, world_id=world_id, from_actor_id=guide_actor.id, faction_id=faction.id)
     standing = ensure_faction_standing(db, world_id=world_id, actor_id=player_actor_id, faction_id=faction.id)
     character_sheet = ensure_character_sheet(db, world_id, player_actor_id)
     quest_template = ensure_starter_quest_template(db, world_id)
@@ -485,8 +607,8 @@ def ensure_world_slice_seed(
         db,
         world_id=world_id,
         actor_id=player_actor_id,
-        location_id=starter_location_id(world_id),
-        focus_actor_id=guide_actor_id,
+        location_id=locations_by_key["square"].id,
+        focus_actor_id=guide_actor.id if guide_actor is not None else None,
     )
     return WorldSliceSeed(
         faction=faction,
@@ -510,7 +632,205 @@ def get_location_summary(db: Session, world_id: str, location_id: str | None) ->
         "id": location.id,
         "name": location.name,
         "description": location.description,
+        "key": str((location.state or {}).get("key") or location_key_for_id(world_id, location.id) or ""),
     }
+
+
+def get_location_by_key(db: Session, world_id: str, location_key: str) -> Location | None:
+    locations = ensure_seeded_locations(db, world_id)
+    return locations.get(location_key)
+
+
+def get_location_route(
+    db: Session,
+    *,
+    world_id: str,
+    from_location_id: str,
+    to_location_id: str,
+) -> LocationRoute | None:
+    return db.execute(
+        select(LocationRoute).where(
+            LocationRoute.world_id == world_id,
+            LocationRoute.from_location_id == from_location_id,
+            LocationRoute.to_location_id == to_location_id,
+        )
+    ).scalar_one_or_none()
+
+
+def _route_summary(route: LocationRoute, to_location: Location) -> dict[str, Any]:
+    available = route.status == ROUTE_STATUS_OPEN
+    summary = route.travel_summary.strip()
+    destination_key = str((to_location.state or {}).get("key") or "")
+    if not summary:
+        summary = (
+            f"{to_location.name}へ抜ける道が開いている。"
+            if available
+            else f"{to_location.name}へ続く道は、まだためらうように閉じている。"
+        )
+    return {
+        "route_id": route.id,
+        "route_key": route.route_key,
+        "summary": summary,
+        "available": available,
+        "destination_id": to_location.id,
+        "destination_name": to_location.name,
+        "destination_key": destination_key,
+        "to_location": {
+            "id": to_location.id,
+            "name": to_location.name,
+            "description": to_location.description,
+            "key": destination_key,
+        },
+    }
+
+
+def list_nearby_routes(db: Session, world_id: str, location_id: str | None) -> list[dict[str, Any]]:
+    if location_id is None:
+        return []
+    routes = list(
+        db.execute(
+            select(LocationRoute, Location)
+            .join(
+                Location,
+                (Location.id == LocationRoute.to_location_id) & (Location.world_id == LocationRoute.world_id),
+            )
+            .where(LocationRoute.world_id == world_id, LocationRoute.from_location_id == location_id)
+            .order_by(Location.name.asc(), LocationRoute.route_key.asc())
+        ).all()
+    )
+    return [_route_summary(route, location) for route, location in routes]
+
+
+def list_location_summaries(db: Session, world_id: str) -> list[dict[str, Any]]:
+    locations = list(
+        db.execute(
+            select(Location).where(Location.world_id == world_id).order_by(Location.created_at.asc(), Location.id.asc())
+        ).scalars()
+    )
+    return [
+        {
+            "id": location.id,
+            "name": location.name,
+            "description": location.description,
+            "key": str((location.state or {}).get("key") or ""),
+            "kind": str((location.state or {}).get("kind") or ""),
+        }
+        for location in locations
+    ]
+
+
+def list_recent_travel_history(db: Session, world_id: str, actor_id: str, *, limit: int = 3) -> list[str]:
+    rows = list(
+        db.execute(
+            select(Event)
+            .where(
+                Event.world_id == world_id,
+                Event.source_actor_id == actor_id,
+                Event.event_type.in_(("travel.arrived", "travel.hesitated")),
+            )
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(limit)
+        ).scalars()
+    )
+    history: list[str] = []
+    for event in rows:
+        summary = str((event.payload or {}).get("travel_summary") or event.narrative or "").strip()
+        if summary:
+            history.append(summary)
+    return history
+
+
+def unlock_watch_path_routes(db: Session, world_id: str) -> list[LocationRoute]:
+    routes = list(
+        db.execute(
+            select(LocationRoute).where(
+                LocationRoute.world_id == world_id,
+                LocationRoute.route_key.in_(("square_to_watch_path", "watch_path_to_square")),
+            )
+        ).scalars()
+    )
+    updated: list[LocationRoute] = []
+    for route in routes:
+        if route.status != ROUTE_STATUS_OPEN:
+            route.status = ROUTE_STATUS_OPEN
+            updated.append(route)
+    db.flush()
+    return routes
+
+
+def travel_to_location(
+    db: Session,
+    *,
+    world_id: str,
+    actor: Actor,
+    destination_location_id: str,
+) -> TravelOutcome:
+    origin_location = db.execute(
+        select(Location).where(Location.world_id == world_id, Location.id == actor.current_location_id)
+    ).scalar_one()
+    destination = db.execute(
+        select(Location).where(Location.world_id == world_id, Location.id == destination_location_id)
+    ).scalar_one_or_none()
+    if destination is None:
+        raise LookupError("Destination location not found")
+    route = get_location_route(
+        db,
+        world_id=world_id,
+        from_location_id=origin_location.id,
+        to_location_id=destination.id,
+    )
+    if route is None:
+        raise LookupError("Travel route not found")
+    if route.status != ROUTE_STATUS_OPEN:
+        raise ValueError("Travel route is not open")
+
+    actor.current_location_id = destination.id
+    location_updates = [
+        {
+            "from_location": get_location_summary(db, world_id, origin_location.id),
+            "to_location": get_location_summary(db, world_id, destination.id),
+            "summary": route.travel_summary or f"{origin_location.name}から{destination.name}へ移動した。",
+            "action": "arrived",
+        }
+    ]
+    travel_summary = str(route.travel_summary or f"{destination.name}へ移動した。").strip()
+    event_payload = {
+        "world_id": world_id,
+        "route_id": route.id,
+        "route_key": route.route_key,
+        "travel_summary": travel_summary,
+        "from_location_id": origin_location.id,
+        "to_location_id": destination.id,
+        "from_location_name": origin_location.name,
+        "to_location_name": destination.name,
+    }
+    event_narrative = f"{actor.display_name}は{origin_location.name}を離れ、{destination.name}へ歩みを進めた。"
+    memory_drafts = [
+        {
+            "scope": "location",
+            "text": f"{actor.display_name}は{destination.name}へ辿り着き、その場の空気を新しく読み始めた。",
+            "salience": 0.88,
+            "location_id": destination.id,
+            "actor_id": None,
+        },
+        {
+            "scope": "world",
+            "text": f"{actor.display_name}は{origin_location.name}から{destination.name}へ移動した。",
+            "salience": 0.82,
+            "location_id": destination.id,
+            "actor_id": None,
+        },
+    ]
+    db.flush()
+    return TravelOutcome(
+        destination=destination,
+        location_updates=location_updates,
+        event_type="travel.arrived",
+        event_narrative=event_narrative,
+        event_payload=event_payload,
+        memory_drafts=memory_drafts,
+        travel_summary=travel_summary,
+    )
 
 
 def get_character_summary(db: Session, world_id: str, actor_id: str) -> dict[str, Any]:
@@ -746,6 +1066,73 @@ def list_consequence_threads_debug(db: Session, world_id: str) -> list[dict[str,
     return payload
 
 
+def list_locations_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
+    routes_by_from: dict[str, list[dict[str, Any]]] = {}
+    route_rows = list(
+        db.execute(
+            select(LocationRoute, Location)
+            .join(
+                Location,
+                (Location.id == LocationRoute.to_location_id) & (Location.world_id == LocationRoute.world_id),
+            )
+            .where(LocationRoute.world_id == world_id)
+            .order_by(LocationRoute.route_key.asc())
+        ).all()
+    )
+    for route, to_location in route_rows:
+        routes_by_from.setdefault(route.from_location_id, []).append(
+            {
+                "route_id": route.id,
+                "route_key": route.route_key,
+                "status": route.status,
+                "travel_summary": route.travel_summary,
+                "to_location_id": to_location.id,
+                "to_location_name": to_location.name,
+            }
+        )
+
+    payload: list[dict[str, Any]] = []
+    for location in db.execute(
+        select(Location).where(Location.world_id == world_id).order_by(Location.created_at.asc(), Location.id.asc())
+    ).scalars():
+        payload.append(
+            {
+                "id": location.id,
+                "name": location.name,
+                "description": location.description,
+                "key": str((location.state or {}).get("key") or ""),
+                "kind": str((location.state or {}).get("kind") or ""),
+                "routes": routes_by_from.get(location.id, []),
+            }
+        )
+    return payload
+
+
+def list_travel_log_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(Event)
+            .where(Event.world_id == world_id, Event.event_type.in_(("travel.arrived", "travel.hesitated")))
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(40)
+        ).scalars()
+    )
+    return [
+        {
+            "event_id": event.id,
+            "turn_id": event.turn_id,
+            "session_id": event.session_id,
+            "event_type": event.event_type,
+            "location_id": event.location_id,
+            "travel_summary": str((event.payload or {}).get("travel_summary") or event.narrative or ""),
+            "from_location_id": (event.payload or {}).get("from_location_id"),
+            "to_location_id": (event.payload or {}).get("to_location_id"),
+            "created_at": event.created_at.isoformat(),
+        }
+        for event in rows
+    ]
+
+
 def narrative_state_bands(character: dict[str, Any], factions: list[dict[str, Any]]) -> dict[str, str]:
     hp = int(character.get("hp") or 0)
     focus = int(character.get("focus") or 0)
@@ -784,7 +1171,7 @@ def important_inventory_affordances(inventory: list[dict[str, Any]]) -> list[dic
                 "usable": bool(item.get("usable")),
                 "effect_kind": effect_kind,
                 "summary": (
-                    f"{item['name']} can unlock the next watch path."
+                    f"{item['name']} can open the road toward Watch Path."
                     if effect_kind == "unlock_followup_watch_path"
                     else f"{item['name']} carries a special affordance."
                 ),
@@ -798,6 +1185,12 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     inventory = session_state.get("inventory") or []
     relationships = session_state.get("relationships") or []
     active_threads = session_state.get("active_consequence_threads") or []
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    current_location_name = str(current_location.get("name") or "the scene")
+    current_location_key = str(current_location.get("key") or "square")
+    nearby_routes = session_state.get("nearby_routes") or []
+    local_figures = session_state.get("local_figures") or session_state.get("plaza_figures") or []
+    recent_travel_history = session_state.get("recent_travel_history") or []
     active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else {})
     stage_key = str(active_quest.get("stage_key") or "starter_watch")
     progress = int(active_quest.get("progress") or 0)
@@ -811,17 +1204,28 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     chapter_summary = str((session_state.get("chapter") or {}).get("summary") or "").strip()
     recent_world_beats = session_state.get("recent_world_beats") or []
     ambient_murmurs = session_state.get("ambient_murmurs") or []
-    plaza_figures = session_state.get("plaza_figures") or []
     leading_world_beat = str(recent_world_beats[0]) if recent_world_beats else ""
     leading_murmur = str(ambient_murmurs[0]) if ambient_murmurs else ""
-    leading_plaza_figure = str((plaza_figures[0] or {}).get("summary") or "") if plaza_figures else ""
+    leading_local_figure = str((local_figures[0] or {}).get("summary") or "") if local_figures else ""
+    leading_route = str((nearby_routes[0] or {}).get("summary") or "") if nearby_routes else ""
+    leading_travel = str(recent_travel_history[0] or "") if recent_travel_history else ""
+
+    def route_to(location_key: str) -> dict[str, Any] | None:
+        return next(
+            (
+                route
+                for route in nearby_routes
+                if str(((route or {}).get("to_location") or {}).get("key") or "") == location_key
+            ),
+            None,
+        )
 
     safe_choice = {
         "choice_id": "safe",
         "posture": "safe",
-        "label": "一歩退いて広場の気配を落ち着いて見守る",
+        "label": f"{current_location_name}の気配を乱さず、まず息を整えて見守る",
         "summary": "場の流れを乱さず、まず気配と視線を確かめる。",
-        "canonical_input_text": "広場の流れを乱さず、周囲の気配と旅人の様子を見守る",
+        "canonical_input_text": f"{current_location_name}の流れを乱さず、周囲の気配と視線を見守る",
         "action_kind": "narrative",
     }
     progress_choice = {
@@ -837,7 +1241,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         "posture": "explore",
         "label": "噂と視線をたどり、場の裏側を探る",
         "summary": "探索や関係変化に寄せた行動で、状況理解を広げる。",
-        "canonical_input_text": "広場の空気や旅人の事情を探り、何が起きているか確かめる",
+        "canonical_input_text": f"{current_location_name}の空気や人の事情を探り、何が起きているか確かめる",
         "action_kind": "narrative",
     }
 
@@ -858,7 +1262,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             **explore_choice,
             "label": "約束がどう噂や視線に残っているかを探る",
             "summary": "物語のしこりの広がり方を探る。",
-            "canonical_input_text": "約束が広場の噂や視線にどう残っているかを探る",
+            "canonical_input_text": f"約束が{current_location_name}の噂や視線にどう残っているかを探る",
         }
     elif "scrutiny" in thread_types:
         safe_choice = {
@@ -890,55 +1294,123 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     if stage_key == "starter_watch" and progress >= 1:
         progress_choice = {
             **progress_choice,
-            "label": "旅人に報告を促し、次の見回りを引き受ける",
+            "label": "見聞きをまとめて報告し、次の見回りへ繋げる",
             "summary": "依頼を締め、watch から次の信頼を引き出す。",
-            "canonical_input_text": "旅人へ報告し、広場を見回して次の見回りを約束する",
+            "canonical_input_text": f"見聞きを報告し、{current_location_name}で次の見回りを引き受ける",
         }
         safe_choice = {
             **safe_choice,
-            "label": "急がず旅人の落ち着きを確かめ、広場の気配を保つ",
-            "canonical_input_text": "急がず旅人の落ち着きを確かめ、広場の気配を保つ",
+            "label": "急がず相手の落ち着きを確かめ、場の気配を保つ",
+            "canonical_input_text": f"急がず相手の落ち着きを確かめ、{current_location_name}の気配を保つ",
         }
         explore_choice = {
             **explore_choice,
-            "label": "広場の視線や噂を探り、次の手掛かりを拾う",
-            "canonical_input_text": "広場の視線や噂を探り、次の手掛かりを拾う",
+            "label": "周囲の視線や噂を探り、次の手掛かりを拾う",
+            "canonical_input_text": f"{current_location_name}に残る視線や噂を探り、次の手掛かりを拾う",
         }
 
     if usable_item is not None and usable_item.get("effect_kind") == "unlock_followup_watch_path":
-        progress_choice = {
-            "choice_id": "progress",
-            "posture": "progress",
-            "label": "Lantern Sigilを掲げ、次の watch path を正式に開く",
-            "summary": "重要アイテムを使って次の物語段階を解放する。",
-            "canonical_input_text": "Lantern Sigilを掲げ、次の watch path を開く",
-            "action_kind": "use_reward_item",
-        }
+        if current_location_key == "square":
+            progress_choice = {
+                "choice_id": "progress",
+                "posture": "progress",
+                "label": "Lantern Sigilを掲げ、次の watch path を正式に開く",
+                "summary": "重要アイテムを使って次の物語段階を解放する。",
+                "canonical_input_text": "Lantern Sigilを掲げ、次の watch path を開く",
+                "action_kind": "use_reward_item",
+            }
+        else:
+            return_route = route_to("square")
+            if return_route is not None and bool(return_route.get("available")):
+                progress_choice = {
+                    "choice_id": "progress",
+                    "posture": "progress",
+                    "label": "Lantern Sigilを使える場所へ戻る",
+                    "summary": "重要アイテムを使うため、まず広場へ戻る。",
+                    "canonical_input_text": "Lantern Sigilを使える場所へ戻る",
+                    "action_kind": "travel",
+                    "travel_target_key": "square",
+                }
 
     if stage_key == "watch_path_followup":
-        progress_choice = {
-            "choice_id": "progress",
-            "posture": "progress",
-            "label": "開いた watch path を辿り、そこで見つかる異変を確かめる",
-            "summary": "follow-up quest を前へ進める選択。",
-            "canonical_input_text": "Lantern Sigilで開いた watch path の様子を観察する",
-            "action_kind": "narrative",
-        }
-        safe_choice = {
-            "choice_id": "safe",
-            "posture": "safe",
-            "label": "巡回路の灯を整え、場を静かに安定させる",
-            "summary": "危険を抑えつつ、場の安定を優先する。",
-            "canonical_input_text": "開いた巡回路の灯を整え、場を静かに安定させる",
-            "action_kind": "narrative",
-        }
+        watch_route = route_to("watch_path")
+        if current_location_key != "watch_path" and watch_route is not None and bool(watch_route.get("available")):
+            progress_choice = {
+                "choice_id": "progress",
+                "posture": "progress",
+                "label": "開いた watch path へ足を向ける",
+                "summary": "follow-up quest の舞台へ実際に移る。",
+                "canonical_input_text": "Lantern Sigilで開いた watch path へ向かう",
+                "action_kind": "travel",
+                "travel_target_key": "watch_path",
+            }
+        else:
+            progress_choice = {
+                "choice_id": "progress",
+                "posture": "progress",
+                "label": "開いた watch path を辿り、そこで見つかる異変を確かめる",
+                "summary": "follow-up quest を前へ進める選択。",
+                "canonical_input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+                "action_kind": "narrative",
+            }
+        if current_location_key == "watch_path":
+            safe_choice = {
+                "choice_id": "safe",
+                "posture": "safe",
+                "label": "巡回路の灯を整え、場を静かに安定させる",
+                "summary": "危険を抑えつつ、場の安定を優先する。",
+                "canonical_input_text": "開いた巡回路の灯を整え、場を静かに安定させる",
+                "action_kind": "narrative",
+            }
+            explore_choice = {
+                "choice_id": "explore",
+                "posture": "explore",
+                "label": "巡回路の痕跡や見張りの記憶を集め、関係の糸口を探る",
+                "summary": "探索と関係変化に寄せた選択。",
+                "canonical_input_text": "Lantern Sigilで開いた巡回路の痕跡や見張りの記憶を集める",
+                "action_kind": "narrative",
+            }
+
+    archive_route = route_to("archive_steps")
+    square_route = route_to("square")
+    if current_location_key == "square" and archive_route is not None and bool(archive_route.get("available")):
         explore_choice = {
             "choice_id": "explore",
             "posture": "explore",
-            "label": "巡回路の痕跡や見張りの記憶を集め、関係の糸口を探る",
-            "summary": "探索と関係変化に寄せた選択。",
-            "canonical_input_text": "Lantern Sigilで開いた巡回路の痕跡や見張りの記憶を集める",
+            "label": "Archive Steps へ向かい、古い記録と視線の重なりを確かめる",
+            "summary": "場を変えながら探索を進める。",
+            "canonical_input_text": "Archive Stepsへ向かう",
+            "action_kind": "travel",
+            "travel_target_key": "archive_steps",
+        }
+    if current_location_key == "archive_steps":
+        progress_choice = {
+            "choice_id": "progress",
+            "posture": "progress",
+            "label": "石段の上で古い記録を辿り、次の糸口を掴む",
+            "summary": "Archive Steps 側で状況を前へ進める。",
+            "canonical_input_text": "Archive Stepsで古い記録と見張りの話を辿る",
             "action_kind": "narrative",
+        }
+        if square_route is not None and bool(square_route.get("available")):
+            safe_choice = {
+                "choice_id": "safe",
+                "posture": "safe",
+                "label": "いったん広場へ戻り、場の流れを確かめ直す",
+                "summary": "Square へ戻って場の圧力を測り直す。",
+                "canonical_input_text": "Founders Squareへ戻る",
+                "action_kind": "travel",
+                "travel_target_key": "square",
+            }
+    if current_location_key == "watch_path" and square_route is not None and bool(square_route.get("available")):
+        safe_choice = {
+            "choice_id": "safe",
+            "posture": "safe",
+            "label": "Watch Path の緊張を抱えたまま、いったん広場へ戻る",
+            "summary": "新しい場所の余韻を持ち帰る。",
+            "canonical_input_text": "Founders Squareへ戻る",
+            "action_kind": "travel",
+            "travel_target_key": "square",
         }
 
     for choice in (safe_choice, progress_choice, explore_choice):
@@ -946,8 +1418,10 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             scene_summary,
             pressure_summary,
             chapter_summary,
+            leading_travel if str(choice.get("action_kind") or "") == "travel" else "",
+            leading_route if str(choice.get("action_kind") or "") == "travel" else "",
             leading_world_beat if choice["choice_id"] != "safe" else leading_murmur,
-            leading_plaza_figure if choice["choice_id"] == "explore" else "",
+            leading_local_figure if choice["choice_id"] == "explore" else "",
             str(choice.get("summary") or "").strip(),
         ]
         choice["summary"] = " ".join(part for part in ambient_parts if part).strip()
@@ -972,12 +1446,16 @@ def build_session_state(
     chapter = get_current_chapter_summary(db, world_id, actor_id)
     current_scene = get_current_scene_summary(db, world_id, actor_id)
     recent_scene_history = list_recent_scene_history(db, world_id, actor_id)
-    plaza_figures = list_plaza_figures(db, world_id, actor_id, location_id)
+    current_location = get_location_summary(db, world_id, location_id)
+    local_figures = list_local_figures(db, world_id, actor_id, location_id)
     recent_world_beats = list_recent_world_beats(db, world_id, location_id)
     ambient_murmurs = list_ambient_murmurs(db, world_id, location_id)
+    nearby_routes = list_nearby_routes(db, world_id, location_id)
+    recent_travel_history = list_recent_travel_history(db, world_id, actor_id)
     state = {
         "world_id": world_id,
-        "location": get_location_summary(db, world_id, location_id),
+        "location": current_location,
+        "current_location": current_location,
         "character": character,
         "quests": quests,
         "factions": factions,
@@ -985,7 +1463,10 @@ def build_session_state(
         "chapter": chapter,
         "current_scene": current_scene,
         "recent_scene_history": recent_scene_history,
-        "plaza_figures": plaza_figures,
+        "local_figures": local_figures,
+        "plaza_figures": local_figures,
+        "nearby_routes": nearby_routes,
+        "recent_travel_history": recent_travel_history,
         "recent_world_beats": recent_world_beats,
         "ambient_murmurs": ambient_murmurs,
         "relationships": relationships,
@@ -1490,6 +1971,7 @@ def use_reward_item(
     item.used_at = datetime.now(timezone.utc)
     item.effect_payload = dict(item.effect_payload or {})
     item.effect_payload["followup_quest_assignment_id"] = followup_assignment.id
+    unlock_watch_path_routes(db, world_id)
 
     quest_updates = [
         {
@@ -1524,26 +2006,26 @@ def use_reward_item(
         "standing_delta": FOLLOWUP_STANDING_DELTA,
     }
     event_narrative = (
-        f"{actor_name}はLantern Sigilを掲げ、Founders Watchに新しい巡回路の解放を認められた。"
+        f"{actor_name}はLantern Sigilを掲げ、Founders WatchにWatch Pathへの道を開く許しを受けた。"
     )
     memory_drafts = [
         {
             "scope": "location",
-            "text": "Founders ReachでLantern Sigilが使われ、新しい watch path が解放された。",
+            "text": "Founders SquareでLantern Sigilが使われ、Watch Pathへの道が解放された。",
             "salience": 0.95,
             "location_id": location_id,
             "actor_id": None,
         },
         {
             "scope": "location",
-            "text": "Lantern Sigilで開いた watch path の気配が、Founders Reachの広場にはっきり残っている。",
+            "text": "Lantern Sigilで開いた Watch Path の気配が、Founders Squareにはっきり残っている。",
             "salience": 0.98,
             "location_id": location_id,
             "actor_id": None,
         },
         {
             "scope": "world",
-            "text": f"{actor_name}はLantern Sigilを使い、Founders Watchの次の依頼段階を開いた。",
+            "text": f"{actor_name}はLantern Sigilを使い、Founders Watchの次の依頼段階とWatch Pathへの道を開いた。",
             "salience": 0.9,
             "location_id": location_id,
             "actor_id": None,

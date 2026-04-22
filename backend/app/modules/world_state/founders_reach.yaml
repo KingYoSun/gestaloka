@@ -1,8 +1,46 @@
 world:
   default_name: Founders Reach
-location:
-  name: Founders Reach
-  description: The public square where new sessions begin and the watch keeps first contact with newcomers.
+locations:
+  square:
+    id: founders_square
+    starter: true
+    name: Founders Square
+    description: The public square where new sessions begin and the watch keeps first contact with newcomers.
+  archive_steps:
+    id: archive_steps
+    name: Archive Steps
+    description: Stone steps rise toward the archive, where careful records and older promises linger.
+  watch_path:
+    id: watch_path
+    name: Watch Path
+    description: A narrow lantern path beyond the square, opened only when the sigil's trust is recognized.
+routes:
+  - route_key: square_to_archive
+    from: square
+    to: archive_steps
+    status: open
+    travel_summary: Stone steps stand open toward the archive, where older records wait above the square.
+    unlock_requirements: {}
+  - route_key: archive_to_square
+    from: archive_steps
+    to: square
+    status: open
+    travel_summary: The steps back down to the square are clear, carrying every rumor back into the open.
+    unlock_requirements: {}
+  - route_key: square_to_watch_path
+    from: square
+    to: watch_path
+    status: locked
+    travel_summary: A dim watch path lies beyond the plaza, but the way stays closed until the sigil is honored.
+    unlock_requirements:
+      starter_item_effect: unlock_followup_watch_path
+  - route_key: watch_path_to_square
+    from: watch_path
+    to: square
+    status: locked
+    travel_summary: The lantern path bends back toward the square once its trust has been opened.
+    unlock_requirements:
+      starter_item_effect: unlock_followup_watch_path
 faction:
   id: founders_watch
   name: Founders Watch

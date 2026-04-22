@@ -7,7 +7,7 @@ import math
 import re
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -326,11 +326,12 @@ class MemoryService:
                     db,
                     candidate_memories=candidate_memories,
                     query_embedding=query_embedding,
+                    location_id=location_id,
                     limit=resolved_limit,
                     min_score=resolved_min_score,
                 )
                 if semantic_hits is None:
-                    fallback_hits = self._fallback_hits(candidate_memories, limit=resolved_limit)
+                    fallback_hits = self._fallback_hits(candidate_memories, location_id=location_id, limit=resolved_limit)
                     return self._result_from_hits(
                         memories=candidate_memories,
                         hits=fallback_hits,
@@ -347,7 +348,7 @@ class MemoryService:
                 )
             except Exception:
                 try:
-                    fallback_hits = self._fallback_hits(candidate_memories, limit=resolved_limit)
+                    fallback_hits = self._fallback_hits(candidate_memories, location_id=location_id, limit=resolved_limit)
                     return self._result_from_hits(
                         memories=candidate_memories,
                         hits=fallback_hits,
@@ -497,8 +498,6 @@ class MemoryService:
         stmt = select(Memory).where(Memory.world_id == world_id)
         if actor_id is not None:
             stmt = stmt.where(or_(Memory.actor_id.is_(None), Memory.actor_id == actor_id))
-        if location_id is not None:
-            stmt = stmt.where(or_(Memory.location_id.is_(None), Memory.location_id == location_id))
         if scopes:
             stmt = stmt.where(Memory.scope.in_(scopes))
         return list(db.execute(stmt.order_by(Memory.created_at.desc(), Memory.id.desc())).scalars())
@@ -509,6 +508,7 @@ class MemoryService:
         *,
         candidate_memories: list[Memory],
         query_embedding: list[float],
+        location_id: str | None,
         limit: int,
         min_score: float,
     ) -> list[MemorySearchHit] | None:
@@ -520,6 +520,7 @@ class MemoryService:
                 db,
                 candidate_ids=[memory.id for memory in candidate_memories],
                 query_embedding=query_embedding,
+                location_id=location_id,
                 limit=limit,
                 min_score=min_score,
             )
@@ -527,15 +528,16 @@ class MemoryService:
             (
                 memory,
                 _cosine_similarity(memory.embedding, query_embedding),
+                _location_rank(memory.location_id, location_id),
             )
             for memory in ready_memories
         ]
         scored = [item for item in scored if item[1] >= min_score]
         scored.sort(
-            key=lambda item: (item[1], item[0].salience, item[0].created_at.timestamp(), item[0].id),
+            key=lambda item: (item[2], item[1], item[0].salience, item[0].created_at.timestamp(), item[0].id),
             reverse=True,
         )
-        return [_memory_hit(memory, score) for memory, score in scored[:limit]]
+        return [_memory_hit(memory, score) for memory, score, _ in scored[:limit]]
 
     def _postgres_semantic_hits(
         self,
@@ -543,29 +545,46 @@ class MemoryService:
         *,
         candidate_ids: list[str],
         query_embedding: list[float],
+        location_id: str | None,
         limit: int,
         min_score: float,
     ) -> list[MemorySearchHit]:
         score_expr = (1 - Memory.embedding.cosine_distance(query_embedding)).label("score")
+        location_rank_expr = case(
+            (Memory.location_id == location_id, 2),
+            (Memory.location_id.is_(None), 1),
+            else_=0,
+        ).label("location_rank")
         stmt = (
-            select(Memory, score_expr)
+            select(Memory, score_expr, location_rank_expr)
             .where(
                 Memory.id.in_(candidate_ids),
                 Memory.embedding_status == "ready",
                 Memory.embedding.is_not(None),
                 score_expr >= min_score,
             )
-            .order_by(score_expr.desc(), Memory.salience.desc(), Memory.created_at.desc(), Memory.id.desc())
+            .order_by(
+                location_rank_expr.desc(),
+                score_expr.desc(),
+                Memory.salience.desc(),
+                Memory.created_at.desc(),
+                Memory.id.desc(),
+            )
             .limit(limit)
         )
         rows = db.execute(stmt).all()
-        return [_memory_hit(memory, float(score)) for memory, score in rows]
+        return [_memory_hit(memory, float(score)) for memory, score, _ in rows]
 
     @staticmethod
-    def _fallback_hits(memories: list[Memory], *, limit: int) -> list[MemorySearchHit]:
+    def _fallback_hits(memories: list[Memory], *, location_id: str | None, limit: int) -> list[MemorySearchHit]:
         ordered = sorted(
             memories,
-            key=lambda memory: (memory.salience, memory.created_at.timestamp(), memory.id),
+            key=lambda memory: (
+                _location_rank(memory.location_id, location_id),
+                memory.salience,
+                memory.created_at.timestamp(),
+                memory.id,
+            ),
             reverse=True,
         )
         return [_memory_hit(memory, 0.0) for memory in ordered[:limit]]
@@ -639,6 +658,16 @@ def _memory_hit(memory: Memory, score: float) -> MemorySearchHit:
         salience=memory.salience,
         score=float(score),
     )
+
+
+def _location_rank(memory_location_id: str | None, requested_location_id: str | None) -> int:
+    if requested_location_id is None:
+        return 1 if memory_location_id is None else 0
+    if memory_location_id == requested_location_id:
+        return 2
+    if memory_location_id is None:
+        return 1
+    return 0
 
 
 def list_world_memories(db: Session, world_id: str) -> list[Memory]:

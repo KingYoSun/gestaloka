@@ -113,6 +113,8 @@ async def resolve_turn(
         await realtime_hub.emit(payload.session_id, "faction.standing.updated", {"items": result.faction_updates})
     if result.inventory_updates:
         await realtime_hub.emit(payload.session_id, "inventory.changed", {"items": result.inventory_updates})
+    if result.location_updates:
+        await realtime_hub.emit(payload.session_id, "location.updated", {"items": result.location_updates})
     if result.relationship_updates:
         await realtime_hub.emit(payload.session_id, "relationship.updated", {"items": result.relationship_updates})
     if result.consequence_updates:
@@ -157,6 +159,7 @@ async def resolve_turn(
                 "quest_updates": [],
                 "faction_updates": [],
                 "inventory_updates": [],
+                "location_updates": [],
                 "relationship_updates": [],
                 "consequence_updates": [],
                 "scene_updates": [],
@@ -169,6 +172,8 @@ async def resolve_turn(
                 "consequence_summary": result.consequence_summary,
                 "scene_tone": result.scene_tone,
                 "scene_summary": result.scene_summary,
+                "current_location": result.current_location,
+                "travel_summary": result.travel_summary,
                 "recent_world_beats": result.recent_world_beats,
             },
         )
@@ -191,12 +196,15 @@ async def resolve_turn(
         "quest_updates": result.quest_updates,
         "faction_updates": result.faction_updates,
         "inventory_updates": result.inventory_updates,
+        "location_updates": result.location_updates,
         "relationship_updates": result.relationship_updates,
         "consequence_updates": result.consequence_updates,
         "scene_updates": result.scene_updates,
         "chapter_updates": result.chapter_updates,
         "ambient_updates": result.ambient_updates,
         "scene_summary": result.scene_summary,
+        "current_location": result.current_location,
+        "travel_summary": result.travel_summary,
         "recent_world_beats": result.recent_world_beats,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)

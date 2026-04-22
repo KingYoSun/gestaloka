@@ -63,7 +63,8 @@ def _routine_state_with_defaults(profile: NPCProfile) -> dict[str, Any]:
     routine_state.setdefault("last_ambient_turn_id", None)
     routine_state.setdefault("rumor_focus", "the square")
     routine_state.setdefault("tension_band", "medium")
-    routine_state.setdefault("location", "Founders Reach")
+    routine_state.setdefault("home_location_id", None)
+    routine_state.setdefault("active_location_id", None)
     return routine_state
 
 
@@ -150,6 +151,10 @@ def list_plaza_figures(db: Session, world_id: str, actor_id: str, location_id: s
             }
         )
     return summaries
+
+
+def list_local_figures(db: Session, world_id: str, actor_id: str, location_id: str | None) -> list[dict[str, Any]]:
+    return list_plaza_figures(db, world_id, actor_id, location_id)
 
 
 def list_npc_routines_debug(db: Session, world_id: str) -> list[dict[str, Any]]:

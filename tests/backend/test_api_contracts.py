@@ -107,6 +107,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert {
         "world_id",
         "location",
+        "current_location",
         "character",
         "quests",
         "factions",
@@ -114,6 +115,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "chapter",
         "current_scene",
         "recent_scene_history",
+        "local_figures",
+        "nearby_routes",
+        "recent_travel_history",
         "plaza_figures",
         "recent_world_beats",
         "ambient_murmurs",
@@ -127,7 +131,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["quests"][0]["progress"] == 0
     assert state_response.json()["quests"][0]["stage_key"] == "starter_watch"
     assert state_response.json()["chapter"]["key"] == "founders_watch_opening"
-    assert "Founders Reach" in state_response.json()["current_scene"]["summary"]
+    assert "Founders Square" in state_response.json()["current_scene"]["summary"]
+    assert state_response.json()["current_location"]["key"] == "square"
+    assert state_response.json()["local_figures"]
+    assert state_response.json()["nearby_routes"]
     assert state_response.json()["inventory"] == []
     assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["safe", "progress", "explore"]
 
@@ -161,6 +168,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "quest_updates",
             "faction_updates",
             "inventory_updates",
+            "location_updates",
+            "current_location",
+            "travel_summary",
             "relationship_updates",
             "consequence_updates",
             "scene_updates",
@@ -274,19 +284,15 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["inventory_updates"][0]["status"] == "used"
         assert payload["inventory_updates"][0]["action"] == "used"
         assert payload["faction_updates"][0]["delta"] == 0.1
+        assert payload["location_updates"] == []
+        assert payload["current_location"]["key"] == "square"
+        assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(26)]
+        messages = [websocket.receive_json() for _ in range(19)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
         "turn.progress",
         "turn.progress",
         "turn.progress",
@@ -307,13 +313,6 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "turn.resolved",
     ]
     assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == [
-        "intent_interpretation",
-        "memory_council",
-        "npc_council",
-        "world_progress",
-        "rules_arbiter",
-        "safety_guard",
-        "narrative",
         "item_use",
         "consequence_resolution",
         "scene_framing",
@@ -447,6 +446,20 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert ambient_beats_response.status_code == 200
     assert ambient_beats_response.json()["items"]
     assert {"beat_kind", "visible_summary"} <= set(ambient_beats_response.json()["items"][0])
+
+    locations_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/locations",
+        headers=auth_headers,
+    )
+    assert locations_response.status_code == 200
+    assert len(locations_response.json()["items"]) >= 3
+
+    travel_log_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/travel-log",
+        headers=auth_headers,
+    )
+    assert travel_log_response.status_code == 200
+    assert "items" in travel_log_response.json()
 
 
 def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):

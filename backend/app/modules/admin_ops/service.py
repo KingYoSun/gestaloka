@@ -13,7 +13,12 @@ from app.modules.observability.service import CanaryProbeResult, ObservabilitySe
 from app.modules.world_memory.service import MemoryService
 from app.modules.world_state.ambient import list_ambient_beats_debug, list_npc_routines_debug
 from app.modules.world_state.scene import list_chapter_tracks_debug, list_scene_frames_debug
-from app.modules.world_state.service import list_consequence_threads_debug, list_relationship_debug
+from app.modules.world_state.service import (
+    list_consequence_threads_debug,
+    list_locations_debug,
+    list_relationship_debug,
+    list_travel_log_debug,
+)
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
@@ -302,6 +307,20 @@ def world_ambient_beats(db: Session, *, world_id: str) -> dict[str, object]:
     return {
         "world_id": world_id,
         "items": list_ambient_beats_debug(db, world_id),
+    }
+
+
+def world_locations(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_locations_debug(db, world_id),
+    }
+
+
+def world_travel_log(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_travel_log_debug(db, world_id),
     }
 
 

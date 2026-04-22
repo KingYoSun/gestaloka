@@ -25,9 +25,11 @@ from app.modules.admin_ops.service import (
     world_memory_search,
     world_graph_summary,
     world_chapters,
+    world_locations,
     world_npc_routines,
     world_relationships,
     world_scenes,
+    world_travel_log,
     world_consequence_threads,
 )
 from app.modules.economy_sp.service import InsufficientSPError
@@ -227,6 +229,28 @@ def get_world_ambient_beats(
 ) -> dict[str, object]:
     del container, user
     return world_ambient_beats(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/locations")
+def get_world_locations(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_locations(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/travel-log")
+def get_world_travel_log(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_travel_log(db, world_id=world_id)
 
 
 @router.get("/sp/overview")

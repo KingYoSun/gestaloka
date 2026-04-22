@@ -12,6 +12,8 @@ from app.modules.llm_harness.service import (
     MemoryDraft,
     ModelRouter,
     NarrativeChoiceDraft,
+    PromptExecutionAttempt,
+    PromptExecutionOutcome,
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
@@ -178,6 +180,67 @@ class GMCouncilService:
             canonical.append("earned_trust")
         return normalize_consequence_tags(canonical)
 
+    def _choice_intent_outcome(
+        self,
+        *,
+        request: CouncilRequest,
+        input_payload: dict[str, Any],
+    ) -> PromptExecutionOutcome[CouncilIntentInterpreterPayload]:
+        selected_choice = request.selected_choice or {}
+        prompt = self.model_router.prompt_registry.get("council.intent_interpreter")
+        action_kind = str(selected_choice.get("action_kind") or "narrative").strip()
+        if action_kind not in {"narrative", "use_reward_item", "travel"}:
+            action_kind = "narrative"
+        travel_target_key = str(selected_choice.get("travel_target_key") or "none").strip()
+        if travel_target_key not in {"square", "archive_steps", "watch_path"}:
+            travel_target_key = "none"
+        posture = str(selected_choice.get("posture") or "none").strip()
+        consequence_tags = self._canonical_intent_consequence_tags(
+            input_mode="choice",
+            input_text=request.input_text,
+            selected_choice=selected_choice,
+            action_kind=action_kind,
+            raw_tags=[],
+        )
+        consequence_summary = str(selected_choice.get("summary") or "").strip() or "The chosen line fits the current scene."
+        if action_kind == "travel":
+            consequence_summary = "The player follows a route the current scene actually affords."
+        elif action_kind == "use_reward_item":
+            consequence_summary = "The selected choice invokes an important reward-item affordance."
+        payload = CouncilIntentInterpreterPayload.model_validate(
+            {
+                "input_mode": "choice",
+                "canonical_action_kind": action_kind,
+                "intent_summary": str(
+                    selected_choice.get("canonical_input_text") or selected_choice.get("label") or request.input_text
+                ).strip(),
+                "travel_target_key": travel_target_key,
+                "requested_choice_posture": posture if posture in {"safe", "progress", "explore"} else "none",
+                "fail_forward": False,
+                "consequence_flags": [],
+                "consequence_tags": consequence_tags,
+                "consequence_summary": consequence_summary,
+            }
+        )
+        attempt = PromptExecutionAttempt(
+            prompt_id=prompt.prompt_id,
+            schema_version=prompt.schema_version,
+            model_lane="choice_short_circuit",
+            model_id="choice_short_circuit",
+            input_hash="choice_short_circuit",
+            input_context_hash="choice_short_circuit",
+            status="success",
+            output_schema_status="valid",
+            output_payload=payload.model_dump(),
+            provider_name="internal",
+            provider_response_id=None,
+        )
+        return PromptExecutionOutcome(
+            attempts=[attempt],
+            final_lane="choice_short_circuit",
+            final_payload=payload,
+        )
+
     def resolve_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
         role_runs: list[CouncilRoleRun] = []
         quests = request.session_state.get("quests") or []
@@ -193,7 +256,11 @@ class GMCouncilService:
         current_scene = request.session_state.get("current_scene") or {}
         current_chapter = request.session_state.get("chapter") or {}
         recent_scene_history = request.session_state.get("recent_scene_history") or []
-        plaza_figures = request.session_state.get("plaza_figures") or []
+        current_location = request.session_state.get("current_location") or request.session_state.get("location") or {}
+        local_figures = request.session_state.get("local_figures") or request.session_state.get("plaza_figures") or []
+        nearby_routes = request.session_state.get("nearby_routes") or []
+        recent_travel_history = request.session_state.get("recent_travel_history") or []
+        plaza_figures = request.session_state.get("plaza_figures") or local_figures
         recent_world_beats = request.session_state.get("recent_world_beats") or []
         ambient_murmurs = request.session_state.get("ambient_murmurs") or []
 
@@ -217,18 +284,25 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "current_location": current_location,
+            "local_figures": local_figures,
+            "nearby_routes": nearby_routes,
+            "recent_travel_history": recent_travel_history,
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
         }
-        intent_result = self.model_router.execute_structured_prompt(
-            prompt_id="council.intent_interpreter",
-            response_model=CouncilIntentInterpreterPayload,
-            input_payload=intent_input,
-            world_id=request.world_id,
-            turn_id=request.turn_id,
-            graph_context_status=request.graph_context_status,
-        )
+        if request.input_mode == "choice" and request.selected_choice:
+            intent_result = self._choice_intent_outcome(request=request, input_payload=intent_input)
+        else:
+            intent_result = self.model_router.execute_structured_prompt(
+                prompt_id="council.intent_interpreter",
+                response_model=CouncilIntentInterpreterPayload,
+                input_payload=intent_input,
+                world_id=request.world_id,
+                turn_id=request.turn_id,
+                graph_context_status=request.graph_context_status,
+            )
         role_runs.append(
             self._role_run(
                 council_role="intent_interpreter",
@@ -330,6 +404,10 @@ class GMCouncilService:
             "relationship_summaries": relationship_summaries,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
+            "current_location": current_location,
+            "local_figures": local_figures,
+            "nearby_routes": nearby_routes,
+            "recent_travel_history": recent_travel_history,
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
@@ -385,6 +463,10 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "current_location": current_location,
+            "local_figures": local_figures,
+            "nearby_routes": nearby_routes,
+            "recent_travel_history": recent_travel_history,
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,

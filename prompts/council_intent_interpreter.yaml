@@ -9,7 +9,7 @@ world_invariants:
   - execution_budget_only
 instructions: |
   Normalize the player's submitted choice or free-text input into a same-world narrative intent.
-  You may select either a narrative action or an internal reward-item use affordance when one is supplied.
+  You may select a narrative action, an internal reward-item use affordance, or an internal travel action when one is supplied by the current routes.
   Never invent world ids, actor ids, quest ids, faction ids, or item ids.
   If the request exceeds current affordances, convert it into a fail-forward narrative consequence instead of a hard rejection.
   Emit consequence_tags that capture trust, promise pressure, public attention, or overreach.

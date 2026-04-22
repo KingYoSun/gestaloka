@@ -51,7 +51,9 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert state_after_reward.json()["relationships"][0]["band"] == "warm"
     assert state_after_reward.json()["chapter"]["key"] == "founders_watch_opening"
     assert state_after_reward.json()["current_scene"]["summary"]
-    assert len(state_after_reward.json()["plaza_figures"]) >= 3
+    assert state_after_reward.json()["current_location"]["key"] == "square"
+    assert len(state_after_reward.json()["local_figures"]) >= 1
+    assert any(item["destination_key"] == "archive_steps" for item in state_after_reward.json()["nearby_routes"])
     assert state_after_reward.json()["recent_world_beats"]
 
     assert state_after_reward.json()["next_choices"][1]["action_kind"] == "use_reward_item"
@@ -70,20 +72,43 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert use_payload["faction_updates"][0]["delta"] == 0.1
     assert use_payload["chapter_updates"][-1]["key"] == "watch_path_followup"
     assert use_payload["scene_updates"]
+    assert use_payload["current_location"]["key"] == "square"
+
+    post_use_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert post_use_state.status_code == 200
+    assert any(item["destination_key"] == "watch_path" and item["available"] for item in post_use_state.json()["nearby_routes"])
+    assert post_use_state.json()["next_choices"][1]["action_kind"] == "travel"
+
+    travel_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_mode": "choice",
+            "choice_id": "progress",
+        },
+        headers=auth_headers,
+    )
+    assert travel_turn.status_code == 200
+    travel_payload = travel_turn.json()
+    assert travel_payload["action_type"] == "travel"
+    assert travel_payload["sp_balance"] == 6
+    assert travel_payload["current_location"]["key"] == "watch_path"
+    assert travel_payload["location_updates"]
+    assert travel_payload["travel_summary"]
 
     third_turn = client.post(
         "/turns",
         json={
             "session_id": session_payload["session_id"],
             "input_mode": "free_text",
-            "input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+            "input_text": "Watch Pathで灯の余韻と見回りの気配を観察する",
         },
         headers=auth_headers,
     )
     assert third_turn.status_code == 200
     third_payload = third_turn.json()
-    assert third_payload["sp_balance"] == 4
-    assert "Lantern Sigil" in third_payload["npc_reaction"]
+    assert third_payload["sp_balance"] == 3
+    assert "watch" in third_payload["npc_reaction"].lower() or "巡回" in third_payload["npc_reaction"]
     assert third_payload["scene_summary"]
     assert third_payload["ambient_updates"]
     assert third_payload["recent_world_beats"]
@@ -94,16 +119,19 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert events.status_code == 200
     assert memories.status_code == 200
     assert state.status_code == 200
-    assert len(events.json()["items"]) >= 8
+    assert len(events.json()["items"]) >= 10
     assert events.json()["items"][-1]["event_type"] == "session.started"
     assert any(item["event_type"].startswith("ambient.npc.") for item in events.json()["items"])
+    assert any(item["event_type"] == "travel.arrived" for item in events.json()["items"])
     assert any("旅人を助け" in item["text"] for item in memories.json()["items"])
     assert any("Lantern Sigil" in item["text"] for item in memories.json()["items"])
+    assert any("Watch Path" in item["text"] for item in memories.json()["items"])
     assert state.json()["quests"][0]["stage_key"] == "watch_path_followup"
     assert state.json()["inventory"][0]["status"] == "used"
     assert state.json()["chapter"]["key"] == "watch_path_followup"
     assert state.json()["recent_scene_history"]
     assert state.json()["recent_world_beats"]
+    assert state.json()["current_location"]["key"] == "watch_path"
     assert "watch path" in state.json()["current_scene"]["summary"].lower()
 
     with container.session_factory() as db:
@@ -219,12 +247,20 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
     )
     assert use_turn.status_code == 200
 
+    travel_turn = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert travel_turn.status_code == 200
+    assert travel_turn.json()["action_type"] == "travel"
+
     followup_turn = client.post(
         "/turns",
         json={
             "session_id": session_payload["session_id"],
             "input_mode": "free_text",
-            "input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+            "input_text": "Watch Pathで灯の余韻と見回りの気配を観察する",
         },
         headers=auth_headers,
     )

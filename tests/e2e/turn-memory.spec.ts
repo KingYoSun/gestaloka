@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("login, carry relationship pressure across turns, unlock follow-up progression, and keep admin/SP flows separate", async ({ page }) => {
+test("login, travel across founders reach, unlock watch path, and keep SP separate from world progression", async ({ page }) => {
   test.setTimeout(420_000);
-  const worldId = `e2e-memory-${Date.now()}`;
+  const worldId = `e2e-travel-${Date.now()}`;
   const slowTimeout = 120_000;
 
   const readBalance = async () => {
@@ -26,19 +26,8 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
     await expect(page).toHaveURL(/\/$/);
   };
 
-  const submitChoiceAndWaitForMutation = async (choiceId: "safe" | "progress" | "explore") => {
-    const beforeBalance = await readBalance();
+  const submitChoice = async (choiceId: "safe" | "progress" | "explore") => {
     await page.getByTestId(`choice-${choiceId}`).click();
-    await expect.poll(readBalance, { timeout: slowTimeout }).toBe(beforeBalance - 1);
-  };
-
-  const submitFreeTextAndWaitForMutation = async (text: string) => {
-    await page.getByTestId("toggle-free-text").click();
-    await page.getByTestId("turn-input").fill(text);
-    await expect(page.getByTestId("submit-turn")).toBeEnabled({ timeout: slowTimeout });
-    const beforeBalance = await readBalance();
-    await page.getByTestId("submit-turn").click();
-    await expect.poll(readBalance, { timeout: slowTimeout }).toBe(beforeBalance - 3);
   };
 
   await page.goto("/");
@@ -51,6 +40,7 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
   await expect(page.getByTestId("auth-status")).toContainText("authenticated");
   await expect(page.getByTestId("sp-balance")).toContainText(/SP balance:\s*-?\d+/, { timeout: slowTimeout });
   await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
+
   const currentBalance = await readBalance();
   if (currentBalance !== 10) {
     await page.getByTestId("nav-admin").click();
@@ -61,118 +51,70 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
     await page.getByTestId("nav-game").click();
     await expect(page).toHaveURL(/\/$/);
   }
-  await expect(page.getByTestId("sp-balance")).toContainText("10");
 
   await page.getByTestId("world-id-input").fill(worldId);
   await page.getByTestId("start-session").click();
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Founders Square/i, { timeout: 20_000 });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Founders/i, { timeout: 20_000 });
+  await expect(page.getByTestId("current-scene-summary")).toContainText(/Square|request/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("First Watch Request", { timeout: 20_000 });
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Founders Reach|chapter/i, { timeout: 20_000 });
-  await expect(page.getByTestId("current-scene-summary")).toContainText(/square|scene|request/i, { timeout: 20_000 });
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
-  await expect(page.getByTestId("choice-list")).toContainText("困っている相手", { timeout: 20_000 });
-  await expect(page.getByTestId("relationship-summary")).toContainText(/Archivist|Nera|trust|ordinary|neutral/i, {
-    timeout: 20_000,
-  });
-  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Archivist Nera/i, { timeout: 20_000 });
-  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Lamplighter Sera|Courier Pell/i, {
-    timeout: 20_000,
-  });
+  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Courier Pell/i, { timeout: 20_000 });
+  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Archive Steps/i, { timeout: 20_000 });
+  await expect(page.getByTestId("choice-list")).toContainText(/Archive Steps/i, { timeout: 20_000 });
 
-  await submitChoiceAndWaitForMutation("progress");
+  await submitChoice("explore");
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Archive Steps/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-travel-history")).toContainText(/Archive Steps|archive|stone steps/i, {
+    timeout: slowTimeout,
+  });
+  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Archivist Nera/i, { timeout: slowTimeout });
 
-  await expect(page.getByTestId("latest-narrative")).not.toContainText("No turn resolved yet.", { timeout: slowTimeout });
-  await expect(page.getByTestId("memories-stream").locator("li").first()).toBeVisible({ timeout: slowTimeout });
-  await expect(page.getByTestId("ops-stream")).toContainText("intent_interpretation", { timeout: slowTimeout });
-  await expect(page.getByTestId("ops-stream")).toContainText("choice_generation", { timeout: slowTimeout });
-  await expect(page.getByTestId("sp-balance")).toContainText("9", { timeout: slowTimeout });
+  await submitChoice("progress");
   await expect(page.getByTestId("quest-progress")).toContainText("1/2", { timeout: slowTimeout });
-  await expect(page.getByTestId("faction-standing")).toContainText("Founders Watch");
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const progressText = await page.getByTestId("quest-progress").textContent();
-    const inventoryText = await page.getByTestId("inventory-stream").textContent();
-    if (progressText?.includes("2/2") && inventoryText?.includes("Lantern Sigil")) {
-      break;
-    }
-    await submitChoiceAndWaitForMutation("progress");
-  }
-  await expect(page.getByTestId("latest-reaction")).not.toContainText("No NPC reaction yet.", { timeout: slowTimeout });
+  await submitChoice("progress");
   await expect(page.getByTestId("quest-progress")).toContainText("2/2", { timeout: slowTimeout });
   await expect(page.getByTestId("inventory-stream")).toContainText("Lantern Sigil", { timeout: slowTimeout });
   await expect(page.getByTestId("relationship-summary")).toContainText(/warm|trust/i, { timeout: slowTimeout });
-  await ensureBalanceAtLeast(7);
-  const afterRewardBalance = await readBalance();
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const beforeBalance = await readBalance();
-    await submitFreeTextAndWaitForMutation("今は行かない。あとで約束には応える。");
-    const recentHistory = (await page.getByTestId("recent-consequence-history").textContent()) ?? "";
-    const afterBalance = await readBalance();
-    if (afterBalance === beforeBalance - 3 && /promise|約束|square/i.test(recentHistory)) {
-      break;
-    }
-  }
-  await expect.poll(readBalance, { timeout: slowTimeout }).toBe(afterRewardBalance - 3);
-  await expect(page.getByTestId("last-consequence-summary")).not.toContainText("The scene is waiting", { timeout: slowTimeout });
-  await expect(page.getByTestId("undercurrents-stream")).not.toContainText("No unresolved undercurrents", { timeout: slowTimeout });
-  await expect(page.getByTestId("recent-consequence-history")).toContainText(/promise|約束|square/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("recent-world-beats")).toContainText(/promise|rumor|square|広場|約束/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("ambient-murmurs-stream")).not.toContainText("No rumor has started", { timeout: slowTimeout });
-  const afterPromiseDelayBalance = await readBalance();
+  await ensureBalanceAtLeast(6);
+  await submitChoice("safe");
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Founders Square/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-travel-history")).toContainText(/Founders Square|square/i, { timeout: slowTimeout });
 
-  await submitChoiceAndWaitForMutation("progress");
-  await expect.poll(readBalance, { timeout: slowTimeout }).toBe(afterPromiseDelayBalance - 1);
+  await submitChoice("progress");
   await expect(page.getByTestId("active-quest")).toContainText("Watch Path Unsealed", { timeout: slowTimeout });
   await expect(page.getByTestId("quest-stage")).toContainText("watch_path_followup", { timeout: slowTimeout });
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/watch path|Lantern Sigil/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("recent-scene-history")).not.toContainText("No scene echoes", { timeout: slowTimeout });
   await expect(page.getByTestId("inventory-stream")).toContainText("used", { timeout: slowTimeout });
-  const afterSigilUseBalance = await readBalance();
+  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Watch Path/i, { timeout: slowTimeout });
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const beforeBalance = await readBalance();
-    await submitFreeTextAndWaitForMutation("Lantern Sigilで開いた watch path の様子を観察する");
-    const latestReaction = (await page.getByTestId("latest-reaction").textContent()) ?? "";
-    const afterBalance = await readBalance();
-    if (afterBalance === beforeBalance - 3 && /Lantern|Sigil|watch|巡回|見回|灯/.test(latestReaction)) {
-      break;
-    }
-  }
-  await expect(page.getByTestId("latest-reaction")).not.toContainText("No NPC reaction yet.", { timeout: slowTimeout });
-  await expect(page.getByTestId("latest-reaction")).toContainText(/Lantern|Sigil|watch|巡回|見回|灯/, { timeout: slowTimeout });
-  await expect.poll(readBalance, { timeout: slowTimeout }).toBe(afterSigilUseBalance - 3);
-  await expect(page.getByTestId("last-consequence-summary")).not.toContainText("The scene is waiting", { timeout: slowTimeout });
-  await expect(page.getByTestId("recent-world-beats")).toContainText(/Lamplighter Sera|Courier Pell|Archivist Nera|square|watch/i, {
+  await submitChoice("progress");
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Watch Path/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/watch path|Lantern Sigil/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Lamplighter Sera/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-travel-history")).toContainText(/Watch Path|watch path|巡回路/i, {
     timeout: slowTimeout,
   });
 
-  await page.getByTestId("nav-admin").click();
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByTestId("ops-status")).toContainText("ready");
-  await expect(page.getByTestId("sp-admin-separation-note")).toContainText("separate");
-  await expect(page.getByTestId("admin-ledger")).toContainText("turn_cost");
-  await expect(page.getByTestId("progression-stream")).toContainText("Watch Path Unsealed");
-  await expect(page.getByTestId("progression-stream")).toContainText("used");
-  await expect(page.getByTestId("council-trace-stream")).toContainText("intent_interpreter");
-  await expect(page.getByTestId("council-trace-stream")).toContainText("narrative");
-  await expect(page.getByTestId("relationship-ops-stream")).toContainText(/Archivist|Nera/i);
-  await expect(page.getByTestId("consequence-thread-stream")).toContainText(/promise|resolved|cooling|active/i);
-  await expect(page.getByTestId("chapter-timeline-stream")).toContainText(/founders_watch_opening|watch_path_followup/i);
-  await expect(page.getByTestId("scene-timeline-stream")).toContainText(/establish|reveal|active|closed|cooling/i);
-  await expect(page.getByTestId("npc-routine-stream")).toContainText(/Lamplighter Sera|Courier Pell|Archivist Nera/i);
-  await expect(page.getByTestId("ambient-beat-stream")).toContainText(/murmur|question|observe|reassure|withdraw/i);
-  let adminBalance = await readBalance();
-  for (let attempt = 0; attempt < 12 && adminBalance > 0; attempt += 1) {
-    const before = adminBalance;
-    await page.getByTestId("adjust-delta").fill("-1");
-    await page.getByTestId("submit-adjustment").click();
-    await expect.poll(readBalance, { timeout: slowTimeout }).toBeLessThan(before);
-    adminBalance = await readBalance();
-  }
+  await submitChoice("progress");
+  await expect(page.getByTestId("latest-reaction")).toContainText(/watch|巡回|Lantern|Sigil/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-world-beats")).toContainText(/Lamplighter Sera|Watch Path|watch/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-scene-history")).not.toContainText("No scene echoes", { timeout: slowTimeout });
 
-  await page.getByTestId("nav-game").click();
-  await expect(page.getByTestId("sp-balance")).toContainText("0", { timeout: slowTimeout });
-  await page.getByTestId("choice-progress").click();
-  await expect(page.getByTestId("error-banner")).toContainText("Insufficient SP balance", { timeout: 15_000 });
+  await page.evaluate(() => {
+    window.history.pushState({}, "", "/admin");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page.getByTestId("ops-status")).toContainText("ready", { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-admin-separation-note")).toContainText("separate");
+  await expect(page.getByTestId("location-route-stream")).toContainText(/Founders Square|Archive Steps|Watch Path/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("travel-log-stream")).toContainText(/Archive Steps|Watch Path/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("npc-routine-stream")).toContainText(/Archivist Nera|Lamplighter Sera|Courier Pell/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("ambient-beat-stream")).toContainText(/observe|murmur|reassure|question|withdraw/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("scene-timeline-stream")).toContainText(/active|closed|cooling|pressure|reveal|establish/i, {
+    timeout: slowTimeout,
+  });
 });

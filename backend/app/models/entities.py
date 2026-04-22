@@ -32,6 +32,22 @@ def starter_location_id(world_id: str) -> str:
     return f"loc-{digest}-starter"
 
 
+def archive_steps_location_id(world_id: str) -> str:
+    digest = hashlib.sha1(world_id.encode("utf-8")).hexdigest()[:12]
+    return f"loc-{digest}-archive-steps"
+
+
+def watch_path_location_id(world_id: str) -> str:
+    digest = hashlib.sha1(world_id.encode("utf-8")).hexdigest()[:12]
+    return f"loc-{digest}-watch-path"
+
+
+def route_id(world_id: str, route_key: str) -> str:
+    digest = hashlib.sha1(world_id.encode("utf-8")).hexdigest()[:12]
+    normalized = route_key.replace("_", "-")
+    return f"route-{digest}-{normalized}"
+
+
 class World(Base, TimestampMixin):
     __tablename__ = "worlds"
 
@@ -49,6 +65,27 @@ class Location(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
     state: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class LocationRoute(Base, TimestampMixin):
+    __tablename__ = "location_routes"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_location_routes_id_world"),
+        UniqueConstraint("world_id", "route_key", name="uq_location_routes_world_route_key"),
+        UniqueConstraint("world_id", "from_location_id", "to_location_id", name="uq_location_routes_world_pair"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["from_location_id", "world_id"], ["locations.id", "locations.world_id"]),
+        ForeignKeyConstraint(["to_location_id", "world_id"], ["locations.id", "locations.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    world_id: Mapped[str] = mapped_column(String(64))
+    from_location_id: Mapped[str] = mapped_column(String(96))
+    to_location_id: Mapped[str] = mapped_column(String(96))
+    route_key: Mapped[str] = mapped_column(String(96))
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    travel_summary: Mapped[str] = mapped_column(Text, default="")
+    unlock_requirements_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Actor(Base, TimestampMixin):

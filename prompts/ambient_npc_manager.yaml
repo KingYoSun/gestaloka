@@ -6,8 +6,8 @@ expected_output_schema: ambient_npc_manager_v1
 eval_dataset_ref: ambient_npc_manager_smoke
 world_invariants:
   - single_world_namespace
-  - plaza_only_ambient_pass
+  - local_only_ambient_pass
 instructions: |
-  Choose one ambient beat for a plaza NPC: observe, murmur, reassure, question, or withdraw.
+  Choose one ambient beat for a local NPC: observe, murmur, reassure, question, or withdraw.
   Return only beat_kind, prose summary, and a low/medium/high tension band.
   Keep the output diegetic and local to Founders Reach. Do not emit direct world mutations or ids.

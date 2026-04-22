@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
@@ -9,18 +10,20 @@ from app.models.entities import Actor, NPCProfile, PlayerProfile, Relationship
 
 
 @dataclass(frozen=True)
-class PlazaNPCSeed:
+class FoundersReachNPCSeed:
     display_name: str
     personality: str
     goals: dict[str, str]
+    home_location_key: str
     routine_state: dict[str, object]
 
 
-PLAZA_NPC_SEEDS: tuple[PlazaNPCSeed, ...] = (
-    PlazaNPCSeed(
+PLAZA_NPC_SEEDS: tuple[FoundersReachNPCSeed, ...] = (
+    FoundersReachNPCSeed(
         display_name="Archivist Nera",
         personality="observant and steady",
         goals={"duty": "keep same-world memory coherent"},
+        home_location_key="archive_steps",
         routine_state={
             "routine_role": "archivist",
             "beat_state": "observe",
@@ -28,13 +31,13 @@ PLAZA_NPC_SEEDS: tuple[PlazaNPCSeed, ...] = (
             "last_ambient_turn_id": None,
             "rumor_focus": "newcomers and first impressions",
             "tension_band": "medium",
-            "location": "Founders Reach",
         },
     ),
-    PlazaNPCSeed(
+    FoundersReachNPCSeed(
         display_name="Lamplighter Sera",
         personality="warmly practical and alert to the square's shifting light",
         goals={"duty": "keep the plaza calm by tending its lamps"},
+        home_location_key="watch_path",
         routine_state={
             "routine_role": "lamplighter",
             "beat_state": "observe",
@@ -42,13 +45,13 @@ PLAZA_NPC_SEEDS: tuple[PlazaNPCSeed, ...] = (
             "last_ambient_turn_id": None,
             "rumor_focus": "the plaza lamps and who lingers beneath them",
             "tension_band": "low",
-            "location": "Founders Reach",
         },
     ),
-    PlazaNPCSeed(
+    FoundersReachNPCSeed(
         display_name="Courier Pell",
         personality="quick-eyed and curious about every message that crosses the square",
         goals={"duty": "carry notices and hear how the square answers them"},
+        home_location_key="square",
         routine_state={
             "routine_role": "courier",
             "beat_state": "observe",
@@ -56,7 +59,6 @@ PLAZA_NPC_SEEDS: tuple[PlazaNPCSeed, ...] = (
             "last_ambient_turn_id": None,
             "rumor_focus": "small promises and the gossip they leave behind",
             "tension_band": "medium",
-            "location": "Founders Reach",
         },
     ),
 )
@@ -100,7 +102,13 @@ def ensure_player_actor(
     return actor
 
 
-def _merge_routine_state(existing: dict[str, object] | None, defaults: dict[str, object]) -> dict[str, object]:
+def _merge_routine_state(
+    existing: dict[str, object] | None,
+    defaults: dict[str, object],
+    *,
+    home_location_id: str | None,
+    active_location_id: str | None,
+) -> dict[str, object]:
     merged = dict(defaults)
     for key, value in (existing or {}).items():
         merged[key] = value
@@ -111,8 +119,15 @@ def _merge_routine_state(existing: dict[str, object] | None, defaults: dict[str,
         "last_ambient_turn_id",
         "rumor_focus",
         "tension_band",
-        "location",
+        "home_location_id",
+        "active_location_id",
     ):
+        if required_key == "home_location_id":
+            merged.setdefault(required_key, home_location_id)
+            continue
+        if required_key == "active_location_id":
+            merged.setdefault(required_key, active_location_id)
+            continue
         merged.setdefault(required_key, defaults.get(required_key))
     return merged
 
@@ -120,10 +135,11 @@ def _merge_routine_state(existing: dict[str, object] | None, defaults: dict[str,
 def _ensure_seeded_npc(
     db: Session,
     world_id: str,
-    seed: PlazaNPCSeed,
+    seed: FoundersReachNPCSeed,
     *,
-    location_id: str | None = None,
+    location_ids_by_key: Mapping[str, str] | None = None,
 ) -> Actor:
+    home_location_id = (location_ids_by_key or {}).get(seed.home_location_key)
     npc = db.execute(
         select(Actor).where(
             Actor.world_id == world_id,
@@ -132,8 +148,8 @@ def _ensure_seeded_npc(
         )
     ).scalar_one_or_none()
     if npc is not None:
-        if location_id and npc.current_location_id != location_id:
-            npc.current_location_id = location_id
+        if home_location_id and npc.current_location_id != home_location_id:
+            npc.current_location_id = home_location_id
         profile = db.execute(
             select(NPCProfile).where(NPCProfile.world_id == world_id, NPCProfile.actor_id == npc.id)
         ).scalar_one_or_none()
@@ -144,19 +160,32 @@ def _ensure_seeded_npc(
                     world_id=world_id,
                     personality=seed.personality,
                     goals=seed.goals,
-                    routine_state=_merge_routine_state({}, seed.routine_state),
+                    routine_state=_merge_routine_state(
+                        {},
+                        seed.routine_state,
+                        home_location_id=home_location_id,
+                        active_location_id=home_location_id,
+                    ),
                 )
             )
         else:
             profile.personality = profile.personality or seed.personality
             profile.goals = dict(profile.goals or seed.goals)
-            profile.routine_state = _merge_routine_state(profile.routine_state, seed.routine_state)
+            profile.routine_state = _merge_routine_state(
+                profile.routine_state,
+                seed.routine_state,
+                home_location_id=home_location_id,
+                active_location_id=home_location_id,
+            )
+            if home_location_id is not None:
+                profile.routine_state["home_location_id"] = home_location_id
+                profile.routine_state["active_location_id"] = home_location_id
         db.flush()
         return npc
 
     npc = Actor(
         world_id=world_id,
-        current_location_id=location_id,
+        current_location_id=home_location_id,
         actor_type="npc",
         display_name=seed.display_name,
         status="active",
@@ -169,19 +198,47 @@ def _ensure_seeded_npc(
             world_id=world_id,
             personality=seed.personality,
             goals=seed.goals,
-            routine_state=_merge_routine_state({}, seed.routine_state),
+            routine_state=_merge_routine_state(
+                {},
+                seed.routine_state,
+                home_location_id=home_location_id,
+                active_location_id=home_location_id,
+            ),
         )
     )
     db.flush()
     return npc
 
 
-def ensure_founders_reach_npcs(db: Session, world_id: str, *, location_id: str | None = None) -> list[Actor]:
-    return [_ensure_seeded_npc(db, world_id, seed, location_id=location_id) for seed in PLAZA_NPC_SEEDS]
+def ensure_founders_reach_npcs(
+    db: Session,
+    world_id: str,
+    *,
+    location_ids_by_key: Mapping[str, str] | None = None,
+) -> list[Actor]:
+    return [_ensure_seeded_npc(db, world_id, seed, location_ids_by_key=location_ids_by_key) for seed in PLAZA_NPC_SEEDS]
 
 
 def get_or_create_guide_npc(db: Session, world_id: str, *, location_id: str | None = None) -> Actor:
-    return _ensure_seeded_npc(db, world_id, PLAZA_NPC_SEEDS[0], location_id=location_id)
+    guide = get_guide_npc_for_location(db, world_id, location_id=location_id)
+    if guide is not None:
+        return guide
+    return _ensure_seeded_npc(db, world_id, PLAZA_NPC_SEEDS[2], location_ids_by_key=None)
+
+
+def get_guide_npc_for_location(db: Session, world_id: str, *, location_id: str | None = None) -> Actor | None:
+    stmt: Select[tuple[Actor]] = select(Actor).where(
+        Actor.world_id == world_id,
+        Actor.actor_type == "npc",
+    )
+    if location_id is not None:
+        stmt = stmt.where(Actor.current_location_id == location_id)
+    rows = list(db.execute(stmt.order_by(Actor.created_at.asc(), Actor.id.asc())).scalars())
+    if not rows:
+        return None
+    priority = {seed.display_name: index for index, seed in enumerate(PLAZA_NPC_SEEDS)}
+    rows.sort(key=lambda actor: (priority.get(actor.display_name, 999), actor.display_name, actor.id))
+    return rows[0]
 
 
 def user_has_world_membership(db: Session, world_id: str, user_sub: str) -> bool:
