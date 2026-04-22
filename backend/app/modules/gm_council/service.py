@@ -193,6 +193,9 @@ class GMCouncilService:
         current_scene = request.session_state.get("current_scene") or {}
         current_chapter = request.session_state.get("chapter") or {}
         recent_scene_history = request.session_state.get("recent_scene_history") or []
+        plaza_figures = request.session_state.get("plaza_figures") or []
+        recent_world_beats = request.session_state.get("recent_world_beats") or []
+        ambient_murmurs = request.session_state.get("ambient_murmurs") or []
 
         intent_input = {
             "world_id": request.world_id,
@@ -214,6 +217,9 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "plaza_figures": plaza_figures,
+            "recent_world_beats": recent_world_beats,
+            "ambient_murmurs": ambient_murmurs,
         }
         intent_result = self.model_router.execute_structured_prompt(
             prompt_id="council.intent_interpreter",
@@ -274,6 +280,9 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "plaza_figures": plaza_figures,
+            "recent_world_beats": recent_world_beats,
+            "ambient_murmurs": ambient_murmurs,
         }
         memory_result = self.model_router.execute_structured_prompt(
             prompt_id="council.memory_manager",
@@ -321,6 +330,9 @@ class GMCouncilService:
             "relationship_summaries": relationship_summaries,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
+            "plaza_figures": plaza_figures,
+            "recent_world_beats": recent_world_beats,
+            "ambient_murmurs": ambient_murmurs,
         }
         npc_result = self.model_router.execute_structured_prompt(
             prompt_id="council.npc_manager",
@@ -373,6 +385,9 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "plaza_figures": plaza_figures,
+            "recent_world_beats": recent_world_beats,
+            "ambient_murmurs": ambient_murmurs,
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",

@@ -1,9 +1,65 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, NPCProfile, PlayerProfile, Relationship
+
+
+@dataclass(frozen=True)
+class PlazaNPCSeed:
+    display_name: str
+    personality: str
+    goals: dict[str, str]
+    routine_state: dict[str, object]
+
+
+PLAZA_NPC_SEEDS: tuple[PlazaNPCSeed, ...] = (
+    PlazaNPCSeed(
+        display_name="Archivist Nera",
+        personality="observant and steady",
+        goals={"duty": "keep same-world memory coherent"},
+        routine_state={
+            "routine_role": "archivist",
+            "beat_state": "observe",
+            "attention_target_actor_id": None,
+            "last_ambient_turn_id": None,
+            "rumor_focus": "newcomers and first impressions",
+            "tension_band": "medium",
+            "location": "Founders Reach",
+        },
+    ),
+    PlazaNPCSeed(
+        display_name="Lamplighter Sera",
+        personality="warmly practical and alert to the square's shifting light",
+        goals={"duty": "keep the plaza calm by tending its lamps"},
+        routine_state={
+            "routine_role": "lamplighter",
+            "beat_state": "observe",
+            "attention_target_actor_id": None,
+            "last_ambient_turn_id": None,
+            "rumor_focus": "the plaza lamps and who lingers beneath them",
+            "tension_band": "low",
+            "location": "Founders Reach",
+        },
+    ),
+    PlazaNPCSeed(
+        display_name="Courier Pell",
+        personality="quick-eyed and curious about every message that crosses the square",
+        goals={"duty": "carry notices and hear how the square answers them"},
+        routine_state={
+            "routine_role": "courier",
+            "beat_state": "observe",
+            "attention_target_actor_id": None,
+            "last_ambient_turn_id": None,
+            "rumor_focus": "small promises and the gossip they leave behind",
+            "tension_band": "medium",
+            "location": "Founders Reach",
+        },
+    ),
+)
 
 
 def get_player_actor_for_user(db: Session, world_id: str, user_sub: str) -> Actor | None:
@@ -44,20 +100,65 @@ def ensure_player_actor(
     return actor
 
 
-def get_or_create_guide_npc(db: Session, world_id: str, *, location_id: str | None = None) -> Actor:
-    stmt = select(Actor).where(Actor.world_id == world_id, Actor.actor_type == "npc").order_by(Actor.created_at.asc())
-    npc = db.execute(stmt).scalar_one_or_none()
+def _merge_routine_state(existing: dict[str, object] | None, defaults: dict[str, object]) -> dict[str, object]:
+    merged = dict(defaults)
+    for key, value in (existing or {}).items():
+        merged[key] = value
+    for required_key in (
+        "routine_role",
+        "beat_state",
+        "attention_target_actor_id",
+        "last_ambient_turn_id",
+        "rumor_focus",
+        "tension_band",
+        "location",
+    ):
+        merged.setdefault(required_key, defaults.get(required_key))
+    return merged
+
+
+def _ensure_seeded_npc(
+    db: Session,
+    world_id: str,
+    seed: PlazaNPCSeed,
+    *,
+    location_id: str | None = None,
+) -> Actor:
+    npc = db.execute(
+        select(Actor).where(
+            Actor.world_id == world_id,
+            Actor.actor_type == "npc",
+            Actor.display_name == seed.display_name,
+        )
+    ).scalar_one_or_none()
     if npc is not None:
         if location_id and npc.current_location_id != location_id:
             npc.current_location_id = location_id
-            db.flush()
+        profile = db.execute(
+            select(NPCProfile).where(NPCProfile.world_id == world_id, NPCProfile.actor_id == npc.id)
+        ).scalar_one_or_none()
+        if profile is None:
+            db.add(
+                NPCProfile(
+                    actor_id=npc.id,
+                    world_id=world_id,
+                    personality=seed.personality,
+                    goals=seed.goals,
+                    routine_state=_merge_routine_state({}, seed.routine_state),
+                )
+            )
+        else:
+            profile.personality = profile.personality or seed.personality
+            profile.goals = dict(profile.goals or seed.goals)
+            profile.routine_state = _merge_routine_state(profile.routine_state, seed.routine_state)
+        db.flush()
         return npc
 
     npc = Actor(
         world_id=world_id,
         current_location_id=location_id,
         actor_type="npc",
-        display_name="Archivist Nera",
+        display_name=seed.display_name,
         status="active",
     )
     db.add(npc)
@@ -66,13 +167,21 @@ def get_or_create_guide_npc(db: Session, world_id: str, *, location_id: str | No
         NPCProfile(
             actor_id=npc.id,
             world_id=world_id,
-            personality="observant and steady",
-            goals={"duty": "keep same-world memory coherent"},
-            routine_state={"location": "Founders Reach"},
+            personality=seed.personality,
+            goals=seed.goals,
+            routine_state=_merge_routine_state({}, seed.routine_state),
         )
     )
     db.flush()
     return npc
+
+
+def ensure_founders_reach_npcs(db: Session, world_id: str, *, location_id: str | None = None) -> list[Actor]:
+    return [_ensure_seeded_npc(db, world_id, seed, location_id=location_id) for seed in PLAZA_NPC_SEEDS]
+
+
+def get_or_create_guide_npc(db: Session, world_id: str, *, location_id: str | None = None) -> Actor:
+    return _ensure_seeded_npc(db, world_id, PLAZA_NPC_SEEDS[0], location_id=location_id)
 
 
 def user_has_world_membership(db: Session, world_id: str, user_sub: str) -> bool:

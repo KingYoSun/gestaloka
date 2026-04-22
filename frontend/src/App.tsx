@@ -158,6 +158,12 @@ type RelationshipSummary = {
   summary: string;
 };
 
+type PlazaFigureSummary = {
+  actor_id: string;
+  display_name: string;
+  summary: string;
+};
+
 type ConsequenceThreadSummary = {
   id: string;
   title: string;
@@ -183,6 +189,9 @@ type SessionState = {
   chapter: ChapterSummary;
   current_scene: CurrentSceneSummary;
   recent_scene_history: string[];
+  plaza_figures: PlazaFigureSummary[];
+  recent_world_beats: string[];
+  ambient_murmurs: string[];
   relationships: RelationshipSummary[];
   active_consequence_threads: ConsequenceThreadSummary[];
   recent_consequence_history: string[];
@@ -220,6 +229,14 @@ type TurnResponse = {
   consequence_updates: Array<ConsequenceThreadSummary & { action?: string }>;
   scene_updates: Array<SceneSummaryValue & { action?: string }>;
   chapter_updates: ChapterSummaryValue[];
+  ambient_updates: Array<{
+    event_id: string;
+    actor_id: string;
+    display_name: string;
+    beat_kind: string;
+    summary: string;
+  }>;
+  recent_world_beats: string[];
 };
 
 type EventItem = {
@@ -396,6 +413,28 @@ type SceneOpsItem = {
   pressure_summary: string;
   updated_at: string;
   closed_at: string | null;
+};
+
+type NPCRoutineOpsItem = {
+  actor_id: string;
+  display_name: string;
+  location_id: string | null;
+  routine_state: Record<string, unknown>;
+  updated_at: string;
+};
+
+type AmbientBeatOpsItem = {
+  event_id: string;
+  world_id: string;
+  turn_id: string;
+  session_id: string;
+  beat_kind: string;
+  display_name: string | null;
+  actor_id: string | null;
+  visible_summary: string | null;
+  relationship_updates: Array<Record<string, unknown>>;
+  consequence_updates: Array<Record<string, unknown>>;
+  created_at: string;
 };
 
 type RebuildSummary = {
@@ -709,6 +748,15 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
   const recentSceneHistory = response.scene_summary
     ? [response.scene_summary, ...current.recent_scene_history.filter((item) => item !== response.scene_summary)].slice(0, 3)
     : current.recent_scene_history;
+  const recentWorldBeats = response.recent_world_beats?.length
+    ? response.recent_world_beats
+    : current.recent_world_beats;
+  const ambientMurmurs = response.ambient_updates?.length
+    ? response.ambient_updates
+        .filter((item) => item.beat_kind === "murmur" || item.beat_kind === "question")
+        .map((item) => item.summary)
+        .slice(0, 3)
+    : current.ambient_murmurs;
   const currentScene = response.scene_updates.length ? response.scene_updates[response.scene_updates.length - 1] : current.current_scene;
   const currentChapter = response.chapter_updates.length ? response.chapter_updates[response.chapter_updates.length - 1] : current.chapter;
 
@@ -720,6 +768,8 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
     chapter: currentChapter,
     current_scene: currentScene,
     recent_scene_history: recentSceneHistory,
+    recent_world_beats: recentWorldBeats,
+    ambient_murmurs: ambientMurmurs,
     relationships,
     active_consequence_threads: Array.from(threadMap.values()),
     recent_consequence_history: recentConsequenceHistory,
@@ -814,6 +864,8 @@ function App() {
   const [consequenceThreadOps, setConsequenceThreadOps] = useState<ConsequenceThreadOpsItem[]>([]);
   const [chapterOps, setChapterOps] = useState<ChapterOpsItem[]>([]);
   const [sceneOps, setSceneOps] = useState<SceneOpsItem[]>([]);
+  const [npcRoutineOps, setNpcRoutineOps] = useState<NPCRoutineOpsItem[]>([]);
+  const [ambientBeatOps, setAmbientBeatOps] = useState<AmbientBeatOpsItem[]>([]);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
@@ -894,6 +946,8 @@ function App() {
       setConsequenceThreadOps([]);
       setChapterOps([]);
       setSceneOps([]);
+      setNpcRoutineOps([]);
+      setAmbientBeatOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -937,7 +991,7 @@ function App() {
     socket.onopen = () => setSocketState("open");
     socket.onmessage = (message) => {
       const parsed = JSON.parse(message.data) as ActivityMessage;
-      setActivity((current) => [parsed, ...current].slice(0, 20));
+      setActivity((current) => [parsed, ...current].slice(0, 40));
       if (parsed.event === "turn.resolved") {
         const data = parsed.data as Partial<TurnResponse>;
         if (data.narrative) {
@@ -1065,6 +1119,8 @@ function App() {
         setConsequenceThreadOps([]);
         setChapterOps([]);
         setSceneOps([]);
+        setNpcRoutineOps([]);
+        setAmbientBeatOps([]);
         setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
@@ -1082,6 +1138,8 @@ function App() {
       setConsequenceThreadOps([]);
       setChapterOps([]);
       setSceneOps([]);
+      setNpcRoutineOps([]);
+      setAmbientBeatOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -1096,22 +1154,30 @@ function App() {
       setGraphSummary(null);
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
+      setChapterOps([]);
+      setSceneOps([]);
+      setNpcRoutineOps([]);
+      setAmbientBeatOps([]);
       return;
     }
 
     try {
-      const [summaryPayload, relationshipPayload, threadPayload, chapterPayload, scenePayload] = await Promise.all([
+      const [summaryPayload, relationshipPayload, threadPayload, chapterPayload, scenePayload, npcRoutinePayload, ambientBeatPayload] = await Promise.all([
         apiFetch<GraphSummary>(`/ops/worlds/${currentWorldId}/graph-summary`, currentToken),
         apiFetch<{ items: RelationshipOpsItem[] }>(`/ops/worlds/${currentWorldId}/relationships`, currentToken),
         apiFetch<{ items: ConsequenceThreadOpsItem[] }>(`/ops/worlds/${currentWorldId}/consequence-threads`, currentToken),
         apiFetch<{ items: ChapterOpsItem[] }>(`/ops/worlds/${currentWorldId}/chapters`, currentToken),
         apiFetch<{ items: SceneOpsItem[] }>(`/ops/worlds/${currentWorldId}/scenes`, currentToken),
+        apiFetch<{ items: NPCRoutineOpsItem[] }>(`/ops/worlds/${currentWorldId}/npc-routines`, currentToken),
+        apiFetch<{ items: AmbientBeatOpsItem[] }>(`/ops/worlds/${currentWorldId}/ambient-beats`, currentToken),
       ]);
       setGraphSummary(summaryPayload);
       setRelationshipOps(relationshipPayload.items);
       setConsequenceThreadOps(threadPayload.items);
       setChapterOps(chapterPayload.items);
       setSceneOps(scenePayload.items);
+      setNpcRoutineOps(npcRoutinePayload.items);
+      setAmbientBeatOps(ambientBeatPayload.items);
     } catch (requestError) {
       const typedError = requestError as APIError;
       if (typedError.status === 403) {
@@ -1124,6 +1190,8 @@ function App() {
       setConsequenceThreadOps([]);
       setChapterOps([]);
       setSceneOps([]);
+      setNpcRoutineOps([]);
+      setAmbientBeatOps([]);
     }
   }
 
@@ -1269,7 +1337,7 @@ function App() {
       setActivity((current) => [
         { event: "ops.projection.rebuild", data: rebuilt as unknown as Record<string, unknown> },
         ...current,
-      ].slice(0, 20));
+      ].slice(0, 40));
       await Promise.all([
         refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
         refreshHealth(),
@@ -1697,7 +1765,52 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>8. Inventory</h2>
+              <h2>8. Around the square</h2>
+              <ul className="stream" data-testid="plaza-figures-stream">
+                {sessionState?.plaza_figures.length ? (
+                  sessionState.plaza_figures.map((item) => (
+                    <li key={item.actor_id}>
+                      <strong>{item.display_name}</strong>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>The square has not settled into any clear figures yet.</li>
+                )}
+              </ul>
+            </article>
+
+            <article className="card">
+              <h2>9. Recent world beats</h2>
+              <ul className="stream" data-testid="recent-world-beats">
+                {sessionState?.recent_world_beats.length ? (
+                  sessionState.recent_world_beats.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>beat</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No wider plaza beat has risen yet.</li>
+                )}
+              </ul>
+              <h3>Ambient murmurs</h3>
+              <ul className="stream" data-testid="ambient-murmurs-stream">
+                {sessionState?.ambient_murmurs.length ? (
+                  sessionState.ambient_murmurs.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>murmur</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No rumor has started moving through the square.</li>
+                )}
+              </ul>
+            </article>
+
+            <article className="card">
+              <h2>10. Inventory</h2>
               <ul className="stream" data-testid="inventory-stream">
                 {sessionState?.inventory.length ? (
                   sessionState.inventory.map((item) => (
@@ -1731,7 +1844,7 @@ function App() {
             </article>
 
             <article className="card wide">
-              <h2>9. Suggested choices</h2>
+              <h2>11. Suggested choices</h2>
               <p data-testid="last-consequence-summary">
                 {latestConsequenceSummary || "The scene is waiting for your next line."}
               </p>
@@ -1801,7 +1914,7 @@ function App() {
             </article>
 
             <article className="card">
-              <h2>10. Results</h2>
+              <h2>12. Results</h2>
               <h3>Events</h3>
               <ul className="stream" data-testid="events-stream">
                 {events.map((item) => (
@@ -2017,6 +2130,34 @@ function App() {
                   ))
                 ) : (
                   <li>No scene timeline data loaded.</li>
+                )}
+              </ul>
+              <h3>NPC routine state</h3>
+              <ul className="stream" data-testid="npc-routine-stream">
+                {npcRoutineOps.length ? (
+                  npcRoutineOps.map((item) => (
+                    <li key={item.actor_id}>
+                      <strong>{item.display_name}</strong>
+                      <span>{item.location_id ?? "no location"}</span>
+                      <span>{JSON.stringify(item.routine_state)}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No NPC routine state loaded.</li>
+                )}
+              </ul>
+              <h3>Ambient beat log</h3>
+              <ul className="stream" data-testid="ambient-beat-stream">
+                {ambientBeatOps.length ? (
+                  ambientBeatOps.map((item) => (
+                    <li key={item.event_id}>
+                      <strong>{item.display_name ?? "Unknown figure"}</strong>
+                      <span>{item.beat_kind}</span>
+                      <span>{item.visible_summary ?? "No visible summary"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No ambient beat log loaded.</li>
                 )}
               </ul>
               <h3>Recent runtime failures</h3>

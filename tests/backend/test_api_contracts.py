@@ -114,6 +114,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "chapter",
         "current_scene",
         "recent_scene_history",
+        "plaza_figures",
+        "recent_world_beats",
+        "ambient_murmurs",
         "relationships",
         "active_consequence_threads",
         "recent_consequence_history",
@@ -162,7 +165,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "consequence_updates",
             "scene_updates",
             "chapter_updates",
+            "ambient_updates",
             "scene_summary",
+            "recent_world_beats",
         }
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"
@@ -173,10 +178,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = [websocket.receive_json() for _ in range(21)]
+        messages = [websocket.receive_json() for _ in range(23)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
+        "turn.progress",
         "turn.progress",
         "turn.progress",
         "turn.progress",
@@ -195,6 +201,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "relationship.updated",
         "scene.updated",
         "chapter.updated",
+        "ambient.updated",
         "graph.projection.updated",
         "turn.resolved",
     ]
@@ -208,6 +215,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "narrative",
         "consequence_resolution",
         "scene_framing",
+        "ambient_world_pass",
         "choice_generation",
     ]
     assert messages[-1]["data"] == turn_payload
@@ -268,10 +276,11 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["faction_updates"][0]["delta"] == 0.1
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(23)]
+        messages = [websocket.receive_json() for _ in range(26)]
 
     assert [message["event"] for message in messages] == [
         "turn.accepted",
+        "turn.progress",
         "turn.progress",
         "turn.progress",
         "turn.progress",
@@ -290,8 +299,10 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "faction.standing.updated",
         "inventory.changed",
         "relationship.updated",
+        "consequence.updated",
         "scene.updated",
         "chapter.updated",
+        "ambient.updated",
         "graph.projection.updated",
         "turn.resolved",
     ]
@@ -306,6 +317,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "item_use",
         "consequence_resolution",
         "scene_framing",
+        "ambient_world_pass",
         "choice_generation",
     ]
     assert messages[-1]["data"] == payload
@@ -417,6 +429,24 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     assert scenes_response.status_code == 200
     assert scenes_response.json()["items"]
+
+    npc_routines_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/npc-routines",
+        headers=auth_headers,
+    )
+    assert npc_routines_response.status_code == 200
+    assert len(npc_routines_response.json()["items"]) >= 3
+    assert {"routine_role", "beat_state", "last_ambient_turn_id"} <= set(
+        npc_routines_response.json()["items"][0]["routine_state"]
+    )
+
+    ambient_beats_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/ambient-beats",
+        headers=auth_headers,
+    )
+    assert ambient_beats_response.status_code == 200
+    assert ambient_beats_response.json()["items"]
+    assert {"beat_kind", "visible_summary"} <= set(ambient_beats_response.json()["items"][0])
 
 
 def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):

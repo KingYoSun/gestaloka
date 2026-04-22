@@ -1,0 +1,9 @@
+dataset_id: ambient_safety_guard_smoke
+prompt_id: ambient.safety_guard
+expected_output_schema: ambient_safety_guard_v1
+cases:
+  - case_id: ambient-safety-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Archivist Nera
+    input_text: 広場の余韻が同一世界のまま保たれているか

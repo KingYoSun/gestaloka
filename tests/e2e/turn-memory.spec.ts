@@ -12,19 +12,6 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
     return Number(match?.[1]);
   };
 
-  const readTurnSnapshot = async () => {
-    const [progressText, inventoryText, consequenceText, narrativeText, eventsText, opsText, balance] = await Promise.all([
-      page.getByTestId("quest-progress").textContent(),
-      page.getByTestId("inventory-stream").textContent(),
-      page.getByTestId("last-consequence-summary").textContent(),
-      page.getByTestId("latest-narrative").textContent(),
-      page.getByTestId("events-stream").textContent(),
-      page.getByTestId("ops-stream").textContent(),
-      readBalance(),
-    ]);
-    return `${progressText ?? ""}|${inventoryText ?? ""}|${consequenceText ?? ""}|${narrativeText ?? ""}|${eventsText ?? ""}|${opsText ?? ""}|${balance}`;
-  };
-
   const ensureBalanceAtLeast = async (minimum: number) => {
     const balance = await readBalance();
     if (balance >= minimum) {
@@ -40,18 +27,18 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
   };
 
   const submitChoiceAndWaitForMutation = async (choiceId: "safe" | "progress" | "explore") => {
-    const beforeSnapshot = await readTurnSnapshot();
+    const beforeBalance = await readBalance();
     await page.getByTestId(`choice-${choiceId}`).click();
-    await expect.poll(readTurnSnapshot, { timeout: slowTimeout }).not.toBe(beforeSnapshot);
+    await expect.poll(readBalance, { timeout: slowTimeout }).toBe(beforeBalance - 1);
   };
 
   const submitFreeTextAndWaitForMutation = async (text: string) => {
     await page.getByTestId("toggle-free-text").click();
     await page.getByTestId("turn-input").fill(text);
     await expect(page.getByTestId("submit-turn")).toBeEnabled({ timeout: slowTimeout });
-    const beforeSnapshot = await readTurnSnapshot();
+    const beforeBalance = await readBalance();
     await page.getByTestId("submit-turn").click();
-    await expect.poll(readTurnSnapshot, { timeout: slowTimeout }).not.toBe(beforeSnapshot);
+    await expect.poll(readBalance, { timeout: slowTimeout }).toBe(beforeBalance - 3);
   };
 
   await page.goto("/");
@@ -78,12 +65,17 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
 
   await page.getByTestId("world-id-input").fill(worldId);
   await page.getByTestId("start-session").click();
+  await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("First Watch Request", { timeout: 20_000 });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Founders Reach|chapter/i, { timeout: 20_000 });
   await expect(page.getByTestId("current-scene-summary")).toContainText(/square|scene|request/i, { timeout: 20_000 });
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
   await expect(page.getByTestId("choice-list")).toContainText("困っている相手", { timeout: 20_000 });
   await expect(page.getByTestId("relationship-summary")).toContainText(/Archivist|Nera|trust|ordinary|neutral/i, {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Archivist Nera/i, { timeout: 20_000 });
+  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Lamplighter Sera|Courier Pell/i, {
     timeout: 20_000,
   });
 
@@ -125,6 +117,8 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
   await expect(page.getByTestId("last-consequence-summary")).not.toContainText("The scene is waiting", { timeout: slowTimeout });
   await expect(page.getByTestId("undercurrents-stream")).not.toContainText("No unresolved undercurrents", { timeout: slowTimeout });
   await expect(page.getByTestId("recent-consequence-history")).toContainText(/promise|約束|square/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-world-beats")).toContainText(/promise|rumor|square|広場|約束/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("ambient-murmurs-stream")).not.toContainText("No rumor has started", { timeout: slowTimeout });
   const afterPromiseDelayBalance = await readBalance();
 
   await submitChoiceAndWaitForMutation("progress");
@@ -149,6 +143,9 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
   await expect(page.getByTestId("latest-reaction")).toContainText(/Lantern|Sigil|watch|巡回|見回|灯/, { timeout: slowTimeout });
   await expect.poll(readBalance, { timeout: slowTimeout }).toBe(afterSigilUseBalance - 3);
   await expect(page.getByTestId("last-consequence-summary")).not.toContainText("The scene is waiting", { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-world-beats")).toContainText(/Lamplighter Sera|Courier Pell|Archivist Nera|square|watch/i, {
+    timeout: slowTimeout,
+  });
 
   await page.getByTestId("nav-admin").click();
   await expect(page).toHaveURL(/\/admin$/);
@@ -163,6 +160,8 @@ test("login, carry relationship pressure across turns, unlock follow-up progress
   await expect(page.getByTestId("consequence-thread-stream")).toContainText(/promise|resolved|cooling|active/i);
   await expect(page.getByTestId("chapter-timeline-stream")).toContainText(/founders_watch_opening|watch_path_followup/i);
   await expect(page.getByTestId("scene-timeline-stream")).toContainText(/establish|reveal|active|closed|cooling/i);
+  await expect(page.getByTestId("npc-routine-stream")).toContainText(/Lamplighter Sera|Courier Pell|Archivist Nera/i);
+  await expect(page.getByTestId("ambient-beat-stream")).toContainText(/murmur|question|observe|reassure|withdraw/i);
   let adminBalance = await readBalance();
   for (let attempt = 0; attempt < 12 && adminBalance > 0; attempt += 1) {
     const before = adminBalance;

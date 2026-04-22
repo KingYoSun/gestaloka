@@ -27,7 +27,12 @@ from app.models.entities import (
     new_id,
     starter_location_id,
 )
-from app.modules.actor.service import adjust_relationship_strength, get_relationship
+from app.modules.actor.service import adjust_relationship_strength, ensure_founders_reach_npcs, get_relationship
+from app.modules.world_state.ambient import (
+    list_ambient_murmurs,
+    list_plaza_figures,
+    list_recent_world_beats,
+)
 from app.modules.world_state.consequence import (
     ConsequenceRuleEngine,
     ConsequenceRuleInput,
@@ -463,6 +468,7 @@ def ensure_world_slice_seed(
     guide_actor_id: str,
 ) -> WorldSliceSeed:
     ensure_starter_location(db, world_id)
+    ensure_founders_reach_npcs(db, world_id, location_id=starter_location_id(world_id))
     faction = ensure_starter_faction(db, world_id)
     ensure_membership_relationship(db, world_id=world_id, from_actor_id=guide_actor_id, faction_id=faction.id)
     standing = ensure_faction_standing(db, world_id=world_id, actor_id=player_actor_id, faction_id=faction.id)
@@ -803,6 +809,12 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     scene_summary = str(current_scene.get("summary") or "").strip()
     pressure_summary = str(current_scene.get("pressure_summary") or "").strip()
     chapter_summary = str((session_state.get("chapter") or {}).get("summary") or "").strip()
+    recent_world_beats = session_state.get("recent_world_beats") or []
+    ambient_murmurs = session_state.get("ambient_murmurs") or []
+    plaza_figures = session_state.get("plaza_figures") or []
+    leading_world_beat = str(recent_world_beats[0]) if recent_world_beats else ""
+    leading_murmur = str(ambient_murmurs[0]) if ambient_murmurs else ""
+    leading_plaza_figure = str((plaza_figures[0] or {}).get("summary") or "") if plaza_figures else ""
 
     safe_choice = {
         "choice_id": "safe",
@@ -930,7 +942,14 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         }
 
     for choice in (safe_choice, progress_choice, explore_choice):
-        ambient_parts = [scene_summary, pressure_summary, chapter_summary, str(choice.get("summary") or "").strip()]
+        ambient_parts = [
+            scene_summary,
+            pressure_summary,
+            chapter_summary,
+            leading_world_beat if choice["choice_id"] != "safe" else leading_murmur,
+            leading_plaza_figure if choice["choice_id"] == "explore" else "",
+            str(choice.get("summary") or "").strip(),
+        ]
         choice["summary"] = " ".join(part for part in ambient_parts if part).strip()
 
     return [safe_choice, progress_choice, explore_choice]
@@ -953,6 +972,9 @@ def build_session_state(
     chapter = get_current_chapter_summary(db, world_id, actor_id)
     current_scene = get_current_scene_summary(db, world_id, actor_id)
     recent_scene_history = list_recent_scene_history(db, world_id, actor_id)
+    plaza_figures = list_plaza_figures(db, world_id, actor_id, location_id)
+    recent_world_beats = list_recent_world_beats(db, world_id, location_id)
+    ambient_murmurs = list_ambient_murmurs(db, world_id, location_id)
     state = {
         "world_id": world_id,
         "location": get_location_summary(db, world_id, location_id),
@@ -963,6 +985,9 @@ def build_session_state(
         "chapter": chapter,
         "current_scene": current_scene,
         "recent_scene_history": recent_scene_history,
+        "plaza_figures": plaza_figures,
+        "recent_world_beats": recent_world_beats,
+        "ambient_murmurs": ambient_murmurs,
         "relationships": relationships,
         "active_consequence_threads": active_consequence_threads,
         "recent_consequence_history": recent_consequence_history,
@@ -1506,6 +1531,13 @@ def use_reward_item(
             "scope": "location",
             "text": "Founders ReachでLantern Sigilが使われ、新しい watch path が解放された。",
             "salience": 0.95,
+            "location_id": location_id,
+            "actor_id": None,
+        },
+        {
+            "scope": "location",
+            "text": "Lantern Sigilで開いた watch path の気配が、Founders Reachの広場にはっきり残っている。",
+            "salience": 0.98,
             "location_id": location_id,
             "actor_id": None,
         },

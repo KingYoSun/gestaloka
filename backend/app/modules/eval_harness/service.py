@@ -1061,14 +1061,25 @@ class EvalHarnessService:
             ).scalar_one_or_none()
             if session is None:
                 continue
-            player_actor = db.execute(
-                select(Actor).where(Actor.id == session.player_actor_id, Actor.world_id == turn.world_id)
-            ).scalar_one_or_none()
-            npc_actor = db.execute(
-                select(Actor)
-                .where(Actor.world_id == turn.world_id, Actor.actor_type == "npc")
-                .order_by(Actor.created_at.asc(), Actor.id.asc())
-            ).scalar_one_or_none()
+            player_actor = (
+                db.execute(
+                    select(Actor)
+                    .where(Actor.id == session.player_actor_id, Actor.world_id == turn.world_id)
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            npc_actor = (
+                db.execute(
+                    select(Actor)
+                    .where(Actor.world_id == turn.world_id, Actor.actor_type == "npc")
+                    .order_by(Actor.created_at.asc(), Actor.id.asc())
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
             if player_actor is None or npc_actor is None:
                 continue
             graph_context = self.projection_service.resolve_relation_context(

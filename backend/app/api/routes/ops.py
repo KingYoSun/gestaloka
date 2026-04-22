@@ -21,9 +21,11 @@ from app.modules.admin_ops.service import (
     recent_runtime_failures,
     sp_ledger,
     sp_overview,
+    world_ambient_beats,
     world_memory_search,
     world_graph_summary,
     world_chapters,
+    world_npc_routines,
     world_relationships,
     world_scenes,
     world_consequence_threads,
@@ -203,6 +205,28 @@ def get_world_consequence_threads(
 ) -> dict[str, object]:
     del container, user
     return world_consequence_threads(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/npc-routines")
+def get_world_npc_routines(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_npc_routines(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/ambient-beats")
+def get_world_ambient_beats(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_ambient_beats(db, world_id=world_id)
 
 
 @router.get("/sp/overview")

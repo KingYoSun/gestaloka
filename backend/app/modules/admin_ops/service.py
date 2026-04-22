@@ -11,6 +11,7 @@ from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_memory.service import MemoryService
+from app.modules.world_state.ambient import list_ambient_beats_debug, list_npc_routines_debug
 from app.modules.world_state.scene import list_chapter_tracks_debug, list_scene_frames_debug
 from app.modules.world_state.service import list_consequence_threads_debug, list_relationship_debug
 
@@ -146,12 +147,26 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
         if str(record.payload.get("label") or "") in {"Faction", "Quest", "Item", "AFFECTS", "PURSUES", "REWARDS"}
     ][:12]
 
-    primary_actor = db.execute(
-        select(Actor).where(Actor.world_id == world_id, Actor.actor_type == "npc").order_by(Actor.created_at.asc())
-    ).scalar_one_or_none()
-    counterpart = db.execute(
-        select(Actor).where(Actor.world_id == world_id, Actor.actor_type == "player").order_by(Actor.created_at.asc())
-    ).scalar_one_or_none()
+    primary_actor = (
+        db.execute(
+            select(Actor)
+            .where(Actor.world_id == world_id, Actor.actor_type == "npc")
+            .order_by(Actor.created_at.asc(), Actor.id.asc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    counterpart = (
+        db.execute(
+            select(Actor)
+            .where(Actor.world_id == world_id, Actor.actor_type == "player")
+            .order_by(Actor.created_at.asc(), Actor.id.asc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
     neighborhood_summary: list[str] = []
     if primary_actor is not None:
         context = projection_service.recording_repository.read_relation_context(
@@ -276,6 +291,20 @@ def world_scenes(db: Session, *, world_id: str) -> dict[str, object]:
     }
 
 
+def world_npc_routines(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_npc_routines_debug(db, world_id),
+    }
+
+
+def world_ambient_beats(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_ambient_beats_debug(db, world_id),
+    }
+
+
 def recent_runtime_failures(db: Session) -> list[dict[str, object]]:
     failed_outbox = list(
         db.execute(
@@ -351,7 +380,11 @@ def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str,
     llm_runs = list(
         db.execute(
             select(LLMRun)
-            .where(LLMRun.turn_id == turn.id, LLMRun.world_id == turn.world_id)
+            .where(
+                LLMRun.turn_id == turn.id,
+                LLMRun.world_id == turn.world_id,
+                LLMRun.workflow_name == "gm_council",
+            )
             .order_by(LLMRun.stage_index.asc(), LLMRun.created_at.asc(), LLMRun.id.asc())
         ).scalars()
     )

@@ -49,3 +49,24 @@ routes:
       lite_lane: gemini-2.5-flash-lite
       main_lane: gemini-3-flash-preview
       pro_lane: gemini-3.1-pro-preview
+  ambient.memory_manager:
+    prompt_id: ambient.memory_manager
+    default_lane: lite_lane
+    model_ids:
+      lite_lane: gemini-2.5-flash-lite
+      main_lane: gemini-3-flash-preview
+      pro_lane: gemini-3.1-pro-preview
+  ambient.npc_manager:
+    prompt_id: ambient.npc_manager
+    default_lane: lite_lane
+    model_ids:
+      lite_lane: gemini-2.5-flash-lite
+      main_lane: gemini-3-flash-preview
+      pro_lane: gemini-3.1-pro-preview
+  ambient.safety_guard:
+    prompt_id: ambient.safety_guard
+    default_lane: main_lane
+    model_ids:
+      lite_lane: gemini-2.5-flash-lite
+      main_lane: gemini-3-flash-preview
+      pro_lane: gemini-3.1-pro-preview

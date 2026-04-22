@@ -186,7 +186,12 @@ class StubModelProvider(BaseModelProvider):
     def _generate_stub_output(self, prompt_id: str, *, lane: str, input_payload: dict[str, Any]) -> dict[str, Any]:
         if "__force_invalid_all__" in str(input_payload.get("input_text", "")):
             return {"status": "invalid"}
-        if prompt_id in {"council.rules_arbiter", "council.safety_guard", "council.narrative"} and lane == "main_lane":
+        if prompt_id in {
+            "council.rules_arbiter",
+            "council.safety_guard",
+            "council.narrative",
+            "ambient.safety_guard",
+        } and lane == "main_lane":
             if "__force_invalid_main__" in str(input_payload.get("input_text", "")):
                 return {"status": "invalid"}
 
@@ -204,6 +209,12 @@ class StubModelProvider(BaseModelProvider):
             return self._safety_guard_output(input_payload)
         if prompt_id == "council.narrative":
             return self._narrative_output(input_payload)
+        if prompt_id == "ambient.memory_manager":
+            return self._ambient_memory_manager_output(input_payload)
+        if prompt_id == "ambient.npc_manager":
+            return self._ambient_npc_manager_output(input_payload)
+        if prompt_id == "ambient.safety_guard":
+            return self._ambient_safety_guard_output(input_payload)
         raise KeyError(f"Unsupported stub prompt: {prompt_id}")
 
     def _intent_interpreter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -545,6 +556,75 @@ class StubModelProvider(BaseModelProvider):
             "narrative": narrative,
             "npc_reaction": npc_reaction,
             "tone": "tense" if outcome_band == "setback" else "uneasy" if outcome_band == "tangled" else "measured",
+        }
+
+    def _ambient_memory_manager_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        npc_name = str(input_payload.get("npc_name") or "An onlooker")
+        routine_state = input_payload.get("routine_state") or {}
+        rumor_focus = str(routine_state.get("rumor_focus") or "the square")
+        relevant_memories = [str(item) for item in input_payload.get("relevant_memories") or [] if str(item)]
+        current_scene = input_payload.get("current_scene") or {}
+        recent_world_beats = [str(item) for item in input_payload.get("recent_world_beats") or [] if str(item)]
+        summary_parts = [f"{npc_name} keeps the square in mind through {rumor_focus}."]
+        if relevant_memories:
+            summary_parts.append(f"Recent memory: {relevant_memories[0]}")
+        if recent_world_beats:
+            summary_parts.append(f"Latest world beat: {recent_world_beats[0]}")
+        return {
+            "memory_summary": " ".join(summary_parts).strip(),
+            "focus_memories": relevant_memories[:2],
+            "scene_summary": str(current_scene.get("summary") or "The square listens to itself."),
+            "rumor_focus": rumor_focus,
+        }
+
+    def _ambient_npc_manager_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        npc_name = str(input_payload.get("npc_name") or "An onlooker")
+        routine_state = input_payload.get("routine_state") or {}
+        thread_types = {
+            str(item.get("thread_type") or "")
+            for item in (input_payload.get("active_consequence_threads") or [])
+            if isinstance(item, dict)
+        }
+        recent_world_beats = [str(item) for item in input_payload.get("recent_world_beats") or [] if str(item)]
+        role = str(routine_state.get("routine_role") or "watcher")
+        rumor_focus = str(input_payload.get("rumor_focus") or routine_state.get("rumor_focus") or "the square")
+
+        if "promise" in thread_types:
+            beat_kind = "murmur"
+            summary = f"{npc_name} lets a rumor move through the square about {rumor_focus}, as if a promise were still hanging there."
+            tension_band = "medium"
+        elif "scrutiny" in thread_types:
+            beat_kind = "question"
+            summary = f"{npc_name} turns a sharper question over the plaza, making its scrutiny more visible."
+            tension_band = "high"
+        elif role == "lamplighter":
+            beat_kind = "reassure"
+            summary = f"{npc_name} trims the light around the square and eases the scene without making a show of it."
+            tension_band = "low"
+        elif role == "courier" and recent_world_beats:
+            beat_kind = "murmur"
+            summary = f"{npc_name} carries the latest plaza murmur a little further, letting it circulate under the open sky."
+            tension_band = "medium"
+        else:
+            beat_kind = "observe"
+            summary = f"{npc_name} watches the square as the {role}, measuring what the last turn left behind."
+            tension_band = str(routine_state.get("tension_band") or "medium")
+        return {
+            "beat_kind": beat_kind,
+            "summary": summary,
+            "tension_band": tension_band,
+        }
+
+    def _ambient_safety_guard_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        summary = str(input_payload.get("summary") or "")
+        violations: list[str] = []
+        if "__force_safety_reject__" in summary:
+            violations.append("forced ambient safety rejection")
+        approval_status = "approved" if not violations else "rejected"
+        return {
+            "approval_status": approval_status,
+            "reason": "ambient beat stays inside same-world plaza constraints" if approval_status == "approved" else "; ".join(violations),
+            "violations": violations,
         }
 
 

@@ -51,6 +51,8 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert state_after_reward.json()["relationships"][0]["band"] == "warm"
     assert state_after_reward.json()["chapter"]["key"] == "founders_watch_opening"
     assert state_after_reward.json()["current_scene"]["summary"]
+    assert len(state_after_reward.json()["plaza_figures"]) >= 3
+    assert state_after_reward.json()["recent_world_beats"]
 
     assert state_after_reward.json()["next_choices"][1]["action_kind"] == "use_reward_item"
 
@@ -83,6 +85,8 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert third_payload["sp_balance"] == 4
     assert "Lantern Sigil" in third_payload["npc_reaction"]
     assert third_payload["scene_summary"]
+    assert third_payload["ambient_updates"]
+    assert third_payload["recent_world_beats"]
 
     events = client.get(f"/worlds/{session_payload['world_id']}/events", headers=auth_headers)
     memories = client.get(f"/worlds/{session_payload['world_id']}/memories", headers=auth_headers)
@@ -90,14 +94,16 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert events.status_code == 200
     assert memories.status_code == 200
     assert state.status_code == 200
-    assert len(events.json()["items"]) == 5
+    assert len(events.json()["items"]) >= 8
     assert events.json()["items"][-1]["event_type"] == "session.started"
+    assert any(item["event_type"].startswith("ambient.npc.") for item in events.json()["items"])
     assert any("旅人を助け" in item["text"] for item in memories.json()["items"])
     assert any("Lantern Sigil" in item["text"] for item in memories.json()["items"])
     assert state.json()["quests"][0]["stage_key"] == "watch_path_followup"
     assert state.json()["inventory"][0]["status"] == "used"
     assert state.json()["chapter"]["key"] == "watch_path_followup"
     assert state.json()["recent_scene_history"]
+    assert state.json()["recent_world_beats"]
     assert "watch path" in state.json()["current_scene"]["summary"].lower()
 
     with container.session_factory() as db:
@@ -158,6 +164,8 @@ def test_consequence_threads_affect_state_and_fail_forward_without_422(client, a
     assert state_after_delay.status_code == 200
     assert state_after_delay.json()["active_consequence_threads"]
     assert any("約束" in item["summary"] or "promise" in item["summary"].lower() for item in state_after_delay.json()["active_consequence_threads"])
+    assert state_after_delay.json()["ambient_murmurs"]
+    assert any("rumor" in item.lower() or "promise" in item.lower() or "約束" in item for item in state_after_delay.json()["recent_world_beats"])
 
     impossible = client.post(
         "/turns",

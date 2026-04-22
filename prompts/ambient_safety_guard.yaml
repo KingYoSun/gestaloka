@@ -1,0 +1,13 @@
+prompt_id: ambient.safety_guard
+owner_module: world_state
+schema_version: "1"
+model_lane: main_lane
+expected_output_schema: ambient_safety_guard_v1
+eval_dataset_ref: ambient_safety_guard_smoke
+world_invariants:
+  - single_world_namespace
+  - no_ambient_quest_or_item_mutation
+instructions: |
+  Validate that an ambient plaza beat stays within same-world constraints.
+  Approve only beats that avoid direct quest progress, reward item issuance, item consumption, or chapter open/close.
+  Return approval_status, reason, and any violations.

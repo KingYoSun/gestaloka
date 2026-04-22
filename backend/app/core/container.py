@@ -15,6 +15,7 @@ from app.modules.identity.oidc import BaseOIDCAdapter, build_oidc_adapter
 from app.modules.llm_harness.service import ModelRouter
 from app.modules.observability.service import ObservabilityService
 from app.modules.world_memory.service import MemoryService
+from app.modules.world_state.ambient import AmbientWorldPassService
 
 
 @dataclass
@@ -30,6 +31,7 @@ class AppContainer:
     projection_service: ProjectionService
     observability_service: ObservabilityService
     memory_service: MemoryService
+    ambient_world_service: AmbientWorldPassService
 
 
 def build_container(settings: Settings | None = None) -> AppContainer:
@@ -59,6 +61,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     model_router = eval_service.runtime_router()
     council_service = GMCouncilService(resolved_settings, model_router)
     economy_service = EconomyService(resolved_settings)
+    ambient_world_service = AmbientWorldPassService(resolved_settings, model_router, memory_service)
     return AppContainer(
         settings=resolved_settings,
         session_factory=session_factory,
@@ -71,4 +74,5 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         projection_service=projection_service,
         observability_service=observability_service,
         memory_service=memory_service,
+        ambient_world_service=ambient_world_service,
     )

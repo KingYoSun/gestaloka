@@ -1,0 +1,9 @@
+dataset_id: ambient_memory_manager_smoke
+prompt_id: ambient.memory_manager
+expected_output_schema: ambient_memory_manager_v1
+cases:
+  - case_id: ambient-memory-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Courier Pell
+    input_text: プレイヤーの行動のあと、広場の空気を拾う

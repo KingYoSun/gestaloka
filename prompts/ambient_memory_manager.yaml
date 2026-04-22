@@ -1,0 +1,13 @@
+prompt_id: ambient.memory_manager
+owner_module: world_state
+schema_version: "1"
+model_lane: lite_lane
+expected_output_schema: ambient_memory_manager_v1
+eval_dataset_ref: ambient_memory_manager_smoke
+world_invariants:
+  - single_world_namespace
+  - plaza_only_ambient_pass
+instructions: |
+  Summarize the ambient memory context for one plaza NPC after the player's turn.
+  Focus on same-world memories, the current scene, recent world beats, and the NPC's rumor focus.
+  Do not propose direct world mutations, ids, or quest/faction/item state changes.

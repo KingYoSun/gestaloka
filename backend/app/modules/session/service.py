@@ -62,6 +62,7 @@ class TurnResolutionResult:
     consequence_updates: list[dict]
     scene_updates: list[dict]
     chapter_updates: list[dict]
+    ambient_updates: list[dict]
     action_type: str
     input_mode: str
     interpreted_intent: dict[str, Any]
@@ -69,6 +70,7 @@ class TurnResolutionResult:
     consequence_summary: str
     scene_tone: str
     scene_summary: str
+    recent_world_beats: list[str]
     progress_phases: list[str]
     error_detail: str | None = None
     status_code: int = 200
@@ -260,6 +262,81 @@ def resolve_turn_for_session(
     )
 
 
+def _persist_role_runs(
+    db: Session,
+    *,
+    world_id: str,
+    turn_id: str,
+    workflow_name: str,
+    role_runs: list[Any],
+    graph_context_status: str,
+) -> None:
+    for role_run in role_runs:
+        for attempt in role_run.attempts:
+            db.add(
+                LLMRun(
+                    world_id=world_id,
+                    turn_id=turn_id,
+                    prompt_id=attempt.prompt_id,
+                    workflow_name=workflow_name,
+                    council_role=role_run.council_role,
+                    stage_index=role_run.stage_index,
+                    approval_status=(
+                        "schema_invalid"
+                        if attempt.output_schema_status != "valid"
+                        else role_run.approval_status
+                    ),
+                    model_id=attempt.model_id,
+                    model_lane=attempt.model_lane,
+                    provider_name=attempt.provider_name,
+                    provider_response_id=attempt.provider_response_id,
+                    input_hash=attempt.input_hash,
+                    input_context_hash=attempt.input_context_hash,
+                    schema_version=attempt.schema_version,
+                    graph_context_status=graph_context_status,
+                    output_schema_status=attempt.output_schema_status,
+                    output_payload=attempt.output_payload,
+                )
+            )
+
+
+def _run_ambient_world_pass(
+    db: Session,
+    container: AppContainer,
+    *,
+    game_session: GameSession,
+    player_actor: Actor,
+    turn: Turn,
+    location_id: str | None,
+    session_state: dict[str, Any],
+) -> dict[str, Any]:
+    ambient_result = container.ambient_world_service.run(
+        db,
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        player_turn_id=turn.id,
+        player_actor_id=player_actor.id,
+        player_name=player_actor.display_name,
+        location_id=location_id,
+        session_state=session_state,
+    )
+    _persist_role_runs(
+        db,
+        world_id=game_session.world_id,
+        turn_id=turn.id,
+        workflow_name="ambient_world_pass",
+        role_runs=ambient_result.role_runs,
+        graph_context_status="ready",
+    )
+    return {
+        "ambient_updates": ambient_result.updates,
+        "recent_world_beats": ambient_result.recent_world_beats,
+        "scene_updates": ambient_result.scene_updates,
+        "chapter_updates": ambient_result.chapter_updates,
+        "scene_summary": ambient_result.scene_summary,
+    }
+
+
 def _resolve_narrative_turn_for_session(
     db: Session,
     container: AppContainer,
@@ -328,33 +405,14 @@ def _resolve_narrative_turn_for_session(
         )
     )
 
-    for role_run in resolution.role_runs:
-        for attempt in role_run.attempts:
-            db.add(
-                LLMRun(
-                    world_id=game_session.world_id,
-                    turn_id=turn.id,
-                    prompt_id=attempt.prompt_id,
-                    workflow_name="gm_council",
-                    council_role=role_run.council_role,
-                    stage_index=role_run.stage_index,
-                    approval_status=(
-                        "schema_invalid"
-                        if attempt.output_schema_status != "valid"
-                        else role_run.approval_status
-                    ),
-                    model_id=attempt.model_id,
-                    model_lane=attempt.model_lane,
-                    provider_name=attempt.provider_name,
-                    provider_response_id=attempt.provider_response_id,
-                    input_hash=attempt.input_hash,
-                    input_context_hash=attempt.input_context_hash,
-                    schema_version=attempt.schema_version,
-                    graph_context_status=graph_context.status,
-                    output_schema_status=attempt.output_schema_status,
-                    output_payload=attempt.output_payload,
-                )
-            )
+    _persist_role_runs(
+        db,
+        world_id=game_session.world_id,
+        turn_id=turn.id,
+        workflow_name="gm_council",
+        role_runs=resolution.role_runs,
+        graph_context_status=graph_context.status,
+    )
 
     if not resolution.succeeded:
         progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
@@ -498,17 +556,7 @@ def _resolve_narrative_turn_for_session(
         scene_move=getattr(payload, "scene_move", None),
         scene_pressure=getattr(payload, "scene_pressure", None),
     )
-    post_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-    )
     combined_faction_updates = [*state_updates["faction_updates"], *consequence_result.faction_updates]
-    next_choices = _canonicalize_next_choices(
-        [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
-        post_state.get("next_choices") or [],
-    )
 
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
@@ -531,7 +579,9 @@ def _resolve_narrative_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
-        "next_choices": next_choices,
+        "ambient_updates": [],
+        "recent_world_beats": [],
+        "next_choices": [],
         "quest_updates": state_updates["quest_updates"],
         "faction_updates": combined_faction_updates,
         "inventory_updates": state_updates["inventory_updates"],
@@ -557,6 +607,8 @@ def _resolve_narrative_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "ambient_updates": [],
+        "recent_world_beats": [],
         "faction_updates": combined_faction_updates,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
@@ -591,6 +643,49 @@ def _resolve_narrative_turn_for_session(
     )
     db.flush()
 
+    ambient_input_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    ambient_result = _run_ambient_world_pass(
+        db,
+        container,
+        game_session=game_session,
+        player_actor=player_actor,
+        turn=turn,
+        location_id=prepared.location_id,
+        session_state=ambient_input_state,
+    )
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    next_choices = _canonicalize_next_choices(
+        [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
+        post_state.get("next_choices") or [],
+    )
+    turn.resolved_output = {
+        **turn.resolved_output,
+        "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
+        "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
+        "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "ambient_updates": ambient_result["ambient_updates"],
+        "recent_world_beats": ambient_result["recent_world_beats"],
+        "next_choices": next_choices,
+    }
+    event.payload = {
+        **event.payload,
+        "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
+        "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
+        "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "ambient_updates": ambient_result["ambient_updates"],
+        "recent_world_beats": ambient_result["recent_world_beats"],
+    }
+
     return TurnResolutionResult(
         turn=turn,
         event=event,
@@ -606,16 +701,18 @@ def _resolve_narrative_turn_for_session(
         inventory_updates=state_updates["inventory_updates"],
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
-        scene_updates=scene_result["scene_updates"],
-        chapter_updates=scene_result["chapter_updates"],
+        scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
+        chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        ambient_updates=ambient_result["ambient_updates"],
         action_type="narrative",
         input_mode=input_mode,
         interpreted_intent=interpreted_intent,
         next_choices=next_choices,
         consequence_summary=consequence_result.consequence_summary,
         scene_tone=consequence_result.scene_tone,
-        scene_summary=scene_result["scene_summary"],
-        progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "choice_generation"],
+        scene_summary=ambient_result["scene_summary"] or scene_result["scene_summary"],
+        recent_world_beats=ambient_result["recent_world_beats"],
+        progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "ambient_world_pass", "choice_generation"],
     )
 
 
@@ -811,13 +908,6 @@ def _resolve_reward_item_turn_for_session(
         scene_move="pivot",
         scene_pressure="medium",
     )
-    post_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-    )
-    next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
 
     memories = container.memory_service.materialize_memories(
         db,
@@ -852,6 +942,8 @@ def _resolve_reward_item_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "ambient_updates": [],
+        "recent_world_beats": [],
         "faction_updates": combined_faction_updates,
     }
     event.payload = {
@@ -864,7 +956,49 @@ def _resolve_reward_item_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "ambient_updates": [],
+        "recent_world_beats": [],
         "faction_updates": combined_faction_updates,
+    }
+
+    ambient_input_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    ambient_result = _run_ambient_world_pass(
+        db,
+        container,
+        game_session=game_session,
+        player_actor=player_actor,
+        turn=turn,
+        location_id=prepared.location_id,
+        session_state=ambient_input_state,
+    )
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
+    turn.resolved_output = {
+        **turn.resolved_output,
+        "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
+        "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
+        "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "ambient_updates": ambient_result["ambient_updates"],
+        "recent_world_beats": ambient_result["recent_world_beats"],
+        "next_choices": next_choices,
+    }
+    event.payload = {
+        **event.payload,
+        "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
+        "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
+        "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "ambient_updates": ambient_result["ambient_updates"],
+        "recent_world_beats": ambient_result["recent_world_beats"],
     }
 
     return TurnResolutionResult(
@@ -882,19 +1016,22 @@ def _resolve_reward_item_turn_for_session(
         inventory_updates=outcome.inventory_updates,
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
-        scene_updates=scene_result["scene_updates"],
-        chapter_updates=scene_result["chapter_updates"],
+        scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
+        chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        ambient_updates=ambient_result["ambient_updates"],
         action_type="use_reward_item",
         input_mode=input_mode,
         interpreted_intent=resolved_interpreted_intent,
         next_choices=next_choices,
         consequence_summary=consequence_result.consequence_summary,
         scene_tone=consequence_result.scene_tone,
-        scene_summary=scene_result["scene_summary"],
+        scene_summary=ambient_result["scene_summary"] or scene_result["scene_summary"],
+        recent_world_beats=ambient_result["recent_world_beats"],
         progress_phases=[
             *(progress_phases or ["item_use"]),
             *([] if "consequence_resolution" in (progress_phases or []) else ["consequence_resolution"]),
             *([] if "scene_framing" in (progress_phases or []) else ["scene_framing"]),
+            *([] if "ambient_world_pass" in (progress_phases or []) else ["ambient_world_pass"]),
             *([] if "choice_generation" in (progress_phases or []) else ["choice_generation"]),
         ],
     )
@@ -939,6 +1076,8 @@ def _build_failed_turn_result(
         "consequence_updates": [],
         "scene_updates": [],
         "chapter_updates": [],
+        "ambient_updates": [],
+        "recent_world_beats": [],
         "scene_tone": scene_tone_for_band("setback"),
         "outcome_band": "setback",
         **(failure_payload or {}),
@@ -998,6 +1137,7 @@ def _build_failed_turn_result(
         consequence_updates=[],
         scene_updates=[],
         chapter_updates=[],
+        ambient_updates=[],
         action_type=action_type,
         input_mode=input_mode,
         interpreted_intent=interpreted_intent,
@@ -1005,6 +1145,7 @@ def _build_failed_turn_result(
         consequence_summary=consequence_summary,
         scene_tone=scene_tone_for_band("setback"),
         scene_summary=consequence_summary,
+        recent_world_beats=[],
         progress_phases=progress_phases,
         error_detail=failure_reason,
         status_code=status_code,

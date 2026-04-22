@@ -153,6 +153,9 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["checks"]["shadow_replay"]["candidate_passed"] is True
     assert gate["canary_promote_status"] == "ready"
     assert {item["route_id"] for item in gate["diff_summary"]} == {
+        "ambient.memory_manager",
+        "ambient.npc_manager",
+        "ambient.safety_guard",
         "council.world_progress",
         "council.rules_arbiter",
         "council.safety_guard",
