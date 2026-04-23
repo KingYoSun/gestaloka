@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, ChapterTrack, Location, SceneFrame, new_id
+from app.modules.world_state.branch import branch_label
 
 
 SceneMove = Literal["hold", "deepen", "pivot", "close"]
@@ -61,8 +62,24 @@ def _chapter_status_for_state(chapter_key: str, state: dict[str, Any]) -> Chapte
 
 
 def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, state: dict[str, Any]) -> str:
+    chapter_state = state.get("chapter") or {}
+    current_branch = str(chapter_state.get("current_branch") or "")
+    crossroads_summary = str(chapter_state.get("crossroads_summary") or "").strip()
     if chapter_key == "watch_path_followup":
-        base = "The next chapter follows the watch path the Lantern Sigil opened beyond the square."
+        if current_branch == "watch_oath":
+            base = (
+                "The next chapter follows the watch path through Watch Oath, leaning toward formal trust, "
+                "kept promises, and the watch's visible order."
+            )
+        elif current_branch == "lantern_whispers":
+            base = (
+                "The next chapter follows the watch path through Lantern Whispers, leaning toward rumor, "
+                "lampglow, and the city's offstage pull."
+            )
+        elif crossroads_summary:
+            base = crossroads_summary
+        else:
+            base = "The next chapter follows the watch path the Lantern Sigil opened beyond the square."
         if chapter_status == "cooling":
             return f"{base} Its main beat has landed, and the chapter is cooling into aftermath."
         if chapter_status == "resolved":
@@ -85,9 +102,15 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
 def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
     location = state.get("location") or {}
     location_name = str(location.get("name") or "the square")
+    chapter_state = state.get("chapter") or {}
+    current_branch = str(chapter_state.get("current_branch") or "")
     active_quest = _active_quest(state)
     progress = int(active_quest.get("progress") or 0)
     if chapter_key == "watch_path_followup":
+        if current_branch == "watch_oath":
+            return f"The watch path beyond {location_name} is asking whether formal trust can actually hold."
+        if current_branch == "lantern_whispers":
+            return f"The watch path beyond {location_name} is listening for rumor, lampglow, and what the city keeps half-hidden."
         followup = _followup_quest(state)
         if followup and str(followup.get("status") or "") == "completed":
             return f"The newly opened watch path beyond {location_name} is settling after the sigil's passage."
@@ -179,13 +202,23 @@ def scene_summary_text(stakes_summary: str, pressure_summary: str) -> str:
     return " ".join(part.strip() for part in (stakes_summary, pressure_summary) if str(part).strip()).strip()
 
 
-def chapter_track_to_dict(chapter: ChapterTrack) -> dict[str, Any]:
-    return {
+def chapter_track_to_dict(chapter: ChapterTrack, *, include_internal: bool = False) -> dict[str, Any]:
+    payload = {
         "id": chapter.id,
         "key": chapter.chapter_key,
         "status": chapter.status,
         "summary": chapter.summary,
+        "crossroads_summary": chapter.crossroads_summary,
+        "branch_hint": (
+            f"The chapter now leans toward {branch_label(chapter.branch_key)}."
+            if chapter.branch_key
+            else (chapter.crossroads_summary or "")
+        ),
     }
+    if include_internal:
+        payload["branch_status"] = chapter.crossroads_status
+        payload["current_branch"] = chapter.branch_key
+    return payload
 
 
 def _location_summary(db: Session, scene: SceneFrame) -> dict[str, Any] | None:
@@ -276,11 +309,17 @@ def _current_scene(db: Session, world_id: str, actor_id: str) -> SceneFrame | No
     return rows[0] if rows else None
 
 
-def get_current_chapter_summary(db: Session, world_id: str, actor_id: str) -> dict[str, Any] | None:
+def get_current_chapter_summary(
+    db: Session,
+    world_id: str,
+    actor_id: str,
+    *,
+    include_internal: bool = False,
+) -> dict[str, Any] | None:
     chapter = _current_chapter(db, world_id, actor_id)
     if chapter is None:
         return None
-    return chapter_track_to_dict(chapter)
+    return chapter_track_to_dict(chapter, include_internal=include_internal)
 
 
 def get_current_scene_summary(db: Session, world_id: str, actor_id: str) -> dict[str, Any] | None:
@@ -406,6 +445,10 @@ def list_chapter_tracks_debug(db: Session, world_id: str) -> list[dict[str, Any]
             "chapter_key": chapter.chapter_key,
             "status": chapter.status,
             "summary": chapter.summary,
+            "branch_key": chapter.branch_key,
+            "crossroads_status": chapter.crossroads_status,
+            "crossroads_summary": chapter.crossroads_summary,
+            "committed_at": chapter.committed_at.isoformat() if chapter.committed_at is not None else None,
             "updated_at": chapter.updated_at.isoformat(),
             "resolved_at": chapter.resolved_at.isoformat() if chapter.resolved_at is not None else None,
         }

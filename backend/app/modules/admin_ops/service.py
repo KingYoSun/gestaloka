@@ -19,6 +19,7 @@ from app.modules.world_state.ambient import (
     list_offstage_beats_debug,
     list_world_ticks_debug,
 )
+from app.modules.world_state.branch import list_route_pressures_debug
 from app.modules.world_state.scene import list_chapter_tracks_debug, list_scene_frames_debug
 from app.modules.world_state.service import (
     list_consequence_threads_debug,
@@ -297,6 +298,27 @@ def world_chapters(db: Session, *, world_id: str) -> dict[str, object]:
     }
 
 
+def world_chapter_branches(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": [
+            {
+                "chapter_id": item["id"],
+                "owner_actor_id": item["owner_actor_id"],
+                "owner_actor_name": item["owner_actor_name"],
+                "chapter_key": item["chapter_key"],
+                "status": item["status"],
+                "branch_key": item.get("branch_key"),
+                "crossroads_status": item.get("crossroads_status"),
+                "crossroads_summary": item.get("crossroads_summary"),
+                "committed_at": item.get("committed_at"),
+                "updated_at": item["updated_at"],
+            }
+            for item in list_chapter_tracks_debug(db, world_id)
+        ],
+    }
+
+
 def world_scenes(db: Session, *, world_id: str) -> dict[str, object]:
     return {
         "world_id": world_id,
@@ -336,6 +358,13 @@ def world_offstage_beats(db: Session, *, world_id: str) -> dict[str, object]:
     return {
         "world_id": world_id,
         "items": list_offstage_beats_debug(db, world_id),
+    }
+
+
+def world_route_pressures(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_route_pressures_debug(db, world_id),
     }
 
 

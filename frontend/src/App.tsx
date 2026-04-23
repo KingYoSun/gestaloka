@@ -95,6 +95,8 @@ type ChapterSummaryValue = {
   key: string;
   status: string;
   summary: string;
+  crossroads_summary?: string;
+  branch_hint?: string;
 };
 
 type ChapterSummary = ChapterSummaryValue | null;
@@ -225,6 +227,7 @@ type SessionState = {
   chapter: ChapterSummary;
   current_scene: CurrentSceneSummary;
   recent_scene_history: string[];
+  recent_branch_echoes: string[];
   local_figures: PlazaFigureSummary[];
   nearby_routes: NearbyRouteSummary[];
   recent_travel_history: string[];
@@ -279,6 +282,14 @@ type TurnResponse = {
   consequence_updates: Array<ConsequenceThreadSummary & { action?: string }>;
   scene_updates: Array<SceneSummaryValue & { action?: string }>;
   chapter_updates: ChapterSummaryValue[];
+  branch_updates: Array<{
+    action: string;
+    route_key?: string | null;
+    label?: string;
+    summary: string;
+    branch_hint?: string;
+    crossroads_summary?: string;
+  }>;
   ambient_updates: Array<{
     event_id: string;
     actor_id: string;
@@ -288,6 +299,7 @@ type TurnResponse = {
   }>;
   recent_world_beats: string[];
   recent_offstage_beats: string[];
+  crossroads_summary: string;
   idle_updates: Array<{
     event_id: string;
     actor_id: string;
@@ -456,8 +468,38 @@ type ChapterOpsItem = {
   chapter_key: string;
   status: string;
   summary: string;
+  branch_key?: string | null;
+  crossroads_status?: string;
+  crossroads_summary?: string;
+  committed_at?: string | null;
   updated_at: string;
   resolved_at: string | null;
+};
+
+type RoutePressureOpsItem = {
+  world_id: string;
+  owner_actor_id: string;
+  owner_actor_name: string;
+  chapter_key: string;
+  route_key: string;
+  label: string;
+  pressure: number;
+  band: string;
+  last_signal: string;
+  updated_at: string;
+};
+
+type ChapterBranchOpsItem = {
+  chapter_id: string;
+  owner_actor_id: string;
+  owner_actor_name: string;
+  chapter_key: string;
+  status: string;
+  branch_key: string | null;
+  crossroads_status: string;
+  crossroads_summary: string;
+  committed_at: string | null;
+  updated_at: string;
 };
 
 type SceneOpsItem = {
@@ -868,6 +910,12 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
   const recentSceneHistory = response.scene_summary
     ? [response.scene_summary, ...current.recent_scene_history.filter((item) => item !== response.scene_summary)].slice(0, 3)
     : current.recent_scene_history;
+  const recentBranchEchoes = response.branch_updates?.length
+    ? response.branch_updates
+        .map((item) => item.summary)
+        .filter((item, index, items) => Boolean(item) && items.indexOf(item) === index)
+        .slice(0, 3)
+    : current.recent_branch_echoes;
   const recentWorldBeats = response.recent_world_beats?.length
     ? response.recent_world_beats
     : current.recent_world_beats;
@@ -887,7 +935,18 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
         .slice(0, 3)
     : current.offstage_murmurs;
   const currentScene = response.scene_updates.length ? response.scene_updates[response.scene_updates.length - 1] : current.current_scene;
-  const currentChapter = response.chapter_updates.length ? response.chapter_updates[response.chapter_updates.length - 1] : current.chapter;
+  const currentChapterBase = response.chapter_updates.length ? response.chapter_updates[response.chapter_updates.length - 1] : current.chapter;
+  const currentChapter = currentChapterBase
+    ? {
+        ...currentChapterBase,
+        crossroads_summary: response.crossroads_summary || currentChapterBase.crossroads_summary || "",
+        branch_hint:
+          response.branch_updates?.[response.branch_updates.length - 1]?.branch_hint ??
+          currentChapterBase.branch_hint ??
+          response.crossroads_summary ??
+          "",
+      }
+    : currentChapterBase;
   const currentLocation = response.current_location ?? current.current_location ?? current.location;
 
   return {
@@ -900,6 +959,7 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
     chapter: currentChapter,
     current_scene: currentScene,
     recent_scene_history: recentSceneHistory,
+    recent_branch_echoes: recentBranchEchoes,
     recent_travel_history: response.travel_summary
       ? [response.travel_summary, ...current.recent_travel_history.filter((item) => item !== response.travel_summary)].slice(0, 3)
       : current.recent_travel_history,
@@ -1018,6 +1078,8 @@ function App() {
   const [relationshipOps, setRelationshipOps] = useState<RelationshipOpsItem[]>([]);
   const [consequenceThreadOps, setConsequenceThreadOps] = useState<ConsequenceThreadOpsItem[]>([]);
   const [chapterOps, setChapterOps] = useState<ChapterOpsItem[]>([]);
+  const [routePressureOps, setRoutePressureOps] = useState<RoutePressureOpsItem[]>([]);
+  const [chapterBranchOps, setChapterBranchOps] = useState<ChapterBranchOpsItem[]>([]);
   const [sceneOps, setSceneOps] = useState<SceneOpsItem[]>([]);
   const [locationOps, setLocationOps] = useState<LocationOpsItem[]>([]);
   const [travelLogOps, setTravelLogOps] = useState<TravelLogItem[]>([]);
@@ -1106,6 +1168,8 @@ function App() {
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
       setChapterOps([]);
+      setRoutePressureOps([]);
+      setChapterBranchOps([]);
       setSceneOps([]);
       setLocationOps([]);
       setTravelLogOps([]);
@@ -1250,6 +1314,8 @@ function App() {
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
       setChapterOps([]);
+      setRoutePressureOps([]);
+      setChapterBranchOps([]);
       setSceneOps([]);
       setObservability(null);
       setSpOverview(null);
@@ -1296,6 +1362,8 @@ function App() {
         setRelationshipOps([]);
         setConsequenceThreadOps([]);
         setChapterOps([]);
+        setRoutePressureOps([]);
+        setChapterBranchOps([]);
         setSceneOps([]);
         setLocationOps([]);
         setTravelLogOps([]);
@@ -1320,6 +1388,8 @@ function App() {
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
       setChapterOps([]);
+      setRoutePressureOps([]);
+      setChapterBranchOps([]);
       setSceneOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
@@ -1338,6 +1408,8 @@ function App() {
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
       setChapterOps([]);
+      setRoutePressureOps([]);
+      setChapterBranchOps([]);
       setSceneOps([]);
       setLocationOps([]);
       setTravelLogOps([]);
@@ -1355,6 +1427,8 @@ function App() {
         relationshipPayload,
         threadPayload,
         chapterPayload,
+        chapterBranchPayload,
+        routePressurePayload,
         scenePayload,
         locationPayload,
         travelLogPayload,
@@ -1368,6 +1442,8 @@ function App() {
         apiFetch<{ items: RelationshipOpsItem[] }>(`/ops/worlds/${currentWorldId}/relationships`, currentToken),
         apiFetch<{ items: ConsequenceThreadOpsItem[] }>(`/ops/worlds/${currentWorldId}/consequence-threads`, currentToken),
         apiFetch<{ items: ChapterOpsItem[] }>(`/ops/worlds/${currentWorldId}/chapters`, currentToken),
+        apiFetch<{ items: ChapterBranchOpsItem[] }>(`/ops/worlds/${currentWorldId}/chapter-branches`, currentToken),
+        apiFetch<{ items: RoutePressureOpsItem[] }>(`/ops/worlds/${currentWorldId}/route-pressures`, currentToken),
         apiFetch<{ items: SceneOpsItem[] }>(`/ops/worlds/${currentWorldId}/scenes`, currentToken),
         apiFetch<{ items: LocationOpsItem[] }>(`/ops/worlds/${currentWorldId}/locations`, currentToken),
         apiFetch<{ items: TravelLogItem[] }>(`/ops/worlds/${currentWorldId}/travel-log`, currentToken),
@@ -1381,6 +1457,8 @@ function App() {
       setRelationshipOps(relationshipPayload.items);
       setConsequenceThreadOps(threadPayload.items);
       setChapterOps(chapterPayload.items);
+      setChapterBranchOps(chapterBranchPayload.items);
+      setRoutePressureOps(routePressurePayload.items);
       setSceneOps(scenePayload.items);
       setLocationOps(locationPayload.items);
       setTravelLogOps(travelLogPayload.items);
@@ -1400,6 +1478,8 @@ function App() {
       setRelationshipOps([]);
       setConsequenceThreadOps([]);
       setChapterOps([]);
+      setRoutePressureOps([]);
+      setChapterBranchOps([]);
       setSceneOps([]);
       setLocationOps([]);
       setTravelLogOps([]);
@@ -1947,6 +2027,11 @@ function App() {
                     <strong>{sessionState.chapter.summary}</strong>
                   </p>
                   <p>Chapter status: {sessionState.chapter.status}</p>
+                  {sessionState.chapter.crossroads_summary ? <p>{sessionState.chapter.crossroads_summary}</p> : null}
+                  {sessionState.chapter.branch_hint &&
+                  sessionState.chapter.branch_hint !== sessionState.chapter.crossroads_summary ? (
+                    <p>{sessionState.chapter.branch_hint}</p>
+                  ) : null}
                 </div>
               ) : (
                 <p>No chapter frame yet.</p>
@@ -1976,6 +2061,19 @@ function App() {
                   ))
                 ) : (
                   <li>No scene echoes are visible yet.</li>
+                )}
+              </ul>
+              <h3>Recent branch echoes</h3>
+              <ul className="stream" data-testid="recent-branch-echoes">
+                {sessionState?.recent_branch_echoes.length ? (
+                  sessionState.recent_branch_echoes.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>branch</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No branch echo has gathered into focus yet.</li>
                 )}
               </ul>
             </article>
@@ -2530,10 +2628,43 @@ function App() {
                       <strong>{item.chapter_key}</strong>
                       <span>{item.status}</span>
                       <span>{item.summary}</span>
+                      {item.crossroads_summary ? <span>{item.crossroads_summary}</span> : null}
                     </li>
                   ))
                 ) : (
                   <li>No chapter timeline data loaded.</li>
+                )}
+              </ul>
+              <h3>Chapter branch status</h3>
+              <ul className="stream" data-testid="chapter-branch-stream">
+                {chapterBranchOps.length ? (
+                  chapterBranchOps.map((item) => (
+                    <li key={item.chapter_id}>
+                      <strong>{item.chapter_key}</strong>
+                      <span>{item.crossroads_status}</span>
+                      <span>{item.branch_key ?? "uncommitted"}</span>
+                      <span>{item.crossroads_summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No chapter branch data loaded.</li>
+                )}
+              </ul>
+              <h3>Route pressures</h3>
+              <ul className="stream" data-testid="route-pressure-stream">
+                {routePressureOps.length ? (
+                  routePressureOps.map((item) => (
+                    <li key={`${item.owner_actor_id}-${item.chapter_key}-${item.route_key}`}>
+                      <strong>{item.owner_actor_name}</strong>
+                      <span>{item.chapter_key}</span>
+                      <span>
+                        {item.route_key} / {item.band} / {item.pressure.toFixed(2)}
+                      </span>
+                      <span>{item.last_signal}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No route pressure data loaded.</li>
                 )}
               </ul>
               <h3>Scene timeline</h3>

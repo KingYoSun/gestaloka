@@ -123,6 +123,8 @@ async def resolve_turn(
         await realtime_hub.emit(payload.session_id, "scene.updated", {"items": result.scene_updates})
     if result.chapter_updates:
         await realtime_hub.emit(payload.session_id, "chapter.updated", {"items": result.chapter_updates})
+    if result.branch_updates:
+        await realtime_hub.emit(payload.session_id, "branch.updated", {"items": result.branch_updates})
     if result.ambient_updates:
         await realtime_hub.emit(
             payload.session_id,
@@ -164,6 +166,7 @@ async def resolve_turn(
                 "consequence_updates": [],
                 "scene_updates": [],
                 "chapter_updates": [],
+                "branch_updates": [],
                 "ambient_updates": [],
                 "action_type": result.action_type,
                 "input_mode": result.input_mode,
@@ -172,6 +175,7 @@ async def resolve_turn(
                 "consequence_summary": result.consequence_summary,
                 "scene_tone": result.scene_tone,
                 "scene_summary": result.scene_summary,
+                "crossroads_summary": result.crossroads_summary,
                 "current_location": result.current_location,
                 "travel_summary": result.travel_summary,
                 "recent_world_beats": result.recent_world_beats,
@@ -203,8 +207,10 @@ async def resolve_turn(
         "consequence_updates": result.consequence_updates,
         "scene_updates": result.scene_updates,
         "chapter_updates": result.chapter_updates,
+        "branch_updates": result.branch_updates,
         "ambient_updates": result.ambient_updates,
         "scene_summary": result.scene_summary,
+        "crossroads_summary": result.crossroads_summary,
         "current_location": result.current_location,
         "travel_summary": result.travel_summary,
         "recent_world_beats": result.recent_world_beats,

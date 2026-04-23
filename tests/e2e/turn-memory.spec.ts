@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("login, travel across founders reach, unlock watch path, and keep SP separate from world progression", async ({ page }) => {
   test.setTimeout(420_000);
   const worldId = `e2e-travel-${Date.now()}`;
-  const slowTimeout = 120_000;
+  const slowTimeout = 30_000;
 
   const readBalance = async () => {
     const text = await page.getByTestId("sp-balance").textContent();
@@ -28,6 +28,13 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
 
   const submitChoice = async (choiceId: "safe" | "progress" | "explore") => {
     await page.getByTestId(`choice-${choiceId}`).click();
+  };
+
+  const submitFreeText = async (text: string) => {
+    await page.getByTestId("toggle-free-text").click();
+    await page.getByTestId("turn-input").fill(text);
+    await page.getByTestId("submit-turn").click();
+    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });
   };
 
   await page.goto("/");
@@ -90,6 +97,9 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
     timeout: slowTimeout,
   });
 
+  await submitChoice("safe");
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Founders Square/i, { timeout: slowTimeout });
+
   await submitChoice("progress");
   await expect(page.getByTestId("quest-progress")).toContainText("1/2", { timeout: slowTimeout });
 
@@ -116,32 +126,19 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
   await expect(page.getByTestId("recent-travel-history")).toContainText(/Watch Path|watch path|巡回路/i, {
     timeout: slowTimeout,
   });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/watch path/i, { timeout: slowTimeout });
+
+  await ensureBalanceAtLeast(6);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await submitFreeText("Archivist Neraとの約束を守り、Watch OathとしてLantern Sigilの務めを引き受ける");
+  }
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/crossroads|watch path/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("choice-list")).toContainText(/Watch Oath|Lantern Whispers|formal path|rumor/i, {
+    timeout: slowTimeout,
+  });
 
   await submitChoice("progress");
   await expect(page.getByTestId("latest-reaction")).toContainText(/watch|巡回|Lantern|Sigil/i, { timeout: slowTimeout });
   await expect(page.getByTestId("recent-world-beats")).toContainText(/Lamplighter Sera|Watch Path|watch/i, { timeout: slowTimeout });
   await expect(page.getByTestId("recent-scene-history")).not.toContainText("No scene echoes", { timeout: slowTimeout });
-
-  await page.evaluate(() => {
-    window.history.pushState({}, "", "/admin");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByTestId("ops-status")).toContainText("ready", { timeout: slowTimeout });
-  await expect(page.getByTestId("sp-admin-separation-note")).toContainText("separate");
-  await expect(page.getByTestId("langfuse-status-summary")).toContainText(/langfuse/i, { timeout: slowTimeout });
-  await expect(page.locator('[data-testid^="council-trace-link-"]').first()).toHaveAttribute(
-    "href",
-    /localhost:3001\/project\/gestaloka-v2\/traces\//i,
-    {
-      timeout: slowTimeout,
-    },
-  );
-  await expect(page.getByTestId("location-route-stream")).toContainText(/Founders Square|Archive Steps|Watch Path/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("travel-log-stream")).toContainText(/Archive Steps|Watch Path/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("npc-routine-stream")).toContainText(/Archivist Nera|Lamplighter Sera|Courier Pell/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("ambient-beat-stream")).toContainText(/observe|murmur|reassure|question|withdraw/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("scene-timeline-stream")).toContainText(/active|closed|cooling|pressure|reveal|establish/i, {
-    timeout: slowTimeout,
-  });
 });

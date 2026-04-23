@@ -17,6 +17,7 @@ from app.modules.llm_harness.service import (
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
+from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, normalize_world_tags
 
@@ -41,6 +42,7 @@ class CouncilWorldProgressPayload(BaseModel):
     memories: list[MemoryDraft] = Field(min_length=1)
     world_tags: list[WorldTag] = Field(min_length=1)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    branch_signals: list[BranchSignal] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     resolution_summary: str = Field(min_length=1)
     risk_level: Literal["low", "medium", "high"]
@@ -260,6 +262,8 @@ class GMCouncilService:
         current_scene = request.session_state.get("current_scene") or {}
         current_chapter = request.session_state.get("chapter") or {}
         recent_scene_history = request.session_state.get("recent_scene_history") or []
+        recent_branch_echoes = request.session_state.get("recent_branch_echoes") or []
+        route_pressures = (current_chapter or {}).get("route_pressures") or []
         current_location = request.session_state.get("current_location") or request.session_state.get("location") or {}
         local_figures = request.session_state.get("local_figures") or request.session_state.get("plaza_figures") or []
         nearby_routes = request.session_state.get("nearby_routes") or []
@@ -358,6 +362,8 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "recent_branch_echoes": recent_branch_echoes,
+            "route_pressures": route_pressures,
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
@@ -412,6 +418,8 @@ class GMCouncilService:
             "local_figures": local_figures,
             "nearby_routes": nearby_routes,
             "recent_travel_history": recent_travel_history,
+            "recent_branch_echoes": recent_branch_echoes,
+            "route_pressures": route_pressures,
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
@@ -467,6 +475,8 @@ class GMCouncilService:
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,
+            "recent_branch_echoes": recent_branch_echoes,
+            "route_pressures": route_pressures,
             "current_location": current_location,
             "local_figures": local_figures,
             "nearby_routes": nearby_routes,
@@ -504,6 +514,7 @@ class GMCouncilService:
         world_progress_payload = world_progress_result.final_payload
         assert world_progress_payload is not None
         world_progress_payload.consequence_tags = normalize_consequence_tags(list(world_progress_payload.consequence_tags))
+        world_progress_payload.branch_signals = normalize_branch_signals(list(world_progress_payload.branch_signals))
         world_progress_payload.world_tags = self._choice_world_tags(
             session_state=request.session_state,
             selected_choice=request.selected_choice,
@@ -669,6 +680,7 @@ class GMCouncilService:
             next_choices=world_progress_payload.next_choices,
             consequence_summary=intent_payload.consequence_summary,
             consequence_tags=world_progress_payload.consequence_tags,
+            branch_signals=world_progress_payload.branch_signals,
             outcome_band=world_progress_payload.outcome_band,
             scene_tone=narrative_payload.tone,
             scene_move=world_progress_payload.scene_move,

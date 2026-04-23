@@ -31,9 +31,11 @@ from app.modules.admin_ops.service import (
     world_locations,
     world_npc_locations,
     world_npc_routines,
+    world_route_pressures,
     world_relationships,
     world_scenes,
     world_travel_log,
+    world_chapter_branches,
     world_consequence_threads,
     world_ticks,
 )
@@ -201,6 +203,17 @@ def get_world_chapters(
     return world_chapters(db, world_id=world_id)
 
 
+@router.get("/worlds/{world_id}/chapter-branches")
+def get_world_chapter_branches(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_chapter_branches(db, world_id=world_id)
+
+
 @router.get("/worlds/{world_id}/scenes")
 def get_world_scenes(
     world_id: str,
@@ -221,6 +234,17 @@ def get_world_consequence_threads(
 ) -> dict[str, object]:
     del container, user
     return world_consequence_threads(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/route-pressures")
+def get_world_route_pressures(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_route_pressures(db, world_id=world_id)
 
 
 @router.get("/worlds/{world_id}/npc-routines")

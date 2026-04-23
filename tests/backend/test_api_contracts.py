@@ -119,6 +119,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "chapter",
         "current_scene",
         "recent_scene_history",
+        "recent_branch_echoes",
         "local_figures",
         "nearby_routes",
         "recent_travel_history",
@@ -182,8 +183,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "consequence_updates",
             "scene_updates",
             "chapter_updates",
+            "branch_updates",
             "ambient_updates",
             "scene_summary",
+            "crossroads_summary",
             "recent_world_beats",
             "recent_offstage_beats",
             "idle_updates",
@@ -439,6 +442,13 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert chapters_response.status_code == 200
     assert chapters_response.json()["items"]
 
+    chapter_branches_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/chapter-branches",
+        headers=auth_headers,
+    )
+    assert chapter_branches_response.status_code == 200
+    assert "items" in chapter_branches_response.json()
+
     scenes_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/scenes",
         headers=auth_headers,
@@ -463,6 +473,13 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert ambient_beats_response.status_code == 200
     assert ambient_beats_response.json()["items"]
     assert {"beat_kind", "visible_summary"} <= set(ambient_beats_response.json()["items"][0])
+
+    route_pressures_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/route-pressures",
+        headers=auth_headers,
+    )
+    assert route_pressures_response.status_code == 200
+    assert "items" in route_pressures_response.json()
 
     locations_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/locations",

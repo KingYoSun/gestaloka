@@ -285,10 +285,38 @@ class ChapterTrack(Base, TimestampMixin):
     chapter_key: Mapped[str] = mapped_column(String(96))
     status: Mapped[str] = mapped_column(String(32), default="active")
     summary: Mapped[str] = mapped_column(Text, default="")
+    branch_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    crossroads_status: Mapped[str] = mapped_column(String(32), default="none")
+    crossroads_summary: Mapped[str] = mapped_column(Text, default="")
     opening_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     closing_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RoutePressure(Base, TimestampMixin):
+    __tablename__ = "route_pressures"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_route_pressures_id_world"),
+        UniqueConstraint(
+            "world_id",
+            "owner_actor_id",
+            "chapter_key",
+            "route_key",
+            name="uq_route_pressures_owner_chapter_route",
+        ),
+        ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    owner_actor_id: Mapped[str] = mapped_column(String(36))
+    chapter_key: Mapped[str] = mapped_column(String(96))
+    route_key: Mapped[str] = mapped_column(String(64))
+    pressure: Mapped[float] = mapped_column(Float, default=0.0)
+    band: Mapped[str] = mapped_column(String(32), default="low")
+    last_signal: Mapped[str] = mapped_column(String(64), default="none")
 
 
 class SceneFrame(Base, TimestampMixin):

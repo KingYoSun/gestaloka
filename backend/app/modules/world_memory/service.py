@@ -170,6 +170,14 @@ def build_retrieval_query_text(
     location = state.get("location") or {}
     if isinstance(location, dict) and location.get("name"):
         lines.append(f"location={location['name']}")
+    chapter = state.get("chapter") or {}
+    if isinstance(chapter, dict):
+        if chapter.get("summary"):
+            lines.append(f"chapter={chapter['summary']}")
+        if chapter.get("crossroads_summary"):
+            lines.append(f"crossroads={chapter['crossroads_summary']}")
+        if chapter.get("branch_hint"):
+            lines.append(f"branch_hint={chapter['branch_hint']}")
     for quest in (state.get("quests") or [])[:2]:
         if isinstance(quest, dict):
             lines.append(
@@ -183,6 +191,9 @@ def build_retrieval_query_text(
     inventory = [item.get("name", "") for item in (state.get("inventory") or []) if isinstance(item, dict) and item.get("name")]
     if inventory:
         lines.append(f"inventory={', '.join(inventory[:3])}")
+    branch_echoes = [str(item) for item in (state.get("recent_branch_echoes") or []) if str(item).strip()]
+    if branch_echoes:
+        lines.append(f"branch_echoes={'; '.join(branch_echoes[:2])}")
     lines.extend((relation_context or [])[:6])
     return "\n".join(item for item in lines if item)
 

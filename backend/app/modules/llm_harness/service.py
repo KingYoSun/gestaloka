@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.core.config import Settings
 from app.core.prompts import PromptDefinition, PromptRegistry
 from app.modules.observability.service import ObservabilityService
+from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
 
@@ -123,6 +124,7 @@ class TurnResolutionPayload(BaseModel):
     next_choices: list[NarrativeChoiceDraft] = Field(min_length=3)
     consequence_summary: str = Field(min_length=1)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    branch_signals: list[BranchSignal] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     scene_tone: str = Field(min_length=1)
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
@@ -508,6 +510,15 @@ class StubModelProvider(BaseModelProvider):
         elif current_chapter and str(current_chapter.get("key") or "") == "watch_path_followup":
             scene_move = "hold"
             scene_pressure = "medium"
+        branch_signals = normalize_branch_signals([str(item) for item in input_payload.get("branch_signals") or []])
+        lower_text = f"{interpreted_intent} {input_text}".lower()
+        if active_quest_stage == "watch_path_followup" or str(current_chapter.get("key") or "") == "watch_path_followup":
+            if any(token in lower_text for token in ("archivist", "watch", "oath", "promise", "order")):
+                branch_signals = normalize_branch_signals([*branch_signals, "formal_trust", "kept_watch_promise"])
+            if any(token in lower_text for token in ("courier", "lamplighter", "rumor", "whisper", "street")):
+                branch_signals = normalize_branch_signals([*branch_signals, "rumor_curiosity", "street_pull"])
+            if "sigil" in lower_text:
+                branch_signals = normalize_branch_signals([*branch_signals, "sigil_duty"])
         return {
             "event_type": "player.turn.resolved",
             "event_payload": {
@@ -532,6 +543,7 @@ class StubModelProvider(BaseModelProvider):
             ],
             "world_tags": world_tags,
             "consequence_tags": consequence_tags,
+            "branch_signals": branch_signals,
             "outcome_band": outcome_band,
             "resolution_summary": (
                 str(input_payload.get("consequence_summary") or "").strip()

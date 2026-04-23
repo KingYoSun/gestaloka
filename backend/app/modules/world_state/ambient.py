@@ -29,6 +29,7 @@ from app.modules.actor.service import adjust_relationship_strength
 from app.modules.llm_harness.service import CouncilRoleRun, ModelRouter, PromptExecutionOutcome
 from app.modules.world_memory.service import MemoryService, build_retrieval_query_text
 from app.modules.world_state.consequence import relationship_band, relationship_summary, thread_summary, thread_title
+from app.modules.world_state.branch import BranchPressureEngine
 from app.modules.world_state.scene import SceneFrameEngine
 
 
@@ -806,7 +807,13 @@ class AmbientWorldPassService:
         if location_id is None:
             return None
 
-        idle_state = build_session_state(db, world_id=world_id, actor_id=player_actor.id, location_id=location_id)
+        idle_state = build_session_state(
+            db,
+            world_id=world_id,
+            actor_id=player_actor.id,
+            location_id=location_id,
+            include_internal=True,
+        )
         tick = WorldTick(
             world_id=world_id,
             tick_kind="idle_world_pass",
@@ -1335,6 +1342,12 @@ class AmbientWorldPassService:
 
         scene_updates: list[dict[str, Any]] = []
         scene_summary = str((session_state.get("current_scene") or {}).get("summary") or "")
+        BranchPressureEngine.apply_idle_pass(
+            db,
+            world_id=world_id,
+            actor_id=player_actor.id,
+            beat_updates=updates,
+        )
         if last_event_id is not None:
             scene_result = SceneFrameEngine.apply(
                 db,

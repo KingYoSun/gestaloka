@@ -46,6 +46,13 @@ from app.modules.world_state.ambient import (
     list_recent_offstage_beats,
     list_recent_world_beats,
 )
+from app.modules.world_state.branch import (
+    crossroads_summary_text,
+    dominant_branch_key,
+    list_recent_branch_echoes,
+    list_route_pressures,
+    player_visible_branch_hint,
+)
 from app.modules.world_state.consequence import (
     ConsequenceRuleEngine,
     ConsequenceRuleInput,
@@ -1205,6 +1212,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     scene_summary = str(current_scene.get("summary") or "").strip()
     pressure_summary = str(current_scene.get("pressure_summary") or "").strip()
     chapter_summary = str((session_state.get("chapter") or {}).get("summary") or "").strip()
+    crossroads_summary = str((session_state.get("chapter") or {}).get("crossroads_summary") or "").strip()
+    branch_hint = str((session_state.get("chapter") or {}).get("branch_hint") or "").strip()
+    route_pressures = (session_state.get("chapter") or {}).get("route_pressures") or []
+    current_branch = str((session_state.get("chapter") or {}).get("current_branch") or "")
+    recent_branch_echoes = session_state.get("recent_branch_echoes") or []
     recent_world_beats = session_state.get("recent_world_beats") or []
     ambient_murmurs = session_state.get("ambient_murmurs") or []
     recent_offstage_beats = session_state.get("recent_offstage_beats") or []
@@ -1218,6 +1230,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     leading_local_figure = str((local_figures[0] or {}).get("summary") or "") if local_figures else ""
     leading_route = str((nearby_routes[0] or {}).get("summary") or "") if nearby_routes else ""
     leading_travel = str(recent_travel_history[0] or "") if recent_travel_history else ""
+    leading_branch_echo = str(recent_branch_echoes[0] or "") if recent_branch_echoes else ""
+    dominant_branch = dominant_branch_key(route_pressures)
 
     def route_to(location_key: str) -> dict[str, Any] | None:
         return next(
@@ -1379,6 +1393,66 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "canonical_input_text": "Lantern Sigilで開いた巡回路の痕跡や見張りの記憶を集める",
                 "action_kind": "narrative",
             }
+        if current_branch == "watch_oath":
+            safe_choice = {
+                **safe_choice,
+                "label": "見張りの秩序を崩さず、約束の線を丁寧に保つ",
+                "canonical_input_text": "見張りの秩序を崩さず、約束の線を丁寧に保つ",
+            }
+            progress_choice = {
+                **progress_choice,
+                "label": "Watch Oath に沿って前へ進み、正式な信頼を固める",
+                "canonical_input_text": "Watch Oath に沿って前へ進み、正式な信頼を固める",
+            }
+            explore_choice = {
+                **explore_choice,
+                "label": "秩序の裏でまだ揺れている噂やためらいを探る",
+                "canonical_input_text": "秩序の裏でまだ揺れている噂やためらいを探る",
+            }
+        elif current_branch == "lantern_whispers":
+            safe_choice = {
+                **safe_choice,
+                "label": "広がりすぎた噂を刺激せず、灯の下の空気を読む",
+                "canonical_input_text": "広がりすぎた噂を刺激せず、灯の下の空気を読む",
+            }
+            progress_choice = {
+                **progress_choice,
+                "label": "Lantern Whispers を辿り、街の quieter path を前へ進める",
+                "canonical_input_text": "Lantern Whispers を辿り、街の quieter path を前へ進める",
+            }
+            explore_choice = {
+                **explore_choice,
+                "label": "噂の外縁に残る formal path の影を探る",
+                "canonical_input_text": "噂の外縁に残る formal path の影を探る",
+            }
+        elif crossroads_summary:
+            safe_choice = {
+                **safe_choice,
+                "label": "どちらの道にも決め切らず、場の圧だけを静かに読む",
+                "canonical_input_text": "どちらの道にも決め切らず、場の圧だけを静かに読む",
+            }
+            if dominant_branch == "watch_oath":
+                progress_choice = {
+                    **progress_choice,
+                    "label": "見張りの側へ少し踏み込み、formal path を前へ押す",
+                    "canonical_input_text": "見張りの側へ少し踏み込み、formal path を前へ押す",
+                }
+                explore_choice = {
+                    **explore_choice,
+                    "label": "街の rumor 側にまだ残る別の糸を拾う",
+                    "canonical_input_text": "街の rumor 側にまだ残る別の糸を拾う",
+                }
+            elif dominant_branch == "lantern_whispers":
+                progress_choice = {
+                    **progress_choice,
+                    "label": "噂と灯の側へ少し踏み込み、Lantern Whispers を前へ押す",
+                    "canonical_input_text": "噂と灯の側へ少し踏み込み、Lantern Whispers を前へ押す",
+                }
+                explore_choice = {
+                    **explore_choice,
+                    "label": "見張りの oath 側にまだ残る formal な糸を拾う",
+                    "canonical_input_text": "見張りの oath 側にまだ残る formal な糸を拾う",
+                }
 
     archive_route = route_to("archive_steps")
     square_route = route_to("square")
@@ -1427,6 +1501,9 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             scene_summary,
             pressure_summary,
             chapter_summary,
+            crossroads_summary,
+            branch_hint,
+            leading_branch_echo,
             leading_travel if str(choice.get("action_kind") or "") == "travel" else "",
             leading_route if str(choice.get("action_kind") or "") == "travel" else "",
             leading_world_beat if choice["choice_id"] != "safe" else leading_murmur,
@@ -1446,6 +1523,7 @@ def build_session_state(
     world_id: str,
     actor_id: str,
     location_id: str | None,
+    include_internal: bool = False,
 ) -> dict[str, Any]:
     character = get_character_summary(db, world_id, actor_id)
     quests = list_quest_summaries(db, world_id, actor_id)
@@ -1454,7 +1532,8 @@ def build_session_state(
     relationships = list_relationship_summaries(db, world_id, actor_id)
     active_consequence_threads = list_active_consequence_threads(db, world_id, actor_id)
     recent_consequence_history = list_recent_consequence_history(db, world_id, actor_id)
-    chapter = get_current_chapter_summary(db, world_id, actor_id)
+    chapter_full = get_current_chapter_summary(db, world_id, actor_id, include_internal=True)
+    chapter = None if chapter_full is None else dict(chapter_full)
     current_scene = get_current_scene_summary(db, world_id, actor_id)
     recent_scene_history = list_recent_scene_history(db, world_id, actor_id)
     current_location = get_location_summary(db, world_id, location_id)
@@ -1466,6 +1545,45 @@ def build_session_state(
     offstage_murmurs = list_offstage_murmurs(db, world_id, location_id)
     nearby_routes = list_nearby_routes(db, world_id, location_id)
     recent_travel_history = list_recent_travel_history(db, world_id, actor_id)
+    chapter_key = str((chapter or {}).get("key") or "")
+    route_pressures = (
+        list_route_pressures(db, world_id=world_id, actor_id=actor_id, chapter_key=chapter_key)
+        if chapter_key == "watch_path_followup"
+        else []
+    )
+    branch_hint = player_visible_branch_hint(
+        current_branch=((chapter or {}).get("current_branch") if include_internal else None),
+        pressures={
+            "watch_oath": float(next((item["pressure"] for item in route_pressures if item["route_key"] == "watch_oath"), 0.0)),
+            "lantern_whispers": float(
+                next((item["pressure"] for item in route_pressures if item["route_key"] == "lantern_whispers"), 0.0)
+            ),
+        },
+        crossroads_status=str((chapter or {}).get("branch_status") or ("open" if route_pressures and chapter_key == "watch_path_followup" else "none")),
+    )
+    if chapter is not None:
+        if not str(chapter.get("crossroads_summary") or "").strip() and route_pressures and chapter_key == "watch_path_followup":
+            chapter["crossroads_summary"] = crossroads_summary_text(
+                current_branch=chapter.get("current_branch"),
+                crossroads_status=str(chapter.get("branch_status") or "open"),
+                pressures={
+                    "watch_oath": float(
+                        next((item["pressure"] for item in route_pressures if item["route_key"] == "watch_oath"), 0.0)
+                    ),
+                    "lantern_whispers": float(
+                        next((item["pressure"] for item in route_pressures if item["route_key"] == "lantern_whispers"), 0.0)
+                    ),
+                },
+            )
+        chapter["crossroads_summary"] = str(chapter.get("crossroads_summary") or "")
+        chapter["branch_hint"] = branch_hint or str(chapter.get("branch_hint") or "")
+        chapter["route_pressures"] = route_pressures
+    recent_branch_echoes = list_recent_branch_echoes(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        current_chapter=chapter,
+    )
     state = {
         "world_id": world_id,
         "location": current_location,
@@ -1486,6 +1604,7 @@ def build_session_state(
         "npc_locations": npc_locations,
         "recent_offstage_beats": recent_offstage_beats,
         "offstage_murmurs": offstage_murmurs,
+        "recent_branch_echoes": recent_branch_echoes,
         "relationships": relationships,
         "active_consequence_threads": active_consequence_threads,
         "recent_consequence_history": recent_consequence_history,
@@ -1493,6 +1612,10 @@ def build_session_state(
         "important_inventory_affordances": important_inventory_affordances(inventory),
     }
     state["next_choices"] = default_next_choices(state)
+    if not include_internal and chapter is not None:
+        chapter.pop("current_branch", None)
+        chapter.pop("branch_status", None)
+        chapter.pop("route_pressures", None)
     return state
 
 

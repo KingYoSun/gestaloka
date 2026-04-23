@@ -20,6 +20,7 @@ from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.gm_council.service import CouncilRequest
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
+from app.modules.world_state.branch import BranchCommitDraft, BranchPressureEngine, ensure_route_pressures
 from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
 from app.modules.world_state.rules import normalize_world_tags
 from app.modules.world_state.service import (
@@ -67,6 +68,7 @@ class TurnResolutionResult:
     consequence_updates: list[dict]
     scene_updates: list[dict]
     chapter_updates: list[dict]
+    branch_updates: list[dict]
     ambient_updates: list[dict]
     location_updates: list[dict]
     action_type: str
@@ -76,6 +78,7 @@ class TurnResolutionResult:
     consequence_summary: str
     scene_tone: str
     scene_summary: str
+    crossroads_summary: str
     current_location: dict[str, Any] | None
     travel_summary: str | None
     recent_world_beats: list[str]
@@ -425,6 +428,76 @@ def _apply_langfuse_trace_to_turn(turn: Turn, trace_link: Any) -> None:
         }
 
 
+def _persist_branch_commit(
+    db: Session,
+    container: AppContainer,
+    *,
+    game_session: GameSession,
+    turn: Turn,
+    player_actor: Actor,
+    location_id: str | None,
+    commit: BranchCommitDraft,
+) -> tuple[Event, list[Any]]:
+    event = Event(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        turn_id=turn.id,
+        event_type=commit.event_type,
+        source_actor_id=player_actor.id,
+        location_id=location_id,
+        payload={
+            **commit.payload,
+            "action_type": turn.action_type,
+            "resolution_mode": turn.resolution_mode,
+        },
+        narrative=commit.narrative,
+    )
+    db.add(event)
+    db.flush()
+    memories = container.memory_service.materialize_memories(
+        db,
+        world_id=game_session.world_id,
+        source_event_id=event.id,
+        location_id=location_id,
+        drafts=commit.memory_drafts,
+    )
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={
+                "turn_id": turn.id,
+                "outcome": "branch_commit",
+                "location_id": location_id,
+            },
+        )
+    )
+    db.flush()
+    return event, memories
+
+
+def _branch_response_from_state(session_state: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    chapter = session_state.get("chapter") or {}
+    crossroads_summary = str(chapter.get("crossroads_summary") or "").strip()
+    branch_hint = str(chapter.get("branch_hint") or "").strip()
+    branch_status = str(chapter.get("branch_status") or "")
+    if not crossroads_summary:
+        return [], ""
+    action = "committed" if branch_status == "committed" else "crossroads_opened"
+    return (
+        [
+            {
+                "action": action,
+                "summary": crossroads_summary,
+                "branch_hint": branch_hint or crossroads_summary,
+                "crossroads_summary": crossroads_summary,
+            }
+        ],
+        crossroads_summary,
+    )
+
+
 def _resolve_narrative_turn_for_session(
     db: Session,
     container: AppContainer,
@@ -729,12 +802,41 @@ def _resolve_narrative_turn_for_session(
         action_kind="narrative",
         fail_forward=bool(interpreted_intent.get("fail_forward")),
     )
+    branch_result = BranchPressureEngine.apply_player_turn(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        source_event_id=event.id,
+        location_id=prepared.location_id,
+        session_state=session_state,
+        outcome_band=consequence_result.outcome_band,
+        world_tags=resolved_world_tags,
+        consequence_tags=payload.consequence_tags
+        or fallback_consequence_tags(
+            world_tags=resolved_world_tags,
+            action_kind="narrative",
+            fail_forward=bool(interpreted_intent.get("fail_forward")),
+        ),
+        branch_signals=list(getattr(payload, "branch_signals", []) or []),
+    )
+    branch_event_memories: list[Any] = []
+    if branch_result.commit is not None:
+        _, branch_event_memories = _persist_branch_commit(
+            db,
+            container,
+            game_session=game_session,
+            turn=turn,
+            player_actor=player_actor,
+            location_id=prepared.location_id,
+            commit=branch_result.commit,
+        )
 
     pre_scene_state = build_session_state(
         db,
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
+        include_internal=True,
     )
     scene_result = apply_scene_updates(
         db,
@@ -746,7 +848,7 @@ def _resolve_narrative_turn_for_session(
         action_kind="narrative",
         session_state=pre_scene_state,
         outcome_band=consequence_result.outcome_band,
-        scene_move=getattr(payload, "scene_move", None),
+        scene_move=branch_result.commit.forced_scene_move if branch_result.commit is not None else getattr(payload, "scene_move", None),
         scene_pressure=getattr(payload, "scene_pressure", None),
     )
     combined_faction_updates = [*state_updates["faction_updates"], *consequence_result.faction_updates]
@@ -772,6 +874,8 @@ def _resolve_narrative_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "branch_updates": branch_result.updates,
+        "crossroads_summary": branch_result.crossroads_summary,
         "ambient_updates": [],
         "recent_world_beats": [],
         "next_choices": [],
@@ -800,6 +904,8 @@ def _resolve_narrative_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "branch_updates": branch_result.updates,
+        "crossroads_summary": branch_result.crossroads_summary,
         "ambient_updates": [],
         "recent_world_beats": [],
         "faction_updates": combined_faction_updates,
@@ -841,6 +947,7 @@ def _resolve_narrative_turn_for_session(
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
+        include_internal=True,
     )
     ambient_result = _run_ambient_world_pass(
         db,
@@ -856,7 +963,9 @@ def _resolve_narrative_turn_for_session(
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
+        include_internal=True,
     )
+    public_branch_updates, crossroads_summary = _branch_response_from_state(post_state)
     next_choices = _canonicalize_next_choices(
         [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
         post_state.get("next_choices") or [],
@@ -866,6 +975,8 @@ def _resolve_narrative_turn_for_session(
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
         "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "branch_updates": public_branch_updates or branch_result.updates,
+        "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
         "next_choices": next_choices,
@@ -875,6 +986,8 @@ def _resolve_narrative_turn_for_session(
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
         "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "branch_updates": public_branch_updates or branch_result.updates,
+        "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
     }
@@ -882,9 +995,9 @@ def _resolve_narrative_turn_for_session(
     return TurnResolutionResult(
         turn=turn,
         event=event,
-        memory_ids=[memory.id for memory in memories],
+        memory_ids=[memory.id for memory in [*memories, *branch_event_memories]],
         event_payload=_event_payload(event),
-        memories_payload=[_memory_payload(memory) for memory in memories],
+        memories_payload=[_memory_payload(memory) for memory in [*memories, *branch_event_memories]],
         graph_context_status=graph_context.status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
@@ -896,6 +1009,7 @@ def _resolve_narrative_turn_for_session(
         consequence_updates=consequence_result.consequence_updates,
         scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
         chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        branch_updates=public_branch_updates or branch_result.updates,
         ambient_updates=ambient_result["ambient_updates"],
         location_updates=[],
         action_type="narrative",
@@ -905,6 +1019,7 @@ def _resolve_narrative_turn_for_session(
         consequence_summary=consequence_result.consequence_summary,
         scene_tone=consequence_result.scene_tone,
         scene_summary=ambient_result["scene_summary"] or scene_result["scene_summary"],
+        crossroads_summary=crossroads_summary or branch_result.crossroads_summary,
         current_location=post_state.get("current_location"),
         travel_summary=None,
         recent_world_beats=ambient_result["recent_world_beats"],
@@ -1087,11 +1202,19 @@ def _resolve_reward_item_turn_for_session(
         fail_forward=False,
     )
     combined_faction_updates = [*outcome.faction_updates, *consequence_result.faction_updates]
+    if any(str(item.get("stage_key") or "") == "watch_path_followup" for item in outcome.quest_updates):
+        ensure_route_pressures(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            chapter_key="watch_path_followup",
+        )
     pre_scene_state = build_session_state(
         db,
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
+        include_internal=True,
     )
     scene_result = apply_scene_updates(
         db,
@@ -1140,6 +1263,8 @@ def _resolve_reward_item_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "branch_updates": [],
+        "crossroads_summary": "",
         "ambient_updates": [],
         "recent_world_beats": [],
         "faction_updates": combined_faction_updates,
@@ -1154,6 +1279,8 @@ def _resolve_reward_item_turn_for_session(
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
         "chapter_updates": scene_result["chapter_updates"],
+        "branch_updates": [],
+        "crossroads_summary": "",
         "ambient_updates": [],
         "recent_world_beats": [],
         "faction_updates": combined_faction_updates,
@@ -1164,6 +1291,7 @@ def _resolve_reward_item_turn_for_session(
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
+        include_internal=True,
     )
     ambient_result = _run_ambient_world_pass(
         db,
@@ -1179,13 +1307,17 @@ def _resolve_reward_item_turn_for_session(
         world_id=game_session.world_id,
         actor_id=player_actor.id,
         location_id=prepared.location_id,
+        include_internal=True,
     )
+    branch_updates, crossroads_summary = _branch_response_from_state(post_state)
     next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
     turn.resolved_output = {
         **turn.resolved_output,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
         "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "branch_updates": branch_updates,
+        "crossroads_summary": crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
         "next_choices": next_choices,
@@ -1195,6 +1327,8 @@ def _resolve_reward_item_turn_for_session(
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
         "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "branch_updates": branch_updates,
+        "crossroads_summary": crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
     }
@@ -1216,6 +1350,7 @@ def _resolve_reward_item_turn_for_session(
         consequence_updates=consequence_result.consequence_updates,
         scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
         chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        branch_updates=branch_updates,
         ambient_updates=ambient_result["ambient_updates"],
         location_updates=[],
         action_type="use_reward_item",
@@ -1225,6 +1360,7 @@ def _resolve_reward_item_turn_for_session(
         consequence_summary=consequence_result.consequence_summary,
         scene_tone=consequence_result.scene_tone,
         scene_summary=ambient_result["scene_summary"] or scene_result["scene_summary"],
+        crossroads_summary=crossroads_summary,
         current_location=post_state.get("current_location"),
         travel_summary=None,
         recent_world_beats=ambient_result["recent_world_beats"],
@@ -1335,6 +1471,7 @@ def _resolve_travel_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             location_id=destination.id,
+            include_internal=True,
         )
         scene_result = apply_scene_updates(
             db,
@@ -1391,6 +1528,8 @@ def _resolve_travel_turn_for_session(
             "scene_summary": scene_result["scene_summary"],
             "scene_updates": scene_result["scene_updates"],
             "chapter_updates": scene_result["chapter_updates"],
+            "branch_updates": [],
+            "crossroads_summary": "",
             "location_updates": outcome.location_updates,
             "current_location": get_location_summary(db, game_session.world_id, destination.id),
             "travel_summary": outcome.travel_summary,
@@ -1414,6 +1553,7 @@ def _resolve_travel_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             location_id=destination.id,
+            include_internal=True,
         )
         ambient_result = _run_ambient_world_pass(
             db,
@@ -1429,13 +1569,17 @@ def _resolve_travel_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             location_id=destination.id,
+            include_internal=True,
         )
+        branch_updates, crossroads_summary = _branch_response_from_state(post_state)
         next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
         turn.resolved_output = {
             **turn.resolved_output,
             "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
             "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
             "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+            "branch_updates": branch_updates,
+            "crossroads_summary": crossroads_summary,
             "ambient_updates": ambient_result["ambient_updates"],
             "recent_world_beats": ambient_result["recent_world_beats"],
             "next_choices": next_choices,
@@ -1445,6 +1589,8 @@ def _resolve_travel_turn_for_session(
             "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
             "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
             "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+            "branch_updates": branch_updates,
+            "crossroads_summary": crossroads_summary,
             "ambient_updates": ambient_result["ambient_updates"],
             "recent_world_beats": ambient_result["recent_world_beats"],
         }
@@ -1465,6 +1611,7 @@ def _resolve_travel_turn_for_session(
             consequence_updates=consequence_result.consequence_updates,
             scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
             chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+            branch_updates=branch_updates,
             ambient_updates=ambient_result["ambient_updates"],
             location_updates=outcome.location_updates,
             action_type="travel",
@@ -1474,6 +1621,7 @@ def _resolve_travel_turn_for_session(
             consequence_summary=outcome.travel_summary,
             scene_tone="measured",
             scene_summary=ambient_result["scene_summary"] or scene_result["scene_summary"],
+            crossroads_summary=crossroads_summary,
             current_location=post_state.get("current_location"),
             travel_summary=outcome.travel_summary,
             recent_world_beats=ambient_result["recent_world_beats"],
@@ -1525,6 +1673,7 @@ def _resolve_travel_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             location_id=prepared.location_id,
+            include_internal=True,
         )
         scene_result = apply_scene_updates(
             db,
@@ -1574,6 +1723,7 @@ def _resolve_travel_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             location_id=prepared.location_id,
+            include_internal=True,
         )
         ambient_result = _run_ambient_world_pass(
             db,
@@ -1589,8 +1739,10 @@ def _resolve_travel_turn_for_session(
             world_id=game_session.world_id,
             actor_id=player_actor.id,
             location_id=prepared.location_id,
+            include_internal=True,
         )
         travel_summary = str(event.payload.get("travel_summary") or event.narrative)
+        branch_updates, crossroads_summary = _branch_response_from_state(post_state)
         next_choices = _canonicalize_next_choices(post_state.get("next_choices") or [], post_state.get("next_choices") or [])
         turn.resolved_output = {
             "status": "resolved",
@@ -1612,6 +1764,8 @@ def _resolve_travel_turn_for_session(
             "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
             "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
             "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+            "branch_updates": branch_updates,
+            "crossroads_summary": crossroads_summary,
             "location_updates": [],
             "current_location": post_state.get("current_location"),
             "travel_summary": travel_summary,
@@ -1627,6 +1781,8 @@ def _resolve_travel_turn_for_session(
             "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
             "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
             "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+            "branch_updates": branch_updates,
+            "crossroads_summary": crossroads_summary,
             "ambient_updates": ambient_result["ambient_updates"],
             "recent_world_beats": ambient_result["recent_world_beats"],
         }
@@ -1647,6 +1803,7 @@ def _resolve_travel_turn_for_session(
             consequence_updates=consequence_result.consequence_updates,
             scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
             chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+            branch_updates=branch_updates,
             ambient_updates=ambient_result["ambient_updates"],
             location_updates=[],
             action_type="travel",
@@ -1656,6 +1813,7 @@ def _resolve_travel_turn_for_session(
             consequence_summary=consequence_result.consequence_summary,
             scene_tone=consequence_result.scene_tone,
             scene_summary=ambient_result["scene_summary"] or scene_result["scene_summary"],
+            crossroads_summary=crossroads_summary,
             current_location=post_state.get("current_location"),
             travel_summary=travel_summary,
             recent_world_beats=ambient_result["recent_world_beats"],
@@ -1710,6 +1868,8 @@ def _build_failed_turn_result(
         "consequence_updates": [],
         "scene_updates": [],
         "chapter_updates": [],
+        "branch_updates": [],
+        "crossroads_summary": "",
         "ambient_updates": [],
         "recent_world_beats": [],
         "scene_tone": scene_tone_for_band("setback"),
@@ -1771,6 +1931,7 @@ def _build_failed_turn_result(
         consequence_updates=[],
         scene_updates=[],
         chapter_updates=[],
+        branch_updates=[],
         ambient_updates=[],
         location_updates=[],
         action_type=action_type,
@@ -1780,6 +1941,7 @@ def _build_failed_turn_result(
         consequence_summary=consequence_summary,
         scene_tone=scene_tone_for_band("setback"),
         scene_summary=consequence_summary,
+        crossroads_summary="",
         current_location=get_location_summary(db, game_session.world_id, prepared.location_id),
         travel_summary=None,
         recent_world_beats=[],
@@ -1933,6 +2095,7 @@ def _session_state_with_latest_choices(
         world_id=world_id,
         actor_id=actor_id,
         location_id=location_id,
+        include_internal=True,
     )
     fallback_choices = state.get("next_choices") or []
     state["next_choices"] = _latest_session_choices(db, session_id=session_id, fallback_choices=fallback_choices)
