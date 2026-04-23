@@ -221,6 +221,12 @@ class StubModelProvider(BaseModelProvider):
             return self._ambient_npc_manager_output(input_payload)
         if prompt_id == "ambient.safety_guard":
             return self._ambient_safety_guard_output(input_payload)
+        if prompt_id == "idle.memory_manager":
+            return self._ambient_memory_manager_output(input_payload)
+        if prompt_id == "idle.npc_manager":
+            return self._idle_npc_manager_output(input_payload)
+        if prompt_id == "idle.safety_guard":
+            return self._ambient_safety_guard_output(input_payload)
         raise KeyError(f"Unsupported stub prompt: {prompt_id}")
 
     def _intent_interpreter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
@@ -676,6 +682,53 @@ class StubModelProvider(BaseModelProvider):
             "approval_status": approval_status,
             "reason": "ambient beat stays inside same-world local constraints" if approval_status == "approved" else "; ".join(violations),
             "violations": violations,
+        }
+
+    def _idle_npc_manager_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        npc_name = str(input_payload.get("npc_name") or "An offstage figure")
+        routine_state = input_payload.get("routine_state") or {}
+        role = str(routine_state.get("routine_role") or "watcher")
+        thread_types = {
+            str(item.get("thread_type") or "")
+            for item in (input_payload.get("active_consequence_threads") or [])
+            if isinstance(item, dict)
+        }
+        nearby_routes = [item for item in input_payload.get("nearby_routes") or [] if isinstance(item, dict)]
+        route_keys = [str(item.get("route_key") or "") for item in nearby_routes if str(item.get("status") or "") == "open"]
+
+        if "scrutiny" in thread_types:
+            return {
+                "beat_kind": "question",
+                "summary": f"{npc_name} keeps a sharper offstage question alive, making the district feel watched even in the player's absence.",
+                "tension_band": "high",
+                "target_route_key": None,
+            }
+        if "promise" in thread_types:
+            return {
+                "beat_kind": "murmur",
+                "summary": f"{npc_name} lets a rumor drift between districts about a promise that still has not settled.",
+                "tension_band": "medium",
+                "target_route_key": None,
+            }
+        if role == "courier" and route_keys:
+            return {
+                "beat_kind": "relocate",
+                "summary": f"{npc_name} keeps moving with the square's latest whisper, carrying it onward to the next stop.",
+                "tension_band": "medium",
+                "target_route_key": route_keys[0],
+            }
+        if role == "lamplighter" and route_keys:
+            return {
+                "beat_kind": "reassure",
+                "summary": f"{npc_name} keeps the district calmer from just out of sight, softening the line of rumor without erasing it.",
+                "tension_band": "low",
+                "target_route_key": None,
+            }
+        return {
+            "beat_kind": "observe",
+            "summary": f"{npc_name} keeps a quiet offstage watch and leaves the district to settle around that attention.",
+            "tension_band": str(routine_state.get("tension_band") or "medium"),
+            "target_route_key": None,
         }
 
 

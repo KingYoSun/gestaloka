@@ -71,6 +71,25 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
   });
   await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Archivist Nera/i, { timeout: slowTimeout });
 
+  await page.getByTestId("nav-admin").click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.getByTestId("trigger-idle-pass").click();
+  await expect(page.getByTestId("world-tick-stream")).toContainText(/idle_world_pass/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("npc-location-stream")).toContainText(/Archivist Nera|Lamplighter Sera|Courier Pell/i, {
+    timeout: slowTimeout,
+  });
+  await expect(page.getByTestId("offstage-beat-stream")).not.toContainText("No offstage beat log loaded.", {
+    timeout: slowTimeout,
+  });
+  await page.getByTestId("nav-game").click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("npc-locations-stream")).not.toContainText("No wider district movement is visible yet.", {
+    timeout: slowTimeout,
+  });
+  await expect(page.getByTestId("recent-world-beats")).not.toContainText("No wider plaza beat has risen yet.", {
+    timeout: slowTimeout,
+  });
+
   await submitChoice("progress");
   await expect(page.getByTestId("quest-progress")).toContainText("1/2", { timeout: slowTimeout });
 

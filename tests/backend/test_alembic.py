@@ -39,6 +39,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "consequence_threads",
         "chapter_tracks",
         "scene_frames",
+        "world_ticks",
         "sp_accounts",
         "sp_ledger",
         "llm_runs",
@@ -55,6 +56,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     eval_run_columns = {column["name"] for column in inspector.get_columns("eval_runs")}
     release_gate_columns = {column["name"] for column in inspector.get_columns("release_gate_reports")}
     memory_columns = {column["name"] for column in inspector.get_columns("memories")}
+    world_tick_columns = {column["name"] for column in inspector.get_columns("world_ticks")}
     assert "resolution_mode" in turn_columns
     assert "action_type" in turn_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= turn_columns
@@ -76,3 +78,4 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     } <= llm_run_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= eval_run_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= release_gate_columns
+    assert {"tick_kind", "status", "seed_turn_id", "location_id", "summary", "started_at", "completed_at"} <= world_tick_columns

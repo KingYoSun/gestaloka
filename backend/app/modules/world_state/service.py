@@ -40,7 +40,10 @@ from app.modules.actor.service import (
 from app.modules.world_state.ambient import (
     list_ambient_murmurs,
     list_local_figures,
+    list_npc_locations,
+    list_offstage_murmurs,
     list_plaza_figures,
+    list_recent_offstage_beats,
     list_recent_world_beats,
 )
 from app.modules.world_state.consequence import (
@@ -1204,8 +1207,14 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     chapter_summary = str((session_state.get("chapter") or {}).get("summary") or "").strip()
     recent_world_beats = session_state.get("recent_world_beats") or []
     ambient_murmurs = session_state.get("ambient_murmurs") or []
+    recent_offstage_beats = session_state.get("recent_offstage_beats") or []
+    offstage_murmurs = session_state.get("offstage_murmurs") or []
+    npc_locations = session_state.get("npc_locations") or []
     leading_world_beat = str(recent_world_beats[0]) if recent_world_beats else ""
     leading_murmur = str(ambient_murmurs[0]) if ambient_murmurs else ""
+    leading_offstage = str(recent_offstage_beats[0]) if recent_offstage_beats else ""
+    leading_offstage_murmur = str(offstage_murmurs[0]) if offstage_murmurs else ""
+    leading_npc_location = str((npc_locations[0] or {}).get("summary") or "") if npc_locations else ""
     leading_local_figure = str((local_figures[0] or {}).get("summary") or "") if local_figures else ""
     leading_route = str((nearby_routes[0] or {}).get("summary") or "") if nearby_routes else ""
     leading_travel = str(recent_travel_history[0] or "") if recent_travel_history else ""
@@ -1421,6 +1430,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             leading_travel if str(choice.get("action_kind") or "") == "travel" else "",
             leading_route if str(choice.get("action_kind") or "") == "travel" else "",
             leading_world_beat if choice["choice_id"] != "safe" else leading_murmur,
+            leading_offstage if choice["choice_id"] == "progress" else leading_offstage_murmur,
+            leading_npc_location if choice["choice_id"] == "explore" else "",
             leading_local_figure if choice["choice_id"] == "explore" else "",
             str(choice.get("summary") or "").strip(),
         ]
@@ -1450,6 +1461,9 @@ def build_session_state(
     local_figures = list_local_figures(db, world_id, actor_id, location_id)
     recent_world_beats = list_recent_world_beats(db, world_id, location_id)
     ambient_murmurs = list_ambient_murmurs(db, world_id, location_id)
+    npc_locations = list_npc_locations(db, world_id)
+    recent_offstage_beats = list_recent_offstage_beats(db, world_id, location_id)
+    offstage_murmurs = list_offstage_murmurs(db, world_id, location_id)
     nearby_routes = list_nearby_routes(db, world_id, location_id)
     recent_travel_history = list_recent_travel_history(db, world_id, actor_id)
     state = {
@@ -1469,6 +1483,9 @@ def build_session_state(
         "recent_travel_history": recent_travel_history,
         "recent_world_beats": recent_world_beats,
         "ambient_murmurs": ambient_murmurs,
+        "npc_locations": npc_locations,
+        "recent_offstage_beats": recent_offstage_beats,
+        "offstage_murmurs": offstage_murmurs,
         "relationships": relationships,
         "active_consequence_threads": active_consequence_threads,
         "recent_consequence_history": recent_consequence_history,

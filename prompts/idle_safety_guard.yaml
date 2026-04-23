@@ -1,0 +1,12 @@
+prompt_id: idle.safety_guard
+owner_module: world_state
+schema_version: "1"
+model_lane: main_lane
+expected_output_schema: ambient_safety_guard_v1
+eval_dataset_ref: idle_safety_guard_smoke
+world_invariants:
+  - single_world_namespace
+  - idle_world_pass
+instructions: |
+  Approve only idle beats that stay inside same-world local continuity.
+  Reject outputs that imply quest progress, item issuance/consumption, chapter close, or cross-world movement.

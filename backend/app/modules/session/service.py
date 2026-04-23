@@ -79,6 +79,8 @@ class TurnResolutionResult:
     current_location: dict[str, Any] | None
     travel_summary: str | None
     recent_world_beats: list[str]
+    recent_offstage_beats: list[str]
+    idle_updates: list[dict[str, Any]]
     progress_phases: list[str]
     error_detail: str | None = None
     status_code: int = 200
@@ -906,6 +908,8 @@ def _resolve_narrative_turn_for_session(
         current_location=post_state.get("current_location"),
         travel_summary=None,
         recent_world_beats=ambient_result["recent_world_beats"],
+        recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
+        idle_updates=[],
         progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "ambient_world_pass", "choice_generation"],
     )
 
@@ -1224,6 +1228,8 @@ def _resolve_reward_item_turn_for_session(
         current_location=post_state.get("current_location"),
         travel_summary=None,
         recent_world_beats=ambient_result["recent_world_beats"],
+        recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
+        idle_updates=[],
         progress_phases=[
             *(progress_phases or ["item_use"]),
             *([] if "consequence_resolution" in (progress_phases or []) else ["consequence_resolution"]),
@@ -1471,6 +1477,8 @@ def _resolve_travel_turn_for_session(
             current_location=post_state.get("current_location"),
             travel_summary=outcome.travel_summary,
             recent_world_beats=ambient_result["recent_world_beats"],
+            recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
+            idle_updates=[],
             progress_phases=[
                 *(progress_phases or ["travel_resolution"]),
                 *([] if "scene_framing" in (progress_phases or []) else ["scene_framing"]),
@@ -1651,6 +1659,8 @@ def _resolve_travel_turn_for_session(
             current_location=post_state.get("current_location"),
             travel_summary=travel_summary,
             recent_world_beats=ambient_result["recent_world_beats"],
+            recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
+            idle_updates=[],
             progress_phases=[
                 *(progress_phases or ["travel_resolution"]),
                 "consequence_resolution",
@@ -1773,6 +1783,15 @@ def _build_failed_turn_result(
         current_location=get_location_summary(db, game_session.world_id, prepared.location_id),
         travel_summary=None,
         recent_world_beats=[],
+        recent_offstage_beats=_session_state_with_latest_choices(
+            db,
+            session_id=game_session.id,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+        ).get("recent_offstage_beats")
+        or [],
+        idle_updates=[],
         progress_phases=progress_phases,
         error_detail=failure_reason,
         status_code=status_code,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,7 +12,13 @@ from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_memory.service import MemoryService
-from app.modules.world_state.ambient import list_ambient_beats_debug, list_npc_routines_debug
+from app.modules.world_state.ambient import (
+    list_ambient_beats_debug,
+    list_npc_locations,
+    list_npc_routines_debug,
+    list_offstage_beats_debug,
+    list_world_ticks_debug,
+)
 from app.modules.world_state.scene import list_chapter_tracks_debug, list_scene_frames_debug
 from app.modules.world_state.service import (
     list_consequence_threads_debug,
@@ -308,6 +315,54 @@ def world_ambient_beats(db: Session, *, world_id: str) -> dict[str, object]:
     return {
         "world_id": world_id,
         "items": list_ambient_beats_debug(db, world_id),
+    }
+
+
+def world_ticks(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_world_ticks_debug(db, world_id),
+    }
+
+
+def world_npc_locations(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_npc_locations(db, world_id),
+    }
+
+
+def world_offstage_beats(db: Session, *, world_id: str) -> dict[str, object]:
+    return {
+        "world_id": world_id,
+        "items": list_offstage_beats_debug(db, world_id),
+    }
+
+
+def trigger_idle_world_pass(
+    db: Session,
+    ambient_world_service: Any,
+    *,
+    world_id: str,
+) -> dict[str, object] | None:
+    result = ambient_world_service.run_idle_world_pass(db, world_id=world_id)
+    if result is None:
+        return None
+    return {
+        "world_id": world_id,
+        "tick": {
+            "tick_id": result.tick.id,
+            "status": result.tick.status,
+            "summary": result.tick.summary,
+            "location_id": result.tick.location_id,
+            "langfuse_status": result.langfuse_status,
+        },
+        "idle_updates": result.updates,
+        "recent_offstage_beats": result.recent_offstage_beats,
+        "offstage_murmurs": result.offstage_murmurs,
+        "npc_locations": result.npc_locations,
+        "scene_updates": result.scene_updates,
+        "scene_summary": result.scene_summary,
     }
 
 

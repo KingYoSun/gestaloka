@@ -1,0 +1,9 @@
+dataset_id: idle_npc_manager_smoke
+prompt_id: idle.npc_manager
+expected_output_schema: ambient_npc_manager_v1
+cases:
+  - case_id: idle-npc-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Courier Pell
+    input_text: 人通りの少ない時間に、配達人が広場の外で起こす小さな動きを決める

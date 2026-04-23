@@ -180,6 +180,14 @@ type PlazaFigureSummary = {
   summary: string;
 };
 
+type NPCLocationSummary = {
+  actor_id: string;
+  display_name: string;
+  location_id: string | null;
+  location_name: string;
+  summary: string;
+};
+
 type CurrentLocationSummary = {
   id: string;
   key: string;
@@ -223,6 +231,9 @@ type SessionState = {
   plaza_figures: PlazaFigureSummary[];
   recent_world_beats: string[];
   ambient_murmurs: string[];
+  npc_locations: NPCLocationSummary[];
+  recent_offstage_beats: string[];
+  offstage_murmurs: string[];
   relationships: RelationshipSummary[];
   active_consequence_threads: ConsequenceThreadSummary[];
   recent_consequence_history: string[];
@@ -276,6 +287,15 @@ type TurnResponse = {
     summary: string;
   }>;
   recent_world_beats: string[];
+  recent_offstage_beats: string[];
+  idle_updates: Array<{
+    event_id: string;
+    actor_id: string;
+    display_name: string;
+    beat_kind: string;
+    summary: string;
+    moved?: boolean;
+  }>;
 };
 
 type EventItem = {
@@ -503,6 +523,19 @@ type TravelLogItem = {
   travel_summary?: string;
   location_id: string | null;
   created_at: string;
+};
+
+type WorldTickItem = {
+  tick_id: string;
+  world_id: string;
+  tick_kind: string;
+  status: string;
+  seed_turn_id: string | null;
+  location_id: string | null;
+  summary: string;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 };
 
 type RebuildSummary = {
@@ -838,12 +871,21 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
   const recentWorldBeats = response.recent_world_beats?.length
     ? response.recent_world_beats
     : current.recent_world_beats;
+  const recentOffstageBeats = response.recent_offstage_beats?.length
+    ? response.recent_offstage_beats
+    : current.recent_offstage_beats;
   const ambientMurmurs = response.ambient_updates?.length
     ? response.ambient_updates
         .filter((item) => item.beat_kind === "murmur" || item.beat_kind === "question")
         .map((item) => item.summary)
         .slice(0, 3)
     : current.ambient_murmurs;
+  const offstageMurmurs = response.idle_updates?.length
+    ? response.idle_updates
+        .filter((item) => item.beat_kind === "murmur" || item.beat_kind === "question" || item.beat_kind === "relocate")
+        .map((item) => item.summary)
+        .slice(0, 3)
+    : current.offstage_murmurs;
   const currentScene = response.scene_updates.length ? response.scene_updates[response.scene_updates.length - 1] : current.current_scene;
   const currentChapter = response.chapter_updates.length ? response.chapter_updates[response.chapter_updates.length - 1] : current.chapter;
   const currentLocation = response.current_location ?? current.current_location ?? current.location;
@@ -863,6 +905,9 @@ function mergeTurnResponseIntoSessionState(current: SessionState | null, respons
       : current.recent_travel_history,
     recent_world_beats: recentWorldBeats,
     ambient_murmurs: ambientMurmurs,
+    npc_locations: current.npc_locations,
+    recent_offstage_beats: recentOffstageBeats,
+    offstage_murmurs: offstageMurmurs,
     relationships,
     active_consequence_threads: Array.from(threadMap.values()),
     recent_consequence_history: recentConsequenceHistory,
@@ -978,6 +1023,9 @@ function App() {
   const [travelLogOps, setTravelLogOps] = useState<TravelLogItem[]>([]);
   const [npcRoutineOps, setNpcRoutineOps] = useState<NPCRoutineOpsItem[]>([]);
   const [ambientBeatOps, setAmbientBeatOps] = useState<AmbientBeatOpsItem[]>([]);
+  const [worldTickOps, setWorldTickOps] = useState<WorldTickItem[]>([]);
+  const [npcLocationOps, setNpcLocationOps] = useState<NPCLocationSummary[]>([]);
+  const [offstageBeatOps, setOffstageBeatOps] = useState<AmbientBeatOpsItem[]>([]);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
@@ -1005,6 +1053,7 @@ function App() {
   const [adjustPending, setAdjustPending] = useState(false);
   const [evalPending, setEvalPending] = useState(false);
   const [checklistPending, setChecklistPending] = useState(false);
+  const [idlePassPending, setIdlePassPending] = useState(false);
   const [socketState, setSocketState] = useState("idle");
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -1062,6 +1111,9 @@ function App() {
       setTravelLogOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
+      setWorldTickOps([]);
+      setNpcLocationOps([]);
+      setOffstageBeatOps([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -1129,6 +1181,18 @@ function App() {
           ledgerWorldFilter || session.world_id,
           session.session_id,
         );
+      }
+      if (parsed.event === "idle.updated") {
+        void Promise.all([
+          refreshWorldState(session, token),
+          refreshAdminData(
+            token,
+            session.world_id,
+            ledgerUserFilter,
+            ledgerWorldFilter || session.world_id,
+            session.session_id,
+          ),
+        ]);
       }
     };
     socket.onerror = () => {
@@ -1237,6 +1301,9 @@ function App() {
         setTravelLogOps([]);
         setNpcRoutineOps([]);
         setAmbientBeatOps([]);
+        setWorldTickOps([]);
+        setNpcLocationOps([]);
+        setOffstageBeatOps([]);
         setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
@@ -1276,11 +1343,27 @@ function App() {
       setTravelLogOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
+      setWorldTickOps([]);
+      setNpcLocationOps([]);
+      setOffstageBeatOps([]);
       return;
     }
 
     try {
-      const [summaryPayload, relationshipPayload, threadPayload, chapterPayload, scenePayload, locationPayload, travelLogPayload, npcRoutinePayload, ambientBeatPayload] = await Promise.all([
+      const [
+        summaryPayload,
+        relationshipPayload,
+        threadPayload,
+        chapterPayload,
+        scenePayload,
+        locationPayload,
+        travelLogPayload,
+        npcRoutinePayload,
+        ambientBeatPayload,
+        worldTickPayload,
+        npcLocationPayload,
+        offstageBeatPayload,
+      ] = await Promise.all([
         apiFetch<GraphSummary>(`/ops/worlds/${currentWorldId}/graph-summary`, currentToken),
         apiFetch<{ items: RelationshipOpsItem[] }>(`/ops/worlds/${currentWorldId}/relationships`, currentToken),
         apiFetch<{ items: ConsequenceThreadOpsItem[] }>(`/ops/worlds/${currentWorldId}/consequence-threads`, currentToken),
@@ -1290,6 +1373,9 @@ function App() {
         apiFetch<{ items: TravelLogItem[] }>(`/ops/worlds/${currentWorldId}/travel-log`, currentToken),
         apiFetch<{ items: NPCRoutineOpsItem[] }>(`/ops/worlds/${currentWorldId}/npc-routines`, currentToken),
         apiFetch<{ items: AmbientBeatOpsItem[] }>(`/ops/worlds/${currentWorldId}/ambient-beats`, currentToken),
+        apiFetch<{ items: WorldTickItem[] }>(`/ops/worlds/${currentWorldId}/world-ticks`, currentToken),
+        apiFetch<{ items: NPCLocationSummary[] }>(`/ops/worlds/${currentWorldId}/npc-locations`, currentToken),
+        apiFetch<{ items: AmbientBeatOpsItem[] }>(`/ops/worlds/${currentWorldId}/offstage-beats`, currentToken),
       ]);
       setGraphSummary(summaryPayload);
       setRelationshipOps(relationshipPayload.items);
@@ -1300,6 +1386,9 @@ function App() {
       setTravelLogOps(travelLogPayload.items);
       setNpcRoutineOps(npcRoutinePayload.items);
       setAmbientBeatOps(ambientBeatPayload.items);
+      setWorldTickOps(worldTickPayload.items);
+      setNpcLocationOps(npcLocationPayload.items);
+      setOffstageBeatOps(offstageBeatPayload.items);
     } catch (requestError) {
       const typedError = requestError as APIError;
       if (typedError.status === 403) {
@@ -1316,6 +1405,9 @@ function App() {
       setTravelLogOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
+      setWorldTickOps([]);
+      setNpcLocationOps([]);
+      setOffstageBeatOps([]);
     }
   }
 
@@ -1471,6 +1563,41 @@ function App() {
       setError(formatError(requestError));
     } finally {
       setRebuildPending(false);
+    }
+  }
+
+  async function handleIdlePass() {
+    if (!token || !activeWorldId) {
+      setError("Choose a world before triggering an idle pass");
+      return;
+    }
+
+    try {
+      setIdlePassPending(true);
+      setError("");
+      const response = await apiFetch<{
+        world_id: string;
+        tick: {
+          tick_id: string;
+          status: string;
+          summary: string;
+          location_id: string | null;
+          langfuse_status: string;
+        };
+        idle_updates: Array<Record<string, unknown>>;
+      }>(`/ops/worlds/${activeWorldId}/idle-pass`, token, { method: "POST" });
+      setActivity((current) => [
+        { event: "ops.idle-pass", data: response as unknown as Record<string, unknown> },
+        ...current,
+      ].slice(0, 40));
+      await Promise.all([
+        session ? refreshWorldState(session, token) : Promise.resolve(),
+        refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
+      ]);
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setIdlePassPending(false);
     }
   }
 
@@ -1910,6 +2037,19 @@ function App() {
                   <li>No nearby figures have settled into focus yet.</li>
                 )}
               </ul>
+              <h3>Who is elsewhere</h3>
+              <ul className="stream" data-testid="npc-locations-stream">
+                {sessionState?.npc_locations.length ? (
+                  sessionState.npc_locations.map((item) => (
+                    <li key={`${item.actor_id}-${item.location_id ?? "none"}`}>
+                      <strong>{item.display_name}</strong>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No wider district movement is visible yet.</li>
+                )}
+              </ul>
               <h3>Nearby routes</h3>
               <ul className="stream" data-testid="nearby-routes-stream">
                 {sessionState?.nearby_routes.length ? (
@@ -1963,6 +2103,32 @@ function App() {
                   ))
                 ) : (
                   <li>No rumor has started moving through the square.</li>
+                )}
+              </ul>
+              <h3>Recent offstage beats</h3>
+              <ul className="stream" data-testid="recent-offstage-beats">
+                {sessionState?.recent_offstage_beats.length ? (
+                  sessionState.recent_offstage_beats.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>offstage</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No offstage shift is echoing back yet.</li>
+                )}
+              </ul>
+              <h3>Offstage murmurs</h3>
+              <ul className="stream" data-testid="offstage-murmurs-stream">
+                {sessionState?.offstage_murmurs.length ? (
+                  sessionState.offstage_murmurs.map((item, index) => (
+                    <li key={`${item}-${index}`}>
+                      <strong>murmur</strong>
+                      <span>{item}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No offstage rumor has reached you yet.</li>
                 )}
               </ul>
             </article>
@@ -2266,6 +2432,13 @@ function App() {
                 >
                   {rebuildPending ? "Rebuilding..." : "Rebuild graph"}
                 </button>
+                <button
+                  data-testid="trigger-idle-pass"
+                  onClick={() => void handleIdlePass()}
+                  disabled={!token || idlePassPending || opsState !== "ready" || !activeWorldId}
+                >
+                  {idlePassPending ? "Running idle pass..." : "Trigger idle pass"}
+                </button>
               </div>
               {lastRebuild ? (
                 <p data-testid="rebuild-result">
@@ -2424,6 +2597,20 @@ function App() {
                   <li>No NPC routine state loaded.</li>
                 )}
               </ul>
+              <h3>NPC current locations</h3>
+              <ul className="stream" data-testid="npc-location-stream">
+                {npcLocationOps.length ? (
+                  npcLocationOps.map((item) => (
+                    <li key={`${item.actor_id}-${item.location_id ?? "none"}`}>
+                      <strong>{item.display_name}</strong>
+                      <span>{item.location_name}</span>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No NPC location summary loaded.</li>
+                )}
+              </ul>
               <h3>Ambient beat log</h3>
               <ul className="stream" data-testid="ambient-beat-stream">
                 {ambientBeatOps.length ? (
@@ -2436,6 +2623,34 @@ function App() {
                   ))
                 ) : (
                   <li>No ambient beat log loaded.</li>
+                )}
+              </ul>
+              <h3>World tick log</h3>
+              <ul className="stream" data-testid="world-tick-stream">
+                {worldTickOps.length ? (
+                  worldTickOps.map((item) => (
+                    <li key={item.tick_id}>
+                      <strong>{item.tick_kind}</strong>
+                      <span>{item.status}</span>
+                      <span>{item.summary}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No world tick log loaded.</li>
+                )}
+              </ul>
+              <h3>Offstage beat log</h3>
+              <ul className="stream" data-testid="offstage-beat-stream">
+                {offstageBeatOps.length ? (
+                  offstageBeatOps.map((item) => (
+                    <li key={item.event_id}>
+                      <strong>{item.display_name ?? "Unknown figure"}</strong>
+                      <span>{item.beat_kind ?? "beat"}</span>
+                      <span>{item.visible_summary ?? "No visible summary"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No offstage beat log loaded.</li>
                 )}
               </ul>
               <h3>Recent runtime failures</h3>

@@ -1,0 +1,9 @@
+dataset_id: idle_memory_manager_smoke
+prompt_id: idle.memory_manager
+expected_output_schema: ambient_memory_manager_v1
+cases:
+  - case_id: idle-memory-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Courier Pell
+    input_text: 広場から少し離れた場所で、配達人が何を気に留めるかを要約する

@@ -1,0 +1,13 @@
+prompt_id: idle.npc_manager
+owner_module: world_state
+schema_version: "1"
+model_lane: lite_lane
+expected_output_schema: ambient_npc_manager_v1
+eval_dataset_ref: idle_npc_manager_smoke
+world_invariants:
+  - single_world_namespace
+  - idle_world_pass
+instructions: |
+  Choose one idle beat for an offstage NPC: observe, murmur, reassure, question, withdraw, or relocate.
+  Return only beat_kind, prose summary, and a low/medium/high tension band.
+  If relocate is appropriate, keep it local to an already-open route and never emit world mutations or ids.

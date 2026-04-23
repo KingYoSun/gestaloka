@@ -595,6 +595,68 @@ services:
         condition: service_started
     command: python -m app.modules.eval_harness.scheduler loop
 
+  world-scheduler:
+    build:
+      context: ./backend
+    container_name: gestaloka-v2-world-scheduler
+    env_file:
+      - .env
+    environment:
+      APP_RUNTIME_ROLE: primary
+      DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
+      PROMPT_DIR: /workspace/prompts
+      EVAL_DATASET_DIR: /workspace/evals/datasets
+      RELEASE_CONFIG_DIR: /workspace/config/release
+      RELEASE_RUNTIME_CONFIG_NAME: current
+      WORLD_IDLE_INTERVAL_SECONDS: ${WORLD_IDLE_INTERVAL_SECONDS:-60}
+      WORLD_IDLE_GRACE_SECONDS: ${WORLD_IDLE_GRACE_SECONDS:-60}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-gemini_developer_api}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-gemini_developer_api}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-30}
+      GEMINI_MAX_RETRIES: ${GEMINI_MAX_RETRIES:-2}
+      GEMINI_TEMPERATURE_LITE: ${GEMINI_TEMPERATURE_LITE:-0.2}
+      GEMINI_TEMPERATURE_MAIN: ${GEMINI_TEMPERATURE_MAIN:-0.3}
+      GEMINI_TEMPERATURE_PRO: ${GEMINI_TEMPERATURE_PRO:-0.1}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-001}
+      MEMORY_EMBEDDING_DIM: ${MEMORY_EMBEDDING_DIM:-768}
+      MEMORY_RETRIEVAL_LIMIT: ${MEMORY_RETRIEVAL_LIMIT:-8}
+      MEMORY_RETRIEVAL_MIN_SCORE: ${MEMORY_RETRIEVAL_MIN_SCORE:-0.1}
+      OTEL_SERVICE_NAME: gestaloka-world-scheduler
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_METRICS_HOST: 0.0.0.0
+      OTEL_METRICS_PORT: 9468
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gestaloka-dev}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gestaloka-dev}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://localhost:3001}
+      LANGFUSE_INTERNAL_BASE_URL: ${LANGFUSE_INTERNAL_BASE_URL:-http://langfuse-web:3000}
+      LANGFUSE_PROJECT: ${LANGFUSE_PROJECT:-gestaloka-v2}
+      LANGFUSE_ENV: ${LANGFUSE_ENV:-development}
+      CANARY_HEALTH_URL: http://backend-canary:8000/health
+      GRAPH_PROJECTION_BACKEND: nebula
+      NEBULA_HOST: nebula-graphd
+      NEBULA_PORT: 9669
+      NEBULA_SPACE: gestaloka_v2
+      NEBULA_USER: root
+      NEBULA_PASSWORD: nebula
+    volumes:
+      - ./backend:/app
+      - ./prompts:/workspace/prompts
+      - ./evals:/workspace/evals
+      - ./config:/workspace/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      langfuse-web:
+        condition: service_started
+    command: python -m app.modules.world_state.scheduler loop
+
   frontend-e2e:
     image: mcr.microsoft.com/playwright:v1.59.1-noble
     container_name: gestaloka-v2-frontend-e2e

@@ -1,0 +1,9 @@
+dataset_id: idle_safety_guard_smoke
+prompt_id: idle.safety_guard
+expected_output_schema: ambient_safety_guard_v1
+cases:
+  - case_id: idle-safety-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Archivist Nera
+    input_text: 閑散時の world pass が同一世界と既存章進行を壊していないかを検査する

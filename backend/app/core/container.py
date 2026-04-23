@@ -61,7 +61,12 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     model_router = eval_service.runtime_router()
     council_service = GMCouncilService(resolved_settings, model_router)
     economy_service = EconomyService(resolved_settings)
-    ambient_world_service = AmbientWorldPassService(resolved_settings, model_router, memory_service)
+    ambient_world_service = AmbientWorldPassService(
+        resolved_settings,
+        model_router,
+        memory_service,
+        observability_service,
+    )
     return AppContainer(
         settings=resolved_settings,
         session_factory=session_factory,

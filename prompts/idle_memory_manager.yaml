@@ -1,0 +1,13 @@
+prompt_id: idle.memory_manager
+owner_module: world_state
+schema_version: "1"
+model_lane: lite_lane
+expected_output_schema: ambient_memory_manager_v1
+eval_dataset_ref: idle_memory_manager_smoke
+world_invariants:
+  - single_world_namespace
+  - idle_world_pass
+instructions: |
+  Summarize what an offstage NPC should keep in mind during an idle world pass.
+  Return only a memory summary, a few focus memories, a scene summary, and a rumor focus.
+  Stay inside same-world local continuity and do not emit ids or direct mutations.

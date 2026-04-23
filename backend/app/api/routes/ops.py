@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_container, get_current_ops_user, get_db
 from app.core.container import AppContainer
-from app.models.entities import World
+from app.core.realtime import realtime_hub
+from app.models.entities import Session as GameSession, World
 from app.modules.admin_ops.service import (
     get_council_turn,
     list_council_turns,
@@ -21,16 +22,20 @@ from app.modules.admin_ops.service import (
     recent_runtime_failures,
     sp_ledger,
     sp_overview,
+    trigger_idle_world_pass,
     world_ambient_beats,
+    world_offstage_beats,
     world_memory_search,
     world_graph_summary,
     world_chapters,
     world_locations,
+    world_npc_locations,
     world_npc_routines,
     world_relationships,
     world_scenes,
     world_travel_log,
     world_consequence_threads,
+    world_ticks,
 )
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
@@ -238,6 +243,77 @@ def get_world_ambient_beats(
 ) -> dict[str, object]:
     del container, user
     return world_ambient_beats(db, world_id=world_id)
+
+
+@router.post("/worlds/{world_id}/idle-pass")
+async def post_world_idle_pass(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    result = trigger_idle_world_pass(db, container.ambient_world_service, world_id=world_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="World not found or has no active session")
+    db.commit()
+    active_sessions = list(
+        db.execute(
+            select(GameSession).where(GameSession.world_id == world_id, GameSession.status == "active")
+        ).scalars()
+    )
+    payload = {
+        "world_id": world_id,
+        "tick": result["tick"],
+        "items": result["idle_updates"],
+        "recent_offstage_beats": result["recent_offstage_beats"],
+        "offstage_murmurs": result["offstage_murmurs"],
+        "npc_locations": result["npc_locations"],
+    }
+    for game_session in active_sessions:
+        await realtime_hub.emit(game_session.id, "idle.updated", payload)
+        if result["idle_updates"]:
+            moved_items = [item for item in result["idle_updates"] if item.get("moved")]
+            if moved_items:
+                await realtime_hub.emit(
+                    game_session.id,
+                    "location.updated",
+                    {"items": moved_items},
+                )
+    return result
+
+
+@router.get("/worlds/{world_id}/world-ticks")
+def get_world_ticks(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_ticks(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/npc-locations")
+def get_world_npc_locations(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_npc_locations(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/offstage-beats")
+def get_world_offstage_beats(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_offstage_beats(db, world_id=world_id)
 
 
 @router.get("/worlds/{world_id}/locations")

@@ -138,6 +138,26 @@ class Session(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), default="active")
 
 
+class WorldTick(Base, TimestampMixin):
+    __tablename__ = "world_ticks"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_world_ticks_id_world"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["seed_turn_id", "world_id"], ["turns.id", "turns.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    tick_kind: Mapped[str] = mapped_column(String(32), default="idle_world_pass")
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    seed_turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Turn(Base, TimestampMixin):
     __tablename__ = "turns"
     __table_args__ = (

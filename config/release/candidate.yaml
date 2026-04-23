@@ -70,3 +70,24 @@ routes:
       lite_lane: gemini-2.5-flash-lite
       main_lane: gemini-2.5-flash
       pro_lane: gemini-3.1-pro-preview
+  idle.memory_manager:
+    prompt_id: idle.memory_manager
+    default_lane: lite_lane
+    model_ids:
+      lite_lane: gemini-2.5-flash-lite
+      main_lane: gemini-2.5-flash
+      pro_lane: gemini-3.1-pro-preview
+  idle.npc_manager:
+    prompt_id: idle.npc_manager
+    default_lane: lite_lane
+    model_ids:
+      lite_lane: gemini-2.5-flash-lite
+      main_lane: gemini-2.5-flash
+      pro_lane: gemini-3.1-pro-preview
+  idle.safety_guard:
+    prompt_id: idle.safety_guard
+    default_lane: main_lane
+    model_ids:
+      lite_lane: gemini-2.5-flash-lite
+      main_lane: gemini-2.5-flash
+      pro_lane: gemini-3.1-pro-preview

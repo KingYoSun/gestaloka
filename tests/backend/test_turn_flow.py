@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from app.models.entities import Item, Memory, OutboxEvent, ProjectionRecord, QuestAssignment, Turn
+from app.models.entities import Actor, Item, Memory, NPCProfile, OutboxEvent, ProjectionRecord, QuestAssignment, Turn
 from app.modules.world_memory.service import build_retrieval_query_text
 
 
@@ -325,3 +325,85 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
         )
         assert refreshed.trace.status == "ready"
         assert refreshed.trace.retrieved_memory_ids
+
+
+def test_manual_idle_world_pass_updates_offstage_state_without_mutating_progression(client, container, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-idle", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    pre_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert pre_state.status_code == 200
+    pre_payload = pre_state.json()
+
+    with container.session_factory() as db:
+        npc_rows = list(
+            db.execute(
+                select(Actor, NPCProfile)
+                .join(NPCProfile, (NPCProfile.actor_id == Actor.id) & (NPCProfile.world_id == Actor.world_id))
+                .where(Actor.world_id == session_payload["world_id"], Actor.actor_type == "npc")
+                .order_by(Actor.created_at.asc(), Actor.id.asc())
+            ).all()
+        )
+        assert len(npc_rows) == 3
+        before_locations = {actor.id: actor.current_location_id for actor, _ in npc_rows}
+        for _, profile in npc_rows:
+            routine_state = profile.routine_state or {}
+            assert {
+                "home_location_id",
+                "active_location_id",
+                "routine_role",
+                "beat_state",
+                "attention_target_actor_id",
+                "last_ambient_turn_id",
+                "last_idle_tick_id",
+                "rumor_focus",
+                "tension_band",
+            } <= set(routine_state)
+
+    idle_response = client.post(f"/ops/worlds/{session_payload['world_id']}/idle-pass", headers=auth_headers)
+    assert idle_response.status_code == 200
+    idle_payload = idle_response.json()
+    assert idle_payload["tick"]["status"] == "completed"
+    assert len(idle_payload["idle_updates"]) <= 2
+
+    world_ticks = client.get(f"/ops/worlds/{session_payload['world_id']}/world-ticks", headers=auth_headers)
+    npc_locations = client.get(f"/ops/worlds/{session_payload['world_id']}/npc-locations", headers=auth_headers)
+    offstage_beats = client.get(f"/ops/worlds/{session_payload['world_id']}/offstage-beats", headers=auth_headers)
+    assert world_ticks.status_code == 200
+    assert npc_locations.status_code == 200
+    assert offstage_beats.status_code == 200
+    assert world_ticks.json()["items"]
+    assert len(npc_locations.json()["items"]) == 3
+    assert offstage_beats.json()["items"]
+
+    post_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert post_state.status_code == 200
+    post_payload = post_state.json()
+    assert post_payload["quests"][0]["progress"] == pre_payload["quests"][0]["progress"]
+    assert post_payload["quests"][0]["stage_key"] == pre_payload["quests"][0]["stage_key"]
+    assert post_payload["inventory"] == pre_payload["inventory"]
+    assert post_payload["chapter"]["key"] == pre_payload["chapter"]["key"]
+    assert post_payload["npc_locations"]
+    assert post_payload["recent_offstage_beats"]
+
+    with container.session_factory() as db:
+        npc_rows = list(
+            db.execute(
+                select(Actor, NPCProfile)
+                .join(NPCProfile, (NPCProfile.actor_id == Actor.id) & (NPCProfile.world_id == Actor.world_id))
+                .where(Actor.world_id == session_payload["world_id"], Actor.actor_type == "npc")
+                .order_by(Actor.created_at.asc(), Actor.id.asc())
+            ).all()
+        )
+        moved_count = sum(1 for actor, _ in npc_rows if before_locations.get(actor.id) != actor.current_location_id)
+        assert moved_count <= 1
+        assert not any(
+            actor.display_name == "Lamplighter Sera" and before_locations.get(actor.id) != actor.current_location_id
+            for actor, _ in npc_rows
+        )
+        assert any((_profile.routine_state or {}).get("last_idle_tick_id") for _, _profile in npc_rows)

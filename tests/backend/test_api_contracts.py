@@ -125,6 +125,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "plaza_figures",
         "recent_world_beats",
         "ambient_murmurs",
+        "npc_locations",
+        "recent_offstage_beats",
+        "offstage_murmurs",
         "relationships",
         "active_consequence_threads",
         "recent_consequence_history",
@@ -182,6 +185,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "ambient_updates",
             "scene_summary",
             "recent_world_beats",
+            "recent_offstage_beats",
+            "idle_updates",
         }
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"

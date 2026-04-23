@@ -175,6 +175,8 @@ async def resolve_turn(
                 "current_location": result.current_location,
                 "travel_summary": result.travel_summary,
                 "recent_world_beats": result.recent_world_beats,
+                "recent_offstage_beats": result.recent_offstage_beats,
+                "idle_updates": result.idle_updates,
             },
         )
 
@@ -206,6 +208,8 @@ async def resolve_turn(
         "current_location": result.current_location,
         "travel_summary": result.travel_summary,
         "recent_world_beats": result.recent_world_beats,
+        "recent_offstage_beats": result.recent_offstage_beats,
+        "idle_updates": result.idle_updates,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)
 
