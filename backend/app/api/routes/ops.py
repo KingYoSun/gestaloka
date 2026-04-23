@@ -118,6 +118,15 @@ def get_observability_summary(
     return observability_summary(db, container.settings, container.projection_service, container.observability_service)
 
 
+@router.get("/observability/langfuse/status")
+def get_langfuse_status(
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.observability_service.langfuse_runtime()
+
+
 @router.post("/projection/rebuild")
 def post_projection_rebuild(
     payload: RebuildProjectionRequest,

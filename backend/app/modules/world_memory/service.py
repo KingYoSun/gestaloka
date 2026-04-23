@@ -320,54 +320,81 @@ class MemoryService:
             "runtime_role": self.settings.app_runtime_role,
         }
         with self._span("memory.retrieve", attributes=span_attributes):
-            try:
-                query_embedding = self.provider.embed_query(query_text)
-                semantic_hits = self._semantic_hits(
-                    db,
-                    candidate_memories=candidate_memories,
-                    query_embedding=query_embedding,
-                    location_id=location_id,
-                    limit=resolved_limit,
-                    min_score=resolved_min_score,
-                )
-                if semantic_hits is None:
-                    fallback_hits = self._fallback_hits(candidate_memories, location_id=location_id, limit=resolved_limit)
-                    return self._result_from_hits(
-                        memories=candidate_memories,
-                        hits=fallback_hits,
-                        trace_hash=trace_hash,
-                        status="degraded",
-                        used_fallback=True,
-                    )
-                return self._result_from_hits(
-                    memories=candidate_memories,
-                    hits=semantic_hits,
-                    trace_hash=trace_hash,
-                    status="ready",
-                    used_fallback=False,
-                )
-            except Exception:
+            langfuse_context = self._langfuse_observation(
+                name="memory.retrieve",
+                as_type="retriever",
+                input_payload={"query_text_hash": trace_hash},
+                metadata={
+                    "world_id": world_id,
+                    "actor_id": actor_id,
+                    "location_id": location_id,
+                    "query_text_hash": trace_hash,
+                    "runtime_role": self.settings.app_runtime_role,
+                },
+                model=self.provider.model_name,
+                model_parameters={
+                    "retrieval_order": "local location first -> same world fallback",
+                    "limit": resolved_limit,
+                    "min_score": resolved_min_score,
+                },
+            )
+            with langfuse_context as langfuse_link:
                 try:
-                    fallback_hits = self._fallback_hits(candidate_memories, location_id=location_id, limit=resolved_limit)
-                    return self._result_from_hits(
-                        memories=candidate_memories,
-                        hits=fallback_hits,
-                        trace_hash=trace_hash,
-                        status="degraded",
-                        used_fallback=True,
+                    query_embedding = self.provider.embed_query(query_text)
+                    semantic_hits = self._semantic_hits(
+                        db,
+                        candidate_memories=candidate_memories,
+                        query_embedding=query_embedding,
+                        location_id=location_id,
+                        limit=resolved_limit,
+                        min_score=resolved_min_score,
                     )
-                except Exception:
-                    return MemoryRetrievalResult(
-                        memories=[],
-                        hits=[],
-                        trace=MemoryRetrievalTrace(
-                            status="failed",
-                            query_text_hash=trace_hash,
-                            retrieved_memory_ids=[],
-                            top_scores=[],
+                    if semantic_hits is None:
+                        fallback_hits = self._fallback_hits(candidate_memories, location_id=location_id, limit=resolved_limit)
+                        result = self._result_from_hits(
+                            memories=candidate_memories,
+                            hits=fallback_hits,
+                            trace_hash=trace_hash,
+                            status="degraded",
                             used_fallback=True,
-                        ),
+                        )
+                        _update_langfuse_observation(langfuse_link, result.trace)
+                        return result
+                    result = self._result_from_hits(
+                        memories=candidate_memories,
+                        hits=semantic_hits,
+                        trace_hash=trace_hash,
+                        status="ready",
+                        used_fallback=False,
                     )
+                    _update_langfuse_observation(langfuse_link, result.trace)
+                    return result
+                except Exception:
+                    try:
+                        fallback_hits = self._fallback_hits(candidate_memories, location_id=location_id, limit=resolved_limit)
+                        result = self._result_from_hits(
+                            memories=candidate_memories,
+                            hits=fallback_hits,
+                            trace_hash=trace_hash,
+                            status="degraded",
+                            used_fallback=True,
+                        )
+                        _update_langfuse_observation(langfuse_link, result.trace)
+                        return result
+                    except Exception:
+                        result = MemoryRetrievalResult(
+                            memories=[],
+                            hits=[],
+                            trace=MemoryRetrievalTrace(
+                                status="failed",
+                                query_text_hash=trace_hash,
+                                retrieved_memory_ids=[],
+                                top_scores=[],
+                                used_fallback=True,
+                            ),
+                        )
+                        _update_langfuse_observation(langfuse_link, result.trace)
+                        return result
 
     def search_corpus(
         self,
@@ -471,20 +498,52 @@ class MemoryService:
         }
 
     def _embed_memory(self, memory: Memory, *, allow_pending: bool) -> bool:
-        try:
-            embedding = self.provider.embed_document(memory.text)
-            memory.embedding = embedding
-            memory.embedding_status = "ready"
-            memory.embedding_model = self.provider.model_name
-            memory.embedded_at = datetime.now(timezone.utc)
-            return True
-        except Exception:
-            if allow_pending:
-                memory.embedding = None
-                memory.embedding_status = "pending"
-                memory.embedding_model = self.provider.model_name if self._provider is not None else None
-                memory.embedded_at = None
-            return False
+        langfuse_context = self._langfuse_observation(
+            name="memory.embed",
+            as_type="embedding",
+            input_payload={"memory_id": memory.id, "text": memory.text[:200]},
+            metadata={
+                "world_id": memory.world_id,
+                "memory_id": memory.id,
+                "actor_id": memory.actor_id,
+                "location_id": memory.location_id,
+                "runtime_role": self.settings.app_runtime_role,
+            },
+            model=self.provider.model_name,
+            model_parameters={
+                "dimension": self.settings.memory_embedding_dim,
+                "task_type": "RETRIEVAL_DOCUMENT",
+                "allow_pending": allow_pending,
+            },
+        )
+        with langfuse_context as langfuse_link:
+            try:
+                embedding = self.provider.embed_document(memory.text)
+                memory.embedding = embedding
+                memory.embedding_status = "ready"
+                memory.embedding_model = self.provider.model_name
+                memory.embedded_at = datetime.now(timezone.utc)
+                _update_langfuse_embedding(
+                    langfuse_link,
+                    status="ready",
+                    memory_id=memory.id,
+                    embedding_model=self.provider.model_name,
+                )
+                return True
+            except Exception as exc:
+                if allow_pending:
+                    memory.embedding = None
+                    memory.embedding_status = "pending"
+                    memory.embedding_model = self.provider.model_name if self._provider is not None else None
+                    memory.embedded_at = None
+                _update_langfuse_embedding(
+                    langfuse_link,
+                    status="pending" if allow_pending else "failed",
+                    memory_id=memory.id,
+                    embedding_model=self.provider.model_name if self._provider is not None else None,
+                    error=str(exc),
+                )
+                return False
 
     def _candidate_memories(
         self,
@@ -617,10 +676,39 @@ class MemoryService:
             return _NullContextManager()
         return self.observability_service.span(name, attributes=attributes)
 
+    def _langfuse_observation(
+        self,
+        *,
+        name: str,
+        as_type: str,
+        input_payload: Any,
+        metadata: dict[str, Any],
+        model: str | None = None,
+        model_parameters: dict[str, Any] | None = None,
+    ) -> Any:
+        if self.observability_service is None:
+            return _NullTraceContext()
+        return self.observability_service.langfuse_observation(
+            name=name,
+            as_type=as_type,
+            input_payload=input_payload,
+            metadata=metadata,
+            model=model,
+            model_parameters=model_parameters,
+        )
+
 
 class _NullContextManager:
     def __enter__(self) -> None:
         return None
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _NullTraceContext:
+    def __enter__(self) -> Any:
+        return type("NullTraceLink", (), {"trace_id": None, "observation_id": None, "trace_url": None, "status": "disabled", "observation": None})()
 
     def __exit__(self, exc_type, exc, tb) -> bool:
         return False
@@ -681,3 +769,54 @@ def list_world_memories(db: Session, world_id: str) -> list[Memory]:
 
 def retrieval_trace_to_dict(trace: MemoryRetrievalTrace) -> dict[str, object]:
     return asdict(trace)
+
+
+def _update_langfuse_observation(link: Any, trace: MemoryRetrievalTrace) -> None:
+    observation = getattr(link, "observation", None)
+    if observation is None:
+        return
+    try:
+        observation.update(
+            output={"retrieval_trace": retrieval_trace_to_dict(trace)},
+            metadata={
+                "retrieval_status": trace.status,
+                "retrieval_query_hash": trace.query_text_hash,
+                "retrieved_memory_ids": trace.retrieved_memory_ids,
+                "top_scores": trace.top_scores,
+                "used_fallback": trace.used_fallback,
+            },
+        )
+    except Exception:
+        if hasattr(link, "status"):
+            link.status = "degraded"
+
+
+def _update_langfuse_embedding(
+    link: Any,
+    *,
+    status: str,
+    memory_id: str,
+    embedding_model: str | None,
+    error: str | None = None,
+) -> None:
+    observation = getattr(link, "observation", None)
+    if observation is None:
+        return
+    try:
+        observation.update(
+            output={
+                "memory_id": memory_id,
+                "embedding_status": status,
+                "embedding_model": embedding_model,
+                "error": error,
+            },
+            metadata={
+                "memory_id": memory_id,
+                "embedding_status": status,
+                "embedding_model": embedding_model,
+                "error": error,
+            },
+        )
+    except Exception:
+        if hasattr(link, "status"):
+            link.status = "degraded"

@@ -234,6 +234,10 @@ class GMCouncilService:
             output_payload=payload.model_dump(),
             provider_name="internal",
             provider_response_id=None,
+            langfuse_trace_id=None,
+            langfuse_observation_id=None,
+            langfuse_trace_url=None,
+            langfuse_status="disabled",
         )
         return PromptExecutionOutcome(
             attempts=[attempt],

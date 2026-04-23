@@ -155,6 +155,9 @@ class Turn(Base, TimestampMixin):
     model_lane: Mapped[str] = mapped_column(String(32))
     action_type: Mapped[str] = mapped_column(String(32), default="narrative")
     resolution_mode: Mapped[str] = mapped_column(String(32), default="legacy")
+    langfuse_trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    langfuse_trace_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")
 
 
 class Event(Base, TimestampMixin):
@@ -452,6 +455,10 @@ class LLMRun(Base, TimestampMixin):
     graph_context_status: Mapped[str] = mapped_column(String(32), default="ready")
     output_schema_status: Mapped[str] = mapped_column(String(32))
     output_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    langfuse_trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    langfuse_observation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    langfuse_trace_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")
 
 
 class OutboxEvent(Base, TimestampMixin):
@@ -495,6 +502,9 @@ class EvalRun(Base, TimestampMixin):
     git_sha: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32), default="running")
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    langfuse_trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    langfuse_trace_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -535,3 +545,6 @@ class ReleaseGateReport(Base, TimestampMixin):
     blocked_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     slo_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     trigger_type: Mapped[str] = mapped_column(String(32), default="manual")
+    langfuse_trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    langfuse_trace_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")

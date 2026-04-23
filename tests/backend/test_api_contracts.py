@@ -25,6 +25,10 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["embedding"]["runtime_status"] == "ready"
     assert {"projection_lag_seconds", "outbox_pending_count", "llm_schema_valid_rate"} <= set(payload["observability"])
     assert {"verdict", "blocked_reasons", "canary_promote_status"} <= set(payload["release_gate"])
+    assert payload["llm_observability"]["stack"] == "langfuse"
+    assert payload["llm_observability"]["enabled"] is True
+    assert payload["llm_observability"]["runtime_status"] == "ready"
+    assert payload["llm_observability"]["base_url"] == "http://langfuse.test"
     assert payload["oidc_mode"] == "development"
 
 
@@ -380,6 +384,9 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert council_turns_response.status_code == 200
     council_turns_payload = council_turns_response.json()
     assert council_turns_payload["items"][0]["resolution_mode"] == "gm_council"
+    assert council_turns_payload["items"][0]["langfuse_trace_id"]
+    assert council_turns_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    assert council_turns_payload["items"][0]["langfuse_status"] == "ok"
     assert [item["council_role"] for item in council_turns_payload["items"][0]["roles"]] == [
         "intent_interpreter",
         "memory_manager",
@@ -398,6 +405,11 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane"}
     assert "attempts" in council_detail_payload["roles"][-1]
     assert council_detail_payload["resolved_output"]["retrieval_trace"]["status"] == "ready"
+    assert council_detail_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    assert council_detail_payload["roles"][-1]["langfuse_trace_url"].startswith(
+        "http://langfuse.test/project/gestaloka-v2/traces/"
+    )
+    assert council_detail_payload["roles"][-1]["attempts"][-1]["langfuse_observation_id"]
 
     relationships_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/relationships",
@@ -551,20 +563,31 @@ def test_ops_eval_contracts(client, container, auth_headers):
     run_payload = run_response.json()
     assert run_payload["dataset_name"] == "turn_resolution_smoke"
     assert run_payload["summary"]["variants"]["current"]["gate_passed"] is True
+    assert run_payload["langfuse_trace_id"]
+    assert run_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    assert run_payload["langfuse_status"] == "ok"
 
     runs_response = client.get("/ops/evals/runs", headers=auth_headers)
     assert runs_response.status_code == 200
     runs_payload = runs_response.json()
     assert runs_payload["items"][0]["id"] == run_payload["id"]
+    assert runs_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     detail_response = client.get(f"/ops/evals/runs/{run_payload['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
     assert len(detail_response.json()["results"]) >= 2
+    assert detail_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     observability_response = client.get("/ops/observability/summary", headers=auth_headers)
     assert observability_response.status_code == 200
     observability_payload = observability_response.json()
-    assert {"primary", "canary", "recent_traces", "metrics"} <= set(observability_payload)
+    assert {"primary", "canary", "langfuse", "recent_traces", "metrics"} <= set(observability_payload)
+    assert observability_payload["langfuse"]["runtime_status"] == "ready"
+
+    langfuse_status_response = client.get("/ops/observability/langfuse/status", headers=auth_headers)
+    assert langfuse_status_response.status_code == 200
+    assert langfuse_status_response.json()["stack"] == "langfuse"
+    assert langfuse_status_response.json()["runtime_status"] == "ready"
 
     checklist_run_response = client.post(
         "/ops/release/checklists/run",
@@ -573,11 +596,24 @@ def test_ops_eval_contracts(client, container, auth_headers):
     )
     assert checklist_run_response.status_code == 200
     checklist_payload = checklist_run_response.json()
-    assert {"report_id", "verdict", "checks", "diff_summary", "runbook", "slo_snapshot"} <= set(checklist_payload)
+    assert {
+        "report_id",
+        "verdict",
+        "checks",
+        "diff_summary",
+        "runbook",
+        "slo_snapshot",
+        "langfuse_trace_id",
+        "langfuse_trace_url",
+        "langfuse_status",
+        "langfuse_delivery",
+    } <= set(checklist_payload)
+    assert checklist_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     latest_response = client.get("/ops/release/checklists/latest", headers=auth_headers)
     assert latest_response.status_code == 200
     assert latest_response.json()["report_id"] == checklist_payload["report_id"]
+    assert latest_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     detail_gate_response = client.get(
         f"/ops/release/checklists/{checklist_payload['report_id']}",
@@ -585,10 +621,12 @@ def test_ops_eval_contracts(client, container, auth_headers):
     )
     assert detail_gate_response.status_code == 200
     assert detail_gate_response.json()["report_id"] == checklist_payload["report_id"]
+    assert detail_gate_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     gate_alias_response = client.get("/ops/release/gates/latest", headers=auth_headers)
     assert gate_alias_response.status_code == 200
     assert gate_alias_response.json()["report_id"] == checklist_payload["report_id"]
+    assert gate_alias_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
 
 def test_canary_runtime_blocks_gameplay_writes(client, container, auth_headers):

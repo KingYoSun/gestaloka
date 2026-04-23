@@ -110,6 +110,14 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByTestId("ops-status")).toContainText("ready", { timeout: slowTimeout });
   await expect(page.getByTestId("sp-admin-separation-note")).toContainText("separate");
+  await expect(page.getByTestId("langfuse-status-summary")).toContainText(/langfuse/i, { timeout: slowTimeout });
+  await expect(page.locator('[data-testid^="council-trace-link-"]').first()).toHaveAttribute(
+    "href",
+    /localhost:3001\/project\/gestaloka-v2\/traces\//i,
+    {
+      timeout: slowTimeout,
+    },
+  );
   await expect(page.getByTestId("location-route-stream")).toContainText(/Founders Square|Archive Steps|Watch Path/i, { timeout: slowTimeout });
   await expect(page.getByTestId("travel-log-stream")).toContainText(/Archive Steps|Watch Path/i, { timeout: slowTimeout });
   await expect(page.getByTestId("npc-routine-stream")).toContainText(/Archivist Nera|Lamplighter Sera|Courier Pell/i, { timeout: slowTimeout });

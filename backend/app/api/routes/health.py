@@ -27,6 +27,7 @@ def health(
     )
     embedding = memory_status(db, container.memory_service)
     release_gate = container.eval_service.latest_release_checklist(db)
+    langfuse = container.observability_service.langfuse_runtime()
     return {
         "status": "ok",
         "database": "ok",
@@ -69,6 +70,7 @@ def health(
             "llm_fallback_rate": snapshot["llm_fallback_rate"],
             "canary_health": observability["canary"],
         },
+        "llm_observability": langfuse,
         "release_gate": {
             "report_id": release_gate["report_id"],
             "verdict": release_gate["verdict"],

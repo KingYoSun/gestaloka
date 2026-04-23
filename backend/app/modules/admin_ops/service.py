@@ -98,6 +98,7 @@ def observability_summary(
             "llm_fallback_rate": snapshot["llm_fallback_rate"],
         },
         "canary": _canary_probe_dict(canary),
+        "langfuse": observability_service.langfuse_runtime(),
         "recent_traces": observability_service.recent_trace_attributes(),
         "metrics": observability_service.metric_snapshot(),
     }
@@ -425,6 +426,10 @@ def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str,
             "provider_name": final_run.provider_name,
             "provider_response_id": final_run.provider_response_id,
             "output_schema_status": final_run.output_schema_status,
+            "langfuse_trace_id": final_run.langfuse_trace_id,
+            "langfuse_observation_id": final_run.langfuse_observation_id,
+            "langfuse_trace_url": final_run.langfuse_trace_url,
+            "langfuse_status": final_run.langfuse_status,
             "failure_reason": (
                 final_run.output_payload.get("reason")
                 if isinstance(final_run.output_payload, dict)
@@ -441,6 +446,10 @@ def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str,
                     "provider_response_id": item.provider_response_id,
                     "approval_status": item.approval_status,
                     "output_schema_status": item.output_schema_status,
+                    "langfuse_trace_id": item.langfuse_trace_id,
+                    "langfuse_observation_id": item.langfuse_observation_id,
+                    "langfuse_trace_url": item.langfuse_trace_url,
+                    "langfuse_status": item.langfuse_status,
                     "output_payload": item.output_payload,
                     "created_at": item.created_at.isoformat(),
                 }
@@ -457,5 +466,8 @@ def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str,
         "resolution_mode": turn.resolution_mode,
         "resolved_output": turn.resolved_output,
         "created_at": turn.created_at.isoformat(),
+        "langfuse_trace_id": turn.langfuse_trace_id,
+        "langfuse_trace_url": turn.langfuse_trace_url,
+        "langfuse_status": turn.langfuse_status,
         "roles": roles,
     }

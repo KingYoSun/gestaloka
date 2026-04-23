@@ -104,6 +104,170 @@ services:
     ports:
       - "4318:4318"
 
+  langfuse-postgres:
+    image: postgres:17
+    container_name: gestaloka-v2-langfuse-postgres
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    container_name: gestaloka-v2-langfuse-clickhouse
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse-redis:
+    image: redis:7
+    container_name: gestaloka-v2-langfuse-redis
+    command: ["redis-server", "--requirepass", "langfuse-dev-redis", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "langfuse-dev-redis", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio
+    container_name: gestaloka-v2-langfuse-minio
+    entrypoint: sh
+    command:
+      - -c
+      - "mkdir -p /data/langfuse && minio server --address ':9000' --console-address ':9001' /data"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    volumes:
+      - langfuse_minio_data:/data
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: gestaloka-v2-langfuse-worker
+    restart: always
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_started
+    environment:
+      NEXTAUTH_URL: http://localhost:3001
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-postgres:5432/langfuse
+      SALT: gestaloka-langfuse-salt
+      ENCRYPTION_KEY: "${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000001}"
+      TELEMETRY_ENABLED: "true"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: langfuse-dev-redis
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    container_name: gestaloka-v2-langfuse-web
+    restart: always
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_started
+      langfuse-worker:
+        condition: service_started
+    environment:
+      NEXTAUTH_URL: http://localhost:3001
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-postgres:5432/langfuse
+      SALT: gestaloka-langfuse-salt
+      ENCRYPTION_KEY: "${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000001}"
+      NEXTAUTH_SECRET: gestaloka-langfuse-nextauth
+      TELEMETRY_ENABLED: "true"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: langfuse-dev-redis
+      LANGFUSE_INIT_ORG_ID: gestaloka
+      LANGFUSE_INIT_ORG_NAME: GESTALOKA
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_PROJECT:-gestaloka-v2}
+      LANGFUSE_INIT_PROJECT_NAME: GESTALOKA v2
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gestaloka-dev}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gestaloka-dev}
+      LANGFUSE_INIT_USER_EMAIL: demo@gestaloka.local
+      LANGFUSE_INIT_USER_NAME: Gestaloka Admin
+      LANGFUSE_INIT_USER_PASSWORD: demo-password
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000').then((response) => process.exit(response.status === 200 || response.status === 302 ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   prometheus:
     image: prom/prometheus:v3.3.1
     container_name: gestaloka-v2-prometheus
@@ -169,6 +333,13 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
       OTEL_METRICS_PORT: 9464
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gestaloka-dev}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gestaloka-dev}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://localhost:3001}
+      LANGFUSE_INTERNAL_BASE_URL: ${LANGFUSE_INTERNAL_BASE_URL:-http://langfuse-web:3000}
+      LANGFUSE_PROJECT: ${LANGFUSE_PROJECT:-gestaloka-v2}
+      LANGFUSE_ENV: ${LANGFUSE_ENV:-development}
       CANARY_HEALTH_URL: http://backend-canary:8000/health
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
@@ -192,6 +363,8 @@ services:
       nebula-init:
         condition: service_completed_successfully
       otel-collector:
+        condition: service_started
+      langfuse-web:
         condition: service_started
     healthcheck:
       test:
@@ -231,6 +404,13 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
       OTEL_METRICS_PORT: 9466
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gestaloka-dev}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gestaloka-dev}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://localhost:3001}
+      LANGFUSE_INTERNAL_BASE_URL: ${LANGFUSE_INTERNAL_BASE_URL:-http://langfuse-web:3000}
+      LANGFUSE_PROJECT: ${LANGFUSE_PROJECT:-gestaloka-v2}
+      LANGFUSE_ENV: ${LANGFUSE_ENV:-development}
       CANARY_HEALTH_URL: http://backend-canary:8000/health
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
@@ -251,6 +431,8 @@ services:
       nebula-init:
         condition: service_completed_successfully
       otel-collector:
+        condition: service_started
+      langfuse-web:
         condition: service_started
     command: python -m app.worker
 
@@ -309,6 +491,13 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
       OTEL_METRICS_PORT: 9465
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gestaloka-dev}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gestaloka-dev}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://localhost:3001}
+      LANGFUSE_INTERNAL_BASE_URL: ${LANGFUSE_INTERNAL_BASE_URL:-http://langfuse-web:3000}
+      LANGFUSE_PROJECT: ${LANGFUSE_PROJECT:-gestaloka-v2}
+      LANGFUSE_ENV: ${LANGFUSE_ENV:-development}
       CANARY_HEALTH_URL: ""
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
@@ -327,6 +516,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      langfuse-web:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -372,6 +563,13 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_METRICS_HOST: 0.0.0.0
       OTEL_METRICS_PORT: 9467
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-gestaloka-dev}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-gestaloka-dev}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://localhost:3001}
+      LANGFUSE_INTERNAL_BASE_URL: ${LANGFUSE_INTERNAL_BASE_URL:-http://langfuse-web:3000}
+      LANGFUSE_PROJECT: ${LANGFUSE_PROJECT:-gestaloka-v2}
+      LANGFUSE_ENV: ${LANGFUSE_ENV:-development}
       CANARY_HEALTH_URL: http://backend-canary:8000/health
       GRAPH_PROJECTION_BACKEND: nebula
       NEBULA_HOST: nebula-graphd
@@ -392,6 +590,8 @@ services:
       backend-canary:
         condition: service_started
       otel-collector:
+        condition: service_started
+      langfuse-web:
         condition: service_started
     command: python -m app.modules.eval_harness.scheduler loop
 
@@ -419,3 +619,8 @@ volumes:
   postgres_data:
   nebula_meta_data:
   nebula_storage_data:
+  langfuse_postgres_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_redis_data:
+  langfuse_minio_data:

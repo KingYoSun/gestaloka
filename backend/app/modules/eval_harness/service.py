@@ -4,6 +4,7 @@ import hashlib
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from contextlib import nullcontext
 from typing import Literal
 
 import yaml
@@ -280,6 +281,46 @@ class EvalHarnessService:
                 blocked_reasons=blocked_reasons,
                 trigger_type=trigger_type,
             )
+            with self.observability_service.langfuse_trace(
+                seed_id=report.id,
+                name="release_checklist",
+                input_payload={
+                    "report_id": report.id,
+                    "trigger_type": trigger_type,
+                    "runtime_role": resolved_runtime_role,
+                },
+                metadata={
+                    "runtime_role": resolved_runtime_role,
+                    "trigger_type": trigger_type,
+                    "report_id": report.id,
+                },
+                tags=[resolved_runtime_role, trigger_type],
+            ) as trace_link:
+                observation = getattr(trace_link, "observation", None)
+                if observation is not None:
+                    try:
+                        observation.update(
+                            output={
+                                "verdict": verdict,
+                                "blocked_reasons": blocked_reasons,
+                                "runs": {
+                                    "smoke": smoke["id"],
+                                    "failure": failure["id"],
+                                    "shadow": shadow["id"],
+                                },
+                            },
+                            metadata={
+                                "runtime_role": resolved_runtime_role,
+                                "trigger_type": trigger_type,
+                                "report_id": report.id,
+                                "langfuse_delivery": "ok" if trace_link.status == "ok" else trace_link.status,
+                            },
+                        )
+                    except Exception:
+                        trace_link.status = "degraded"
+            report.langfuse_trace_id = trace_link.trace_id
+            report.langfuse_trace_url = trace_link.trace_url
+            report.langfuse_status = trace_link.status
 
         return self._report_to_dict(db, report, current_config=current_config, candidate_config=candidate_config)
 
@@ -299,6 +340,9 @@ class EvalHarnessService:
                     "summary": run.summary,
                     "started_at": run.started_at.isoformat(),
                     "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+                    "langfuse_trace_id": run.langfuse_trace_id,
+                    "langfuse_trace_url": run.langfuse_trace_url,
+                    "langfuse_status": run.langfuse_status,
                 }
                 for run in runs
             ]
@@ -323,6 +367,9 @@ class EvalHarnessService:
             "summary": run.summary,
             "started_at": run.started_at.isoformat(),
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "langfuse_trace_id": run.langfuse_trace_id,
+            "langfuse_trace_url": run.langfuse_trace_url,
+            "langfuse_status": run.langfuse_status,
             "results": [
                 {
                     "id": result.id,
@@ -383,6 +430,10 @@ class EvalHarnessService:
                 "runbook": self._runbook(),
                 "created_at": None,
                 "canary_promote_status": "blocked",
+                "langfuse_trace_id": None,
+                "langfuse_trace_url": None,
+                "langfuse_status": "disabled",
+                "langfuse_delivery": "disabled",
             }
         return self._report_to_dict(
             db,
@@ -453,6 +504,10 @@ class EvalHarnessService:
             "runbook": self._runbook(),
             "created_at": report.created_at.isoformat(),
             "canary_promote_status": "ready" if report.verdict == "passed" else "blocked",
+            "langfuse_trace_id": report.langfuse_trace_id,
+            "langfuse_trace_url": report.langfuse_trace_url,
+            "langfuse_status": report.langfuse_status,
+            "langfuse_delivery": "ok" if report.langfuse_status == "ok" else report.langfuse_status,
         }
 
     def _run_cases(
@@ -483,81 +538,122 @@ class EvalHarnessService:
         db.add(run)
         db.flush()
 
-        if self.observability_service is not None:
-            self.observability_service.record_eval_run(
-                eval_run_id=run.id,
-                dataset_name=dataset_name,
-                trigger_type=trigger_type,
-                runtime_role=runtime_role,
+        trace_context = (
+            self.observability_service.langfuse_trace(
+                seed_id=run.id,
+                name="eval_run",
+                input_payload={
+                    "eval_run_id": run.id,
+                    "source_type": source_type,
+                    "dataset_name": dataset_name,
+                    "trigger_type": trigger_type,
+                    "runtime_role": runtime_role,
+                },
+                metadata={
+                    "runtime_role": runtime_role,
+                    "trigger_type": trigger_type,
+                    "eval_run_id": run.id,
+                    "dataset_name": dataset_name,
+                },
+                tags=[runtime_role, trigger_type, source_type],
             )
+            if self.observability_service is not None
+            else nullcontext(type("NullTraceLink", (), {"trace_id": None, "trace_url": None, "status": "disabled", "observation": None})())
+        )
 
-        routers = {
-            "current": GMCouncilService(
-                self.settings,
-                ModelRouter(
-                    self.settings,
-                    self.prompt_registry,
-                    route_overrides=current_config.routes,
-                    config_name=current_config.name,
-                    observability_service=self.observability_service,
-                ),
-            ),
-            "candidate": GMCouncilService(
-                self.settings,
-                ModelRouter(
-                    self.settings,
-                    self.prompt_registry,
-                    route_overrides=candidate_config.routes,
-                    config_name=candidate_config.name,
-                    observability_service=self.observability_service,
-                ),
-            ),
-        }
+        with trace_context as trace_link:
+            if self.observability_service is not None:
+                self.observability_service.record_eval_run(
+                    eval_run_id=run.id,
+                    dataset_name=dataset_name,
+                    trigger_type=trigger_type,
+                    runtime_role=runtime_role,
+                )
 
-        case_payloads: list[dict[str, object]] = []
-        for variant, council_service in routers.items():
-            for case in cases:
-                retrieved_memories, retrieval_trace = self._resolve_case_retrieval(case)
-                outcome = council_service.resolve_turn(
-                    CouncilRequest(
-                        world_id=case.world_id,
-                        turn_id=case.source_turn_id,
-                        player_name=case.player_name,
-                        npc_name=case.npc_name,
-                        input_text=case.input_text,
-                        input_mode=case.input_mode,
-                        relevant_memories=retrieved_memories,
-                        relation_context=case.relation_context,
-                        graph_context_status=case.graph_context_status,
-                        session_state=self._session_state_for_case(case),
-                        selected_choice=(
-                            next(
-                                (
-                                    item
-                                    for item in (self._session_state_for_case(case).get("next_choices") or [])
-                                    if isinstance(item, dict) and item.get("choice_id") == case.choice_id
-                                ),
-                                None,
-                            )
-                            if case.input_mode == "choice" and case.choice_id is not None
-                            else None
+            routers = {
+                "current": GMCouncilService(
+                    self.settings,
+                    ModelRouter(
+                        self.settings,
+                        self.prompt_registry,
+                        route_overrides=current_config.routes,
+                        config_name=current_config.name,
+                        observability_service=self.observability_service,
+                    ),
+                ),
+                "candidate": GMCouncilService(
+                    self.settings,
+                    ModelRouter(
+                        self.settings,
+                        self.prompt_registry,
+                        route_overrides=candidate_config.routes,
+                        config_name=candidate_config.name,
+                        observability_service=self.observability_service,
+                    ),
+                ),
+            }
+
+            case_payloads: list[dict[str, object]] = []
+            for variant, council_service in routers.items():
+                for case in cases:
+                    retrieved_memories, retrieval_trace = self._resolve_case_retrieval(case)
+                    outcome = council_service.resolve_turn(
+                        CouncilRequest(
+                            world_id=case.world_id,
+                            turn_id=case.source_turn_id,
+                            player_name=case.player_name,
+                            npc_name=case.npc_name,
+                            input_text=case.input_text,
+                            input_mode=case.input_mode,
+                            relevant_memories=retrieved_memories,
+                            relation_context=case.relation_context,
+                            graph_context_status=case.graph_context_status,
+                            session_state=self._session_state_for_case(case),
+                            selected_choice=(
+                                next(
+                                    (
+                                        item
+                                        for item in (self._session_state_for_case(case).get("next_choices") or [])
+                                        if isinstance(item, dict) and item.get("choice_id") == case.choice_id
+                                    ),
+                                    None,
+                                )
+                                if case.input_mode == "choice" and case.choice_id is not None
+                                else None
+                            ),
                         ),
                     )
-                )
-                payload = self._persist_case_result(
-                    db,
-                    run_id=run.id,
-                    variant=variant,
-                    case=case,
-                    outcome=outcome,
-                    retrieved_memories=retrieved_memories,
-                    retrieval_trace=retrieval_trace,
-                )
-                case_payloads.append(payload)
+                    payload = self._persist_case_result(
+                        db,
+                        run_id=run.id,
+                        variant=variant,
+                        case=case,
+                        outcome=outcome,
+                        retrieved_memories=retrieved_memories,
+                        retrieval_trace=retrieval_trace,
+                    )
+                    case_payloads.append(payload)
 
-        run.summary = self._build_run_summary(source_type, dataset_name, cases, case_payloads)
-        run.status = "completed"
-        run.completed_at = run.updated_at
+            run.summary = self._build_run_summary(source_type, dataset_name, cases, case_payloads)
+            run.status = "completed"
+            run.completed_at = run.updated_at
+            observation = getattr(trace_link, "observation", None)
+            if observation is not None:
+                try:
+                    observation.update(
+                        output=run.summary,
+                        metadata={
+                            "runtime_role": runtime_role,
+                            "trigger_type": trigger_type,
+                            "eval_run_id": run.id,
+                            "dataset_name": dataset_name,
+                        },
+                    )
+                except Exception:
+                    trace_link.status = "degraded"
+        run.langfuse_trace_id = trace_link.trace_id
+        run.langfuse_trace_url = trace_link.trace_url
+        run.langfuse_status = trace_link.status
         db.flush()
         return self.get_run_detail(db, run.id)
 
@@ -611,6 +707,10 @@ class EvalHarnessService:
                             "model_id": attempt.model_id,
                             "provider_name": attempt.provider_name,
                             "provider_response_id": attempt.provider_response_id,
+                            "langfuse_trace_id": attempt.langfuse_trace_id,
+                            "langfuse_observation_id": attempt.langfuse_observation_id,
+                            "langfuse_trace_url": attempt.langfuse_trace_url,
+                            "langfuse_status": attempt.langfuse_status,
                             "status": attempt.status,
                             "output_schema_status": attempt.output_schema_status,
                             "output_payload": attempt.output_payload,
@@ -628,6 +728,10 @@ class EvalHarnessService:
                     "model_id": attempt.model_id,
                     "provider_name": attempt.provider_name,
                     "provider_response_id": attempt.provider_response_id,
+                    "langfuse_trace_id": attempt.langfuse_trace_id,
+                    "langfuse_observation_id": attempt.langfuse_observation_id,
+                    "langfuse_trace_url": attempt.langfuse_trace_url,
+                    "langfuse_status": attempt.langfuse_status,
                     "status": attempt.status,
                     "output_schema_status": attempt.output_schema_status,
                     "output_payload": attempt.output_payload,

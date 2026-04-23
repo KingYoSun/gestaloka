@@ -221,52 +221,80 @@ def resolve_turn_for_session(
     input_text: str | None = None,
     item_id: str | None = None,
 ) -> TurnResolutionResult:
-    if action_type == "use_reward_item":
-        if item_id is None:
-            raise ValueError("item_id is required for use_reward_item")
-        return _resolve_reward_item_turn_for_session(
-            db,
-            container,
-            prepared,
-            item_id=item_id,
-            input_mode=input_mode,
-        )
-    if input_mode == "choice":
-        if choice_id is None:
-            raise ValueError("choice_id is required for choice turns")
-        session_state = _session_state_with_latest_choices(
-            db,
-            session_id=prepared.session.id,
-            world_id=prepared.session.world_id,
-            actor_id=prepared.player_actor.id,
-            location_id=prepared.location_id,
-        )
-        selected_choice = _select_choice(session_state.get("next_choices") or [], choice_id)
-        if selected_choice is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"Unknown choice_id: {choice_id}",
-            )
-        input_text = str(selected_choice.get("canonical_input_text") or selected_choice.get("label") or "").strip()
-        if not input_text:
-            raise ValueError("Selected choice is missing canonical_input_text")
-        return _resolve_narrative_turn_for_session(
-            db,
-            container,
-            prepared,
-            input_mode="choice",
-            input_text=input_text,
-            selected_choice=selected_choice,
-        )
-    if input_text is None:
-        raise ValueError("input_text is required for free_text turns")
-    return _resolve_narrative_turn_for_session(
-        db,
-        container,
-        prepared,
-        input_mode=input_mode,
-        input_text=input_text,
+    trace_context = container.observability_service.langfuse_trace(
+        seed_id=prepared.turn_id,
+        name="player_turn",
+        input_payload={
+            "session_id": prepared.session.id,
+            "world_id": prepared.session.world_id,
+            "action_type": action_type or "narrative",
+            "input_mode": input_mode,
+            "choice_id": choice_id,
+            "input_text": input_text,
+            "item_id": item_id,
+        },
+        metadata={
+            "world_id": prepared.session.world_id,
+            "session_id": prepared.session.id,
+            "turn_id": prepared.turn_id,
+            "action_type": action_type or "narrative",
+            "input_mode": input_mode,
+        },
+        user_id=prepared.player_actor.user_sub,
+        session_id=prepared.session.id,
+        tags=[container.settings.app_runtime_role],
     )
+    with trace_context as trace_link:
+        if action_type == "use_reward_item":
+            if item_id is None:
+                raise ValueError("item_id is required for use_reward_item")
+            result = _resolve_reward_item_turn_for_session(
+                db,
+                container,
+                prepared,
+                item_id=item_id,
+                input_mode=input_mode,
+            )
+        elif input_mode == "choice":
+            if choice_id is None:
+                raise ValueError("choice_id is required for choice turns")
+            session_state = _session_state_with_latest_choices(
+                db,
+                session_id=prepared.session.id,
+                world_id=prepared.session.world_id,
+                actor_id=prepared.player_actor.id,
+                location_id=prepared.location_id,
+            )
+            selected_choice = _select_choice(session_state.get("next_choices") or [], choice_id)
+            if selected_choice is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=f"Unknown choice_id: {choice_id}",
+                )
+            input_text = str(selected_choice.get("canonical_input_text") or selected_choice.get("label") or "").strip()
+            if not input_text:
+                raise ValueError("Selected choice is missing canonical_input_text")
+            result = _resolve_narrative_turn_for_session(
+                db,
+                container,
+                prepared,
+                input_mode="choice",
+                input_text=input_text,
+                selected_choice=selected_choice,
+            )
+        else:
+            if input_text is None:
+                raise ValueError("input_text is required for free_text turns")
+            result = _resolve_narrative_turn_for_session(
+                db,
+                container,
+                prepared,
+                input_mode=input_mode,
+                input_text=input_text,
+            )
+
+    _apply_langfuse_trace_to_turn(result.turn, trace_link)
+    return result
 
 
 def _persist_role_runs(
@@ -303,6 +331,10 @@ def _persist_role_runs(
                     graph_context_status=graph_context_status,
                     output_schema_status=attempt.output_schema_status,
                     output_payload=attempt.output_payload,
+                    langfuse_trace_id=attempt.langfuse_trace_id,
+                    langfuse_observation_id=attempt.langfuse_observation_id,
+                    langfuse_trace_url=attempt.langfuse_trace_url,
+                    langfuse_status=attempt.langfuse_status,
                 )
             )
 
@@ -317,16 +349,50 @@ def _run_ambient_world_pass(
     location_id: str | None,
     session_state: dict[str, Any],
 ) -> dict[str, Any]:
-    ambient_result = container.ambient_world_service.run(
-        db,
-        world_id=game_session.world_id,
-        session_id=game_session.id,
-        player_turn_id=turn.id,
-        player_actor_id=player_actor.id,
-        player_name=player_actor.display_name,
-        location_id=location_id,
-        session_state=session_state,
+    ambient_context = container.observability_service.langfuse_observation(
+        name="ambient_world_pass",
+        as_type="agent",
+        input_payload={
+            "session_id": game_session.id,
+            "player_turn_id": turn.id,
+            "location_id": location_id,
+        },
+        metadata={
+            "world_id": game_session.world_id,
+            "session_id": game_session.id,
+            "turn_id": turn.id,
+            "location_id": location_id,
+            "runtime_role": container.settings.app_runtime_role,
+        },
     )
+    with ambient_context as langfuse_link:
+        ambient_result = container.ambient_world_service.run(
+            db,
+            world_id=game_session.world_id,
+            session_id=game_session.id,
+            player_turn_id=turn.id,
+            player_actor_id=player_actor.id,
+            player_name=player_actor.display_name,
+            location_id=location_id,
+            session_state=session_state,
+        )
+        observation = getattr(langfuse_link, "observation", None)
+        if observation is not None:
+            try:
+                observation.update(
+                    output={
+                        "updates": ambient_result.updates,
+                        "recent_world_beats": ambient_result.recent_world_beats,
+                        "scene_summary": ambient_result.scene_summary,
+                    },
+                    metadata={
+                        "world_id": game_session.world_id,
+                        "turn_id": turn.id,
+                        "location_id": location_id,
+                    },
+                )
+            except Exception:
+                langfuse_link.status = "degraded"
     _persist_role_runs(
         db,
         world_id=game_session.world_id,
@@ -342,6 +408,19 @@ def _run_ambient_world_pass(
         "chapter_updates": ambient_result.chapter_updates,
         "scene_summary": ambient_result.scene_summary,
     }
+
+
+def _apply_langfuse_trace_to_turn(turn: Turn, trace_link: Any) -> None:
+    turn.langfuse_trace_id = getattr(trace_link, "trace_id", None)
+    turn.langfuse_trace_url = getattr(trace_link, "trace_url", None)
+    turn.langfuse_status = getattr(trace_link, "status", "disabled")
+    if isinstance(turn.resolved_output, dict):
+        turn.resolved_output = {
+            **turn.resolved_output,
+            "langfuse_trace_id": turn.langfuse_trace_id,
+            "langfuse_trace_url": turn.langfuse_trace_url,
+            "langfuse_status": turn.langfuse_status,
+        }
 
 
 def _resolve_narrative_turn_for_session(

@@ -72,8 +72,12 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     assert len(runs) == 1
     assert runs[0].trigger_type == "manual"
     assert runs[0].runtime_role == "primary"
+    assert runs[0].langfuse_trace_id
+    assert runs[0].langfuse_trace_url == f"http://langfuse.test/project/gestaloka-v2/traces/{runs[0].langfuse_trace_id}"
+    assert runs[0].langfuse_status == "ok"
     assert len(case_results) == payload["summary"]["case_count"] * 2
     assert {item.variant for item in case_results} == {"current", "candidate"}
+    assert payload["langfuse_trace_url"] == runs[0].langfuse_trace_url
 
 
 def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container, auth_headers):
@@ -152,6 +156,9 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["checks"]["failure_injection"]["candidate_passed"] is True
     assert gate["checks"]["shadow_replay"]["candidate_passed"] is True
     assert gate["canary_promote_status"] == "ready"
+    assert gate["langfuse_trace_id"]
+    assert gate["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    assert gate["langfuse_status"] == "ok"
     assert {item["route_id"] for item in gate["diff_summary"]} == {
         "ambient.memory_manager",
         "ambient.npc_manager",
@@ -229,3 +236,32 @@ def test_scheduler_helpers_only_persist_eval_and_release_tables(client, containe
     assert after["eval_runs"] == 3
     assert after["release_gate_reports"] == 1
     assert seconds_until_next_run("0 3 * * *") >= 0.0
+
+
+def test_langfuse_flush_failure_degrades_but_does_not_fail_turn(client, container, auth_headers):
+    fake_client = container.observability_service._langfuse_client
+    fake_client.raise_on_flush = True
+
+    session_response = client.post(
+        "/sessions",
+        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+
+    assert turn_response.status_code == 200
+
+    council_turns = client.get(
+        f"/ops/council/turns?session_id={session_payload['session_id']}",
+        headers=auth_headers,
+    ).json()["items"]
+    assert council_turns[0]["langfuse_status"] == "degraded"
+    assert council_turns[0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+
+    fake_client.raise_on_flush = False

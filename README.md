@@ -18,6 +18,7 @@ GESTALOKA v2 is a same-world narrative MMO rebuild. The canonical store is Postg
 2. Start the stack with `docker compose up --build`.
 3. Open `http://localhost:5173`.
 4. Open `http://localhost:5173/admin` for the internal admin surface after login.
+5. Open `http://localhost:3001` for Langfuse trace browsing.
 5. Sign in with the demo Keycloak user:
 
 ```text
@@ -50,6 +51,8 @@ password: demo-password
 - v1 assets are frozen under `legacy/v1/` and are not imported by v2.
 - The graph projection path is outbox-driven. The standard compose stack now targets NebulaGraph, while lightweight test settings still use the recording backend.
 - Runtime stabilization for NebulaGraph includes an init step that registers the storage host before backend and projection worker start.
+- LLM observability uses self-hosted Langfuse for prompt/generation/retrieval/eval traces, while OpenTelemetry remains the infra/metrics layer.
+- The canonical embedding policy is fixed in [ADR-001](documents/adr/ADR-001-embedding-policy.md).
 - Sessions start with a canonical starter location and a projected `KNOWS` relation between the player and guide NPC.
 - SP is an execution-budget ledger for API/runtime cost only. It is not an in-world currency and does not buy quest, faction, or item power.
 - Successful requests consume SP, business-failed requests refund in-request, and `/admin` inspects execution budget separately from world progression.

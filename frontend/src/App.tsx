@@ -63,7 +63,22 @@ type HealthPayload = {
     created_at: string | null;
     canary_promote_status: string;
   };
+  llm_observability: {
+    stack: string;
+    enabled: boolean;
+    base_url: string | null;
+    runtime_status: string;
+    last_error: string | null;
+  };
   oidc_mode: string;
+};
+
+type LangfuseStatus = {
+  stack: string;
+  enabled: boolean;
+  base_url: string | null;
+  runtime_status: string;
+  last_error: string | null;
 };
 
 type SessionInfo = {
@@ -530,6 +545,9 @@ type EvalRunItem = {
   trigger_type: string;
   runtime_role: string;
   status: string;
+  langfuse_trace_id?: string | null;
+  langfuse_trace_url?: string | null;
+  langfuse_status?: string;
   summary: {
     case_count: number;
     variants?: {
@@ -588,6 +606,10 @@ type ReleaseGateReport = {
   blocked_reasons: string[];
   trigger_type: string;
   canary_promote_status: string;
+  langfuse_trace_id?: string | null;
+  langfuse_trace_url?: string | null;
+  langfuse_status?: string;
+  langfuse_delivery?: string;
   checks: {
     smoke: {
       present: boolean;
@@ -647,6 +669,10 @@ type CouncilRoleSummary = {
   provider_name: string | null;
   provider_response_id: string | null;
   output_schema_status: string;
+  langfuse_trace_id?: string | null;
+  langfuse_observation_id?: string | null;
+  langfuse_trace_url?: string | null;
+  langfuse_status?: string;
   failure_reason: string | null;
   attempts?: Array<{
     id: string;
@@ -656,6 +682,10 @@ type CouncilRoleSummary = {
     provider_response_id: string | null;
     approval_status: string | null;
     output_schema_status: string;
+    langfuse_trace_id?: string | null;
+    langfuse_observation_id?: string | null;
+    langfuse_trace_url?: string | null;
+    langfuse_status?: string;
     output_payload: Record<string, unknown>;
     created_at: string;
   }>;
@@ -670,6 +700,9 @@ type CouncilTurnTrace = {
   resolution_mode: string;
   resolved_output: Record<string, unknown>;
   created_at: string;
+  langfuse_trace_id?: string | null;
+  langfuse_trace_url?: string | null;
+  langfuse_status?: string;
   roles: CouncilRoleSummary[];
 };
 
@@ -697,6 +730,7 @@ type ObservabilitySummary = {
     llm_schema_valid_rate: number | null;
     llm_fallback_rate: number | null;
   };
+  langfuse: LangfuseStatus;
   recent_traces: Array<{
     name: string;
     attributes: Record<string, unknown>;
@@ -1367,8 +1401,8 @@ function App() {
             }
           : current,
       );
-      await refreshWorldState(session, token);
       setTurnPending(false);
+      await refreshWorldState(session, token);
       const backgroundRefresh = Promise.all([
         refreshWallet(token),
         refreshAdminData(
@@ -1386,6 +1420,7 @@ function App() {
       return;
     } catch (requestError) {
       setError(formatError(requestError));
+      setTurnPending(false);
       await Promise.all([
         refreshWallet(token),
         refreshAdminData(
@@ -1397,8 +1432,8 @@ function App() {
         ),
         refreshHealth(),
       ]);
+      return;
     }
-    setTurnPending(false);
   }
 
   async function handleTurnSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2185,6 +2220,17 @@ function App() {
                 {embeddingStatus?.failed_count ?? health?.embedding?.failed_count ?? 0} / status:{" "}
                 {embeddingStatus?.runtime_status ?? health?.embedding?.runtime_status ?? "unknown"}
               </p>
+              <p data-testid="langfuse-status-summary">
+                LLM observability: {observability?.langfuse?.stack ?? health?.llm_observability?.stack ?? "langfuse"} / enabled:{" "}
+                {String(observability?.langfuse?.enabled ?? health?.llm_observability?.enabled ?? false)} / status:{" "}
+                {observability?.langfuse?.runtime_status ?? health?.llm_observability?.runtime_status ?? "unknown"} / base:{" "}
+                {observability?.langfuse?.base_url ?? health?.llm_observability?.base_url ?? "unknown"}
+              </p>
+              {(observability?.langfuse?.last_error ?? health?.llm_observability?.last_error) ? (
+                <p data-testid="langfuse-last-error">
+                  Langfuse note: {observability?.langfuse?.last_error ?? health?.llm_observability?.last_error}
+                </p>
+              ) : null}
               <p data-testid="sp-admin-separation-note">
                 SP execution ledger is separate from world progression. Reward item use and follow-up quest unlocks are tracked below, not as paid power.
               </p>
@@ -2412,6 +2458,21 @@ function App() {
                         {item.resolution_mode} / final lane {item.model_lane}
                       </span>
                       <span>
+                        trace:{" "}
+                        {item.langfuse_trace_url ? (
+                          <a
+                            data-testid={`council-trace-link-${item.turn_id}`}
+                            href={item.langfuse_trace_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            open
+                          </a>
+                        ) : (
+                          item.langfuse_status ?? "disabled"
+                        )}
+                      </span>
+                      <span>
                         {item.roles
                           .map(
                             (role) =>
@@ -2483,6 +2544,17 @@ function App() {
               </p>
               <p>
                 Trigger: {releaseGate?.trigger_type ?? "unknown"} / Created: {releaseGate?.created_at ?? "not yet run"}
+              </p>
+              <p data-testid="release-trace-link">
+                Release trace:{" "}
+                {releaseGate?.langfuse_trace_url ? (
+                  <a href={releaseGate.langfuse_trace_url} target="_blank" rel="noreferrer">
+                    open
+                  </a>
+                ) : (
+                  releaseGate?.langfuse_status ?? "disabled"
+                )}{" "}
+                / delivery: {releaseGate?.langfuse_delivery ?? "unknown"}
               </p>
               <div className="actions">
                 <button
@@ -2587,6 +2659,21 @@ function App() {
                     <span>{item.status}</span>
                     <span>
                       {item.trigger_type} / {item.runtime_role}
+                    </span>
+                    <span>
+                      trace:{" "}
+                      {item.langfuse_trace_url ? (
+                        <a
+                          data-testid={`eval-trace-link-${item.id}`}
+                          href={item.langfuse_trace_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          open
+                        </a>
+                      ) : (
+                        item.langfuse_status ?? "disabled"
+                      )}
                     </span>
                     <span>
                       current {item.summary.variants?.current?.passed ?? 0}/{item.summary.variants?.current?.total ?? 0}

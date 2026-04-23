@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
 from threading import Lock
 from time import perf_counter
 from typing import Any
@@ -25,6 +26,12 @@ from sqlalchemy.engine import Engine
 
 from app.core.config import Settings
 
+try:
+    from langfuse import Langfuse, propagate_attributes
+except ImportError:  # pragma: no cover - dependency is installed in runtime image
+    Langfuse = None
+    propagate_attributes = None
+
 
 @dataclass(frozen=True)
 class CanaryProbeResult:
@@ -39,6 +46,16 @@ class CanaryProbeResult:
     outbox_failed_count: int | None = None
     llm_schema_valid_rate: float | None = None
     llm_fallback_rate: float | None = None
+
+
+@dataclass
+class TraceLink:
+    trace_id: str | None = None
+    observation_id: str | None = None
+    trace_url: str | None = None
+    status: str = "disabled"
+    last_error: str | None = None
+    observation: Any | None = None
 
 
 class ObservabilityService:
@@ -56,6 +73,7 @@ class ObservabilityService:
             "llm_fallback_rate": 0.0,
             "release_gate_verdict": 0.0,
         }
+        self._langfuse_last_error: str | None = None
         self._resource = Resource.create(
             {
                 "service.name": settings.otel_service_name,
@@ -102,6 +120,8 @@ class ObservabilityService:
             if key not in self._metrics_servers:
                 start_http_server(port=settings.otel_metrics_port, addr=settings.otel_metrics_host)
                 self._metrics_servers.add(key)
+
+        self._langfuse_client = self._build_langfuse_client()
 
     def _make_observer(self, name: str):
         def observe(options: object) -> list[Observation]:
@@ -153,6 +173,224 @@ class ObservabilityService:
             span.end()
 
         self._instrumented_engines.add(engine_id)
+
+    def _build_langfuse_client(self) -> Any | None:
+        if not self.settings.langfuse_enabled:
+            return None
+        if Langfuse is None:
+            self._remember_langfuse_error("langfuse python sdk is not available")
+            return None
+        if not self.settings.langfuse_public_key or not self.settings.langfuse_secret_key:
+            self._remember_langfuse_error("Langfuse is enabled but keys are missing")
+            return None
+        base_url = self.settings.langfuse_internal_base_url or self.settings.langfuse_base_url
+        if not base_url:
+            self._remember_langfuse_error("Langfuse is enabled but base URL is missing")
+            return None
+        try:
+            client = Langfuse(
+                public_key=self.settings.langfuse_public_key,
+                secret_key=self.settings.langfuse_secret_key,
+                base_url=base_url,
+                environment=self.settings.langfuse_env,
+            )
+            self._clear_langfuse_error()
+            return client
+        except Exception as exc:  # pragma: no cover - depends on external runtime
+            self._remember_langfuse_error(str(exc))
+            return None
+
+    def _remember_langfuse_error(self, detail: str) -> None:
+        with self._lock:
+            self._langfuse_last_error = detail[:500]
+
+    def _clear_langfuse_error(self) -> None:
+        with self._lock:
+            self._langfuse_last_error = None
+
+    def _langfuse_trace_id(self, seed_id: str) -> str:
+        if self._langfuse_client is not None:
+            create_trace_id = getattr(self._langfuse_client, "create_trace_id", None)
+            if callable(create_trace_id):
+                try:
+                    return str(create_trace_id(seed_id))
+                except Exception:
+                    pass
+        return hashlib.sha256(seed_id.encode("utf-8")).hexdigest()[:32]
+
+    def _langfuse_public_base_url(self) -> str | None:
+        if not self.settings.langfuse_base_url:
+            return None
+        return self.settings.langfuse_base_url.rstrip("/")
+
+    def _langfuse_trace_url_fallback(self, trace_id: str | None) -> str | None:
+        if not trace_id:
+            return None
+        base_url = self._langfuse_public_base_url()
+        if not base_url or not self.settings.langfuse_project:
+            return None
+        return f"{base_url}/project/{self.settings.langfuse_project}/traces/{trace_id}"
+
+    def _langfuse_trace_url(self, trace_id: str | None) -> str | None:
+        if not trace_id:
+            return None
+        if self._langfuse_client is None:
+            return self._langfuse_trace_url_fallback(trace_id)
+        try:
+            trace_url = self._langfuse_client.get_trace_url(trace_id=trace_id)
+            if trace_url:
+                self._clear_langfuse_error()
+                return trace_url
+        except Exception as exc:  # pragma: no cover - depends on external runtime
+            self._remember_langfuse_error(str(exc))
+        return self._langfuse_trace_url_fallback(trace_id)
+
+    def langfuse_runtime(self) -> dict[str, object]:
+        if not self.settings.langfuse_enabled:
+            return {
+                "stack": "langfuse",
+                "enabled": False,
+                "base_url": self.settings.langfuse_base_url or None,
+                "runtime_status": "disabled",
+                "last_error": None,
+            }
+        return {
+            "stack": "langfuse",
+            "enabled": True,
+            "base_url": self.settings.langfuse_base_url or None,
+            "runtime_status": "ready" if self._langfuse_client is not None else "degraded",
+            "last_error": self._langfuse_last_error,
+        }
+
+    @contextmanager
+    def langfuse_trace(
+        self,
+        *,
+        seed_id: str,
+        name: str,
+        input_payload: Any | None = None,
+        metadata: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        tags: list[str] | None = None,
+    ) -> Iterator[TraceLink]:
+        trace_id = self._langfuse_trace_id(seed_id)
+        if not self.settings.langfuse_enabled:
+            yield TraceLink(trace_id=trace_id, trace_url=self._langfuse_trace_url_fallback(trace_id), status="disabled")
+            return
+        if self._langfuse_client is None:
+            yield TraceLink(
+                trace_id=trace_id,
+                trace_url=self._langfuse_trace_url_fallback(trace_id),
+                status="degraded",
+                last_error=self._langfuse_last_error,
+            )
+            return
+
+        try:
+            observation_cm = self._langfuse_client.start_as_current_observation(
+                as_type="span",
+                name=name,
+                trace_context={"trace_id": trace_id},
+                input=input_payload,
+                metadata=metadata,
+            )
+        except Exception as exc:  # pragma: no cover - depends on external runtime
+            self._remember_langfuse_error(str(exc))
+            yield TraceLink(
+                trace_id=trace_id,
+                trace_url=self._langfuse_trace_url_fallback(trace_id),
+                status="degraded",
+                last_error=str(exc),
+            )
+            return
+
+        link = TraceLink(trace_id=trace_id, trace_url=self._langfuse_trace_url(trace_id), status="ok")
+        propagated_metadata = {
+            key: value
+            for key, value in {
+                "world_id": str((metadata or {}).get("world_id") or "")[:200],
+                "turn_id": str((metadata or {}).get("turn_id") or "")[:200],
+                "runtime_role": self.settings.app_runtime_role[:200],
+            }.items()
+            if value
+        }
+
+        with observation_cm as observation:
+            link.observation = observation
+            link.observation_id = getattr(observation, "id", None)
+            current_trace_id = getattr(observation, "trace_id", None) or trace_id
+            link.trace_id = current_trace_id
+            link.trace_url = self._langfuse_trace_url(current_trace_id)
+            try:
+                propagation_cm = (
+                    propagate_attributes(
+                        user_id=user_id,
+                        session_id=session_id,
+                        metadata=propagated_metadata or None,
+                        tags=tags,
+                        trace_name=name,
+                    )
+                    if propagate_attributes is not None and (user_id or session_id or propagated_metadata or tags)
+                    else nullcontext()
+                )
+            except Exception as exc:  # pragma: no cover - depends on external runtime
+                self._remember_langfuse_error(str(exc))
+                link.status = "degraded"
+                link.last_error = str(exc)
+                propagation_cm = nullcontext()
+            with propagation_cm:
+                yield link
+
+        try:
+            self._langfuse_client.flush()
+            self._clear_langfuse_error()
+        except Exception as exc:  # pragma: no cover - depends on external runtime
+            self._remember_langfuse_error(str(exc))
+            link.status = "degraded"
+            link.last_error = str(exc)
+
+    @contextmanager
+    def langfuse_observation(
+        self,
+        *,
+        name: str,
+        as_type: str = "span",
+        input_payload: Any | None = None,
+        metadata: dict[str, Any] | None = None,
+        model: str | None = None,
+        model_parameters: dict[str, Any] | None = None,
+    ) -> Iterator[TraceLink]:
+        if not self.settings.langfuse_enabled:
+            yield TraceLink(status="disabled")
+            return
+        if self._langfuse_client is None:
+            yield TraceLink(status="degraded", last_error=self._langfuse_last_error)
+            return
+
+        try:
+            observation_cm = self._langfuse_client.start_as_current_observation(
+                as_type=as_type,
+                name=name,
+                input=input_payload,
+                metadata=metadata,
+                model=model,
+                model_parameters=model_parameters,
+            )
+        except Exception as exc:  # pragma: no cover - depends on external runtime
+            self._remember_langfuse_error(str(exc))
+            yield TraceLink(status="degraded", last_error=str(exc))
+            return
+
+        with observation_cm as observation:
+            trace_id = getattr(observation, "trace_id", None)
+            yield TraceLink(
+                trace_id=trace_id,
+                observation_id=getattr(observation, "id", None),
+                trace_url=self._langfuse_trace_url(trace_id),
+                status="ok",
+                observation=observation,
+            )
 
     @contextmanager
     def span(self, name: str, *, attributes: dict[str, Any] | None = None) -> Iterator[Any]:

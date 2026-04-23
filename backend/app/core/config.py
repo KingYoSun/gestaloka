@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
     otel_metrics_host: str = "0.0.0.0"
     otel_metrics_port: int = 0
+    langfuse_enabled: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = ""
+    langfuse_internal_base_url: str = ""
+    langfuse_project: str = ""
+    langfuse_env: str = "development"
     canary_health_url: str = ""
     cors_origins: list[str] = ["http://localhost:5173"]
 

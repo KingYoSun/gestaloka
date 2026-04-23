@@ -45,6 +45,10 @@ class PromptExecutionAttempt:
     output_payload: dict[str, Any]
     provider_name: str
     provider_response_id: str | None
+    langfuse_trace_id: str | None = None
+    langfuse_observation_id: str | None = None
+    langfuse_trace_url: str | None = None
+    langfuse_status: str = "disabled"
 
 
 @dataclass(frozen=True)
@@ -811,72 +815,165 @@ class ModelRouter:
             lanes = self._lane_sequence(requested_lane, allow_pro_fallback or force_pro_after_success)
             for lane_index, lane in enumerate(lanes):
                 model_id = self._model_id_for_lane(lane, route)
-                try:
-                    provider_response = self.provider.generate(
-                        prompt=prompt,
-                        response_model=response_model,
-                        model_id=model_id,
-                        lane=lane,
+                langfuse_context = (
+                    self.observability_service.langfuse_observation(
+                        name=prompt.prompt_id,
+                        as_type="generation",
                         input_payload=input_payload,
-                        temperature=self._temperature_for_lane(lane),
-                    )
-                except Exception as exc:
-                    failure_reason = f"{lane} provider execution failed: {exc}"
-                    attempt = PromptExecutionAttempt(
-                        prompt_id=prompt.prompt_id,
-                        schema_version=prompt.schema_version,
-                        model_lane=lane,
-                        model_id=model_id,
-                        input_hash=input_context_hash,
-                        input_context_hash=input_context_hash,
-                        status="provider_error",
-                        output_schema_status="invalid",
-                        output_payload={"status": "provider_error", "reason": str(exc)},
-                        provider_name=self.provider.provider_name,
-                        provider_response_id=None,
-                    )
-                    attempts.append(attempt)
-                    self._record_attempt(
-                        world_id,
-                        turn_id,
-                        lane,
-                        prompt.prompt_id,
-                        model_id,
-                        graph_context_status,
-                        False,
-                        len(attempts) > 1,
-                    )
-                    if lane == "pro_lane" or not allow_pro_fallback:
-                        return PromptExecutionOutcome(
-                            attempts=attempts,
-                            final_lane=attempts[-1].model_lane,
-                            final_payload=None,
-                            failure_reason=failure_reason,
-                        )
-                    continue
-
-                raw_output = provider_response.raw_output
-                try:
-                    payload = response_model.model_validate(raw_output)
-                except ValidationError as exc:
-                    failure_reason = f"{lane} output failed schema validation"
-                    attempt = PromptExecutionAttempt(
-                        prompt_id=prompt.prompt_id,
-                        schema_version=prompt.schema_version,
-                        model_lane=lane,
-                        model_id=model_id,
-                        input_hash=input_context_hash,
-                        input_context_hash=input_context_hash,
-                        status="schema_invalid",
-                        output_schema_status="invalid",
-                        output_payload={
-                            "status": "schema_invalid",
-                            "reason": failure_reason,
-                            "errors": exc.errors(),
-                            "raw_output": raw_output,
+                        metadata={
+                            "world_id": world_id,
+                            "turn_id": turn_id,
+                            "prompt_id": prompt.prompt_id,
+                            "model_id": model_id,
+                            "lane": lane,
+                            "graph_context_status": graph_context_status,
+                            "runtime_role": self.settings.app_runtime_role,
+                            "config_name": self.config_name,
                         },
+                        model=model_id,
+                        model_parameters={"lane": lane, "config_name": self.config_name},
+                    )
+                    if self.observability_service is not None
+                    else _null_trace_link()
+                )
+                with langfuse_context as langfuse_link:
+                    try:
+                        provider_response = self.provider.generate(
+                            prompt=prompt,
+                            response_model=response_model,
+                            model_id=model_id,
+                            lane=lane,
+                            input_payload=input_payload,
+                            temperature=self._temperature_for_lane(lane),
+                        )
+                    except Exception as exc:
+                        failure_reason = f"{lane} provider execution failed: {exc}"
+                        _update_langfuse_observation(
+                            langfuse_link,
+                            output={"status": "provider_error", "reason": str(exc)},
+                            metadata={"status": "provider_error", "failure_reason": failure_reason},
+                        )
+                        attempt = PromptExecutionAttempt(
+                            prompt_id=prompt.prompt_id,
+                            schema_version=prompt.schema_version,
+                            model_lane=lane,
+                            model_id=model_id,
+                            input_hash=input_context_hash,
+                            input_context_hash=input_context_hash,
+                            status="provider_error",
+                            output_schema_status="invalid",
+                            output_payload={"status": "provider_error", "reason": str(exc)},
+                            provider_name=self.provider.provider_name,
+                            provider_response_id=None,
+                            langfuse_trace_id=langfuse_link.trace_id,
+                            langfuse_observation_id=langfuse_link.observation_id,
+                            langfuse_trace_url=langfuse_link.trace_url,
+                            langfuse_status=langfuse_link.status,
+                        )
+                        attempts.append(attempt)
+                        self._record_attempt(
+                            world_id,
+                            turn_id,
+                            lane,
+                            prompt.prompt_id,
+                            model_id,
+                            graph_context_status,
+                            False,
+                            len(attempts) > 1,
+                        )
+                        if lane == "pro_lane" or not allow_pro_fallback:
+                            return PromptExecutionOutcome(
+                                attempts=attempts,
+                                final_lane=attempts[-1].model_lane,
+                                final_payload=None,
+                                failure_reason=failure_reason,
+                            )
+                        continue
+
+                    raw_output = provider_response.raw_output
+                    try:
+                        payload = response_model.model_validate(raw_output)
+                    except ValidationError as exc:
+                        failure_reason = f"{lane} output failed schema validation"
+                        _update_langfuse_observation(
+                            langfuse_link,
+                            output={
+                                "status": "schema_invalid",
+                                "reason": failure_reason,
+                                "raw_output": raw_output,
+                            },
+                            metadata={
+                                "status": "schema_invalid",
+                                "failure_reason": failure_reason,
+                                "provider_response_id": provider_response.provider_response_id,
+                            },
+                        )
+                        attempt = PromptExecutionAttempt(
+                            prompt_id=prompt.prompt_id,
+                            schema_version=prompt.schema_version,
+                            model_lane=lane,
+                            model_id=model_id,
+                            input_hash=input_context_hash,
+                            input_context_hash=input_context_hash,
+                            status="schema_invalid",
+                            output_schema_status="invalid",
+                            output_payload={
+                                "status": "schema_invalid",
+                                "reason": failure_reason,
+                                "errors": exc.errors(),
+                                "raw_output": raw_output,
+                            },
+                            provider_name=provider_response.provider_name,
+                            provider_response_id=provider_response.provider_response_id,
+                            langfuse_trace_id=langfuse_link.trace_id,
+                            langfuse_observation_id=langfuse_link.observation_id,
+                            langfuse_trace_url=langfuse_link.trace_url,
+                            langfuse_status=langfuse_link.status,
+                        )
+                        attempts.append(attempt)
+                        self._record_attempt(
+                            world_id,
+                            turn_id,
+                            lane,
+                            prompt.prompt_id,
+                            model_id,
+                            graph_context_status,
+                            False,
+                            len(attempts) > 1,
+                        )
+                        if lane == "pro_lane" or not allow_pro_fallback:
+                            return PromptExecutionOutcome(
+                                attempts=attempts,
+                                final_lane=attempts[-1].model_lane,
+                                final_payload=None,
+                                failure_reason=failure_reason,
+                            )
+                        continue
+
+                    _update_langfuse_observation(
+                        langfuse_link,
+                        output={"status": "resolved", "raw_output": payload.model_dump()},
+                        metadata={
+                            "status": "resolved",
+                            "provider_response_id": provider_response.provider_response_id,
+                        },
+                    )
+                    attempt = PromptExecutionAttempt(
+                        prompt_id=prompt.prompt_id,
+                        schema_version=prompt.schema_version,
+                        model_lane=lane,
+                        model_id=model_id,
+                        input_hash=input_context_hash,
+                        input_context_hash=input_context_hash,
+                        status="resolved",
+                        output_schema_status="valid",
+                        output_payload={"status": "resolved", "raw_output": payload.model_dump()},
                         provider_name=provider_response.provider_name,
                         provider_response_id=provider_response.provider_response_id,
+                        langfuse_trace_id=langfuse_link.trace_id,
+                        langfuse_observation_id=langfuse_link.observation_id,
+                        langfuse_trace_url=langfuse_link.trace_url,
+                        langfuse_status=langfuse_link.status,
                     )
                     attempts.append(attempt)
                     self._record_attempt(
@@ -886,45 +983,12 @@ class ModelRouter:
                         prompt.prompt_id,
                         model_id,
                         graph_context_status,
-                        False,
+                        True,
                         len(attempts) > 1,
                     )
-                    if lane == "pro_lane" or not allow_pro_fallback:
-                        return PromptExecutionOutcome(
-                            attempts=attempts,
-                            final_lane=attempts[-1].model_lane,
-                            final_payload=None,
-                            failure_reason=failure_reason,
-                        )
-                    continue
-
-                attempt = PromptExecutionAttempt(
-                    prompt_id=prompt.prompt_id,
-                    schema_version=prompt.schema_version,
-                    model_lane=lane,
-                    model_id=model_id,
-                    input_hash=input_context_hash,
-                    input_context_hash=input_context_hash,
-                    status="resolved",
-                    output_schema_status="valid",
-                    output_payload={"status": "resolved", "raw_output": payload.model_dump()},
-                    provider_name=provider_response.provider_name,
-                    provider_response_id=provider_response.provider_response_id,
-                )
-                attempts.append(attempt)
-                self._record_attempt(
-                    world_id,
-                    turn_id,
-                    lane,
-                    prompt.prompt_id,
-                    model_id,
-                    graph_context_status,
-                    True,
-                    len(attempts) > 1,
-                )
-                if force_pro_after_success and lane != "pro_lane" and lane_index < len(lanes) - 1:
-                    continue
-                return PromptExecutionOutcome(attempts=attempts, final_lane=lane, final_payload=payload)
+                    if force_pro_after_success and lane != "pro_lane" and lane_index < len(lanes) - 1:
+                        continue
+                    return PromptExecutionOutcome(attempts=attempts, final_lane=lane, final_payload=payload)
 
         return PromptExecutionOutcome(
             attempts=attempts,
@@ -1008,3 +1072,19 @@ class ModelRouter:
 @contextmanager
 def _null_span():
     yield None
+
+
+@contextmanager
+def _null_trace_link():
+    yield type("NullTraceLink", (), {"trace_id": None, "observation_id": None, "trace_url": None, "status": "disabled", "observation": None})()
+
+
+def _update_langfuse_observation(link: Any, *, output: Any | None = None, metadata: dict[str, Any] | None = None) -> None:
+    observation = getattr(link, "observation", None)
+    if observation is None:
+        return
+    try:
+        observation.update(output=output, metadata=metadata)
+    except Exception:
+        if hasattr(link, "status"):
+            link.status = "degraded"
