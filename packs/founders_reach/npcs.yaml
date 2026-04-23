@@ -1,0 +1,41 @@
+npcs:
+  - display_name: Archivist Nera
+    personality: observant and steady
+    goals:
+      duty: keep same-world memory coherent
+    home_location_key: archive_steps
+    routine_state:
+      routine_role: archivist
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: newcomers and first impressions
+      tension_band: medium
+  - display_name: Lamplighter Sera
+    personality: warmly practical and alert to the square's shifting light
+    goals:
+      duty: keep the plaza calm by tending its lamps
+    home_location_key: watch_path
+    routine_state:
+      routine_role: lamplighter
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: the plaza lamps and who lingers beneath them
+      tension_band: low
+  - display_name: Courier Pell
+    personality: quick-eyed and curious about every message that crosses the square
+    goals:
+      duty: carry notices and hear how the square answers them
+    home_location_key: square
+    routine_state:
+      routine_role: courier
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: small promises and the gossip they leave behind
+      tension_band: medium
+    is_guide: true

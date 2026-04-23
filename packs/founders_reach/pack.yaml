@@ -1,0 +1,19 @@
+pack_id: founders_reach
+version: 1.0.0
+engine_api_version: v2
+display_name: Founders Reach
+world_templates:
+  - template_id: founders_reach
+    display_name: Founders Reach
+    summary: A watch-kept plaza where first trust, memory, and rumor become the opening progression slice.
+semantic_tags:
+  - plaza
+  - watch
+  - memory
+  - trust
+prompt_overlays:
+  - prompt_overlays
+content_refs:
+  world_templates: world_templates.yaml
+  npcs: npcs.yaml
+  prompt_overlays: prompts.yaml

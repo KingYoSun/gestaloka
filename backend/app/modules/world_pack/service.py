@@ -1,0 +1,344 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import Settings, get_settings
+from app.models.entities import World
+
+
+ENGINE_API_VERSION = "v2"
+DEFAULT_PACK_ID = "founders_reach"
+DEFAULT_WORLD_TEMPLATE_ID = "founders_reach"
+
+_ACTIVE_REGISTRY: PackRegistry | None = None
+_ACTIVE_PACK_DIR: Path | None = None
+
+
+class TemplateSummary(BaseModel):
+    template_id: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(min_length=1, max_length=120)
+    summary: str = ""
+
+
+class PackManifest(BaseModel):
+    pack_id: str = Field(min_length=1, max_length=120)
+    version: str = Field(min_length=1, max_length=32)
+    engine_api_version: str = Field(min_length=1, max_length=16)
+    display_name: str = Field(min_length=1, max_length=120)
+    world_templates: list[TemplateSummary] = Field(min_length=1)
+    semantic_tags: list[str] = Field(default_factory=list)
+    prompt_overlays: list[str] = Field(default_factory=list)
+    content_refs: dict[str, str] = Field(default_factory=dict)
+
+
+class PackRoles(BaseModel):
+    starter_location_key: str = "square"
+    lore_location_key: str = "archive_steps"
+    followup_location_key: str = "watch_path"
+    guide_npc_name: str = ""
+    starter_stage_key: str = "starter_watch"
+    followup_stage_key: str = "watch_path_followup"
+    opening_chapter_key: str = "founders_watch_opening"
+    followup_chapter_key: str = "watch_path_followup"
+    reward_effect_kind: str = "unlock_followup_watch_path"
+    branch_labels: dict[str, str] = Field(
+        default_factory=lambda: {
+            "watch_oath": "Watch Oath",
+            "lantern_whispers": "Lantern Whispers",
+        }
+    )
+
+
+class PackBootstrap(BaseModel):
+    start_consequence_summary: str = "The first request waits for your next move."
+    session_started_narrative: str = (
+        "{player_name} began a session in {starter_location_name} and received the first request from {guide_npc_name}."
+    )
+    reward_unlock_summary: str = "{reward_name} unlocked the next route."
+    reward_use_narrative: str = (
+        "{player_name} raised {reward_name} in {starter_location_name}, and {faction_name} opened the next route."
+    )
+    reward_location_memory: str = "{starter_location_name} remembers {reward_name} opening the next route."
+    reward_world_memory: str = (
+        "{player_name} used {reward_name} to open the next route for {faction_name}'s follow-up request."
+    )
+
+
+class PackLocation(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    starter: bool = False
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+
+
+class PackRoute(BaseModel):
+    route_key: str = Field(min_length=1, max_length=120)
+    from_location_key: str = Field(alias="from", min_length=1, max_length=120)
+    to_location_key: str = Field(alias="to", min_length=1, max_length=120)
+    status: str = "open"
+    travel_summary: str = ""
+    unlock_requirements: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PackFaction(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    state: dict[str, Any] = Field(default_factory=dict)
+
+
+class PackQuest(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=160)
+    description: str = ""
+    stage_key: str = Field(min_length=1, max_length=120)
+    unlock_requirements: dict[str, Any] = Field(default_factory=dict)
+    completion_target: int = Field(default=1, ge=1)
+    reward_template_key: str = "none"
+    reward_name: str = ""
+    reward_description: str = ""
+    state: dict[str, Any] = Field(default_factory=dict)
+
+
+class PackCharacter(BaseModel):
+    rank: str = "Wayfarer"
+    hp: int = 10
+    focus: int = 5
+    status_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class PackNPCSeed(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+    personality: str = ""
+    goals: dict[str, str] = Field(default_factory=dict)
+    home_location_key: str = Field(min_length=1, max_length=120)
+    routine_state: dict[str, Any] = Field(default_factory=dict)
+    is_guide: bool = False
+
+
+class WorldTemplateDefinition(BaseModel):
+    template_id: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(min_length=1, max_length=120)
+    summary: str = ""
+    world: dict[str, Any] = Field(default_factory=dict)
+    roles: PackRoles = Field(default_factory=PackRoles)
+    bootstrap: PackBootstrap = Field(default_factory=PackBootstrap)
+    locations: dict[str, PackLocation]
+    routes: list[PackRoute]
+    faction: PackFaction
+    quest: PackQuest
+    followup_quest: PackQuest
+    character: PackCharacter = Field(default_factory=PackCharacter)
+
+    @model_validator(mode="after")
+    def validate_world_template(self) -> "WorldTemplateDefinition":
+        location_keys = set(self.locations)
+        required = {
+            self.roles.starter_location_key,
+            self.roles.lore_location_key,
+            self.roles.followup_location_key,
+        }
+        missing = required - location_keys
+        if missing:
+            raise ValueError(f"world template {self.template_id} is missing location keys: {sorted(missing)}")
+        npc_reward_effect = str((self.quest.state or {}).get("reward_effect_kind") or self.roles.reward_effect_kind)
+        if npc_reward_effect != self.roles.reward_effect_kind:
+            self.roles.reward_effect_kind = npc_reward_effect
+        return self
+
+
+class WorldTemplatesPayload(BaseModel):
+    world_templates: dict[str, WorldTemplateDefinition]
+
+
+class NPCSeedsPayload(BaseModel):
+    npcs: list[PackNPCSeed] = Field(default_factory=list)
+
+
+class PromptOverlaysPayload(BaseModel):
+    global_overlays: dict[str, str] = Field(default_factory=dict, alias="global")
+    template_overlays: dict[str, dict[str, str]] = Field(default_factory=dict, alias="templates")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+@dataclass(frozen=True)
+class LoadedWorldPack:
+    manifest: PackManifest
+    templates: dict[str, WorldTemplateDefinition]
+    npcs: list[PackNPCSeed]
+    prompt_overlays: PromptOverlaysPayload
+    root_dir: Path
+
+    def template(self, template_id: str) -> WorldTemplateDefinition:
+        try:
+            return self.templates[template_id]
+        except KeyError as exc:
+            raise KeyError(f"Unknown world_template_id {template_id!r} for pack {self.manifest.pack_id}") from exc
+
+
+class PackRegistry:
+    def __init__(self, pack_dir: Path) -> None:
+        self.pack_dir = Path(pack_dir)
+        self._packs = self._load_packs()
+
+    def list_packs(self) -> list[LoadedWorldPack]:
+        return [self._packs[key] for key in sorted(self._packs)]
+
+    def get_pack(self, pack_id: str) -> LoadedWorldPack:
+        try:
+            return self._packs[pack_id]
+        except KeyError as exc:
+            raise KeyError(f"Unknown pack_id: {pack_id}") from exc
+
+    def get_template(self, pack_id: str, template_id: str) -> WorldTemplateDefinition:
+        return self.get_pack(pack_id).template(template_id)
+
+    def default_pack(self) -> LoadedWorldPack:
+        return self.get_pack(DEFAULT_PACK_ID)
+
+    def default_template(self) -> WorldTemplateDefinition:
+        return self.get_template(DEFAULT_PACK_ID, DEFAULT_WORLD_TEMPLATE_ID)
+
+    def pack_summary_items(self) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for pack in self.list_packs():
+            items.append(
+                {
+                    "pack_id": pack.manifest.pack_id,
+                    "version": pack.manifest.version,
+                    "engine_api_version": pack.manifest.engine_api_version,
+                    "display_name": pack.manifest.display_name,
+                    "semantic_tags": list(pack.manifest.semantic_tags),
+                    "content_refs": dict(pack.manifest.content_refs),
+                    "world_templates": [template.model_dump() for template in pack.manifest.world_templates],
+                }
+            )
+        return items
+
+    def resolve_prompt_overlay(self, *, pack_id: str, template_id: str, prompt_id: str) -> str:
+        pack = self.get_pack(pack_id)
+        sections = [
+            pack.prompt_overlays.global_overlays.get("*", "").strip(),
+            pack.prompt_overlays.global_overlays.get(prompt_id, "").strip(),
+            (pack.prompt_overlays.template_overlays.get(template_id) or {}).get("*", "").strip(),
+            (pack.prompt_overlays.template_overlays.get(template_id) or {}).get(prompt_id, "").strip(),
+        ]
+        return "\n\n".join(section for section in sections if section)
+
+    def _load_packs(self) -> dict[str, LoadedWorldPack]:
+        if not self.pack_dir.exists():
+            raise FileNotFoundError(f"Pack directory not found: {self.pack_dir}")
+        packs: dict[str, LoadedWorldPack] = {}
+        for pack_file in sorted(self.pack_dir.glob("*/pack.yaml")):
+            loaded = self._load_pack(pack_file)
+            if loaded.manifest.pack_id in packs:
+                raise ValueError(f"Duplicate pack_id detected: {loaded.manifest.pack_id}")
+            packs[loaded.manifest.pack_id] = loaded
+        if not packs:
+            raise ValueError(f"No world packs found in {self.pack_dir}")
+        return packs
+
+    def _load_pack(self, manifest_path: Path) -> LoadedWorldPack:
+        raw_manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        manifest = PackManifest.model_validate(raw_manifest)
+        if manifest.engine_api_version != ENGINE_API_VERSION:
+            raise ValueError(
+                f"Pack {manifest.pack_id} uses engine_api_version {manifest.engine_api_version}, expected {ENGINE_API_VERSION}"
+            )
+
+        root_dir = manifest_path.parent
+        templates_payload = self._read_content(root_dir, manifest, "world_templates", WorldTemplatesPayload)
+        npc_payload = self._read_content(root_dir, manifest, "npcs", NPCSeedsPayload)
+        prompt_payload = self._read_content(root_dir, manifest, "prompt_overlays", PromptOverlaysPayload)
+
+        template_ids = {template.template_id for template in manifest.world_templates}
+        loaded_ids = set(templates_payload.world_templates)
+        if template_ids != loaded_ids:
+            raise ValueError(
+                f"Pack {manifest.pack_id} template mismatch. manifest={sorted(template_ids)} loaded={sorted(loaded_ids)}"
+            )
+
+        guide_name = next((npc.display_name for npc in npc_payload.npcs if npc.is_guide), "")
+        templates: dict[str, WorldTemplateDefinition] = {}
+        for template_id, template in templates_payload.world_templates.items():
+            if not template.roles.guide_npc_name and guide_name:
+                template.roles.guide_npc_name = guide_name
+            templates[template_id] = template
+
+        return LoadedWorldPack(
+            manifest=manifest,
+            templates=templates,
+            npcs=npc_payload.npcs,
+            prompt_overlays=prompt_payload,
+            root_dir=root_dir,
+        )
+
+    @staticmethod
+    def _read_content(root_dir: Path, manifest: PackManifest, key: str, model: type[BaseModel]) -> BaseModel:
+        relative = manifest.content_refs.get(key)
+        if not relative:
+            raise ValueError(f"Pack {manifest.pack_id} is missing content_ref for {key}")
+        content_path = root_dir / relative
+        if not content_path.exists():
+            raise FileNotFoundError(f"Pack content file not found: {content_path}")
+        raw = yaml.safe_load(content_path.read_text(encoding="utf-8")) or {}
+        return model.model_validate(raw)
+
+
+def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:
+    global _ACTIVE_PACK_DIR, _ACTIVE_REGISTRY
+    resolved_dir = Path(pack_dir).resolve()
+    if _ACTIVE_REGISTRY is not None and _ACTIVE_PACK_DIR == resolved_dir:
+        return _ACTIVE_REGISTRY
+    _ACTIVE_PACK_DIR = resolved_dir
+    _ACTIVE_REGISTRY = PackRegistry(resolved_dir)
+    return _ACTIVE_REGISTRY
+
+
+def get_pack_registry(settings: Settings | None = None) -> PackRegistry:
+    resolved_settings = settings or get_settings()
+    return configure_pack_registry(resolved_settings.pack_dir)
+
+
+def world_pack_metadata(world: World | None) -> dict[str, Any]:
+    state = dict((world.state if world is not None else None) or {})
+    pack_id = str(state.get("pack_id") or DEFAULT_PACK_ID)
+    template_id = str(state.get("world_template_id") or DEFAULT_WORLD_TEMPLATE_ID)
+    return {
+        "pack_id": pack_id,
+        "world_template_id": template_id,
+    }
+
+
+def resolve_world_pack(db: Session, world_id: str) -> tuple[LoadedWorldPack, WorldTemplateDefinition]:
+    world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    registry = get_pack_registry()
+    metadata = world_pack_metadata(world)
+    pack = registry.get_pack(metadata["pack_id"])
+    template = pack.template(metadata["world_template_id"])
+    return pack, template
+
+
+def world_pack_summary(db: Session, world_id: str) -> dict[str, Any]:
+    world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    registry = get_pack_registry()
+    metadata = world_pack_metadata(world)
+    pack = registry.get_pack(metadata["pack_id"])
+    template = pack.template(metadata["world_template_id"])
+    return {
+        "pack_id": pack.manifest.pack_id,
+        "pack_display_name": pack.manifest.display_name,
+        "world_template_id": template.template_id,
+        "world_template_display_name": template.display_name,
+        "semantic_tags": list(pack.manifest.semantic_tags),
+    }

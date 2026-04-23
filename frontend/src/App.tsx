@@ -84,10 +84,27 @@ type LangfuseStatus = {
 type SessionInfo = {
   session_id: string;
   world_id: string;
+  world_name: string;
+  pack_id: string;
+  world_template_id: string;
   player_actor_id: string;
   npc_actor_id: string;
   location_id: string;
   websocket_url: string;
+};
+
+type WorldPackItem = {
+  pack_id: string;
+  version: string;
+  engine_api_version: string;
+  display_name: string;
+  semantic_tags: string[];
+  content_refs: Record<string, string>;
+  world_templates: Array<{
+    template_id: string;
+    display_name: string;
+    summary: string;
+  }>;
 };
 
 type ChapterSummaryValue = {
@@ -1062,6 +1079,9 @@ function App() {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [wallet, setWallet] = useState<SPWallet | null>(null);
   const [worldId, setWorldId] = useState("world-alpha");
+  const [worldPacks, setWorldPacks] = useState<WorldPackItem[]>([]);
+  const [selectedPackId, setSelectedPackId] = useState("founders_reach");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("founders_reach");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
@@ -1161,6 +1181,7 @@ function App() {
     if (!authenticated || !token) {
       setMe(null);
       setWallet(null);
+      setWorldPacks([]);
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -1189,15 +1210,48 @@ function App() {
       return;
     }
 
-    void Promise.all([apiFetch<AuthMe>("/auth/me", token), apiFetch<SPWallet>("/economy/sp/me", token)])
-      .then(([mePayload, walletPayload]) => {
+    void Promise.all([
+      apiFetch<AuthMe>("/auth/me", token),
+      apiFetch<SPWallet>("/economy/sp/me", token),
+      apiFetch<{ items: WorldPackItem[] }>("/worlds/packs", token),
+    ])
+      .then(([mePayload, walletPayload, packPayload]) => {
         setMe(mePayload);
         setWallet(walletPayload);
+        setWorldPacks(packPayload.items);
+        const firstPack = packPayload.items[0];
+        if (firstPack) {
+          setSelectedPackId((current) =>
+            packPayload.items.some((item) => item.pack_id === current) ? current : firstPack.pack_id,
+          );
+          setSelectedTemplateId((current) => {
+            const activePack =
+              packPayload.items.find((item) => item.pack_id === selectedPackId) ??
+              packPayload.items.find((item) => item.pack_id === current) ??
+              firstPack;
+            const firstTemplate = activePack.world_templates[0];
+            if (!firstTemplate) {
+              return current;
+            }
+            return activePack.world_templates.some((item) => item.template_id === current) ? current : firstTemplate.template_id;
+          });
+        }
         setLedgerUserFilter((current) => current || walletPayload.user_sub);
         setAdjustUserSub((current) => current || walletPayload.user_sub);
       })
       .catch((requestError: unknown) => setError(formatError(requestError)));
-  }, [authenticated, token]);
+  }, [authenticated, token, selectedPackId]);
+
+  useEffect(() => {
+    const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId);
+    const firstTemplate = selectedPack?.world_templates[0];
+    if (!selectedPack || !firstTemplate) {
+      return;
+    }
+    if (!selectedPack.world_templates.some((item) => item.template_id === selectedTemplateId)) {
+      setSelectedTemplateId(firstTemplate.template_id);
+    }
+  }, [selectedPackId, selectedTemplateId, worldPacks]);
 
   useEffect(() => {
     setAdjustWorldId(session?.world_id ?? worldId);
@@ -1523,7 +1577,8 @@ function App() {
         method: "POST",
         body: JSON.stringify({
           world_id: worldId,
-          world_name: "Founders Reach",
+          pack_id: selectedPackId,
+          world_template_id: selectedTemplateId,
         }),
       });
       setSession(created);
@@ -1913,6 +1968,34 @@ function App() {
           <h2>2. World start</h2>
           <form onSubmit={handleStartSession} className="stack">
             <label>
+              Content Pack
+              <select
+                data-testid="pack-select"
+                value={selectedPackId}
+                onChange={(event) => setSelectedPackId(event.target.value)}
+              >
+                {worldPacks.map((item) => (
+                  <option key={item.pack_id} value={item.pack_id}>
+                    {item.display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              World Template
+              <select
+                data-testid="template-select"
+                value={selectedTemplateId}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+              >
+                {(worldPacks.find((item) => item.pack_id === selectedPackId)?.world_templates ?? []).map((item) => (
+                  <option key={item.template_id} value={item.template_id}>
+                    {item.display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
               World ID
               <input
                 data-testid="world-id-input"
@@ -1920,7 +2003,7 @@ function App() {
                 onChange={(event) => setWorldId(event.target.value)}
               />
             </label>
-            <button data-testid="start-session" type="submit" disabled={!authenticated}>
+            <button data-testid="start-session" type="submit" disabled={!authenticated || !selectedPackId || !selectedTemplateId}>
               Start session
             </button>
           </form>
@@ -1928,7 +2011,13 @@ function App() {
             <dl className="meta">
               <div>
                 <dt>World</dt>
-                <dd>{session.world_id}</dd>
+                <dd>
+                  {session.world_name} ({session.world_id})
+                </dd>
+              </div>
+              <div>
+                <dt>Pack</dt>
+                <dd>{session.pack_id}</dd>
               </div>
               <div>
                 <dt>Session</dt>

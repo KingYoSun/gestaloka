@@ -1,70 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Mapping
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, NPCProfile, PlayerProfile, Relationship
-
-
-@dataclass(frozen=True)
-class FoundersReachNPCSeed:
-    display_name: str
-    personality: str
-    goals: dict[str, str]
-    home_location_key: str
-    routine_state: dict[str, object]
-
-
-PLAZA_NPC_SEEDS: tuple[FoundersReachNPCSeed, ...] = (
-    FoundersReachNPCSeed(
-        display_name="Archivist Nera",
-        personality="observant and steady",
-        goals={"duty": "keep same-world memory coherent"},
-        home_location_key="archive_steps",
-        routine_state={
-            "routine_role": "archivist",
-            "beat_state": "observe",
-            "attention_target_actor_id": None,
-            "last_ambient_turn_id": None,
-            "last_idle_tick_id": None,
-            "rumor_focus": "newcomers and first impressions",
-            "tension_band": "medium",
-        },
-    ),
-    FoundersReachNPCSeed(
-        display_name="Lamplighter Sera",
-        personality="warmly practical and alert to the square's shifting light",
-        goals={"duty": "keep the plaza calm by tending its lamps"},
-        home_location_key="watch_path",
-        routine_state={
-            "routine_role": "lamplighter",
-            "beat_state": "observe",
-            "attention_target_actor_id": None,
-            "last_ambient_turn_id": None,
-            "last_idle_tick_id": None,
-            "rumor_focus": "the plaza lamps and who lingers beneath them",
-            "tension_band": "low",
-        },
-    ),
-    FoundersReachNPCSeed(
-        display_name="Courier Pell",
-        personality="quick-eyed and curious about every message that crosses the square",
-        goals={"duty": "carry notices and hear how the square answers them"},
-        home_location_key="square",
-        routine_state={
-            "routine_role": "courier",
-            "beat_state": "observe",
-            "attention_target_actor_id": None,
-            "last_ambient_turn_id": None,
-            "last_idle_tick_id": None,
-            "rumor_focus": "small promises and the gossip they leave behind",
-            "tension_band": "medium",
-        },
-    ),
-)
+from app.modules.world_pack.service import PackNPCSeed, resolve_world_pack
 
 
 def get_player_actor_for_user(db: Session, world_id: str, user_sub: str) -> Actor | None:
@@ -139,7 +81,7 @@ def _merge_routine_state(
 def _ensure_seeded_npc(
     db: Session,
     world_id: str,
-    seed: FoundersReachNPCSeed,
+    seed: PackNPCSeed,
     *,
     location_ids_by_key: Mapping[str, str] | None = None,
 ) -> Actor:
@@ -214,20 +156,28 @@ def _ensure_seeded_npc(
     return npc
 
 
-def ensure_founders_reach_npcs(
+def ensure_pack_npcs(
     db: Session,
     world_id: str,
     *,
     location_ids_by_key: Mapping[str, str] | None = None,
 ) -> list[Actor]:
-    return [_ensure_seeded_npc(db, world_id, seed, location_ids_by_key=location_ids_by_key) for seed in PLAZA_NPC_SEEDS]
+    pack, _ = resolve_world_pack(db, world_id)
+    return [_ensure_seeded_npc(db, world_id, seed, location_ids_by_key=location_ids_by_key) for seed in pack.npcs]
 
 
 def get_or_create_guide_npc(db: Session, world_id: str, *, location_id: str | None = None) -> Actor:
     guide = get_guide_npc_for_location(db, world_id, location_id=location_id)
     if guide is not None:
         return guide
-    return _ensure_seeded_npc(db, world_id, PLAZA_NPC_SEEDS[2], location_ids_by_key=None)
+    pack, template = resolve_world_pack(db, world_id)
+    guide_name = template.roles.guide_npc_name
+    guide_seed = next((seed for seed in pack.npcs if seed.display_name == guide_name or seed.is_guide), None)
+    if guide_seed is not None:
+        return _ensure_seeded_npc(db, world_id, guide_seed, location_ids_by_key=None)
+    if pack.npcs:
+        return _ensure_seeded_npc(db, world_id, pack.npcs[0], location_ids_by_key=None)
+    raise LookupError(f"Pack for world {world_id} does not define any NPC seeds")
 
 
 def get_guide_npc_for_location(db: Session, world_id: str, *, location_id: str | None = None) -> Actor | None:
@@ -240,8 +190,9 @@ def get_guide_npc_for_location(db: Session, world_id: str, *, location_id: str |
     rows = list(db.execute(stmt.order_by(Actor.created_at.asc(), Actor.id.asc())).scalars())
     if not rows:
         return None
-    priority = {seed.display_name: index for index, seed in enumerate(PLAZA_NPC_SEEDS)}
-    rows.sort(key=lambda actor: (priority.get(actor.display_name, 999), actor.display_name, actor.id))
+    _, template = resolve_world_pack(db, world_id)
+    guide_name = template.roles.guide_npc_name
+    rows.sort(key=lambda actor: (actor.display_name != guide_name, actor.display_name, actor.id))
     return rows[0]
 
 

@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
-import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, aliased
 
@@ -25,17 +22,20 @@ from app.models.entities import (
     Relationship,
     Turn,
     World,
-    archive_steps_location_id,
     new_id,
     route_id,
-    starter_location_id,
-    watch_path_location_id,
 )
 from app.modules.actor.service import (
     adjust_relationship_strength,
-    ensure_founders_reach_npcs,
+    ensure_pack_npcs,
     get_guide_npc_for_location,
     get_relationship,
+)
+from app.modules.world_pack.service import (
+    DEFAULT_PACK_ID,
+    DEFAULT_WORLD_TEMPLATE_ID,
+    get_pack_registry,
+    resolve_world_pack,
 )
 from app.modules.world_state.ambient import (
     list_ambient_murmurs,
@@ -131,20 +131,27 @@ class ConsequenceApplicationOutcome:
     consequence_summary: str
 
 
-def _seed_path() -> Path:
-    return Path(__file__).with_name("founders_reach.yaml")
+def _world_row(db: Session, world_id: str) -> World | None:
+    return db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
 
 
-@lru_cache(maxsize=1)
-def _load_seed() -> dict[str, Any]:
-    return yaml.safe_load(_seed_path().read_text(encoding="utf-8")) or {}
-
-
-def _seed_section(name: str) -> dict[str, Any]:
-    value = _load_seed().get(name) or {}
-    if not isinstance(value, dict):
-        raise ValueError(f"Invalid world seed section: {name}")
-    return value
+def _seed_section(db: Session, world_id: str, name: str) -> dict[str, Any]:
+    _, template = resolve_world_pack(db, world_id)
+    if name == "world":
+        return dict(template.world)
+    if name == "roles":
+        return template.roles.model_dump()
+    if name == "bootstrap":
+        return template.bootstrap.model_dump()
+    if name == "faction":
+        return template.faction.model_dump()
+    if name == "quest":
+        return template.quest.model_dump()
+    if name == "followup_quest":
+        return template.followup_quest.model_dump()
+    if name == "character":
+        return template.character.model_dump()
+    raise KeyError(f"Unknown pack section: {name}")
 
 
 def _world_scoped_seed_id(world_id: str, base_id: str) -> str:
@@ -156,45 +163,79 @@ def _resolve_seeded_entity_id(world_id: str, base_id: str) -> tuple[str, list[st
     return scoped_id, [scoped_id, base_id]
 
 
-def _seed_locations() -> dict[str, dict[str, Any]]:
-    locations = _load_seed().get("locations") or {}
-    if not isinstance(locations, dict) or not locations:
-        raise ValueError("World seed is missing locations")
-    return {str(key): dict(value or {}) for key, value in locations.items()}
+def _seed_locations(db: Session, world_id: str) -> dict[str, dict[str, Any]]:
+    _, template = resolve_world_pack(db, world_id)
+    locations = {key: value.model_dump() for key, value in template.locations.items()}
+    if not locations:
+        raise ValueError("World pack is missing locations")
+    return locations
 
 
-def _seed_routes() -> list[dict[str, Any]]:
-    routes = _load_seed().get("routes") or []
-    if not isinstance(routes, list):
-        raise ValueError("World seed routes must be a list")
-    return [dict(item or {}) for item in routes]
+def _seed_routes(db: Session, world_id: str) -> list[dict[str, Any]]:
+    _, template = resolve_world_pack(db, world_id)
+    return [item.model_dump(by_alias=True) for item in template.routes]
+
+
+def _starter_location_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("starter_location_key") or "square")
+
+
+def _lore_location_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("lore_location_key") or "archive_steps")
+
+
+def _followup_location_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("followup_location_key") or "watch_path")
+
+
+def _starter_stage_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("starter_stage_key") or "starter_watch")
+
+
+def _followup_stage_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("followup_stage_key") or "watch_path_followup")
+
+
+def _opening_chapter_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("opening_chapter_key") or "founders_watch_opening")
+
+
+def _followup_chapter_key(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("followup_chapter_key") or _followup_stage_key(db, world_id))
+
+
+def _reward_effect_kind(db: Session, world_id: str) -> str:
+    return str(_seed_section(db, world_id, "roles").get("reward_effect_kind") or "unlock_followup_watch_path")
+
+
+def _branch_labels(db: Session, world_id: str) -> dict[str, str]:
+    labels = _seed_section(db, world_id, "roles").get("branch_labels") or {}
+    if not isinstance(labels, dict):
+        return {}
+    return {str(key): str(value) for key, value in labels.items()}
+
+
+def _bootstrap_copy(db: Session, world_id: str) -> dict[str, Any]:
+    return _seed_section(db, world_id, "bootstrap")
 
 
 def _location_id_for_key(world_id: str, location_key: str, base_id: str | None = None) -> str:
-    if location_key == "square":
-        return starter_location_id(world_id)
-    if location_key == "archive_steps":
-        return archive_steps_location_id(world_id)
-    if location_key == "watch_path":
-        return watch_path_location_id(world_id)
     return _world_scoped_seed_id(world_id, base_id or location_key)
 
 
-def location_key_for_id(world_id: str, location_id: str | None) -> str | None:
+def location_key_for_id(db: Session, world_id: str, location_id: str | None) -> str | None:
     if location_id is None:
         return None
-    if location_id == starter_location_id(world_id):
-        return "square"
-    if location_id == archive_steps_location_id(world_id):
-        return "archive_steps"
-    if location_id == watch_path_location_id(world_id):
-        return "watch_path"
+    for location_key, payload in _seed_locations(db, world_id).items():
+        seeded_location_id = _location_id_for_key(world_id, location_key, str(payload.get("id") or location_key))
+        if location_id == seeded_location_id:
+            return location_key
     return None
 
 
 def ensure_seeded_locations(db: Session, world_id: str) -> dict[str, Location]:
     seeded: dict[str, Location] = {}
-    for location_key, payload in _seed_locations().items():
+    for location_key, payload in _seed_locations(db, world_id).items():
         location_id = _location_id_for_key(world_id, location_key, str(payload.get("id") or location_key))
         location = db.execute(
             select(Location).where(Location.world_id == world_id, Location.id == location_id)
@@ -228,7 +269,7 @@ def ensure_seeded_locations(db: Session, world_id: str) -> dict[str, Location]:
 def ensure_location_routes(db: Session, world_id: str, *, locations_by_key: dict[str, Location] | None = None) -> dict[str, LocationRoute]:
     resolved_locations = locations_by_key or ensure_seeded_locations(db, world_id)
     routes: dict[str, LocationRoute] = {}
-    for payload in _seed_routes():
+    for payload in _seed_routes(db, world_id):
         route_key_name = str(payload.get("route_key") or "").strip()
         from_key = str(payload.get("from") or "").strip()
         to_key = str(payload.get("to") or "").strip()
@@ -263,15 +304,38 @@ def ensure_location_routes(db: Session, world_id: str, *, locations_by_key: dict
     return routes
 
 
-def ensure_world(db: Session, world_id: str, world_name: str) -> World:
+def ensure_world(
+    db: Session,
+    world_id: str,
+    *,
+    pack_id: str = DEFAULT_PACK_ID,
+    world_template_id: str = DEFAULT_WORLD_TEMPLATE_ID,
+    world_name: str | None = None,
+) -> World:
+    registry = get_pack_registry()
+    template = registry.get_template(pack_id, world_template_id)
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is not None:
+        world.state = {
+            **dict(world.state or {}),
+            "pack_id": pack_id,
+            "world_template_id": world_template_id,
+        }
         locations = ensure_seeded_locations(db, world_id)
         ensure_location_routes(db, world_id, locations_by_key=locations)
+        db.flush()
         return world
 
-    fallback_name = str(_seed_section("world").get("default_name") or "Founders Reach")
-    world = World(id=world_id, name=world_name or fallback_name, status="active")
+    fallback_name = str((template.world or {}).get("default_name") or template.display_name)
+    world = World(
+        id=world_id,
+        name=world_name or fallback_name,
+        status="active",
+        state={
+            "pack_id": pack_id,
+            "world_template_id": world_template_id,
+        },
+    )
     db.add(world)
     db.flush()
     locations = ensure_seeded_locations(db, world_id)
@@ -280,7 +344,7 @@ def ensure_world(db: Session, world_id: str, world_name: str) -> World:
 
 
 def ensure_starter_location(db: Session, world_id: str) -> Location:
-    return ensure_seeded_locations(db, world_id)["square"]
+    return ensure_seeded_locations(db, world_id)[_starter_location_key(db, world_id)]
 
 
 def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> CharacterSheet:
@@ -290,7 +354,7 @@ def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> Charact
     if sheet is not None:
         return sheet
 
-    character_seed = _seed_section("character")
+    character_seed = _seed_section(db, world_id, "character")
     sheet = CharacterSheet(
         actor_id=actor_id,
         world_id=world_id,
@@ -305,8 +369,8 @@ def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> Charact
 
 
 def ensure_starter_faction(db: Session, world_id: str) -> Faction:
-    faction_seed = _seed_section("faction")
-    faction_base_id = str(faction_seed.get("id") or "founders_watch")
+    faction_seed = _seed_section(db, world_id, "faction")
+    faction_base_id = str(faction_seed.get("id") or "starter_faction")
     faction_id, candidates = _resolve_seeded_entity_id(world_id, faction_base_id)
     faction = db.execute(
         select(Faction).where(
@@ -320,7 +384,7 @@ def ensure_starter_faction(db: Session, world_id: str) -> Faction:
     faction = Faction(
         id=faction_id,
         world_id=world_id,
-        name=str(faction_seed.get("name") or "Founders Watch"),
+        name=str(faction_seed.get("name") or "Starter Faction"),
         description=str(faction_seed.get("description") or ""),
         state=dict(faction_seed.get("state") or {}),
     )
@@ -375,7 +439,7 @@ def _ensure_seeded_quest_template(
     default_unlock_requirements: dict[str, Any] | None = None,
     default_state: dict[str, Any] | None = None,
 ) -> QuestTemplate:
-    quest_seed = _seed_section(section_name)
+    quest_seed = _seed_section(db, world_id, section_name)
     quest_base_id = str(quest_seed.get("id") or default_id)
     quest_id, candidates = _resolve_seeded_entity_id(world_id, quest_base_id)
     quest_template = db.execute(
@@ -425,6 +489,7 @@ def _ensure_seeded_quest_template(
 
 
 def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
+    template = resolve_world_pack(db, world_id)[1]
     return _ensure_seeded_quest_template(
         db,
         world_id=world_id,
@@ -433,33 +498,34 @@ def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
         default_title="First Watch Request",
         default_description="Help a local traveler, report back what you learned, and earn the watch's trust.",
         default_completion_target=2,
-        default_reward_template_key="lantern_sigils",
-        default_reward_name="Lantern Sigil",
-        default_reward_description="A stamped sigil from the watch that marks the bearer as a trusted helper.",
-        default_stage_key="starter_watch",
+        default_reward_template_key="starter_reward",
+        default_reward_name=str(template.quest.reward_name or "World Seal"),
+        default_reward_description=str(template.quest.reward_description or "A trusted item for the next route."),
+        default_stage_key=_starter_stage_key(db, world_id),
         default_unlock_requirements={},
         default_state={
             "reward_enabled": True,
-            "reward_effect_kind": "unlock_followup_watch_path",
-            "reward_effect_payload": {"unlock_stage_key": "watch_path_followup"},
+            "reward_effect_kind": _reward_effect_kind(db, world_id),
+            "reward_effect_payload": {"unlock_stage_key": _followup_stage_key(db, world_id)},
         },
     )
 
 
 def ensure_followup_quest_template(db: Session, world_id: str) -> QuestTemplate:
+    template = resolve_world_pack(db, world_id)[1]
     return _ensure_seeded_quest_template(
         db,
         world_id=world_id,
         section_name="followup_quest",
         default_id="followup_watch_path",
-        default_title="Watch Path Unsealed",
-        default_description="Carry the sigil's trust into the next watch path and steady the square.",
+        default_title=str(template.followup_quest.title or "Follow-up Route Unsealed"),
+        default_description=str(template.followup_quest.description or "Carry earned trust into the next route."),
         default_completion_target=1,
         default_reward_template_key="none",
         default_reward_name="",
         default_reward_description="",
-        default_stage_key="watch_path_followup",
-        default_unlock_requirements={"starter_item_effect": "unlock_followup_watch_path"},
+        default_stage_key=_followup_stage_key(db, world_id),
+        default_unlock_requirements={"starter_item_effect": _reward_effect_kind(db, world_id)},
         default_state={"reward_enabled": False},
     )
 
@@ -509,12 +575,13 @@ def ensure_starter_quest_assignment(
     quest_template = db.execute(
         select(QuestTemplate).where(QuestTemplate.world_id == world_id, QuestTemplate.id == quest_template_id)
     ).scalar_one()
+    lore_location_name = ensure_seeded_locations(db, world_id)[_lore_location_key(db, world_id)].name
     return _ensure_quest_assignment(
         db,
         world_id=world_id,
         owner_actor_id=owner_actor_id,
         quest_template=quest_template,
-        latest_summary="Help a local and return with what you learned.",
+        latest_summary=f"Help a local and return with what you learned around {lore_location_name}.",
         state_json={"lore_progress": 0, "last_world_tags": [], "unlocked_by_item_id": None},
     )
 
@@ -537,12 +604,16 @@ def ensure_followup_quest_assignment(
     if existing is not None:
         return existing
 
+    template = resolve_world_pack(db, world_id)[1]
     return _ensure_quest_assignment(
         db,
         world_id=world_id,
         owner_actor_id=owner_actor_id,
         quest_template=followup_template,
-        latest_summary="The Lantern Sigil opened a follow-up watch path.",
+        latest_summary=_bootstrap_copy(db, world_id).get(
+            "reward_unlock_summary",
+            f"{template.quest.reward_name} opened a follow-up route.",
+        ),
         state_json={
             "lore_progress": 0,
             "last_world_tags": [],
@@ -594,12 +665,13 @@ def ensure_world_slice_seed(
 ) -> WorldSliceSeed:
     locations_by_key = ensure_seeded_locations(db, world_id)
     ensure_location_routes(db, world_id, locations_by_key=locations_by_key)
-    ensure_founders_reach_npcs(
+    ensure_pack_npcs(
         db,
         world_id,
         location_ids_by_key={key: location.id for key, location in locations_by_key.items()},
     )
-    guide_actor = get_guide_npc_for_location(db, world_id, location_id=locations_by_key["square"].id)
+    starter_key = _starter_location_key(db, world_id)
+    guide_actor = get_guide_npc_for_location(db, world_id, location_id=locations_by_key[starter_key].id)
     faction = ensure_starter_faction(db, world_id)
     if guide_actor is not None:
         ensure_membership_relationship(db, world_id=world_id, from_actor_id=guide_actor.id, faction_id=faction.id)
@@ -617,7 +689,7 @@ def ensure_world_slice_seed(
         db,
         world_id=world_id,
         actor_id=player_actor_id,
-        location_id=locations_by_key["square"].id,
+        location_id=locations_by_key[starter_key].id,
         focus_actor_id=guide_actor.id if guide_actor is not None else None,
     )
     return WorldSliceSeed(
@@ -642,7 +714,7 @@ def get_location_summary(db: Session, world_id: str, location_id: str | None) ->
         "id": location.id,
         "name": location.name,
         "description": location.description,
-        "key": str((location.state or {}).get("key") or location_key_for_id(world_id, location.id) or ""),
+        "key": str((location.state or {}).get("key") or location_key_for_id(db, world_id, location.id) or ""),
     }
 
 
@@ -751,14 +823,17 @@ def list_recent_travel_history(db: Session, world_id: str, actor_id: str, *, lim
 
 
 def unlock_watch_path_routes(db: Session, world_id: str) -> list[LocationRoute]:
-    routes = list(
-        db.execute(
-            select(LocationRoute).where(
-                LocationRoute.world_id == world_id,
-                LocationRoute.route_key.in_(("square_to_watch_path", "watch_path_to_square")),
-            )
-        ).scalars()
-    )
+    locations = ensure_seeded_locations(db, world_id)
+    starter = locations[_starter_location_key(db, world_id)]
+    followup = locations[_followup_location_key(db, world_id)]
+    routes = [
+        route
+        for route in (
+            get_location_route(db, world_id=world_id, from_location_id=starter.id, to_location_id=followup.id),
+            get_location_route(db, world_id=world_id, from_location_id=followup.id, to_location_id=starter.id),
+        )
+        if route is not None
+    ]
     updated: list[LocationRoute] = []
     for route in routes:
         if route.status != ROUTE_STATUS_OPEN:
@@ -1143,6 +1218,37 @@ def list_travel_log_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
+    world = _world_row(db, world_id)
+    pack, template = resolve_world_pack(db, world_id)
+    locations = ensure_seeded_locations(db, world_id)
+    starter_key = _starter_location_key(db, world_id)
+    lore_key = _lore_location_key(db, world_id)
+    followup_key = _followup_location_key(db, world_id)
+    return {
+        "pack_id": pack.manifest.pack_id,
+        "pack_display_name": pack.manifest.display_name,
+        "world_template_id": template.template_id,
+        "world_template_display_name": template.display_name,
+        "world_name": world.name if world is not None else str((template.world or {}).get("default_name") or template.display_name),
+        "semantic_tags": list(pack.manifest.semantic_tags),
+        "starter_location_key": starter_key,
+        "starter_location_name": locations[starter_key].name,
+        "lore_location_key": lore_key,
+        "lore_location_name": locations[lore_key].name,
+        "followup_location_key": followup_key,
+        "followup_location_name": locations[followup_key].name,
+        "starter_stage_key": _starter_stage_key(db, world_id),
+        "followup_stage_key": _followup_stage_key(db, world_id),
+        "opening_chapter_key": _opening_chapter_key(db, world_id),
+        "followup_chapter_key": _followup_chapter_key(db, world_id),
+        "reward_effect_kind": _reward_effect_kind(db, world_id),
+        "reward_name": str(template.quest.reward_name or ""),
+        "faction_name": str(template.faction.name or ""),
+        "branch_labels": _branch_labels(db, world_id),
+    }
+
+
 def narrative_state_bands(character: dict[str, Any], factions: list[dict[str, Any]]) -> dict[str, str]:
     hp = int(character.get("hp") or 0)
     focus = int(character.get("focus") or 0)
@@ -1168,7 +1274,7 @@ def narrative_state_bands(character: dict[str, Any], factions: list[dict[str, An
     }
 
 
-def important_inventory_affordances(inventory: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def important_inventory_affordances(inventory: list[dict[str, Any]], *, followup_location_name: str = "the next route") -> list[dict[str, Any]]:
     affordances: list[dict[str, Any]] = []
     for item in inventory:
         effect_kind = item.get("effect_kind")
@@ -1181,8 +1287,8 @@ def important_inventory_affordances(inventory: list[dict[str, Any]]) -> list[dic
                 "usable": bool(item.get("usable")),
                 "effect_kind": effect_kind,
                 "summary": (
-                    f"{item['name']} can open the road toward Watch Path."
-                    if effect_kind == "unlock_followup_watch_path"
+                    f"{item['name']} can open the road toward {followup_location_name}."
+                    if effect_kind
                     else f"{item['name']} carries a special affordance."
                 ),
             }
@@ -1191,18 +1297,32 @@ def important_inventory_affordances(inventory: list[dict[str, Any]]) -> list[dic
 
 
 def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
+    world_pack = session_state.get("world_pack") or {}
+    starter_location_key = str(world_pack.get("starter_location_key") or "square")
+    lore_location_key = str(world_pack.get("lore_location_key") or "archive_steps")
+    followup_location_key = str(world_pack.get("followup_location_key") or "watch_path")
+    starter_location_name = str(world_pack.get("starter_location_name") or "the square")
+    lore_location_name = str(world_pack.get("lore_location_name") or "the archive steps")
+    followup_location_name = str(world_pack.get("followup_location_name") or "the next route")
+    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
+    followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
+    reward_effect_kind = str(world_pack.get("reward_effect_kind") or "unlock_followup_watch_path")
+    reward_name = str(world_pack.get("reward_name") or (session_state.get("inventory") or [{}])[0].get("name") or "the seal")
+    branch_labels = dict(world_pack.get("branch_labels") or {})
+    watch_branch_label = str(branch_labels.get("watch_oath") or "Watch Oath")
+    whisper_branch_label = str(branch_labels.get("lantern_whispers") or "Lantern Whispers")
     quests = session_state.get("quests") or []
     inventory = session_state.get("inventory") or []
     relationships = session_state.get("relationships") or []
     active_threads = session_state.get("active_consequence_threads") or []
     current_location = session_state.get("current_location") or session_state.get("location") or {}
     current_location_name = str(current_location.get("name") or "the scene")
-    current_location_key = str(current_location.get("key") or "square")
+    current_location_key = str(current_location.get("key") or starter_location_key)
     nearby_routes = session_state.get("nearby_routes") or []
     local_figures = session_state.get("local_figures") or session_state.get("plaza_figures") or []
     recent_travel_history = session_state.get("recent_travel_history") or []
     active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else {})
-    stage_key = str(active_quest.get("stage_key") or "starter_watch")
+    stage_key = str(active_quest.get("stage_key") or starter_stage_key)
     progress = int(active_quest.get("progress") or 0)
     usable_item = next((item for item in inventory if item.get("usable")), None)
     primary_relationship = relationships[0] if relationships else {}
@@ -1256,7 +1376,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         "posture": "progress",
         "label": "困っている相手に手を差し伸べ、次の進展を作る",
         "summary": "もっとも前進寄りの行動で、依頼や関係を進める。",
-        "canonical_input_text": "広場で旅人を助け、灯をともす",
+        "canonical_input_text": f"{starter_location_name}で旅人を助け、次の進展を作る",
         "action_kind": "narrative",
     }
     explore_choice = {
@@ -1314,7 +1434,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             "canonical_input_text": "差し出された信頼を受け止め、そのまま次の進展へ踏み込む",
         }
 
-    if stage_key == "starter_watch" and progress >= 1:
+    if stage_key == starter_stage_key and progress >= 1:
         progress_choice = {
             **progress_choice,
             "label": "見聞きをまとめて報告し、次の見回りへ繋げる",
@@ -1332,51 +1452,51 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             "canonical_input_text": f"{current_location_name}に残る視線や噂を探り、次の手掛かりを拾う",
         }
 
-    if usable_item is not None and usable_item.get("effect_kind") == "unlock_followup_watch_path":
-        if current_location_key == "square":
+    if usable_item is not None and usable_item.get("effect_kind") == reward_effect_kind:
+        if current_location_key == starter_location_key:
             progress_choice = {
                 "choice_id": "progress",
                 "posture": "progress",
-                "label": "Lantern Sigilを掲げ、次の watch path を正式に開く",
+                "label": f"{reward_name}を掲げ、次の道を正式に開く",
                 "summary": "重要アイテムを使って次の物語段階を解放する。",
-                "canonical_input_text": "Lantern Sigilを掲げ、次の watch path を開く",
+                "canonical_input_text": f"{reward_name}を掲げ、次の道を開く",
                 "action_kind": "use_reward_item",
             }
         else:
-            return_route = route_to("square")
+            return_route = route_to(starter_location_key)
             if return_route is not None and bool(return_route.get("available")):
                 progress_choice = {
                     "choice_id": "progress",
                     "posture": "progress",
-                    "label": "Lantern Sigilを使える場所へ戻る",
-                    "summary": "重要アイテムを使うため、まず広場へ戻る。",
-                    "canonical_input_text": "Lantern Sigilを使える場所へ戻る",
+                    "label": f"{reward_name}を使える場所へ戻る",
+                    "summary": "重要アイテムを使うため、まず起点の場所へ戻る。",
+                    "canonical_input_text": f"{reward_name}を使える場所へ戻る",
                     "action_kind": "travel",
-                    "travel_target_key": "square",
+                    "travel_target_key": starter_location_key,
                 }
 
-    if stage_key == "watch_path_followup":
-        watch_route = route_to("watch_path")
-        if current_location_key != "watch_path" and watch_route is not None and bool(watch_route.get("available")):
+    if stage_key == followup_stage_key:
+        watch_route = route_to(followup_location_key)
+        if current_location_key != followup_location_key and watch_route is not None and bool(watch_route.get("available")):
             progress_choice = {
                 "choice_id": "progress",
                 "posture": "progress",
-                "label": "開いた watch path へ足を向ける",
+                "label": f"開いた{followup_location_name}へ足を向ける",
                 "summary": "follow-up quest の舞台へ実際に移る。",
-                "canonical_input_text": "Lantern Sigilで開いた watch path へ向かう",
+                "canonical_input_text": f"{reward_name}で開いた{followup_location_name}へ向かう",
                 "action_kind": "travel",
-                "travel_target_key": "watch_path",
+                "travel_target_key": followup_location_key,
             }
         else:
             progress_choice = {
                 "choice_id": "progress",
                 "posture": "progress",
-                "label": "開いた watch path を辿り、そこで見つかる異変を確かめる",
+                "label": f"開いた{followup_location_name}を辿り、そこで見つかる異変を確かめる",
                 "summary": "follow-up quest を前へ進める選択。",
-                "canonical_input_text": "Lantern Sigilで開いた watch path の様子を観察する",
+                "canonical_input_text": f"{reward_name}で開いた{followup_location_name}の様子を観察する",
                 "action_kind": "narrative",
             }
-        if current_location_key == "watch_path":
+        if current_location_key == followup_location_key:
             safe_choice = {
                 "choice_id": "safe",
                 "posture": "safe",
@@ -1390,7 +1510,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "posture": "explore",
                 "label": "巡回路の痕跡や見張りの記憶を集め、関係の糸口を探る",
                 "summary": "探索と関係変化に寄せた選択。",
-                "canonical_input_text": "Lantern Sigilで開いた巡回路の痕跡や見張りの記憶を集める",
+                "canonical_input_text": f"{reward_name}で開いた巡回路の痕跡や見張りの記憶を集める",
                 "action_kind": "narrative",
             }
         if current_branch == "watch_oath":
@@ -1401,8 +1521,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             }
             progress_choice = {
                 **progress_choice,
-                "label": "Watch Oath に沿って前へ進み、正式な信頼を固める",
-                "canonical_input_text": "Watch Oath に沿って前へ進み、正式な信頼を固める",
+                "label": f"{watch_branch_label}に沿って前へ進み、正式な信頼を固める",
+                "canonical_input_text": f"{watch_branch_label}に沿って前へ進み、正式な信頼を固める",
             }
             explore_choice = {
                 **explore_choice,
@@ -1417,8 +1537,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             }
             progress_choice = {
                 **progress_choice,
-                "label": "Lantern Whispers を辿り、街の quieter path を前へ進める",
-                "canonical_input_text": "Lantern Whispers を辿り、街の quieter path を前へ進める",
+                "label": f"{whisper_branch_label}を辿り、街の quieter path を前へ進める",
+                "canonical_input_text": f"{whisper_branch_label}を辿り、街の quieter path を前へ進める",
             }
             explore_choice = {
                 **explore_choice,
@@ -1445,8 +1565,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             elif dominant_branch == "lantern_whispers":
                 progress_choice = {
                     **progress_choice,
-                    "label": "噂と灯の側へ少し踏み込み、Lantern Whispers を前へ押す",
-                    "canonical_input_text": "噂と灯の側へ少し踏み込み、Lantern Whispers を前へ押す",
+                    "label": f"噂と灯の側へ少し踏み込み、{whisper_branch_label}を前へ押す",
+                    "canonical_input_text": f"噂と灯の側へ少し踏み込み、{whisper_branch_label}を前へ押す",
                 }
                 explore_choice = {
                     **explore_choice,
@@ -1454,25 +1574,25 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     "canonical_input_text": "見張りの oath 側にまだ残る formal な糸を拾う",
                 }
 
-    archive_route = route_to("archive_steps")
-    square_route = route_to("square")
-    if current_location_key == "square" and archive_route is not None and bool(archive_route.get("available")):
+    archive_route = route_to(lore_location_key)
+    square_route = route_to(starter_location_key)
+    if current_location_key == starter_location_key and archive_route is not None and bool(archive_route.get("available")):
         explore_choice = {
             "choice_id": "explore",
             "posture": "explore",
-            "label": "Archive Steps へ向かい、古い記録と視線の重なりを確かめる",
+            "label": f"{lore_location_name}へ向かい、古い記録と視線の重なりを確かめる",
             "summary": "場を変えながら探索を進める。",
-            "canonical_input_text": "Archive Stepsへ向かう",
+            "canonical_input_text": f"{lore_location_name}へ向かう",
             "action_kind": "travel",
-            "travel_target_key": "archive_steps",
+            "travel_target_key": lore_location_key,
         }
-    if current_location_key == "archive_steps":
+    if current_location_key == lore_location_key:
         progress_choice = {
             "choice_id": "progress",
             "posture": "progress",
             "label": "石段の上で古い記録を辿り、次の糸口を掴む",
-            "summary": "Archive Steps 側で状況を前へ進める。",
-            "canonical_input_text": "Archive Stepsで古い記録と見張りの話を辿る",
+            "summary": f"{lore_location_name}側で状況を前へ進める。",
+            "canonical_input_text": f"{lore_location_name}で古い記録と見張りの話を辿る",
             "action_kind": "narrative",
         }
         if square_route is not None and bool(square_route.get("available")):
@@ -1481,19 +1601,19 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "posture": "safe",
                 "label": "いったん広場へ戻り、場の流れを確かめ直す",
                 "summary": "Square へ戻って場の圧力を測り直す。",
-                "canonical_input_text": "Founders Squareへ戻る",
+                "canonical_input_text": f"{starter_location_name}へ戻る",
                 "action_kind": "travel",
-                "travel_target_key": "square",
+                "travel_target_key": starter_location_key,
             }
-    if current_location_key == "watch_path" and square_route is not None and bool(square_route.get("available")):
+    if current_location_key == followup_location_key and square_route is not None and bool(square_route.get("available")):
         safe_choice = {
             "choice_id": "safe",
             "posture": "safe",
-            "label": "Watch Path の緊張を抱えたまま、いったん広場へ戻る",
+            "label": f"{followup_location_name}の緊張を抱えたまま、いったん起点へ戻る",
             "summary": "新しい場所の余韻を持ち帰る。",
-            "canonical_input_text": "Founders Squareへ戻る",
+            "canonical_input_text": f"{starter_location_name}へ戻る",
             "action_kind": "travel",
-            "travel_target_key": "square",
+            "travel_target_key": starter_location_key,
         }
 
     for choice in (safe_choice, progress_choice, explore_choice):
@@ -1525,6 +1645,7 @@ def build_session_state(
     location_id: str | None,
     include_internal: bool = False,
 ) -> dict[str, Any]:
+    world_info = _world_pack_state(db, world_id)
     character = get_character_summary(db, world_id, actor_id)
     quests = list_quest_summaries(db, world_id, actor_id)
     factions = list_faction_summaries(db, world_id, actor_id)
@@ -1586,6 +1707,7 @@ def build_session_state(
     )
     state = {
         "world_id": world_id,
+        "world_pack": world_info,
         "location": current_location,
         "current_location": current_location,
         "character": character,
@@ -1609,7 +1731,10 @@ def build_session_state(
         "active_consequence_threads": active_consequence_threads,
         "recent_consequence_history": recent_consequence_history,
         "narrative_state_bands": narrative_state_bands(character, factions),
-        "important_inventory_affordances": important_inventory_affordances(inventory),
+        "important_inventory_affordances": important_inventory_affordances(
+            inventory,
+            followup_location_name=str(world_info.get("followup_location_name") or "the next route"),
+        ),
     }
     state["next_choices"] = default_next_choices(state)
     if not include_internal and chapter is not None:
@@ -2060,6 +2185,8 @@ def use_reward_item(
     location_id: str,
     item_id: str,
 ) -> RewardItemUseOutcome:
+    world_info = _world_pack_state(db, world_id)
+    starter_location = ensure_starter_location(db, world_id)
     item = db.execute(
         select(Item).where(Item.world_id == world_id, Item.id == item_id)
     ).scalar_one_or_none()
@@ -2067,9 +2194,9 @@ def use_reward_item(
         raise LookupError("Reward item not found")
     if item.used_at is not None or item.status == "used":
         raise ValueError("Reward item has already been used")
-    if item.effect_kind != "unlock_followup_watch_path":
+    if item.effect_kind != str(world_info.get("reward_effect_kind") or ""):
         raise ValueError("Reward item is not usable in the current progression slice")
-    if location_id != starter_location_id(world_id):
+    if location_id != starter_location.id:
         raise ValueError("Reward item can only be used at the starter location")
 
     starter_template = ensure_starter_quest_template(db, world_id)
@@ -2116,7 +2243,10 @@ def use_reward_item(
     quest_updates = [
         {
             **quest_summary_to_dict(followup_assignment, followup_template),
-            "summary": "Lantern Sigil unlocked the next watch path.",
+            "summary": _bootstrap_copy(db, world_id).get(
+                "reward_unlock_summary",
+                f"{item.name} unlocked the next route.",
+            ),
             "world_tags": ["collect_reward"],
         }
     ]
@@ -2145,27 +2275,56 @@ def use_reward_item(
         "faction_id": faction.id,
         "standing_delta": FOLLOWUP_STANDING_DELTA,
     }
-    event_narrative = (
-        f"{actor_name}はLantern Sigilを掲げ、Founders WatchにWatch Pathへの道を開く許しを受けた。"
+    bootstrap_copy = _bootstrap_copy(db, world_id)
+    event_narrative = str(
+        bootstrap_copy.get(
+            "reward_use_narrative",
+            "{player_name} used {reward_name} to open the next route.",
+        )
+    ).format(
+        player_name=actor_name,
+        reward_name=item.name,
+        faction_name=faction.name,
+        starter_location_name=starter_location.name,
+        followup_location_name=str(world_info.get("followup_location_name") or ""),
     )
     memory_drafts = [
         {
             "scope": "location",
-            "text": "Founders SquareでLantern Sigilが使われ、Watch Pathへの道が解放された。",
+            "text": str(
+                bootstrap_copy.get(
+                    "reward_location_memory",
+                    "{starter_location_name} remembers {reward_name} opening the next route.",
+                )
+            ).format(
+                starter_location_name=starter_location.name,
+                reward_name=item.name,
+                followup_location_name=str(world_info.get("followup_location_name") or ""),
+            ),
             "salience": 0.95,
             "location_id": location_id,
             "actor_id": None,
         },
         {
             "scope": "location",
-            "text": "Lantern Sigilで開いた Watch Path の気配が、Founders Squareにはっきり残っている。",
+            "text": f"{item.name}で開いた{world_info.get('followup_location_name') or '次の道'}の気配が、{starter_location.name}にはっきり残っている。",
             "salience": 0.98,
             "location_id": location_id,
             "actor_id": None,
         },
         {
             "scope": "world",
-            "text": f"{actor_name}はLantern Sigilを使い、Founders Watchの次の依頼段階とWatch Pathへの道を開いた。",
+            "text": str(
+                bootstrap_copy.get(
+                    "reward_world_memory",
+                    "{player_name} used {reward_name} to open the next route for {faction_name}.",
+                )
+            ).format(
+                player_name=actor_name,
+                reward_name=item.name,
+                faction_name=faction.name,
+                followup_location_name=str(world_info.get("followup_location_name") or ""),
+            ),
             "salience": 0.9,
             "location_id": location_id,
             "actor_id": None,

@@ -130,12 +130,15 @@ class GMCouncilService:
             return normalized
 
         active_quest = GMCouncilService._active_quest(session_state)
-        stage_key = str(active_quest.get("stage_key") or "starter_watch")
+        world_pack = session_state.get("world_pack") or {}
+        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
+        followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
+        stage_key = str(active_quest.get("stage_key") or starter_stage_key)
         progress = int(active_quest.get("progress") or 0)
 
-        if stage_key == "starter_watch":
+        if stage_key == starter_stage_key:
             return ["aid_local"] if progress < 1 else ["promise_followup"]
-        if stage_key == "watch_path_followup":
+        if stage_key == followup_stage_key:
             return ["investigate"]
         return normalized
 

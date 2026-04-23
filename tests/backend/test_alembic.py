@@ -57,6 +57,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     release_gate_columns = {column["name"] for column in inspector.get_columns("release_gate_reports")}
     memory_columns = {column["name"] for column in inspector.get_columns("memories")}
     world_tick_columns = {column["name"] for column in inspector.get_columns("world_ticks")}
+    world_columns = {column["name"] for column in inspector.get_columns("worlds")}
     assert "resolution_mode" in turn_columns
     assert "action_type" in turn_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= turn_columns
@@ -79,3 +80,4 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= eval_run_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= release_gate_columns
     assert {"tick_kind", "status", "seed_turn_id", "location_id", "summary", "started_at", "completed_at"} <= world_tick_columns
+    assert "state" in world_columns

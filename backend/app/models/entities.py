@@ -54,6 +54,7 @@ class World(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(32), default="active")
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Location(Base, TimestampMixin):

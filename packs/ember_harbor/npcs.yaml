@@ -1,0 +1,41 @@
+npcs:
+  - display_name: Tide-Scribe Miro
+    personality: methodical and tide-minded, with a habit of listening before speaking
+    goals:
+      duty: keep harbor records coherent when reports begin to conflict
+    home_location_key: tide_market
+    routine_state:
+      routine_role: scribe
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: tide reports and dockside contradictions
+      tension_band: medium
+  - display_name: Beacon-Keeper Sol
+    personality: practical and patient, always measuring how far calm can reach
+    goals:
+      duty: keep the harbor lights steady at the edge of the breakwater
+    home_location_key: breakwater
+    routine_state:
+      routine_role: beacon_keeper
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: the breakwater lights and who lingers near them
+      tension_band: low
+  - display_name: Runner Eska
+    personality: quick, alert, and always listening for the next message that needs carrying
+    goals:
+      duty: move notices along the quay and hear how the harbor answers them
+    home_location_key: quay
+    routine_state:
+      routine_role: runner
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: favors, manifests, and which promises still travel
+      tension_band: medium
+    is_guide: true

@@ -14,6 +14,7 @@ from app.modules.graph_projection.service import ProjectionService
 from app.modules.identity.oidc import BaseOIDCAdapter, build_oidc_adapter
 from app.modules.llm_harness.service import ModelRouter
 from app.modules.observability.service import ObservabilityService
+from app.modules.world_pack.service import PackRegistry, configure_pack_registry
 from app.modules.world_memory.service import MemoryService
 from app.modules.world_state.ambient import AmbientWorldPassService
 
@@ -23,6 +24,7 @@ class AppContainer:
     settings: Settings
     session_factory: sessionmaker[Session]
     oidc_adapter: BaseOIDCAdapter
+    pack_registry: PackRegistry
     prompt_registry: PromptRegistry
     model_router: ModelRouter
     council_service: GMCouncilService
@@ -50,6 +52,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     observability_service.instrument_sqlalchemy(engine)
     projection_service = ProjectionService(resolved_settings, observability_service)
     memory_service = MemoryService(resolved_settings, observability_service)
+    pack_registry = configure_pack_registry(resolved_settings.pack_dir)
     prompt_registry = PromptRegistry(resolved_settings.prompt_dir, resolved_settings.eval_dataset_dir)
     eval_service = EvalHarnessService(
         resolved_settings,
@@ -57,6 +60,8 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         projection_service,
         memory_service,
         observability_service,
+        pack_registry=pack_registry,
+        session_factory=session_factory,
     )
     model_router = eval_service.runtime_router()
     council_service = GMCouncilService(resolved_settings, model_router)
@@ -71,6 +76,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         settings=resolved_settings,
         session_factory=session_factory,
         oidc_adapter=build_oidc_adapter(resolved_settings),
+        pack_registry=pack_registry,
         prompt_registry=prompt_registry,
         model_router=model_router,
         council_service=council_service,

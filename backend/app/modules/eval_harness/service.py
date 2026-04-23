@@ -9,7 +9,7 @@ from typing import Literal
 
 import yaml
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry, SUPPORTED_MODEL_LANES, SUPPORTED_PROMPT_SCHEMAS
@@ -29,6 +29,7 @@ from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
+from app.modules.world_pack.service import PackRegistry
 from app.modules.world_memory.service import (
     MemoryRetrievalTrace,
     MemoryService,
@@ -124,12 +125,17 @@ class EvalHarnessService:
         projection_service: ProjectionService,
         memory_service: MemoryService,
         observability_service: ObservabilityService | None = None,
+        *,
+        pack_registry: PackRegistry | None = None,
+        session_factory: sessionmaker[Session] | None = None,
     ) -> None:
         self.settings = settings
         self.prompt_registry = prompt_registry
         self.projection_service = projection_service
         self.memory_service = memory_service
         self.observability_service = observability_service
+        self.pack_registry = pack_registry
+        self.session_factory = session_factory
         self.datasets = self._load_datasets(settings.eval_dataset_dir)
 
     def router_for_config(self, config_name: str) -> ModelRouter:
@@ -137,6 +143,8 @@ class EvalHarnessService:
         return ModelRouter(
             self.settings,
             self.prompt_registry,
+            pack_registry=self.pack_registry,
+            session_factory=self.session_factory,
             route_overrides=release_config.routes,
             config_name=release_config.name,
             observability_service=self.observability_service,
@@ -576,6 +584,8 @@ class EvalHarnessService:
                     ModelRouter(
                         self.settings,
                         self.prompt_registry,
+                        pack_registry=self.pack_registry,
+                        session_factory=self.session_factory,
                         route_overrides=current_config.routes,
                         config_name=current_config.name,
                         observability_service=self.observability_service,
@@ -586,6 +596,8 @@ class EvalHarnessService:
                     ModelRouter(
                         self.settings,
                         self.prompt_registry,
+                        pack_registry=self.pack_registry,
+                        session_factory=self.session_factory,
                         route_overrides=candidate_config.routes,
                         config_name=candidate_config.name,
                         observability_service=self.observability_service,

@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.prompts import PromptDefinition, PromptRegistry
+from app.models.entities import World
 from app.modules.observability.service import ObservabilityService
+from app.modules.world_pack.service import PackRegistry, world_pack_metadata
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
@@ -831,12 +835,16 @@ class ModelRouter:
         settings: Settings,
         prompt_registry: PromptRegistry,
         *,
+        pack_registry: PackRegistry | None = None,
+        session_factory: sessionmaker[Session] | None = None,
         route_overrides: dict[str, PromptRouteOverride] | None = None,
         config_name: str = "settings",
         observability_service: ObservabilityService | None = None,
     ) -> None:
         self.settings = settings
         self.prompt_registry = prompt_registry
+        self.pack_registry = pack_registry
+        self.session_factory = session_factory
         self.route_overrides = route_overrides or {}
         self.config_name = config_name
         self.observability_service = observability_service
@@ -856,7 +864,7 @@ class ModelRouter:
     ) -> PromptExecutionOutcome[T]:
         route = self.route_overrides.get(prompt_id)
         resolved_prompt_id = route.prompt_id if route is not None else prompt_id
-        prompt = self.prompt_registry.get(resolved_prompt_id)
+        prompt = self._resolve_prompt_for_world(resolved_prompt_id, world_id)
         requested_lane = route.default_lane if route is not None else prompt.model_lane
         input_context_hash = self._input_context_hash(prompt, input_payload)
         attempts: list[PromptExecutionAttempt] = []
@@ -1061,6 +1069,26 @@ class ModelRouter:
             final_payload=None,
             failure_reason=failure_reason or "No LLM lane executed",
         )
+
+    def _resolve_prompt_for_world(self, prompt_id: str, world_id: str) -> PromptDefinition:
+        prompt = self.prompt_registry.get(prompt_id)
+        if self.pack_registry is None or self.session_factory is None:
+            return prompt
+        try:
+            with self.session_factory() as db:
+                world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+        except Exception:
+            return prompt
+        metadata = world_pack_metadata(world)
+        try:
+            overlay = self.pack_registry.resolve_prompt_overlay(
+                pack_id=metadata["pack_id"],
+                template_id=metadata["world_template_id"],
+                prompt_id=prompt_id,
+            )
+        except Exception:
+            return prompt
+        return self.prompt_registry.compose(prompt, overlay_instructions=overlay)
 
     def _build_provider(self) -> BaseModelProvider:
         if self.settings.model_provider == "gemini_developer_api":

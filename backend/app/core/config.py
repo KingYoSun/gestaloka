@@ -7,6 +7,15 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _default_project_path(*parts: str) -> Path:
+    workspace_path = Path("/workspace").joinpath(*parts)
+    repo_path = Path(__file__).resolve().parents[3].joinpath(*parts)
+    for candidate in (workspace_path, repo_path):
+        if candidate.exists():
+            return candidate
+    return workspace_path if Path("/workspace").exists() else repo_path
+
+
 class Settings(BaseSettings):
     app_env: str = "development"
     app_runtime_role: str = "primary"
@@ -32,9 +41,10 @@ class Settings(BaseSettings):
     dev_oidc_sub: str = "local-player"
     dev_oidc_email: str = "demo@example.com"
     dev_oidc_name: str = "Demo Player"
-    prompt_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "prompts")
-    eval_dataset_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "evals" / "datasets")
-    release_config_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[3] / "config" / "release")
+    prompt_dir: Path = Field(default_factory=lambda: _default_project_path("prompts"))
+    pack_dir: Path = Field(default_factory=lambda: _default_project_path("packs"))
+    eval_dataset_dir: Path = Field(default_factory=lambda: _default_project_path("evals", "datasets"))
+    release_config_dir: Path = Field(default_factory=lambda: _default_project_path("config", "release"))
     release_runtime_config_name: str = "current"
     release_scheduler_cron: str = "0 3 * * *"
     release_shadow_limit: int = 5
@@ -77,12 +87,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def normalize_paths(self) -> "Settings":
-        if not self.prompt_dir.exists() and self.prompt_dir == Path("/workspace/prompts"):
-            self.prompt_dir = Path(__file__).resolve().parents[3] / "prompts"
-        if not self.eval_dataset_dir.exists() and self.eval_dataset_dir == Path("/workspace/evals/datasets"):
-            self.eval_dataset_dir = Path(__file__).resolve().parents[3] / "evals" / "datasets"
-        if not self.release_config_dir.exists() and self.release_config_dir == Path("/workspace/config/release"):
-            self.release_config_dir = Path(__file__).resolve().parents[3] / "config" / "release"
+        if not self.prompt_dir.exists():
+            self.prompt_dir = _default_project_path("prompts")
+        if not self.pack_dir.exists():
+            self.pack_dir = _default_project_path("packs")
+        if not self.eval_dataset_dir.exists():
+            self.eval_dataset_dir = _default_project_path("evals", "datasets")
+        if not self.release_config_dir.exists():
+            self.release_config_dir = _default_project_path("config", "release")
         return self
 
 

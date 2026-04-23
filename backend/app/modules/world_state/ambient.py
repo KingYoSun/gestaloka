@@ -929,7 +929,7 @@ class AmbientWorldPassService:
         for participant_index, participant in enumerate(participants):
             routine_state = _routine_state_with_defaults(participant.profile)
             relation_context = [
-                f"location={session_state.get('location', {}).get('name', 'Founders Reach')}",
+                f"location={session_state.get('location', {}).get('name', 'the active world')}",
                 f"npc={participant.actor.display_name}",
                 f"routine_role={routine_state.get('routine_role')}",
             ]
@@ -1182,7 +1182,7 @@ class AmbientWorldPassService:
             local_state = dict(session_state)
             local_state["current_location"] = local_state.get("current_location") or local_state.get("location") or {}
             relation_context = [
-                f"location={(local_state.get('current_location') or {}).get('name', 'Founders Reach')}",
+                f"location={(local_state.get('current_location') or {}).get('name', 'the active world')}",
                 f"npc={participant.actor.display_name}",
                 f"routine_role={routine_state.get('routine_role')}",
             ]

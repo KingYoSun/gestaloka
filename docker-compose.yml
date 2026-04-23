@@ -314,6 +314,7 @@ services:
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
       PROMPT_DIR: /workspace/prompts
+      PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
@@ -351,6 +352,7 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./packs:/workspace/packs
       - ./evals:/workspace/evals
       - ./config:/workspace/config
     ports:
@@ -385,6 +387,7 @@ services:
       DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       PROMPT_DIR: /workspace/prompts
+      PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
@@ -417,6 +420,7 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./packs:/workspace/packs
       - ./evals:/workspace/evals
       - ./config:/workspace/config
     depends_on:
@@ -477,6 +481,7 @@ services:
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
       PROMPT_DIR: /workspace/prompts
+      PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: candidate
@@ -514,6 +519,7 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./packs:/workspace/packs
       - ./evals:/workspace/evals
       - ./config:/workspace/config
     ports:
@@ -547,6 +553,7 @@ services:
       DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       PROMPT_DIR: /workspace/prompts
+      PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
@@ -585,6 +592,7 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./packs:/workspace/packs
       - ./evals:/workspace/evals
       - ./config:/workspace/config
     depends_on:
@@ -611,6 +619,7 @@ services:
       DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       ALEMBIC_DATABASE_URL: postgresql+psycopg://gestaloka:gestaloka@postgres:5432/gestaloka
       PROMPT_DIR: /workspace/prompts
+      PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
@@ -649,6 +658,7 @@ services:
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
+      - ./packs:/workspace/packs
       - ./evals:/workspace/evals
       - ./config:/workspace/config
     depends_on:

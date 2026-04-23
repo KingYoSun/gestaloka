@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, ChapterTrack, Location, SceneFrame, new_id
+from app.modules.world_pack.service import resolve_world_pack
 from app.modules.world_state.branch import branch_label
 
 
@@ -32,7 +33,8 @@ def _active_quest(state: dict[str, Any]) -> dict[str, Any]:
 
 def _followup_quest(state: dict[str, Any]) -> dict[str, Any]:
     quests = state.get("quests") or []
-    return next((item for item in quests if item.get("stage_key") == "watch_path_followup"), {})
+    followup_stage_key = str((state.get("world_pack") or {}).get("followup_stage_key") or "watch_path_followup")
+    return next((item for item in quests if item.get("stage_key") == followup_stage_key), {})
 
 
 def _thread_summary(state: dict[str, Any]) -> str | None:
@@ -44,17 +46,22 @@ def _thread_summary(state: dict[str, Any]) -> str | None:
 
 
 def _chapter_key_for_state(state: dict[str, Any]) -> str:
+    world_pack = state.get("world_pack") or {}
+    followup_chapter_key = str(world_pack.get("followup_chapter_key") or "watch_path_followup")
+    opening_chapter_key = str(world_pack.get("opening_chapter_key") or "founders_watch_opening")
+    reward_effect_kind = str(world_pack.get("reward_effect_kind") or "unlock_followup_watch_path")
     followup = _followup_quest(state)
     inventory = state.get("inventory") or []
     if followup:
-        return "watch_path_followup"
-    if any(str(item.get("effect_kind") or "") == "unlock_followup_watch_path" and str(item.get("status") or "") == "used" for item in inventory):
-        return "watch_path_followup"
-    return "founders_watch_opening"
+        return followup_chapter_key
+    if any(str(item.get("effect_kind") or "") == reward_effect_kind and str(item.get("status") or "") == "used" for item in inventory):
+        return followup_chapter_key
+    return opening_chapter_key
 
 
 def _chapter_status_for_state(chapter_key: str, state: dict[str, Any]) -> ChapterStatus:
-    if chapter_key == "watch_path_followup":
+    followup_chapter_key = str((state.get("world_pack") or {}).get("followup_chapter_key") or "watch_path_followup")
+    if chapter_key == followup_chapter_key:
         followup = _followup_quest(state)
         if followup and str(followup.get("status") or "") == "completed":
             return "cooling"
@@ -62,24 +69,32 @@ def _chapter_status_for_state(chapter_key: str, state: dict[str, Any]) -> Chapte
 
 
 def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, state: dict[str, Any]) -> str:
+    world_pack = state.get("world_pack") or {}
+    followup_chapter_key = str(world_pack.get("followup_chapter_key") or "watch_path_followup")
+    followup_location_name = str(world_pack.get("followup_location_name") or "the next route")
+    world_name = str(world_pack.get("world_name") or "this world")
+    reward_name = str(world_pack.get("reward_name") or "the seal")
+    branch_labels = dict(world_pack.get("branch_labels") or {})
+    watch_branch_label = str(branch_labels.get("watch_oath") or branch_label("watch_oath"))
+    whisper_branch_label = str(branch_labels.get("lantern_whispers") or branch_label("lantern_whispers"))
     chapter_state = state.get("chapter") or {}
     current_branch = str(chapter_state.get("current_branch") or "")
     crossroads_summary = str(chapter_state.get("crossroads_summary") or "").strip()
-    if chapter_key == "watch_path_followup":
+    if chapter_key == followup_chapter_key:
         if current_branch == "watch_oath":
             base = (
-                "The next chapter follows the watch path through Watch Oath, leaning toward formal trust, "
+                f"The next chapter follows {followup_location_name} through {watch_branch_label}, leaning toward formal trust, "
                 "kept promises, and the watch's visible order."
             )
         elif current_branch == "lantern_whispers":
             base = (
-                "The next chapter follows the watch path through Lantern Whispers, leaning toward rumor, "
+                f"The next chapter follows {followup_location_name} through {whisper_branch_label}, leaning toward rumor, "
                 "lampglow, and the city's offstage pull."
             )
         elif crossroads_summary:
             base = crossroads_summary
         else:
-            base = "The next chapter follows the watch path the Lantern Sigil opened beyond the square."
+            base = f"The next chapter follows {followup_location_name}, the route {reward_name} opened beyond the starter district."
         if chapter_status == "cooling":
             return f"{base} Its main beat has landed, and the chapter is cooling into aftermath."
         if chapter_status == "resolved":
@@ -89,9 +104,9 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
     active_quest = _active_quest(state)
     progress = int(active_quest.get("progress") or 0)
     if progress >= 1:
-        base = "The opening chapter of Founders Reach now turns on whether the first promise will be carried through."
+        base = f"The opening chapter of {world_name} now turns on whether the first promise will be carried through."
     else:
-        base = "The opening chapter of Founders Reach is still gathering the square's first trust."
+        base = f"The opening chapter of {world_name} is still gathering the first trust the world asks for."
     if chapter_status == "cooling":
         return f"{base} It has started to cool into its next shape."
     if chapter_status == "resolved":
@@ -100,13 +115,15 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
 
 
 def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
+    world_pack = state.get("world_pack") or {}
+    followup_chapter_key = str(world_pack.get("followup_chapter_key") or "watch_path_followup")
     location = state.get("location") or {}
     location_name = str(location.get("name") or "the square")
     chapter_state = state.get("chapter") or {}
     current_branch = str(chapter_state.get("current_branch") or "")
     active_quest = _active_quest(state)
     progress = int(active_quest.get("progress") or 0)
-    if chapter_key == "watch_path_followup":
+    if chapter_key == followup_chapter_key:
         if current_branch == "watch_oath":
             return f"The watch path beyond {location_name} is asking whether formal trust can actually hold."
         if current_branch == "lantern_whispers":
@@ -362,7 +379,8 @@ def ensure_narrative_frame_seed(
         "inventory": [],
         "active_consequence_threads": [],
     }
-    chapter_key = "founders_watch_opening"
+    _, template = resolve_world_pack(db, world_id)
+    chapter_key = str(template.roles.opening_chapter_key or "founders_watch_opening")
     chapter_status: ChapterStatus = "active"
     summary = chapter_summary_for_state(chapter_key, chapter_status, state)
     stakes_summary = _stakes_summary_for_state(chapter_key, state)

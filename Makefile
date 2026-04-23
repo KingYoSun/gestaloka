@@ -10,7 +10,7 @@ compose-down:
 	$(COMPOSE) down -v --remove-orphans
 
 backend-test:
-	PYTHONPATH=backend pytest tests/backend
+	PYTHONPATH=backend python -m pytest tests/backend
 
 build-frontend:
 	$(COMPOSE) build frontend
@@ -20,7 +20,8 @@ frontend-e2e:
 	@set -eu; \
 	$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true; \
 	trap '$(COMPOSE) down -v --remove-orphans' EXIT; \
-	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build backend frontend; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build backend; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build frontend; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:

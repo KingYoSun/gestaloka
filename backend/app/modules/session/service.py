@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
 from app.models.entities import Actor, Event, LLMRun, OutboxEvent, Session as GameSession, Turn, new_id
+from app.modules.world_pack.service import DEFAULT_PACK_ID, DEFAULT_WORLD_TEMPLATE_ID, resolve_world_pack
 from app.modules.actor.service import (
     ensure_player_actor,
     ensure_relationship,
@@ -109,10 +110,20 @@ def create_session_for_user(
     container: AppContainer,
     user: UserIdentity,
     world_id: str,
-    world_name: str,
+    *,
+    pack_id: str = DEFAULT_PACK_ID,
+    world_template_id: str = DEFAULT_WORLD_TEMPLATE_ID,
+    world_name: str | None = None,
     player_display_name: str | None,
 ) -> SessionCreationResult:
-    world = ensure_world(db, world_id, world_name)
+    world = ensure_world(
+        db,
+        world_id,
+        pack_id=pack_id,
+        world_template_id=world_template_id,
+        world_name=world_name,
+    )
+    _, template = resolve_world_pack(db, world_id)
     starter_location = ensure_starter_location(db, world_id)
     player_actor = ensure_player_actor(
         db,
@@ -163,7 +174,7 @@ def create_session_for_user(
             "action_type": "system",
             "input_mode": "choice",
             "next_choices": bootstrap_state["next_choices"],
-            "consequence_summary": "The watch waits for your first move.",
+            "consequence_summary": str(template.bootstrap.start_consequence_summary),
         },
         model_lane="system",
         action_type="system",
@@ -182,14 +193,18 @@ def create_session_for_user(
         payload={
             "session_id": session.id,
             "world_id": world.id,
+            "pack_id": pack_id,
+            "world_template_id": world_template_id,
             "npc_actor_id": guide_npc.id,
             "location_id": starter_location.id,
             "faction_id": seeded.faction.id,
             "quest_assignment_id": seeded.quest_assignment.id,
         },
-        narrative=(
-            f"{player_actor.display_name}は{starter_location.name}でセッションを開始し、"
-            f"{guide_npc.display_name}から{seeded.faction.name}の最初の依頼を受けた。"
+        narrative=str(template.bootstrap.session_started_narrative).format(
+            player_name=player_actor.display_name,
+            starter_location_name=starter_location.name,
+            guide_npc_name=guide_npc.display_name,
+            faction_name=seeded.faction.name,
         ),
     )
     db.add(bootstrap_event)
@@ -1136,13 +1151,20 @@ def _resolve_reward_item_turn_for_session(
             failure_payload={"item_id": item_id},
         )
 
+    _, template = resolve_world_pack(db, game_session.world_id)
+    reward_name = str(template.quest.reward_name or outcome.item.name)
+    followup_location_name = str(
+        template.locations[template.roles.followup_location_key].name
+        if template.roles.followup_location_key in template.locations
+        else "the next route"
+    )
     npc_reaction = (
-        f"{guide_npc.display_name}はLantern Sigilを確かめ、次の watch path が正式に開いたと告げた。"
+        f"{guide_npc.display_name}は{reward_name}を確かめ、{followup_location_name}への道が正式に開いたと告げた。"
     )
     resolved_interpreted_intent = interpreted_intent or {
         "input_mode": input_mode,
         "canonical_action_kind": "use_reward_item",
-        "intent_summary": "Lantern Sigilを掲げて次の watch path を開く",
+        "intent_summary": f"{reward_name}を掲げて{followup_location_name}への道を開く",
     }
     resolved_consequence_summary = (
         str(resolved_interpreted_intent.get("consequence_summary") or "").strip()
@@ -1202,12 +1224,14 @@ def _resolve_reward_item_turn_for_session(
         fail_forward=False,
     )
     combined_faction_updates = [*outcome.faction_updates, *consequence_result.faction_updates]
-    if any(str(item.get("stage_key") or "") == "watch_path_followup" for item in outcome.quest_updates):
+    _, template = resolve_world_pack(db, game_session.world_id)
+    followup_stage_key = str(template.roles.followup_stage_key or "watch_path_followup")
+    if any(str(item.get("stage_key") or "") == followup_stage_key for item in outcome.quest_updates):
         ensure_route_pressures(
             db,
             world_id=game_session.world_id,
             actor_id=player_actor.id,
-            chapter_key="watch_path_followup",
+            chapter_key=str(template.roles.followup_chapter_key or followup_stage_key),
         )
     pre_scene_state = build_session_state(
         db,
@@ -2251,7 +2275,10 @@ def _coerce_choice_world_tags(
     progress_target = int(active_quest.get("progress_target") or 0)
     if progress_target and progress >= progress_target:
         return normalized
-    if stage_key in {"starter_watch", "watch_path_followup"}:
+    world_pack = session_state.get("world_pack") or {}
+    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
+    followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
+    if stage_key in {starter_stage_key, followup_stage_key}:
         return normalize_world_tags([*normalized, "promise_followup"])
     return normalized
 

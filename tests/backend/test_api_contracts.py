@@ -101,6 +101,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert set(session_payload) == {
         "session_id",
         "world_id",
+        "world_name",
+        "pack_id",
+        "world_template_id",
         "player_actor_id",
         "npc_actor_id",
         "location_id",

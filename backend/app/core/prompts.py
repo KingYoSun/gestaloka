@@ -47,6 +47,29 @@ class PromptRegistry:
         except KeyError as exc:
             raise KeyError(f"Prompt not found: {prompt_id}") from exc
 
+    @staticmethod
+    def compose(definition: PromptDefinition, *, overlay_instructions: str = "") -> PromptDefinition:
+        overlay = overlay_instructions.strip()
+        if not overlay:
+            return definition
+        instructions = "\n\n".join(
+            [
+                definition.instructions.strip(),
+                "[World Pack Overlay]",
+                overlay,
+            ]
+        )
+        return PromptDefinition(
+            prompt_id=definition.prompt_id,
+            owner_module=definition.owner_module,
+            schema_version=definition.schema_version,
+            model_lane=definition.model_lane,
+            expected_output_schema=definition.expected_output_schema,
+            eval_dataset_ref=definition.eval_dataset_ref,
+            world_invariants=list(definition.world_invariants),
+            instructions=instructions,
+        )
+
     def _load_definitions(self) -> dict[str, PromptDefinition]:
         if not self.prompt_dir.exists():
             raise FileNotFoundError(f"Prompt directory not found: {self.prompt_dir}")
