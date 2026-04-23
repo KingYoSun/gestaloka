@@ -28,6 +28,7 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
 
   const submitChoice = async (choiceId: "safe" | "progress" | "explore") => {
     await page.getByTestId(`choice-${choiceId}`).click();
+    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });
   };
 
   const submitFreeText = async (text: string) => {
