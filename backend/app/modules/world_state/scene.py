@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, ChapterTrack, Location, SceneFrame, new_id
-from app.modules.world_pack.service import resolve_world_pack
-from app.modules.world_state.branch import branch_label
+from app.modules.world_pack.service import branch_labels_from_followup_branches, resolve_world_pack, serialize_followup_branches
+from app.modules.world_state.branch import branch_key_for_slot, branch_label, branch_slot_for_key
 
 
 SceneMove = Literal["hold", "deepen", "pivot", "close"]
@@ -75,22 +75,24 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
     starter_location_name = str(world_pack.get("starter_location_name") or "the starting place")
     world_name = str(world_pack.get("world_name") or "the current world")
     reward_name = str(world_pack.get("reward_name") or "the seal")
-    branch_labels = dict(world_pack.get("branch_labels") or {})
-    watch_branch_label = str(branch_labels.get("watch_oath") or branch_label("watch_oath"))
-    whisper_branch_label = str(branch_labels.get("lantern_whispers") or branch_label("lantern_whispers"))
+    formal_branch_key = branch_key_for_slot(world_pack, "formal_path")
+    undercurrent_branch_key = branch_key_for_slot(world_pack, "undercurrent_path")
+    formal_branch_label = branch_label(formal_branch_key, world_pack=world_pack)
+    undercurrent_branch_label = branch_label(undercurrent_branch_key, world_pack=world_pack)
     chapter_state = state.get("chapter") or {}
     current_branch = str(chapter_state.get("current_branch") or "")
     crossroads_summary = str(chapter_state.get("crossroads_summary") or "").strip()
+    current_branch_slot = branch_slot_for_key(world_pack, current_branch)
     if chapter_key == followup_chapter_key:
-        if current_branch == "watch_oath":
+        if current_branch_slot == "formal_path":
             base = (
-                f"The next chapter follows {followup_location_name} through {watch_branch_label}, leaning toward formal trust, "
-                "kept promises, and the watch's visible order."
+                f"The next chapter follows {followup_location_name} through {formal_branch_label}, leaning toward formal trust, "
+                "kept promises, and the world's visible order."
             )
-        elif current_branch == "lantern_whispers":
+        elif current_branch_slot == "undercurrent_path":
             base = (
-                f"The next chapter follows {followup_location_name} through {whisper_branch_label}, leaning toward rumor, "
-                "lampglow, and the city's offstage pull."
+                f"The next chapter follows {followup_location_name} through {undercurrent_branch_label}, leaning toward rumor, "
+                "undertow, and the world's quieter pull."
             )
         elif crossroads_summary:
             base = crossroads_summary
@@ -123,13 +125,14 @@ def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
     location_name = str(location.get("name") or "the current district")
     chapter_state = state.get("chapter") or {}
     current_branch = str(chapter_state.get("current_branch") or "")
+    current_branch_slot = branch_slot_for_key(world_pack, current_branch)
     active_quest = _active_quest(state)
     progress = int(active_quest.get("progress") or 0)
     if chapter_key == followup_chapter_key:
-        if current_branch == "watch_oath":
+        if current_branch_slot == "formal_path":
             return f"The route toward {followup_location_name} is asking whether formal trust can actually hold."
-        if current_branch == "lantern_whispers":
-            return f"The route toward {followup_location_name} is listening for rumor, undertow, and what the city keeps half-hidden."
+        if current_branch_slot == "undercurrent_path":
+            return f"The route toward {followup_location_name} is listening for rumor, undertow, and what the world keeps half-hidden."
         followup = _followup_quest(state)
         if followup and str(followup.get("status") or "") == "completed":
             return f"The newly opened route toward {followup_location_name} is settling after the reward token's passage."
@@ -221,7 +224,12 @@ def scene_summary_text(stakes_summary: str, pressure_summary: str) -> str:
     return " ".join(part.strip() for part in (stakes_summary, pressure_summary) if str(part).strip()).strip()
 
 
-def chapter_track_to_dict(chapter: ChapterTrack, *, include_internal: bool = False) -> dict[str, Any]:
+def chapter_track_to_dict(
+    chapter: ChapterTrack,
+    *,
+    world_pack: dict[str, Any] | None = None,
+    include_internal: bool = False,
+) -> dict[str, Any]:
     payload = {
         "id": chapter.id,
         "key": chapter.chapter_key,
@@ -229,7 +237,7 @@ def chapter_track_to_dict(chapter: ChapterTrack, *, include_internal: bool = Fal
         "summary": chapter.summary,
         "crossroads_summary": chapter.crossroads_summary,
         "branch_hint": (
-            f"The chapter now leans toward {branch_label(chapter.branch_key)}."
+            f"The chapter now leans toward {branch_label(chapter.branch_key, world_pack=world_pack)}."
             if chapter.branch_key
             else (chapter.crossroads_summary or "")
         ),
@@ -338,7 +346,12 @@ def get_current_chapter_summary(
     chapter = _current_chapter(db, world_id, actor_id)
     if chapter is None:
         return None
-    return chapter_track_to_dict(chapter, include_internal=include_internal)
+    _, template = resolve_world_pack(db, world_id)
+    return chapter_track_to_dict(
+        chapter,
+        world_pack={"followup_branches": serialize_followup_branches(template.roles.followup_branches)},
+        include_internal=include_internal,
+    )
 
 
 def get_current_scene_summary(db: Session, world_id: str, actor_id: str) -> dict[str, Any] | None:
@@ -400,7 +413,8 @@ def ensure_narrative_frame_seed(
         "followup_location_name": followup_location_name,
         "world_name": str((template.world or {}).get("default_name") or template.display_name),
         "reward_name": str(template.quest.reward_name or ""),
-        "branch_labels": dict(template.roles.branch_labels),
+        "followup_branches": serialize_followup_branches(template.roles.followup_branches),
+        "branch_labels": branch_labels_from_followup_branches(template.roles.followup_branches),
     }
     chapter_key = str(template.roles.opening_chapter_key or "opening_chapter")
     chapter_status: ChapterStatus = "active"
@@ -578,7 +592,7 @@ class SceneFrameEngine:
             current_chapter.closing_event_id = source_event_id
             current_chapter.resolved_at = now
             current_chapter.updated_at = now
-            chapter_updates.append(chapter_track_to_dict(current_chapter))
+            chapter_updates.append(chapter_track_to_dict(current_chapter, world_pack=session_state.get("world_pack") or {}))
 
         target_chapter = _chapter_by_key(db, world_id, actor_id, target_chapter_key)
         if target_chapter is None:
@@ -594,7 +608,7 @@ class SceneFrameEngine:
             )
             db.add(target_chapter)
             db.flush()
-            chapter_updates.append(chapter_track_to_dict(target_chapter))
+            chapter_updates.append(chapter_track_to_dict(target_chapter, world_pack=session_state.get("world_pack") or {}))
         else:
             if target_chapter.status != target_chapter_status or target_chapter.summary != target_chapter_summary:
                 target_chapter.status = target_chapter_status
@@ -604,7 +618,7 @@ class SceneFrameEngine:
                     target_chapter.resolved_at = now
                 target_chapter.updated_at = now
                 db.flush()
-                chapter_updates.append(chapter_track_to_dict(target_chapter))
+                chapter_updates.append(chapter_track_to_dict(target_chapter, world_pack=session_state.get("world_pack") or {}))
 
         scene_updates: list[dict[str, Any]] = []
         needs_new_scene = current_scene is None or chapter_switched or scene_move in {"pivot", "close"}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Mapping
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -16,6 +16,7 @@ from app.models.entities import World
 ENGINE_API_VERSION = "v2"
 DEFAULT_PACK_ID = "founders_reach"
 DEFAULT_WORLD_TEMPLATE_ID = "founders_reach"
+FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
 _ACTIVE_PACK_DIR: Path | None = None
@@ -48,12 +49,49 @@ class PackRoles(BaseModel):
     opening_chapter_key: str = "opening_chapter"
     followup_chapter_key: str = "followup_chapter"
     reward_effect_kind: str = "unlock_followup_route"
-    branch_labels: dict[str, str] = Field(
-        default_factory=lambda: {
-            "watch_oath": "Watch Oath",
-            "lantern_whispers": "Lantern Whispers",
+    followup_branches: PackFollowupBranches
+
+
+FollowupBranchSlot = Literal["formal_path", "undercurrent_path"]
+
+
+class PackFollowupBranch(BaseModel):
+    branch_key: str = Field(min_length=1, max_length=120)
+    label: str = Field(min_length=1, max_length=120)
+    anchor_npcs: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_anchor_npcs(self) -> "PackFollowupBranch":
+        deduplicated: list[str] = []
+        seen: set[str] = set()
+        for item in self.anchor_npcs:
+            candidate = str(item or "").strip()
+            if not candidate or candidate in seen:
+                continue
+            deduplicated.append(candidate)
+            seen.add(candidate)
+        if not deduplicated:
+            raise ValueError("followup branch must define at least one anchor_npcs entry")
+        self.anchor_npcs = deduplicated
+        return self
+
+
+class PackFollowupBranches(BaseModel):
+    formal_path: PackFollowupBranch
+    undercurrent_path: PackFollowupBranch
+
+    @model_validator(mode="after")
+    def validate_branch_keys(self) -> "PackFollowupBranches":
+        keys = [self.formal_path.branch_key, self.undercurrent_path.branch_key]
+        if len(set(keys)) != len(keys):
+            raise ValueError("followup branch keys must be unique")
+        return self
+
+    def by_slot(self) -> dict[FollowupBranchSlot, PackFollowupBranch]:
+        return {
+            "formal_path": self.formal_path,
+            "undercurrent_path": self.undercurrent_path,
         }
-    )
 
 
 class PackBootstrap(BaseModel):
@@ -171,6 +209,52 @@ class PromptOverlaysPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+def serialize_followup_branches(
+    followup_branches: PackFollowupBranches | Mapping[str, Any] | None,
+) -> dict[FollowupBranchSlot, dict[str, Any]]:
+    if isinstance(followup_branches, PackFollowupBranches):
+        entries = followup_branches.by_slot()
+    else:
+        raw = dict(followup_branches or {})
+        entries = {}
+        for slot in FOLLOWUP_BRANCH_SLOTS:
+            item = raw.get(slot)
+            if not isinstance(item, Mapping):
+                raise ValueError(f"followup branch mapping is missing slot {slot}")
+            branch_key = str(item.get("branch_key") or "").strip()
+            label = str(item.get("label") or "").strip() or branch_key.replace("_", " ").title()
+            if not branch_key:
+                raise ValueError(f"followup branch mapping is missing branch_key for slot {slot}")
+            entries[slot] = {
+                "branch_key": branch_key,
+                "label": label,
+                "anchor_npcs": [str(name).strip() for name in item.get("anchor_npcs") or [] if str(name).strip()],
+            }
+    return {
+        slot: {
+            "slot": slot,
+            "branch_key": entry.branch_key if isinstance(entry, PackFollowupBranch) else str(entry["branch_key"]),
+            "label": entry.label if isinstance(entry, PackFollowupBranch) else str(entry["label"]),
+            "anchor_npcs": (
+                list(entry.anchor_npcs)
+                if isinstance(entry, PackFollowupBranch)
+                else [str(name) for name in entry.get("anchor_npcs") or []]
+            ),
+        }
+        for slot, entry in entries.items()
+    }
+
+
+def branch_labels_from_followup_branches(
+    followup_branches: PackFollowupBranches | Mapping[str, Any] | None,
+) -> dict[str, str]:
+    entries = serialize_followup_branches(followup_branches)
+    return {
+        str(entry["branch_key"]): str(entry["label"])
+        for entry in entries.values()
+    }
+
+
 @dataclass(frozen=True)
 class LoadedWorldPack:
     manifest: PackManifest
@@ -269,10 +353,12 @@ class PackRegistry:
             )
 
         guide_name = next((npc.display_name for npc in npc_payload.npcs if npc.is_guide), "")
+        npc_names = {npc.display_name for npc in npc_payload.npcs}
         templates: dict[str, WorldTemplateDefinition] = {}
         for template_id, template in templates_payload.world_templates.items():
             if not template.roles.guide_npc_name and guide_name:
                 template.roles.guide_npc_name = guide_name
+            self._validate_followup_branches(manifest.pack_id, template, npc_names)
             templates[template_id] = template
 
         return LoadedWorldPack(
@@ -293,6 +379,19 @@ class PackRegistry:
             raise FileNotFoundError(f"Pack content file not found: {content_path}")
         raw = yaml.safe_load(content_path.read_text(encoding="utf-8")) or {}
         return model.model_validate(raw)
+
+    @staticmethod
+    def _validate_followup_branches(
+        pack_id: str,
+        template: WorldTemplateDefinition,
+        npc_names: set[str],
+    ) -> None:
+        for slot, branch in template.roles.followup_branches.by_slot().items():
+            missing = [name for name in branch.anchor_npcs if name not in npc_names]
+            if missing:
+                raise ValueError(
+                    f"Pack {pack_id} template {template.template_id} slot {slot} references unknown anchor_npcs: {missing}"
+                )
 
 
 def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:

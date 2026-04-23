@@ -29,7 +29,7 @@ from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
-from app.modules.world_pack.service import PackRegistry
+from app.modules.world_pack.service import PackRegistry, branch_labels_from_followup_branches
 from app.modules.world_memory.service import (
     MemoryRetrievalTrace,
     MemoryService,
@@ -1288,6 +1288,12 @@ class EvalHarnessService:
         progress_target = int((case.quest_context or {}).get("progress_target", 2))
         current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
         world_pack = dict((case.quest_context or {}).get("world_pack") or {})
+        followup_branches = dict(world_pack.get("followup_branches") or {})
+        if not followup_branches:
+            followup_branches = {
+                "formal_path": {"branch_key": "watch_oath", "label": "Watch Oath", "anchor_npcs": []},
+                "undercurrent_path": {"branch_key": "lantern_whispers", "label": "Lantern Whispers", "anchor_npcs": []},
+            }
         stage_key = str((case.quest_context or {}).get("stage_key") or world_pack.get("starter_stage_key") or "starter_watch")
         starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
         followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
@@ -1312,7 +1318,8 @@ class EvalHarnessService:
                 "world_name": str(world_pack.get("world_name") or "Founders Reach"),
                 "reward_name": str(world_pack.get("reward_name") or "Lantern Sigil"),
                 "faction_name": str(world_pack.get("faction_name") or "Founders Watch"),
-                "branch_labels": dict(world_pack.get("branch_labels") or {"watch_oath": "Watch Oath", "lantern_whispers": "Lantern Whispers"}),
+                "followup_branches": followup_branches,
+                "branch_labels": dict(world_pack.get("branch_labels") or branch_labels_from_followup_branches(followup_branches)),
             },
             "chapter": {
                 "id": "eval-chapter",

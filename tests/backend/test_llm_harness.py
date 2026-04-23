@@ -47,6 +47,18 @@ def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id:
             "world_name": "Founders Reach",
             "reward_name": "Lantern Sigil",
             "faction_name": "Founders Watch",
+            "followup_branches": {
+                "formal_path": {
+                    "branch_key": "watch_oath",
+                    "label": "Watch Oath",
+                    "anchor_npcs": ["Archivist Nera"],
+                },
+                "undercurrent_path": {
+                    "branch_key": "lantern_whispers",
+                    "label": "Lantern Whispers",
+                    "anchor_npcs": ["Courier Pell", "Lamplighter Sera"],
+                },
+            },
             "branch_labels": {"watch_oath": "Watch Oath", "lantern_whispers": "Lantern Whispers"},
         },
         "location": {"id": "starter", "name": "Founders Reach", "description": "Starter plaza"},

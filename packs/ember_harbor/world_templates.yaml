@@ -15,9 +15,18 @@ world_templates:
       opening_chapter_key: ember_harbor_opening
       followup_chapter_key: ember_breakwater_followup
       reward_effect_kind: unlock_breakwater_route
-      branch_labels:
-        watch_oath: Beacon Oath
-        lantern_whispers: Tide Whispers
+      followup_branches:
+        formal_path:
+          branch_key: beacon_oath
+          label: Beacon Oath
+          anchor_npcs:
+            - Tide-Scribe Miro
+        undercurrent_path:
+          branch_key: tide_whispers
+          label: Tide Whispers
+          anchor_npcs:
+            - Runner Eska
+            - Beacon-Keeper Sol
     bootstrap:
       start_consequence_summary: The harbor wardens wait for your first move.
       session_started_narrative: >-

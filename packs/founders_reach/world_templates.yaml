@@ -15,9 +15,18 @@ world_templates:
       opening_chapter_key: founders_watch_opening
       followup_chapter_key: watch_path_followup
       reward_effect_kind: unlock_followup_watch_path
-      branch_labels:
-        watch_oath: Watch Oath
-        lantern_whispers: Lantern Whispers
+      followup_branches:
+        formal_path:
+          branch_key: watch_oath
+          label: Watch Oath
+          anchor_npcs:
+            - Archivist Nera
+        undercurrent_path:
+          branch_key: lantern_whispers
+          label: Lantern Whispers
+          anchor_npcs:
+            - Courier Pell
+            - Lamplighter Sera
     bootstrap:
       start_consequence_summary: The watch waits for your first move.
       session_started_narrative: >-

@@ -537,14 +537,44 @@ class StubModelProvider(BaseModelProvider):
             scene_pressure = "medium"
         branch_signals = normalize_branch_signals([str(item) for item in input_payload.get("branch_signals") or []])
         lower_text = f"{interpreted_intent} {input_text}".lower()
+        followup_branches = dict(world_pack.get("followup_branches") or {})
+
+        def _branch_tokens(slot: str) -> set[str]:
+            entry = followup_branches.get(slot)
+            if not isinstance(entry, dict):
+                return set()
+            raw_values = [
+                str(entry.get("label") or ""),
+                str(entry.get("branch_key") or ""),
+                *[str(item) for item in entry.get("anchor_npcs") or []],
+            ]
+            tokens: set[str] = set()
+            for value in raw_values:
+                lowered = value.strip().lower()
+                if not lowered:
+                    continue
+                normalized = lowered.replace("-", " ").replace("_", " ")
+                tokens.add(lowered)
+                tokens.add(normalized)
+            return tokens
+
+        formal_tokens = _branch_tokens("formal_path") | {"oath", "promise", "order", "duty"}
+        undercurrent_tokens = _branch_tokens("undercurrent_path") | {"rumor", "whisper", "street", "undertow"}
+        reward_tokens = {token for token in _branch_tokens("formal_path") if token in {"sigil", "seal"}} | {
+            "sigil",
+            "seal",
+        }
+        reward_name = str(world_pack.get("reward_name") or "")
+        if reward_name:
+            reward_tokens.update(token for token in reward_name.lower().replace("-", " ").split() if token)
         if (followup_stage_key and active_quest_stage == followup_stage_key) or (
             followup_chapter_key and current_chapter_key == followup_chapter_key
         ):
-            if any(token in lower_text for token in ("archivist", "watch", "oath", "promise", "order")):
-                branch_signals = normalize_branch_signals([*branch_signals, "formal_trust", "kept_watch_promise"])
-            if any(token in lower_text for token in ("courier", "lamplighter", "rumor", "whisper", "street")):
+            if any(token in lower_text for token in formal_tokens):
+                branch_signals = normalize_branch_signals([*branch_signals, "formal_trust", "kept_formal_promise"])
+            if any(token in lower_text for token in undercurrent_tokens):
                 branch_signals = normalize_branch_signals([*branch_signals, "rumor_curiosity", "street_pull"])
-            if "sigil" in lower_text:
+            if any(token in lower_text for token in reward_tokens):
                 branch_signals = normalize_branch_signals([*branch_signals, "sigil_duty"])
         return {
             "event_type": "player.turn.resolved",

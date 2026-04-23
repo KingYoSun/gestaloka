@@ -34,8 +34,10 @@ from app.modules.actor.service import (
 from app.modules.world_pack.service import (
     DEFAULT_PACK_ID,
     DEFAULT_WORLD_TEMPLATE_ID,
+    branch_labels_from_followup_branches,
     get_pack_registry,
     resolve_world_pack,
+    serialize_followup_branches,
 )
 from app.modules.world_state.ambient import (
     list_ambient_murmurs,
@@ -47,6 +49,9 @@ from app.modules.world_state.ambient import (
     list_recent_world_beats,
 )
 from app.modules.world_state.branch import (
+    branch_key_for_slot,
+    branch_label,
+    branch_slot_for_key,
     crossroads_summary_text,
     dominant_branch_key,
     list_recent_branch_echoes,
@@ -208,11 +213,14 @@ def _reward_effect_kind(db: Session, world_id: str) -> str:
     return str(_seed_section(db, world_id, "roles").get("reward_effect_kind") or "unlock_followup_route")
 
 
+def _followup_branches(db: Session, world_id: str) -> dict[str, dict[str, Any]]:
+    _, template = resolve_world_pack(db, world_id)
+    return serialize_followup_branches(template.roles.followup_branches)
+
+
 def _branch_labels(db: Session, world_id: str) -> dict[str, str]:
-    labels = _seed_section(db, world_id, "roles").get("branch_labels") or {}
-    if not isinstance(labels, dict):
-        return {}
-    return {str(key): str(value) for key, value in labels.items()}
+    _, template = resolve_world_pack(db, world_id)
+    return branch_labels_from_followup_branches(template.roles.followup_branches)
 
 
 def _bootstrap_copy(db: Session, world_id: str) -> dict[str, Any]:
@@ -1225,6 +1233,7 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
     starter_key = _starter_location_key(db, world_id)
     lore_key = _lore_location_key(db, world_id)
     followup_key = _followup_location_key(db, world_id)
+    followup_branches = _followup_branches(db, world_id)
     return {
         "pack_id": pack.manifest.pack_id,
         "pack_display_name": pack.manifest.display_name,
@@ -1245,7 +1254,8 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
         "reward_effect_kind": _reward_effect_kind(db, world_id),
         "reward_name": str(template.quest.reward_name or ""),
         "faction_name": str(template.faction.name or ""),
-        "branch_labels": _branch_labels(db, world_id),
+        "followup_branches": followup_branches,
+        "branch_labels": branch_labels_from_followup_branches(followup_branches),
     }
 
 
@@ -1309,9 +1319,10 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     reward_effect_kind = str(world_pack.get("reward_effect_kind") or "unlock_followup_route")
     reward_name = str(world_pack.get("reward_name") or (session_state.get("inventory") or [{}])[0].get("name") or "the seal")
     faction_name = str(world_pack.get("faction_name") or "the local faction")
-    branch_labels = dict(world_pack.get("branch_labels") or {})
-    watch_branch_label = str(branch_labels.get("watch_oath") or "Watch Oath")
-    whisper_branch_label = str(branch_labels.get("lantern_whispers") or "Lantern Whispers")
+    formal_branch_key = branch_key_for_slot(world_pack, "formal_path")
+    undercurrent_branch_key = branch_key_for_slot(world_pack, "undercurrent_path")
+    formal_branch_label = branch_label(formal_branch_key, world_pack=world_pack)
+    undercurrent_branch_label = branch_label(undercurrent_branch_key, world_pack=world_pack)
     quests = session_state.get("quests") or []
     inventory = session_state.get("inventory") or []
     relationships = session_state.get("relationships") or []
@@ -1337,6 +1348,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     branch_hint = str((session_state.get("chapter") or {}).get("branch_hint") or "").strip()
     route_pressures = (session_state.get("chapter") or {}).get("route_pressures") or []
     current_branch = str((session_state.get("chapter") or {}).get("current_branch") or "")
+    current_branch_slot = branch_slot_for_key(world_pack, current_branch)
     recent_branch_echoes = session_state.get("recent_branch_echoes") or []
     recent_world_beats = session_state.get("recent_world_beats") or []
     ambient_murmurs = session_state.get("ambient_murmurs") or []
@@ -1352,7 +1364,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     leading_route = str((nearby_routes[0] or {}).get("summary") or "") if nearby_routes else ""
     leading_travel = str(recent_travel_history[0] or "") if recent_travel_history else ""
     leading_branch_echo = str(recent_branch_echoes[0] or "") if recent_branch_echoes else ""
-    dominant_branch = dominant_branch_key(route_pressures)
+    dominant_branch = dominant_branch_key(route_pressures, world_pack=world_pack)
+    dominant_branch_slot = branch_slot_for_key(world_pack, dominant_branch)
 
     def route_to(location_key: str) -> dict[str, Any] | None:
         return next(
@@ -1514,7 +1527,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "canonical_input_text": f"{reward_name}で開いた{followup_location_name}の痕跡や現地の記憶を集める",
                 "action_kind": "narrative",
             }
-        if current_branch == "watch_oath":
+        if current_branch_slot == "formal_path":
             safe_choice = {
                 **safe_choice,
                 "label": "表に出た秩序を崩さず、今の線を丁寧に保つ",
@@ -1522,15 +1535,15 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             }
             progress_choice = {
                 **progress_choice,
-                "label": f"{watch_branch_label}に沿って前へ進み、正式な信頼を固める",
-                "canonical_input_text": f"{watch_branch_label}に沿って前へ進み、正式な信頼を固める",
+                "label": f"{formal_branch_label}に沿って前へ進み、正式な信頼を固める",
+                "canonical_input_text": f"{formal_branch_label}に沿って前へ進み、正式な信頼を固める",
             }
             explore_choice = {
                 **explore_choice,
                 "label": "表の流れの裏でまだ揺れている気配を探る",
                 "canonical_input_text": "表の流れの裏でまだ揺れている気配を探る",
             }
-        elif current_branch == "lantern_whispers":
+        elif current_branch_slot == "undercurrent_path":
             safe_choice = {
                 **safe_choice,
                 "label": "広がりすぎた噂を刺激せず、静かな流れを読む",
@@ -1538,8 +1551,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             }
             progress_choice = {
                 **progress_choice,
-                "label": f"{whisper_branch_label}に沿って前へ進み、裏の流れを確かめる",
-                "canonical_input_text": f"{whisper_branch_label}に沿って前へ進み、裏の流れを確かめる",
+                "label": f"{undercurrent_branch_label}に沿って前へ進み、裏の流れを確かめる",
+                "canonical_input_text": f"{undercurrent_branch_label}に沿って前へ進み、裏の流れを確かめる",
             }
             explore_choice = {
                 **explore_choice,
@@ -1552,27 +1565,27 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "label": "どちらの道にも決め切らず、場の圧だけを静かに読む",
                 "canonical_input_text": "どちらの道にも決め切らず、場の圧だけを静かに読む",
             }
-            if dominant_branch == "watch_oath":
+            if dominant_branch_slot == "formal_path":
                 progress_choice = {
                     **progress_choice,
-                    "label": f"{watch_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
-                    "canonical_input_text": f"{watch_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
+                    "label": f"{formal_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
+                    "canonical_input_text": f"{formal_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
                 }
                 explore_choice = {
                     **explore_choice,
-                    "label": f"{whisper_branch_label}の側にまだ残る別の糸を拾う",
-                    "canonical_input_text": f"{whisper_branch_label}の側にまだ残る別の糸を拾う",
+                    "label": f"{undercurrent_branch_label}の側にまだ残る別の糸を拾う",
+                    "canonical_input_text": f"{undercurrent_branch_label}の側にまだ残る別の糸を拾う",
                 }
-            elif dominant_branch == "lantern_whispers":
+            elif dominant_branch_slot == "undercurrent_path":
                 progress_choice = {
                     **progress_choice,
-                    "label": f"{whisper_branch_label}の側へ少し踏み込み、その流れを前へ押す",
-                    "canonical_input_text": f"{whisper_branch_label}の側へ少し踏み込み、その流れを前へ押す",
+                    "label": f"{undercurrent_branch_label}の側へ少し踏み込み、その流れを前へ押す",
+                    "canonical_input_text": f"{undercurrent_branch_label}の側へ少し踏み込み、その流れを前へ押す",
                 }
                 explore_choice = {
                     **explore_choice,
-                    "label": f"{watch_branch_label}の側にまだ残る別の糸を拾う",
-                    "canonical_input_text": f"{watch_branch_label}の側にまだ残る別の糸を拾う",
+                    "label": f"{formal_branch_label}の側にまだ残る別の糸を拾う",
+                    "canonical_input_text": f"{formal_branch_label}の側にまだ残る別の糸を拾う",
                 }
 
     archive_route = route_to(lore_location_key)
@@ -1674,14 +1687,14 @@ def build_session_state(
         if followup_chapter_key and chapter_key == followup_chapter_key
         else []
     )
+    route_pressure_map = {
+        str(item.get("route_key") or ""): float(item.get("pressure") or 0.0)
+        for item in route_pressures
+    }
     branch_hint = player_visible_branch_hint(
+        world_pack=world_info,
         current_branch=((chapter or {}).get("current_branch") if include_internal else None),
-        pressures={
-            "watch_oath": float(next((item["pressure"] for item in route_pressures if item["route_key"] == "watch_oath"), 0.0)),
-            "lantern_whispers": float(
-                next((item["pressure"] for item in route_pressures if item["route_key"] == "lantern_whispers"), 0.0)
-            ),
-        },
+        pressures=route_pressure_map,
         crossroads_status=str(
             (chapter or {}).get("branch_status")
             or ("open" if route_pressures and followup_chapter_key and chapter_key == followup_chapter_key else "none")
@@ -1695,16 +1708,10 @@ def build_session_state(
             and chapter_key == followup_chapter_key
         ):
             chapter["crossroads_summary"] = crossroads_summary_text(
+                world_pack=world_info,
                 current_branch=chapter.get("current_branch"),
                 crossroads_status=str(chapter.get("branch_status") or "open"),
-                pressures={
-                    "watch_oath": float(
-                        next((item["pressure"] for item in route_pressures if item["route_key"] == "watch_oath"), 0.0)
-                    ),
-                    "lantern_whispers": float(
-                        next((item["pressure"] for item in route_pressures if item["route_key"] == "lantern_whispers"), 0.0)
-                    ),
-                },
+                pressures=route_pressure_map,
             )
         chapter["crossroads_summary"] = str(chapter.get("crossroads_summary") or "")
         chapter["branch_hint"] = branch_hint or str(chapter.get("branch_hint") or "")
