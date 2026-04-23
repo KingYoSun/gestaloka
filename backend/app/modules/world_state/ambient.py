@@ -98,7 +98,7 @@ def _routine_state_with_defaults(profile: NPCProfile) -> dict[str, Any]:
     routine_state.setdefault("attention_target_actor_id", None)
     routine_state.setdefault("last_ambient_turn_id", None)
     routine_state.setdefault("last_idle_tick_id", None)
-    routine_state.setdefault("rumor_focus", "the square")
+    routine_state.setdefault("rumor_focus", "the current district")
     routine_state.setdefault("tension_band", "medium")
     routine_state.setdefault("home_location_id", None)
     routine_state.setdefault("active_location_id", None)
@@ -242,7 +242,7 @@ def list_plaza_figures(db: Session, world_id: str, actor_id: str, location_id: s
             {
                 "actor_id": npc.id,
                 "display_name": npc.display_name,
-                "summary": f"{npc.display_name} keeps to the square as the {routine_role}, carrying a {tension_band} edge while the scene reads as {band}.",
+                "summary": f"{npc.display_name} keeps to the local district as the {routine_role}, carrying a {tension_band} edge while the scene reads as {band}.",
             }
         )
     return summaries
@@ -491,10 +491,10 @@ def _fallback_memory_payload(
     session_state: dict[str, Any],
     relevant_memories: list[str],
 ) -> AmbientMemoryManagerPayload:
-    scene_summary = str((session_state.get("current_scene") or {}).get("summary") or "The square holds its breath.")
-    rumor_focus = str(_routine_state_with_defaults(participant.profile).get("rumor_focus") or "the square")
+    scene_summary = str((session_state.get("current_scene") or {}).get("summary") or "The current district holds its breath.")
+    rumor_focus = str(_routine_state_with_defaults(participant.profile).get("rumor_focus") or "the current district")
     return AmbientMemoryManagerPayload(
-        memory_summary=f"{participant.actor.display_name} keeps the square in mind through {rumor_focus}.",
+        memory_summary=f"{participant.actor.display_name} keeps the local district in mind through {rumor_focus}.",
         focus_memories=relevant_memories[:2],
         scene_summary=scene_summary,
         rumor_focus=rumor_focus,
@@ -511,13 +511,13 @@ def _fallback_beat(
     if "promise" in thread_types:
         return AmbientNPCManagerPayload(
             beat_kind="murmur",
-            summary=f"{participant.actor.display_name} lets a low rumor move through the square about a promise still hanging in the air.",
+            summary=f"{participant.actor.display_name} lets a low rumor move through the district about a promise still hanging in the air.",
             tension_band="medium",
         )
     if "scrutiny" in thread_types:
         return AmbientNPCManagerPayload(
             beat_kind="question",
-            summary=f"{participant.actor.display_name} turns a sharper question toward the square, testing who still means what they said.",
+            summary=f"{participant.actor.display_name} turns a sharper question toward the district, testing who still means what they said.",
             tension_band="high",
         )
     routine_role = str(routine_state.get("routine_role") or "watcher")
@@ -539,7 +539,7 @@ def _normalize_beat_payload(
         return AmbientNPCManagerPayload(
             beat_kind="question",
             summary=(
-                f"{participant.actor.display_name} turns a sharper question through the square, "
+                f"{participant.actor.display_name} turns a sharper question through the district, "
                 "pressing on the unease that is already being watched."
             ),
             tension_band="high",
@@ -572,15 +572,15 @@ def _fallback_idle_beat(
     if "scrutiny" in thread_types:
         return IdleNPCManagerPayload(
             beat_kind="question",
-            summary=f"{participant.actor.display_name} tests the district with a sharper question, keeping the square's unease alive.",
+            summary=f"{participant.actor.display_name} tests the district with a sharper question, keeping its unease alive.",
             tension_band="high",
         )
-    if str(routine_state.get("routine_role") or "") == "courier":
+    if str(routine_state.get("routine_role") or "") in {"courier", "runner"}:
         return IdleNPCManagerPayload(
             beat_kind="relocate",
             summary=f"{participant.actor.display_name} carries the district's latest rumor onward with a courier's restlessness.",
             tension_band=str(routine_state.get("tension_band") or "medium"),  # type: ignore[arg-type]
-            target_route_key="square_to_archive_steps",
+            target_route_key=None,
         )
     return IdleNPCManagerPayload(
         beat_kind="observe",
@@ -937,7 +937,7 @@ class AmbientWorldPassService:
                 db,
                 world_id=world_id,
                 query_text=build_retrieval_query_text(
-                    f"{participant.actor.display_name} reacts to the square after {session_state.get('recent_consequence_history', ['the latest turn'])[0] if session_state.get('recent_consequence_history') else 'the latest turn'}",
+                    f"{participant.actor.display_name} reacts to the district after {session_state.get('recent_consequence_history', ['the latest turn'])[0] if session_state.get('recent_consequence_history') else 'the latest turn'}",
                     session_state=session_state,
                     relation_context=relation_context,
                 ),
@@ -1346,6 +1346,7 @@ class AmbientWorldPassService:
             db,
             world_id=world_id,
             actor_id=player_actor.id,
+            session_state=session_state,
             beat_updates=updates,
         )
         if last_event_id is not None:
@@ -1403,15 +1404,15 @@ class AmbientWorldPassService:
         visible_summary = summary.strip()
 
         if beat_kind == "murmur":
-            visible_summary = summary.strip() or f"{participant.actor.display_name} lets a rumor move through the square."
+            visible_summary = summary.strip() or f"{participant.actor.display_name} lets a rumor move through the district."
         elif beat_kind == "reassure":
-            visible_summary = summary.strip() or f"{participant.actor.display_name} eases the square's edge without calling attention to it."
+            visible_summary = summary.strip() or f"{participant.actor.display_name} eases the district's edge without calling attention to it."
         elif beat_kind == "question":
-            visible_summary = summary.strip() or f"{participant.actor.display_name} asks a sharper question of what the square has just seen."
+            visible_summary = summary.strip() or f"{participant.actor.display_name} asks a sharper question of what the district has just seen."
         elif beat_kind == "withdraw":
-            visible_summary = summary.strip() or f"{participant.actor.display_name} steps back and leaves the plaza listening to itself."
+            visible_summary = summary.strip() or f"{participant.actor.display_name} steps back and leaves the district listening to itself."
         else:
-            visible_summary = summary.strip() or f"{participant.actor.display_name} keeps watch on the plaza."
+            visible_summary = summary.strip() or f"{participant.actor.display_name} keeps watch on the district."
 
         if beat_kind in {"reassure", "question"} and allow_relationship_delta:
             delta = 0.05 if beat_kind == "reassure" else -0.05
@@ -1855,12 +1856,13 @@ class AmbientWorldPassService:
             str(item.get("thread_type") or "") in {"promise", "scrutiny"} and str(item.get("pressure_band") or "") in {"medium", "high"}
             for item in active_threads
         )
+        routine_role = str(_routine_state_with_defaults(participant.profile).get("routine_role") or "")
         for route, location in routes:
-            if participant.actor.display_name == "Courier Pell" and route.route_key in {"square_to_archive_steps", "archive_steps_to_square"}:
+            if routine_role in {"courier", "runner"}:
                 allowed.append((route, location))
-            elif participant.actor.display_name == "Archivist Nera" and has_pressure and route.route_key == "archive_steps_to_square":
+            elif routine_role in {"archivist", "scribe"} and has_pressure:
                 allowed.append((route, location))
-            elif participant.actor.display_name == "Lamplighter Sera" and route.route_key in {"watch_path_to_square", "square_to_watch_path"}:
+            elif routine_role in {"lamplighter", "beacon_keeper"}:
                 allowed.append((route, location))
         if not allowed:
             return None

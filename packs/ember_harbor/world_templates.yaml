@@ -10,11 +10,11 @@ world_templates:
       lore_location_key: tide_market
       followup_location_key: breakwater
       guide_npc_name: Runner Eska
-      starter_stage_key: starter_watch
-      followup_stage_key: watch_path_followup
-      opening_chapter_key: founders_watch_opening
-      followup_chapter_key: watch_path_followup
-      reward_effect_kind: unlock_followup_watch_path
+      starter_stage_key: starter_harbor
+      followup_stage_key: breakwater_unsealed
+      opening_chapter_key: ember_harbor_opening
+      followup_chapter_key: ember_breakwater_followup
+      reward_effect_kind: unlock_breakwater_route
       branch_labels:
         watch_oath: Beacon Oath
         lantern_whispers: Tide Whispers
@@ -64,14 +64,14 @@ world_templates:
         status: locked
         travel_summary: The breakwater gate stays sealed until the wardens accept the seal's authority.
         unlock_requirements:
-          starter_item_effect: unlock_followup_watch_path
+          starter_item_effect: unlock_breakwater_route
       - route_key: breakwater_to_quay
         from: breakwater
         to: quay
         status: locked
         travel_summary: The outer wall bends back toward Ember Quay once the seal has opened the route.
         unlock_requirements:
-          starter_item_effect: unlock_followup_watch_path
+          starter_item_effect: unlock_breakwater_route
     faction:
       id: ember_wardens
       name: Ember Wardens
@@ -82,7 +82,7 @@ world_templates:
       id: starter_harbor_request
       title: First Harbor Request
       description: Help a dockside local, report what you found, and earn the wardens' trust.
-      stage_key: starter_watch
+      stage_key: starter_harbor
       unlock_requirements: {}
       completion_target: 2
       reward_template_key: harbor_seals
@@ -90,16 +90,16 @@ world_templates:
       reward_description: A stamped harbor seal that marks the bearer as a trusted hand along the quay.
       state:
         reward_enabled: true
-        reward_effect_kind: unlock_followup_watch_path
+        reward_effect_kind: unlock_breakwater_route
         reward_effect_payload:
-          unlock_stage_key: watch_path_followup
+          unlock_stage_key: breakwater_unsealed
     followup_quest:
       id: followup_breakwater
       title: Breakwater Unsealed
       description: Carry the harbor's trust out to the breakwater and steady what waits beyond the gate.
-      stage_key: watch_path_followup
+      stage_key: breakwater_unsealed
       unlock_requirements:
-        starter_item_effect: unlock_followup_watch_path
+        starter_item_effect: unlock_breakwater_route
       completion_target: 1
       reward_template_key: none
       reward_name: ""

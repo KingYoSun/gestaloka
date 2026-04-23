@@ -39,15 +39,15 @@ class PackManifest(BaseModel):
 
 
 class PackRoles(BaseModel):
-    starter_location_key: str = "square"
-    lore_location_key: str = "archive_steps"
-    followup_location_key: str = "watch_path"
+    starter_location_key: str = "starter"
+    lore_location_key: str = "lore"
+    followup_location_key: str = "followup"
     guide_npc_name: str = ""
-    starter_stage_key: str = "starter_watch"
-    followup_stage_key: str = "watch_path_followup"
-    opening_chapter_key: str = "founders_watch_opening"
-    followup_chapter_key: str = "watch_path_followup"
-    reward_effect_kind: str = "unlock_followup_watch_path"
+    starter_stage_key: str = "starter_stage"
+    followup_stage_key: str = "followup_stage"
+    opening_chapter_key: str = "opening_chapter"
+    followup_chapter_key: str = "followup_chapter"
+    reward_effect_kind: str = "unlock_followup_route"
     branch_labels: dict[str, str] = Field(
         default_factory=lambda: {
             "watch_oath": "Watch Oath",

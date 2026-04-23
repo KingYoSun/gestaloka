@@ -150,7 +150,7 @@ type NarrativeChoice = {
   summary: string;
   canonical_input_text: string;
   action_kind: "narrative" | "use_reward_item" | "travel";
-  travel_target_key?: "square" | "archive_steps" | "watch_path" | "none";
+  travel_target_key?: string | null;
 };
 
 type QuestSummary = {
@@ -855,9 +855,7 @@ function deriveImportantInventoryAffordances(inventory: InventorySummary[]): Ses
       usable: item.usable,
       effect_kind: item.effect_kind,
       summary:
-        item.effect_kind === "unlock_followup_watch_path"
-          ? `${item.name} can unlock the next watch path.`
-          : `${item.name} carries a special affordance.`,
+        item.effect_kind ? `${item.name} can unlock the next route.` : `${item.name} carries a special affordance.`,
     }));
 }
 
@@ -2289,7 +2287,7 @@ function App() {
                     </li>
                   ))
                 ) : (
-                  <li>No rumor has started moving through the square.</li>
+                  <li>No rumor has started moving through the current district.</li>
                 )}
               </ul>
               <h3>Recent offstage beats</h3>

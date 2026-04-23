@@ -139,11 +139,12 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "narrative_state_bands",
         "important_inventory_affordances",
     } <= set(state_response.json())
+    world_pack = state_response.json()["world_pack"]
     assert state_response.json()["quests"][0]["progress"] == 0
-    assert state_response.json()["quests"][0]["stage_key"] == "starter_watch"
-    assert state_response.json()["chapter"]["key"] == "founders_watch_opening"
+    assert state_response.json()["quests"][0]["stage_key"] == world_pack["starter_stage_key"]
+    assert state_response.json()["chapter"]["key"] == world_pack["opening_chapter_key"]
     assert "Founders Square" in state_response.json()["current_scene"]["summary"]
-    assert state_response.json()["current_location"]["key"] == "square"
+    assert state_response.json()["current_location"]["key"] == world_pack["starter_location_key"]
     assert state_response.json()["local_figures"]
     assert state_response.json()["nearby_routes"]
     assert state_response.json()["inventory"] == []
@@ -280,6 +281,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.json()["inventory"][0]["id"]
     assert state_response.json()["next_choices"][1]["action_kind"] == "use_reward_item"
+    world_pack = state_response.json()["world_pack"]
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
         use_response = client.post(
@@ -295,12 +297,12 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         payload = use_response.json()
         assert payload["action_type"] == "use_reward_item"
         assert payload["input_mode"] == "choice"
-        assert payload["quest_updates"][0]["stage_key"] == "watch_path_followup"
+        assert payload["quest_updates"][0]["stage_key"] == world_pack["followup_stage_key"]
         assert payload["inventory_updates"][0]["status"] == "used"
         assert payload["inventory_updates"][0]["action"] == "used"
         assert payload["faction_updates"][0]["delta"] == 0.1
         assert payload["location_updates"] == []
-        assert payload["current_location"]["key"] == "square"
+        assert payload["current_location"]["key"] == world_pack["starter_location_key"]
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 

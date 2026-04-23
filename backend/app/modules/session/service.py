@@ -579,7 +579,7 @@ def _resolve_narrative_turn_for_session(
                 )
         if selected_action_kind == "travel":
             travel_target_key = str(selected_choice.get("travel_target_key") or "").strip()
-            if travel_target_key in {"square", "archive_steps", "watch_path"}:
+            if travel_target_key and travel_target_key in _available_travel_target_keys(session_state):
                 return _resolve_travel_turn_for_session(
                     db,
                     container,
@@ -698,7 +698,7 @@ def _resolve_narrative_turn_for_session(
         if forced_action_kind in {"narrative", "use_reward_item", "travel"}:
             interpreted_intent["canonical_action_kind"] = forced_action_kind
         forced_travel_target = str(selected_choice.get("travel_target_key") or "").strip()
-        if forced_action_kind == "travel" and forced_travel_target in {"square", "archive_steps", "watch_path"}:
+        if forced_action_kind == "travel" and forced_travel_target:
             interpreted_intent["travel_target_key"] = forced_travel_target
         if not interpreted_intent.get("intent_summary"):
             interpreted_intent["intent_summary"] = str(
@@ -735,7 +735,11 @@ def _resolve_narrative_turn_for_session(
                 },
             )
     if interpreted_intent.get("canonical_action_kind") == "travel":
-        travel_target_key = _resolve_travel_target_key(interpreted_intent, selected_choice)
+        travel_target_key = _resolve_travel_target_key(
+            interpreted_intent,
+            selected_choice,
+            session_state=session_state,
+        )
         if travel_target_key is not None:
             return _resolve_travel_turn_for_session(
                 db,
@@ -1225,7 +1229,7 @@ def _resolve_reward_item_turn_for_session(
     )
     combined_faction_updates = [*outcome.faction_updates, *consequence_result.faction_updates]
     _, template = resolve_world_pack(db, game_session.world_id)
-    followup_stage_key = str(template.roles.followup_stage_key or "watch_path_followup")
+    followup_stage_key = str(template.roles.followup_stage_key or "followup_stage")
     if any(str(item.get("stage_key") or "") == followup_stage_key for item in outcome.quest_updates):
         ensure_route_pressures(
             db,
@@ -2221,18 +2225,34 @@ def _select_choice(choices: list[dict[str, Any]], choice_id: str) -> dict[str, A
     return None
 
 
+def _reward_effect_kind_from_state(session_state: dict[str, Any]) -> str:
+    return str((session_state.get("world_pack") or {}).get("reward_effect_kind") or "unlock_followup_route")
+
+
+def _available_travel_target_keys(session_state: dict[str, Any]) -> set[str]:
+    targets: set[str] = set()
+    for route in session_state.get("nearby_routes") or []:
+        if not isinstance(route, dict) or not bool(route.get("available")):
+            continue
+        destination_key = str(route.get("destination_key") or "").strip()
+        if destination_key:
+            targets.add(destination_key)
+    return targets
+
+
 def _resolve_usable_reward_item_id(session_state: dict[str, Any]) -> str | None:
+    reward_effect_kind = _reward_effect_kind_from_state(session_state)
     for affordance in session_state.get("important_inventory_affordances") or []:
         if not isinstance(affordance, dict):
             continue
-        if affordance.get("usable") and affordance.get("effect_kind") == "unlock_followup_watch_path":
+        if affordance.get("usable") and affordance.get("effect_kind") == reward_effect_kind:
             item_id = str(affordance.get("item_id") or "").strip()
             if item_id:
                 return item_id
     for item in session_state.get("inventory") or []:
         if not isinstance(item, dict):
             continue
-        if item.get("usable") and item.get("effect_kind") == "unlock_followup_watch_path":
+        if item.get("usable") and item.get("effect_kind") == reward_effect_kind:
             item_id = str(item.get("id") or "").strip()
             if item_id:
                 return item_id
@@ -2242,8 +2262,10 @@ def _resolve_usable_reward_item_id(session_state: dict[str, Any]) -> str | None:
 def _resolve_travel_target_key(
     interpreted_intent: dict[str, Any],
     selected_choice: dict[str, Any] | None,
+    *,
+    session_state: dict[str, Any],
 ) -> str | None:
-    allowed = {"square", "archive_steps", "watch_path"}
+    allowed = _available_travel_target_keys(session_state)
     selected_target = str((selected_choice or {}).get("travel_target_key") or "").strip()
     if selected_target in allowed:
         return selected_target
@@ -2276,8 +2298,8 @@ def _coerce_choice_world_tags(
     if progress_target and progress >= progress_target:
         return normalized
     world_pack = session_state.get("world_pack") or {}
-    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
-    followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
+    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
+    followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
     if stage_key in {starter_stage_key, followup_stage_key}:
         return normalize_world_tags([*normalized, "promise_followup"])
     return normalized

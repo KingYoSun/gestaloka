@@ -131,8 +131,8 @@ class GMCouncilService:
 
         active_quest = GMCouncilService._active_quest(session_state)
         world_pack = session_state.get("world_pack") or {}
-        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
-        followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
+        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
+        followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
         stage_key = str(active_quest.get("stage_key") or starter_stage_key)
         progress = int(active_quest.get("progress") or 0)
 
@@ -196,9 +196,7 @@ class GMCouncilService:
         action_kind = str(selected_choice.get("action_kind") or "narrative").strip()
         if action_kind not in {"narrative", "use_reward_item", "travel"}:
             action_kind = "narrative"
-        travel_target_key = str(selected_choice.get("travel_target_key") or "none").strip()
-        if travel_target_key not in {"square", "archive_steps", "watch_path"}:
-            travel_target_key = "none"
+        travel_target_key = str(selected_choice.get("travel_target_key") or "").strip() or None
         posture = str(selected_choice.get("posture") or "none").strip()
         consequence_tags = self._canonical_intent_consequence_tags(
             input_mode="choice",
@@ -282,6 +280,7 @@ class GMCouncilService:
             "player_name": request.player_name,
             "npc_name": request.npc_name,
             "selected_choice": request.selected_choice or {},
+            "world_pack": request.session_state.get("world_pack") or {},
             "quests": quests,
             "factions": request.session_state.get("factions") or [],
             "inventory": inventory,
@@ -475,6 +474,7 @@ class GMCouncilService:
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
             "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
+            "world_pack": request.session_state.get("world_pack") or {},
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,

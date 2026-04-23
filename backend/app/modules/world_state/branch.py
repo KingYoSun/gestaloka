@@ -79,13 +79,6 @@ def ensure_route_pressures(db: Session, *, world_id: str, actor_id: str, chapter
         ).scalars()
     )
     indexed = {str(row.route_key): row for row in rows}
-    if chapter_key != "watch_path_followup":
-        return {
-            route_key: indexed[route_key]  # type: ignore[index]
-            for route_key in ROUTE_KEYS
-            if route_key in indexed
-        }
-
     for route_key in ROUTE_KEYS:
         if route_key in indexed:
             continue
@@ -105,7 +98,7 @@ def ensure_route_pressures(db: Session, *, world_id: str, actor_id: str, chapter
     return {route_key: indexed[route_key] for route_key in ROUTE_KEYS}
 
 
-def list_route_pressures(db: Session, *, world_id: str, actor_id: str, chapter_key: str = "watch_path_followup") -> list[dict[str, Any]]:
+def list_route_pressures(db: Session, *, world_id: str, actor_id: str, chapter_key: str) -> list[dict[str, Any]]:
     rows = {
         str(row.route_key): row
         for row in db.execute(
@@ -217,18 +210,18 @@ def crossroads_summary_text(
     pressures: dict[BranchKey, float],
 ) -> str:
     if current_branch == "watch_oath":
-        return "The watch path has committed to Watch Oath, drawing the scene toward promises kept, order, and formal trust."
+        return "The follow-up route has committed to Watch Oath, drawing the scene toward promises kept, order, and formal trust."
     if current_branch == "lantern_whispers":
-        return "The watch path has committed to Lantern Whispers, drawing the scene toward rumor, lampglow, and offstage echoes."
+        return "The follow-up route has committed to Lantern Whispers, drawing the scene toward rumor, lampglow, and offstage echoes."
     if crossroads_status != "open":
         return ""
     watch = pressures["watch_oath"]
     lantern = pressures["lantern_whispers"]
     if watch >= lantern + 0.1:
-        return "The watch path is splitting toward a more formal oath, though the city's whispers still pull at its edge."
+        return "The follow-up route is splitting toward a more formal oath, though the city's whispers still pull at its edge."
     if lantern >= watch + 0.1:
-        return "The watch path is splitting toward whispers and rumor, though the formal oath has not fully released its hold."
-    return "The watch path now stands at a crossroads between Watch Oath and Lantern Whispers."
+        return "The follow-up route is splitting toward whispers and rumor, though the formal oath has not fully released its hold."
+    return "The follow-up route now stands at a crossroads between Watch Oath and Lantern Whispers."
 
 
 def dominant_branch_key(pressures: list[dict[str, Any]] | None) -> BranchKey | None:
@@ -270,6 +263,14 @@ def _location_key(session_state: dict[str, Any]) -> str:
     return str(current_location.get("key") or "")
 
 
+def _world_pack(session_state: dict[str, Any]) -> dict[str, Any]:
+    return dict(session_state.get("world_pack") or {})
+
+
+def _followup_chapter_key(session_state: dict[str, Any]) -> str:
+    return str(_world_pack(session_state).get("followup_chapter_key") or "followup_chapter")
+
+
 def _offstage_texts(session_state: dict[str, Any]) -> list[str]:
     return [
         *[str(item) for item in (session_state.get("recent_offstage_beats") or []) if str(item).strip()],
@@ -296,10 +297,14 @@ def infer_branch_signals(
     session_state: dict[str, Any],
 ) -> list[BranchSignal]:
     signals: list[BranchSignal] = []
+    world_pack = _world_pack(session_state)
     thread_types = _thread_types(session_state)
     location_key = _location_key(session_state)
     relationship_summaries = session_state.get("relationships") or []
     offstage_text = " ".join(_offstage_texts(session_state)).lower()
+    starter_location_key = str(world_pack.get("starter_location_key") or "")
+    lore_location_key = str(world_pack.get("lore_location_key") or "")
+    followup_location_key = str(world_pack.get("followup_location_key") or "")
 
     if any(tag in consequence_tags for tag in ("earned_trust", "kept_promise", "sigil_respect")):
         signals.extend(["formal_trust", "sigil_duty"])
@@ -313,11 +318,11 @@ def infer_branch_signals(
         signals.append("public_scrutiny")
     if "rumor" in thread_types:
         signals.append("street_pull")
-    if location_key == "archive_steps":
+    if lore_location_key and location_key == lore_location_key:
         signals.append("formal_trust")
-    if location_key == "watch_path":
+    if followup_location_key and location_key == followup_location_key:
         signals.append("sigil_duty")
-    if location_key == "square":
+    if starter_location_key and location_key == starter_location_key:
         signals.append("street_pull")
     if any(_band_is_warm(item) and "Archivist Nera" in str(item.get("display_name") or "") for item in relationship_summaries):
         signals.append("formal_trust")
@@ -378,7 +383,7 @@ class BranchPressureEngine:
         branch_signals: list[str] | None,
     ) -> BranchPressureResult:
         chapter = _current_chapter(db, world_id=world_id, actor_id=actor_id)
-        if chapter is None or chapter.chapter_key != "watch_path_followup":
+        if chapter is None or chapter.chapter_key != _followup_chapter_key(session_state):
             return BranchPressureResult(updates=[], crossroads_summary="", branch_hint="", current_branch=None, commit=None)
 
         rows = ensure_route_pressures(db, world_id=world_id, actor_id=actor_id, chapter_key=chapter.chapter_key)
@@ -534,10 +539,11 @@ class BranchPressureEngine:
         *,
         world_id: str,
         actor_id: str,
+        session_state: dict[str, Any],
         beat_updates: list[dict[str, Any]],
     ) -> BranchPressureResult:
         chapter = _current_chapter(db, world_id=world_id, actor_id=actor_id)
-        if chapter is None or chapter.chapter_key != "watch_path_followup":
+        if chapter is None or chapter.chapter_key != _followup_chapter_key(session_state):
             return BranchPressureResult(updates=[], crossroads_summary="", branch_hint="", current_branch=None, commit=None)
         if chapter.branch_key in ROUTE_KEYS:
             pressures = {

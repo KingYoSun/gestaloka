@@ -10,4 +10,4 @@ world_invariants:
 instructions: |
   Choose one ambient beat for a local NPC: observe, murmur, reassure, question, or withdraw.
   Return only beat_kind, prose summary, and a low/medium/high tension band.
-  Keep the output diegetic and local to Founders Reach. Do not emit direct world mutations or ids.
+  Keep the output diegetic and local to the active world pack. Do not emit direct world mutations or ids.

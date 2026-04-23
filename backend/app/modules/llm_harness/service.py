@@ -102,14 +102,14 @@ class NarrativeChoiceDraft(BaseModel):
     label: str = Field(min_length=1)
     intent_summary: str = Field(min_length=1)
     action_kind: Literal["narrative", "use_reward_item", "travel"] = "narrative"
-    travel_target_key: Literal["square", "archive_steps", "watch_path", "none"] = "none"
+    travel_target_key: str | None = None
 
 
 class CouncilIntentInterpreterPayload(BaseModel):
     input_mode: Literal["choice", "free_text"]
     canonical_action_kind: Literal["narrative", "use_reward_item", "travel"]
     intent_summary: str = Field(min_length=1)
-    travel_target_key: Literal["square", "archive_steps", "watch_path", "none"] = "none"
+    travel_target_key: str | None = None
     requested_choice_posture: Literal["safe", "progress", "explore", "none"] = "none"
     fail_forward: bool = False
     consequence_flags: list[str] = Field(default_factory=list)
@@ -244,17 +244,46 @@ class StubModelProvider(BaseModelProvider):
         input_text = str(input_payload.get("input_text") or "")
         selected_posture = str(selected_choice.get("posture") or "none")
         action_kind = str(selected_choice.get("action_kind") or "narrative")
-        travel_target_key = str(selected_choice.get("travel_target_key") or "none")
+        travel_target_key = str(selected_choice.get("travel_target_key") or "").strip() or None
         intent_summary = str(selected_choice.get("intent_summary") or selected_choice.get("canonical_input_text") or input_text)
         fail_forward = False
         consequence_flags: list[str] = []
         consequence_tags: list[str] = []
         consequence_summary = "The world accepts the player's chosen line of action."
         used_reward_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
+        nearby_routes = [item for item in input_payload.get("nearby_routes") or [] if isinstance(item, dict)]
+
+        def route_targets() -> list[tuple[str, str]]:
+            targets: list[tuple[str, str]] = []
+            for route in nearby_routes:
+                destination_key = str(
+                    route.get("destination_key") or ((route.get("to_location") or {}).get("key") or "")
+                ).strip()
+                destination_name = str(
+                    route.get("destination_name") or ((route.get("to_location") or {}).get("name") or "")
+                ).strip()
+                if destination_key:
+                    targets.append((destination_key, destination_name))
+            return targets
+
+        available_targets = route_targets()
+
+        def mentioned_target(text: str) -> str | None:
+            for destination_key, destination_name in available_targets:
+                key_token = destination_key.lower()
+                name_token = destination_name.lower()
+                if (key_token and key_token in text) or (name_token and name_token in text):
+                    return destination_key
+            return None
+
+        reward_tokens = [name.lower() for name in [*usable_items, *used_reward_items] if name]
+        mentions_reward_item = any(token in input_text.lower() for token in reward_tokens) or any(
+            token in input_text.lower() for token in ("sigil", "seal", "token", "pass", "印", "証")
+        )
 
         normalized = input_text.lower()
         if input_mode == "choice":
-            if action_kind == "travel" and travel_target_key in {"square", "archive_steps", "watch_path"}:
+            if action_kind == "travel" and travel_target_key:
                 consequence_tags.append("careful_observation")
                 consequence_summary = "The player follows a route the current scene actually affords."
             if selected_posture == "progress":
@@ -262,22 +291,20 @@ class StubModelProvider(BaseModelProvider):
             elif selected_posture in {"safe", "explore"}:
                 consequence_tags.append("careful_observation")
         if input_mode == "free_text":
-            wants_archive_steps = any(token in normalized for token in ("archive steps", "archive", "石段", "記録庫"))
-            wants_watch_path = any(token in normalized for token in ("watch path", "watchpath", "巡回路", "見回り路"))
-            wants_square_return = any(token in normalized for token in ("founders square", "square", "plaza", "広場", "戻る", "帰る"))
             travel_verbs = ("向か", "行く", "進む", "移動", "赴", "go to", "head to", "walk to", "toward", "towards")
-            return_verbs = ("戻る", "帰る", "back to", "return to", "head back", "go back")
-            if any(token in normalized for token in ("lantern", "sigil", "灯印", "印章", "sigil")):
+            route_target_key = mentioned_target(normalized) if any(token in normalized for token in travel_verbs) else None
+            if mentions_reward_item:
                 if usable_items:
                     action_kind = "use_reward_item"
-                    intent_summary = intent_summary or "Lantern Sigilを掲げて次の巡回路を開く"
+                    reward_name = usable_items[0]
+                    intent_summary = intent_summary or f"{reward_name}を掲げて次の道を開く"
                     consequence_tags.extend(["sigil_respect", "kept_promise"])
-                    consequence_summary = "The watch recognizes the sigil and prepares to answer the request."
+                    consequence_summary = "The world recognizes the reward token and prepares to answer the request."
                 elif used_reward_items:
                     action_kind = "narrative"
-                    intent_summary = input_text or "The player follows the watch path opened by the sigil."
+                    intent_summary = input_text or "The player follows the route opened by the reward token."
                     consequence_tags.append("careful_observation")
-                    consequence_summary = "The scene proceeds through the path the sigil already opened."
+                    consequence_summary = "The scene proceeds through the route the reward token already opened."
                 else:
                     action_kind = "narrative"
                     fail_forward = True
@@ -294,21 +321,11 @@ class StubModelProvider(BaseModelProvider):
                 consequence_flags = ["overreach"]
                 consequence_tags.extend(["overreach", "public_attention"])
                 consequence_summary = "The world bends the request into a costly misunderstanding rather than allowing an impossible leap."
-            elif wants_archive_steps and any(token in normalized for token in travel_verbs):
+            elif route_target_key:
                 action_kind = "travel"
-                travel_target_key = "archive_steps"
+                travel_target_key = route_target_key
                 consequence_tags.append("careful_observation")
-                consequence_summary = "The player tries to follow the scene into the archive steps."
-            elif wants_watch_path and any(token in normalized for token in travel_verbs):
-                action_kind = "travel"
-                travel_target_key = "watch_path"
-                consequence_tags.append("careful_observation")
-                consequence_summary = "The player tries to follow the newly significant watch path."
-            elif wants_square_return and any(token in normalized for token in return_verbs):
-                action_kind = "travel"
-                travel_target_key = "square"
-                consequence_tags.append("careful_observation")
-                consequence_summary = "The player turns back toward the square to read the scene there again."
+                consequence_summary = "The player tries to follow a route the current scene actually affords."
             elif any(token in normalized for token in ("約束", "promise", "引き受ける", "応える")):
                 consequence_tags.append("kept_promise")
             elif any(token in normalized for token in ("探", "observe", "watch path", "巡回路")):
@@ -327,7 +344,7 @@ class StubModelProvider(BaseModelProvider):
             "input_mode": input_mode if input_mode in {"choice", "free_text"} else "choice",
             "canonical_action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
             "intent_summary": intent_summary,
-            "travel_target_key": travel_target_key if travel_target_key in {"square", "archive_steps", "watch_path"} else "none",
+            "travel_target_key": travel_target_key,
             "requested_choice_posture": selected_posture if selected_posture in {"safe", "progress", "explore"} else "none",
             "fail_forward": fail_forward,
             "consequence_flags": consequence_flags,
@@ -441,6 +458,10 @@ class StubModelProvider(BaseModelProvider):
         active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
         current_scene = input_payload.get("current_scene") or {}
         current_chapter = input_payload.get("current_chapter") or {}
+        world_pack = input_payload.get("world_pack") or {}
+        followup_stage_key = str(world_pack.get("followup_stage_key") or "")
+        followup_chapter_key = str(world_pack.get("followup_chapter_key") or followup_stage_key)
+        current_chapter_key = str(current_chapter.get("key") or "")
         if "__force_council_reject__" in input_text:
             world_tags = ["threaten_local"]
         if bool(input_payload.get("fail_forward")):
@@ -465,31 +486,31 @@ class StubModelProvider(BaseModelProvider):
                     "label": label,
                     "intent_summary": str(template.get("canonical_input_text") or label),
                     "action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
-                    "travel_target_key": str(template.get("travel_target_key") or "none"),
+                    "travel_target_key": str(template.get("travel_target_key") or "").strip() or None,
                 }
             )
         if len(next_choices) < 3:
             next_choices = [
                 {
                     "posture": "safe",
-                    "label": "一歩退いて広場の気配を見守る",
-                    "intent_summary": "広場の気配を見守り、場を乱さず状況を確かめる",
+                    "label": "一歩退いて場の気配を見守る",
+                    "intent_summary": "場の気配を見守り、流れを乱さず状況を確かめる",
                     "action_kind": "narrative",
-                    "travel_target_key": "none",
+                    "travel_target_key": None,
                 },
                 {
                     "posture": "progress",
                     "label": "困っている相手へ手を差し伸べ、次の進展を作る",
                     "intent_summary": "困っている相手へ手を差し伸べ、次の進展を作る",
                     "action_kind": "narrative",
-                    "travel_target_key": "none",
+                    "travel_target_key": None,
                 },
                 {
                     "posture": "explore",
                     "label": "周囲の噂や視線を探り、関係の糸口を拾う",
                     "intent_summary": "周囲の噂や視線を探り、関係の糸口を拾う",
                     "action_kind": "narrative",
-                    "travel_target_key": "none",
+                    "travel_target_key": None,
                 },
             ]
         outcome_band: OutcomeBand = "steady"
@@ -508,15 +529,17 @@ class StubModelProvider(BaseModelProvider):
         elif outcome_band == "tangled":
             scene_move = "deepen"
             scene_pressure = "medium"
-        elif active_quest_stage == "watch_path_followup":
+        elif followup_stage_key and active_quest_stage == followup_stage_key:
             scene_move = "deepen" if "investigate" in world_tags else "hold"
             scene_pressure = "medium"
-        elif current_chapter and str(current_chapter.get("key") or "") == "watch_path_followup":
+        elif followup_chapter_key and current_chapter_key == followup_chapter_key:
             scene_move = "hold"
             scene_pressure = "medium"
         branch_signals = normalize_branch_signals([str(item) for item in input_payload.get("branch_signals") or []])
         lower_text = f"{interpreted_intent} {input_text}".lower()
-        if active_quest_stage == "watch_path_followup" or str(current_chapter.get("key") or "") == "watch_path_followup":
+        if (followup_stage_key and active_quest_stage == followup_stage_key) or (
+            followup_chapter_key and current_chapter_key == followup_chapter_key
+        ):
             if any(token in lower_text for token in ("archivist", "watch", "oath", "promise", "order")):
                 branch_signals = normalize_branch_signals([*branch_signals, "formal_trust", "kept_watch_promise"])
             if any(token in lower_text for token in ("courier", "lamplighter", "rumor", "whisper", "street")):
@@ -670,11 +693,11 @@ class StubModelProvider(BaseModelProvider):
             beat_kind = "question"
             summary = f"{npc_name} turns a sharper question over {current_location_name}, making its scrutiny more visible."
             tension_band = "high"
-        elif role == "lamplighter":
+        elif role in {"lamplighter", "beacon_keeper"}:
             beat_kind = "reassure"
             summary = f"{npc_name} trims the light around {current_location_name} and eases the scene without making a show of it."
             tension_band = "low"
-        elif role == "courier" and recent_world_beats:
+        elif role in {"courier", "runner"} and recent_world_beats:
             beat_kind = "murmur"
             summary = f"{npc_name} carries the latest local murmur a little further, letting it circulate under the open sky."
             tension_band = "medium"
@@ -726,14 +749,14 @@ class StubModelProvider(BaseModelProvider):
                 "tension_band": "medium",
                 "target_route_key": None,
             }
-        if role == "courier" and route_keys:
+        if role in {"courier", "runner"} and route_keys:
             return {
                 "beat_kind": "relocate",
-                "summary": f"{npc_name} keeps moving with the square's latest whisper, carrying it onward to the next stop.",
+                "summary": f"{npc_name} keeps moving with the district's latest whisper, carrying it onward to the next stop.",
                 "tension_band": "medium",
                 "target_route_key": route_keys[0],
             }
-        if role == "lamplighter" and route_keys:
+        if role in {"lamplighter", "beacon_keeper"} and route_keys:
             return {
                 "beat_kind": "reassure",
                 "summary": f"{npc_name} keeps the district calmer from just out of sight, softening the line of rumor without erasing it.",

@@ -1287,11 +1287,33 @@ class EvalHarnessService:
         quest_progress = int((case.quest_context or {}).get("current_progress", 0))
         progress_target = int((case.quest_context or {}).get("progress_target", 2))
         current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
-        stage_key = str((case.quest_context or {}).get("stage_key") or "starter_watch")
-        chapter_key = "watch_path_followup" if stage_key == "watch_path_followup" else "founders_watch_opening"
+        world_pack = dict((case.quest_context or {}).get("world_pack") or {})
+        stage_key = str((case.quest_context or {}).get("stage_key") or world_pack.get("starter_stage_key") or "starter_watch")
+        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
+        followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
+        opening_chapter_key = str(world_pack.get("opening_chapter_key") or "founders_watch_opening")
+        followup_chapter_key = str(world_pack.get("followup_chapter_key") or "watch_path_followup")
+        chapter_key = followup_chapter_key if stage_key == followup_stage_key else opening_chapter_key
         base_state: dict[str, object] = {
             "world_id": case.world_id,
             "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
+            "world_pack": {
+                "starter_stage_key": starter_stage_key,
+                "followup_stage_key": followup_stage_key,
+                "opening_chapter_key": opening_chapter_key,
+                "followup_chapter_key": followup_chapter_key,
+                "reward_effect_kind": str(world_pack.get("reward_effect_kind") or "unlock_followup_watch_path"),
+                "starter_location_key": str(world_pack.get("starter_location_key") or "square"),
+                "starter_location_name": str(world_pack.get("starter_location_name") or "Founders Reach"),
+                "lore_location_key": str(world_pack.get("lore_location_key") or "archive_steps"),
+                "lore_location_name": str(world_pack.get("lore_location_name") or "Archive Steps"),
+                "followup_location_key": str(world_pack.get("followup_location_key") or "watch_path"),
+                "followup_location_name": str(world_pack.get("followup_location_name") or "Watch Path"),
+                "world_name": str(world_pack.get("world_name") or "Founders Reach"),
+                "reward_name": str(world_pack.get("reward_name") or "Lantern Sigil"),
+                "faction_name": str(world_pack.get("faction_name") or "Founders Watch"),
+                "branch_labels": dict(world_pack.get("branch_labels") or {"watch_oath": "Watch Oath", "lantern_whispers": "Lantern Whispers"}),
+            },
             "chapter": {
                 "id": "eval-chapter",
                 "key": chapter_key,

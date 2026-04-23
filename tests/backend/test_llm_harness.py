@@ -32,6 +32,23 @@ def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id:
         )
     return {
         "world_id": "world-alpha",
+        "world_pack": {
+            "starter_stage_key": "starter_watch",
+            "followup_stage_key": "watch_path_followup",
+            "opening_chapter_key": "founders_watch_opening",
+            "followup_chapter_key": "watch_path_followup",
+            "reward_effect_kind": "unlock_followup_watch_path",
+            "starter_location_key": "square",
+            "starter_location_name": "Founders Reach",
+            "lore_location_key": "archive_steps",
+            "lore_location_name": "Archive Steps",
+            "followup_location_key": "watch_path",
+            "followup_location_name": "Watch Path",
+            "world_name": "Founders Reach",
+            "reward_name": "Lantern Sigil",
+            "faction_name": "Founders Watch",
+            "branch_labels": {"watch_oath": "Watch Oath", "lantern_whispers": "Lantern Whispers"},
+        },
         "location": {"id": "starter", "name": "Founders Reach", "description": "Starter plaza"},
         "chapter": {
             "id": "chapter-open",

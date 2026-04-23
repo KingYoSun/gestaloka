@@ -177,27 +177,27 @@ def _seed_routes(db: Session, world_id: str) -> list[dict[str, Any]]:
 
 
 def _starter_location_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("starter_location_key") or "square")
+    return str(_seed_section(db, world_id, "roles").get("starter_location_key") or "starter")
 
 
 def _lore_location_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("lore_location_key") or "archive_steps")
+    return str(_seed_section(db, world_id, "roles").get("lore_location_key") or "lore")
 
 
 def _followup_location_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("followup_location_key") or "watch_path")
+    return str(_seed_section(db, world_id, "roles").get("followup_location_key") or "followup")
 
 
 def _starter_stage_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("starter_stage_key") or "starter_watch")
+    return str(_seed_section(db, world_id, "roles").get("starter_stage_key") or "starter_stage")
 
 
 def _followup_stage_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("followup_stage_key") or "watch_path_followup")
+    return str(_seed_section(db, world_id, "roles").get("followup_stage_key") or "followup_stage")
 
 
 def _opening_chapter_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("opening_chapter_key") or "founders_watch_opening")
+    return str(_seed_section(db, world_id, "roles").get("opening_chapter_key") or "opening_chapter")
 
 
 def _followup_chapter_key(db: Session, world_id: str) -> str:
@@ -205,7 +205,7 @@ def _followup_chapter_key(db: Session, world_id: str) -> str:
 
 
 def _reward_effect_kind(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("reward_effect_kind") or "unlock_followup_watch_path")
+    return str(_seed_section(db, world_id, "roles").get("reward_effect_kind") or "unlock_followup_route")
 
 
 def _branch_labels(db: Session, world_id: str) -> dict[str, str]:
@@ -494,9 +494,9 @@ def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
         db,
         world_id=world_id,
         section_name="quest",
-        default_id="starter_watch_request",
-        default_title="First Watch Request",
-        default_description="Help a local traveler, report back what you learned, and earn the watch's trust.",
+        default_id="starter_quest_request",
+        default_title="Starter Request",
+        default_description="Help a local, report back what you learned, and earn enough trust to unlock the next route.",
         default_completion_target=2,
         default_reward_template_key="starter_reward",
         default_reward_name=str(template.quest.reward_name or "World Seal"),
@@ -1298,16 +1298,17 @@ def important_inventory_affordances(inventory: list[dict[str, Any]], *, followup
 
 def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     world_pack = session_state.get("world_pack") or {}
-    starter_location_key = str(world_pack.get("starter_location_key") or "square")
-    lore_location_key = str(world_pack.get("lore_location_key") or "archive_steps")
-    followup_location_key = str(world_pack.get("followup_location_key") or "watch_path")
-    starter_location_name = str(world_pack.get("starter_location_name") or "the square")
-    lore_location_name = str(world_pack.get("lore_location_name") or "the archive steps")
+    starter_location_key = str(world_pack.get("starter_location_key") or "starter")
+    lore_location_key = str(world_pack.get("lore_location_key") or "lore")
+    followup_location_key = str(world_pack.get("followup_location_key") or "followup")
+    starter_location_name = str(world_pack.get("starter_location_name") or "the starting place")
+    lore_location_name = str(world_pack.get("lore_location_name") or "the loreward district")
     followup_location_name = str(world_pack.get("followup_location_name") or "the next route")
-    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
-    followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
-    reward_effect_kind = str(world_pack.get("reward_effect_kind") or "unlock_followup_watch_path")
+    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
+    followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
+    reward_effect_kind = str(world_pack.get("reward_effect_kind") or "unlock_followup_route")
     reward_name = str(world_pack.get("reward_name") or (session_state.get("inventory") or [{}])[0].get("name") or "the seal")
+    faction_name = str(world_pack.get("faction_name") or "the local faction")
     branch_labels = dict(world_pack.get("branch_labels") or {})
     watch_branch_label = str(branch_labels.get("watch_oath") or "Watch Oath")
     whisper_branch_label = str(branch_labels.get("lantern_whispers") or "Lantern Whispers")
@@ -1438,8 +1439,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         progress_choice = {
             **progress_choice,
             "label": "見聞きをまとめて報告し、次の見回りへ繋げる",
-            "summary": "依頼を締め、watch から次の信頼を引き出す。",
-            "canonical_input_text": f"見聞きを報告し、{current_location_name}で次の見回りを引き受ける",
+            "summary": f"依頼を締め、{faction_name}から次の信頼を引き出す。",
+            "canonical_input_text": f"見聞きを報告し、{current_location_name}で次の段取りを引き受ける",
         }
         safe_choice = {
             **safe_choice,
@@ -1500,24 +1501,24 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             safe_choice = {
                 "choice_id": "safe",
                 "posture": "safe",
-                "label": "巡回路の灯を整え、場を静かに安定させる",
+                "label": f"{followup_location_name}の気配を整え、場を静かに安定させる",
                 "summary": "危険を抑えつつ、場の安定を優先する。",
-                "canonical_input_text": "開いた巡回路の灯を整え、場を静かに安定させる",
+                "canonical_input_text": f"開いた{followup_location_name}の気配を整え、場を静かに安定させる",
                 "action_kind": "narrative",
             }
             explore_choice = {
                 "choice_id": "explore",
                 "posture": "explore",
-                "label": "巡回路の痕跡や見張りの記憶を集め、関係の糸口を探る",
+                "label": f"{followup_location_name}の痕跡や現地の記憶を集め、関係の糸口を探る",
                 "summary": "探索と関係変化に寄せた選択。",
-                "canonical_input_text": f"{reward_name}で開いた巡回路の痕跡や見張りの記憶を集める",
+                "canonical_input_text": f"{reward_name}で開いた{followup_location_name}の痕跡や現地の記憶を集める",
                 "action_kind": "narrative",
             }
         if current_branch == "watch_oath":
             safe_choice = {
                 **safe_choice,
-                "label": "見張りの秩序を崩さず、約束の線を丁寧に保つ",
-                "canonical_input_text": "見張りの秩序を崩さず、約束の線を丁寧に保つ",
+                "label": "表に出た秩序を崩さず、今の線を丁寧に保つ",
+                "canonical_input_text": "表に出た秩序を崩さず、今の線を丁寧に保つ",
             }
             progress_choice = {
                 **progress_choice,
@@ -1526,24 +1527,24 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             }
             explore_choice = {
                 **explore_choice,
-                "label": "秩序の裏でまだ揺れている噂やためらいを探る",
-                "canonical_input_text": "秩序の裏でまだ揺れている噂やためらいを探る",
+                "label": "表の流れの裏でまだ揺れている気配を探る",
+                "canonical_input_text": "表の流れの裏でまだ揺れている気配を探る",
             }
         elif current_branch == "lantern_whispers":
             safe_choice = {
                 **safe_choice,
-                "label": "広がりすぎた噂を刺激せず、灯の下の空気を読む",
-                "canonical_input_text": "広がりすぎた噂を刺激せず、灯の下の空気を読む",
+                "label": "広がりすぎた噂を刺激せず、静かな流れを読む",
+                "canonical_input_text": "広がりすぎた噂を刺激せず、静かな流れを読む",
             }
             progress_choice = {
                 **progress_choice,
-                "label": f"{whisper_branch_label}を辿り、街の quieter path を前へ進める",
-                "canonical_input_text": f"{whisper_branch_label}を辿り、街の quieter path を前へ進める",
+                "label": f"{whisper_branch_label}に沿って前へ進み、裏の流れを確かめる",
+                "canonical_input_text": f"{whisper_branch_label}に沿って前へ進み、裏の流れを確かめる",
             }
             explore_choice = {
                 **explore_choice,
-                "label": "噂の外縁に残る formal path の影を探る",
-                "canonical_input_text": "噂の外縁に残る formal path の影を探る",
+                "label": "静かな流れの外縁に残る別の糸を探る",
+                "canonical_input_text": "静かな流れの外縁に残る別の糸を探る",
             }
         elif crossroads_summary:
             safe_choice = {
@@ -1554,24 +1555,24 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             if dominant_branch == "watch_oath":
                 progress_choice = {
                     **progress_choice,
-                    "label": "見張りの側へ少し踏み込み、formal path を前へ押す",
-                    "canonical_input_text": "見張りの側へ少し踏み込み、formal path を前へ押す",
+                    "label": f"{watch_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
+                    "canonical_input_text": f"{watch_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
                 }
                 explore_choice = {
                     **explore_choice,
-                    "label": "街の rumor 側にまだ残る別の糸を拾う",
-                    "canonical_input_text": "街の rumor 側にまだ残る別の糸を拾う",
+                    "label": f"{whisper_branch_label}の側にまだ残る別の糸を拾う",
+                    "canonical_input_text": f"{whisper_branch_label}の側にまだ残る別の糸を拾う",
                 }
             elif dominant_branch == "lantern_whispers":
                 progress_choice = {
                     **progress_choice,
-                    "label": f"噂と灯の側へ少し踏み込み、{whisper_branch_label}を前へ押す",
-                    "canonical_input_text": f"噂と灯の側へ少し踏み込み、{whisper_branch_label}を前へ押す",
+                    "label": f"{whisper_branch_label}の側へ少し踏み込み、その流れを前へ押す",
+                    "canonical_input_text": f"{whisper_branch_label}の側へ少し踏み込み、その流れを前へ押す",
                 }
                 explore_choice = {
                     **explore_choice,
-                    "label": "見張りの oath 側にまだ残る formal な糸を拾う",
-                    "canonical_input_text": "見張りの oath 側にまだ残る formal な糸を拾う",
+                    "label": f"{watch_branch_label}の側にまだ残る別の糸を拾う",
+                    "canonical_input_text": f"{watch_branch_label}の側にまだ残る別の糸を拾う",
                 }
 
     archive_route = route_to(lore_location_key)
@@ -1590,17 +1591,17 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         progress_choice = {
             "choice_id": "progress",
             "posture": "progress",
-            "label": "石段の上で古い記録を辿り、次の糸口を掴む",
+            "label": f"{lore_location_name}で手掛かりを辿り、次の糸口を掴む",
             "summary": f"{lore_location_name}側で状況を前へ進める。",
-            "canonical_input_text": f"{lore_location_name}で古い記録と見張りの話を辿る",
+            "canonical_input_text": f"{lore_location_name}で古い記録と現地の話を辿る",
             "action_kind": "narrative",
         }
         if square_route is not None and bool(square_route.get("available")):
             safe_choice = {
                 "choice_id": "safe",
                 "posture": "safe",
-                "label": "いったん広場へ戻り、場の流れを確かめ直す",
-                "summary": "Square へ戻って場の圧力を測り直す。",
+                "label": f"いったん{starter_location_name}へ戻り、場の流れを確かめ直す",
+                "summary": "起点へ戻って場の圧力を測り直す。",
                 "canonical_input_text": f"{starter_location_name}へ戻る",
                 "action_kind": "travel",
                 "travel_target_key": starter_location_key,
@@ -1667,9 +1668,10 @@ def build_session_state(
     nearby_routes = list_nearby_routes(db, world_id, location_id)
     recent_travel_history = list_recent_travel_history(db, world_id, actor_id)
     chapter_key = str((chapter or {}).get("key") or "")
+    followup_chapter_key = str(world_info.get("followup_chapter_key") or "")
     route_pressures = (
         list_route_pressures(db, world_id=world_id, actor_id=actor_id, chapter_key=chapter_key)
-        if chapter_key == "watch_path_followup"
+        if followup_chapter_key and chapter_key == followup_chapter_key
         else []
     )
     branch_hint = player_visible_branch_hint(
@@ -1680,10 +1682,18 @@ def build_session_state(
                 next((item["pressure"] for item in route_pressures if item["route_key"] == "lantern_whispers"), 0.0)
             ),
         },
-        crossroads_status=str((chapter or {}).get("branch_status") or ("open" if route_pressures and chapter_key == "watch_path_followup" else "none")),
+        crossroads_status=str(
+            (chapter or {}).get("branch_status")
+            or ("open" if route_pressures and followup_chapter_key and chapter_key == followup_chapter_key else "none")
+        ),
     )
     if chapter is not None:
-        if not str(chapter.get("crossroads_summary") or "").strip() and route_pressures and chapter_key == "watch_path_followup":
+        if (
+            not str(chapter.get("crossroads_summary") or "").strip()
+            and route_pressures
+            and followup_chapter_key
+            and chapter_key == followup_chapter_key
+        ):
             chapter["crossroads_summary"] = crossroads_summary_text(
                 current_branch=chapter.get("current_branch"),
                 crossroads_status=str(chapter.get("branch_status") or "open"),
@@ -1921,7 +1931,7 @@ def apply_consequence_updates(
                 "actor_id": counterpart_actor_id,
                 "display_name": counterpart_name or "Unknown counterpart",
                 "band": band,
-                "summary": relationship_summary(counterpart_name or "The square", band),
+                "summary": relationship_summary(counterpart_name or "The district", band),
                 "delta": round(outcome.relationship_delta, 3),
             }
         )

@@ -133,7 +133,9 @@ test("login, travel across founders reach, unlock watch path, and keep SP separa
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await submitFreeText("Archivist Neraとの約束を守り、Watch OathとしてLantern Sigilの務めを引き受ける");
   }
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/crossroads|watch path/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/follow-up route|formal oath|watch path/i, {
+    timeout: slowTimeout,
+  });
   await expect(page.getByTestId("choice-list")).toContainText(/Watch Oath|Lantern Whispers|formal path|rumor/i, {
     timeout: slowTimeout,
   });

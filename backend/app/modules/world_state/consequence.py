@@ -73,15 +73,15 @@ def scene_tone_for_band(outcome_band: OutcomeBand) -> str:
 
 def thread_title(thread_type: ThreadType) -> str:
     return {
-        "promise": "A promise hangs in the square",
-        "rumor": "A rumor moves along the watch path",
+        "promise": "A promise remains unresolved",
+        "rumor": "A rumor keeps moving through the district",
         "scrutiny": "Watchful eyes linger",
         "debt": "An unpaid kindness remains",
     }[thread_type]
 
 
 def thread_summary(thread_type: ThreadType, pressure_band: PressureBand, *, counterpart_name: str | None = None) -> str:
-    subject = counterpart_name or "The square"
+    subject = counterpart_name or "The district"
     if thread_type == "promise":
         if pressure_band == "high":
             return f"{subject} still holds you to words that have not yet been answered."
@@ -237,7 +237,7 @@ class ConsequenceRuleEngine:
                 thread_status=thread_status,
                 pressure_band=pressure_band,
                 scene_tone=scene_tone_for_band("steady"),
-                summary="The sigil is taken seriously, and the square answers with a steadier kind of trust.",
+                summary="The reward token is taken seriously, and the scene answers with a steadier kind of trust.",
             )
 
         if "kept_promise" in consequence_tags:
