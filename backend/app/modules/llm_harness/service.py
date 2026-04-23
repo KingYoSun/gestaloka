@@ -1132,6 +1132,8 @@ class ModelRouter:
                 world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
         except Exception:
             return prompt
+        if world is None:
+            return prompt
         metadata = world_pack_metadata(world)
         try:
             overlay = self.pack_registry.resolve_prompt_overlay(

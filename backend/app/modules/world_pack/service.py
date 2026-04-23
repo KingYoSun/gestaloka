@@ -394,6 +394,16 @@ class PackRegistry:
                 )
 
 
+def load_pack_from_dir(pack_dir: Path | str, pack_id: str) -> LoadedWorldPack:
+    resolved_dir = Path(pack_dir).resolve()
+    manifest_path = resolved_dir / pack_id / "pack.yaml"
+    if not manifest_path.exists():
+        raise KeyError(f"Unknown pack_id: {pack_id}")
+    registry = PackRegistry.__new__(PackRegistry)
+    registry.pack_dir = resolved_dir
+    return registry._load_pack(manifest_path)
+
+
 def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:
     global _ACTIVE_PACK_DIR, _ACTIVE_REGISTRY
     resolved_dir = Path(pack_dir).resolve()
@@ -421,6 +431,8 @@ def world_pack_metadata(world: World | None) -> dict[str, Any]:
 
 def resolve_world_pack(db: Session, world_id: str) -> tuple[LoadedWorldPack, WorldTemplateDefinition]:
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    if world is None:
+        raise LookupError(f"World not found: {world_id}")
     registry = get_pack_registry()
     metadata = world_pack_metadata(world)
     pack = registry.get_pack(metadata["pack_id"])
@@ -430,6 +442,8 @@ def resolve_world_pack(db: Session, world_id: str) -> tuple[LoadedWorldPack, Wor
 
 def world_pack_summary(db: Session, world_id: str) -> dict[str, Any]:
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    if world is None:
+        raise LookupError(f"World not found: {world_id}")
     registry = get_pack_registry()
     metadata = world_pack_metadata(world)
     pack = registry.get_pack(metadata["pack_id"])

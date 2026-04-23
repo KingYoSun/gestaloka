@@ -12,7 +12,7 @@ from app.models.entities import Actor, Event, Session as GameSession, Turn, Worl
 from app.modules.world_memory.service import MemoryService
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
 @pytest.mark.skipif(

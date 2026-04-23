@@ -15,7 +15,7 @@ from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_memory.service import MemoryService
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
 def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
@@ -32,11 +32,15 @@ def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
                 "cases:",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
+                "    pack_id: founders_reach",
+                "    world_template_id: founders_reach",
                 "    player_name: Demo Player",
                 "    npc_name: Archivist Nera",
                 "    input_text: one",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
+                "    pack_id: founders_reach",
+                "    world_template_id: founders_reach",
                 "    player_name: Demo Player",
                 "    npc_name: Archivist Nera",
                 "    input_text: two",

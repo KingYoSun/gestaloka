@@ -143,7 +143,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["quests"][0]["progress"] == 0
     assert state_response.json()["quests"][0]["stage_key"] == world_pack["starter_stage_key"]
     assert state_response.json()["chapter"]["key"] == world_pack["opening_chapter_key"]
-    assert "Founders Square" in state_response.json()["current_scene"]["summary"]
+    assert state_response.json()["current_location"]["name"] in state_response.json()["current_scene"]["summary"]
     assert state_response.json()["current_location"]["key"] == world_pack["starter_location_key"]
     assert state_response.json()["local_figures"]
     assert state_response.json()["nearby_routes"]

@@ -4,6 +4,8 @@ expected_output_schema: council_turn_resolution_v1
 cases:
   - case_id: fallback-main-to-pro
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: __force_invalid_main__ 広場で灯をともす
@@ -20,6 +22,8 @@ cases:
     expect_failure_reason: null
   - case_id: council-rejected-422
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: __force_safety_reject__ 広場で灯をともす
@@ -36,6 +40,8 @@ cases:
     expect_failure_reason: forced safety rejection
   - case_id: fail-forward-impossible-free-text
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: 空を飛んで広場の上から一気に全部を解決する

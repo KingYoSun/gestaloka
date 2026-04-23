@@ -23,20 +23,6 @@ BranchSignal = Literal[
 
 FORMAL_PATH_SLOT: BranchSlot = "formal_path"
 UNDERCURRENT_PATH_SLOT: BranchSlot = "undercurrent_path"
-LEGACY_FOLLOWUP_BRANCHES: dict[BranchSlot, dict[str, Any]] = {
-    FORMAL_PATH_SLOT: {
-        "slot": FORMAL_PATH_SLOT,
-        "branch_key": "watch_oath",
-        "label": "Watch Oath",
-        "anchor_npcs": [],
-    },
-    UNDERCURRENT_PATH_SLOT: {
-        "slot": UNDERCURRENT_PATH_SLOT,
-        "branch_key": "lantern_whispers",
-        "label": "Lantern Whispers",
-        "anchor_npcs": [],
-    },
-}
 
 
 @dataclass(frozen=True)
@@ -75,38 +61,24 @@ def _followup_branches_from_world_pack(world_pack: Mapping[str, Any] | None) -> 
         candidate_mapping = serialized
     elif all(isinstance(raw.get(slot), dict) for slot in FOLLOWUP_BRANCH_SLOTS):
         candidate_mapping = raw
-    if candidate_mapping is not None:
-        normalized: dict[BranchSlot, dict[str, Any]] = {}
-        for slot in FOLLOWUP_BRANCH_SLOTS:
-            item = candidate_mapping.get(slot)
-            if not isinstance(item, dict):
-                continue
-            branch_key = str(item.get("branch_key") or "").strip()
-            label = str(item.get("label") or "").strip() or branch_key.replace("_", " ").title()
-            anchor_npcs = [str(name).strip() for name in item.get("anchor_npcs") or [] if str(name).strip()]
-            if branch_key:
-                normalized[slot] = {
-                    "slot": slot,
-                    "branch_key": branch_key,
-                    "label": label,
-                    "anchor_npcs": anchor_npcs,
-                }
-        if len(normalized) == len(FOLLOWUP_BRANCH_SLOTS):
-            return normalized
+    if candidate_mapping is None:
+        raise ValueError("world pack is missing followup_branches")
 
-    labels = dict(raw.get("branch_labels") or {})
-    return {
-        FORMAL_PATH_SLOT: {
-            **LEGACY_FOLLOWUP_BRANCHES[FORMAL_PATH_SLOT],
-            "label": str(labels.get("watch_oath") or LEGACY_FOLLOWUP_BRANCHES[FORMAL_PATH_SLOT]["label"]),
-        },
-        UNDERCURRENT_PATH_SLOT: {
-            **LEGACY_FOLLOWUP_BRANCHES[UNDERCURRENT_PATH_SLOT],
-            "label": str(
-                labels.get("lantern_whispers") or LEGACY_FOLLOWUP_BRANCHES[UNDERCURRENT_PATH_SLOT]["label"]
-            ),
-        },
-    }
+    normalized: dict[BranchSlot, dict[str, Any]] = {}
+    for slot in FOLLOWUP_BRANCH_SLOTS:
+        item = candidate_mapping.get(slot)
+        if not isinstance(item, Mapping):
+            raise ValueError(f"world pack is missing followup branch slot {slot}")
+        branch_key = str(item.get("branch_key") or "").strip()
+        if not branch_key:
+            raise ValueError(f"world pack followup branch slot {slot} is missing branch_key")
+        normalized[slot] = {
+            "slot": slot,
+            "branch_key": branch_key,
+            "label": str(item.get("label") or "").strip() or branch_key.replace("_", " ").title(),
+            "anchor_npcs": [str(name).strip() for name in item.get("anchor_npcs") or [] if str(name).strip()],
+        }
+    return normalized
 
 
 def _followup_branches_for_world(db: Session, world_id: str) -> dict[BranchSlot, dict[str, Any]]:

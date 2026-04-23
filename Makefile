@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_COMPOSE_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -11,6 +11,18 @@ compose-down:
 
 backend-test:
 	PYTHONPATH=backend python -m pytest tests/backend
+
+backend-test-engine:
+	PYTHONPATH=backend python -m pytest tests/backend/engine
+
+backend-test-packs:
+	PYTHONPATH=backend python -m pytest tests/backend/packs/founders_reach tests/backend/packs/ember_harbor
+
+pack-list:
+	PYTHONPATH=backend python -m app.modules.world_pack list
+
+pack-validate:
+	PYTHONPATH=backend python -m app.modules.world_pack validate
 
 build-frontend:
 	$(COMPOSE) build frontend
@@ -26,6 +38,7 @@ frontend-e2e:
 
 verify-v2:
 	$(MAKE) backend-test
+	$(MAKE) pack-validate
 	$(MAKE) scan-v1-terms
 	$(MAKE) check-legacy
 	$(MAKE) build-frontend

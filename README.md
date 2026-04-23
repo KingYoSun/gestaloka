@@ -33,7 +33,7 @@ password: demo-password
 
 - `PYTHONPATH=backend pytest tests/backend` verifies the backend slice directly.
 - `make build-frontend` is the official frontend build path. It runs inside Docker/Compose instead of the host shell.
-- `make frontend-e2e` is the official full-stack Playwright smoke path. It runs `tests/e2e/turn-memory.spec.ts` through Compose, waits for `backend` / `frontend` / `keycloak` readiness, and cleans the stack afterward.
+- `make frontend-e2e` is the official full-stack Playwright smoke path. It runs the Playwright smoke specs under `tests/e2e/` through Compose, waits for `backend` / `frontend` / `keycloak` readiness, and cleans the stack afterward.
 - `make verify-v2` is the canonical local and CI verification entrypoint. It runs backend tests, v1 terminology checks, legacy layout checks, the containerized frontend build, and the containerized E2E smoke in order.
 - `GET /worlds/packs` exposes the bundled pack and template catalog used by the session bootstrap UI.
 - Host `npm run build` remains a convenience path only. In mixed WSL/Windows environments it is non-authoritative and may fail even when the Compose verification path is healthy.

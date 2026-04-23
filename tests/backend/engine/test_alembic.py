@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, inspect
 def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     db_path = tmp_path / "alembic.db"
     sqlite_url = f"sqlite:///{db_path}"
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
     alembic_path = repo_root / "backend" / "alembic.ini"
 
     monkeypatch.setenv("ALEMBIC_DATABASE_URL", sqlite_url)

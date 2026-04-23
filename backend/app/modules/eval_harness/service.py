@@ -29,7 +29,13 @@ from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import ModelRouter, PromptRouteOverride, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
-from app.modules.world_pack.service import PackRegistry, branch_labels_from_followup_branches
+from app.modules.world_pack.service import (
+    PackRegistry,
+    branch_labels_from_followup_branches,
+    get_pack_registry,
+    resolve_world_pack,
+    serialize_followup_branches,
+)
 from app.modules.world_memory.service import (
     MemoryRetrievalTrace,
     MemoryService,
@@ -45,6 +51,8 @@ class EvalCaseInput:
     case_id: str
     prompt_id: str
     world_id: str
+    pack_id: str
+    world_template_id: str
     player_name: str
     npc_name: str
     input_text: str
@@ -1078,58 +1086,59 @@ class EvalHarnessService:
                 if case_id in case_ids:
                     raise ValueError(f"Dataset {dataset_id} includes duplicate case_id {case_id}")
                 case_ids.add(case_id)
-                cases.append(
-                    EvalCaseInput(
-                        case_id=case_id,
-                        prompt_id=prompt_id,
-                        world_id=str(raw_case.get("world_id", "")).strip(),
-                        player_name=str(raw_case.get("player_name", "")).strip(),
-                        npc_name=str(raw_case.get("npc_name", "")).strip(),
-                        input_text=str(raw_case.get("input_text", "")).strip(),
-                        input_mode=str(raw_case.get("input_mode", "free_text")).strip() or "free_text",
-                        choice_id=(
-                            str(raw_case.get("choice_id")).strip()
-                            if raw_case.get("choice_id") is not None
-                            else None
-                        ),
-                        relevant_memories=[str(item) for item in raw_case.get("relevant_memories") or []],
-                        relation_context=[str(item) for item in raw_case.get("relation_context") or []],
-                        graph_context_status=str(raw_case.get("graph_context_status", "ready")).strip() or "ready",
-                        expect_success=bool(raw_case.get("expect_success", True)),
-                        expect_final_lane=str(raw_case.get("expect_final_lane", prompt.model_lane)).strip(),
-                        expect_fallback=bool(raw_case.get("expect_fallback", False)),
-                        expect_failure_reason=(
-                            str(raw_case.get("expect_failure_reason")).strip()
-                            if raw_case.get("expect_failure_reason") is not None
-                            else None
-                        ),
-                        expected_world_tags=[str(item) for item in raw_case.get("expected_world_tags") or []] or None,
-                        quest_context=dict(raw_case.get("quest_context") or {}) or None,
-                        expect_progress_after=(
-                            int(raw_case.get("expect_progress_after"))
-                            if raw_case.get("expect_progress_after") is not None
-                            else None
-                        ),
-                        expect_reward_issued=(
-                            bool(raw_case.get("expect_reward_issued"))
-                            if raw_case.get("expect_reward_issued") is not None
-                            else None
-                        ),
-                        expect_standing_after=(
-                            float(raw_case.get("expect_standing_after"))
-                            if raw_case.get("expect_standing_after") is not None
-                            else None
-                        ),
-                        expect_retrieval_status=(
-                            str(raw_case.get("expect_retrieval_status")).strip()
-                            if raw_case.get("expect_retrieval_status") is not None
-                            else None
-                        ),
-                        expect_retrieval_hit_substring=(
-                            str(raw_case.get("expect_retrieval_hit_substring")).strip()
-                            if raw_case.get("expect_retrieval_hit_substring") is not None
-                            else None
-                        ),
+                case = EvalCaseInput(
+                    case_id=case_id,
+                    prompt_id=prompt_id,
+                    world_id=str(raw_case.get("world_id", "")).strip(),
+                    pack_id=str(raw_case.get("pack_id", "")).strip(),
+                    world_template_id=str(raw_case.get("world_template_id", "")).strip(),
+                    player_name=str(raw_case.get("player_name", "")).strip(),
+                    npc_name=str(raw_case.get("npc_name", "")).strip(),
+                    input_text=str(raw_case.get("input_text", "")).strip(),
+                    input_mode=str(raw_case.get("input_mode", "free_text")).strip() or "free_text",
+                    choice_id=(
+                        str(raw_case.get("choice_id")).strip()
+                        if raw_case.get("choice_id") is not None
+                        else None
+                    ),
+                    relevant_memories=[str(item) for item in raw_case.get("relevant_memories") or []],
+                    relation_context=[str(item) for item in raw_case.get("relation_context") or []],
+                    graph_context_status=str(raw_case.get("graph_context_status", "ready")).strip() or "ready",
+                    expect_success=bool(raw_case.get("expect_success", True)),
+                    expect_final_lane=str(raw_case.get("expect_final_lane", prompt.model_lane)).strip(),
+                    expect_fallback=bool(raw_case.get("expect_fallback", False)),
+                    expect_failure_reason=(
+                        str(raw_case.get("expect_failure_reason")).strip()
+                        if raw_case.get("expect_failure_reason") is not None
+                        else None
+                    ),
+                    expected_world_tags=[str(item) for item in raw_case.get("expected_world_tags") or []] or None,
+                    quest_context=dict(raw_case.get("quest_context") or {}) or None,
+                    expect_progress_after=(
+                        int(raw_case.get("expect_progress_after"))
+                        if raw_case.get("expect_progress_after") is not None
+                        else None
+                    ),
+                    expect_reward_issued=(
+                        bool(raw_case.get("expect_reward_issued"))
+                        if raw_case.get("expect_reward_issued") is not None
+                        else None
+                    ),
+                    expect_standing_after=(
+                        float(raw_case.get("expect_standing_after"))
+                        if raw_case.get("expect_standing_after") is not None
+                        else None
+                    ),
+                    expect_retrieval_status=(
+                        str(raw_case.get("expect_retrieval_status")).strip()
+                        if raw_case.get("expect_retrieval_status") is not None
+                        else None
+                    ),
+                    expect_retrieval_hit_substring=(
+                        str(raw_case.get("expect_retrieval_hit_substring")).strip()
+                        if raw_case.get("expect_retrieval_hit_substring") is not None
+                        else None
+                    ),
                     expect_retrieval_min_hits=(
                         int(raw_case.get("expect_retrieval_min_hits"))
                         if raw_case.get("expect_retrieval_min_hits") is not None
@@ -1152,8 +1161,13 @@ class EvalHarnessService:
                     ]
                     or None,
                     session_state_overrides=dict(raw_case.get("session_state_overrides") or {}) or None,
-                    )
                 )
+                if prompt_id == "session.turn_resolution":
+                    if not case.pack_id:
+                        raise ValueError(f"Dataset {dataset_id} case {case_id} is missing pack_id")
+                    if not case.world_template_id:
+                        raise ValueError(f"Dataset {dataset_id} case {case_id} is missing world_template_id")
+                cases.append(case)
             if not cases:
                 raise ValueError(f"Dataset {dataset_id} does not define any cases")
             datasets[dataset_id] = EvalDataset(
@@ -1198,6 +1212,7 @@ class EvalHarnessService:
             )
             if player_actor is None or npc_actor is None:
                 continue
+            pack, template = resolve_world_pack(db, turn.world_id)
             graph_context = self.projection_service.resolve_relation_context(
                 db,
                 world_id=turn.world_id,
@@ -1212,6 +1227,8 @@ class EvalHarnessService:
                         case_id="shadow-bootstrap",
                         prompt_id="session.turn_resolution",
                         world_id=turn.world_id,
+                        pack_id=pack.manifest.pack_id,
+                        world_template_id=template.template_id,
                         player_name=player_actor.display_name,
                         npc_name=npc_actor.display_name,
                         input_text=turn.input_text,
@@ -1238,6 +1255,8 @@ class EvalHarnessService:
                     case_id=f"shadow-{turn.id}",
                     prompt_id="session.turn_resolution",
                     world_id=turn.world_id,
+                    pack_id=pack.manifest.pack_id,
+                    world_template_id=template.template_id,
                     player_name=player_actor.display_name,
                     npc_name=npc_actor.display_name,
                     input_text=turn.input_text,
@@ -1282,65 +1301,127 @@ class EvalHarnessService:
         except KeyError as exc:
             raise KeyError(f"Unknown eval dataset: {dataset_name}") from exc
 
-    @staticmethod
-    def _session_state_for_case(case: EvalCaseInput) -> dict[str, object]:
+    def _session_state_for_case(self, case: EvalCaseInput) -> dict[str, object]:
         quest_progress = int((case.quest_context or {}).get("current_progress", 0))
         progress_target = int((case.quest_context or {}).get("progress_target", 2))
         current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
-        world_pack = dict((case.quest_context or {}).get("world_pack") or {})
-        followup_branches = dict(world_pack.get("followup_branches") or {})
-        if not followup_branches:
-            followup_branches = {
-                "formal_path": {"branch_key": "watch_oath", "label": "Watch Oath", "anchor_npcs": []},
-                "undercurrent_path": {"branch_key": "lantern_whispers", "label": "Lantern Whispers", "anchor_npcs": []},
-            }
-        stage_key = str((case.quest_context or {}).get("stage_key") or world_pack.get("starter_stage_key") or "starter_watch")
-        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_watch")
-        followup_stage_key = str(world_pack.get("followup_stage_key") or "watch_path_followup")
-        opening_chapter_key = str(world_pack.get("opening_chapter_key") or "founders_watch_opening")
-        followup_chapter_key = str(world_pack.get("followup_chapter_key") or "watch_path_followup")
+        if not case.pack_id or not case.world_template_id:
+            raise ValueError(f"Eval case {case.case_id} is missing pack_id/world_template_id")
+
+        registry = self.pack_registry or get_pack_registry(self.settings)
+        pack = registry.get_pack(case.pack_id)
+        template = pack.template(case.world_template_id)
+        world_pack_overrides = dict((case.quest_context or {}).get("world_pack") or {})
+        roles = template.roles.model_dump()
+        locations = {key: value.model_dump() for key, value in template.locations.items()}
+        followup_branches = serialize_followup_branches(template.roles.followup_branches)
+        starter_stage_key = str(roles.get("starter_stage_key") or "starter_stage")
+        followup_stage_key = str(roles.get("followup_stage_key") or "followup_stage")
+        opening_chapter_key = str(roles.get("opening_chapter_key") or "opening_chapter")
+        followup_chapter_key = str(roles.get("followup_chapter_key") or "followup_chapter")
+        reward_effect_kind = str(roles.get("reward_effect_kind") or "unlock_followup_route")
+        starter_location_key = str(roles.get("starter_location_key") or "starter")
+        lore_location_key = str(roles.get("lore_location_key") or "lore")
+        followup_location_key = str(roles.get("followup_location_key") or "followup")
+        starter_location = dict(locations.get(starter_location_key) or {"id": starter_location_key, "name": "Starter"})
+        lore_location = dict(locations.get(lore_location_key) or {"id": lore_location_key, "name": "Lore"})
+        followup_location = dict(
+            locations.get(followup_location_key) or {"id": followup_location_key, "name": "Follow-up"}
+        )
+        stage_key = str((case.quest_context or {}).get("stage_key") or starter_stage_key)
         chapter_key = followup_chapter_key if stage_key == followup_stage_key else opening_chapter_key
+        inventory_items = list((case.quest_context or {}).get("inventory_items") or [])
+        current_location_key = str((case.quest_context or {}).get("current_location_key") or "").strip()
+        if not current_location_key:
+            if stage_key == followup_stage_key and any(str(item.get("status") or "") == "used" for item in inventory_items):
+                current_location_key = starter_location_key
+            elif stage_key == followup_stage_key and quest_progress > 0:
+                current_location_key = followup_location_key
+            else:
+                current_location_key = starter_location_key
+        current_location = dict(locations.get(current_location_key) or starter_location)
+        world_name = str(
+            world_pack_overrides.get("world_name")
+            or (template.world or {}).get("default_name")
+            or template.display_name
+        )
+        reward_name = str(world_pack_overrides.get("reward_name") or template.quest.reward_name or "the seal")
+        faction_name = str(world_pack_overrides.get("faction_name") or template.faction.name or "the local faction")
+        world_pack = {
+            "pack_id": pack.manifest.pack_id,
+            "world_template_id": template.template_id,
+            "starter_stage_key": starter_stage_key,
+            "followup_stage_key": followup_stage_key,
+            "opening_chapter_key": opening_chapter_key,
+            "followup_chapter_key": followup_chapter_key,
+            "reward_effect_kind": reward_effect_kind,
+            "starter_location_key": starter_location_key,
+            "starter_location_name": str(starter_location.get("name") or starter_location_key),
+            "lore_location_key": lore_location_key,
+            "lore_location_name": str(lore_location.get("name") or lore_location_key),
+            "followup_location_key": followup_location_key,
+            "followup_location_name": str(followup_location.get("name") or followup_location_key),
+            "world_name": world_name,
+            "reward_name": reward_name,
+            "faction_name": faction_name,
+            "followup_branches": followup_branches,
+            "branch_labels": branch_labels_from_followup_branches(followup_branches),
+        }
+        world_pack.update(world_pack_overrides)
+        world_pack["followup_branches"] = dict(world_pack.get("followup_branches") or followup_branches)
+        world_pack["branch_labels"] = dict(
+            world_pack.get("branch_labels") or branch_labels_from_followup_branches(world_pack["followup_branches"])
+        )
+        quest_definition = template.followup_quest if stage_key == followup_stage_key else template.quest
+        chapter_summary = (
+            f"The opening chapter of {world_name} is still gathering the world's first trust."
+            if chapter_key == opening_chapter_key
+            else f"The follow-up route toward {world_pack['followup_location_name']} is currently active."
+        )
+        scene_summary = (
+            f"The scene around {current_location.get('name') or current_location_key} is still reading the current request."
+            if chapter_key == opening_chapter_key
+            else f"The scene is turning toward {world_pack['followup_location_name']} and what the unlocked route now asks."
+        )
         base_state: dict[str, object] = {
             "world_id": case.world_id,
-            "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
-            "world_pack": {
-                "starter_stage_key": starter_stage_key,
-                "followup_stage_key": followup_stage_key,
-                "opening_chapter_key": opening_chapter_key,
-                "followup_chapter_key": followup_chapter_key,
-                "reward_effect_kind": str(world_pack.get("reward_effect_kind") or "unlock_followup_watch_path"),
-                "starter_location_key": str(world_pack.get("starter_location_key") or "square"),
-                "starter_location_name": str(world_pack.get("starter_location_name") or "Founders Reach"),
-                "lore_location_key": str(world_pack.get("lore_location_key") or "archive_steps"),
-                "lore_location_name": str(world_pack.get("lore_location_name") or "Archive Steps"),
-                "followup_location_key": str(world_pack.get("followup_location_key") or "watch_path"),
-                "followup_location_name": str(world_pack.get("followup_location_name") or "Watch Path"),
-                "world_name": str(world_pack.get("world_name") or "Founders Reach"),
-                "reward_name": str(world_pack.get("reward_name") or "Lantern Sigil"),
-                "faction_name": str(world_pack.get("faction_name") or "Founders Watch"),
-                "followup_branches": followup_branches,
-                "branch_labels": dict(world_pack.get("branch_labels") or branch_labels_from_followup_branches(followup_branches)),
+            "location": {
+                "id": str(current_location.get("id") or current_location_key),
+                "key": current_location_key,
+                "name": str(current_location.get("name") or current_location_key),
+                "description": str(current_location.get("description") or "Eval fixture"),
             },
+            "current_location": {
+                "id": str(current_location.get("id") or current_location_key),
+                "key": current_location_key,
+                "name": str(current_location.get("name") or current_location_key),
+                "description": str(current_location.get("description") or "Eval fixture"),
+            },
+            "world_pack": world_pack,
             "chapter": {
                 "id": "eval-chapter",
                 "key": chapter_key,
                 "status": "active",
-                "summary": "Eval chapter fixture",
+                "summary": chapter_summary,
             },
             "current_scene": {
                 "id": "eval-scene",
-                "summary": "Eval scene fixture around the current request.",
+                "summary": scene_summary,
                 "pressure_summary": "Eval pressure fixture.",
-                "location": {"id": "eval-location", "name": "Founders Reach", "description": "Eval fixture"},
+                "location": {
+                    "id": str(current_location.get("id") or current_location_key),
+                    "name": str(current_location.get("name") or current_location_key),
+                    "description": str(current_location.get("description") or "Eval fixture"),
+                },
                 "focus_actor": {"actor_id": "eval-npc", "display_name": case.npc_name},
             },
-            "recent_scene_history": ["Eval scene fixture around the current request."],
+            "recent_scene_history": [scene_summary],
             "character": {"actor_id": "eval-actor", "rank": "Wayfarer", "hp": 10, "focus": 5, "status_json": {}},
             "quests": [
                 {
                     "assignment_id": "eval-quest",
-                    "quest_template_id": "starter_watch_request",
-                    "title": str((case.quest_context or {}).get("title") or "First Watch Request"),
+                    "quest_template_id": quest_definition.id,
+                    "title": str((case.quest_context or {}).get("title") or quest_definition.title),
                     "description": "Eval fixture quest",
                     "status": str((case.quest_context or {}).get("status") or "active"),
                     "stage_key": stage_key,
@@ -1354,14 +1435,14 @@ class EvalHarnessService:
             ],
             "factions": [
                 {
-                    "faction_id": "founders_watch",
-                    "name": "Founders Watch",
+                    "faction_id": template.faction.id,
+                    "name": faction_name,
                     "description": "Eval fixture faction",
                     "standing": current_standing,
                     "band": "neutral",
                 }
             ],
-            "inventory": list((case.quest_context or {}).get("inventory_items") or []),
+            "inventory": inventory_items,
         }
         overrides = case.session_state_overrides or {}
         for key, value in overrides.items():
@@ -1370,7 +1451,10 @@ class EvalHarnessService:
         factions = list(base_state.get("factions") or [])
         inventory = list(base_state.get("inventory") or [])
         base_state["narrative_state_bands"] = narrative_state_bands(character, factions)
-        base_state["important_inventory_affordances"] = important_inventory_affordances(inventory)
+        base_state["important_inventory_affordances"] = important_inventory_affordances(
+            inventory,
+            followup_location_name=str(world_pack["followup_location_name"]),
+        )
         base_state["next_choices"] = default_next_choices(base_state)
         return base_state
 

@@ -4,6 +4,8 @@ expected_output_schema: council_turn_resolution_v1
 cases:
   - case_id: smoke-basic
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: 広場で旅人を助け、灯をともす
@@ -38,6 +40,8 @@ cases:
     expect_standing_after: 0.4
   - case_id: smoke-basic-free-text-parity
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: 広場で旅人を助け、灯をともす
@@ -71,6 +75,8 @@ cases:
     expect_standing_after: 0.4
   - case_id: smoke-memory-aware
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: 旅人へ報告し、広場を見回して次の見回りを約束する
@@ -108,6 +114,8 @@ cases:
     expect_standing_after: 0.55
   - case_id: smoke-followup-after-sigil
     world_id: world-alpha
+    pack_id: founders_reach
+    world_template_id: founders_reach
     player_name: Demo Player
     npc_name: Archivist Nera
     input_text: Lantern Sigilで開いた watch path の様子を観察する

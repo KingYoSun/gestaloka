@@ -13,7 +13,7 @@ from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.llm_harness.service import ModelRouter
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
 def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id: str | None = None) -> dict[str, object]:
