@@ -26,6 +26,14 @@ username: demo
 password: demo-password
 ```
 
+## Verification
+
+- `PYTHONPATH=backend pytest tests/backend` verifies the backend slice directly.
+- `make build-frontend` is the official frontend build path. It runs inside Docker/Compose instead of the host shell.
+- `make frontend-e2e` is the official full-stack Playwright smoke path. It runs `tests/e2e/turn-memory.spec.ts` through Compose, waits for `backend` / `frontend` / `keycloak` readiness, and cleans the stack afterward.
+- `make verify-v2` is the canonical local and CI verification entrypoint. It runs backend tests, v1 terminology checks, legacy layout checks, the containerized frontend build, and the containerized E2E smoke in order.
+- Host `npm run build` remains a convenience path only. In mixed WSL/Windows environments it is non-authoritative and may fail even when the Compose verification path is healthy.
+
 ## Initial public interfaces
 
 - `GET /health`
@@ -52,6 +60,7 @@ password: demo-password
 - The graph projection path is outbox-driven. The standard compose stack now targets NebulaGraph, while lightweight test settings still use the recording backend.
 - Runtime stabilization for NebulaGraph includes an init step that registers the storage host before backend and projection worker start.
 - LLM observability uses self-hosted Langfuse for prompt/generation/retrieval/eval traces, while OpenTelemetry remains the infra/metrics layer.
+- The container-first verification targets (`make frontend-e2e`, `make verify-v2`) override model execution to the local `stub` provider and disable telemetry exports so verification does not depend on external AI or observability runtimes.
 - The canonical embedding policy is fixed in [ADR-001](documents/adr/ADR-001-embedding-policy.md).
 - Sessions start with a canonical starter location and a projected `KNOWS` relation between the player and guide NPC.
 - SP is an execution-budget ledger for API/runtime cost only. It is not an in-world currency and does not buy quest, faction, or item power.

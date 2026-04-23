@@ -330,7 +330,7 @@ services:
       MEMORY_RETRIEVAL_LIMIT: ${MEMORY_RETRIEVAL_LIMIT:-8}
       MEMORY_RETRIEVAL_MIN_SCORE: ${MEMORY_RETRIEVAL_MIN_SCORE:-0.1}
       OTEL_SERVICE_NAME: gestaloka-backend
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://otel-collector:4318}
       OTEL_METRICS_HOST: 0.0.0.0
       OTEL_METRICS_PORT: 9464
       LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
@@ -362,10 +362,6 @@ services:
         condition: service_healthy
       nebula-init:
         condition: service_completed_successfully
-      otel-collector:
-        condition: service_started
-      langfuse-web:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -456,6 +452,15 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5173').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     command: npm run dev -- --host 0.0.0.0 --port 5173
 
   backend-canary:
@@ -670,12 +675,30 @@ services:
       - ./tests:/workspace/tests
     depends_on:
       frontend:
-        condition: service_started
+        condition: service_healthy
       backend:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-    command: sh -c "npm install && ln -sfn /workspace/frontend/node_modules /workspace/node_modules && npm run test:e2e"
+    command:
+      - /bin/sh
+      - -eu
+      - -c
+      - |
+          npm ci
+          ln -sfn /workspace/frontend/node_modules /workspace/node_modules
+          wait_for() {
+            target="$$1"
+            label="$$2"
+            until node -e "fetch(process.argv[1]).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" "$$target"; do
+              echo "waiting for $$label at $$target"
+              sleep 2
+            done
+          }
+          wait_for http://127.0.0.1:8000/health backend
+          wait_for http://127.0.0.1:5173 frontend
+          wait_for http://127.0.0.1:8080/realms/gestaloka/.well-known/openid-configuration keycloak
+          npx playwright test ../tests/e2e/turn-memory.spec.ts --reporter=line
 
 volumes:
   postgres_data:

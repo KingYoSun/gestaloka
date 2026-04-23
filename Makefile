@@ -1,16 +1,34 @@
-.PHONY: compose-up compose-down backend-test build-frontend scan-v1-terms check-legacy eval-smoke eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+
+COMPOSE ?= docker compose
+VERIFY_COMPOSE_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
 
 compose-up:
-	docker compose up --build
+	$(COMPOSE) up --build
 
 compose-down:
-	docker compose down -v
+	$(COMPOSE) down -v --remove-orphans
 
 backend-test:
 	PYTHONPATH=backend pytest tests/backend
 
 build-frontend:
-	cd frontend && npm run build
+	$(COMPOSE) build frontend
+	$(COMPOSE) run --rm --no-deps frontend npm run build
+
+frontend-e2e:
+	@set -eu; \
+	$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true; \
+	trap '$(COMPOSE) down -v --remove-orphans' EXIT; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build backend frontend; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) run --rm frontend-e2e
+
+verify-v2:
+	$(MAKE) backend-test
+	$(MAKE) scan-v1-terms
+	$(MAKE) check-legacy
+	$(MAKE) build-frontend
+	$(MAKE) frontend-e2e
 
 eval-smoke:
 	PYTHONPATH=backend python -m app.modules.eval_harness smoke
@@ -37,10 +55,10 @@ canary-probe:
 	PYTHONPATH=backend python -m app.modules.eval_harness canary-probe
 
 observability-up:
-	docker compose up -d otel-collector prometheus grafana
+	$(COMPOSE) up -d otel-collector prometheus grafana
 
 observability-down:
-	docker compose rm -sf otel-collector prometheus grafana
+	$(COMPOSE) rm -sf otel-collector prometheus grafana
 
 scan-v1-terms:
 	@! rg -n "(Neo4j|neomodel|Socket\\.IO|他世界|NPC化|dispatch)" . \
