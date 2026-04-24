@@ -150,6 +150,16 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "npc_actor_id",
         "location_id",
         "websocket_url",
+        "world_context",
+    }
+    assert session_payload["world_context"] == {
+        "world_id": session_payload["world_id"],
+        "world_name": session_payload["world_name"],
+        "pack_id": "ember_harbor",
+        "pack_display_name": "Ember Harbor",
+        "world_template_id": "ember_harbor",
+        "world_template_display_name": "Ember Harbor",
+        "semantic_tags": ["harbor", "beacon", "rumor", "wardens"],
     }
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
@@ -250,9 +260,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = [websocket.receive_json() for _ in range(23)]
+        messages = [websocket.receive_json() for _ in range(24)]
 
     assert [message["event"] for message in messages] == [
+        "session.connected",
         "turn.accepted",
         "turn.progress",
         "turn.progress",
@@ -277,6 +288,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "graph.projection.updated",
         "turn.resolved",
     ]
+    assert messages[0]["data"] == {
+        "session_id": session_payload["session_id"],
+        "world_context": session_payload["world_context"],
+    }
     assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == [
         "intent_interpretation",
         "memory_council",
@@ -355,9 +370,10 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(19)]
+        messages = [websocket.receive_json() for _ in range(20)]
 
     assert [message["event"] for message in messages] == [
+        "session.connected",
         "turn.accepted",
         "turn.progress",
         "turn.progress",
@@ -389,6 +405,35 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
     assert all(message["data"]["world_context"]["pack_id"] == "ember_harbor" for message in messages)
     assert payload["scene_updates"]
     assert payload["chapter_updates"]
+
+
+def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(world_id="world-idle-realtime"),
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
+        connected = websocket.receive_json()
+        assert connected["event"] == "session.connected"
+        assert connected["data"]["world_context"] == session_payload["world_context"]
+
+        idle_response = client.post(f"/ops/worlds/{session_payload['world_id']}/idle-pass", headers=auth_headers)
+        assert idle_response.status_code == 200
+        idle_payload = idle_response.json()
+        assert idle_payload["world_context"]["pack_id"] == "ember_harbor"
+        assert idle_payload["world_context"]["world_template_id"] == "ember_harbor"
+
+        message = websocket.receive_json()
+
+    assert message["event"] == "idle.updated"
+    assert message["data"]["world_context"] == session_payload["world_context"]
+    assert message["data"]["world_id"] == session_payload["world_id"]
+    assert message["data"]["tick"]["tick_id"] == idle_payload["tick"]["tick_id"]
+    assert message["data"]["items"] == idle_payload["idle_updates"]
 
 
 def test_ops_projection_status_and_rebuild_contract(client, auth_headers):

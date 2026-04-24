@@ -87,6 +87,7 @@ type SessionInfo = {
   world_name: string;
   pack_id: string;
   world_template_id: string;
+  world_context: WorldContext;
   player_actor_id: string;
   npc_actor_id: string;
   location_id: string;
@@ -1162,17 +1163,8 @@ function App() {
   const activeWorldContext =
     opsWorlds.find((item) => item.world_context.world_id === activeWorldId)?.world_context ??
     sessionState?.world_context ??
-    (session
-      ? {
-          world_id: session.world_id,
-          world_name: session.world_name,
-          pack_id: session.pack_id,
-          pack_display_name: selectedPack?.display_name ?? session.pack_id,
-          world_template_id: session.world_template_id,
-          world_template_display_name: selectedTemplate?.display_name ?? session.world_template_id,
-          semantic_tags: [],
-        }
-      : null);
+    session?.world_context ??
+    null;
   const suggestedChoices = sessionState?.next_choices ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
@@ -2077,7 +2069,9 @@ function App() {
               </div>
               <div>
                 <dt>Pack</dt>
-                <dd>{session.pack_id}</dd>
+                <dd data-testid="session-pack">
+                  {session.world_context.pack_display_name} ({session.pack_id}) / {session.world_context.world_template_display_name}
+                </dd>
               </div>
               <div>
                 <dt>Session</dt>
@@ -2514,11 +2508,10 @@ function App() {
                 {activity.map((item, index) => (
                   <li key={`${item.event}-${index}`}>
                     <strong>{item.event}</strong>
-                    {item.data.world_context ? (
-                      <span>
-                        {item.data.world_context.pack_display_name} / {item.data.world_context.world_template_display_name}
-                      </span>
-                    ) : null}
+                    <span>
+                      {(item.data.world_context ?? activeWorldContext)?.pack_display_name ?? "global"} /{" "}
+                      {(item.data.world_context ?? activeWorldContext)?.world_template_display_name ?? "all templates"}
+                    </span>
                     <span>{JSON.stringify(item.data)}</span>
                   </li>
                 ))}

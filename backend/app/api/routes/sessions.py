@@ -10,6 +10,7 @@ from app.api.deps import ensure_primary_runtime, get_container, get_current_user
 from app.core.container import AppContainer
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
+from app.modules.world_pack.service import world_context_for_world
 
 router = APIRouter(tags=["sessions"])
 
@@ -29,7 +30,7 @@ def create_session(
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
-) -> dict[str, str]:
+) -> dict[str, object]:
     ensure_primary_runtime(container)
     requested_world_name = str(payload.world_overrides.get("world_name") or payload.world_name or "").strip() or None
     try:
@@ -46,6 +47,7 @@ def create_session(
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     container.projection_service.process_pending(db)
+    world_context = world_context_for_world(db, result.world.id)
     db.commit()
     world_state = dict(result.world.state or {})
     return {
@@ -58,6 +60,7 @@ def create_session(
         "npc_actor_id": result.guide_npc.id,
         "location_id": result.starter_location.id,
         "websocket_url": result.websocket_url,
+        "world_context": world_context,
     }
 
 

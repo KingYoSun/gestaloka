@@ -54,6 +54,9 @@ test("login, select founders reach explicitly, and keep the founders regression 
   await page.getByTestId("world-id-input").fill(worldId);
   await page.getByTestId("start-session").click();
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
+  await expect(page.getByTestId("session-pack")).toContainText("Founders Reach", { timeout: 20_000 });
+  await expect(page.getByTestId("ops-stream")).toContainText("session.connected", { timeout: 20_000 });
+  await expect(page.getByTestId("ops-stream")).toContainText("Founders Reach", { timeout: 20_000 });
   await expect(page.getByTestId("current-place-summary")).toContainText(/Founders Square/i, { timeout: 20_000 });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Founders/i, { timeout: 20_000 });
   await expect(page.getByTestId("current-scene-summary")).toContainText(/Square|request/i, { timeout: 20_000 });
@@ -82,6 +85,8 @@ test("login, select founders reach explicitly, and keep the founders regression 
   });
   await page.getByTestId("nav-game").click();
   await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("ops-stream")).toContainText("idle.updated", { timeout: slowTimeout });
+  await expect(page.getByTestId("ops-stream")).toContainText("Founders Reach", { timeout: slowTimeout });
   await expect(page.getByTestId("npc-locations-stream")).not.toContainText("No wider district movement is visible yet.", {
     timeout: slowTimeout,
   });
