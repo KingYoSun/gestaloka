@@ -127,10 +127,11 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
 
         await realtime_hub.connect(session_id, websocket)
         connected = True
-        await realtime_hub.emit(
+        await realtime_hub.emit_with_world_context(
             session_id,
             "session.connected",
-            {"session_id": session_id, "world_context": world_context},
+            {"session_id": session_id},
+            world_context,
         )
         try:
             while True:

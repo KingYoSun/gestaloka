@@ -2505,16 +2505,19 @@ function App() {
             <article className="card wide">
               <h2>Realtime stream</h2>
               <ul className="stream" data-testid="ops-stream">
-                {activity.map((item, index) => (
-                  <li key={`${item.event}-${index}`}>
-                    <strong>{item.event}</strong>
-                    <span>
-                      {(item.data.world_context ?? activeWorldContext)?.pack_display_name ?? "global"} /{" "}
-                      {(item.data.world_context ?? activeWorldContext)?.world_template_display_name ?? "all templates"}
-                    </span>
-                    <span>{JSON.stringify(item.data)}</span>
-                  </li>
-                ))}
+                {activity.map((item, index) => {
+                  const context = item.data.world_context;
+                  return (
+                    <li key={`${item.event}-${index}`}>
+                      <strong>{item.event}</strong>
+                      <span>
+                        {context?.pack_display_name ?? "missing world context"} /{" "}
+                        {context?.world_template_display_name ?? "missing world context"}
+                      </span>
+                      <span>{JSON.stringify(item.data)}</span>
+                    </li>
+                  );
+                })}
               </ul>
             </article>
 

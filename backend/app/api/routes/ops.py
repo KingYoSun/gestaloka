@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_container, get_current_ops_user, get_db
 from app.core.container import AppContainer
-from app.core.realtime import realtime_hub
+from app.core.realtime import realtime_hub, with_world_context
 from app.models.entities import Session as GameSession, World
 from app.modules.admin_ops.service import (
     get_council_turn,
@@ -75,10 +75,6 @@ class ReleaseChecklistRequest(BaseModel):
 class ReindexMemoriesRequest(BaseModel):
     world_id: str | None = Field(default=None, max_length=64)
     limit: int = Field(default=200, ge=1, le=1000)
-
-
-def _with_world_context(payload: dict[str, object], world_context: dict[str, object]) -> dict[str, object]:
-    return {**payload, "world_context": world_context}
 
 
 @router.get("/worlds")
@@ -313,16 +309,17 @@ async def post_world_idle_pass(
         "world_context": world_context,
     }
     for game_session in active_sessions:
-        await realtime_hub.emit(game_session.id, "idle.updated", payload)
+        await realtime_hub.emit_with_world_context(game_session.id, "idle.updated", payload, world_context)
         if result["idle_updates"]:
             moved_items = [item for item in result["idle_updates"] if item.get("moved")]
             if moved_items:
-                await realtime_hub.emit(
+                await realtime_hub.emit_with_world_context(
                     game_session.id,
                     "location.updated",
-                    _with_world_context({"items": moved_items}, world_context),
+                    {"items": moved_items},
+                    world_context,
                 )
-    return _with_world_context(result, world_context)
+    return with_world_context(result, world_context)
 
 
 @router.get("/worlds/{world_id}/world-ticks")

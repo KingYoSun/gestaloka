@@ -15,6 +15,20 @@ def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
     }
 
 
+REALTIME_WORLD_CONTEXT_KEYS = {
+    "world_id",
+    "pack_id",
+    "pack_display_name",
+    "world_template_id",
+    "world_template_display_name",
+}
+
+
+def assert_realtime_world_context(message: dict, expected: dict) -> None:
+    assert message["data"]["world_context"] == expected
+    assert REALTIME_WORLD_CONTEXT_KEYS <= set(message["data"]["world_context"])
+
+
 def test_health_reports_database_projection_and_oidc(client):
     response = client.get("/health")
 
@@ -308,8 +322,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert messages[-1]["data"] == turn_payload
     assert messages[-2]["data"]["world_id"] == session_payload["world_id"]
     assert {"vertex_count", "edge_count"} <= set(messages[-2]["data"])
-    assert all(message["data"]["world_context"]["pack_id"] == "ember_harbor" for message in messages)
-    assert all(message["data"]["world_context"]["world_template_id"] == "ember_harbor" for message in messages)
+    for message in messages:
+        assert_realtime_world_context(message, session_payload["world_context"])
+        assert message["data"]["world_context"]["pack_id"] == "ember_harbor"
+        assert message["data"]["world_context"]["world_template_id"] == "ember_harbor"
 
 
 def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
@@ -402,7 +418,10 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "choice_generation",
     ]
     assert messages[-1]["data"] == payload
-    assert all(message["data"]["world_context"]["pack_id"] == "ember_harbor" for message in messages)
+    for message in messages:
+        assert_realtime_world_context(message, session_payload["world_context"])
+        assert message["data"]["world_context"]["pack_id"] == "ember_harbor"
+        assert message["data"]["world_context"]["world_template_id"] == "ember_harbor"
     assert payload["scene_updates"]
     assert payload["chapter_updates"]
 
@@ -419,7 +438,7 @@ def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
         connected = websocket.receive_json()
         assert connected["event"] == "session.connected"
-        assert connected["data"]["world_context"] == session_payload["world_context"]
+        assert_realtime_world_context(connected, session_payload["world_context"])
 
         idle_response = client.post(f"/ops/worlds/{session_payload['world_id']}/idle-pass", headers=auth_headers)
         assert idle_response.status_code == 200
@@ -428,12 +447,18 @@ def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
         assert idle_payload["world_context"]["world_template_id"] == "ember_harbor"
 
         message = websocket.receive_json()
+        moved_items = [item for item in idle_payload["idle_updates"] if item.get("moved")]
+        location_message = websocket.receive_json() if moved_items else None
 
     assert message["event"] == "idle.updated"
-    assert message["data"]["world_context"] == session_payload["world_context"]
+    assert_realtime_world_context(message, session_payload["world_context"])
     assert message["data"]["world_id"] == session_payload["world_id"]
     assert message["data"]["tick"]["tick_id"] == idle_payload["tick"]["tick_id"]
     assert message["data"]["items"] == idle_payload["idle_updates"]
+    if location_message is not None:
+        assert location_message["event"] == "location.updated"
+        assert_realtime_world_context(location_message, session_payload["world_context"])
+        assert location_message["data"]["items"] == moved_items
 
 
 def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
