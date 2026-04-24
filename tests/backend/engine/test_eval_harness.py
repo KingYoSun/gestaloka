@@ -18,6 +18,15 @@ from app.modules.world_memory.service import MemoryService
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
+def founders_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+    return {
+        "world_id": world_id,
+        "pack_id": "founders_reach",
+        "world_template_id": "founders_reach",
+        "world_name": "Founders Reach",
+    }
+
+
 def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
     dataset_dir = tmp_path / "datasets"
     dataset_dir.mkdir()
@@ -87,7 +96,7 @@ def test_eval_runner_persists_current_and_candidate_results(container):
 def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -125,7 +134,7 @@ def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container,
 def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -197,7 +206,7 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
 def test_scheduler_helpers_only_persist_eval_and_release_tables(client, container, auth_headers, monkeypatch):
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -251,7 +260,7 @@ def test_langfuse_flush_failure_degrades_but_does_not_fail_turn(client, containe
 
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()

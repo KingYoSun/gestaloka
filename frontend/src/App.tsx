@@ -1078,8 +1078,8 @@ function App() {
   const [wallet, setWallet] = useState<SPWallet | null>(null);
   const [worldId, setWorldId] = useState("world-alpha");
   const [worldPacks, setWorldPacks] = useState<WorldPackItem[]>([]);
-  const [selectedPackId, setSelectedPackId] = useState("founders_reach");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("founders_reach");
+  const [selectedPackId, setSelectedPackId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
@@ -1140,6 +1140,8 @@ function App() {
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
   const activeWorldId = session?.world_id ?? worldId;
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
+  const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId) ?? null;
+  const selectedTemplate = selectedPack?.world_templates.find((item) => item.template_id === selectedTemplateId) ?? null;
   const suggestedChoices = sessionState?.next_choices ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
@@ -1180,6 +1182,8 @@ function App() {
       setMe(null);
       setWallet(null);
       setWorldPacks([]);
+      setSelectedPackId("");
+      setSelectedTemplateId("");
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -1218,32 +1222,20 @@ function App() {
         setWallet(walletPayload);
         setWorldPacks(packPayload.items);
         const firstPack = packPayload.items[0];
-        if (firstPack) {
-          setSelectedPackId((current) =>
-            packPayload.items.some((item) => item.pack_id === current) ? current : firstPack.pack_id,
-          );
-          setSelectedTemplateId((current) => {
-            const activePack =
-              packPayload.items.find((item) => item.pack_id === selectedPackId) ??
-              packPayload.items.find((item) => item.pack_id === current) ??
-              firstPack;
-            const firstTemplate = activePack.world_templates[0];
-            if (!firstTemplate) {
-              return current;
-            }
-            return activePack.world_templates.some((item) => item.template_id === current) ? current : firstTemplate.template_id;
-          });
-        }
+        setSelectedPackId((current) => (firstPack && packPayload.items.some((item) => item.pack_id === current) ? current : (firstPack?.pack_id ?? "")));
         setLedgerUserFilter((current) => current || walletPayload.user_sub);
         setAdjustUserSub((current) => current || walletPayload.user_sub);
       })
       .catch((requestError: unknown) => setError(formatError(requestError)));
-  }, [authenticated, token, selectedPackId]);
+  }, [authenticated, token]);
 
   useEffect(() => {
     const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId);
     const firstTemplate = selectedPack?.world_templates[0];
     if (!selectedPack || !firstTemplate) {
+      if (selectedTemplateId) {
+        setSelectedTemplateId("");
+      }
       return;
     }
     if (!selectedPack.world_templates.some((item) => item.template_id === selectedTemplateId)) {
@@ -1563,6 +1555,10 @@ function App() {
       setError("Sign in before starting a world session");
       return;
     }
+    if (!selectedPack || !selectedTemplate) {
+      setError("Choose a content pack and world template before starting a session");
+      return;
+    }
 
     try {
       setError("");
@@ -1575,8 +1571,8 @@ function App() {
         method: "POST",
         body: JSON.stringify({
           world_id: worldId,
-          pack_id: selectedPackId,
-          world_template_id: selectedTemplateId,
+          pack_id: selectedPack.pack_id,
+          world_template_id: selectedTemplate.template_id,
         }),
       });
       setSession(created);
@@ -1971,7 +1967,11 @@ function App() {
                 data-testid="pack-select"
                 value={selectedPackId}
                 onChange={(event) => setSelectedPackId(event.target.value)}
+                disabled={!worldPacks.length}
               >
+                <option value="" disabled>
+                  Select a content pack
+                </option>
                 {worldPacks.map((item) => (
                   <option key={item.pack_id} value={item.pack_id}>
                     {item.display_name}
@@ -1985,8 +1985,12 @@ function App() {
                 data-testid="template-select"
                 value={selectedTemplateId}
                 onChange={(event) => setSelectedTemplateId(event.target.value)}
+                disabled={!selectedPack}
               >
-                {(worldPacks.find((item) => item.pack_id === selectedPackId)?.world_templates ?? []).map((item) => (
+                <option value="" disabled>
+                  Select a world template
+                </option>
+                {(selectedPack?.world_templates ?? []).map((item) => (
                   <option key={item.template_id} value={item.template_id}>
                     {item.display_name}
                   </option>
@@ -2001,7 +2005,7 @@ function App() {
                 onChange={(event) => setWorldId(event.target.value)}
               />
             </label>
-            <button data-testid="start-session" type="submit" disabled={!authenticated || !selectedPackId || !selectedTemplateId}>
+            <button data-testid="start-session" type="submit" disabled={!authenticated || !selectedPack || !selectedTemplate}>
               Start session
             </button>
           </form>

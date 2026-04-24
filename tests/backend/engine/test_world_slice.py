@@ -3,8 +3,17 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.models.entities import ChapterTrack, CharacterSheet, Faction, FactionStanding, QuestAssignment, QuestTemplate, SceneFrame
-from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput
+from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput, ConsequenceThreadSnapshot
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
+
+
+def founders_session_payload() -> dict[str, str]:
+    return {
+        "world_id": "world-alpha",
+        "pack_id": "founders_reach",
+        "world_template_id": "founders_reach",
+        "world_name": "Founders Reach",
+    }
 
 
 def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
@@ -50,12 +59,12 @@ def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
 def test_session_seed_is_idempotent_for_character_faction_and_quest(client, container, auth_headers):
     first = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     second = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
 
@@ -84,6 +93,19 @@ def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():
     assert steady.outcome_band == "steady"
     assert steady.relationship_delta > 0
     assert steady.thread_action == "none"
+
+    reward_item = ConsequenceRuleEngine.evaluate(
+        ConsequenceRuleInput(
+            world_tags=["collect_reward"],
+            consequence_tags=["reward_item_respect"],
+            relationship_strength=0.55,
+            active_threads=[ConsequenceThreadSnapshot(thread_type="promise", status="active", pressure_band="medium")],
+        )
+    )
+    assert reward_item.outcome_band == "steady"
+    assert reward_item.thread_type == "promise"
+    assert reward_item.thread_action == "resolved"
+    assert reward_item.relationship_delta > 0
 
     tangled = ConsequenceRuleEngine.evaluate(
         ConsequenceRuleInput(

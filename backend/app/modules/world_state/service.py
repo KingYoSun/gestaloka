@@ -32,8 +32,6 @@ from app.modules.actor.service import (
     get_relationship,
 )
 from app.modules.world_pack.service import (
-    DEFAULT_PACK_ID,
-    DEFAULT_WORLD_TEMPLATE_ID,
     branch_labels_from_followup_branches,
     get_pack_registry,
     resolve_world_pack,
@@ -316,8 +314,8 @@ def ensure_world(
     db: Session,
     world_id: str,
     *,
-    pack_id: str = DEFAULT_PACK_ID,
-    world_template_id: str = DEFAULT_WORLD_TEMPLATE_ID,
+    pack_id: str,
+    world_template_id: str,
     world_name: str | None = None,
 ) -> World:
     registry = get_pack_registry()
@@ -1317,7 +1315,9 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
     followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
     reward_effect_kind = str(world_pack.get("reward_effect_kind") or "unlock_followup_route")
-    reward_name = str(world_pack.get("reward_name") or (session_state.get("inventory") or [{}])[0].get("name") or "the seal")
+    reward_name = str(
+        world_pack.get("reward_name") or (session_state.get("inventory") or [{}])[0].get("name") or "the reward item"
+    )
     faction_name = str(world_pack.get("faction_name") or "the local faction")
     formal_branch_key = branch_key_for_slot(world_pack, "formal_path")
     undercurrent_branch_key = branch_key_for_slot(world_pack, "undercurrent_path")

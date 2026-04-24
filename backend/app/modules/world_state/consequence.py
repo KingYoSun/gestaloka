@@ -13,7 +13,7 @@ ConsequenceTag = Literal[
     "public_attention",
     "overreach",
     "careful_observation",
-    "sigil_respect",
+    "reward_item_respect",
 ]
 CONSEQUENCE_TAG_VALUES = {
     "earned_trust",
@@ -22,7 +22,7 @@ CONSEQUENCE_TAG_VALUES = {
     "public_attention",
     "overreach",
     "careful_observation",
-    "sigil_respect",
+    "reward_item_respect",
 }
 OutcomeBand = Literal["steady", "tangled", "setback"]
 RelationshipBand = Literal["estranged", "wary", "neutral", "warm", "trusted"]
@@ -45,7 +45,7 @@ def normalize_consequence_tags(tags: list[str] | None) -> list[ConsequenceTag]:
     # Choice/free-text parity depends on progress/help intent not being randomly
     # downgraded into public suspicion when the same turn is also clearly trust-building.
     if "overreach" not in seen and "public_attention" in seen and (
-        "earned_trust" in seen or "kept_promise" in seen or "sigil_respect" in seen
+        "earned_trust" in seen or "kept_promise" in seen or "reward_item_respect" in seen
     ):
         normalized = [tag for tag in normalized if tag != "public_attention"]
     return normalized
@@ -129,7 +129,7 @@ def fallback_consequence_tags(
 ) -> list[ConsequenceTag]:
     tags: list[ConsequenceTag] = []
     if action_kind == "use_reward_item":
-        tags.extend(["sigil_respect", "kept_promise"])
+        tags.extend(["reward_item_respect", "kept_promise"])
     if "aid_local" in world_tags:
         tags.append("earned_trust")
     if "promise_followup" in world_tags:
@@ -217,7 +217,7 @@ class ConsequenceRuleEngine:
                 summary="The scene keeps moving, but people are now carrying a version of it with them.",
             )
 
-        if "sigil_respect" in consequence_tags:
+        if "reward_item_respect" in consequence_tags:
             thread_action: ThreadAction = "none"
             thread_type: ThreadType | None = None
             thread_status: ThreadStatus | None = None
@@ -237,7 +237,7 @@ class ConsequenceRuleEngine:
                 thread_status=thread_status,
                 pressure_band=pressure_band,
                 scene_tone=scene_tone_for_band("steady"),
-                summary="The reward token is taken seriously, and the scene answers with a steadier kind of trust.",
+                summary="The reward item is taken seriously, and the scene answers with a steadier kind of trust.",
             )
 
         if "kept_promise" in consequence_tags:

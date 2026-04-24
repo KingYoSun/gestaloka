@@ -176,7 +176,7 @@ class GMCouncilService:
         if any(token in input_text or token in normalized_text for token in ("無理", "impossible", "空を飛", "teleport", "爆破")):
             return ["overreach", "public_attention"]
         if action_kind == "use_reward_item":
-            return ["sigil_respect", "kept_promise"]
+            return ["reward_item_respect", "kept_promise"]
         if any(token in input_text or token in normalized_text for token in ("約束", "promise", "引き受ける", "応える")):
             canonical.append("kept_promise")
         if any(token in input_text or token in normalized_text for token in ("探", "observe", "watch path", "巡回路")):

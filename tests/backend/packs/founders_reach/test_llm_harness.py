@@ -16,6 +16,15 @@ from app.modules.llm_harness.service import ModelRouter
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
+def founders_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+    return {
+        "world_id": world_id,
+        "pack_id": "founders_reach",
+        "world_template_id": "founders_reach",
+        "world_name": "Founders Reach",
+    }
+
+
 def _session_state(*, progress: int = 0, standing: float = 0.25, reward_item_id: str | None = None) -> dict[str, object]:
     inventory = []
     if reward_item_id is not None:
@@ -224,7 +233,7 @@ def test_council_service_falls_back_to_pro_lane(container):
 def test_turn_council_reject_returns_422_and_persists_audit_records(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()

@@ -1345,7 +1345,7 @@ class EvalHarnessService:
             or (template.world or {}).get("default_name")
             or template.display_name
         )
-        reward_name = str(world_pack_overrides.get("reward_name") or template.quest.reward_name or "the seal")
+        reward_name = str(world_pack_overrides.get("reward_name") or template.quest.reward_name or "the reward item")
         faction_name = str(world_pack_overrides.get("faction_name") or template.faction.name or "the local faction")
         world_pack = {
             "pack_id": pack.manifest.pack_id,

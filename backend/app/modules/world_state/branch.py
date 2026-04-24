@@ -18,7 +18,7 @@ BranchSignal = Literal[
     "rumor_curiosity",
     "street_pull",
     "public_scrutiny",
-    "sigil_duty",
+    "reward_item_commitment",
 ]
 
 FORMAL_PATH_SLOT: BranchSlot = "formal_path"
@@ -411,7 +411,7 @@ ROUTE_SIGNAL_WEIGHTS: dict[BranchSignal, dict[BranchSlot, float]] = {
     "rumor_curiosity": {FORMAL_PATH_SLOT: -0.02, UNDERCURRENT_PATH_SLOT: 0.12},
     "street_pull": {FORMAL_PATH_SLOT: -0.02, UNDERCURRENT_PATH_SLOT: 0.12},
     "public_scrutiny": {FORMAL_PATH_SLOT: 0.03, UNDERCURRENT_PATH_SLOT: 0.08},
-    "sigil_duty": {FORMAL_PATH_SLOT: 0.1, UNDERCURRENT_PATH_SLOT: 0.02},
+    "reward_item_commitment": {FORMAL_PATH_SLOT: 0.1, UNDERCURRENT_PATH_SLOT: 0.02},
 }
 
 
@@ -432,16 +432,11 @@ def infer_branch_signals(
     followup_location_key = str(world_pack.get("followup_location_key") or "")
     formal_anchor_names = _branch_anchor_names(world_pack, FORMAL_PATH_SLOT)
     undercurrent_anchor_names = _branch_anchor_names(world_pack, UNDERCURRENT_PATH_SLOT)
-    formal_tokens = _branch_text_tokens(world_pack, FORMAL_PATH_SLOT) | {"promise", "oath", "duty", "order"}
-    undercurrent_tokens = _branch_text_tokens(world_pack, UNDERCURRENT_PATH_SLOT) | {
-        "rumor",
-        "whisper",
-        "street",
-        "undertow",
-    }
+    formal_tokens = _branch_text_tokens(world_pack, FORMAL_PATH_SLOT)
+    undercurrent_tokens = _branch_text_tokens(world_pack, UNDERCURRENT_PATH_SLOT)
 
-    if any(tag in consequence_tags for tag in ("earned_trust", "kept_promise", "sigil_respect")):
-        signals.extend(["formal_trust", "sigil_duty"])
+    if any(tag in consequence_tags for tag in ("earned_trust", "kept_promise", "reward_item_respect")):
+        signals.extend(["formal_trust", "reward_item_commitment"])
     if any(tag in consequence_tags for tag in ("careful_observation", "public_attention", "missed_timing")):
         signals.extend(["rumor_curiosity"])
     if any(tag in world_tags for tag in ("aid_local", "promise_followup", "collect_reward")):
@@ -455,7 +450,7 @@ def infer_branch_signals(
     if lore_location_key and location_key == lore_location_key:
         signals.append("formal_trust")
     if followup_location_key and location_key == followup_location_key:
-        signals.append("sigil_duty")
+        signals.append("reward_item_commitment")
     if starter_location_key and location_key == starter_location_key:
         signals.append("street_pull")
     if any(
@@ -730,13 +725,8 @@ class BranchPressureEngine:
         rows = ensure_route_pressures(db, world_id=world_id, actor_id=actor_id, chapter_key=chapter.chapter_key)
         formal_anchor_names = _branch_anchor_names(world_pack, FORMAL_PATH_SLOT)
         undercurrent_anchor_names = _branch_anchor_names(world_pack, UNDERCURRENT_PATH_SLOT)
-        formal_tokens = _branch_text_tokens(world_pack, FORMAL_PATH_SLOT) | {"promise", "oath", "order", "duty"}
-        undercurrent_tokens = _branch_text_tokens(world_pack, UNDERCURRENT_PATH_SLOT) | {
-            "rumor",
-            "whisper",
-            "street",
-            "undertow",
-        }
+        formal_tokens = _branch_text_tokens(world_pack, FORMAL_PATH_SLOT)
+        undercurrent_tokens = _branch_text_tokens(world_pack, UNDERCURRENT_PATH_SLOT)
         deltas_by_slot: dict[BranchSlot, float] = {
             FORMAL_PATH_SLOT: 0.0,
             UNDERCURRENT_PATH_SLOT: 0.0,

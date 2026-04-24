@@ -240,7 +240,6 @@ class StubModelProvider(BaseModelProvider):
         selected_choice = input_payload.get("selected_choice") or {}
         if not isinstance(selected_choice, dict):
             selected_choice = {}
-        usable_items = [item.get("name", "") for item in input_payload.get("usable_reward_items") or [] if item.get("name")]
         input_text = str(input_payload.get("input_text") or "")
         selected_posture = str(selected_choice.get("posture") or "none")
         action_kind = str(selected_choice.get("action_kind") or "narrative")
@@ -250,8 +249,27 @@ class StubModelProvider(BaseModelProvider):
         consequence_flags: list[str] = []
         consequence_tags: list[str] = []
         consequence_summary = "The world accepts the player's chosen line of action."
-        used_reward_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
         nearby_routes = [item for item in input_payload.get("nearby_routes") or [] if isinstance(item, dict)]
+        world_pack = input_payload.get("world_pack") or {}
+        reward_effect_kind = str(world_pack.get("reward_effect_kind") or "").strip()
+
+        def reward_item_names(raw_items: Any) -> list[str]:
+            names: list[str] = []
+            for item in raw_items or []:
+                if not isinstance(item, dict):
+                    continue
+                effect_kind = str(item.get("effect_kind") or "").strip()
+                if reward_effect_kind and effect_kind and effect_kind != reward_effect_kind:
+                    continue
+                if reward_effect_kind and not effect_kind:
+                    continue
+                name = str(item.get("name") or "").strip()
+                if name:
+                    names.append(name)
+            return names
+
+        usable_items = reward_item_names(input_payload.get("usable_reward_items"))
+        used_reward_items = reward_item_names(input_payload.get("used_reward_items"))
 
         def route_targets() -> list[tuple[str, str]]:
             targets: list[tuple[str, str]] = []
@@ -277,9 +295,7 @@ class StubModelProvider(BaseModelProvider):
             return None
 
         reward_tokens = [name.lower() for name in [*usable_items, *used_reward_items] if name]
-        mentions_reward_item = any(token in input_text.lower() for token in reward_tokens) or any(
-            token in input_text.lower() for token in ("sigil", "seal", "token", "pass", "印", "証")
-        )
+        mentions_reward_item = any(token in input_text.lower() for token in reward_tokens)
 
         normalized = input_text.lower()
         if input_mode == "choice":
@@ -298,13 +314,13 @@ class StubModelProvider(BaseModelProvider):
                     action_kind = "use_reward_item"
                     reward_name = usable_items[0]
                     intent_summary = intent_summary or f"{reward_name}を掲げて次の道を開く"
-                    consequence_tags.extend(["sigil_respect", "kept_promise"])
-                    consequence_summary = "The world recognizes the reward token and prepares to answer the request."
+                    consequence_tags.extend(["reward_item_respect", "kept_promise"])
+                    consequence_summary = "The world recognizes the reward item and prepares to answer the request."
                 elif used_reward_items:
                     action_kind = "narrative"
-                    intent_summary = input_text or "The player follows the route opened by the reward token."
+                    intent_summary = input_text or "The player follows the route opened by the reward item."
                     consequence_tags.append("careful_observation")
-                    consequence_summary = "The scene proceeds through the route the reward token already opened."
+                    consequence_summary = "The scene proceeds through the route the reward item already opened."
                 else:
                     action_kind = "narrative"
                     fail_forward = True
@@ -334,7 +350,7 @@ class StubModelProvider(BaseModelProvider):
                 consequence_tags.append("earned_trust")
 
         if input_mode == "choice" and action_kind == "use_reward_item":
-            consequence_tags.extend(["sigil_respect", "kept_promise"])
+            consequence_tags.extend(["reward_item_respect", "kept_promise"])
             consequence_summary = "The selected choice invokes an important reward-item affordance."
 
         if not intent_summary:
@@ -520,7 +536,7 @@ class StubModelProvider(BaseModelProvider):
             outcome_band = "tangled"
         scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
         scene_pressure: Literal["low", "medium", "high"] = "medium"
-        if "sigil_respect" in consequence_tags:
+        if "reward_item_respect" in consequence_tags:
             scene_move = "pivot"
             scene_pressure = "medium"
         elif outcome_band == "setback":
@@ -560,13 +576,6 @@ class StubModelProvider(BaseModelProvider):
 
         formal_tokens = _branch_tokens("formal_path") | {"oath", "promise", "order", "duty"}
         undercurrent_tokens = _branch_tokens("undercurrent_path") | {"rumor", "whisper", "street", "undertow"}
-        reward_tokens = {token for token in _branch_tokens("formal_path") if token in {"sigil", "seal"}} | {
-            "sigil",
-            "seal",
-        }
-        reward_name = str(world_pack.get("reward_name") or "")
-        if reward_name:
-            reward_tokens.update(token for token in reward_name.lower().replace("-", " ").split() if token)
         if (followup_stage_key and active_quest_stage == followup_stage_key) or (
             followup_chapter_key and current_chapter_key == followup_chapter_key
         ):
@@ -574,8 +583,6 @@ class StubModelProvider(BaseModelProvider):
                 branch_signals = normalize_branch_signals([*branch_signals, "formal_trust", "kept_formal_promise"])
             if any(token in lower_text for token in undercurrent_tokens):
                 branch_signals = normalize_branch_signals([*branch_signals, "rumor_curiosity", "street_pull"])
-            if any(token in lower_text for token in reward_tokens):
-                branch_signals = normalize_branch_signals([*branch_signals, "sigil_duty"])
         return {
             "event_type": "player.turn.resolved",
             "event_payload": {

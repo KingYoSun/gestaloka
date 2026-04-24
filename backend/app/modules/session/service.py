@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
 from app.models.entities import Actor, Event, LLMRun, OutboxEvent, Session as GameSession, Turn, new_id
-from app.modules.world_pack.service import DEFAULT_PACK_ID, DEFAULT_WORLD_TEMPLATE_ID, resolve_world_pack
+from app.modules.world_pack.service import resolve_world_pack
 from app.modules.actor.service import (
     ensure_player_actor,
     ensure_relationship,
@@ -111,8 +111,8 @@ def create_session_for_user(
     user: UserIdentity,
     world_id: str,
     *,
-    pack_id: str = DEFAULT_PACK_ID,
-    world_template_id: str = DEFAULT_WORLD_TEMPLATE_ID,
+    pack_id: str,
+    world_template_id: str,
     world_name: str | None = None,
     player_display_name: str | None,
 ) -> SessionCreationResult:
@@ -567,7 +567,7 @@ def _resolve_narrative_turn_for_session(
                         "requested_choice_posture": str(selected_choice.get("posture") or "none"),
                         "fail_forward": False,
                         "consequence_flags": [],
-                        "consequence_tags": ["sigil_respect", "kept_promise"],
+                        "consequence_tags": ["reward_item_respect", "kept_promise"],
                         "consequence_summary": "The selected choice invokes an important reward-item affordance.",
                     },
                     progress_phases=["item_use"],
@@ -1172,7 +1172,7 @@ def _resolve_reward_item_turn_for_session(
     }
     resolved_consequence_summary = (
         str(resolved_interpreted_intent.get("consequence_summary") or "").strip()
-        or "The sigil changes what the world will now allow."
+        or "The reward item changes what the world will now allow."
     )
 
     turn.model_lane = model_lane
@@ -1223,7 +1223,7 @@ def _resolve_reward_item_turn_for_session(
         source_event_id=event.id,
         world_tags=["collect_reward"],
         consequence_tags=(resolved_interpreted_intent.get("consequence_tags") if isinstance(resolved_interpreted_intent, dict) else None)
-        or ["sigil_respect", "kept_promise"],
+        or ["reward_item_respect", "kept_promise"],
         action_kind="use_reward_item",
         fail_forward=False,
     )

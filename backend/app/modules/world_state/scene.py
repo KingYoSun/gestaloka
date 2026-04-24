@@ -74,7 +74,7 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
     followup_location_name = str(world_pack.get("followup_location_name") or "the next route")
     starter_location_name = str(world_pack.get("starter_location_name") or "the starting place")
     world_name = str(world_pack.get("world_name") or "the current world")
-    reward_name = str(world_pack.get("reward_name") or "the seal")
+    reward_name = str(world_pack.get("reward_name") or "the reward item")
     formal_branch_key = branch_key_for_slot(world_pack, "formal_path")
     undercurrent_branch_key = branch_key_for_slot(world_pack, "undercurrent_path")
     formal_branch_label = branch_label(formal_branch_key, world_pack=world_pack)

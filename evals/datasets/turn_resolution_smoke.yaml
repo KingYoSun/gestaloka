@@ -163,3 +163,54 @@ cases:
     expect_progress_after: 0
     expect_reward_issued: false
     expect_standing_after: 0.65
+  - case_id: smoke-ember-followup-after-reward-item
+    world_id: world-ember
+    pack_id: ember_harbor
+    world_template_id: ember_harbor
+    player_name: Demo Player
+    npc_name: Runner Eska
+    input_text: Harbor Sealで開いた breakwater の様子を観察する
+    input_mode: free_text
+    relevant_memories:
+      - Ember HarborでHarbor Sealが使われ、Cinder Breakwaterへの道が解放された。
+    relation_context:
+      - location=Ember Harbor
+      - memory=Ember HarborでHarbor Sealが使われ、Cinder Breakwaterへの道が解放された。
+      - relationship=Runner Eska KNOWS Demo Player (0.75)
+      - active_quest=Breakwater Unsealed [active 0/1]
+      - faction=Ember Wardens standing=0.65 (favored)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 1
+    expect_retrieval_hit_substring: Harbor Seal
+    expect_outcome_band: steady
+    expect_scene_move: deepen
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      title: Breakwater Unsealed
+      stage_key: breakwater_unsealed
+      unlock_requirements:
+        starter_item_effect: unlock_breakwater_route
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.65
+      reward_already_issued: false
+      reward_enabled: false
+      inventory_items:
+        - id: harbor-seal-1
+          template_key: harbor_seals
+          name: Harbor Seal
+          description: Reward item from the Ember Wardens.
+          status: used
+          usable: false
+          effect_kind: unlock_breakwater_route
+    expect_progress_after: 0
+    expect_reward_issued: false
+    expect_standing_after: 0.65

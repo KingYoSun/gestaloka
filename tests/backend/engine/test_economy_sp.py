@@ -5,6 +5,15 @@ from sqlalchemy import func, select
 from app.models.entities import Event, Memory, SPLedgerEntry, Turn
 
 
+def founders_session_payload() -> dict[str, str]:
+    return {
+        "world_id": "world-alpha",
+        "pack_id": "founders_reach",
+        "world_template_id": "founders_reach",
+        "world_name": "Founders Reach",
+    }
+
+
 def test_sp_wallet_lazy_seed_only_once(client, container, auth_headers):
     first = client.get("/economy/sp/me", headers=auth_headers)
     second = client.get("/economy/sp/me", headers=auth_headers)
@@ -28,7 +37,7 @@ def test_sp_wallet_lazy_seed_only_once(client, container, auth_headers):
 def test_failed_turn_refunds_sp_and_records_ledger(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -56,7 +65,7 @@ def test_failed_turn_refunds_sp_and_records_ledger(client, container, auth_heade
 def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -118,7 +127,7 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
 
     session_response = client.post(
         "/sessions",
-        json={"world_id": "world-alpha", "world_name": "Founders Reach"},
+        json=founders_session_payload(),
         headers=auth_headers,
     )
     assert session_response.status_code == 200
