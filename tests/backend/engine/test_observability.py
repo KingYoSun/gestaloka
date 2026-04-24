@@ -18,6 +18,9 @@ def test_turn_execution_updates_observability_traces_and_metrics(client, contain
     )
     session_payload = session_response.json()
 
+    with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token"):
+        pass
+
     turn_response = client.post(
         "/turns",
         json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
@@ -34,14 +37,21 @@ def test_turn_execution_updates_observability_traces_and_metrics(client, contain
     traces = container.observability_service.recent_trace_attributes(limit=40)
     llm_trace = next(item for item in traces if item["name"] == "llm.attempt")
     turn_trace = next(item for item in traces if item["name"] == "turn.resolve")
+    websocket_trace = next(item for item in traces if item["name"] == "websocket.session")
 
-    assert {"prompt_id", "model_id", "lane", "runtime_role"} <= set(llm_trace["attributes"])
+    assert {"prompt_id", "model_id", "lane", "runtime_role", "pack_id", "world_template_id"} <= set(llm_trace["attributes"])
     assert llm_trace["attributes"]["world_id"] == session_payload["world_id"]
-    assert {"world_id", "session_id", "turn_id", "graph_context_status", "runtime_role"} <= set(
+    assert llm_trace["attributes"]["pack_id"] == "ember_harbor"
+    assert llm_trace["attributes"]["world_template_id"] == "ember_harbor"
+    assert {"world_id", "session_id", "turn_id", "graph_context_status", "runtime_role", "pack_id", "world_template_id"} <= set(
         turn_trace["attributes"]
     )
     assert turn_trace["attributes"]["session_id"] == session_payload["session_id"]
     assert turn_trace["attributes"]["turn_id"] == turn_payload["turn_id"]
+    assert turn_trace["attributes"]["pack_id"] == "ember_harbor"
+    assert turn_trace["attributes"]["world_template_id"] == "ember_harbor"
+    assert websocket_trace["attributes"]["pack_id"] == "ember_harbor"
+    assert websocket_trace["attributes"]["world_template_id"] == "ember_harbor"
 
     metrics = container.observability_service.metric_snapshot()
     assert {

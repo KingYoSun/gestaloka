@@ -1215,8 +1215,23 @@ class ModelRouter:
     ) -> None:
         if self.observability_service is None:
             return
+        pack_id: str | None = None
+        world_template_id: str | None = None
+        if self.session_factory is not None:
+            try:
+                with self.session_factory() as db:
+                    world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+                    if world is not None:
+                        metadata = world_pack_metadata(world)
+                        pack_id = metadata["pack_id"]
+                        world_template_id = metadata["world_template_id"]
+            except Exception:
+                pack_id = None
+                world_template_id = None
         self.observability_service.record_llm_attempt(
             world_id=world_id,
+            pack_id=pack_id,
+            world_template_id=world_template_id,
             turn_id=turn_id,
             prompt_id=prompt_id,
             model_id=model_id,

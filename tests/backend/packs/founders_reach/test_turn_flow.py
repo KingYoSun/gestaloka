@@ -378,6 +378,8 @@ def test_manual_idle_world_pass_updates_offstage_state_without_mutating_progress
     assert idle_response.status_code == 200
     idle_payload = idle_response.json()
     assert idle_payload["tick"]["status"] == "completed"
+    assert idle_payload["world_context"]["pack_id"] == "founders_reach"
+    assert idle_payload["world_context"]["world_template_id"] == "founders_reach"
     assert len(idle_payload["idle_updates"]) <= 2
 
     world_ticks = client.get(f"/ops/worlds/{session_payload['world_id']}/world-ticks", headers=auth_headers)

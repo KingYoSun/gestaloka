@@ -5,13 +5,16 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub
+from app.models.entities import Session as GameSession
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import prepare_turn_for_session, resolve_turn_for_session
+from app.modules.world_pack.service import world_context_for_world
 
 router = APIRouter(tags=["turns"])
 
@@ -56,6 +59,17 @@ class ResolveTurnRequest(BaseModel):
         return self
 
 
+def _with_world_context(payload: dict, world_context: dict[str, object]) -> dict:
+    return {**payload, "world_context": world_context}
+
+
+def _world_context_for_session_id(db: Session, session_id: str) -> dict[str, object] | None:
+    game_session = db.execute(select(GameSession).where(GameSession.id == session_id)).scalar_one_or_none()
+    if game_session is None:
+        return None
+    return world_context_for_world(db, game_session.world_id)
+
+
 @router.post("/turns")
 async def resolve_turn(
     payload: ResolveTurnRequest,
@@ -69,10 +83,17 @@ async def resolve_turn(
         prepared = prepare_turn_for_session(db, container, user, payload.session_id, input_mode=prepared_input_mode)
     except HTTPException as exc:
         if exc.status_code == 409 and isinstance(exc.detail, dict):
-            return JSONResponse(status_code=409, content=exc.detail)
+            world_context = _world_context_for_session_id(db, payload.session_id)
+            detail = exc.detail if world_context is None else _with_world_context(exc.detail, world_context)
+            return JSONResponse(status_code=409, content=detail)
         raise
+    world_context = world_context_for_world(db, prepared.session.world_id)
 
-    await realtime_hub.emit(payload.session_id, "turn.accepted", {"session_id": payload.session_id})
+    await realtime_hub.emit(
+        payload.session_id,
+        "turn.accepted",
+        _with_world_context({"session_id": payload.session_id}, world_context),
+    )
 
     started_at = container.observability_service.timer()
     result = resolve_turn_for_session(
@@ -86,10 +107,12 @@ async def resolve_turn(
         item_id=payload.item_id,
     )
     for phase in result.progress_phases:
-        await realtime_hub.emit(payload.session_id, "turn.progress", {"phase": phase})
+        await realtime_hub.emit(payload.session_id, "turn.progress", _with_world_context({"phase": phase}, world_context))
     container.observability_service.record_turn_resolution(
         duration_seconds=container.observability_service.elapsed(started_at),
         world_id=result.turn.world_id,
+        pack_id=str(world_context["pack_id"]),
+        world_template_id=str(world_context["world_template_id"]),
         session_id=result.turn.session_id,
         turn_id=result.turn.id,
         final_lane=result.turn.model_lane,
@@ -101,35 +124,70 @@ async def resolve_turn(
         await realtime_hub.emit(
             payload.session_id,
             "turn.narrative.delta",
-            {"delta": result.turn.resolved_output.get("narrative", ""), "final": True},
+            _with_world_context({"delta": result.turn.resolved_output.get("narrative", ""), "final": True}, world_context),
         )
 
-    await realtime_hub.emit(payload.session_id, "world.event.created", result.event_payload)
+    await realtime_hub.emit(payload.session_id, "world.event.created", _with_world_context(result.event_payload, world_context))
     if result.memories_payload:
-        await realtime_hub.emit(payload.session_id, "memory.materialized", {"memories": result.memories_payload})
+        await realtime_hub.emit(
+            payload.session_id,
+            "memory.materialized",
+            _with_world_context({"memories": result.memories_payload}, world_context),
+        )
     if result.quest_updates:
-        await realtime_hub.emit(payload.session_id, "quest.updated", {"items": result.quest_updates})
+        await realtime_hub.emit(payload.session_id, "quest.updated", _with_world_context({"items": result.quest_updates}, world_context))
     if result.faction_updates:
-        await realtime_hub.emit(payload.session_id, "faction.standing.updated", {"items": result.faction_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "faction.standing.updated",
+            _with_world_context({"items": result.faction_updates}, world_context),
+        )
     if result.inventory_updates:
-        await realtime_hub.emit(payload.session_id, "inventory.changed", {"items": result.inventory_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "inventory.changed",
+            _with_world_context({"items": result.inventory_updates}, world_context),
+        )
     if result.location_updates:
-        await realtime_hub.emit(payload.session_id, "location.updated", {"items": result.location_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "location.updated",
+            _with_world_context({"items": result.location_updates}, world_context),
+        )
     if result.relationship_updates:
-        await realtime_hub.emit(payload.session_id, "relationship.updated", {"items": result.relationship_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "relationship.updated",
+            _with_world_context({"items": result.relationship_updates}, world_context),
+        )
     if result.consequence_updates:
-        await realtime_hub.emit(payload.session_id, "consequence.updated", {"items": result.consequence_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "consequence.updated",
+            _with_world_context({"items": result.consequence_updates}, world_context),
+        )
     if result.scene_updates:
-        await realtime_hub.emit(payload.session_id, "scene.updated", {"items": result.scene_updates})
+        await realtime_hub.emit(payload.session_id, "scene.updated", _with_world_context({"items": result.scene_updates}, world_context))
     if result.chapter_updates:
-        await realtime_hub.emit(payload.session_id, "chapter.updated", {"items": result.chapter_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "chapter.updated",
+            _with_world_context({"items": result.chapter_updates}, world_context),
+        )
     if result.branch_updates:
-        await realtime_hub.emit(payload.session_id, "branch.updated", {"items": result.branch_updates})
+        await realtime_hub.emit(
+            payload.session_id,
+            "branch.updated",
+            _with_world_context({"items": result.branch_updates}, world_context),
+        )
     if result.ambient_updates:
         await realtime_hub.emit(
             payload.session_id,
             "ambient.updated",
-            {"items": result.ambient_updates, "recent_world_beats": result.recent_world_beats},
+            _with_world_context(
+                {"items": result.ambient_updates, "recent_world_beats": result.recent_world_beats},
+                world_context,
+            ),
         )
 
     processed = container.projection_service.process_pending(db)
@@ -139,12 +197,15 @@ async def resolve_turn(
     await realtime_hub.emit(
         payload.session_id,
         "graph.projection.updated",
-        {
-            "records": processed,
-            "world_id": projection_summary["world_id"],
-            "vertex_count": projection_summary["vertex_count"],
-            "edge_count": projection_summary["edge_count"],
-        },
+        _with_world_context(
+            {
+                "records": processed,
+                "world_id": projection_summary["world_id"],
+                "vertex_count": projection_summary["vertex_count"],
+                "edge_count": projection_summary["edge_count"],
+            },
+            world_context,
+        ),
     )
 
     if not result.succeeded:
@@ -181,6 +242,7 @@ async def resolve_turn(
                 "recent_world_beats": result.recent_world_beats,
                 "recent_offstage_beats": result.recent_offstage_beats,
                 "idle_updates": result.idle_updates,
+                "world_context": world_context,
             },
         )
 
@@ -216,6 +278,7 @@ async def resolve_turn(
         "recent_world_beats": result.recent_world_beats,
         "recent_offstage_beats": result.recent_offstage_beats,
         "idle_updates": result.idle_updates,
+        "world_context": world_context,
     }
     await realtime_hub.emit(payload.session_id, "turn.resolved", response)
 

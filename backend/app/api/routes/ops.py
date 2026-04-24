@@ -13,6 +13,7 @@ from app.core.realtime import realtime_hub
 from app.models.entities import Session as GameSession, World
 from app.modules.admin_ops.service import (
     get_council_turn,
+    list_world_contexts,
     list_council_turns,
     memory_status,
     observability_summary,
@@ -41,6 +42,7 @@ from app.modules.admin_ops.service import (
 )
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
+from app.modules.world_pack.service import world_context_for_world
 
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -73,6 +75,20 @@ class ReleaseChecklistRequest(BaseModel):
 class ReindexMemoriesRequest(BaseModel):
     world_id: str | None = Field(default=None, max_length=64)
     limit: int = Field(default=200, ge=1, le=1000)
+
+
+def _with_world_context(payload: dict[str, object], world_context: dict[str, object]) -> dict[str, object]:
+    return {**payload, "world_context": world_context}
+
+
+@router.get("/worlds")
+def get_ops_worlds(
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return list_world_contexts(db)
 
 
 @router.get("/projection/status")
@@ -277,6 +293,7 @@ async def post_world_idle_pass(
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
+    world_context = world_context_for_world(db, world_id)
     result = trigger_idle_world_pass(db, container.ambient_world_service, world_id=world_id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="World not found or has no active session")
@@ -293,6 +310,7 @@ async def post_world_idle_pass(
         "recent_offstage_beats": result["recent_offstage_beats"],
         "offstage_murmurs": result["offstage_murmurs"],
         "npc_locations": result["npc_locations"],
+        "world_context": world_context,
     }
     for game_session in active_sessions:
         await realtime_hub.emit(game_session.id, "idle.updated", payload)
@@ -302,9 +320,9 @@ async def post_world_idle_pass(
                 await realtime_hub.emit(
                     game_session.id,
                     "location.updated",
-                    {"items": moved_items},
+                    _with_world_context({"items": moved_items}, world_context),
                 )
-    return result
+    return _with_world_context(result, world_context)
 
 
 @router.get("/worlds/{world_id}/world-ticks")

@@ -107,6 +107,23 @@ type WorldPackItem = {
   }>;
 };
 
+type WorldContext = {
+  world_id: string;
+  world_name: string;
+  pack_id: string;
+  pack_display_name: string;
+  world_template_id: string;
+  world_template_display_name: string;
+  semantic_tags: string[];
+};
+
+type OpsWorldItem = {
+  world_context: WorldContext;
+  status: string;
+  active_session_count: number;
+  updated_at: string;
+};
+
 type ChapterSummaryValue = {
   id: string;
   key: string;
@@ -235,6 +252,7 @@ type ConsequenceThreadSummary = {
 
 type SessionState = {
   world_id: string;
+  world_context?: WorldContext;
   location: CurrentLocationSummary;
   current_location: CurrentLocationSummary;
   character: CharacterSummary;
@@ -270,6 +288,7 @@ type SessionState = {
 
 type TurnResponse = {
   turn_id: string;
+  world_context?: WorldContext;
   action_type: "narrative" | "use_reward_item" | "travel";
   input_mode: "choice" | "free_text";
   event_id: string;
@@ -357,6 +376,7 @@ type SPLedgerItem = {
   created_by_sub: string | null;
   note: string | null;
   created_at: string;
+  world_context?: WorldContext | null;
 };
 
 type SPWallet = {
@@ -827,7 +847,7 @@ type ObservabilitySummary = {
 
 type ActivityMessage = {
   event: string;
-  data: Record<string, unknown>;
+  data: Record<string, unknown> & { world_context?: WorldContext };
 };
 
 type APIError = Error & {
@@ -1072,6 +1092,7 @@ function App() {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [wallet, setWallet] = useState<SPWallet | null>(null);
   const [worldId, setWorldId] = useState("world-alpha");
+  const [opsWorldId, setOpsWorldId] = useState("");
   const [worldPacks, setWorldPacks] = useState<WorldPackItem[]>([]);
   const [selectedPackId, setSelectedPackId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -1101,6 +1122,7 @@ function App() {
   const [worldTickOps, setWorldTickOps] = useState<WorldTickItem[]>([]);
   const [npcLocationOps, setNpcLocationOps] = useState<NPCLocationSummary[]>([]);
   const [offstageBeatOps, setOffstageBeatOps] = useState<AmbientBeatOpsItem[]>([]);
+  const [opsWorlds, setOpsWorlds] = useState<OpsWorldItem[]>([]);
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
@@ -1133,10 +1155,24 @@ function App() {
   const socketRef = useRef<WebSocket | null>(null);
 
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
-  const activeWorldId = session?.world_id ?? worldId;
+  const activeWorldId = route === "admin" ? (opsWorldId || session?.world_id || worldId) : (session?.world_id ?? worldId);
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId) ?? null;
   const selectedTemplate = selectedPack?.world_templates.find((item) => item.template_id === selectedTemplateId) ?? null;
+  const activeWorldContext =
+    opsWorlds.find((item) => item.world_context.world_id === activeWorldId)?.world_context ??
+    sessionState?.world_context ??
+    (session
+      ? {
+          world_id: session.world_id,
+          world_name: session.world_name,
+          pack_id: session.pack_id,
+          pack_display_name: selectedPack?.display_name ?? session.pack_id,
+          world_template_id: session.world_template_id,
+          world_template_display_name: selectedTemplate?.display_name ?? session.world_template_id,
+          semantic_tags: [],
+        }
+      : null);
   const suggestedChoices = sessionState?.next_choices ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
@@ -1196,6 +1232,7 @@ function App() {
       setWorldTickOps([]);
       setNpcLocationOps([]);
       setOffstageBeatOps([]);
+      setOpsWorlds([]);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -1241,6 +1278,16 @@ function App() {
   useEffect(() => {
     setAdjustWorldId(session?.world_id ?? worldId);
   }, [session, worldId]);
+
+  useEffect(() => {
+    if (opsWorldId && opsWorlds.some((item) => item.world_context.world_id === opsWorldId)) {
+      return;
+    }
+    const nextWorldId = session?.world_id || opsWorlds[0]?.world_context.world_id || "";
+    if (nextWorldId !== opsWorldId) {
+      setOpsWorldId(nextWorldId);
+    }
+  }, [opsWorldId, opsWorlds, session]);
 
   useEffect(() => {
     if (!session || !token) {
@@ -1366,7 +1413,17 @@ function App() {
     }
 
     try {
-      const [statusPayload, embeddingPayload, observabilityPayload, overviewPayload, ledgerPayload, evalRunsPayload, gatePayload, councilPayload] = await Promise.all([
+      const [
+        statusPayload,
+        embeddingPayload,
+        observabilityPayload,
+        overviewPayload,
+        ledgerPayload,
+        evalRunsPayload,
+        gatePayload,
+        councilPayload,
+        worldsPayload,
+      ] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
         apiFetch<EmbeddingStatus>("/ops/memories/status", currentToken),
         apiFetch<ObservabilitySummary>("/ops/observability/summary", currentToken),
@@ -1381,6 +1438,7 @@ function App() {
           `/ops/council/turns?limit=8${currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : ""}`,
           currentToken,
         ),
+        apiFetch<{ items: OpsWorldItem[] }>("/ops/worlds", currentToken),
       ]);
       setProjectionStatus(statusPayload);
       setEmbeddingStatus(embeddingPayload);
@@ -1390,6 +1448,7 @@ function App() {
       setEvalRuns(evalRunsPayload.items);
       setReleaseGate(gatePayload);
       setCouncilTurns(councilPayload.items);
+      setOpsWorlds(worldsPayload.items);
       setOpsState("ready");
     } catch (requestError) {
       const typedError = requestError as APIError;
@@ -1411,6 +1470,7 @@ function App() {
         setWorldTickOps([]);
         setNpcLocationOps([]);
         setOffstageBeatOps([]);
+        setOpsWorlds([]);
         setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
@@ -1457,6 +1517,7 @@ function App() {
       setWorldTickOps([]);
       setNpcLocationOps([]);
       setOffstageBeatOps([]);
+      setOpsWorlds([]);
       return;
     }
 
@@ -1527,6 +1588,7 @@ function App() {
       setWorldTickOps([]);
       setNpcLocationOps([]);
       setOffstageBeatOps([]);
+      setOpsWorlds([]);
     }
   }
 
@@ -1571,6 +1633,7 @@ function App() {
         }),
       });
       setSession(created);
+      setOpsWorldId(created.world_id);
       setLedgerWorldFilter(created.world_id);
       setAdjustWorldId(created.world_id);
       await Promise.all([
@@ -2451,6 +2514,11 @@ function App() {
                 {activity.map((item, index) => (
                   <li key={`${item.event}-${index}`}>
                     <strong>{item.event}</strong>
+                    {item.data.world_context ? (
+                      <span>
+                        {item.data.world_context.pack_display_name} / {item.data.world_context.world_template_display_name}
+                      </span>
+                    ) : null}
                     <span>{JSON.stringify(item.data)}</span>
                   </li>
                 ))}
@@ -2539,6 +2607,34 @@ function App() {
             <article className="card wide">
               <h2>Projection runtime</h2>
               <p data-testid="ops-status">Ops access: {opsState}</p>
+              <label>
+                Admin World
+                <select
+                  data-testid="ops-world-select"
+                  value={activeWorldId}
+                  onChange={(event) => {
+                    setOpsWorldId(event.target.value);
+                    setLedgerWorldFilter(event.target.value);
+                    setAdjustWorldId(event.target.value);
+                  }}
+                  disabled={!opsWorlds.length}
+                >
+                  {opsWorlds.length ? (
+                    opsWorlds.map((item) => (
+                      <option key={item.world_context.world_id} value={item.world_context.world_id}>
+                        {item.world_context.world_name} / {item.world_context.pack_display_name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={activeWorldId}>{activeWorldId || "No worlds loaded"}</option>
+                  )}
+                </select>
+              </label>
+              <p data-testid="active-world-context">
+                Pack: {activeWorldContext?.pack_display_name ?? "unknown"} / Template:{" "}
+                {activeWorldContext?.world_template_display_name ?? "unknown"} / World:{" "}
+                {activeWorldContext?.world_name ?? activeWorldId}
+              </p>
               <p>
                 Backend: {projectionStatus?.backend ?? health?.projection?.backend ?? "unknown"} / Graph read:{" "}
                 {projectionStatus?.graph_read_mode ?? health?.projection?.graph_read_mode ?? "unknown"} / Runtime:{" "}
@@ -3166,6 +3262,10 @@ function App() {
 
             <article className="card">
               <h2>SP overview</h2>
+              <p data-testid="sp-world-context">
+                Pack dimension: {activeWorldContext?.pack_display_name ?? "global"} /{" "}
+                {activeWorldContext?.world_template_display_name ?? "all templates"}
+              </p>
               <p data-testid="sp-overview">
                 Accounts: {spOverview?.total_accounts ?? 0} / Ledger rows: {spOverview?.total_ledger_entries ?? 0}
               </p>
@@ -3188,6 +3288,7 @@ function App() {
                     <strong>{item.reason_code}</strong>
                     <span>{item.user_sub}</span>
                     <span>{item.delta}</span>
+                    <span>{item.world_context?.pack_display_name ?? "global"}</span>
                   </li>
                 ))}
               </ul>
@@ -3224,7 +3325,7 @@ function App() {
                     <span>
                       delta {item.delta} / balance {item.balance_after}
                     </span>
-                    <span>{item.world_id ?? "global"}</span>
+                    <span>{item.world_context?.pack_display_name ?? item.world_id ?? "global"}</span>
                   </li>
                 ))}
               </ul>

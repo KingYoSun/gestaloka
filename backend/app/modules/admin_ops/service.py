@@ -7,10 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Session as GameSession, Turn
+from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Session as GameSession, Turn, World
 from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
+from app.modules.world_pack.service import nullable_world_context_for_world, world_context_for_world
 from app.modules.world_memory.service import MemoryService
 from app.modules.world_state.ambient import (
     list_ambient_beats_debug,
@@ -204,7 +205,12 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
 
 
 def sp_overview(db: Session, economy_service: EconomyService) -> dict[str, object]:
-    return economy_service.overview(db)
+    payload = economy_service.overview(db)
+    payload["recent_adjustments"] = _ledger_entries_with_world_context(
+        db,
+        list(payload.get("recent_adjustments") or []),
+    )
+    return payload
 
 
 def sp_ledger(
@@ -216,8 +222,46 @@ def sp_ledger(
     limit: int,
 ) -> dict[str, object]:
     return {
-        "items": economy_service.list_ledger(db, user_sub=user_sub, world_id=world_id, limit=limit),
+        "items": _ledger_entries_with_world_context(
+            db,
+            economy_service.list_ledger(db, user_sub=user_sub, world_id=world_id, limit=limit),
+        ),
     }
+
+
+def list_world_contexts(db: Session) -> dict[str, object]:
+    active_session_counts = {
+        world_id: int(count)
+        for world_id, count in db.execute(
+            select(GameSession.world_id, func.count(GameSession.id))
+            .where(GameSession.status == "active")
+            .group_by(GameSession.world_id)
+        ).all()
+    }
+    worlds = list(db.execute(select(World).order_by(World.updated_at.desc(), World.id.asc())).scalars())
+    return {
+        "items": [
+            {
+                "world_context": world_context_for_world(db, world.id),
+                "status": world.status,
+                "active_session_count": active_session_counts.get(world.id, 0),
+                "updated_at": world.updated_at.isoformat(),
+            }
+            for world in worlds
+        ],
+    }
+
+
+def _ledger_entries_with_world_context(db: Session, entries: list[dict[str, object]]) -> list[dict[str, object]]:
+    contexts: dict[str | None, dict[str, object] | None] = {None: None}
+    enriched = []
+    for entry in entries:
+        world_id = entry.get("world_id")
+        normalized_world_id = str(world_id) if world_id is not None else None
+        if normalized_world_id not in contexts:
+            contexts[normalized_world_id] = nullable_world_context_for_world(db, normalized_world_id)
+        enriched.append({**entry, "world_context": contexts[normalized_world_id]})
+    return enriched
 
 
 def memory_status(db: Session, memory_service: MemoryService) -> dict[str, object]:

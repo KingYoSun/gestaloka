@@ -420,12 +420,16 @@ class ObservabilityService:
         world_id: str | None,
         close_code: int | None,
         outcome: str,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
     ) -> None:
         with self.span(
             "websocket.session",
             attributes={
                 "session_id": session_id,
                 "world_id": world_id,
+                "pack_id": pack_id,
+                "world_template_id": world_template_id,
                 "websocket.close_code": close_code,
                 "websocket.outcome": outcome,
                 "runtime_role": self.settings.app_runtime_role,
@@ -442,11 +446,15 @@ class ObservabilityService:
         turn_id: str,
         final_lane: str,
         graph_context_status: str,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
     ) -> None:
         with self.span(
             "turn.resolve",
             attributes={
                 "world_id": world_id,
+                "pack_id": pack_id,
+                "world_template_id": world_template_id,
                 "session_id": session_id,
                 "turn_id": turn_id,
                 "lane": final_lane,
@@ -459,6 +467,8 @@ class ObservabilityService:
             duration_seconds,
             {
                 "world_id": world_id,
+                "pack_id": pack_id or "",
+                "world_template_id": world_template_id or "",
                 "session_id": session_id,
                 "turn_id": turn_id,
                 "lane": final_lane,
@@ -478,9 +488,13 @@ class ObservabilityService:
         graph_context_status: str,
         schema_valid: bool,
         used_fallback: bool,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
     ) -> None:
         attributes = {
             "world_id": world_id or "",
+            "pack_id": pack_id or "",
+            "world_template_id": world_template_id or "",
             "turn_id": turn_id or "",
             "prompt_id": prompt_id,
             "model_id": model_id,

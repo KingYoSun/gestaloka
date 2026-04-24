@@ -10,6 +10,7 @@ from app.core.container import AppContainer, build_container
 from app.core.realtime import realtime_hub
 from app.models.entities import Session as GameSession
 from app.modules.actor.service import get_player_actor_for_user
+from app.modules.world_pack.service import world_context_for_world
 
 
 def create_app(container: AppContainer | None = None) -> FastAPI:
@@ -54,6 +55,8 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
     @app.websocket("/ws/sessions/{session_id}")
     async def session_socket(websocket: WebSocket, session_id: str) -> None:
         world_id: str | None = None
+        pack_id: str | None = None
+        world_template_id: str | None = None
         close_code: int | None = None
         outcome = "closed"
         connected = False
@@ -67,6 +70,8 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                 world_id=None,
                 close_code=close_code,
                 outcome=outcome,
+                pack_id=None,
+                world_template_id=None,
             )
             return
 
@@ -81,6 +86,8 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                 world_id=None,
                 close_code=close_code,
                 outcome=outcome,
+                pack_id=None,
+                world_template_id=None,
             )
             return
 
@@ -95,9 +102,14 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                     world_id=None,
                     close_code=close_code,
                     outcome=outcome,
+                    pack_id=None,
+                    world_template_id=None,
                 )
                 return
             world_id = game_session.world_id
+            world_context = world_context_for_world(db, world_id)
+            pack_id = str(world_context["pack_id"])
+            world_template_id = str(world_context["world_template_id"])
             player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
             if player_actor is None or player_actor.id != game_session.player_actor_id:
                 close_code = 4403
@@ -108,6 +120,8 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                     world_id=world_id,
                     close_code=close_code,
                     outcome=outcome,
+                    pack_id=pack_id,
+                    world_template_id=world_template_id,
                 )
                 return
 
@@ -127,6 +141,8 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
                 world_id=world_id,
                 close_code=close_code,
                 outcome=outcome,
+                pack_id=pack_id,
+                world_template_id=world_template_id,
             )
 
     return app

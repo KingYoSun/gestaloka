@@ -26,6 +26,11 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toContainText(/Runner Eska/i, { timeout: 20_000 });
 
+  await page.getByTestId("nav-admin").click();
+  await expect(page.getByTestId("ops-world-select")).toHaveValue(worldId, { timeout: slowTimeout });
+  await expect(page.getByTestId("active-world-context")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
+  await page.getByTestId("nav-game").click();
+
   for (let step = 0; step < 2; step += 1) {
     await page.getByTestId("choice-progress").click();
     await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });

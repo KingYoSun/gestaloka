@@ -237,7 +237,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "recent_world_beats",
             "recent_offstage_beats",
             "idle_updates",
+            "world_context",
         }
+        assert turn_payload["world_context"]["pack_id"] == "ember_harbor"
+        assert turn_payload["world_context"]["world_template_id"] == "ember_harbor"
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"
         assert turn_payload["sp_delta"] == -1
@@ -290,6 +293,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert messages[-1]["data"] == turn_payload
     assert messages[-2]["data"]["world_id"] == session_payload["world_id"]
     assert {"vertex_count", "edge_count"} <= set(messages[-2]["data"])
+    assert all(message["data"]["world_context"]["pack_id"] == "ember_harbor" for message in messages)
+    assert all(message["data"]["world_context"]["world_template_id"] == "ember_harbor" for message in messages)
 
 
 def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
@@ -338,6 +343,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         )
         assert use_response.status_code == 200
         payload = use_response.json()
+        assert payload["world_context"]["pack_id"] == "ember_harbor"
         assert payload["action_type"] == "use_reward_item"
         assert payload["input_mode"] == "choice"
         assert payload["quest_updates"][0]["stage_key"] == world_pack["followup_stage_key"]
@@ -380,6 +386,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "choice_generation",
     ]
     assert messages[-1]["data"] == payload
+    assert all(message["data"]["world_context"]["pack_id"] == "ember_harbor" for message in messages)
     assert payload["scene_updates"]
     assert payload["chapter_updates"]
 
@@ -418,6 +425,14 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert summary_response.status_code == 200
     summary_payload = summary_response.json()
     assert summary_payload["world_id"] == session_payload["world_id"]
+    worlds_response = client.get("/ops/worlds", headers=auth_headers)
+    assert worlds_response.status_code == 200
+    worlds_payload = worlds_response.json()
+    world_item = next(item for item in worlds_payload["items"] if item["world_context"]["world_id"] == session_payload["world_id"])
+    assert world_item["world_context"]["pack_id"] == "ember_harbor"
+    assert world_item["world_context"]["world_template_id"] == "ember_harbor"
+    assert world_item["status"] == "active"
+    assert world_item["active_session_count"] >= 1
     assert summary_payload["vertex_count"] >= 6
     assert summary_payload["edge_count"] >= 6
     assert summary_payload["label_counts"]["Faction"] >= 1

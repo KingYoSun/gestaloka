@@ -467,14 +467,29 @@ def world_pack_summary(db: Session, world_id: str) -> dict[str, Any]:
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is None:
         raise LookupError(f"World not found: {world_id}")
+    return world_context_for_world(db, world_id)
+
+
+def world_context_for_world(db: Session, world_id: str) -> dict[str, Any]:
+    world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    if world is None:
+        raise LookupError(f"World not found: {world_id}")
     registry = get_pack_registry()
     metadata = world_pack_metadata(world)
     pack = registry.get_pack(metadata["pack_id"])
     template = pack.template(metadata["world_template_id"])
     return {
+        "world_id": world.id,
+        "world_name": world.name,
         "pack_id": pack.manifest.pack_id,
         "pack_display_name": pack.manifest.display_name,
         "world_template_id": template.template_id,
         "world_template_display_name": template.display_name,
         "semantic_tags": list(pack.manifest.semantic_tags),
     }
+
+
+def nullable_world_context_for_world(db: Session, world_id: str | None) -> dict[str, Any] | None:
+    if world_id is None:
+        return None
+    return world_context_for_world(db, world_id)
