@@ -94,6 +94,16 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     assert payload["langfuse_trace_url"] == runs[0].langfuse_trace_url
 
 
+def test_ember_pack_regression_dataset_runs(container):
+    with container.session_factory() as db:
+        payload = container.eval_service.run_dataset(db, "turn_resolution_ember_regression")
+        db.commit()
+
+    assert payload["summary"]["case_count"] == 3
+    assert payload["summary"]["variants"]["current"]["gate_passed"] is True
+    assert payload["summary"]["variants"]["candidate"]["gate_passed"] is True
+
+
 def test_eval_cli_runs_named_dataset(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     calls: list[str] = []
 

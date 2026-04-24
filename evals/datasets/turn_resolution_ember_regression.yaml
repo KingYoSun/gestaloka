@@ -1,0 +1,129 @@
+dataset_id: turn_resolution_ember_regression
+prompt_id: session.turn_resolution
+expected_output_schema: council_turn_resolution_v1
+cases:
+  - case_id: ember-choice-free-text-parity
+    world_id: eval-ember-regression
+    pack_id: ember_harbor
+    world_template_id: ember_harbor
+    player_name: Demo Player
+    npc_name: Runner Eska
+    input_text: 埠頭で困っている相手を助け、港の依頼を進める
+    input_mode: free_text
+    relevant_memories: []
+    relation_context:
+      - location=Ember Harbor
+      - relationship=Runner Eska KNOWS Demo Player (0.55)
+      - active_quest=First Harbor Request [active 0/2]
+      - faction=Ember Wardens standing=0.25 (neutral)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - earned_trust
+    expected_world_tags:
+      - aid_local
+    quest_context:
+      current_progress: 0
+      progress_target: 2
+      current_standing: 0.25
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: false
+    expect_standing_after: 0.4
+  - case_id: ember-memory-aware-reward
+    world_id: eval-ember-regression
+    pack_id: ember_harbor
+    world_template_id: ember_harbor
+    player_name: Demo Player
+    npc_name: Runner Eska
+    input_text: 港の手伝いを報告し、次の約束を果たす
+    input_mode: choice
+    choice_id: progress
+    relevant_memories:
+      - Demo PlayerはEmber Harborで港の依頼を助け、Runner Eskaへ報告した。
+    relation_context:
+      - location=Ember Harbor
+      - memory=Demo PlayerはEmber Harborで港の依頼を助け、Runner Eskaへ報告した。
+      - relationship=Runner Eska KNOWS Demo Player (0.65)
+      - active_quest=First Harbor Request [active 1/2]
+      - faction=Ember Wardens standing=0.40 (favored)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 1
+    expect_retrieval_hit_substring: 港の依頼
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - earned_trust
+    expected_world_tags:
+      - promise_followup
+    quest_context:
+      current_progress: 1
+      progress_target: 2
+      current_standing: 0.4
+      reward_already_issued: false
+    expect_progress_after: 2
+    expect_reward_issued: true
+    expect_standing_after: 0.55
+  - case_id: ember-followup-after-seal
+    world_id: eval-ember-regression
+    pack_id: ember_harbor
+    world_template_id: ember_harbor
+    player_name: Demo Player
+    npc_name: Runner Eska
+    input_text: Harbor Sealで開いた breakwater の様子を観察する
+    input_mode: free_text
+    relevant_memories:
+      - Ember HarborでHarbor Sealが使われ、Cinder Breakwaterへの道が解放された。
+    relation_context:
+      - location=Ember Harbor
+      - memory=Ember HarborでHarbor Sealが使われ、Cinder Breakwaterへの道が解放された。
+      - relationship=Runner Eska KNOWS Demo Player (0.75)
+      - active_quest=Breakwater Unsealed [active 0/1]
+      - faction=Ember Wardens standing=0.65 (favored)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 1
+    expect_retrieval_hit_substring: Harbor Seal
+    expect_outcome_band: steady
+    expect_scene_move: deepen
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      title: Breakwater Unsealed
+      stage_key: breakwater_unsealed
+      unlock_requirements:
+        starter_item_effect: unlock_breakwater_route
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.65
+      reward_already_issued: false
+      reward_enabled: false
+      inventory_items:
+        - id: harbor-seal-1
+          template_key: harbor_seals
+          name: Harbor Seal
+          description: Reward item from the Ember Wardens.
+          status: used
+          usable: false
+          effect_kind: unlock_breakwater_route
+    expect_progress_after: 0
+    expect_reward_issued: false
+    expect_standing_after: 0.65

@@ -152,3 +152,45 @@ def test_pack_cli_validates_single_pack(tmp_path: Path, monkeypatch: pytest.Monk
     payload = yaml.safe_load(capsys.readouterr().out)
     assert payload["pack_dir"] == str(pack_dir)
     assert [item["pack_id"] for item in payload["validated"]] == ["ember_harbor"]
+
+
+def test_pack_cli_scans_runtime_source_for_pack_specific_literals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    pack_dir = _copy_pack_dir(tmp_path)
+    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+    scan_root = tmp_path / "runtime"
+    scan_root.mkdir()
+    runtime_file = scan_root / "service.py"
+    runtime_file.write_text('DEFAULT_WORLD_LABEL = "current world"\n', encoding="utf-8")
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'gestaloka.db'}",
+        alembic_database_url=f"sqlite:///{tmp_path / 'gestaloka.db'}",
+        pack_dir=pack_dir,
+        prompt_dir=REPO_ROOT / "prompts",
+        eval_dataset_dir=REPO_ROOT / "evals" / "datasets",
+        release_config_dir=REPO_ROOT / "config" / "release",
+        oidc_dev_mode=True,
+        otel_metrics_port=0,
+    )
+    monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["world_pack", "scan-leaks", "--scan-root", str(scan_root)])
+
+    world_pack_main()
+
+    clean_payload = yaml.safe_load(capsys.readouterr().out)
+    assert clean_payload["leak_count"] == 0
+    assert clean_payload["term_count"] > 0
+
+    runtime_file.write_text('DEFAULT_WORLD_LABEL = "Founders Reach"\n', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["world_pack", "scan-leaks", "--scan-root", str(scan_root)])
+
+    with pytest.raises(SystemExit) as exc:
+        world_pack_main()
+
+    assert exc.value.code == 1
+    leak_payload = yaml.safe_load(capsys.readouterr().out)
+    assert leak_payload["leak_count"] == 1
+    assert leak_payload["leaks"][0]["term"] == "Founders Reach"

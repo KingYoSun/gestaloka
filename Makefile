@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_COMPOSE_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -24,6 +24,9 @@ pack-list:
 pack-validate:
 	PYTHONPATH=backend python -m app.modules.world_pack validate
 
+scan-pack-leaks:
+	PYTHONPATH=backend python -m app.modules.world_pack scan-leaks
+
 build-frontend:
 	$(COMPOSE) build frontend
 	$(COMPOSE) run --rm --no-deps frontend npm run build
@@ -39,6 +42,7 @@ frontend-e2e:
 verify-v2:
 	$(MAKE) backend-test
 	$(MAKE) pack-validate
+	$(MAKE) scan-pack-leaks
 	$(MAKE) scan-v1-terms
 	$(MAKE) check-legacy
 	$(MAKE) build-frontend
@@ -46,6 +50,10 @@ verify-v2:
 
 eval-smoke:
 	PYTHONPATH=backend python -m app.modules.eval_harness smoke
+
+eval-pack-regressions:
+	PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_founders_regression
+	PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_ember_regression
 
 eval-shadow:
 	PYTHONPATH=backend python -m app.modules.eval_harness shadow
