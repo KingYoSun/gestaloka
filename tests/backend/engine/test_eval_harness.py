@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.prompts import PromptRegistry
 from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry
 from app.modules.eval_harness.service import EvalHarnessService
+from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult
@@ -18,12 +19,12 @@ from app.modules.world_memory.service import MemoryService
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
-def founders_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "pack_id": "founders_reach",
-        "world_template_id": "founders_reach",
-        "world_name": "Founders Reach",
+        "pack_id": "ember_harbor",
+        "world_template_id": "ember_harbor",
+        "world_name": "Ember Harbor",
     }
 
 
@@ -41,17 +42,17 @@ def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
                 "cases:",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
-                "    pack_id: founders_reach",
-                "    world_template_id: founders_reach",
+                "    pack_id: ember_harbor",
+                "    world_template_id: ember_harbor",
                 "    player_name: Demo Player",
-                "    npc_name: Archivist Nera",
+                "    npc_name: Runner Eska",
                 "    input_text: one",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
-                "    pack_id: founders_reach",
-                "    world_template_id: founders_reach",
+                "    pack_id: ember_harbor",
+                "    world_template_id: ember_harbor",
                 "    player_name: Demo Player",
-                "    npc_name: Archivist Nera",
+                "    npc_name: Runner Eska",
                 "    input_text: two",
             ]
         ),
@@ -93,10 +94,46 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     assert payload["langfuse_trace_url"] == runs[0].langfuse_trace_url
 
 
+def test_eval_cli_runs_named_dataset(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    calls: list[str] = []
+
+    class FakeSession:
+        def __enter__(self) -> "FakeSession":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def commit(self) -> None:
+            return None
+
+    class FakeEvalService:
+        def run_dataset(self, db: FakeSession, dataset_name: str) -> dict[str, object]:
+            calls.append(dataset_name)
+            return {"dataset_name": dataset_name}
+
+    class FakeContainer:
+        eval_service = FakeEvalService()
+
+        def session_factory(self) -> FakeSession:
+            return FakeSession()
+
+    monkeypatch.setattr("app.modules.eval_harness.cli.build_container", lambda: FakeContainer())
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eval_harness", "dataset", "--dataset", "turn_resolution_founders_regression"],
+    )
+
+    eval_cli_main()
+
+    assert calls == ["turn_resolution_founders_regression"]
+    assert "turn_resolution_founders_regression" in capsys.readouterr().out
+
+
 def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -134,7 +171,7 @@ def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container,
 def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -206,7 +243,7 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
 def test_scheduler_helpers_only_persist_eval_and_release_tables(client, container, auth_headers, monkeypatch):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -260,7 +297,7 @@ def test_langfuse_flush_failure_degrades_but_does_not_fail_turn(client, containe
 
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()

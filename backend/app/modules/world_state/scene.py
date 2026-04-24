@@ -68,6 +68,17 @@ def _chapter_status_for_state(chapter_key: str, state: dict[str, Any]) -> Chapte
     return "active"
 
 
+def _branch_entry_for_slot(world_pack: dict[str, Any], slot: str) -> dict[str, Any]:
+    followup_branches = world_pack.get("followup_branches") or {}
+    entry = followup_branches.get(slot) if isinstance(followup_branches, dict) else None
+    return dict(entry or {})
+
+
+def _branch_summary_for_slot(world_pack: dict[str, Any], slot: str) -> str:
+    entry = _branch_entry_for_slot(world_pack, slot)
+    return str(entry.get("summary") or "").strip()
+
+
 def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, state: dict[str, Any]) -> str:
     world_pack = state.get("world_pack") or {}
     followup_chapter_key = str(world_pack.get("followup_chapter_key") or "followup_chapter")
@@ -75,25 +86,16 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
     starter_location_name = str(world_pack.get("starter_location_name") or "the starting place")
     world_name = str(world_pack.get("world_name") or "the current world")
     reward_name = str(world_pack.get("reward_name") or "the reward item")
-    formal_branch_key = branch_key_for_slot(world_pack, "formal_path")
-    undercurrent_branch_key = branch_key_for_slot(world_pack, "undercurrent_path")
-    formal_branch_label = branch_label(formal_branch_key, world_pack=world_pack)
-    undercurrent_branch_label = branch_label(undercurrent_branch_key, world_pack=world_pack)
     chapter_state = state.get("chapter") or {}
     current_branch = str(chapter_state.get("current_branch") or "")
     crossroads_summary = str(chapter_state.get("crossroads_summary") or "").strip()
     current_branch_slot = branch_slot_for_key(world_pack, current_branch)
     if chapter_key == followup_chapter_key:
-        if current_branch_slot == "formal_path":
-            base = (
-                f"The next chapter follows {followup_location_name} through {formal_branch_label}, leaning toward formal trust, "
-                "kept promises, and the world's visible order."
-            )
-        elif current_branch_slot == "undercurrent_path":
-            base = (
-                f"The next chapter follows {followup_location_name} through {undercurrent_branch_label}, leaning toward rumor, "
-                "undertow, and the world's quieter pull."
-            )
+        if current_branch_slot in {"formal_path", "undercurrent_path"}:
+            branch_key = branch_key_for_slot(world_pack, current_branch_slot)
+            label = branch_label(branch_key, world_pack=world_pack)
+            summary = _branch_summary_for_slot(world_pack, current_branch_slot)
+            base = f"The next chapter follows {followup_location_name} through {label}.{f' {summary}' if summary else ''}"
         elif crossroads_summary:
             base = crossroads_summary
         else:
@@ -129,10 +131,12 @@ def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
     active_quest = _active_quest(state)
     progress = int(active_quest.get("progress") or 0)
     if chapter_key == followup_chapter_key:
-        if current_branch_slot == "formal_path":
-            return f"The route toward {followup_location_name} is asking whether formal trust can actually hold."
-        if current_branch_slot == "undercurrent_path":
-            return f"The route toward {followup_location_name} is listening for rumor, undertow, and what the world keeps half-hidden."
+        if current_branch_slot in {"formal_path", "undercurrent_path"}:
+            summary = _branch_summary_for_slot(world_pack, current_branch_slot)
+            if summary:
+                return f"The route toward {followup_location_name} is now shaped by {summary}"
+            branch_key = branch_key_for_slot(world_pack, current_branch_slot)
+            return f"The route toward {followup_location_name} is now shaped by {branch_label(branch_key, world_pack=world_pack)}."
         followup = _followup_quest(state)
         if followup and str(followup.get("status") or "") == "completed":
             return f"The newly opened route toward {followup_location_name} is settling after the reward token's passage."

@@ -6,12 +6,12 @@ from app.modules.identity.oidc import UserIdentity
 from app.modules.observability.service import CanaryProbeResult
 
 
-def founders_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "pack_id": "founders_reach",
-        "world_template_id": "founders_reach",
-        "world_name": "Founders Reach",
+        "pack_id": "ember_harbor",
+        "world_template_id": "ember_harbor",
+        "world_name": "Ember Harbor",
     }
 
 
@@ -53,8 +53,8 @@ def test_session_requires_explicit_pack_id(client, auth_headers):
         "/sessions",
         json={
             "world_id": "world-alpha",
-            "world_template_id": "founders_reach",
-            "world_name": "Founders Reach",
+            "world_template_id": "ember_harbor",
+            "world_name": "Ember Harbor",
         },
         headers=auth_headers,
     )
@@ -68,8 +68,8 @@ def test_session_requires_explicit_world_template_id(client, auth_headers):
         "/sessions",
         json={
             "world_id": "world-alpha",
-            "pack_id": "founders_reach",
-            "world_name": "Founders Reach",
+            "pack_id": "ember_harbor",
+            "world_name": "Ember Harbor",
         },
         headers=auth_headers,
     )
@@ -93,7 +93,7 @@ def test_world_membership_mismatch_returns_404(client, container):
 
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers={"Authorization": "Bearer player-a"},
     )
     assert session_response.status_code == 200
@@ -135,7 +135,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
 
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     assert session_response.status_code == 200
@@ -294,7 +294,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
 def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -386,7 +386,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
 def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -546,7 +546,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
 def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -598,7 +598,7 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
 def test_ops_eval_contracts(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -703,7 +703,7 @@ def test_canary_runtime_blocks_gameplay_writes(client, container, auth_headers):
 
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
 

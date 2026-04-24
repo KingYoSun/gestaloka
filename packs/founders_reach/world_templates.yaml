@@ -19,11 +19,31 @@ world_templates:
         formal_path:
           branch_key: watch_oath
           label: Watch Oath
+          summary: Watch Oath keeps the route aligned with recorded promises and public trust.
+          committed_summary: The follow-up route has committed to Watch Oath, binding the watch path to recorded promises and public trust.
+          player_hint: The chapter now leans toward Watch Oath and the duties the watch can openly recognize.
+          signal_weights:
+            formal_trust: 0.12
+            kept_formal_promise: 0.15
+            rumor_curiosity: -0.02
+            street_pull: -0.02
+            public_scrutiny: 0.03
+            reward_item_commitment: 0.1
           anchor_npcs:
             - Archivist Nera
         undercurrent_path:
           branch_key: lantern_whispers
           label: Lantern Whispers
+          summary: Lantern Whispers follows quiet reports, offstage movement, and what the lanterns half-reveal.
+          committed_summary: The follow-up route has committed to Lantern Whispers, carrying the watch path through quiet reports and offstage echoes.
+          player_hint: The chapter now leans toward Lantern Whispers and the quieter pull around the watch path.
+          signal_weights:
+            formal_trust: -0.02
+            kept_formal_promise: -0.03
+            rumor_curiosity: 0.12
+            street_pull: 0.12
+            public_scrutiny: 0.08
+            reward_item_commitment: 0.02
           anchor_npcs:
             - Courier Pell
             - Lamplighter Sera

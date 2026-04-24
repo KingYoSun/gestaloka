@@ -162,8 +162,8 @@ def test_item_cannot_reference_owner_from_another_world(container):
             Item(
                 world_id="world-b",
                 owner_actor_id=actor.id,
-                template_key="lantern_sigils",
-                name="Lantern Sigil",
+                template_key="test_item",
+                name="Test Item",
                 description="desc",
                 status="active",
             )
@@ -218,7 +218,7 @@ def test_chapter_track_cannot_reference_owner_from_another_world(container):
             ChapterTrack(
                 world_id="world-b",
                 owner_actor_id=owner.id,
-                chapter_key="founders_watch_opening",
+                chapter_key="opening_chapter",
                 status="active",
                 summary="bad",
             )
@@ -243,7 +243,7 @@ def test_scene_frame_cannot_reference_chapter_from_another_world(container):
         chapter = ChapterTrack(
             world_id="world-b",
             owner_actor_id=owner_b.id,
-            chapter_key="founders_watch_opening",
+            chapter_key="opening_chapter",
             status="active",
             summary="chapter",
         )

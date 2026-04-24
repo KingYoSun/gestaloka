@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 
-def founders_session_payload() -> dict[str, str]:
+def engine_session_payload() -> dict[str, str]:
     return {
         "world_id": "world-alpha",
-        "pack_id": "founders_reach",
-        "world_template_id": "founders_reach",
-        "world_name": "Founders Reach",
+        "pack_id": "ember_harbor",
+        "world_template_id": "ember_harbor",
+        "world_name": "Ember Harbor",
     }
 
 
 def test_turn_execution_updates_observability_traces_and_metrics(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()

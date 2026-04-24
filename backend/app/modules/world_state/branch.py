@@ -20,6 +20,14 @@ BranchSignal = Literal[
     "public_scrutiny",
     "reward_item_commitment",
 ]
+BRANCH_SIGNAL_VALUES = {
+    "formal_trust",
+    "kept_formal_promise",
+    "rumor_curiosity",
+    "street_pull",
+    "public_scrutiny",
+    "reward_item_commitment",
+}
 
 FORMAL_PATH_SLOT: BranchSlot = "formal_path"
 UNDERCURRENT_PATH_SLOT: BranchSlot = "undercurrent_path"
@@ -77,6 +85,14 @@ def _followup_branches_from_world_pack(world_pack: Mapping[str, Any] | None) -> 
             "branch_key": branch_key,
             "label": str(item.get("label") or "").strip() or branch_key.replace("_", " ").title(),
             "anchor_npcs": [str(name).strip() for name in item.get("anchor_npcs") or [] if str(name).strip()],
+            "summary": str(item.get("summary") or "").strip(),
+            "committed_summary": str(item.get("committed_summary") or "").strip(),
+            "player_hint": str(item.get("player_hint") or "").strip(),
+            "signal_weights": {
+                str(key): float(value)
+                for key, value in dict(item.get("signal_weights") or {}).items()
+                if str(key).strip()
+            },
         }
     return normalized
 
@@ -125,6 +141,9 @@ def _branch_text_tokens(world_pack: Mapping[str, Any] | None, slot: BranchSlot) 
     values = [
         str(entry.get("label") or ""),
         str(entry.get("branch_key") or ""),
+        str(entry.get("summary") or ""),
+        str(entry.get("committed_summary") or ""),
+        str(entry.get("player_hint") or ""),
         *[str(name) for name in entry.get("anchor_npcs") or []],
     ]
     tokens: set[str] = set()
@@ -156,11 +175,10 @@ def branch_pressure_band(value: float) -> str:
 
 
 def normalize_branch_signals(raw_signals: list[str] | None) -> list[BranchSignal]:
-    allowed = set(ROUTE_SIGNAL_WEIGHTS)
     normalized: list[BranchSignal] = []
     for item in raw_signals or []:
         candidate = str(item or "").strip()
-        if candidate in allowed and candidate not in normalized:
+        if candidate in BRANCH_SIGNAL_VALUES and candidate not in normalized:
             normalized.append(candidate)  # type: ignore[arg-type]
     return normalized
 
@@ -296,18 +314,24 @@ def player_visible_branch_hint(
     formal_label = branch_label(formal_key, world_pack=world_pack)
     undercurrent_label = branch_label(undercurrent_key, world_pack=world_pack)
     current_slot = branch_slot_for_key(world_pack, current_branch)
-    if current_slot == FORMAL_PATH_SLOT:
-        return f"The chapter now leans toward {formal_label}, formal trust, and the world's more visible order."
-    if current_slot == UNDERCURRENT_PATH_SLOT:
-        return f"The chapter now leans toward {undercurrent_label}, rumor, undertow, and the world's quieter pull."
+    if current_slot is not None:
+        entry = _branch_entry_for_slot(world_pack, current_slot)
+        hint = str(entry.get("player_hint") or "").strip()
+        if hint:
+            return hint
+        label = branch_label(str(entry.get("branch_key") or ""), world_pack=world_pack)
+        summary = str(entry.get("summary") or "").strip()
+        return f"The chapter now leans toward {label}.{f' {summary}' if summary else ''}"
     if crossroads_status != "open":
         return ""
     formal = _pressure_value(pressures, formal_key)
     undercurrent = _pressure_value(pressures, undercurrent_key)
     if formal >= undercurrent + 0.1:
-        return f"The chapter is beginning to favor {formal_label}, though the quieter route still has something to say."
+        summary = str(_branch_entry_for_slot(world_pack, FORMAL_PATH_SLOT).get("summary") or "").strip()
+        return f"The chapter is beginning to favor {formal_label}.{f' {summary}' if summary else ''}"
     if undercurrent >= formal + 0.1:
-        return f"The chapter is beginning to favor {undercurrent_label}, though the more formal route is not gone."
+        summary = str(_branch_entry_for_slot(world_pack, UNDERCURRENT_PATH_SLOT).get("summary") or "").strip()
+        return f"The chapter is beginning to favor {undercurrent_label}.{f' {summary}' if summary else ''}"
     return f"The chapter stands at a crossroads between {formal_label} and {undercurrent_label}."
 
 
@@ -323,27 +347,24 @@ def crossroads_summary_text(
     formal_label = branch_label(formal_key, world_pack=world_pack)
     undercurrent_label = branch_label(undercurrent_key, world_pack=world_pack)
     current_slot = branch_slot_for_key(world_pack, current_branch)
-    if current_slot == FORMAL_PATH_SLOT:
-        return (
-            f"The follow-up route has committed to {formal_label}, drawing the scene toward promises kept, "
-            "public trust, and the world's visible order."
-        )
-    if current_slot == UNDERCURRENT_PATH_SLOT:
-        return (
-            f"The follow-up route has committed to {undercurrent_label}, drawing the scene toward rumor, "
-            "undertow, and offstage echoes."
-        )
+    if current_slot is not None:
+        entry = _branch_entry_for_slot(world_pack, current_slot)
+        committed_summary = str(entry.get("committed_summary") or "").strip()
+        if committed_summary:
+            return committed_summary
+        label = branch_label(str(entry.get("branch_key") or ""), world_pack=world_pack)
+        summary = str(entry.get("summary") or "").strip()
+        return f"The follow-up route has committed to {label}.{f' {summary}' if summary else ''}"
     if crossroads_status != "open":
         return ""
     formal = _pressure_value(pressures, formal_key)
     undercurrent = _pressure_value(pressures, undercurrent_key)
     if formal >= undercurrent + 0.1:
-        return f"The follow-up route is splitting toward {formal_label}, though the quieter route still pulls at its edge."
+        summary = str(_branch_entry_for_slot(world_pack, FORMAL_PATH_SLOT).get("summary") or "").strip()
+        return f"The follow-up route is splitting toward {formal_label}.{f' {summary}' if summary else ''}"
     if undercurrent >= formal + 0.1:
-        return (
-            f"The follow-up route is splitting toward {undercurrent_label}, "
-            "though the more formal route has not fully released its hold."
-        )
+        summary = str(_branch_entry_for_slot(world_pack, UNDERCURRENT_PATH_SLOT).get("summary") or "").strip()
+        return f"The follow-up route is splitting toward {undercurrent_label}.{f' {summary}' if summary else ''}"
     return f"The follow-up route now stands at a crossroads between {formal_label} and {undercurrent_label}."
 
 
@@ -405,14 +426,9 @@ def _offstage_texts(session_state: dict[str, Any]) -> list[str]:
     ][:8]
 
 
-ROUTE_SIGNAL_WEIGHTS: dict[BranchSignal, dict[BranchSlot, float]] = {
-    "formal_trust": {FORMAL_PATH_SLOT: 0.12, UNDERCURRENT_PATH_SLOT: -0.02},
-    "kept_formal_promise": {FORMAL_PATH_SLOT: 0.15, UNDERCURRENT_PATH_SLOT: -0.03},
-    "rumor_curiosity": {FORMAL_PATH_SLOT: -0.02, UNDERCURRENT_PATH_SLOT: 0.12},
-    "street_pull": {FORMAL_PATH_SLOT: -0.02, UNDERCURRENT_PATH_SLOT: 0.12},
-    "public_scrutiny": {FORMAL_PATH_SLOT: 0.03, UNDERCURRENT_PATH_SLOT: 0.08},
-    "reward_item_commitment": {FORMAL_PATH_SLOT: 0.1, UNDERCURRENT_PATH_SLOT: 0.02},
-}
+def _branch_signal_delta(followup_branches: Mapping[str, Any], slot: BranchSlot, signal: str) -> float:
+    entry = _branch_entry_for_slot(followup_branches, slot)
+    return float((entry.get("signal_weights") or {}).get(signal) or 0.0)
 
 
 def infer_branch_signals(
@@ -561,18 +577,20 @@ class BranchPressureEngine:
             UNDERCURRENT_PATH_SLOT: 0.0,
         }
         for signal in signals:
-            weights = ROUTE_SIGNAL_WEIGHTS.get(signal)
-            if weights is None:
-                continue
-            for slot, delta in weights.items():
-                deltas_by_slot[slot] += delta
-        deltas_by_slot[FORMAL_PATH_SLOT] += 0.04 if "promise" in _thread_types(session_state) else 0.0
-        deltas_by_slot[UNDERCURRENT_PATH_SLOT] += 0.04 if {"rumor", "scrutiny"} & _thread_types(session_state) else 0.0
+            for slot in FOLLOWUP_BRANCH_SLOTS:
+                deltas_by_slot[slot] += _branch_signal_delta(followup_branches, slot, signal)
+        if "promise" in _thread_types(session_state):
+            for slot in FOLLOWUP_BRANCH_SLOTS:
+                deltas_by_slot[slot] += _branch_signal_delta(followup_branches, slot, "kept_formal_promise") * 0.25
+        if {"rumor", "scrutiny"} & _thread_types(session_state):
+            for slot in FOLLOWUP_BRANCH_SLOTS:
+                deltas_by_slot[slot] += _branch_signal_delta(followup_branches, slot, "public_scrutiny") * 0.5
         if outcome_band == "setback":
-            deltas_by_slot[FORMAL_PATH_SLOT] = min(deltas_by_slot[FORMAL_PATH_SLOT], 0.05)
-            deltas_by_slot[UNDERCURRENT_PATH_SLOT] += 0.03
+            for slot in FOLLOWUP_BRANCH_SLOTS:
+                deltas_by_slot[slot] += _branch_signal_delta(followup_branches, slot, "public_scrutiny") * 0.25
         elif outcome_band == "tangled":
-            deltas_by_slot[UNDERCURRENT_PATH_SLOT] += 0.02
+            for slot in FOLLOWUP_BRANCH_SLOTS:
+                deltas_by_slot[slot] += _branch_signal_delta(followup_branches, slot, "rumor_curiosity") * 0.25
 
         if deltas_by_slot[FORMAL_PATH_SLOT] > deltas_by_slot[UNDERCURRENT_PATH_SLOT]:
             deltas_by_slot[UNDERCURRENT_PATH_SLOT] -= 0.03

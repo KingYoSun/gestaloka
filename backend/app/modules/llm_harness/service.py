@@ -562,6 +562,9 @@ class StubModelProvider(BaseModelProvider):
             raw_values = [
                 str(entry.get("label") or ""),
                 str(entry.get("branch_key") or ""),
+                str(entry.get("summary") or ""),
+                str(entry.get("committed_summary") or ""),
+                str(entry.get("player_hint") or ""),
                 *[str(item) for item in entry.get("anchor_npcs") or []],
             ]
             tokens: set[str] = set()
@@ -574,8 +577,8 @@ class StubModelProvider(BaseModelProvider):
                 tokens.add(normalized)
             return tokens
 
-        formal_tokens = _branch_tokens("formal_path") | {"oath", "promise", "order", "duty"}
-        undercurrent_tokens = _branch_tokens("undercurrent_path") | {"rumor", "whisper", "street", "undertow"}
+        formal_tokens = _branch_tokens("formal_path")
+        undercurrent_tokens = _branch_tokens("undercurrent_path")
         if (followup_stage_key and active_quest_stage == followup_stage_key) or (
             followup_chapter_key and current_chapter_key == followup_chapter_key
         ):

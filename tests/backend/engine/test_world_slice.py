@@ -7,12 +7,12 @@ from app.modules.world_state.consequence import ConsequenceRuleEngine, Consequen
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 
 
-def founders_session_payload() -> dict[str, str]:
+def engine_session_payload() -> dict[str, str]:
     return {
         "world_id": "world-alpha",
-        "pack_id": "founders_reach",
-        "world_template_id": "founders_reach",
-        "world_name": "Founders Reach",
+        "pack_id": "ember_harbor",
+        "world_template_id": "ember_harbor",
+        "world_name": "Ember Harbor",
     }
 
 
@@ -59,12 +59,12 @@ def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
 def test_session_seed_is_idempotent_for_character_faction_and_quest(client, container, auth_headers):
     first = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     second = client.post(
         "/sessions",
-        json=founders_session_payload(),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
 

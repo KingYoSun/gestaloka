@@ -14,8 +14,6 @@ from app.models.entities import World
 
 
 ENGINE_API_VERSION = "v2"
-DEFAULT_PACK_ID = "founders_reach"
-DEFAULT_WORLD_TEMPLATE_ID = "founders_reach"
 FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
@@ -59,6 +57,10 @@ class PackFollowupBranch(BaseModel):
     branch_key: str = Field(min_length=1, max_length=120)
     label: str = Field(min_length=1, max_length=120)
     anchor_npcs: list[str] = Field(min_length=1)
+    summary: str = ""
+    committed_summary: str = ""
+    player_hint: str = ""
+    signal_weights: dict[str, float] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_anchor_npcs(self) -> "PackFollowupBranch":
@@ -229,6 +231,14 @@ def serialize_followup_branches(
                 "branch_key": branch_key,
                 "label": label,
                 "anchor_npcs": [str(name).strip() for name in item.get("anchor_npcs") or [] if str(name).strip()],
+                "summary": str(item.get("summary") or "").strip(),
+                "committed_summary": str(item.get("committed_summary") or "").strip(),
+                "player_hint": str(item.get("player_hint") or "").strip(),
+                "signal_weights": {
+                    str(key): float(value)
+                    for key, value in dict(item.get("signal_weights") or {}).items()
+                    if str(key).strip()
+                },
             }
     return {
         slot: {
@@ -239,6 +249,22 @@ def serialize_followup_branches(
                 list(entry.anchor_npcs)
                 if isinstance(entry, PackFollowupBranch)
                 else [str(name) for name in entry.get("anchor_npcs") or []]
+            ),
+            "summary": entry.summary if isinstance(entry, PackFollowupBranch) else str(entry.get("summary") or ""),
+            "committed_summary": (
+                entry.committed_summary
+                if isinstance(entry, PackFollowupBranch)
+                else str(entry.get("committed_summary") or "")
+            ),
+            "player_hint": entry.player_hint if isinstance(entry, PackFollowupBranch) else str(entry.get("player_hint") or ""),
+            "signal_weights": (
+                dict(entry.signal_weights)
+                if isinstance(entry, PackFollowupBranch)
+                else {
+                    str(key): float(value)
+                    for key, value in dict(entry.get("signal_weights") or {}).items()
+                    if str(key).strip()
+                }
             ),
         }
         for slot, entry in entries.items()
@@ -286,12 +312,6 @@ class PackRegistry:
 
     def get_template(self, pack_id: str, template_id: str) -> WorldTemplateDefinition:
         return self.get_pack(pack_id).template(template_id)
-
-    def default_pack(self) -> LoadedWorldPack:
-        return self.get_pack(DEFAULT_PACK_ID)
-
-    def default_template(self) -> WorldTemplateDefinition:
-        return self.get_template(DEFAULT_PACK_ID, DEFAULT_WORLD_TEMPLATE_ID)
 
     def pack_summary_items(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -421,8 +441,11 @@ def get_pack_registry(settings: Settings | None = None) -> PackRegistry:
 
 def world_pack_metadata(world: World | None) -> dict[str, Any]:
     state = dict((world.state if world is not None else None) or {})
-    pack_id = str(state.get("pack_id") or DEFAULT_PACK_ID)
-    template_id = str(state.get("world_template_id") or DEFAULT_WORLD_TEMPLATE_ID)
+    pack_id = str(state.get("pack_id") or "").strip()
+    template_id = str(state.get("world_template_id") or "").strip()
+    if not pack_id or not template_id:
+        world_id = world.id if world is not None else "<missing>"
+        raise ValueError(f"World {world_id} is missing pack_id/world_template_id metadata")
     return {
         "pack_id": pack_id,
         "world_template_id": template_id,

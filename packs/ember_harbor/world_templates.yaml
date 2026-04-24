@@ -19,11 +19,31 @@ world_templates:
         formal_path:
           branch_key: beacon_oath
           label: Beacon Oath
+          summary: Beacon Oath carries the breakwater route through posted duties and wardens' trust.
+          committed_summary: The follow-up route has committed to Beacon Oath, carrying the breakwater through posted duties and wardens' trust.
+          player_hint: The chapter now leans toward Beacon Oath and the duties the wardens can openly recognize.
+          signal_weights:
+            formal_trust: 0.12
+            kept_formal_promise: 0.15
+            rumor_curiosity: -0.02
+            street_pull: -0.02
+            public_scrutiny: 0.03
+            reward_item_commitment: 0.1
           anchor_npcs:
             - Tide-Scribe Miro
         undercurrent_path:
           branch_key: tide_whispers
           label: Tide Whispers
+          summary: Tide Whispers follows dockside reports, offstage movement, and the harbor's half-heard notices.
+          committed_summary: The follow-up route has committed to Tide Whispers, carrying the breakwater through dockside reports and offstage movement.
+          player_hint: The chapter now leans toward Tide Whispers and the quieter pull around the harbor wall.
+          signal_weights:
+            formal_trust: -0.02
+            kept_formal_promise: -0.03
+            rumor_curiosity: 0.12
+            street_pull: 0.12
+            public_scrutiny: 0.08
+            reward_item_commitment: 0.02
           anchor_npcs:
             - Runner Eska
             - Beacon-Keeper Sol

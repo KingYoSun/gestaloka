@@ -1,6 +1,4 @@
 from app.modules.world_pack.service import (
-    DEFAULT_PACK_ID,
-    DEFAULT_WORLD_TEMPLATE_ID,
     PackRegistry,
     configure_pack_registry,
     get_pack_registry,
@@ -10,8 +8,6 @@ from app.modules.world_pack.service import (
 )
 
 __all__ = [
-    "DEFAULT_PACK_ID",
-    "DEFAULT_WORLD_TEMPLATE_ID",
     "PackRegistry",
     "configure_pack_registry",
     "get_pack_registry",
