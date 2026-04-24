@@ -24,7 +24,7 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await expect(page.getByTestId("current-place-summary")).toContainText(/Ember Quay/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("First Harbor Request", { timeout: 20_000 });
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
-  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Runner Eska/i, { timeout: 20_000 });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Runner Eska/i, { timeout: 20_000 });
 
   for (let step = 0; step < 2; step += 1) {
     await page.getByTestId("choice-progress").click();

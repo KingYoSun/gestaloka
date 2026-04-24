@@ -107,11 +107,12 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
         return base
 
     active_quest = _active_quest(state)
+    active_quest_title = str(active_quest.get("title") or "the opening request")
     progress = int(active_quest.get("progress") or 0)
     if progress >= 1:
-        base = f"The opening chapter of {world_name} now turns on whether the first promise will be carried through."
+        base = f"The opening chapter of {world_name} now turns on whether {active_quest_title} will be carried through."
     else:
-        base = f"The opening chapter of {world_name} is still gathering the first trust the world asks for."
+        base = f"The opening chapter of {world_name} is still gathering momentum around {active_quest_title}."
     if chapter_status == "cooling":
         return f"{base} It has started to cool into its next shape."
     if chapter_status == "resolved":
@@ -125,6 +126,7 @@ def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
     followup_location_name = str(world_pack.get("followup_location_name") or "the next route")
     location = state.get("location") or {}
     location_name = str(location.get("name") or "the current district")
+    reward_name = str(world_pack.get("reward_name") or "the reward item")
     chapter_state = state.get("chapter") or {}
     current_branch = str(chapter_state.get("current_branch") or "")
     current_branch_slot = branch_slot_for_key(world_pack, current_branch)
@@ -139,11 +141,13 @@ def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
             return f"The route toward {followup_location_name} is now shaped by {branch_label(branch_key, world_pack=world_pack)}."
         followup = _followup_quest(state)
         if followup and str(followup.get("status") or "") == "completed":
-            return f"The newly opened route toward {followup_location_name} is settling after the reward token's passage."
+            return f"The newly opened route toward {followup_location_name} is settling after {reward_name}'s passage."
         return f"The newly opened route toward {followup_location_name} is asking to be read carefully."
     if progress >= 1:
-        return f"{location_name} is waiting to see whether the first promise will be honored."
-    return f"{location_name} is still establishing who can be trusted with the first request."
+        quest_title = str(active_quest.get("title") or "the opening request")
+        return f"{location_name} is waiting to see whether {quest_title} will be honored."
+    quest_title = str(active_quest.get("title") or "the current request")
+    return f"{location_name} is still establishing who can be trusted with {quest_title}."
 
 
 def _pressure_summary_for_state(

@@ -344,7 +344,7 @@ class StubModelProvider(BaseModelProvider):
                 consequence_summary = "The player tries to follow a route the current scene actually affords."
             elif any(token in normalized for token in ("約束", "promise", "引き受ける", "応える")):
                 consequence_tags.append("kept_promise")
-            elif any(token in normalized for token in ("探", "observe", "watch path", "巡回路")):
+            elif any(token in normalized for token in ("探", "確か", "観察", "様子", "observe")):
                 consequence_tags.append("careful_observation")
             elif any(token in normalized for token in ("助け", "help", "灯", "light")):
                 consequence_tags.append("earned_trust")

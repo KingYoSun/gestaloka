@@ -179,7 +179,7 @@ class GMCouncilService:
             return ["reward_item_respect", "kept_promise"]
         if any(token in input_text or token in normalized_text for token in ("約束", "promise", "引き受ける", "応える")):
             canonical.append("kept_promise")
-        if any(token in input_text or token in normalized_text for token in ("探", "observe", "watch path", "巡回路")):
+        if any(token in input_text or token in normalized_text for token in ("探", "確か", "観察", "様子", "observe")):
             canonical.append("careful_observation")
         if any(token in input_text or token in normalized_text for token in ("助け", "help", "灯", "light")):
             canonical.append("earned_trust")

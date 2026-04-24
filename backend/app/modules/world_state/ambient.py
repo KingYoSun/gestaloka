@@ -214,7 +214,7 @@ def list_offstage_murmurs(db: Session, world_id: str, current_location_id: str |
     return murmurs
 
 
-def list_plaza_figures(db: Session, world_id: str, actor_id: str, location_id: str | None) -> list[dict[str, Any]]:
+def list_local_figures(db: Session, world_id: str, actor_id: str, location_id: str | None) -> list[dict[str, Any]]:
     stmt = (
         select(Actor, NPCProfile)
         .join(NPCProfile, (NPCProfile.actor_id == Actor.id) & (NPCProfile.world_id == Actor.world_id))
@@ -248,8 +248,8 @@ def list_plaza_figures(db: Session, world_id: str, actor_id: str, location_id: s
     return summaries
 
 
-def list_local_figures(db: Session, world_id: str, actor_id: str, location_id: str | None) -> list[dict[str, Any]]:
-    return list_plaza_figures(db, world_id, actor_id, location_id)
+def list_plaza_figures(db: Session, world_id: str, actor_id: str, location_id: str | None) -> list[dict[str, Any]]:
+    return list_local_figures(db, world_id, actor_id, location_id)
 
 
 def list_npc_locations(db: Session, world_id: str) -> list[dict[str, Any]]:
@@ -507,6 +507,8 @@ def _fallback_beat(
     session_state: dict[str, Any],
 ) -> AmbientNPCManagerPayload:
     routine_state = _routine_state_with_defaults(participant.profile)
+    location = session_state.get("current_location") or session_state.get("location") or {}
+    location_name = str(location.get("name") or "the current district")
     thread_types = {str(item.get("thread_type") or "") for item in (session_state.get("active_consequence_threads") or [])}
     if "promise" in thread_types:
         return AmbientNPCManagerPayload(
@@ -523,7 +525,7 @@ def _fallback_beat(
     routine_role = str(routine_state.get("routine_role") or "watcher")
     return AmbientNPCManagerPayload(
         beat_kind="observe",
-        summary=f"{participant.actor.display_name} keeps the plaza in view as the {routine_role}, watching how the air settles after the player's move.",
+        summary=f"{participant.actor.display_name} keeps {location_name} in view as the {routine_role}, watching how the air settles after the player's move.",
         tension_band=str(routine_state.get("tension_band") or "medium"),  # type: ignore[arg-type]
     )
 
@@ -535,6 +537,8 @@ def _normalize_beat_payload(
     session_state: dict[str, Any],
 ) -> AmbientNPCManagerPayload:
     thread_types = {str(item.get("thread_type") or "") for item in (session_state.get("active_consequence_threads") or [])}
+    location = session_state.get("current_location") or session_state.get("location") or {}
+    location_name = str(location.get("name") or "the current district")
     if "scrutiny" in thread_types and beat_payload.beat_kind in {"observe", "withdraw"}:
         return AmbientNPCManagerPayload(
             beat_kind="question",
@@ -548,7 +552,7 @@ def _normalize_beat_payload(
         return AmbientNPCManagerPayload(
             beat_kind="murmur",
             summary=(
-                f"{participant.actor.display_name} lets a low murmur move across the plaza about a promise "
+                f"{participant.actor.display_name} lets a low murmur move across {location_name} about a promise "
                 "that is still waiting to be answered."
             ),
             tension_band="medium",

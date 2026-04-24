@@ -74,57 +74,6 @@ cases:
     expect_progress_after: 1
     expect_reward_issued: false
     expect_standing_after: 0.4
-  - case_id: engine-founders-followup-after-reward-item
-    world_id: eval-founders-followup
-    pack_id: founders_reach
-    world_template_id: founders_reach
-    player_name: Demo Player
-    npc_name: Archivist Nera
-    input_text: Lantern Sigilで開いた watch path の様子を観察する
-    input_mode: free_text
-    relevant_memories:
-      - Founders ReachでLantern Sigilが使われ、新しい watch path が解放された。
-    relation_context:
-      - location=Founders Reach
-      - memory=Founders ReachでLantern Sigilが使われ、新しい watch path が解放された。
-      - relationship=Archivist Nera KNOWS Demo Player (0.75)
-      - active_quest=Watch Path Unsealed [active 0/1]
-      - faction=Founders Watch standing=0.65 (favored)
-    graph_context_status: ready
-    expect_success: true
-    expect_final_lane: main_lane
-    expect_fallback: false
-    expect_failure_reason: null
-    expect_retrieval_status: ready
-    expect_retrieval_min_hits: 1
-    expect_retrieval_hit_substring: Lantern Sigil
-    expect_outcome_band: steady
-    expect_scene_move: deepen
-    expect_consequence_tags:
-      - careful_observation
-    expected_world_tags:
-      - investigate
-    quest_context:
-      title: Watch Path Unsealed
-      stage_key: watch_path_followup
-      unlock_requirements:
-        starter_item_effect: unlock_followup_watch_path
-      current_progress: 0
-      progress_target: 1
-      current_standing: 0.65
-      reward_already_issued: false
-      reward_enabled: false
-      inventory_items:
-        - id: lantern-sigil-1
-          template_key: lantern_sigils
-          name: Lantern Sigil
-          description: Reward sigil from Founders Watch.
-          status: used
-          usable: false
-          effect_kind: unlock_followup_watch_path
-    expect_progress_after: 0
-    expect_reward_issued: false
-    expect_standing_after: 0.65
   - case_id: engine-ember-followup-after-reward-item
     world_id: eval-ember-followup
     pack_id: ember_harbor

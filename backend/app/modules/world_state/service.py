@@ -42,7 +42,6 @@ from app.modules.world_state.ambient import (
     list_local_figures,
     list_npc_locations,
     list_offstage_murmurs,
-    list_plaza_figures,
     list_recent_offstage_beats,
     list_recent_world_beats,
 )
@@ -523,7 +522,7 @@ def ensure_followup_quest_template(db: Session, world_id: str) -> QuestTemplate:
         db,
         world_id=world_id,
         section_name="followup_quest",
-        default_id="followup_watch_path",
+        default_id="followup_route",
         default_title=str(template.followup_quest.title or "Follow-up Route Unsealed"),
         default_description=str(template.followup_quest.description or "Carry earned trust into the next route."),
         default_completion_target=1,
@@ -828,7 +827,7 @@ def list_recent_travel_history(db: Session, world_id: str, actor_id: str, *, lim
     return history
 
 
-def unlock_watch_path_routes(db: Session, world_id: str) -> list[LocationRoute]:
+def unlock_followup_routes(db: Session, world_id: str) -> list[LocationRoute]:
     locations = ensure_seeded_locations(db, world_id)
     starter = locations[_starter_location_key(db, world_id)]
     followup = locations[_followup_location_key(db, world_id)]
@@ -1490,8 +1489,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 }
 
     if stage_key == followup_stage_key:
-        watch_route = route_to(followup_location_key)
-        if current_location_key != followup_location_key and watch_route is not None and bool(watch_route.get("available")):
+        followup_route = route_to(followup_location_key)
+        if current_location_key != followup_location_key and followup_route is not None and bool(followup_route.get("available")):
             progress_choice = {
                 "choice_id": "progress",
                 "posture": "progress",
@@ -2255,7 +2254,7 @@ def use_reward_item(
     item.used_at = datetime.now(timezone.utc)
     item.effect_payload = dict(item.effect_payload or {})
     item.effect_payload["followup_quest_assignment_id"] = followup_assignment.id
-    unlock_watch_path_routes(db, world_id)
+    unlock_followup_routes(db, world_id)
 
     quest_updates = [
         {

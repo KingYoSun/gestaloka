@@ -188,6 +188,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["current_location"]["name"] in state_response.json()["current_scene"]["summary"]
     assert state_response.json()["current_location"]["key"] == world_pack["starter_location_key"]
     assert state_response.json()["local_figures"]
+    assert state_response.json()["plaza_figures"] == state_response.json()["local_figures"]
     assert state_response.json()["nearby_routes"]
     assert state_response.json()["inventory"] == []
     assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["safe", "progress", "explore"]

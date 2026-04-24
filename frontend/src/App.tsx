@@ -193,7 +193,7 @@ type RelationshipSummary = {
   summary: string;
 };
 
-type PlazaFigureSummary = {
+type LocalFigureSummary = {
   actor_id: string;
   display_name: string;
   summary: string;
@@ -245,10 +245,10 @@ type SessionState = {
   current_scene: CurrentSceneSummary;
   recent_scene_history: string[];
   recent_branch_echoes: string[];
-  local_figures: PlazaFigureSummary[];
+  local_figures: LocalFigureSummary[];
   nearby_routes: NearbyRouteSummary[];
   recent_travel_history: string[];
-  plaza_figures: PlazaFigureSummary[];
+  plaza_figures: LocalFigureSummary[];
   recent_world_beats: string[];
   ambient_murmurs: string[];
   npc_locations: NPCLocationSummary[];
@@ -2214,7 +2214,7 @@ function App() {
 
             <article className="card">
               <h2>8. Around you</h2>
-              <ul className="stream" data-testid="plaza-figures-stream">
+              <ul className="stream" data-testid="local-figures-stream">
                 {sessionState?.local_figures.length ? (
                   sessionState.local_figures.map((item) => (
                     <li key={item.actor_id}>
@@ -2278,7 +2278,7 @@ function App() {
                     </li>
                   ))
                 ) : (
-                  <li>No wider plaza beat has risen yet.</li>
+                  <li>No wider district beat has risen yet.</li>
                 )}
               </ul>
               <h3>Ambient murmurs</h3>

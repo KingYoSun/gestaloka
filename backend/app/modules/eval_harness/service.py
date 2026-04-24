@@ -1374,7 +1374,7 @@ class EvalHarnessService:
         )
         quest_definition = template.followup_quest if stage_key == followup_stage_key else template.quest
         chapter_summary = (
-            f"The opening chapter of {world_name} is still gathering the world's first trust."
+            f"The opening chapter of {world_name} is still gathering momentum around the opening request."
             if chapter_key == opening_chapter_key
             else f"The follow-up route toward {world_pack['followup_location_name']} is currently active."
         )

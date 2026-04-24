@@ -59,7 +59,7 @@ test("login, select founders reach explicitly, and keep the founders regression 
   await expect(page.getByTestId("current-scene-summary")).toContainText(/Square|request/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("First Watch Request", { timeout: 20_000 });
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
-  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Courier Pell/i, { timeout: 20_000 });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Courier Pell/i, { timeout: 20_000 });
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Archive Steps/i, { timeout: 20_000 });
   await expect(page.getByTestId("choice-list")).toContainText(/Archive Steps/i, { timeout: 20_000 });
 
@@ -68,7 +68,7 @@ test("login, select founders reach explicitly, and keep the founders regression 
   await expect(page.getByTestId("recent-travel-history")).toContainText(/Archive Steps|archive|stone steps/i, {
     timeout: slowTimeout,
   });
-  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Archivist Nera/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Archivist Nera/i, { timeout: slowTimeout });
 
   await page.getByTestId("nav-admin").click();
   await expect(page).toHaveURL(/\/admin$/);
@@ -85,7 +85,7 @@ test("login, select founders reach explicitly, and keep the founders regression 
   await expect(page.getByTestId("npc-locations-stream")).not.toContainText("No wider district movement is visible yet.", {
     timeout: slowTimeout,
   });
-  await expect(page.getByTestId("recent-world-beats")).not.toContainText("No wider plaza beat has risen yet.", {
+  await expect(page.getByTestId("recent-world-beats")).not.toContainText("No wider district beat has risen yet.", {
     timeout: slowTimeout,
   });
 
@@ -114,7 +114,7 @@ test("login, select founders reach explicitly, and keep the founders regression 
   await submitChoice("progress");
   await expect(page.getByTestId("current-place-summary")).toContainText(/Watch Path/i, { timeout: slowTimeout });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/watch path|Lantern Sigil/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("plaza-figures-stream")).toContainText(/Lamplighter Sera/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Lamplighter Sera/i, { timeout: slowTimeout });
   await expect(page.getByTestId("recent-travel-history")).toContainText(/Watch Path|watch path|巡回路/i, {
     timeout: slowTimeout,
   });
