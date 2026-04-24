@@ -1,7 +1,8 @@
 .PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
-VERIFY_COMPOSE_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
+VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
+VERIFY_COMPOSE_ENV = $(VERIFY_ENV)
 
 compose-up:
 	$(COMPOSE) up --build
@@ -10,13 +11,13 @@ compose-down:
 	$(COMPOSE) down -v --remove-orphans
 
 backend-test:
-	PYTHONPATH=backend python -m pytest tests/backend
+	$(VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend
 
 backend-test-engine:
-	PYTHONPATH=backend python -m pytest tests/backend/engine
+	$(VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/engine
 
 backend-test-packs:
-	PYTHONPATH=backend python -m pytest tests/backend/packs/founders_reach tests/backend/packs/ember_harbor
+	$(VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/packs/founders_reach tests/backend/packs/ember_harbor
 
 pack-list:
 	PYTHONPATH=backend python -m app.modules.world_pack list
