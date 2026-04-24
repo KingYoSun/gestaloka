@@ -692,6 +692,13 @@ type RouteDiff = {
   } | null;
 };
 
+type GateCheck = {
+  present: boolean;
+  current_passed: boolean;
+  candidate_passed: boolean;
+  run_id: string | null;
+};
+
 type ReleaseGateReport = {
   report_id: string | null;
   verdict: string;
@@ -703,34 +710,22 @@ type ReleaseGateReport = {
   langfuse_status?: string;
   langfuse_delivery?: string;
   checks: {
-    smoke: {
-      present: boolean;
-      current_passed: boolean;
-      candidate_passed: boolean;
-      run_id: string | null;
-    };
-    failure_injection: {
-      present: boolean;
-      current_passed: boolean;
-      candidate_passed: boolean;
-      run_id: string | null;
-    };
-    shadow_replay: {
-      present: boolean;
-      current_passed: boolean;
-      candidate_passed: boolean;
-      run_id: string | null;
-    };
+    smoke: GateCheck;
+    failure_injection: GateCheck;
+    shadow_replay: GateCheck;
+    pack_regressions: Record<string, GateCheck>;
   };
   runs: {
     smoke: string | null;
     failure_injection: string | null;
     shadow_replay: string | null;
+    pack_regressions: Record<string, string | null>;
   };
   latest_runs?: {
     smoke: string | null;
     failure_injection: string | null;
     shadow_replay: string | null;
+    pack_regressions: Record<string, string | null>;
   };
   slo_snapshot: ReleaseSLOSnapshot;
   diff_summary: RouteDiff[];
@@ -3058,6 +3053,15 @@ function App() {
                     {String(releaseGate?.checks?.shadow_replay?.candidate_passed ?? false)}
                   </span>
                 </li>
+                {Object.entries(releaseGate?.checks?.pack_regressions ?? {}).map(([datasetName, check]) => (
+                  <li key={datasetName}>
+                    <strong>{datasetName}</strong>
+                    <span>
+                      present={String(check.present)} / current={String(check.current_passed)} / candidate=
+                      {String(check.candidate_passed)}
+                    </span>
+                  </li>
+                ))}
               </ul>
               <h3>Current vs candidate diff</h3>
               <ul className="stream" data-testid="release-diff-stream">

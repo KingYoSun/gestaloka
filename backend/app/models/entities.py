@@ -590,6 +590,7 @@ class ReleaseGateReport(Base, TimestampMixin):
     smoke_run_id: Mapped[str] = mapped_column(String(36), index=True)
     failure_run_id: Mapped[str] = mapped_column(String(36), index=True)
     shadow_run_id: Mapped[str] = mapped_column(String(36), index=True)
+    pack_regression_run_ids: Mapped[dict] = mapped_column(JSON, default=dict)
     verdict: Mapped[str] = mapped_column(String(32))
     blocked_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     slo_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)

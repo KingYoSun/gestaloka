@@ -670,6 +670,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "report_id",
         "verdict",
         "checks",
+        "runs",
         "diff_summary",
         "runbook",
         "slo_snapshot",
@@ -678,6 +679,14 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "langfuse_status",
         "langfuse_delivery",
     } <= set(checklist_payload)
+    assert set(checklist_payload["checks"]["pack_regressions"]) == {
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+    }
+    assert set(checklist_payload["runs"]["pack_regressions"]) == {
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+    }
     assert checklist_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     latest_response = client.get("/ops/release/checklists/latest", headers=auth_headers)

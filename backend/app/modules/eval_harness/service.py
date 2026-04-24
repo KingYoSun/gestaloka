@@ -46,6 +46,9 @@ from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, norma
 from app.modules.world_state.service import default_next_choices, important_inventory_affordances, narrative_state_bands
 
 
+PACK_REGRESSION_DATASETS = ["turn_resolution_founders_regression", "turn_resolution_ember_regression"]
+
+
 @dataclass(frozen=True)
 class EvalCaseInput:
     case_id: str
@@ -265,6 +268,15 @@ class EvalHarnessService:
             trigger_type=trigger_type,
             runtime_role=resolved_runtime_role,
         )
+        pack_regressions = {
+            dataset_name: self.run_dataset(
+                db,
+                dataset_name,
+                trigger_type=trigger_type,
+                runtime_role=resolved_runtime_role,
+            )
+            for dataset_name in PACK_REGRESSION_DATASETS
+        }
 
         current_config = self.load_release_config("current")
         candidate_config = self.load_release_config("candidate")
@@ -274,6 +286,9 @@ class EvalHarnessService:
             smoke_summary=smoke["summary"],
             failure_summary=failure["summary"],
             shadow_summary=shadow["summary"],
+            pack_regression_summaries={
+                dataset_name: payload["summary"] for dataset_name, payload in pack_regressions.items()
+            },
             slo_snapshot=slo_snapshot,
         )
         verdict = "passed" if not blocked_reasons else "blocked"
@@ -282,6 +297,9 @@ class EvalHarnessService:
             smoke_run_id=smoke["id"],
             failure_run_id=failure["id"],
             shadow_run_id=shadow["id"],
+            pack_regression_run_ids={
+                dataset_name: payload["id"] for dataset_name, payload in pack_regressions.items()
+            },
             verdict=verdict,
             blocked_reasons=blocked_reasons,
             slo_snapshot=slo_snapshot,
@@ -323,6 +341,10 @@ class EvalHarnessService:
                                     "smoke": smoke["id"],
                                     "failure": failure["id"],
                                     "shadow": shadow["id"],
+                                    "pack_regressions": {
+                                        dataset_name: payload["id"]
+                                        for dataset_name, payload in pack_regressions.items()
+                                    },
                                 },
                             },
                             metadata={
@@ -429,9 +451,28 @@ class EvalHarnessService:
                     "smoke": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
                     "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
                     "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                    "pack_regressions": {
+                        dataset_name: {
+                            "present": False,
+                            "current_passed": False,
+                            "candidate_passed": False,
+                            "run_id": None,
+                        }
+                        for dataset_name in PACK_REGRESSION_DATASETS
+                    },
                 },
-                "runs": {"smoke": None, "failure_injection": None, "shadow_replay": None},
-                "latest_runs": {"smoke": None, "failure_injection": None, "shadow_replay": None},
+                "runs": {
+                    "smoke": None,
+                    "failure_injection": None,
+                    "shadow_replay": None,
+                    "pack_regressions": {dataset_name: None for dataset_name in PACK_REGRESSION_DATASETS},
+                },
+                "latest_runs": {
+                    "smoke": None,
+                    "failure_injection": None,
+                    "shadow_replay": None,
+                    "pack_regressions": {dataset_name: None for dataset_name in PACK_REGRESSION_DATASETS},
+                },
                 "slo_snapshot": {
                     "runtime_role": self.settings.app_runtime_role,
                     "canary_health": self._probe_canary_health().__dict__,
@@ -472,6 +513,11 @@ class EvalHarnessService:
         smoke = db.execute(select(EvalRun).where(EvalRun.id == report.smoke_run_id)).scalar_one()
         failure = db.execute(select(EvalRun).where(EvalRun.id == report.failure_run_id)).scalar_one()
         shadow = db.execute(select(EvalRun).where(EvalRun.id == report.shadow_run_id)).scalar_one()
+        pack_regression_run_ids = dict(report.pack_regression_run_ids or {})
+        pack_regression_runs = {
+            dataset_name: db.execute(select(EvalRun).where(EvalRun.id == run_id)).scalar_one_or_none()
+            for dataset_name, run_id in pack_regression_run_ids.items()
+        }
         shadow_results = list(
             db.execute(
                 select(EvalCaseResult)
@@ -483,6 +529,14 @@ class EvalHarnessService:
             "smoke": self._extract_gate_check(smoke),
             "failure_injection": self._extract_gate_check(failure),
             "shadow_replay": self._extract_gate_check(shadow),
+            "pack_regressions": {
+                dataset_name: self._extract_gate_check(pack_regression_runs.get(dataset_name))
+                for dataset_name in PACK_REGRESSION_DATASETS
+            },
+        }
+        pack_regression_runs_payload = {
+            dataset_name: pack_regression_run_ids.get(dataset_name)
+            for dataset_name in PACK_REGRESSION_DATASETS
         }
         return {
             "report_id": report.id,
@@ -494,11 +548,13 @@ class EvalHarnessService:
                 "smoke": smoke.id,
                 "failure_injection": failure.id,
                 "shadow_replay": shadow.id,
+                "pack_regressions": pack_regression_runs_payload,
             },
             "latest_runs": {
                 "smoke": smoke.id,
                 "failure_injection": failure.id,
                 "shadow_replay": shadow.id,
+                "pack_regressions": pack_regression_runs_payload,
             },
             "slo_snapshot": report.slo_snapshot,
             "diff_summary": current_config.diff(candidate_config),
@@ -965,6 +1021,7 @@ class EvalHarnessService:
         smoke_summary: dict[str, object],
         failure_summary: dict[str, object],
         shadow_summary: dict[str, object],
+        pack_regression_summaries: dict[str, dict[str, object]],
         slo_snapshot: dict[str, object],
     ) -> list[str]:
         blocked: list[str] = []
@@ -974,6 +1031,9 @@ class EvalHarnessService:
             blocked.append("failure injection gate failed")
         if not bool(shadow_summary["variants"]["current"]["gate_passed"]) or not bool(shadow_summary["variants"]["candidate"]["gate_passed"]):
             blocked.append("shadow replay gate failed")
+        for dataset_name, summary in pack_regression_summaries.items():
+            if not bool(summary["variants"]["current"]["gate_passed"]) or not bool(summary["variants"]["candidate"]["gate_passed"]):
+                blocked.append(f"pack regression {dataset_name} failed")
         if int(slo_snapshot["outbox_failed_count"]) > 0:
             blocked.append("failed_outbox > 0")
         if float(slo_snapshot["projection_lag_seconds"]) > 5.0:

@@ -1,8 +1,11 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
 VERIFY_COMPOSE_ENV = $(VERIFY_ENV)
+EVAL_VERIFY_DB ?= $(CURDIR)/.cache/eval-verify.db
+EVAL_VERIFY_DATABASE_URL ?= sqlite:///$(EVAL_VERIFY_DB)
+EVAL_VERIFY_ENV = $(VERIFY_ENV) DATABASE_URL=$(EVAL_VERIFY_DATABASE_URL) ALEMBIC_DATABASE_URL=$(EVAL_VERIFY_DATABASE_URL)
 
 compose-up:
 	$(COMPOSE) up --build
@@ -46,15 +49,21 @@ verify-v2:
 	$(MAKE) scan-pack-leaks
 	$(MAKE) scan-v1-terms
 	$(MAKE) check-legacy
+	$(MAKE) eval-pack-regressions
 	$(MAKE) build-frontend
 	$(MAKE) frontend-e2e
 
 eval-smoke:
 	PYTHONPATH=backend python -m app.modules.eval_harness smoke
 
-eval-pack-regressions:
-	PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_founders_regression
-	PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_ember_regression
+eval-verify-db-reset:
+	mkdir -p $(dir $(EVAL_VERIFY_DB))
+	rm -f $(EVAL_VERIFY_DB)
+	cd backend && $(EVAL_VERIFY_ENV) alembic upgrade head
+
+eval-pack-regressions: eval-verify-db-reset
+	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_founders_regression
+	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_ember_regression
 
 eval-shadow:
 	PYTHONPATH=backend python -m app.modules.eval_harness shadow

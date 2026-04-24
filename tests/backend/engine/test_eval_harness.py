@@ -248,6 +248,15 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
 
     assert gate["verdict"] == "blocked"
     assert "canary health != healthy" in gate["blocked_reasons"]
+    assert set(gate["checks"]["pack_regressions"]) == {
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+    }
+    assert all(item["current_passed"] and item["candidate_passed"] for item in gate["checks"]["pack_regressions"].values())
+    assert set(gate["runs"]["pack_regressions"]) == {
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+    }
 
 
 def test_scheduler_helpers_only_persist_eval_and_release_tables(client, container, auth_headers, monkeypatch):
@@ -296,7 +305,7 @@ def test_scheduler_helpers_only_persist_eval_and_release_tables(client, containe
 
     assert payload["trigger_type"] == "nightly"
     assert before == {key: after[key] for key in before}
-    assert after["eval_runs"] == 3
+    assert after["eval_runs"] == 5
     assert after["release_gate_reports"] == 1
     assert seconds_until_next_run("0 3 * * *") >= 0.0
 
