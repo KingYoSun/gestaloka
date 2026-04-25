@@ -546,13 +546,22 @@ class ObservabilityService:
         dataset_name: str | None,
         trigger_type: str,
         runtime_role: str,
+        pack_scope: list[dict[str, Any]] | None = None,
     ) -> None:
+        pack_ids = [str(item.get("pack_id")) for item in pack_scope or [] if item.get("pack_id")]
+        world_template_ids = [
+            str(item.get("world_template_id"))
+            for item in pack_scope or []
+            if item.get("world_template_id")
+        ]
         with self.span(
             "eval.run",
             attributes={
                 "eval_run_id": eval_run_id,
                 "eval.dataset_name": dataset_name,
                 "eval.trigger_type": trigger_type,
+                "eval.pack_ids": ",".join(pack_ids),
+                "eval.world_template_ids": ",".join(world_template_ids),
                 "runtime_role": runtime_role,
             },
         ):

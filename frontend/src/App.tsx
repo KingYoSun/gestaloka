@@ -125,6 +125,10 @@ type PackScope = {
   world_template_display_name: string;
 };
 
+type PackContext = PackScope & {
+  world_id: string;
+};
+
 type OpsWorldItem = {
   world_context: WorldContext;
   status: string;
@@ -689,6 +693,26 @@ type EvalRunItem = {
   completed_at: string | null;
 };
 
+type EvalRunCaseResult = {
+  id: string;
+  variant: string;
+  case_id: string;
+  prompt_id: string;
+  model_id: string;
+  lane: string;
+  used_fallback: boolean;
+  schema_valid: boolean;
+  same_world_invariant: boolean;
+  graph_context_status: string;
+  passed: boolean;
+  failure_reason: string | null;
+  pack_context?: PackContext | null;
+};
+
+type EvalRunDetail = EvalRunItem & {
+  results: EvalRunCaseResult[];
+};
+
 type ReleaseSLOSnapshot = {
   runtime_role: string;
   canary_health: {
@@ -767,6 +791,7 @@ type ReleaseGateReport = {
     case_id: string;
     variant: string;
     lane: string;
+    pack_context?: PackContext | null;
     graph_context_status: string;
     retrieval_status?: string;
     retrieval_hit_count?: number;
@@ -883,6 +908,14 @@ function formatPackScope(scope?: PackScope[] | null): string {
   return scope
     .map((item) => `${item.pack_display_name} / ${item.world_template_display_name}`)
     .join(" | ");
+}
+
+function formatPackContext(context?: PackContext | null): string {
+  if (!context) {
+    return "unknown pack / unknown template";
+  }
+  const worldSuffix = context.world_id ? ` / ${context.world_id}` : "";
+  return `${context.pack_display_name} / ${context.world_template_display_name}${worldSuffix}`;
 }
 
 function deriveImportantInventoryAffordances(inventory: InventorySummary[]): SessionState["important_inventory_affordances"] {
@@ -1151,6 +1184,7 @@ function App() {
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
   const [evalRuns, setEvalRuns] = useState<EvalRunItem[]>([]);
+  const [evalRunDetail, setEvalRunDetail] = useState<EvalRunDetail | null>(null);
   const [releaseGate, setReleaseGate] = useState<ReleaseGateReport | null>(null);
   const [councilTurns, setCouncilTurns] = useState<CouncilTurnTrace[]>([]);
   const [opsState, setOpsState] = useState("idle");
@@ -1253,6 +1287,7 @@ function App() {
       setSpOverview(null);
       setLedgerEntries([]);
       setEvalRuns([]);
+      setEvalRunDetail(null);
       setReleaseGate(null);
       setCouncilTurns([]);
       setMemorySearchResult(null);
@@ -1462,6 +1497,8 @@ function App() {
       setSpOverview(overviewPayload);
       setLedgerEntries(ledgerPayload.items);
       setEvalRuns(evalRunsPayload.items);
+      const latestEvalRunId = evalRunsPayload.items[0]?.id;
+      setEvalRunDetail(latestEvalRunId ? await apiFetch<EvalRunDetail>(`/ops/evals/runs/${latestEvalRunId}`, currentToken) : null);
       setReleaseGate(gatePayload);
       setCouncilTurns(councilPayload.items);
       setOpsWorlds(worldsPayload.items);
@@ -1491,6 +1528,7 @@ function App() {
         setSpOverview(null);
         setLedgerEntries([]);
         setEvalRuns([]);
+        setEvalRunDetail(null);
         setReleaseGate(null);
         setCouncilTurns([]);
         setMemorySearchResult(null);
@@ -1512,6 +1550,7 @@ function App() {
       setSpOverview(null);
       setLedgerEntries([]);
       setEvalRuns([]);
+      setEvalRunDetail(null);
       setReleaseGate(null);
       setCouncilTurns([]);
       setMemorySearchResult(null);
@@ -1926,6 +1965,7 @@ function App() {
         ),
       });
       setEvalRuns((current) => [run, ...current.filter((item) => item.id !== run.id)].slice(0, 8));
+      setEvalRunDetail(await apiFetch<EvalRunDetail>(`/ops/evals/runs/${run.id}`, token));
       await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
     } catch (requestError) {
       setError(formatError(requestError));
@@ -3261,11 +3301,31 @@ function App() {
                   </li>
                 ))}
               </ul>
+              <h3>Latest eval case results</h3>
+              <ul className="stream" data-testid="eval-case-results-stream">
+                {(evalRunDetail?.results ?? []).slice(0, 12).map((item) => (
+                  <li key={`${item.id}-${item.variant}`}>
+                    <strong>{item.case_id}</strong>
+                    <span>{formatPackContext(item.pack_context)}</span>
+                    <span>
+                      {item.variant} / {item.lane}
+                    </span>
+                    <span>
+                      schema={String(item.schema_valid)} / same-world={String(item.same_world_invariant)}
+                    </span>
+                    <span>
+                      graph={item.graph_context_status} / passed={String(item.passed)}
+                    </span>
+                    <span>{item.failure_reason ?? "none"}</span>
+                  </li>
+                ))}
+              </ul>
               <h3>Shadow replay failures</h3>
               <ul className="stream" data-testid="shadow-failures-stream">
                 {(releaseGate?.shadow_failures ?? []).map((item) => (
                   <li key={`${item.case_id}-${item.variant}`}>
                     <strong>{item.case_id}</strong>
+                    <span>{formatPackContext(item.pack_context)}</span>
                     <span>{item.variant}</span>
                     <span>{item.graph_context_status}</span>
                     <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>

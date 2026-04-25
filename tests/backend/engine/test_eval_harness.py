@@ -91,7 +91,21 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     assert runs[0].langfuse_status == "ok"
     assert len(case_results) == payload["summary"]["case_count"] * 2
     assert {item.variant for item in case_results} == {"current", "candidate"}
+    assert {
+        (item.raw_output["pack_context"]["pack_id"], item.raw_output["pack_context"]["world_template_id"])
+        for item in case_results
+    } == {("ember_harbor", "ember_harbor"), ("founders_reach", "founders_reach")}
     assert payload["langfuse_trace_url"] == runs[0].langfuse_trace_url
+    with container.session_factory() as db:
+        detail = container.eval_service.get_run_detail(db, runs[0].id)
+    assert detail["results"][0]["pack_context"]["world_id"]
+    eval_trace = next(
+        item
+        for item in container.observability_service.recent_trace_attributes(limit=200)
+        if item["name"] == "eval.run"
+    )
+    assert eval_trace["attributes"]["eval.pack_ids"] == "ember_harbor,founders_reach"
+    assert eval_trace["attributes"]["eval.world_template_ids"] == "ember_harbor,founders_reach"
 
 
 def test_ember_pack_regression_dataset_runs(container):
@@ -210,6 +224,16 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
         gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=3)
         db.commit()
         report_count = db.execute(select(func.count(ReleaseGateReport.id))).scalar_one()
+        shadow_result = db.execute(
+            select(EvalCaseResult)
+            .where(EvalCaseResult.eval_run_id == gate["runs"]["shadow_replay"])
+            .order_by(EvalCaseResult.case_id.asc(), EvalCaseResult.variant.asc())
+            .limit(1)
+        ).scalar_one()
+        shadow_result.passed = False
+        shadow_result.graph_context_status = "degraded"
+        db.flush()
+        gate_with_failure = container.eval_service.latest_release_checklist(db)
 
     assert gate["verdict"] == "passed"
     assert gate["checks"]["smoke"]["candidate_passed"] is True
@@ -232,6 +256,9 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
         "council.narrative",
     }
     assert report_count == 1
+    assert gate_with_failure["shadow_failures"]
+    assert gate_with_failure["shadow_failures"][0]["pack_context"]["pack_id"] == "ember_harbor"
+    assert gate_with_failure["shadow_failures"][0]["pack_context"]["world_template_display_name"] == "Ember Harbor"
 
 
 def test_release_gate_blocks_when_canary_is_unhealthy(container):

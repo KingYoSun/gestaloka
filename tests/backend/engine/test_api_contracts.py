@@ -782,6 +782,18 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert detail_response.status_code == 200
     assert len(detail_response.json()["results"]) >= 2
     assert detail_response.json()["summary"]["pack_scope"] == run_payload["summary"]["pack_scope"]
+    assert {
+        (
+            item["pack_context"]["pack_id"],
+            item["pack_context"]["pack_display_name"],
+            item["pack_context"]["world_template_id"],
+            item["pack_context"]["world_template_display_name"],
+        )
+        for item in detail_response.json()["results"]
+    } == {
+        ("ember_harbor", "Ember Harbor", "ember_harbor", "Ember Harbor"),
+        ("founders_reach", "Founders Reach", "founders_reach", "Founders Reach"),
+    }
     assert detail_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     observability_response = client.get("/ops/observability/summary", headers=auth_headers)

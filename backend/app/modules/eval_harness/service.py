@@ -422,6 +422,7 @@ class EvalHarnessService:
                     "graph_context_status": result.graph_context_status,
                     "passed": result.passed,
                     "failure_reason": result.failure_reason,
+                    "pack_context": _pack_context_from_raw_output(result.raw_output),
                     "raw_output": result.raw_output,
                 }
                 for result in results
@@ -567,6 +568,7 @@ class EvalHarnessService:
                     "case_id": item.case_id,
                     "variant": item.variant,
                     "lane": item.lane,
+                    "pack_context": _pack_context_from_raw_output(item.raw_output),
                     "graph_context_status": item.graph_context_status,
                     "retrieval_status": item.raw_output.get("retrieval_trace", {}).get("status"),
                     "retrieval_hit_count": len(item.raw_output.get("retrieval_trace", {}).get("retrieved_memory_ids", [])),
@@ -614,6 +616,7 @@ class EvalHarnessService:
         db.add(run)
         db.flush()
 
+        pack_scope = self._pack_scope_for_cases(cases)
         trace_context = (
             self.observability_service.langfuse_trace(
                 seed_id=run.id,
@@ -630,6 +633,8 @@ class EvalHarnessService:
                     "trigger_type": trigger_type,
                     "eval_run_id": run.id,
                     "dataset_name": dataset_name,
+                    "pack_ids": [str(item["pack_id"]) for item in pack_scope],
+                    "world_template_ids": [str(item["world_template_id"]) for item in pack_scope],
                 },
                 tags=[runtime_role, trigger_type, source_type],
             )
@@ -644,6 +649,7 @@ class EvalHarnessService:
                     dataset_name=dataset_name,
                     trigger_type=trigger_type,
                     runtime_role=runtime_role,
+                    pack_scope=pack_scope,
                 )
 
             routers = {
@@ -767,6 +773,7 @@ class EvalHarnessService:
         )
         raw_output = {
             "source_turn_id": case.source_turn_id,
+            "pack_context": self._pack_context_for_case(case),
             "input_text": case.input_text,
             "relevant_memories": case.relevant_memories,
             "retrieved_memories": retrieved_memories,
@@ -842,6 +849,7 @@ class EvalHarnessService:
         return {
             "variant": variant,
             "case_id": case.case_id,
+            "pack_context": self._pack_context_for_case(case),
             "lane": outcome.final_lane,
             "used_fallback": used_fallback,
             "schema_valid": schema_valid,
@@ -1153,6 +1161,30 @@ class EvalHarnessService:
                 "world_template_display_name": template.display_name,
             }
         return [scoped[key] for key in sorted(scoped)]
+
+    def _pack_context_for_case(self, case: EvalCaseInput) -> dict[str, object]:
+        context: dict[str, object] = {
+            "world_id": case.world_id,
+            "pack_id": case.pack_id,
+            "pack_display_name": case.pack_id,
+            "world_template_id": case.world_template_id,
+            "world_template_display_name": case.world_template_id,
+        }
+        if not case.pack_id or not case.world_template_id:
+            return context
+        registry = self.pack_registry or get_pack_registry(self.settings)
+        try:
+            pack = registry.get_pack(case.pack_id)
+            template = pack.template(case.world_template_id)
+        except (KeyError, ValueError):
+            return context
+        return {
+            "world_id": case.world_id,
+            "pack_id": pack.manifest.pack_id,
+            "pack_display_name": pack.manifest.display_name,
+            "world_template_id": template.template_id,
+            "world_template_display_name": template.display_name,
+        }
 
     def _load_datasets(self, dataset_dir: Path) -> dict[str, EvalDataset]:
         if not dataset_dir.exists():
@@ -1578,3 +1610,19 @@ class EvalHarnessService:
         from datetime import datetime, timezone
 
         return datetime.now(timezone.utc)
+
+
+def _pack_context_from_raw_output(raw_output: dict | None) -> dict[str, object] | None:
+    pack_context = (raw_output or {}).get("pack_context")
+    if not isinstance(pack_context, dict):
+        return None
+    required = {
+        "world_id",
+        "pack_id",
+        "pack_display_name",
+        "world_template_id",
+        "world_template_display_name",
+    }
+    if not required <= set(pack_context):
+        return None
+    return {key: pack_context[key] for key in sorted(required)}
