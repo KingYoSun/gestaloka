@@ -306,7 +306,6 @@ async def post_world_idle_pass(
         "recent_offstage_beats": result["recent_offstage_beats"],
         "offstage_murmurs": result["offstage_murmurs"],
         "npc_locations": result["npc_locations"],
-        "world_context": world_context,
     }
     for game_session in active_sessions:
         await realtime_hub.emit_with_world_context(game_session.id, "idle.updated", payload, world_context)

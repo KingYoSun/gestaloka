@@ -848,7 +848,7 @@ type ObservabilitySummary = {
 
 type ActivityMessage = {
   event: string;
-  data: Record<string, unknown> & { world_context?: WorldContext };
+  data: Record<string, unknown> & { world_context: WorldContext };
 };
 
 type APIError = Error & {
@@ -1717,7 +1717,7 @@ function App() {
   }
 
   async function handleRebuildGraph() {
-    if (!token || !activeWorldId) {
+    if (!token || !activeWorldId || !activeWorldContext) {
       setError("Choose a world before rebuilding the graph");
       return;
     }
@@ -1731,7 +1731,7 @@ function App() {
       });
       setLastRebuild(rebuilt);
       setActivity((current) => [
-        { event: "ops.projection.rebuild", data: rebuilt as unknown as Record<string, unknown> },
+        { event: "ops.projection.rebuild", data: { ...rebuilt, world_context: activeWorldContext } },
         ...current,
       ].slice(0, 40));
       await Promise.all([
@@ -1746,7 +1746,7 @@ function App() {
   }
 
   async function handleIdlePass() {
-    if (!token || !activeWorldId) {
+    if (!token || !activeWorldId || !activeWorldContext) {
       setError("Choose a world before triggering an idle pass");
       return;
     }
@@ -1764,9 +1764,10 @@ function App() {
           langfuse_status: string;
         };
         idle_updates: Array<Record<string, unknown>>;
+        world_context: WorldContext;
       }>(`/ops/worlds/${activeWorldId}/idle-pass`, token, { method: "POST" });
       setActivity((current) => [
-        { event: "ops.idle-pass", data: response as unknown as Record<string, unknown> },
+        { event: "ops.idle-pass", data: response },
         ...current,
       ].slice(0, 40));
       await Promise.all([
@@ -2506,7 +2507,7 @@ function App() {
               <h2>Realtime stream</h2>
               <ul className="stream" data-testid="ops-stream">
                 {activity.map((item, index) => {
-                  const context = item.data.world_context;
+                  const context = item.data.world_context as WorldContext | undefined;
                   return (
                     <li key={`${item.event}-${index}`}>
                       <strong>{item.event}</strong>
@@ -2940,6 +2941,10 @@ function App() {
                   worldTickOps.map((item) => (
                     <li key={item.tick_id}>
                       <strong>{item.tick_kind}</strong>
+                      <span>
+                        {activeWorldContext?.pack_display_name ?? "unknown pack"} /{" "}
+                        {activeWorldContext?.world_template_display_name ?? "unknown template"}
+                      </span>
                       <span>{item.status}</span>
                       <span>{item.summary}</span>
                     </li>

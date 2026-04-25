@@ -6,7 +6,21 @@ from typing import Any, Mapping
 from fastapi import WebSocket
 
 
+REQUIRED_WORLD_CONTEXT_KEYS = {
+    "world_id",
+    "world_name",
+    "pack_id",
+    "pack_display_name",
+    "world_template_id",
+    "world_template_display_name",
+    "semantic_tags",
+}
+
+
 def with_world_context(data: Mapping[str, Any], world_context: Mapping[str, Any]) -> dict[str, Any]:
+    missing = REQUIRED_WORLD_CONTEXT_KEYS - set(world_context)
+    if missing:
+        raise ValueError(f"Realtime world_context is missing required keys: {sorted(missing)}")
     return {**dict(data), "world_context": dict(world_context)}
 
 

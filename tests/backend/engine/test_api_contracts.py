@@ -17,10 +17,12 @@ def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
 
 REALTIME_WORLD_CONTEXT_KEYS = {
     "world_id",
+    "world_name",
     "pack_id",
     "pack_display_name",
     "world_template_id",
     "world_template_display_name",
+    "semantic_tags",
 }
 
 
@@ -452,12 +454,14 @@ def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
 
     assert message["event"] == "idle.updated"
     assert_realtime_world_context(message, session_payload["world_context"])
+    assert message["data"]["world_context"] == idle_payload["world_context"]
     assert message["data"]["world_id"] == session_payload["world_id"]
     assert message["data"]["tick"]["tick_id"] == idle_payload["tick"]["tick_id"]
     assert message["data"]["items"] == idle_payload["idle_updates"]
     if location_message is not None:
         assert location_message["event"] == "location.updated"
         assert_realtime_world_context(location_message, session_payload["world_context"])
+        assert location_message["data"]["world_context"] == idle_payload["world_context"]
         assert location_message["data"]["items"] == moved_items
 
 
