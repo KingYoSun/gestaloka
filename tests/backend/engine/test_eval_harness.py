@@ -240,6 +240,20 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["checks"]["failure_injection"]["candidate_passed"] is True
     assert gate["checks"]["shadow_replay"]["candidate_passed"] is True
     assert gate["canary_promote_status"] == "ready"
+    assert gate["cutover_status"]["promote_ready"] is True
+    assert gate["cutover_status"]["missing_or_failed_checks"] == []
+    assert gate["cutover_status"]["required_checks"] == [
+        "turn_resolution_smoke",
+        "turn_resolution_failure_injection",
+        "shadow_replay",
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+    ]
+    assert gate["runbook"]["canary_up"] == "make canary-up"
+    assert gate["runbook"]["canary_probe"] == "make canary-probe"
+    assert gate["runbook"]["pre_promote_checklist"] == "make release-checklist"
+    assert gate["runbook"]["nightly_gate"] == "make nightly-eval"
+    assert gate["runbook"]["promote_condition"] == "verdict == passed and canary_promote_status == ready"
     assert gate["langfuse_trace_id"]
     assert gate["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     assert gate["langfuse_status"] == "ok"
@@ -275,6 +289,9 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
 
     assert gate["verdict"] == "blocked"
     assert "canary health != healthy" in gate["blocked_reasons"]
+    assert gate["cutover_status"]["promote_ready"] is False
+    assert gate["cutover_status"]["missing_or_failed_checks"] == ["shadow_replay"]
+    assert gate["cutover_status"]["blocked_reasons"] == ["shadow replay gate failed", "canary health != healthy"]
     assert set(gate["checks"]["pack_regressions"]) == {
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",

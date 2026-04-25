@@ -47,6 +47,12 @@ from app.modules.world_state.service import default_next_choices, important_inve
 
 
 PACK_REGRESSION_DATASETS = ["turn_resolution_founders_regression", "turn_resolution_ember_regression"]
+PRODUCT_CUTOVER_REQUIRED_CHECKS = [
+    "turn_resolution_smoke",
+    "turn_resolution_failure_injection",
+    "shadow_replay",
+    *PACK_REGRESSION_DATASETS,
+]
 
 
 @dataclass(frozen=True)
@@ -487,6 +493,19 @@ class EvalHarnessService:
                 "diff_summary": self.load_release_config("current").diff(self.load_release_config("candidate")),
                 "shadow_failures": [],
                 "runbook": self._runbook(),
+                "cutover_status": self._cutover_status(
+                    verdict="blocked",
+                    blocked_reasons=["No release checklist report exists"],
+                    checks={
+                        "smoke": {"present": False, "current_passed": False, "candidate_passed": False},
+                        "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False},
+                        "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False},
+                        "pack_regressions": {
+                            dataset_name: {"present": False, "current_passed": False, "candidate_passed": False}
+                            for dataset_name in PACK_REGRESSION_DATASETS
+                        },
+                    },
+                ),
                 "created_at": None,
                 "canary_promote_status": "blocked",
                 "langfuse_trace_id": None,
@@ -543,6 +562,7 @@ class EvalHarnessService:
             dataset_name: pack_regression_run_ids.get(dataset_name)
             for dataset_name in PACK_REGRESSION_DATASETS
         }
+        canary_promote_status = "ready" if report.verdict == "passed" else "blocked"
         return {
             "report_id": report.id,
             "verdict": report.verdict,
@@ -580,8 +600,13 @@ class EvalHarnessService:
                 or item.raw_output.get("retrieval_trace", {}).get("status") != "ready"
             ],
             "runbook": self._runbook(),
+            "cutover_status": self._cutover_status(
+                verdict=report.verdict,
+                blocked_reasons=report.blocked_reasons,
+                checks=checks,
+            ),
             "created_at": report.created_at.isoformat(),
-            "canary_promote_status": "ready" if report.verdict == "passed" else "blocked",
+            "canary_promote_status": canary_promote_status,
             "langfuse_trace_id": report.langfuse_trace_id,
             "langfuse_trace_url": report.langfuse_trace_url,
             "langfuse_status": report.langfuse_status,
@@ -1598,11 +1623,54 @@ class EvalHarnessService:
             return "unknown"
 
     @staticmethod
+    def _cutover_status(
+        *,
+        verdict: str,
+        blocked_reasons: list[str],
+        checks: dict[str, object],
+    ) -> dict[str, object]:
+        pack_regressions = checks.get("pack_regressions") if isinstance(checks, dict) else {}
+        pack_regressions = pack_regressions if isinstance(pack_regressions, dict) else {}
+
+        def _passed(check_name: str) -> bool:
+            check = checks.get(check_name) if isinstance(checks, dict) else None
+            if not isinstance(check, dict):
+                return False
+            return bool(check.get("present")) and bool(check.get("current_passed")) and bool(check.get("candidate_passed"))
+
+        check_status = {
+            "turn_resolution_smoke": _passed("smoke"),
+            "turn_resolution_failure_injection": _passed("failure_injection"),
+            "shadow_replay": _passed("shadow_replay"),
+        }
+        for dataset_name in PACK_REGRESSION_DATASETS:
+            check = pack_regressions.get(dataset_name)
+            check_status[dataset_name] = (
+                isinstance(check, dict)
+                and bool(check.get("present"))
+                and bool(check.get("current_passed"))
+                and bool(check.get("candidate_passed"))
+            )
+        missing_or_failed = [name for name in PRODUCT_CUTOVER_REQUIRED_CHECKS if not check_status.get(name)]
+        return {
+            "promote_ready": verdict == "passed" and not missing_or_failed,
+            "required_checks": PRODUCT_CUTOVER_REQUIRED_CHECKS,
+            "missing_or_failed_checks": missing_or_failed,
+            "blocked_reasons": blocked_reasons,
+            "bundled_pack_regressions": PACK_REGRESSION_DATASETS,
+            "manual_confirmation": "canary_promote_status == ready only when verdict == passed and all required checks pass",
+        }
+
+    @staticmethod
     def _runbook() -> dict[str, str]:
         return {
-            "canary_up": "docker compose up --build backend-canary",
-            "rollback": "docker compose rm -sf backend-canary",
+            "canary_up": "make canary-up",
+            "canary_probe": "make canary-probe",
+            "pre_promote_checklist": "make release-checklist",
+            "nightly_gate": "make nightly-eval",
+            "promote_condition": "verdict == passed and canary_promote_status == ready",
             "promote": "cp config/release/candidate.yaml config/release/current.yaml && docker compose up -d --build backend",
+            "rollback": "make canary-down && docker compose up -d --build backend",
         }
 
     @staticmethod

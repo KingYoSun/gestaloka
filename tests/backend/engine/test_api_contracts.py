@@ -821,6 +821,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "runs",
         "diff_summary",
         "runbook",
+        "cutover_status",
         "slo_snapshot",
         "langfuse_trace_id",
         "langfuse_trace_url",
@@ -851,11 +852,22 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
     }
+    assert checklist_payload["cutover_status"]["promote_ready"] is True
+    assert checklist_payload["cutover_status"]["bundled_pack_regressions"] == [
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+    ]
+    assert checklist_payload["runbook"]["canary_up"] == "make canary-up"
+    assert checklist_payload["runbook"]["canary_probe"] == "make canary-probe"
+    assert checklist_payload["runbook"]["pre_promote_checklist"] == "make release-checklist"
+    assert checklist_payload["runbook"]["nightly_gate"] == "make nightly-eval"
+    assert checklist_payload["runbook"]["promote_condition"] == "verdict == passed and canary_promote_status == ready"
     assert checklist_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     latest_response = client.get("/ops/release/checklists/latest", headers=auth_headers)
     assert latest_response.status_code == 200
     assert latest_response.json()["report_id"] == checklist_payload["report_id"]
+    assert latest_response.json()["cutover_status"] == checklist_payload["cutover_status"]
     assert latest_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     detail_gate_response = client.get(

@@ -763,6 +763,14 @@ type ReleaseGateReport = {
   blocked_reasons: string[];
   trigger_type: string;
   canary_promote_status: string;
+  cutover_status?: {
+    promote_ready: boolean;
+    required_checks: string[];
+    missing_or_failed_checks: string[];
+    blocked_reasons: string[];
+    bundled_pack_regressions: string[];
+    manual_confirmation: string;
+  };
   langfuse_trace_id?: string | null;
   langfuse_trace_url?: string | null;
   langfuse_status?: string;
@@ -799,6 +807,10 @@ type ReleaseGateReport = {
   }>;
   runbook: {
     canary_up: string;
+    canary_probe?: string;
+    pre_promote_checklist?: string;
+    nightly_gate?: string;
+    promote_condition?: string;
     rollback: string;
     promote: string;
   };
@@ -3147,6 +3159,10 @@ function App() {
                 Gate verdict: {releaseGate?.verdict ?? "unknown"} / Canary promote:{" "}
                 {releaseGate?.canary_promote_status ?? "unknown"}
               </p>
+              <p data-testid="release-cutover-readiness">
+                Product cutover: {releaseGate?.cutover_status?.promote_ready ? "ready" : "blocked"} / missing checks:{" "}
+                {(releaseGate?.cutover_status?.missing_or_failed_checks ?? []).join(", ") || "none"}
+              </p>
               <p>
                 Trigger: {releaseGate?.trigger_type ?? "unknown"} / Created: {releaseGate?.created_at ?? "not yet run"}
               </p>
@@ -3226,6 +3242,9 @@ function App() {
                     {String(releaseGate?.checks?.shadow_replay?.candidate_passed ?? false)}
                   </span>
                 </li>
+              </ul>
+              <h3>Bundled pack regressions</h3>
+              <ul className="stream" data-testid="release-pack-regressions-stream">
                 {Object.entries(releaseGate?.checks?.pack_regressions ?? {}).map(([datasetName, check]) => (
                   <li key={datasetName}>
                     <strong>{datasetName}</strong>
@@ -3237,18 +3256,26 @@ function App() {
                   </li>
                 ))}
               </ul>
-              <h3>Current vs candidate diff</h3>
-              <ul className="stream" data-testid="release-diff-stream">
-                {(releaseGate?.diff_summary ?? []).map((item) => (
-                  <li key={item.route_id}>
-                    <strong>{item.route_id}</strong>
-                    <span>current: {item.current?.model_ids.main_lane ?? "none"}</span>
-                    <span>candidate: {item.candidate?.model_ids.main_lane ?? "none"}</span>
+              <h3>Shadow replay failures</h3>
+              <ul className="stream" data-testid="shadow-failures-stream">
+                {(releaseGate?.shadow_failures ?? []).map((item) => (
+                  <li key={`${item.case_id}-${item.variant}`}>
+                    <strong>{item.case_id}</strong>
+                    <span>{formatPackContext(item.pack_context)}</span>
+                    <span>{item.variant}</span>
+                    <span>{item.graph_context_status}</span>
+                    <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>
+                    <span>{item.failure_reason ?? "none"}</span>
                   </li>
                 ))}
               </ul>
-              <h3>SLO snapshot</h3>
+              <h3>Canary and SLO</h3>
               <ul className="stream" data-testid="release-slo-stream">
+                <li>
+                  <strong>canary</strong>
+                  <span>{releaseGate?.slo_snapshot?.canary_health?.status ?? "unknown"}</span>
+                  <span>{releaseGate?.slo_snapshot?.canary_health?.detail ?? "no detail"}</span>
+                </li>
                 <li>
                   <strong>primary</strong>
                   <span>lag {releaseGate?.slo_snapshot?.projection_lag_seconds ?? 0}s</span>
@@ -3260,11 +3287,47 @@ function App() {
                   <span>schema {(((releaseGate?.slo_snapshot?.llm_schema_valid_rate ?? 0) as number) * 100).toFixed(0)}%</span>
                   <span>fallback {(((releaseGate?.slo_snapshot?.llm_fallback_rate ?? 0) as number) * 100).toFixed(0)}%</span>
                 </li>
+              </ul>
+              <h3>Runbook</h3>
+              <ul className="stream" data-testid="release-runbook">
                 <li>
-                  <strong>canary</strong>
-                  <span>{releaseGate?.slo_snapshot?.canary_health?.status ?? "unknown"}</span>
-                  <span>{releaseGate?.slo_snapshot?.canary_health?.detail ?? "no detail"}</span>
+                  <strong>canary up</strong>
+                  <span>{releaseGate?.runbook?.canary_up ?? "make canary-up"}</span>
                 </li>
+                <li>
+                  <strong>canary probe</strong>
+                  <span>{releaseGate?.runbook?.canary_probe ?? "make canary-probe"}</span>
+                </li>
+                <li>
+                  <strong>pre-promote checklist</strong>
+                  <span>{releaseGate?.runbook?.pre_promote_checklist ?? "make release-checklist"}</span>
+                </li>
+                <li>
+                  <strong>nightly gate</strong>
+                  <span>{releaseGate?.runbook?.nightly_gate ?? "make nightly-eval"}</span>
+                </li>
+                <li>
+                  <strong>promote condition</strong>
+                  <span>{releaseGate?.runbook?.promote_condition ?? "verdict == passed and canary_promote_status == ready"}</span>
+                </li>
+                <li>
+                  <strong>promote</strong>
+                  <span>{releaseGate?.runbook?.promote ?? "blocked until gate passes"}</span>
+                </li>
+                <li>
+                  <strong>rollback</strong>
+                  <span>{releaseGate?.runbook?.rollback ?? "make canary-down"}</span>
+                </li>
+              </ul>
+              <h3>Current vs candidate diff</h3>
+              <ul className="stream" data-testid="release-diff-stream">
+                {(releaseGate?.diff_summary ?? []).map((item) => (
+                  <li key={item.route_id}>
+                    <strong>{item.route_id}</strong>
+                    <span>current: {item.current?.model_ids.main_lane ?? "none"}</span>
+                    <span>candidate: {item.candidate?.model_ids.main_lane ?? "none"}</span>
+                  </li>
+                ))}
               </ul>
               <h3>Latest eval runs</h3>
               <ul className="stream" data-testid="eval-runs-stream">
@@ -3319,34 +3382,6 @@ function App() {
                     <span>{item.failure_reason ?? "none"}</span>
                   </li>
                 ))}
-              </ul>
-              <h3>Shadow replay failures</h3>
-              <ul className="stream" data-testid="shadow-failures-stream">
-                {(releaseGate?.shadow_failures ?? []).map((item) => (
-                  <li key={`${item.case_id}-${item.variant}`}>
-                    <strong>{item.case_id}</strong>
-                    <span>{formatPackContext(item.pack_context)}</span>
-                    <span>{item.variant}</span>
-                    <span>{item.graph_context_status}</span>
-                    <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>
-                    <span>{item.failure_reason ?? "none"}</span>
-                  </li>
-                ))}
-              </ul>
-              <h3>Runbook</h3>
-              <ul className="stream" data-testid="release-runbook">
-                <li>
-                  <strong>canary up</strong>
-                  <span>{releaseGate?.runbook?.canary_up ?? "docker compose --profile canary up --build backend-canary"}</span>
-                </li>
-                <li>
-                  <strong>rollback</strong>
-                  <span>{releaseGate?.runbook?.rollback ?? "docker compose --profile canary down"}</span>
-                </li>
-                <li>
-                  <strong>promote</strong>
-                  <span>{releaseGate?.runbook?.promote ?? "blocked until gate passes"}</span>
-                </li>
               </ul>
               <h3>Recent traces</h3>
               <ul className="stream" data-testid="observability-traces-stream">
