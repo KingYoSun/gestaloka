@@ -118,6 +118,13 @@ type WorldContext = {
   semantic_tags: string[];
 };
 
+type PackScope = {
+  pack_id: string;
+  pack_display_name: string;
+  world_template_id: string;
+  world_template_display_name: string;
+};
+
 type OpsWorldItem = {
   world_context: WorldContext;
   status: string;
@@ -403,6 +410,7 @@ type ProjectionStatus = {
     id: string;
     event_id: string;
     world_id: string;
+    world_context?: WorldContext | null;
     projection_type: string;
     last_error: string | null;
     attempts: number;
@@ -422,6 +430,7 @@ type EmbeddingStatus = {
 
 type MemorySearchResponse = {
   world_id: string;
+  world_context: WorldContext;
   query: string;
   hits: Array<{
     id: string;
@@ -453,6 +462,7 @@ type MemoryReindexResult = {
 
 type GraphSummary = {
   world_id: string;
+  world_context: WorldContext;
   vertex_count: number;
   edge_count: number;
   label_counts: Record<string, number>;
@@ -620,6 +630,7 @@ type WorldTickItem = {
 
 type RebuildSummary = {
   world_id: string;
+  world_context: WorldContext;
   records: number;
   completed_at: string;
   vertex_count: number;
@@ -663,6 +674,7 @@ type EvalRunItem = {
   langfuse_status?: string;
   summary: {
     case_count: number;
+    pack_scope?: PackScope[];
     variants?: {
       current?: EvalRunVariantSummary;
       candidate?: EvalRunVariantSummary;
@@ -718,6 +730,7 @@ type GateCheck = {
   current_passed: boolean;
   candidate_passed: boolean;
   run_id: string | null;
+  pack_scope?: PackScope[];
 };
 
 type ReleaseGateReport = {
@@ -803,6 +816,7 @@ type CouncilTurnTrace = {
   turn_id: string;
   session_id: string;
   world_id: string;
+  world_context?: WorldContext | null;
   input_text: string;
   model_lane: string;
   resolution_mode: string;
@@ -860,6 +874,15 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 function resolveRoute(): AppRoute {
   return window.location.pathname.startsWith("/admin") ? "admin" : "game";
+}
+
+function formatPackScope(scope?: PackScope[] | null): string {
+  if (!scope?.length) {
+    return "unknown pack / unknown template";
+  }
+  return scope
+    .map((item) => `${item.pack_display_name} / ${item.world_template_display_name}`)
+    .join(" | ");
 }
 
 function deriveImportantInventoryAffordances(inventory: InventorySummary[]): SessionState["important_inventory_affordances"] {
@@ -1161,6 +1184,7 @@ function App() {
   const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId) ?? null;
   const selectedTemplate = selectedPack?.world_templates.find((item) => item.template_id === selectedTemplateId) ?? null;
   const activeWorldContext =
+    graphSummary?.world_context ??
     opsWorlds.find((item) => item.world_context.world_id === activeWorldId)?.world_context ??
     sessionState?.world_context ??
     session?.world_context ??
@@ -1717,7 +1741,7 @@ function App() {
   }
 
   async function handleRebuildGraph() {
-    if (!token || !activeWorldId || !activeWorldContext) {
+    if (!token || !activeWorldId) {
       setError("Choose a world before rebuilding the graph");
       return;
     }
@@ -1731,7 +1755,7 @@ function App() {
       });
       setLastRebuild(rebuilt);
       setActivity((current) => [
-        { event: "ops.projection.rebuild", data: { ...rebuilt, world_context: activeWorldContext } },
+        { event: "ops.projection.rebuild", data: rebuilt },
         ...current,
       ].slice(0, 40));
       await Promise.all([
@@ -1746,7 +1770,7 @@ function App() {
   }
 
   async function handleIdlePass() {
-    if (!token || !activeWorldId || !activeWorldContext) {
+    if (!token || !activeWorldId) {
       setError("Choose a world before triggering an idle pass");
       return;
     }
@@ -2512,8 +2536,8 @@ function App() {
                     <li key={`${item.event}-${index}`}>
                       <strong>{item.event}</strong>
                       <span>
-                        {context?.pack_display_name ?? "missing world context"} /{" "}
-                        {context?.world_template_display_name ?? "missing world context"}
+                        {context?.pack_display_name ?? "unknown"} /{" "}
+                        {context?.world_template_display_name ?? "unknown"}
                       </span>
                       <span>{JSON.stringify(item.data)}</span>
                     </li>
@@ -2972,7 +2996,11 @@ function App() {
                 {(projectionStatus?.recent_failures ?? []).map((item) => (
                   <li key={item.id}>
                     <strong>{item.projection_type}</strong>
-                    <span>{item.world_id}</span>
+                    <span>
+                      {item.world_context?.pack_display_name ?? "unknown"} /{" "}
+                      {item.world_context?.world_template_display_name ?? "unknown"}
+                    </span>
+                    <span>{item.world_context?.world_name ?? item.world_id}</span>
                     <span>{item.last_error ?? "no error text"}</span>
                   </li>
                 ))}
@@ -2983,6 +3011,10 @@ function App() {
                   councilTurns.map((item) => (
                     <li key={item.turn_id}>
                       <strong>{item.input_text}</strong>
+                      <span>
+                        {item.world_context?.pack_display_name ?? "unknown"} /{" "}
+                        {item.world_context?.world_template_display_name ?? "unknown"}
+                      </span>
                       <span>
                         {item.resolution_mode} / final lane {item.model_lane}
                       </span>
@@ -3054,6 +3086,10 @@ function App() {
                   Reindexed {lastMemoryReindex.processed}/{lastMemoryReindex.queued} memories at {lastMemoryReindex.completed_at}
                 </p>
               ) : null}
+              <p data-testid="memory-search-world-context">
+                Memory search pack: {memorySearchResult?.world_context.pack_display_name ?? activeWorldContext?.pack_display_name ?? "unknown"} /{" "}
+                {memorySearchResult?.world_context.world_template_display_name ?? activeWorldContext?.world_template_display_name ?? "unknown"}
+              </p>
               <ul className="stream" data-testid="memory-search-stream">
                 {(memorySearchResult?.hits ?? []).map((item) => (
                   <li key={item.id}>
@@ -3153,6 +3189,7 @@ function App() {
                 {Object.entries(releaseGate?.checks?.pack_regressions ?? {}).map(([datasetName, check]) => (
                   <li key={datasetName}>
                     <strong>{datasetName}</strong>
+                    <span>{formatPackScope(check.pack_scope)}</span>
                     <span>
                       present={String(check.present)} / current={String(check.current_passed)} / candidate=
                       {String(check.candidate_passed)}
@@ -3194,6 +3231,7 @@ function App() {
                 {evalRuns.map((item) => (
                   <li key={item.id}>
                     <strong>{item.dataset_name ?? item.source_type}</strong>
+                    <span>{formatPackScope(item.summary.pack_scope)}</span>
                     <span>{item.status}</span>
                     <span>
                       {item.trigger_type} / {item.runtime_role}
@@ -3264,7 +3302,7 @@ function App() {
             <article className="card">
               <h2>SP overview</h2>
               <p data-testid="sp-world-context">
-                Pack dimension: {activeWorldContext?.pack_display_name ?? "global"} /{" "}
+                Pack dimension: {activeWorldContext?.pack_display_name ?? "unknown"} /{" "}
                 {activeWorldContext?.world_template_display_name ?? "all templates"}
               </p>
               <p data-testid="sp-overview">
@@ -3289,7 +3327,7 @@ function App() {
                     <strong>{item.reason_code}</strong>
                     <span>{item.user_sub}</span>
                     <span>{item.delta}</span>
-                    <span>{item.world_context?.pack_display_name ?? "global"}</span>
+                    <span>{item.world_context?.pack_display_name ?? "unknown"}</span>
                   </li>
                 ))}
               </ul>
@@ -3326,7 +3364,7 @@ function App() {
                     <span>
                       delta {item.delta} / balance {item.balance_after}
                     </span>
-                    <span>{item.world_context?.pack_display_name ?? item.world_id ?? "global"}</span>
+                    <span>{item.world_context?.pack_display_name ?? item.world_id ?? "unknown"}</span>
                   </li>
                 ))}
               </ul>

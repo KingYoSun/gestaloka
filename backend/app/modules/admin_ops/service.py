@@ -115,12 +115,12 @@ def observability_summary(
 
 def rebuild_projection(db: Session, projection_service: ProjectionService, world_id: str) -> dict[str, object]:
     created = projection_service.rebuild(db, world_id)
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "records": len(created),
         "completed_at": datetime.now(timezone.utc).isoformat(),
         **ProjectionService.summarize_records(created, world_id=world_id),
-    }
+    })
 
 
 def world_graph_summary(db: Session, projection_service: ProjectionService, world_id: str) -> dict[str, object]:
@@ -193,7 +193,7 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
         )
         neighborhood_summary = context.prompt_lines()
 
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "vertex_count": len(vertex_keys),
         "edge_count": len(edge_keys),
@@ -201,7 +201,7 @@ def world_graph_summary(db: Session, projection_service: ProjectionService, worl
         "recent_records": recent_records,
         "state_changes": state_changes,
         "neighborhood_summary": neighborhood_summary,
-    }
+    })
 
 
 def sp_overview(db: Session, economy_service: EconomyService) -> dict[str, object]:
@@ -264,6 +264,17 @@ def _ledger_entries_with_world_context(db: Session, entries: list[dict[str, obje
     return enriched
 
 
+def _with_world_context(db: Session, world_id: str, payload: dict[str, object]) -> dict[str, object]:
+    return {**payload, "world_context": world_context_for_world(db, world_id)}
+
+
+def _nullable_world_context(db: Session, world_id: str | None) -> dict[str, object] | None:
+    try:
+        return nullable_world_context_for_world(db, world_id)
+    except (LookupError, ValueError, KeyError):
+        return None
+
+
 def memory_status(db: Session, memory_service: MemoryService) -> dict[str, object]:
     return memory_service.status_summary(db)
 
@@ -296,7 +307,7 @@ def world_memory_search(
         location_id=location_id,
         limit=limit,
     )
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "query": query,
         "hits": [
@@ -318,32 +329,32 @@ def world_memory_search(
             "top_scores": result.trace.top_scores,
             "used_fallback": result.trace.used_fallback,
         },
-    }
+    })
 
 
 def world_relationships(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_relationship_debug(db, world_id),
-    }
+    })
 
 
 def world_consequence_threads(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_consequence_threads_debug(db, world_id),
-    }
+    })
 
 
 def world_chapters(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_chapter_tracks_debug(db, world_id),
-    }
+    })
 
 
 def world_chapter_branches(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": [
             {
@@ -360,56 +371,56 @@ def world_chapter_branches(db: Session, *, world_id: str) -> dict[str, object]:
             }
             for item in list_chapter_tracks_debug(db, world_id)
         ],
-    }
+    })
 
 
 def world_scenes(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_scene_frames_debug(db, world_id),
-    }
+    })
 
 
 def world_npc_routines(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_npc_routines_debug(db, world_id),
-    }
+    })
 
 
 def world_ambient_beats(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_ambient_beats_debug(db, world_id),
-    }
+    })
 
 
 def world_ticks(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_world_ticks_debug(db, world_id),
-    }
+    })
 
 
 def world_npc_locations(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_npc_locations(db, world_id),
-    }
+    })
 
 
 def world_offstage_beats(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_offstage_beats_debug(db, world_id),
-    }
+    })
 
 
 def world_route_pressures(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_route_pressures_debug(db, world_id),
-    }
+    })
 
 
 def trigger_idle_world_pass(
@@ -440,17 +451,17 @@ def trigger_idle_world_pass(
 
 
 def world_locations(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_locations_debug(db, world_id),
-    }
+    })
 
 
 def world_travel_log(db: Session, *, world_id: str) -> dict[str, object]:
-    return {
+    return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_travel_log_debug(db, world_id),
-    }
+    })
 
 
 def recent_runtime_failures(db: Session) -> list[dict[str, object]]:
@@ -467,6 +478,7 @@ def recent_runtime_failures(db: Session) -> list[dict[str, object]]:
             "id": item.id,
             "event_id": item.event_id,
             "world_id": item.world_id,
+            "world_context": _nullable_world_context(db, item.world_id),
             "projection_type": item.projection_type,
             "last_error": item.last_error,
             "attempts": item.attempts,
@@ -589,6 +601,7 @@ def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str,
         "turn_id": turn.id,
         "session_id": turn.session_id,
         "world_id": turn.world_id,
+        "world_context": _nullable_world_context(db, turn.world_id),
         "input_text": turn.input_text,
         "model_lane": turn.model_lane,
         "resolution_mode": turn.resolution_mode,

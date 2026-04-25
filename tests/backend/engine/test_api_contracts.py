@@ -499,6 +499,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert summary_response.status_code == 200
     summary_payload = summary_response.json()
     assert summary_payload["world_id"] == session_payload["world_id"]
+    assert summary_payload["world_context"] == session_payload["world_context"]
     worlds_response = client.get("/ops/worlds", headers=auth_headers)
     assert worlds_response.status_code == 200
     worlds_payload = worlds_response.json()
@@ -520,6 +521,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert rebuild_response.status_code == 200
     rebuild_payload = rebuild_response.json()
     assert rebuild_payload["world_id"] == session_payload["world_id"]
+    assert rebuild_payload["world_context"] == session_payload["world_context"]
     assert rebuild_payload["records"] >= 1
 
     council_turns_response = client.get(
@@ -529,6 +531,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert council_turns_response.status_code == 200
     council_turns_payload = council_turns_response.json()
     assert council_turns_payload["items"][0]["resolution_mode"] == "gm_council"
+    assert council_turns_payload["items"][0]["world_context"] == session_payload["world_context"]
     assert council_turns_payload["items"][0]["langfuse_trace_id"]
     assert council_turns_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     assert council_turns_payload["items"][0]["langfuse_status"] == "ok"
@@ -562,6 +565,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     assert relationships_response.status_code == 200
     relationships_payload = relationships_response.json()
+    assert relationships_payload["world_context"] == session_payload["world_context"]
     assert relationships_payload["items"]
     assert {"strength", "band"} <= set(relationships_payload["items"][0])
 
@@ -570,6 +574,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert threads_response.status_code == 200
+    assert threads_response.json()["world_context"] == session_payload["world_context"]
     assert "items" in threads_response.json()
 
     chapters_response = client.get(
@@ -577,6 +582,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert chapters_response.status_code == 200
+    assert chapters_response.json()["world_context"] == session_payload["world_context"]
     assert chapters_response.json()["items"]
 
     chapter_branches_response = client.get(
@@ -584,6 +590,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert chapter_branches_response.status_code == 200
+    assert chapter_branches_response.json()["world_context"] == session_payload["world_context"]
     assert "items" in chapter_branches_response.json()
 
     scenes_response = client.get(
@@ -591,6 +598,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert scenes_response.status_code == 200
+    assert scenes_response.json()["world_context"] == session_payload["world_context"]
     assert scenes_response.json()["items"]
 
     npc_routines_response = client.get(
@@ -598,6 +606,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert npc_routines_response.status_code == 200
+    assert npc_routines_response.json()["world_context"] == session_payload["world_context"]
     assert len(npc_routines_response.json()["items"]) >= 3
     assert {"routine_role", "beat_state", "last_ambient_turn_id"} <= set(
         npc_routines_response.json()["items"][0]["routine_state"]
@@ -608,6 +617,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert ambient_beats_response.status_code == 200
+    assert ambient_beats_response.json()["world_context"] == session_payload["world_context"]
     assert ambient_beats_response.json()["items"]
     assert {"beat_kind", "visible_summary"} <= set(ambient_beats_response.json()["items"][0])
 
@@ -616,6 +626,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert route_pressures_response.status_code == 200
+    assert route_pressures_response.json()["world_context"] == session_payload["world_context"]
     assert "items" in route_pressures_response.json()
 
     locations_response = client.get(
@@ -623,6 +634,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert locations_response.status_code == 200
+    assert locations_response.json()["world_context"] == session_payload["world_context"]
     assert len(locations_response.json()["items"]) >= 3
 
     travel_log_response = client.get(
@@ -630,7 +642,32 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert travel_log_response.status_code == 200
+    assert travel_log_response.json()["world_context"] == session_payload["world_context"]
     assert "items" in travel_log_response.json()
+
+    world_ticks_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/world-ticks",
+        headers=auth_headers,
+    )
+    assert world_ticks_response.status_code == 200
+    assert world_ticks_response.json()["world_context"] == session_payload["world_context"]
+    assert "items" in world_ticks_response.json()
+
+    npc_locations_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/npc-locations",
+        headers=auth_headers,
+    )
+    assert npc_locations_response.status_code == 200
+    assert npc_locations_response.json()["world_context"] == session_payload["world_context"]
+    assert "items" in npc_locations_response.json()
+
+    offstage_beats_response = client.get(
+        f"/ops/worlds/{session_payload['world_id']}/offstage-beats",
+        headers=auth_headers,
+    )
+    assert offstage_beats_response.status_code == 200
+    assert offstage_beats_response.json()["world_context"] == session_payload["world_context"]
+    assert "items" in offstage_beats_response.json()
 
 
 def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
@@ -670,6 +707,7 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     )
     assert search_response.status_code == 200
     search_payload = search_response.json()
+    assert search_payload["world_context"] == session_payload["world_context"]
     assert search_payload["trace"]["status"] == "ready"
     assert len(search_payload["hits"]) >= 1
     assert any("旅人を助け" in item["text"] for item in search_payload["hits"])
@@ -721,6 +759,13 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert run_response.status_code == 200
     run_payload = run_response.json()
     assert run_payload["dataset_name"] == "turn_resolution_smoke"
+    assert {
+        (item["pack_id"], item["pack_display_name"], item["world_template_id"], item["world_template_display_name"])
+        for item in run_payload["summary"]["pack_scope"]
+    } == {
+        ("ember_harbor", "Ember Harbor", "ember_harbor", "Ember Harbor"),
+        ("founders_reach", "Founders Reach", "founders_reach", "Founders Reach"),
+    }
     assert run_payload["summary"]["variants"]["current"]["gate_passed"] is True
     assert run_payload["langfuse_trace_id"]
     assert run_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
@@ -730,11 +775,13 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert runs_response.status_code == 200
     runs_payload = runs_response.json()
     assert runs_payload["items"][0]["id"] == run_payload["id"]
+    assert runs_payload["items"][0]["summary"]["pack_scope"] == run_payload["summary"]["pack_scope"]
     assert runs_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     detail_response = client.get(f"/ops/evals/runs/{run_payload['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
     assert len(detail_response.json()["results"]) >= 2
+    assert detail_response.json()["summary"]["pack_scope"] == run_payload["summary"]["pack_scope"]
     assert detail_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
 
     observability_response = client.get("/ops/observability/summary", headers=auth_headers)
@@ -772,6 +819,22 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
     }
+    assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_founders_regression"]["pack_scope"] == [
+        {
+            "pack_id": "founders_reach",
+            "pack_display_name": "Founders Reach",
+            "world_template_id": "founders_reach",
+            "world_template_display_name": "Founders Reach",
+        }
+    ]
+    assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_ember_regression"]["pack_scope"] == [
+        {
+            "pack_id": "ember_harbor",
+            "pack_display_name": "Ember Harbor",
+            "world_template_id": "ember_harbor",
+            "world_template_display_name": "Ember Harbor",
+        }
+    ]
     assert set(checklist_payload["runs"]["pack_regressions"]) == {
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",

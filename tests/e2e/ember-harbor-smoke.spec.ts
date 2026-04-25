@@ -34,6 +34,10 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await page.getByTestId("nav-admin").click();
   await expect(page.getByTestId("ops-world-select")).toHaveValue(worldId, { timeout: slowTimeout });
   await expect(page.getByTestId("active-world-context")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("release-checks-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
+  await page.getByTestId("trigger-idle-pass").click();
+  await expect(page.getByTestId("world-tick-stream")).toContainText(/idle_world_pass/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("world-tick-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
   await page.getByTestId("nav-game").click();
 
   for (let step = 0; step < 2; step += 1) {

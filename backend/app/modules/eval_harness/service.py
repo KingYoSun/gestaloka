@@ -457,6 +457,7 @@ class EvalHarnessService:
                             "current_passed": False,
                             "candidate_passed": False,
                             "run_id": None,
+                            "pack_scope": self._pack_scope_for_dataset_name(dataset_name),
                         }
                         for dataset_name in PACK_REGRESSION_DATASETS
                     },
@@ -530,7 +531,10 @@ class EvalHarnessService:
             "failure_injection": self._extract_gate_check(failure),
             "shadow_replay": self._extract_gate_check(shadow),
             "pack_regressions": {
-                dataset_name: self._extract_gate_check(pack_regression_runs.get(dataset_name))
+                dataset_name: self._extract_gate_check(
+                    pack_regression_runs.get(dataset_name),
+                    dataset_name=dataset_name,
+                )
                 for dataset_name in PACK_REGRESSION_DATASETS
             },
         }
@@ -968,6 +972,7 @@ class EvalHarnessService:
             "source_type": source_type,
             "dataset_name": dataset_name,
             "case_count": len(cases),
+            "pack_scope": self._pack_scope_for_cases(cases),
             "variants": {},
             "comparison": {},
         }
@@ -1103,9 +1108,15 @@ class EvalHarnessService:
             )
         return snapshot
 
-    def _extract_gate_check(self, run: EvalRun | None) -> dict[str, object]:
+    def _extract_gate_check(self, run: EvalRun | None, *, dataset_name: str | None = None) -> dict[str, object]:
         if run is None:
-            return {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None}
+            return {
+                "present": False,
+                "current_passed": False,
+                "candidate_passed": False,
+                "run_id": None,
+                "pack_scope": self._pack_scope_for_dataset_name(dataset_name) if dataset_name is not None else [],
+            }
         summary = run.summary or {}
         variants = summary.get("variants", {})
         current = variants.get("current", {})
@@ -1115,7 +1126,33 @@ class EvalHarnessService:
             "current_passed": bool(current.get("gate_passed")),
             "candidate_passed": bool(candidate.get("gate_passed")),
             "run_id": run.id,
+            "pack_scope": summary.get("pack_scope") or [],
         }
+
+    def _pack_scope_for_dataset_name(self, dataset_name: str) -> list[dict[str, object]]:
+        dataset = self.datasets.get(dataset_name)
+        if dataset is None:
+            return []
+        return self._pack_scope_for_cases(dataset.cases)
+
+    def _pack_scope_for_cases(self, cases: list[EvalCaseInput]) -> list[dict[str, object]]:
+        registry = self.pack_registry or get_pack_registry(self.settings)
+        scoped: dict[tuple[str, str], dict[str, object]] = {}
+        for case in cases:
+            if not case.pack_id or not case.world_template_id:
+                continue
+            key = (case.pack_id, case.world_template_id)
+            if key in scoped:
+                continue
+            pack = registry.get_pack(case.pack_id)
+            template = pack.template(case.world_template_id)
+            scoped[key] = {
+                "pack_id": pack.manifest.pack_id,
+                "pack_display_name": pack.manifest.display_name,
+                "world_template_id": template.template_id,
+                "world_template_display_name": template.display_name,
+            }
+        return [scoped[key] for key in sorted(scoped)]
 
     def _load_datasets(self, dataset_dir: Path) -> dict[str, EvalDataset]:
         if not dataset_dir.exists():
