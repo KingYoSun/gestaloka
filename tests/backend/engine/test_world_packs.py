@@ -16,7 +16,13 @@ from app.main import create_app
 from app.models.base import Base
 from app.models.entities import World
 from app.modules.world_pack.cli import main as world_pack_main
-from app.modules.world_pack.service import PackRegistry, WorldPackError, configure_pack_registry, world_pack_metadata
+from app.modules.world_pack.service import (
+    PackRegistry,
+    WorldPackError,
+    configure_pack_registry,
+    load_pack_from_dir,
+    world_pack_metadata,
+)
 
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
@@ -222,12 +228,41 @@ def test_pack_registry_reports_empty_and_not_directory_pack_dir(tmp_path: Path):
     empty_diagnostic = PackRegistry(empty_dir).catalog_diagnostic()
     assert empty_diagnostic["status"] == "error"
     assert empty_diagnostic["failures"][0]["error"] == "empty_pack_dir"
+    assert empty_diagnostic["failures"][0]["severity"] == "critical"
 
     not_directory = tmp_path / "packs.txt"
     not_directory.write_text("not a directory\n", encoding="utf-8")
     file_diagnostic = PackRegistry(not_directory).catalog_diagnostic()
     assert file_diagnostic["status"] == "error"
     assert file_diagnostic["failures"][0]["error"] == "pack_dir_not_directory"
+    assert file_diagnostic["failures"][0]["severity"] == "critical"
+
+
+def test_pack_registry_rejects_symlink_pack_roots_and_escaped_pack_ids(tmp_path: Path):
+    pack_dir = tmp_path / "packs"
+    pack_dir.mkdir()
+    outside_dir = tmp_path / "outside"
+    shutil.copytree(REPO_ROOT / "packs" / "ember_harbor", outside_dir / "ember_harbor")
+    (pack_dir / "linked_pack").symlink_to(outside_dir / "ember_harbor", target_is_directory=True)
+
+    symlink_failure = _only_failure(PackRegistry(pack_dir))
+    assert symlink_failure["error"] == "pack_root_symlink_not_allowed"
+    assert symlink_failure["severity"] == "error"
+
+    with pytest.raises(WorldPackError) as exc:
+        load_pack_from_dir(pack_dir, "../outside/ember_harbor")
+    assert exc.value.code == "invalid_pack_id"
+
+
+def test_pack_registry_rejects_pack_manifest_that_is_not_a_file(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+    manifest_path = pack_dir / "ember_harbor" / "pack.yaml"
+    manifest_path.unlink()
+    manifest_path.mkdir()
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "pack_manifest_not_file"
+    assert str(failure["path"]).endswith("ember_harbor/pack.yaml")
 
 
 def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_path: Path, auth_headers):
@@ -266,6 +301,7 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
     admin_payload = admin_response.json()
     assert admin_payload["status"] == "degraded"
     assert admin_payload["failures"][0]["error"] == "pack_id_mismatch"
+    assert admin_payload["failures"][0]["severity"] == "error"
     assert admin_payload["failures"][0]["path"].endswith("founders_reach/pack.yaml")
     assert session_response.status_code == 200
 

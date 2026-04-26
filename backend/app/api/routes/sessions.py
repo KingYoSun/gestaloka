@@ -32,6 +32,15 @@ def create_session(
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, object]:
     ensure_primary_runtime(container)
+    if container.pack_registry.status == "error":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "world_pack_catalog_unavailable",
+                "message": "World pack catalog has no valid packs available",
+                "failure_count": container.pack_registry.failure_count,
+            },
+        )
     requested_world_name = str(payload.world_overrides.get("world_name") or payload.world_name or "").strip() or None
     try:
         result = create_session_for_user(

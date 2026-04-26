@@ -131,6 +131,7 @@ type OpsWorldPackItem = WorldPackItem & {
 type OpsWorldPackFailure = {
   error: string;
   message: string;
+  severity: string;
   pack_id?: string;
   path?: string;
 };
@@ -1201,6 +1202,7 @@ function App() {
   const [worldId, setWorldId] = useState("world-alpha");
   const [opsWorldId, setOpsWorldId] = useState("");
   const [worldPacks, setWorldPacks] = useState<WorldPackItem[]>([]);
+  const [worldPackCatalogStatus, setWorldPackCatalogStatus] = useState("unknown");
   const [selectedPackId, setSelectedPackId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -1270,6 +1272,7 @@ function App() {
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId) ?? null;
   const selectedTemplate = selectedPack?.world_templates.find((item) => item.template_id === selectedTemplateId) ?? null;
+  const worldPackCatalogUnavailable = worldPackCatalogStatus === "error";
   const visibleOpsWorlds = opsWorlds.filter((item) => {
     const context = item.world_context;
     return (
@@ -1331,6 +1334,7 @@ function App() {
       setMe(null);
       setWallet(null);
       setWorldPacks([]);
+      setWorldPackCatalogStatus("unknown");
       setSelectedPackId("");
       setSelectedTemplateId("");
       setSessionState(null);
@@ -1375,6 +1379,7 @@ function App() {
         setMe(mePayload);
         setWallet(walletPayload);
         setWorldPacks(packPayload.items);
+        setWorldPackCatalogStatus(packPayload.status);
         if (packPayload.status === "error") {
           setError(`World pack catalog unavailable (${packPayload.failure_count} failures)`);
         }
@@ -1749,6 +1754,10 @@ function App() {
     event.preventDefault();
     if (!token) {
       setError("Sign in before starting a world session");
+      return;
+    }
+    if (worldPackCatalogUnavailable) {
+      setError("World pack catalog is unavailable");
       return;
     }
     if (!selectedPack || !selectedTemplate) {
@@ -2166,7 +2175,7 @@ function App() {
                 data-testid="pack-select"
                 value={selectedPackId}
                 onChange={(event) => setSelectedPackId(event.target.value)}
-                disabled={!worldPacks.length}
+                disabled={worldPackCatalogUnavailable || !worldPacks.length}
               >
                 <option value="" disabled>
                   Select a content pack
@@ -2184,7 +2193,7 @@ function App() {
                 data-testid="template-select"
                 value={selectedTemplateId}
                 onChange={(event) => setSelectedTemplateId(event.target.value)}
-                disabled={!selectedPack}
+                disabled={worldPackCatalogUnavailable || !selectedPack}
               >
                 <option value="" disabled>
                   Select a world template
@@ -2204,10 +2213,15 @@ function App() {
                 onChange={(event) => setWorldId(event.target.value)}
               />
             </label>
-            <button data-testid="start-session" type="submit" disabled={!authenticated || !selectedPack || !selectedTemplate}>
+            <button
+              data-testid="start-session"
+              type="submit"
+              disabled={!authenticated || worldPackCatalogUnavailable || !selectedPack || !selectedTemplate}
+            >
               Start session
             </button>
           </form>
+          <p data-testid="pack-catalog-status">Pack catalog: {worldPackCatalogStatus}</p>
           {session ? (
             <dl className="meta">
               <div>
@@ -2811,7 +2825,11 @@ function App() {
                 </select>
               </label>
               <p data-testid="ops-pack-catalog-summary">
-                Pack catalog: {opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown"} / packs{" "}
+                Pack catalog:{" "}
+                <strong data-testid="ops-pack-catalog-status">
+                  {opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown"}
+                </strong>{" "}
+                / packs{" "}
                 {opsPackCatalog?.pack_count ?? health?.world_packs?.pack_count ?? 0} / templates{" "}
                 {opsPackCatalog?.template_count ?? health?.world_packs?.template_count ?? 0} / API{" "}
                 {opsPackCatalog?.engine_api_version ?? health?.world_packs?.engine_api_version ?? "unknown"} / failures{" "}
@@ -2821,7 +2839,9 @@ function App() {
                 {(opsPackCatalog?.failures ?? []).length ? (
                   (opsPackCatalog?.failures ?? []).map((item, index) => (
                     <li key={`${item.error}-${item.pack_id ?? "pack-dir"}-${index}`}>
-                      <strong>{item.error}</strong>
+                      <strong>
+                        {item.severity}: {item.error}
+                      </strong>
                       <span>{item.pack_id ?? "pack directory"}</span>
                       <span>{item.message}</span>
                       <span>{item.path ?? "path unavailable"}</span>

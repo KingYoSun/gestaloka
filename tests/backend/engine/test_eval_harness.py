@@ -310,6 +310,7 @@ def test_release_gate_blocks_when_pack_catalog_is_degraded(container):
         PackCatalogFailure(
             error="pack_id_mismatch",
             message="external pack failed validation",
+            severity="error",
             pack_id="broken_pack",
             path="/external/packs/broken_pack/pack.yaml",
         )

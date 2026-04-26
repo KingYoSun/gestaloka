@@ -334,6 +334,7 @@ class LoadedWorldPack:
 class PackCatalogFailure:
     error: str
     message: str
+    severity: str
     pack_id: str | None = None
     path: str | None = None
 
@@ -342,6 +343,7 @@ class PackCatalogFailure:
         return cls(
             error=exc.code,
             message=str(exc),
+            severity=_failure_severity(exc.code),
             pack_id=exc.pack_id,
             path=exc.path,
         )
@@ -350,12 +352,19 @@ class PackCatalogFailure:
         payload: dict[str, Any] = {
             "error": self.error,
             "message": self.message,
+            "severity": self.severity,
         }
         if self.pack_id is not None:
             payload["pack_id"] = self.pack_id
         if include_path and self.path is not None:
             payload["path"] = self.path
         return payload
+
+
+def _failure_severity(code: str) -> str:
+    if code in {"pack_dir_not_found", "pack_dir_not_directory", "empty_pack_dir"}:
+        return "critical"
+    return "error"
 
 
 class PackRegistry:
@@ -487,19 +496,31 @@ class PackRegistry:
             )
             return {}
         packs: dict[str, LoadedWorldPack] = {}
-        pack_roots = [
-            path
-            for path in sorted(self.pack_dir.iterdir())
-            if path.is_dir() and not path.name.startswith(".") and path.name != "__pycache__"
-        ]
-        if not pack_roots:
-            self._record_failure(
-                WorldPackError(
-                    f"No world packs found in {self.pack_dir}",
-                    code="empty_pack_dir",
-                    path=self.pack_dir,
+        pack_roots: list[Path] = []
+        for path in sorted(self.pack_dir.iterdir()):
+            if path.name.startswith(".") or path.name == "__pycache__":
+                continue
+            if path.is_symlink():
+                self._record_failure(
+                    WorldPackError(
+                        f"Pack root symlink is not allowed: {path}",
+                        code="pack_root_symlink_not_allowed",
+                        pack_id=path.name,
+                        path=path,
+                    )
                 )
-            )
+                continue
+            if path.is_dir():
+                pack_roots.append(path)
+        if not pack_roots:
+            if not self.failures:
+                self._record_failure(
+                    WorldPackError(
+                        f"No world packs found in {self.pack_dir}",
+                        code="empty_pack_dir",
+                        path=self.pack_dir,
+                    )
+                )
             return {}
         for pack_root in pack_roots:
             pack_file = pack_root / "pack.yaml"
@@ -508,6 +529,16 @@ class PackRegistry:
                     WorldPackError(
                         f"Pack manifest not found: {pack_file}",
                         code="pack_manifest_not_found",
+                        pack_id=pack_root.name,
+                        path=pack_file,
+                    )
+                )
+                continue
+            if not pack_file.is_file():
+                self._record_failure(
+                    WorldPackError(
+                        f"Pack manifest is not a file: {pack_file}",
+                        code="pack_manifest_not_file",
                         pack_id=pack_root.name,
                         path=pack_file,
                     )
@@ -546,6 +577,14 @@ class PackRegistry:
     def _load_pack(self, manifest_path: Path) -> LoadedWorldPack:
         manifest_path = manifest_path.resolve()
         pack_dir_name = manifest_path.parent.name
+        self._validate_pack_root(manifest_path.parent, pack_id=pack_dir_name, path=manifest_path)
+        if not manifest_path.is_file():
+            raise WorldPackError(
+                f"Pack manifest is not a file: {manifest_path}",
+                code="pack_manifest_not_file",
+                pack_id=pack_dir_name,
+                path=manifest_path,
+            )
         raw_manifest = self._read_yaml_mapping(manifest_path, pack_id=pack_dir_name, content_key="manifest")
         try:
             manifest = PackManifest.model_validate(raw_manifest)
@@ -706,6 +745,18 @@ class PackRegistry:
             )
         return content_path
 
+    def _validate_pack_root(self, root_dir: Path, *, pack_id: str, path: Path | str) -> None:
+        root = root_dir.resolve()
+        try:
+            root.relative_to(self.pack_dir)
+        except ValueError as exc:
+            raise WorldPackError(
+                f"Pack root escapes pack_dir {self.pack_dir}: {root}",
+                code="pack_root_escaped",
+                pack_id=pack_id,
+                path=path,
+            ) from exc
+
     @staticmethod
     def _read_yaml_mapping(path: Path, *, pack_id: str, content_key: str) -> dict[str, Any]:
         try:
@@ -762,6 +813,13 @@ class PackRegistry:
 
 def load_pack_from_dir(pack_dir: Path | str, pack_id: str) -> LoadedWorldPack:
     resolved_dir = Path(pack_dir).resolve()
+    PackRegistry._validate_slug(
+        pack_id,
+        field_name="pack_id",
+        code="invalid_pack_id",
+        pack_id=pack_id,
+        path=resolved_dir,
+    )
     manifest_path = resolved_dir / pack_id / "pack.yaml"
     if not manifest_path.exists():
         raise WorldPackError(

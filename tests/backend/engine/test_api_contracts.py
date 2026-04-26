@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import HTTPException, status
 
 from app.modules.identity.oidc import UserIdentity
 from app.modules.observability.service import CanaryProbeResult
+from app.modules.world_pack.service import PackRegistry
 
 
 def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
@@ -125,6 +128,15 @@ def test_session_unknown_world_template_id_returns_422(client, auth_headers):
     assert response.status_code == 422
     assert response.json()["detail"]["error"] == "unknown_template"
     assert response.json()["detail"]["pack_id"] == "ember_harbor"
+
+
+def test_session_pack_catalog_error_returns_503(client, container, tmp_path: Path, auth_headers):
+    container.pack_registry = PackRegistry(tmp_path / "missing-packs")
+    response = client.post("/sessions", json=engine_session_payload(world_id="world-catalog-error"), headers=auth_headers)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "world_pack_catalog_unavailable"
+    assert response.json()["detail"]["failure_count"] == 1
 
 
 def test_world_membership_mismatch_returns_404(client, container):
