@@ -24,6 +24,7 @@ from app.models.entities import (
     SPLedgerEntry,
     Turn,
 )
+from app.modules.admin_ops.service import create_observability_snapshot
 from app.modules.economy_sp.service import ALLOWED_SP_REASON_CODES
 from app.modules.gm_council.service import CouncilRequest, GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
@@ -365,6 +366,25 @@ class EvalHarnessService:
             report.langfuse_trace_id = trace_link.trace_id
             report.langfuse_trace_url = trace_link.trace_url
             report.langfuse_status = trace_link.status
+            create_observability_snapshot(
+                db,
+                self.settings,
+                snapshot_kind="release_checklist",
+                runtime_role=resolved_runtime_role,
+                release_gate_report_id=report.id,
+                primary_slo={
+                    "runtime_role": resolved_runtime_role,
+                    "projection_lag_seconds": slo_snapshot["projection_lag_seconds"],
+                    "outbox_pending_count": slo_snapshot["outbox_pending_count"],
+                    "outbox_failed_count": slo_snapshot["outbox_failed_count"],
+                    "llm_schema_valid_rate": slo_snapshot["llm_schema_valid_rate"],
+                    "llm_fallback_rate": slo_snapshot["llm_fallback_rate"],
+                },
+                canary_health=canary_probe.__dict__,
+                langfuse_status=self.observability_service.langfuse_runtime(),
+                metrics=self.observability_service.metric_snapshot(),
+                trace_count=len(self.observability_service.recent_trace_attributes(limit=200)),
+            )
 
         return self._report_to_dict(db, report, current_config=current_config, candidate_config=candidate_config)
 

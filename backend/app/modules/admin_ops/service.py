@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.entities import Actor, LLMRun, OutboxEvent, ProjectionRecord, Session as GameSession, Turn, World
+from app.models.entities import Actor, LLMRun, ObservabilitySnapshot, OutboxEvent, ProjectionRecord, Session as GameSession, Turn, World
 from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
-from app.modules.world_pack.service import nullable_world_context_for_world, world_context_for_world
+from app.modules.world_pack.service import get_pack_registry, nullable_world_context_for_world, world_context_for_world
 from app.modules.world_memory.service import MemoryService
 from app.modules.world_state.ambient import (
     list_ambient_beats_debug,
@@ -28,6 +28,9 @@ from app.modules.world_state.service import (
     list_relationship_debug,
     list_travel_log_debug,
 )
+
+
+OBSERVABILITY_SNAPSHOT_RETENTION_DAYS = 30
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
@@ -99,25 +102,103 @@ def observability_summary(
     )
     canary = observability_service.probe_canary_health()
     trace_limit = 200 if pack_id or world_template_id else 12
+    recent_traces = [
+        item
+        for item in observability_service.recent_trace_attributes(limit=trace_limit)
+        if _trace_matches_pack_scope(item.get("attributes", {}), pack_id, world_template_id)
+    ]
+    primary_slo = {
+        "runtime_role": settings.app_runtime_role,
+        "graph_runtime_status": snapshot["graph_runtime_status"],
+        "graph_read_mode": snapshot["graph_read_mode"],
+        "projection_lag_seconds": snapshot["projection_lag_seconds"],
+        "outbox_pending_count": snapshot["pending_outbox"],
+        "outbox_failed_count": snapshot["failed_outbox"],
+        "llm_schema_valid_rate": snapshot["llm_schema_valid_rate"],
+        "llm_fallback_rate": snapshot["llm_fallback_rate"],
+    }
+    canary_health = _canary_probe_dict(canary)
+    langfuse_status = observability_service.langfuse_runtime()
+    metrics = observability_service.metric_snapshot()
+    stored_snapshot = create_observability_snapshot(
+        db,
+        settings,
+        snapshot_kind="summary",
+        runtime_role=settings.app_runtime_role,
+        pack_id=pack_id,
+        world_template_id=world_template_id,
+        primary_slo=primary_slo,
+        canary_health=canary_health,
+        langfuse_status=langfuse_status,
+        metrics=metrics,
+        trace_count=len(recent_traces),
+    )
     return {
-        "primary": {
-            "runtime_role": settings.app_runtime_role,
-            "graph_runtime_status": snapshot["graph_runtime_status"],
-            "graph_read_mode": snapshot["graph_read_mode"],
-            "projection_lag_seconds": snapshot["projection_lag_seconds"],
-            "outbox_pending_count": snapshot["pending_outbox"],
-            "outbox_failed_count": snapshot["failed_outbox"],
-            "llm_schema_valid_rate": snapshot["llm_schema_valid_rate"],
-            "llm_fallback_rate": snapshot["llm_fallback_rate"],
-        },
-        "canary": _canary_probe_dict(canary),
-        "langfuse": observability_service.langfuse_runtime(),
-        "recent_traces": [
-            item
-            for item in observability_service.recent_trace_attributes(limit=trace_limit)
-            if _trace_matches_pack_scope(item.get("attributes", {}), pack_id, world_template_id)
-        ],
-        "metrics": observability_service.metric_snapshot(),
+        "snapshot_id": stored_snapshot.id if stored_snapshot is not None else None,
+        "primary": primary_slo,
+        "canary": canary_health,
+        "langfuse": langfuse_status,
+        "recent_traces": recent_traces,
+        "metrics": metrics,
+    }
+
+
+def create_observability_snapshot(
+    db: Session,
+    settings: Settings,
+    *,
+    snapshot_kind: str,
+    runtime_role: str,
+    pack_id: str | None = None,
+    world_template_id: str | None = None,
+    release_gate_report_id: str | None = None,
+    primary_slo: dict[str, object],
+    canary_health: dict[str, object],
+    langfuse_status: dict[str, object],
+    metrics: dict[str, object],
+    trace_count: int,
+) -> ObservabilitySnapshot | None:
+    _cleanup_observability_snapshots(db)
+    scope = _snapshot_scope(settings, pack_id=pack_id, world_template_id=world_template_id)
+    if not scope.pop("known"):
+        return None
+    snapshot = ObservabilitySnapshot(
+        snapshot_kind=snapshot_kind,
+        runtime_role=runtime_role,
+        pack_id=scope["pack_id"],
+        pack_display_name=scope["pack_display_name"],
+        world_template_id=scope["world_template_id"],
+        world_template_display_name=scope["world_template_display_name"],
+        release_gate_report_id=release_gate_report_id,
+        primary_slo=primary_slo,
+        canary_health=canary_health,
+        langfuse_status=langfuse_status,
+        metrics=metrics,
+        trace_count=trace_count,
+    )
+    db.add(snapshot)
+    db.flush()
+    return snapshot
+
+
+def list_observability_snapshots(
+    db: Session,
+    *,
+    pack_id: str | None = None,
+    world_template_id: str | None = None,
+    limit: int = 12,
+) -> dict[str, object]:
+    stmt = select(ObservabilitySnapshot).order_by(
+        ObservabilitySnapshot.created_at.desc(),
+        ObservabilitySnapshot.id.desc(),
+    )
+    if pack_id:
+        stmt = stmt.where(ObservabilitySnapshot.pack_id == pack_id)
+    if world_template_id:
+        stmt = stmt.where(ObservabilitySnapshot.world_template_id == world_template_id)
+    snapshots = list(db.execute(stmt.limit(limit)).scalars())
+    return {
+        "items": [_observability_snapshot_to_dict(snapshot) for snapshot in snapshots],
     }
 
 
@@ -286,6 +367,74 @@ def _ledger_entries_with_world_context(db: Session, entries: list[dict[str, obje
 
 def _with_world_context(db: Session, world_id: str, payload: dict[str, object]) -> dict[str, object]:
     return {**payload, "world_context": world_context_for_world(db, world_id)}
+
+
+def _cleanup_observability_snapshots(db: Session) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=OBSERVABILITY_SNAPSHOT_RETENTION_DAYS)
+    db.execute(delete(ObservabilitySnapshot).where(ObservabilitySnapshot.created_at < cutoff))
+
+
+def _snapshot_scope(
+    settings: Settings,
+    *,
+    pack_id: str | None,
+    world_template_id: str | None,
+) -> dict[str, str | bool | None]:
+    scope = {
+        "known": False,
+        "pack_id": pack_id,
+        "pack_display_name": None,
+        "world_template_id": world_template_id,
+        "world_template_display_name": None,
+    }
+    if not pack_id and not world_template_id:
+        return {
+            "known": True,
+            "pack_id": None,
+            "pack_display_name": None,
+            "world_template_id": None,
+            "world_template_display_name": None,
+        }
+    try:
+        registry = get_pack_registry(settings)
+        if pack_id:
+            pack = registry.get_pack(pack_id)
+        else:
+            pack = next(
+                item
+                for item in registry.list_packs()
+                if world_template_id is not None and world_template_id in item.templates
+            )
+        scope["pack_id"] = pack.manifest.pack_id
+        scope["pack_display_name"] = pack.manifest.display_name
+        if world_template_id:
+            template = pack.template(world_template_id)
+            scope["world_template_id"] = template.template_id
+            scope["world_template_display_name"] = template.display_name
+        scope["known"] = True
+    except Exception:
+        pass
+    return scope
+
+
+def _observability_snapshot_to_dict(snapshot: ObservabilitySnapshot) -> dict[str, object]:
+    return {
+        "id": snapshot.id,
+        "snapshot_kind": snapshot.snapshot_kind,
+        "runtime_role": snapshot.runtime_role,
+        "pack_id": snapshot.pack_id,
+        "pack_display_name": snapshot.pack_display_name,
+        "world_template_id": snapshot.world_template_id,
+        "world_template_display_name": snapshot.world_template_display_name,
+        "release_gate_report_id": snapshot.release_gate_report_id,
+        "primary_slo": snapshot.primary_slo,
+        "canary_health": snapshot.canary_health,
+        "langfuse_status": snapshot.langfuse_status,
+        "metrics": snapshot.metrics,
+        "trace_count": snapshot.trace_count,
+        "created_at": snapshot.created_at.isoformat(),
+        "updated_at": snapshot.updated_at.isoformat(),
+    }
 
 
 def _trace_matches_pack_scope(attributes: object, pack_id: str | None, world_template_id: str | None) -> bool:

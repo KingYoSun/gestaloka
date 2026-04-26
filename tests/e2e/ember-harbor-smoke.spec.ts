@@ -41,6 +41,9 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await expect(page.getByTestId("ops-world-select")).toHaveValue(worldId, { timeout: slowTimeout });
   await expect(page.getByTestId("ops-world-select").locator("option")).toHaveCount(1, { timeout: slowTimeout });
   await expect(page.getByTestId("ops-world-select")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("observability-snapshot-timeline")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("observability-snapshot-timeline")).not.toContainText(/Founders Reach/i);
+  await expect(page.getByTestId("observability-snapshot-timeline")).toContainText(/schema/i, { timeout: slowTimeout });
   await expect(page.getByTestId("release-pack-regressions-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
   await expect(page.getByTestId("release-pack-regressions-stream")).not.toContainText(/Founders Reach/i);
   await expect(page.getByTestId("release-scope-summary")).toContainText(/ember_harbor/i, { timeout: slowTimeout });

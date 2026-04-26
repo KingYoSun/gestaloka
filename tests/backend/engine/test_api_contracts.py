@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 
+from app.models.entities import ObservabilitySnapshot
 from app.modules.identity.oidc import UserIdentity
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
@@ -904,13 +907,15 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert observability_response.status_code == 200
     observability_payload = observability_response.json()
     assert {"primary", "canary", "langfuse", "recent_traces", "metrics"} <= set(observability_payload)
+    assert observability_payload["snapshot_id"]
     assert observability_payload["langfuse"]["runtime_status"] == "ready"
     scoped_observability_response = client.get(
         "/ops/observability/summary?pack_id=ember_harbor&world_template_id=ember_harbor",
         headers=auth_headers,
     )
     assert scoped_observability_response.status_code == 200
-    scoped_traces = scoped_observability_response.json()["recent_traces"]
+    scoped_observability_payload = scoped_observability_response.json()
+    scoped_traces = scoped_observability_payload["recent_traces"]
     assert scoped_traces
     for trace in scoped_traces:
         attributes = trace["attributes"]
@@ -925,6 +930,20 @@ def test_ops_eval_contracts(client, container, auth_headers):
     missing_observability_response = client.get("/ops/observability/summary?pack_id=missing_pack", headers=auth_headers)
     assert missing_observability_response.status_code == 200
     assert missing_observability_response.json()["recent_traces"] == []
+    scoped_snapshots_response = client.get(
+        "/ops/observability/snapshots?pack_id=ember_harbor&world_template_id=ember_harbor",
+        headers=auth_headers,
+    )
+    assert scoped_snapshots_response.status_code == 200
+    scoped_snapshots = scoped_snapshots_response.json()["items"]
+    assert scoped_snapshots[0]["id"] == scoped_observability_payload["snapshot_id"]
+    assert scoped_snapshots[0]["snapshot_kind"] == "summary"
+    assert scoped_snapshots[0]["pack_id"] == "ember_harbor"
+    assert scoped_snapshots[0]["world_template_id"] == "ember_harbor"
+    assert scoped_snapshots[0]["trace_count"] == len(scoped_traces)
+    missing_snapshots_response = client.get("/ops/observability/snapshots?pack_id=missing_pack", headers=auth_headers)
+    assert missing_snapshots_response.status_code == 200
+    assert missing_snapshots_response.json()["items"] == []
 
     langfuse_status_response = client.get("/ops/observability/langfuse/status", headers=auth_headers)
     assert langfuse_status_response.status_code == 200
@@ -987,6 +1006,13 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert checklist_payload["runbook"]["nightly_gate"] == "make nightly-eval"
     assert checklist_payload["runbook"]["promote_condition"] == "verdict == passed and canary_promote_status == ready"
     assert checklist_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    release_snapshots_response = client.get("/ops/observability/snapshots?limit=20", headers=auth_headers)
+    assert release_snapshots_response.status_code == 200
+    assert any(
+        item["snapshot_kind"] == "release_checklist"
+        and item["release_gate_report_id"] == checklist_payload["report_id"]
+        for item in release_snapshots_response.json()["items"]
+    )
 
     latest_response = client.get("/ops/release/checklists/latest", headers=auth_headers)
     assert latest_response.status_code == 200
@@ -1029,6 +1055,35 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert scoped_gate_alias_response.status_code == 200
     assert scoped_gate_alias_response.json()["report_id"] == checklist_payload["report_id"]
     assert scoped_gate_alias_response.json()["checks"]["pack_regressions"] == {}
+
+
+def test_observability_snapshot_retention_cleanup(client, container, auth_headers):
+    with container.session_factory() as db:
+        old_snapshot = ObservabilitySnapshot(
+            snapshot_kind="summary",
+            runtime_role="primary",
+            primary_slo={},
+            canary_health={},
+            langfuse_status={},
+            metrics={},
+            trace_count=0,
+            created_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+        )
+        db.add(old_snapshot)
+        db.commit()
+        old_snapshot_id = old_snapshot.id
+
+    response = client.get("/ops/observability/summary", headers=auth_headers)
+    assert response.status_code == 200
+
+    with container.session_factory() as db:
+        assert db.execute(
+            select(ObservabilitySnapshot).where(ObservabilitySnapshot.id == old_snapshot_id)
+        ).scalar_one_or_none() is None
+        assert db.execute(
+            select(ObservabilitySnapshot).where(ObservabilitySnapshot.id == response.json()["snapshot_id"])
+        ).scalar_one_or_none() is not None
 
 
 def test_canary_runtime_blocks_gameplay_writes(client, container, auth_headers):

@@ -905,6 +905,7 @@ type CouncilTurnTrace = {
 };
 
 type ObservabilitySummary = {
+  snapshot_id?: string | null;
   primary: {
     runtime_role: string;
     graph_runtime_status: string;
@@ -934,6 +935,33 @@ type ObservabilitySummary = {
     attributes: Record<string, unknown>;
   }>;
   metrics: Record<string, number>;
+};
+
+type ObservabilitySnapshotItem = {
+  id: string;
+  snapshot_kind: string;
+  runtime_role: string;
+  pack_id: string | null;
+  pack_display_name: string | null;
+  world_template_id: string | null;
+  world_template_display_name: string | null;
+  release_gate_report_id: string | null;
+  primary_slo: {
+    projection_lag_seconds?: number;
+    outbox_failed_count?: number;
+    llm_schema_valid_rate?: number;
+    llm_fallback_rate?: number;
+  };
+  canary_health: {
+    status?: string;
+    release_gate_verdict?: string | null;
+  };
+  trace_count: number;
+  created_at: string;
+};
+
+type ObservabilitySnapshotList = {
+  items: ObservabilitySnapshotItem[];
 };
 
 type ActivityMessage = {
@@ -1313,6 +1341,7 @@ function App() {
   const [opsPackFilter, setOpsPackFilter] = useState("");
   const [opsTemplateFilter, setOpsTemplateFilter] = useState("");
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
+  const [observabilitySnapshots, setObservabilitySnapshots] = useState<ObservabilitySnapshotItem[]>([]);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
   const [evalRuns, setEvalRuns] = useState<EvalRunItem[]>([]);
@@ -1395,6 +1424,16 @@ function App() {
   const filteredRecentTraces = (observability?.recent_traces ?? []).filter((item) =>
     traceMatchesOpsScope(item.attributes, opsPackFilter, opsTemplateFilter),
   );
+  const visibleObservabilitySnapshots = observabilitySnapshots.filter((item) =>
+    packContextMatches(
+      {
+        pack_id: item.pack_id ?? "",
+        world_template_id: item.world_template_id ?? "",
+      },
+      opsPackFilter,
+      opsTemplateFilter,
+    ),
+  );
   const suggestedChoices = sessionState?.next_choices ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
@@ -1460,6 +1499,7 @@ function App() {
       setOpsPackFilter("");
       setOpsTemplateFilter("");
       setObservability(null);
+      setObservabilitySnapshots([]);
       setSpOverview(null);
       setLedgerEntries([]);
       setEvalRuns([]);
@@ -1642,6 +1682,7 @@ function App() {
       setChapterBranchOps([]);
       setSceneOps([]);
       setObservability(null);
+      setObservabilitySnapshots([]);
       setSpOverview(null);
       setLedgerEntries([]);
       setCouncilTurns([]);
@@ -1685,9 +1726,14 @@ function App() {
         apiFetch<{ items: OpsWorldItem[] }>(`/ops/worlds${buildQuery(scopeQuery)}`, currentToken),
         apiFetch<OpsWorldPackCatalog>("/ops/world-packs", currentToken),
       ]);
+      const snapshotsPayload = await apiFetch<ObservabilitySnapshotList>(
+        `/ops/observability/snapshots${buildQuery({ limit: 12, ...scopeQuery })}`,
+        currentToken,
+      );
       setProjectionStatus(statusPayload);
       setEmbeddingStatus(embeddingPayload);
       setObservability(observabilityPayload);
+      setObservabilitySnapshots(snapshotsPayload.items);
       setSpOverview(overviewPayload);
       setLedgerEntries(ledgerPayload.items);
       setEvalRuns(evalRunsPayload.items);
@@ -1725,6 +1771,7 @@ function App() {
         setOpsWorlds([]);
         setOpsPackCatalog(null);
         setObservability(null);
+        setObservabilitySnapshots([]);
         setSpOverview(null);
         setLedgerEntries([]);
         setEvalRuns([]);
@@ -1748,6 +1795,7 @@ function App() {
       setAmbientBeatOps([]);
       setOpsPackCatalog(null);
       setObservability(null);
+      setObservabilitySnapshots([]);
       setSpOverview(null);
       setLedgerEntries([]);
       setEvalRuns([]);
@@ -3034,6 +3082,34 @@ function App() {
                 {observability?.canary.graph_runtime_status ?? health?.observability?.canary_health?.graph_runtime_status ?? "unknown"} /
                 gate {observability?.canary.release_gate_verdict ?? health?.observability?.canary_health?.release_gate_verdict ?? "unknown"}
               </p>
+              <h3>Operations health timeline</h3>
+              <ul className="stream" data-testid="observability-snapshot-timeline">
+                {visibleObservabilitySnapshots.length ? (
+                  visibleObservabilitySnapshots.map((item) => (
+                    <li key={item.id}>
+                      <strong>
+                        {item.snapshot_kind} / {item.pack_display_name ?? "all packs"} /{" "}
+                        {item.world_template_display_name ?? "all templates"}
+                      </strong>
+                      <span>{item.created_at}</span>
+                      <span>
+                        lag {item.primary_slo.projection_lag_seconds ?? 0}s / failed{" "}
+                        {item.primary_slo.outbox_failed_count ?? 0}
+                      </span>
+                      <span>
+                        schema {((item.primary_slo.llm_schema_valid_rate ?? 0) * 100).toFixed(0)}% / fallback{" "}
+                        {((item.primary_slo.llm_fallback_rate ?? 0) * 100).toFixed(0)}%
+                      </span>
+                      <span>
+                        canary {item.canary_health.status ?? "unknown"} / gate{" "}
+                        {item.canary_health.release_gate_verdict ?? "unknown"}
+                      </span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No observability snapshots match this scope.</li>
+                )}
+              </ul>
               <p data-testid="embedding-status-summary">
                 Embedding: {embeddingStatus?.provider ?? health?.embedding?.provider ?? "unknown"} / model:{" "}
                 {embeddingStatus?.model ?? health?.embedding?.model ?? "unknown"} / dim:{" "}

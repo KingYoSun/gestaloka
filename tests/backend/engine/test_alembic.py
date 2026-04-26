@@ -46,6 +46,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "eval_runs",
         "eval_case_results",
         "release_gate_reports",
+        "observability_snapshots",
         "outbox_events",
     } <= tables
 
@@ -55,6 +56,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     llm_run_columns = {column["name"] for column in inspector.get_columns("llm_runs")}
     eval_run_columns = {column["name"] for column in inspector.get_columns("eval_runs")}
     release_gate_columns = {column["name"] for column in inspector.get_columns("release_gate_reports")}
+    observability_snapshot_columns = {column["name"] for column in inspector.get_columns("observability_snapshots")}
     memory_columns = {column["name"] for column in inspector.get_columns("memories")}
     world_tick_columns = {column["name"] for column in inspector.get_columns("world_ticks")}
     world_columns = {column["name"] for column in inspector.get_columns("worlds")}
@@ -79,5 +81,24 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     } <= llm_run_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= eval_run_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= release_gate_columns
+    assert {
+        "snapshot_kind",
+        "runtime_role",
+        "pack_id",
+        "world_template_id",
+        "release_gate_report_id",
+        "primary_slo",
+        "canary_health",
+        "langfuse_status",
+        "metrics",
+        "trace_count",
+    } <= observability_snapshot_columns
+    observability_indexes = {index["name"] for index in inspector.get_indexes("observability_snapshots")}
+    assert {
+        "ix_observability_snapshots_snapshot_kind",
+        "ix_observability_snapshots_pack_id",
+        "ix_observability_snapshots_world_template_id",
+        "ix_observability_snapshots_release_gate_report_id",
+    } <= observability_indexes
     assert {"tick_kind", "status", "seed_turn_id", "location_id", "summary", "started_at", "completed_at"} <= world_tick_columns
     assert "state" in world_columns

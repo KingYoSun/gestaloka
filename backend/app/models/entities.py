@@ -598,3 +598,21 @@ class ReleaseGateReport(Base, TimestampMixin):
     langfuse_trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     langfuse_trace_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")
+
+
+class ObservabilitySnapshot(Base, TimestampMixin):
+    __tablename__ = "observability_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    snapshot_kind: Mapped[str] = mapped_column(String(32), default="summary", index=True)
+    runtime_role: Mapped[str] = mapped_column(String(32), default="primary", index=True)
+    pack_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    pack_display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    world_template_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    world_template_display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    release_gate_report_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    primary_slo: Mapped[dict] = mapped_column(JSON, default=dict)
+    canary_health: Mapped[dict] = mapped_column(JSON, default=dict)
+    langfuse_status: Mapped[dict] = mapped_column(JSON, default=dict)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    trace_count: Mapped[int] = mapped_column(Integer, default=0)

@@ -14,6 +14,7 @@ from app.models.entities import Session as GameSession, World
 from app.modules.admin_ops.service import (
     get_council_turn,
     list_world_contexts,
+    list_observability_snapshots,
     list_council_turns,
     memory_status,
     observability_summary,
@@ -147,13 +148,33 @@ def get_observability_summary(
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return observability_summary(
+    payload = observability_summary(
         db,
         container.settings,
         container.projection_service,
         container.observability_service,
         pack_id=pack_id,
         world_template_id=world_template_id,
+    )
+    db.commit()
+    return payload
+
+
+@router.get("/observability/snapshots")
+def get_observability_snapshots(
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=12, ge=1, le=100),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return list_observability_snapshots(
+        db,
+        pack_id=pack_id,
+        world_template_id=world_template_id,
+        limit=limit,
     )
 
 
