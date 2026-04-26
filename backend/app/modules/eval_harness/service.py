@@ -460,51 +460,69 @@ class EvalHarnessService:
             ],
         }
 
-    def get_release_checklist(self, db: Session, report_id: str) -> dict[str, object]:
+    def get_release_checklist(
+        self,
+        db: Session,
+        report_id: str,
+        *,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
+    ) -> dict[str, object]:
         report = db.execute(select(ReleaseGateReport).where(ReleaseGateReport.id == report_id)).scalar_one()
         return self._report_to_dict(
             db,
             report,
             current_config=self.load_release_config("current"),
             candidate_config=self.load_release_config("candidate"),
+            pack_id=pack_id,
+            world_template_id=world_template_id,
         )
 
-    def latest_release_checklist(self, db: Session) -> dict[str, object]:
+    def latest_release_checklist(
+        self,
+        db: Session,
+        *,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
+    ) -> dict[str, object]:
         report = db.execute(
             select(ReleaseGateReport).order_by(ReleaseGateReport.created_at.desc(), ReleaseGateReport.id.desc()).limit(1)
         ).scalar_one_or_none()
         if report is None:
+            all_checks = {
+                "smoke": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                "pack_regressions": {
+                    dataset_name: {
+                        "present": False,
+                        "current_passed": False,
+                        "candidate_passed": False,
+                        "run_id": None,
+                        "pack_scope": self._pack_scope_for_dataset_name(dataset_name),
+                    }
+                    for dataset_name in PACK_REGRESSION_DATASETS
+                },
+            }
+            filtered_checks = _filter_release_checks(all_checks, pack_id, world_template_id)
+            filtered_pack_regression_names = set(filtered_checks["pack_regressions"])
             return {
                 "report_id": None,
                 "verdict": "blocked",
                 "blocked_reasons": ["No release checklist report exists"],
                 "trigger_type": "manual",
-                "checks": {
-                    "smoke": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
-                    "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
-                    "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
-                    "pack_regressions": {
-                        dataset_name: {
-                            "present": False,
-                            "current_passed": False,
-                            "candidate_passed": False,
-                            "run_id": None,
-                            "pack_scope": self._pack_scope_for_dataset_name(dataset_name),
-                        }
-                        for dataset_name in PACK_REGRESSION_DATASETS
-                    },
-                },
+                "checks": filtered_checks,
                 "runs": {
                     "smoke": None,
                     "failure_injection": None,
                     "shadow_replay": None,
-                    "pack_regressions": {dataset_name: None for dataset_name in PACK_REGRESSION_DATASETS},
+                    "pack_regressions": {dataset_name: None for dataset_name in filtered_pack_regression_names},
                 },
                 "latest_runs": {
                     "smoke": None,
                     "failure_injection": None,
                     "shadow_replay": None,
-                    "pack_regressions": {dataset_name: None for dataset_name in PACK_REGRESSION_DATASETS},
+                    "pack_regressions": {dataset_name: None for dataset_name in filtered_pack_regression_names},
                 },
                 "slo_snapshot": {
                     "runtime_role": self.settings.app_runtime_role,
@@ -522,15 +540,7 @@ class EvalHarnessService:
                 "cutover_status": self._cutover_status(
                     verdict="blocked",
                     blocked_reasons=["No release checklist report exists"],
-                    checks={
-                        "smoke": {"present": False, "current_passed": False, "candidate_passed": False},
-                        "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False},
-                        "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False},
-                        "pack_regressions": {
-                            dataset_name: {"present": False, "current_passed": False, "candidate_passed": False}
-                            for dataset_name in PACK_REGRESSION_DATASETS
-                        },
-                    },
+                    checks=all_checks,
                 ),
                 "created_at": None,
                 "canary_promote_status": "blocked",
@@ -544,10 +554,18 @@ class EvalHarnessService:
             report,
             current_config=self.load_release_config("current"),
             candidate_config=self.load_release_config("candidate"),
+            pack_id=pack_id,
+            world_template_id=world_template_id,
         )
 
-    def latest_gate_report(self, db: Session) -> dict[str, object]:
-        return self.latest_release_checklist(db)
+    def latest_gate_report(
+        self,
+        db: Session,
+        *,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
+    ) -> dict[str, object]:
+        return self.latest_release_checklist(db, pack_id=pack_id, world_template_id=world_template_id)
 
     def _report_to_dict(
         self,
@@ -556,6 +574,8 @@ class EvalHarnessService:
         *,
         current_config: ReleaseConfig,
         candidate_config: ReleaseConfig,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
     ) -> dict[str, object]:
         smoke = db.execute(select(EvalRun).where(EvalRun.id == report.smoke_run_id)).scalar_one()
         failure = db.execute(select(EvalRun).where(EvalRun.id == report.failure_run_id)).scalar_one()
@@ -572,7 +592,7 @@ class EvalHarnessService:
                 .order_by(EvalCaseResult.case_id.asc(), EvalCaseResult.variant.asc())
             ).scalars()
         )
-        checks = {
+        all_checks = {
             "smoke": self._extract_gate_check(smoke),
             "failure_injection": self._extract_gate_check(failure),
             "shadow_replay": self._extract_gate_check(shadow),
@@ -584,10 +604,34 @@ class EvalHarnessService:
                 for dataset_name in PACK_REGRESSION_DATASETS
             },
         }
+        checks = _filter_release_checks(all_checks, pack_id, world_template_id)
+        filtered_pack_regression_names = set(checks["pack_regressions"])
         pack_regression_runs_payload = {
             dataset_name: pack_regression_run_ids.get(dataset_name)
             for dataset_name in PACK_REGRESSION_DATASETS
+            if dataset_name in filtered_pack_regression_names
         }
+        shadow_failures = [
+            {
+                "case_id": item.case_id,
+                "variant": item.variant,
+                "lane": item.lane,
+                "pack_context": _pack_context_from_raw_output(item.raw_output),
+                "graph_context_status": item.graph_context_status,
+                "retrieval_status": item.raw_output.get("retrieval_trace", {}).get("status"),
+                "retrieval_hit_count": len(item.raw_output.get("retrieval_trace", {}).get("retrieved_memory_ids", [])),
+                "failure_reason": item.failure_reason,
+            }
+            for item in shadow_results
+            if not item.passed
+            or item.graph_context_status != "ready"
+            or item.raw_output.get("retrieval_trace", {}).get("status") != "ready"
+        ]
+        shadow_failures = [
+            item
+            for item in shadow_failures
+            if _pack_context_matches(item["pack_context"], pack_id, world_template_id)
+        ]
         canary_promote_status = "ready" if report.verdict == "passed" else "blocked"
         return {
             "report_id": report.id,
@@ -609,27 +653,12 @@ class EvalHarnessService:
             },
             "slo_snapshot": report.slo_snapshot,
             "diff_summary": current_config.diff(candidate_config),
-            "shadow_failures": [
-                {
-                    "case_id": item.case_id,
-                    "variant": item.variant,
-                    "lane": item.lane,
-                    "pack_context": _pack_context_from_raw_output(item.raw_output),
-                    "graph_context_status": item.graph_context_status,
-                    "retrieval_status": item.raw_output.get("retrieval_trace", {}).get("status"),
-                    "retrieval_hit_count": len(item.raw_output.get("retrieval_trace", {}).get("retrieved_memory_ids", [])),
-                    "failure_reason": item.failure_reason,
-                }
-                for item in shadow_results
-                if not item.passed
-                or item.graph_context_status != "ready"
-                or item.raw_output.get("retrieval_trace", {}).get("status") != "ready"
-            ],
+            "shadow_failures": shadow_failures,
             "runbook": self._runbook(),
             "cutover_status": self._cutover_status(
                 verdict=report.verdict,
                 blocked_reasons=report.blocked_reasons,
-                checks=checks,
+                checks=all_checks,
             ),
             "created_at": report.created_at.isoformat(),
             "canary_promote_status": canary_promote_status,
@@ -1733,6 +1762,25 @@ def _pack_context_from_raw_output(raw_output: dict | None) -> dict[str, object] 
     if not required <= set(pack_context):
         return None
     return {key: pack_context[key] for key in sorted(required)}
+
+
+def _filter_release_checks(
+    checks: dict[str, object],
+    pack_id: str | None,
+    world_template_id: str | None,
+) -> dict[str, object]:
+    if not pack_id and not world_template_id:
+        return checks
+    pack_regressions = checks.get("pack_regressions")
+    filtered_pack_regressions = {
+        dataset_name: check
+        for dataset_name, check in (pack_regressions.items() if isinstance(pack_regressions, dict) else [])
+        if isinstance(check, dict) and _pack_scope_matches(check.get("pack_scope"), pack_id, world_template_id)
+    }
+    return {
+        **checks,
+        "pack_regressions": filtered_pack_regressions,
+    }
 
 
 def _pack_scope_matches(

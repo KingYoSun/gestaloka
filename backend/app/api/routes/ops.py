@@ -140,12 +140,21 @@ def post_memory_reindex(
 
 @router.get("/observability/summary")
 def get_observability_summary(
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return observability_summary(db, container.settings, container.projection_service, container.observability_service)
+    return observability_summary(
+        db,
+        container.settings,
+        container.projection_service,
+        container.observability_service,
+        pack_id=pack_id,
+        world_template_id=world_template_id,
+    )
 
 
 @router.get("/observability/langfuse/status")
@@ -520,22 +529,26 @@ def get_eval_run_detail(
 
 @router.get("/release/gates/latest")
 def get_latest_release_gate(
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return container.eval_service.latest_gate_report(db)
+    return container.eval_service.latest_gate_report(db, pack_id=pack_id, world_template_id=world_template_id)
 
 
 @router.get("/release/checklists/latest")
 def get_latest_release_checklist(
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return container.eval_service.latest_release_checklist(db)
+    return container.eval_service.latest_release_checklist(db, pack_id=pack_id, world_template_id=world_template_id)
 
 
 @router.get("/release/checklists/{report_id}")

@@ -126,6 +126,34 @@ textarea {
   align-items: end;
 }
 
+.scope-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.scope-summary div {
+  border: 1px solid rgba(247, 243, 232, 0.1);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(247, 243, 232, 0.06);
+  min-width: 0;
+}
+
+.scope-summary dt {
+  margin-bottom: 0.3rem;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(247, 243, 232, 0.56);
+}
+
+.scope-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .actions {
   display: flex;
   gap: 0.8rem;

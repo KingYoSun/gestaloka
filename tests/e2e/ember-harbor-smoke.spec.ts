@@ -44,6 +44,10 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await expect(page.getByTestId("release-pack-regressions-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
   await expect(page.getByTestId("release-pack-regressions-stream")).not.toContainText(/Founders Reach/i);
   await expect(page.getByTestId("release-scope-summary")).toContainText(/ember_harbor/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("eval-runs-stream")).not.toContainText(/Founders Reach/i);
+  await expect(page.getByTestId("eval-case-results-stream")).not.toContainText(/Founders Reach/i);
+  await expect(page.getByTestId("shadow-failures-stream")).not.toContainText(/Founders Reach/i);
+  await expect(page.getByTestId("observability-traces-stream")).not.toContainText(/Founders Reach/i);
   await page.getByTestId("trigger-idle-pass").click();
   await expect(page.getByTestId("world-tick-stream")).toContainText(/idle_world_pass/i, { timeout: slowTimeout });
   await expect(page.getByTestId("world-tick-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });

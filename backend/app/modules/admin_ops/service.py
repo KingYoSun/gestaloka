@@ -83,6 +83,9 @@ def observability_summary(
     settings: Settings,
     projection_service: ProjectionService,
     observability_service: ObservabilityService,
+    *,
+    pack_id: str | None = None,
+    world_template_id: str | None = None,
 ) -> dict[str, object]:
     snapshot = runtime_snapshot(db, settings, projection_service)
     observability_service.sync_outbox_metrics(
@@ -95,6 +98,7 @@ def observability_summary(
         fallback_rate=float(snapshot["llm_fallback_rate"]),
     )
     canary = observability_service.probe_canary_health()
+    trace_limit = 200 if pack_id or world_template_id else 12
     return {
         "primary": {
             "runtime_role": settings.app_runtime_role,
@@ -108,7 +112,11 @@ def observability_summary(
         },
         "canary": _canary_probe_dict(canary),
         "langfuse": observability_service.langfuse_runtime(),
-        "recent_traces": observability_service.recent_trace_attributes(),
+        "recent_traces": [
+            item
+            for item in observability_service.recent_trace_attributes(limit=trace_limit)
+            if _trace_matches_pack_scope(item.get("attributes", {}), pack_id, world_template_id)
+        ],
         "metrics": observability_service.metric_snapshot(),
     }
 
@@ -278,6 +286,36 @@ def _ledger_entries_with_world_context(db: Session, entries: list[dict[str, obje
 
 def _with_world_context(db: Session, world_id: str, payload: dict[str, object]) -> dict[str, object]:
     return {**payload, "world_context": world_context_for_world(db, world_id)}
+
+
+def _trace_matches_pack_scope(attributes: object, pack_id: str | None, world_template_id: str | None) -> bool:
+    if not pack_id and not world_template_id:
+        return True
+    if not isinstance(attributes, dict):
+        return False
+
+    trace_pack_id = attributes.get("pack_id")
+    trace_template_id = attributes.get("world_template_id")
+    if isinstance(trace_pack_id, str) or isinstance(trace_template_id, str):
+        if pack_id and trace_pack_id != pack_id:
+            return False
+        if world_template_id and trace_template_id != world_template_id:
+            return False
+        return True
+
+    eval_pack_ids = _csv_attribute_values(attributes.get("eval.pack_ids"))
+    eval_template_ids = _csv_attribute_values(attributes.get("eval.world_template_ids"))
+    if eval_pack_ids or eval_template_ids:
+        return (not pack_id or pack_id in eval_pack_ids) and (
+            not world_template_id or world_template_id in eval_template_ids
+        )
+    return False
+
+
+def _csv_attribute_values(value: object) -> set[str]:
+    if not isinstance(value, str):
+        return set()
+    return {item.strip() for item in value.split(",") if item.strip()}
 
 
 def _nullable_world_context(db: Session, world_id: str | None) -> dict[str, object] | None:

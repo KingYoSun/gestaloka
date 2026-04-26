@@ -905,6 +905,26 @@ def test_ops_eval_contracts(client, container, auth_headers):
     observability_payload = observability_response.json()
     assert {"primary", "canary", "langfuse", "recent_traces", "metrics"} <= set(observability_payload)
     assert observability_payload["langfuse"]["runtime_status"] == "ready"
+    scoped_observability_response = client.get(
+        "/ops/observability/summary?pack_id=ember_harbor&world_template_id=ember_harbor",
+        headers=auth_headers,
+    )
+    assert scoped_observability_response.status_code == 200
+    scoped_traces = scoped_observability_response.json()["recent_traces"]
+    assert scoped_traces
+    for trace in scoped_traces:
+        attributes = trace["attributes"]
+        assert (
+            attributes.get("pack_id") == "ember_harbor"
+            or "ember_harbor" in str(attributes.get("eval.pack_ids", "")).split(",")
+        )
+        assert (
+            attributes.get("world_template_id") == "ember_harbor"
+            or "ember_harbor" in str(attributes.get("eval.world_template_ids", "")).split(",")
+        )
+    missing_observability_response = client.get("/ops/observability/summary?pack_id=missing_pack", headers=auth_headers)
+    assert missing_observability_response.status_code == 200
+    assert missing_observability_response.json()["recent_traces"] == []
 
     langfuse_status_response = client.get("/ops/observability/langfuse/status", headers=auth_headers)
     assert langfuse_status_response.status_code == 200
@@ -973,6 +993,25 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert latest_response.json()["report_id"] == checklist_payload["report_id"]
     assert latest_response.json()["cutover_status"] == checklist_payload["cutover_status"]
     assert latest_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    scoped_latest_response = client.get(
+        "/ops/release/checklists/latest?pack_id=ember_harbor&world_template_id=ember_harbor",
+        headers=auth_headers,
+    )
+    assert scoped_latest_response.status_code == 200
+    scoped_latest_payload = scoped_latest_response.json()
+    assert scoped_latest_payload["report_id"] == checklist_payload["report_id"]
+    assert scoped_latest_payload["cutover_status"] == checklist_payload["cutover_status"]
+    assert set(scoped_latest_payload["checks"]["pack_regressions"]) == {"turn_resolution_ember_regression"}
+    assert set(scoped_latest_payload["runs"]["pack_regressions"]) == {"turn_resolution_ember_regression"}
+    assert all(
+        item["pack_context"]["pack_id"] == "ember_harbor"
+        for item in scoped_latest_payload["shadow_failures"]
+    )
+    missing_latest_response = client.get("/ops/release/checklists/latest?pack_id=missing_pack", headers=auth_headers)
+    assert missing_latest_response.status_code == 200
+    assert missing_latest_response.json()["checks"]["pack_regressions"] == {}
+    assert missing_latest_response.json()["runs"]["pack_regressions"] == {}
+    assert missing_latest_response.json()["shadow_failures"] == []
 
     detail_gate_response = client.get(
         f"/ops/release/checklists/{checklist_payload['report_id']}",
@@ -986,6 +1025,10 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert gate_alias_response.status_code == 200
     assert gate_alias_response.json()["report_id"] == checklist_payload["report_id"]
     assert gate_alias_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    scoped_gate_alias_response = client.get("/ops/release/gates/latest?pack_id=missing_pack", headers=auth_headers)
+    assert scoped_gate_alias_response.status_code == 200
+    assert scoped_gate_alias_response.json()["report_id"] == checklist_payload["report_id"]
+    assert scoped_gate_alias_response.json()["checks"]["pack_regressions"] == {}
 
 
 def test_canary_runtime_blocks_gameplay_writes(client, container, auth_headers):

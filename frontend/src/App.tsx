@@ -1033,6 +1033,19 @@ function traceMatchesOpsScope(attributes: Record<string, unknown>, packId: strin
   return true;
 }
 
+function packFailureSeverityRank(severity: string): number {
+  if (severity === "critical") {
+    return 0;
+  }
+  if (severity === "error") {
+    return 1;
+  }
+  if (severity === "warning") {
+    return 2;
+  }
+  return 3;
+}
+
 function deriveImportantInventoryAffordances(inventory: InventorySummary[]): SessionState["important_inventory_affordances"] {
   return inventory
     .filter((item) => item.effect_kind)
@@ -1359,6 +1372,20 @@ function App() {
     session?.world_context ??
     null;
   const opsScopeLabel = `${opsPackFilter || "all packs"} / ${opsTemplateFilter || "all templates"}`;
+  const opsCatalogStatus = opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown";
+  const opsCatalogPackCount = opsPackCatalog?.pack_count ?? health?.world_packs?.pack_count ?? 0;
+  const opsCatalogTemplateCount = opsPackCatalog?.template_count ?? health?.world_packs?.template_count ?? 0;
+  const opsCatalogFailureCount = opsPackCatalog?.failure_count ?? health?.world_packs?.failure_count ?? 0;
+  const selectedAdminWorldLabel = activeWorldContext
+    ? `${activeWorldContext.world_name} / ${activeWorldContext.pack_display_name} / ${activeWorldContext.world_template_display_name}`
+    : (activeWorldId || "none");
+  const sortedOpsPackFailures = [...(opsPackCatalog?.failures ?? [])].sort((left, right) => {
+    const severityDelta = packFailureSeverityRank(left.severity) - packFailureSeverityRank(right.severity);
+    if (severityDelta !== 0) {
+      return severityDelta;
+    }
+    return `${left.pack_id ?? ""}${left.error}`.localeCompare(`${right.pack_id ?? ""}${right.error}`);
+  });
   const filteredReleasePackRegressions = Object.entries(releaseGate?.checks?.pack_regressions ?? {}).filter(([, check]) =>
     packScopeMatches(check.pack_scope, opsPackFilter, opsTemplateFilter),
   );
@@ -1643,14 +1670,14 @@ function App() {
       ] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
         apiFetch<EmbeddingStatus>("/ops/memories/status", currentToken),
-        apiFetch<ObservabilitySummary>("/ops/observability/summary", currentToken),
+        apiFetch<ObservabilitySummary>(`/ops/observability/summary${buildQuery(scopeQuery)}`, currentToken),
         apiFetch<SPOverview>("/ops/sp/overview", currentToken),
         apiFetch<{ items: SPLedgerItem[] }>(
           `/ops/sp/ledger?limit=20${currentLedgerUserFilter ? `&user_sub=${encodeURIComponent(currentLedgerUserFilter)}` : ""}${currentLedgerWorldFilter ? `&world_id=${encodeURIComponent(currentLedgerWorldFilter)}` : ""}`,
           currentToken,
         ),
         apiFetch<{ items: EvalRunItem[] }>(`/ops/evals/runs${buildQuery({ limit: 8, ...scopeQuery })}`, currentToken),
-        apiFetch<ReleaseGateReport>("/ops/release/checklists/latest", currentToken),
+        apiFetch<ReleaseGateReport>(`/ops/release/checklists/latest${buildQuery(scopeQuery)}`, currentToken),
         apiFetch<{ items: CouncilTurnTrace[] }>(
           `/ops/council/turns${buildQuery({ limit: 8, world_id: currentWorldId, session_id: scopedSessionId })}`,
           currentToken,
@@ -2856,9 +2883,27 @@ function App() {
             <article className="card wide">
               <h2>Ops scope and projection runtime</h2>
               <p data-testid="ops-status">Ops access: {opsState}</p>
-              <p data-testid="ops-scope-summary">
-                Scope: {opsScopeLabel} / filtered worlds {visibleOpsWorlds.length}
-              </p>
+              <dl className="scope-summary" data-testid="ops-scope-compact-summary">
+                <div>
+                  <dt>Scope</dt>
+                  <dd data-testid="ops-scope-summary">{opsScopeLabel}</dd>
+                </div>
+                <div>
+                  <dt>Filtered worlds</dt>
+                  <dd>{visibleOpsWorlds.length}</dd>
+                </div>
+                <div>
+                  <dt>Selected world</dt>
+                  <dd data-testid="ops-selected-world-summary">{selectedAdminWorldLabel}</dd>
+                </div>
+                <div>
+                  <dt>Catalog health</dt>
+                  <dd data-testid="ops-catalog-health">
+                    {opsCatalogStatus} / packs {opsCatalogPackCount} / templates {opsCatalogTemplateCount} / failures{" "}
+                    {opsCatalogFailureCount}
+                  </dd>
+                </div>
+              </dl>
               <label>
                 Pack Filter
                 <select
@@ -2920,18 +2965,15 @@ function App() {
               <p data-testid="ops-pack-catalog-summary">
                 Pack catalog:{" "}
                 <strong data-testid="ops-pack-catalog-status">
-                  {opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown"}
+                  {opsCatalogStatus}
                 </strong>{" "}
-                / total packs{" "}
-                {opsPackCatalog?.pack_count ?? health?.world_packs?.pack_count ?? 0} / templates{" "}
-                {opsPackCatalog?.template_count ?? health?.world_packs?.template_count ?? 0} / API{" "}
+                / total packs {opsCatalogPackCount} / templates {opsCatalogTemplateCount} / API{" "}
                 {opsPackCatalog?.engine_api_version ?? health?.world_packs?.engine_api_version ?? "unknown"} / failures{" "}
-                {opsPackCatalog?.failure_count ?? health?.world_packs?.failure_count ?? 0} / filtered worlds{" "}
-                {visibleOpsWorlds.length}
+                {opsCatalogFailureCount} / filtered worlds {visibleOpsWorlds.length}
               </p>
               <ul className="stream" data-testid="ops-pack-failure-stream">
-                {(opsPackCatalog?.failures ?? []).length ? (
-                  (opsPackCatalog?.failures ?? []).map((item, index) => (
+                {sortedOpsPackFailures.length ? (
+                  sortedOpsPackFailures.map((item, index) => (
                     <li key={`${item.error}-${item.pack_id ?? "pack-dir"}-${index}`}>
                       <strong>
                         {item.severity}: {item.error}
@@ -2953,9 +2995,14 @@ function App() {
                       {item.pack_id} / {item.version} / {item.engine_api_version}
                     </span>
                     <span>
-                      templates: {item.world_templates.map((template) => template.display_name).join(", ")}
+                      templates ({item.world_templates.length}):{" "}
+                      {item.world_templates.map((template) => template.display_name).join(", ")}
                     </span>
                     <span>tags: {item.semantic_tags.join(", ") || "none"}</span>
+                    <span>
+                      failure state:{" "}
+                      {sortedOpsPackFailures.filter((failure) => failure.pack_id === item.pack_id).length || "clear"}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -3502,29 +3549,37 @@ function App() {
               </ul>
               <h3>Bundled pack regressions</h3>
               <ul className="stream" data-testid="release-pack-regressions-stream">
-                {filteredReleasePackRegressions.map(([datasetName, check]) => (
-                  <li key={datasetName}>
-                    <strong>{datasetName}</strong>
-                    <span>{formatPackScope(check.pack_scope)}</span>
-                    <span>
-                      present={String(check.present)} / current={String(check.current_passed)} / candidate=
-                      {String(check.candidate_passed)}
-                    </span>
-                  </li>
-                ))}
+                {filteredReleasePackRegressions.length ? (
+                  filteredReleasePackRegressions.map(([datasetName, check]) => (
+                    <li key={datasetName}>
+                      <strong>{datasetName}</strong>
+                      <span>{formatPackScope(check.pack_scope)}</span>
+                      <span>
+                        present={String(check.present)} / current={String(check.current_passed)} / candidate=
+                        {String(check.candidate_passed)}
+                      </span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No pack regressions match this scope.</li>
+                )}
               </ul>
               <h3>Shadow replay failures</h3>
               <ul className="stream" data-testid="shadow-failures-stream">
-                {filteredShadowFailures.map((item) => (
-                  <li key={`${item.case_id}-${item.variant}`}>
-                    <strong>{item.case_id}</strong>
-                    <span>{formatPackContext(item.pack_context)}</span>
-                    <span>{item.variant}</span>
-                    <span>{item.graph_context_status}</span>
-                    <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>
-                    <span>{item.failure_reason ?? "none"}</span>
-                  </li>
-                ))}
+                {filteredShadowFailures.length ? (
+                  filteredShadowFailures.map((item) => (
+                    <li key={`${item.case_id}-${item.variant}`}>
+                      <strong>{item.case_id}</strong>
+                      <span>{formatPackContext(item.pack_context)}</span>
+                      <span>{item.variant}</span>
+                      <span>{item.graph_context_status}</span>
+                      <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>
+                      <span>{item.failure_reason ?? "none"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No shadow failures match this scope.</li>
+                )}
               </ul>
               <h3>Canary and SLO</h3>
               <ul className="stream" data-testid="release-slo-stream">
@@ -3642,12 +3697,16 @@ function App() {
               </ul>
               <h3>Recent traces</h3>
               <ul className="stream" data-testid="observability-traces-stream">
-                {filteredRecentTraces.slice(0, 8).map((item, index) => (
-                  <li key={`${item.name}-${index}`}>
-                    <strong>{item.name}</strong>
-                    <span>{JSON.stringify(item.attributes)}</span>
-                  </li>
-                ))}
+                {filteredRecentTraces.length ? (
+                  filteredRecentTraces.slice(0, 8).map((item, index) => (
+                    <li key={`${item.name}-${index}`}>
+                      <strong>{item.name}</strong>
+                      <span>{JSON.stringify(item.attributes)}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No traces match this scope.</li>
+                )}
               </ul>
             </article>
 
