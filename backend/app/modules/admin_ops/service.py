@@ -229,7 +229,12 @@ def sp_ledger(
     }
 
 
-def list_world_contexts(db: Session) -> dict[str, object]:
+def list_world_contexts(
+    db: Session,
+    *,
+    pack_id: str | None = None,
+    world_template_id: str | None = None,
+) -> dict[str, object]:
     active_session_counts = {
         world_id: int(count)
         for world_id, count in db.execute(
@@ -239,16 +244,23 @@ def list_world_contexts(db: Session) -> dict[str, object]:
         ).all()
     }
     worlds = list(db.execute(select(World).order_by(World.updated_at.desc(), World.id.asc())).scalars())
-    return {
-        "items": [
+    items = []
+    for world in worlds:
+        context = world_context_for_world(db, world.id)
+        if pack_id and context["pack_id"] != pack_id:
+            continue
+        if world_template_id and context["world_template_id"] != world_template_id:
+            continue
+        items.append(
             {
-                "world_context": world_context_for_world(db, world.id),
+                "world_context": context,
                 "status": world.status,
                 "active_session_count": active_session_counts.get(world.id, 0),
                 "updated_at": world.updated_at.isoformat(),
             }
-            for world in worlds
-        ],
+        )
+    return {
+        "items": items,
     }
 
 
@@ -523,10 +535,13 @@ def list_council_turns(
     *,
     limit: int,
     session_id: str | None = None,
+    world_id: str | None = None,
 ) -> dict[str, object]:
     stmt = select(Turn).where(Turn.resolution_mode == "gm_council").order_by(Turn.created_at.desc(), Turn.id.desc())
     if session_id is not None:
         stmt = stmt.where(Turn.session_id == session_id)
+    if world_id is not None:
+        stmt = stmt.where(Turn.world_id == world_id)
     turns = list(db.execute(stmt.limit(limit)).scalars())
     return {"items": [_turn_trace(db, turn, include_attempts=False) for turn in turns]}
 

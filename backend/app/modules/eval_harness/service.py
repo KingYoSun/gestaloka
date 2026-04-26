@@ -368,10 +368,23 @@ class EvalHarnessService:
 
         return self._report_to_dict(db, report, current_config=current_config, candidate_config=candidate_config)
 
-    def list_runs(self, db: Session, limit: int = 12) -> dict[str, object]:
-        runs = list(
-            db.execute(select(EvalRun).order_by(EvalRun.started_at.desc(), EvalRun.id.desc()).limit(limit)).scalars()
-        )
+    def list_runs(
+        self,
+        db: Session,
+        limit: int = 12,
+        *,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
+    ) -> dict[str, object]:
+        stmt = select(EvalRun).order_by(EvalRun.started_at.desc(), EvalRun.id.desc())
+        runs = []
+        for run in db.execute(stmt).scalars():
+            run_summary = run.summary if isinstance(run.summary, dict) else {}
+            if not _pack_scope_matches(run_summary.get("pack_scope"), pack_id, world_template_id):
+                continue
+            runs.append(run)
+            if len(runs) >= limit:
+                break
         return {
             "items": [
                 {
@@ -392,7 +405,14 @@ class EvalHarnessService:
             ]
         }
 
-    def get_run_detail(self, db: Session, run_id: str) -> dict[str, object]:
+    def get_run_detail(
+        self,
+        db: Session,
+        run_id: str,
+        *,
+        pack_id: str | None = None,
+        world_template_id: str | None = None,
+    ) -> dict[str, object]:
         run = db.execute(select(EvalRun).where(EvalRun.id == run_id)).scalar_one()
         results = list(
             db.execute(
@@ -401,6 +421,11 @@ class EvalHarnessService:
                 .order_by(EvalCaseResult.case_id.asc(), EvalCaseResult.variant.asc())
             ).scalars()
         )
+        filtered_results = [
+            result
+            for result in results
+            if _pack_context_matches(_pack_context_from_raw_output(result.raw_output), pack_id, world_template_id)
+        ]
         return {
             "id": run.id,
             "source_type": run.source_type,
@@ -431,7 +456,7 @@ class EvalHarnessService:
                     "pack_context": _pack_context_from_raw_output(result.raw_output),
                     "raw_output": result.raw_output,
                 }
-                for result in results
+                for result in filtered_results
             ],
         }
 
@@ -1708,3 +1733,34 @@ def _pack_context_from_raw_output(raw_output: dict | None) -> dict[str, object] 
     if not required <= set(pack_context):
         return None
     return {key: pack_context[key] for key in sorted(required)}
+
+
+def _pack_scope_matches(
+    pack_scope: object,
+    pack_id: str | None,
+    world_template_id: str | None,
+) -> bool:
+    if not pack_id and not world_template_id:
+        return True
+    if not isinstance(pack_scope, list):
+        return False
+    return any(
+        _pack_context_matches(item if isinstance(item, dict) else None, pack_id, world_template_id)
+        for item in pack_scope
+    )
+
+
+def _pack_context_matches(
+    pack_context: dict[str, object] | None,
+    pack_id: str | None,
+    world_template_id: str | None,
+) -> bool:
+    if not pack_id and not world_template_id:
+        return True
+    if pack_context is None:
+        return False
+    if pack_id and pack_context.get("pack_id") != pack_id:
+        return False
+    if world_template_id and pack_context.get("world_template_id") != world_template_id:
+        return False
+    return True

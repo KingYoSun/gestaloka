@@ -36,10 +36,14 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await expect(page.getByTestId("active-world-context")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
   await expect(page.getByTestId("ops-pack-catalog-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
   await page.getByTestId("ops-pack-filter").selectOption("ember_harbor");
+  await expect(page.getByTestId("ops-scope-summary")).toContainText(/ember_harbor/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("ops-pack-catalog-summary")).toContainText(/filtered worlds 1/i, { timeout: slowTimeout });
   await expect(page.getByTestId("ops-world-select")).toHaveValue(worldId, { timeout: slowTimeout });
   await expect(page.getByTestId("ops-world-select").locator("option")).toHaveCount(1, { timeout: slowTimeout });
   await expect(page.getByTestId("ops-world-select")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
   await expect(page.getByTestId("release-pack-regressions-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("release-pack-regressions-stream")).not.toContainText(/Founders Reach/i);
+  await expect(page.getByTestId("release-scope-summary")).toContainText(/ember_harbor/i, { timeout: slowTimeout });
   await page.getByTestId("trigger-idle-pass").click();
   await expect(page.getByTestId("world-tick-stream")).toContainText(/idle_world_pass/i, { timeout: slowTimeout });
   await expect(page.getByTestId("world-tick-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });

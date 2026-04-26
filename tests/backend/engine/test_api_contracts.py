@@ -526,6 +526,24 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert turn_response.status_code == 200
+    founders_session_response = client.post(
+        "/sessions",
+        json={
+            "world_id": "ops-founders-world",
+            "pack_id": "founders_reach",
+            "world_template_id": "founders_reach",
+            "world_name": "Founders Reach",
+        },
+        headers=auth_headers,
+    )
+    assert founders_session_response.status_code == 200
+    founders_session_payload = founders_session_response.json()
+    founders_turn_response = client.post(
+        "/turns",
+        json={"session_id": founders_session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert founders_turn_response.status_code == 200
 
     status_response = client.get("/ops/projection/status", headers=auth_headers)
     assert status_response.status_code == 200
@@ -555,6 +573,16 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert world_item["world_context"]["world_template_id"] == "ember_harbor"
     assert world_item["status"] == "active"
     assert world_item["active_session_count"] >= 1
+    filtered_worlds_response = client.get("/ops/worlds?pack_id=ember_harbor&world_template_id=ember_harbor", headers=auth_headers)
+    assert filtered_worlds_response.status_code == 200
+    assert {item["world_context"]["world_id"] for item in filtered_worlds_response.json()["items"]} == {
+        session_payload["world_id"]
+    }
+    founders_filtered_worlds_response = client.get("/ops/worlds?pack_id=founders_reach", headers=auth_headers)
+    assert founders_filtered_worlds_response.status_code == 200
+    assert {item["world_context"]["world_id"] for item in founders_filtered_worlds_response.json()["items"]} == {
+        founders_session_payload["world_id"]
+    }
     assert summary_payload["vertex_count"] >= 6
     assert summary_payload["edge_count"] >= 6
     assert summary_payload["label_counts"]["Faction"] >= 1
@@ -591,6 +619,16 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "safety_guard",
         "narrative",
     ]
+    founders_council_turns_response = client.get(
+        f"/ops/council/turns?world_id={founders_session_payload['world_id']}",
+        headers=auth_headers,
+    )
+    assert founders_council_turns_response.status_code == 200
+    assert founders_council_turns_response.json()["items"]
+    assert {
+        item["world_context"]["pack_id"]
+        for item in founders_council_turns_response.json()["items"]
+    } == {"founders_reach"}
 
     council_turn_id = council_turns_payload["items"][0]["turn_id"]
     council_detail_response = client.get(f"/ops/council/turns/{council_turn_id}", headers=auth_headers)
@@ -824,6 +862,15 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert runs_payload["items"][0]["id"] == run_payload["id"]
     assert runs_payload["items"][0]["summary"]["pack_scope"] == run_payload["summary"]["pack_scope"]
     assert runs_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    ember_runs_response = client.get(
+        "/ops/evals/runs?pack_id=ember_harbor&world_template_id=ember_harbor",
+        headers=auth_headers,
+    )
+    assert ember_runs_response.status_code == 200
+    assert ember_runs_response.json()["items"][0]["id"] == run_payload["id"]
+    missing_runs_response = client.get("/ops/evals/runs?pack_id=missing_pack", headers=auth_headers)
+    assert missing_runs_response.status_code == 200
+    assert missing_runs_response.json()["items"] == []
 
     detail_response = client.get(f"/ops/evals/runs/{run_payload['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
@@ -842,6 +889,16 @@ def test_ops_eval_contracts(client, container, auth_headers):
         ("founders_reach", "Founders Reach", "founders_reach", "Founders Reach"),
     }
     assert detail_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    ember_detail_response = client.get(
+        f"/ops/evals/runs/{run_payload['id']}?pack_id=ember_harbor&world_template_id=ember_harbor",
+        headers=auth_headers,
+    )
+    assert ember_detail_response.status_code == 200
+    assert {
+        item["pack_context"]["pack_id"]
+        for item in ember_detail_response.json()["results"]
+    } == {"ember_harbor"}
+    assert len(ember_detail_response.json()["results"]) < len(detail_response.json()["results"])
 
     observability_response = client.get("/ops/observability/summary", headers=auth_headers)
     assert observability_response.status_code == 200

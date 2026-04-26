@@ -79,12 +79,14 @@ class ReindexMemoriesRequest(BaseModel):
 
 @router.get("/worlds")
 def get_ops_worlds(
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del container, user
-    return list_world_contexts(db)
+    return list_world_contexts(db, pack_id=pack_id, world_template_id=world_template_id)
 
 
 @router.get("/world-packs")
@@ -493,23 +495,27 @@ def post_release_checklist_run(
 @router.get("/evals/runs")
 def get_eval_runs(
     limit: int = Query(default=12, ge=1, le=50),
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return container.eval_service.list_runs(db, limit=limit)
+    return container.eval_service.list_runs(db, limit=limit, pack_id=pack_id, world_template_id=world_template_id)
 
 
 @router.get("/evals/runs/{run_id}")
 def get_eval_run_detail(
     run_id: str,
+    pack_id: str | None = Query(default=None, max_length=120),
+    world_template_id: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return container.eval_service.get_run_detail(db, run_id)
+    return container.eval_service.get_run_detail(db, run_id, pack_id=pack_id, world_template_id=world_template_id)
 
 
 @router.get("/release/gates/latest")
@@ -547,12 +553,13 @@ def get_release_checklist_detail(
 def get_council_turn_list(
     limit: int = Query(default=12, ge=1, le=50),
     session_id: str | None = Query(default=None, max_length=36),
+    world_id: str | None = Query(default=None, max_length=64),
     db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del container, user
-    return list_council_turns(db, limit=limit, session_id=session_id)
+    return list_council_turns(db, limit=limit, session_id=session_id, world_id=world_id)
 
 
 @router.get("/council/turns/{turn_id}")

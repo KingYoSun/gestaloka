@@ -969,6 +969,70 @@ function formatPackContext(context?: PackContext | null): string {
   return `${context.pack_display_name} / ${context.world_template_display_name}${worldSuffix}`;
 }
 
+function buildQuery(params: Record<string, string | number | undefined | null>): string {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") {
+      return;
+    }
+    query.set(key, String(value));
+  });
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : "";
+}
+
+function packScopeMatches(scope: PackScope[] | undefined | null, packId: string, templateId: string): boolean {
+  if (!packId && !templateId) {
+    return true;
+  }
+  return (scope ?? []).some((item) => packContextMatches(item, packId, templateId));
+}
+
+function packContextMatches(
+  context: Pick<PackContext, "pack_id" | "world_template_id"> | undefined | null,
+  packId: string,
+  templateId: string,
+): boolean {
+  if (!packId && !templateId) {
+    return true;
+  }
+  if (!context) {
+    return false;
+  }
+  if (packId && context.pack_id !== packId) {
+    return false;
+  }
+  if (templateId && context.world_template_id !== templateId) {
+    return false;
+  }
+  return true;
+}
+
+function traceMatchesOpsScope(attributes: Record<string, unknown>, packId: string, templateId: string): boolean {
+  if (!packId && !templateId) {
+    return true;
+  }
+  const tracePackId = typeof attributes.pack_id === "string" ? attributes.pack_id : undefined;
+  const traceTemplateId = typeof attributes.world_template_id === "string" ? attributes.world_template_id : undefined;
+  if (tracePackId || traceTemplateId) {
+    return packContextMatches(
+      {
+        pack_id: tracePackId ?? "",
+        world_template_id: traceTemplateId ?? "",
+      },
+      packId,
+      templateId,
+    );
+  }
+  const packIds = typeof attributes["eval.pack_ids"] === "string" ? attributes["eval.pack_ids"].split(",") : [];
+  const templateIds =
+    typeof attributes["eval.world_template_ids"] === "string" ? attributes["eval.world_template_ids"].split(",") : [];
+  if (packIds.length || templateIds.length) {
+    return (!packId || packIds.includes(packId)) && (!templateId || templateIds.includes(templateId));
+  }
+  return true;
+}
+
 function deriveImportantInventoryAffordances(inventory: InventorySummary[]): SessionState["important_inventory_affordances"] {
   return inventory
     .filter((item) => item.effect_kind)
@@ -1294,6 +1358,16 @@ function App() {
     sessionState?.world_context ??
     session?.world_context ??
     null;
+  const opsScopeLabel = `${opsPackFilter || "all packs"} / ${opsTemplateFilter || "all templates"}`;
+  const filteredReleasePackRegressions = Object.entries(releaseGate?.checks?.pack_regressions ?? {}).filter(([, check]) =>
+    packScopeMatches(check.pack_scope, opsPackFilter, opsTemplateFilter),
+  );
+  const filteredShadowFailures = (releaseGate?.shadow_failures ?? []).filter((item) =>
+    packContextMatches(item.pack_context, opsPackFilter, opsTemplateFilter),
+  );
+  const filteredRecentTraces = (observability?.recent_traces ?? []).filter((item) =>
+    traceMatchesOpsScope(item.attributes, opsPackFilter, opsTemplateFilter),
+  );
   const suggestedChoices = sessionState?.next_choices ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
@@ -1527,6 +1601,8 @@ function App() {
     currentLedgerUserFilter?: string,
     currentLedgerWorldFilter?: string,
     currentSessionId?: string,
+    currentPackFilter = opsPackFilter,
+    currentTemplateFilter = opsTemplateFilter,
   ) {
     if (!currentToken) {
       setProjectionStatus(null);
@@ -1548,6 +1624,11 @@ function App() {
     }
 
     try {
+      const scopeQuery = {
+        pack_id: currentPackFilter,
+        world_template_id: currentTemplateFilter,
+      };
+      const scopedSessionId = currentSessionId && session?.world_id === currentWorldId ? currentSessionId : undefined;
       const [
         statusPayload,
         embeddingPayload,
@@ -1568,13 +1649,13 @@ function App() {
           `/ops/sp/ledger?limit=20${currentLedgerUserFilter ? `&user_sub=${encodeURIComponent(currentLedgerUserFilter)}` : ""}${currentLedgerWorldFilter ? `&world_id=${encodeURIComponent(currentLedgerWorldFilter)}` : ""}`,
           currentToken,
         ),
-        apiFetch<{ items: EvalRunItem[] }>("/ops/evals/runs?limit=8", currentToken),
+        apiFetch<{ items: EvalRunItem[] }>(`/ops/evals/runs${buildQuery({ limit: 8, ...scopeQuery })}`, currentToken),
         apiFetch<ReleaseGateReport>("/ops/release/checklists/latest", currentToken),
         apiFetch<{ items: CouncilTurnTrace[] }>(
-          `/ops/council/turns?limit=8${currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : ""}`,
+          `/ops/council/turns${buildQuery({ limit: 8, world_id: currentWorldId, session_id: scopedSessionId })}`,
           currentToken,
         ),
-        apiFetch<{ items: OpsWorldItem[] }>("/ops/worlds", currentToken),
+        apiFetch<{ items: OpsWorldItem[] }>(`/ops/worlds${buildQuery(scopeQuery)}`, currentToken),
         apiFetch<OpsWorldPackCatalog>("/ops/world-packs", currentToken),
       ]);
       setProjectionStatus(statusPayload);
@@ -1584,7 +1665,11 @@ function App() {
       setLedgerEntries(ledgerPayload.items);
       setEvalRuns(evalRunsPayload.items);
       const latestEvalRunId = evalRunsPayload.items[0]?.id;
-      setEvalRunDetail(latestEvalRunId ? await apiFetch<EvalRunDetail>(`/ops/evals/runs/${latestEvalRunId}`, currentToken) : null);
+      setEvalRunDetail(
+        latestEvalRunId
+          ? await apiFetch<EvalRunDetail>(`/ops/evals/runs/${latestEvalRunId}${buildQuery(scopeQuery)}`, currentToken)
+          : null,
+      );
       setReleaseGate(gatePayload);
       setCouncilTurns(councilPayload.items);
       setOpsWorlds(worldsPayload.items);
@@ -2058,7 +2143,12 @@ function App() {
         ),
       });
       setEvalRuns((current) => [run, ...current.filter((item) => item.id !== run.id)].slice(0, 8));
-      setEvalRunDetail(await apiFetch<EvalRunDetail>(`/ops/evals/runs/${run.id}`, token));
+      setEvalRunDetail(
+        await apiFetch<EvalRunDetail>(
+          `/ops/evals/runs/${run.id}${buildQuery({ pack_id: opsPackFilter, world_template_id: opsTemplateFilter })}`,
+          token,
+        ),
+      );
       await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
     } catch (requestError) {
       setError(formatError(requestError));
@@ -2097,7 +2187,7 @@ function App() {
     if (activeWorldId) {
       void runMemorySearch(token, activeWorldId);
     }
-  }, [route, token, activeWorldId, session?.session_id]);
+  }, [route, token, activeWorldId, session?.session_id, opsPackFilter, opsTemplateFilter]);
 
   return (
     <main className="shell">
@@ -2764,8 +2854,11 @@ function App() {
         ) : (
           <>
             <article className="card wide">
-              <h2>Projection runtime</h2>
+              <h2>Ops scope and projection runtime</h2>
               <p data-testid="ops-status">Ops access: {opsState}</p>
+              <p data-testid="ops-scope-summary">
+                Scope: {opsScopeLabel} / filtered worlds {visibleOpsWorlds.length}
+              </p>
               <label>
                 Pack Filter
                 <select
@@ -2829,11 +2922,12 @@ function App() {
                 <strong data-testid="ops-pack-catalog-status">
                   {opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown"}
                 </strong>{" "}
-                / packs{" "}
+                / total packs{" "}
                 {opsPackCatalog?.pack_count ?? health?.world_packs?.pack_count ?? 0} / templates{" "}
                 {opsPackCatalog?.template_count ?? health?.world_packs?.template_count ?? 0} / API{" "}
                 {opsPackCatalog?.engine_api_version ?? health?.world_packs?.engine_api_version ?? "unknown"} / failures{" "}
-                {opsPackCatalog?.failure_count ?? health?.world_packs?.failure_count ?? 0}
+                {opsPackCatalog?.failure_count ?? health?.world_packs?.failure_count ?? 0} / filtered worlds{" "}
+                {visibleOpsWorlds.length}
               </p>
               <ul className="stream" data-testid="ops-pack-failure-stream">
                 {(opsPackCatalog?.failures ?? []).length ? (
@@ -2884,14 +2978,14 @@ function App() {
                 {projectionStatus?.projected ?? health?.projection?.projected_outbox ?? "unknown"}
               </p>
               <p data-testid="observability-summary">
-                Lag: {observability?.primary.projection_lag_seconds ?? health?.observability?.projection_lag_seconds ?? 0}s / Schema valid:{" "}
+                Global SLO: lag {observability?.primary.projection_lag_seconds ?? health?.observability?.projection_lag_seconds ?? 0}s / schema valid{" "}
                 {((observability?.primary.llm_schema_valid_rate ?? health?.observability?.llm_schema_valid_rate ?? 0) * 100).toFixed(0)}% /
-                Fallback: {((observability?.primary.llm_fallback_rate ?? health?.observability?.llm_fallback_rate ?? 0) * 100).toFixed(0)}%
+                fallback {((observability?.primary.llm_fallback_rate ?? health?.observability?.llm_fallback_rate ?? 0) * 100).toFixed(0)}%
               </p>
               <p data-testid="canary-health-status">
-                Canary: {observability?.canary.status ?? health?.observability?.canary_health?.status ?? "unknown"} / Graph:{" "}
+                Global canary: {observability?.canary.status ?? health?.observability?.canary_health?.status ?? "unknown"} / graph{" "}
                 {observability?.canary.graph_runtime_status ?? health?.observability?.canary_health?.graph_runtime_status ?? "unknown"} /
-                Gate: {observability?.canary.release_gate_verdict ?? health?.observability?.canary_health?.release_gate_verdict ?? "unknown"}
+                gate {observability?.canary.release_gate_verdict ?? health?.observability?.canary_health?.release_gate_verdict ?? "unknown"}
               </p>
               <p data-testid="embedding-status-summary">
                 Embedding: {embeddingStatus?.provider ?? health?.embedding?.provider ?? "unknown"} / model:{" "}
@@ -3317,8 +3411,9 @@ function App() {
 
             <article className="card wide">
               <h2>Eval harness and release gate</h2>
+              <p data-testid="release-scope-summary">Scope diagnostics: {opsScopeLabel}</p>
               <p data-testid="release-gate-verdict">
-                Gate verdict: {releaseGate?.verdict ?? "unknown"} / Canary promote:{" "}
+                Global gate verdict: {releaseGate?.verdict ?? "unknown"} / Canary promote:{" "}
                 {releaseGate?.canary_promote_status ?? "unknown"}
               </p>
               <p data-testid="release-cutover-readiness">
@@ -3407,7 +3502,7 @@ function App() {
               </ul>
               <h3>Bundled pack regressions</h3>
               <ul className="stream" data-testid="release-pack-regressions-stream">
-                {Object.entries(releaseGate?.checks?.pack_regressions ?? {}).map(([datasetName, check]) => (
+                {filteredReleasePackRegressions.map(([datasetName, check]) => (
                   <li key={datasetName}>
                     <strong>{datasetName}</strong>
                     <span>{formatPackScope(check.pack_scope)}</span>
@@ -3420,7 +3515,7 @@ function App() {
               </ul>
               <h3>Shadow replay failures</h3>
               <ul className="stream" data-testid="shadow-failures-stream">
-                {(releaseGate?.shadow_failures ?? []).map((item) => (
+                {filteredShadowFailures.map((item) => (
                   <li key={`${item.case_id}-${item.variant}`}>
                     <strong>{item.case_id}</strong>
                     <span>{formatPackContext(item.pack_context)}</span>
@@ -3434,12 +3529,12 @@ function App() {
               <h3>Canary and SLO</h3>
               <ul className="stream" data-testid="release-slo-stream">
                 <li>
-                  <strong>canary</strong>
+                  <strong>global canary</strong>
                   <span>{releaseGate?.slo_snapshot?.canary_health?.status ?? "unknown"}</span>
                   <span>{releaseGate?.slo_snapshot?.canary_health?.detail ?? "no detail"}</span>
                 </li>
                 <li>
-                  <strong>primary</strong>
+                  <strong>global primary</strong>
                   <span>lag {releaseGate?.slo_snapshot?.projection_lag_seconds ?? 0}s</span>
                   <span>pending {releaseGate?.slo_snapshot?.outbox_pending_count ?? 0}</span>
                   <span>failed {releaseGate?.slo_snapshot?.outbox_failed_count ?? 0}</span>
@@ -3547,7 +3642,7 @@ function App() {
               </ul>
               <h3>Recent traces</h3>
               <ul className="stream" data-testid="observability-traces-stream">
-                {(observability?.recent_traces ?? []).slice(0, 8).map((item, index) => (
+                {filteredRecentTraces.slice(0, 8).map((item, index) => (
                   <li key={`${item.name}-${index}`}>
                     <strong>{item.name}</strong>
                     <span>{JSON.stringify(item.attributes)}</span>
