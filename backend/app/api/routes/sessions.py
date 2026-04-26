@@ -10,7 +10,7 @@ from app.api.deps import ensure_primary_runtime, get_container, get_current_user
 from app.core.container import AppContainer
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
-from app.modules.world_pack.service import world_context_for_world
+from app.modules.world_pack.service import WorldPackError, world_context_for_world
 
 router = APIRouter(tags=["sessions"])
 
@@ -44,10 +44,14 @@ def create_session(
             world_name=requested_world_name,
             player_display_name=payload.player_display_name,
         )
+        container.projection_service.process_pending(db)
+        world_context = world_context_for_world(db, result.world.id)
+    except WorldPackError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.diagnostic()) from exc
     except KeyError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-    container.projection_service.process_pending(db)
-    world_context = world_context_for_world(db, result.world.id)
     db.commit()
     world_state = dict(result.world.state or {})
     return {

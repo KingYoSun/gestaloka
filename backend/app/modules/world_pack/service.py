@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,36 @@ from app.models.entities import World
 
 ENGINE_API_VERSION = "v2"
 FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
+PACK_YAML_SUFFIXES = {".yaml", ".yml"}
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
 _ACTIVE_PACK_DIR: Path | None = None
+
+
+class WorldPackError(ValueError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "world_pack_error",
+        pack_id: str | None = None,
+        path: Path | str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.pack_id = pack_id
+        self.path = str(path) if path is not None else None
+
+    def diagnostic(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "error": self.code,
+            "message": str(self),
+        }
+        if self.pack_id is not None:
+            payload["pack_id"] = self.pack_id
+        if self.path is not None:
+            payload["path"] = self.path
+        return payload
 
 
 class TemplateSummary(BaseModel):
@@ -293,12 +320,17 @@ class LoadedWorldPack:
         try:
             return self.templates[template_id]
         except KeyError as exc:
-            raise KeyError(f"Unknown world_template_id {template_id!r} for pack {self.manifest.pack_id}") from exc
+            raise WorldPackError(
+                f"Unknown world_template_id {template_id!r} for pack {self.manifest.pack_id}",
+                code="unknown_template",
+                pack_id=self.manifest.pack_id,
+                path=self.root_dir,
+            ) from exc
 
 
 class PackRegistry:
     def __init__(self, pack_dir: Path) -> None:
-        self.pack_dir = Path(pack_dir)
+        self.pack_dir = Path(pack_dir).resolve()
         self._packs = self._load_packs()
 
     def list_packs(self) -> list[LoadedWorldPack]:
@@ -308,7 +340,12 @@ class PackRegistry:
         try:
             return self._packs[pack_id]
         except KeyError as exc:
-            raise KeyError(f"Unknown pack_id: {pack_id}") from exc
+            raise WorldPackError(
+                f"Unknown pack_id {pack_id!r} in pack_dir {self.pack_dir}",
+                code="unknown_pack",
+                pack_id=pack_id,
+                path=self.pack_dir,
+            ) from exc
 
     def get_template(self, pack_id: str, template_id: str) -> WorldTemplateDefinition:
         return self.get_pack(pack_id).template(template_id)
@@ -341,23 +378,62 @@ class PackRegistry:
 
     def _load_packs(self) -> dict[str, LoadedWorldPack]:
         if not self.pack_dir.exists():
-            raise FileNotFoundError(f"Pack directory not found: {self.pack_dir}")
+            raise WorldPackError(
+                f"Pack directory not found: {self.pack_dir}",
+                code="pack_dir_not_found",
+                path=self.pack_dir,
+            )
+        if not self.pack_dir.is_dir():
+            raise WorldPackError(
+                f"Pack directory is not a directory: {self.pack_dir}",
+                code="pack_dir_not_directory",
+                path=self.pack_dir,
+            )
         packs: dict[str, LoadedWorldPack] = {}
         for pack_file in sorted(self.pack_dir.glob("*/pack.yaml")):
             loaded = self._load_pack(pack_file)
             if loaded.manifest.pack_id in packs:
-                raise ValueError(f"Duplicate pack_id detected: {loaded.manifest.pack_id}")
+                raise WorldPackError(
+                    f"Duplicate pack_id {loaded.manifest.pack_id!r} detected in {self.pack_dir}",
+                    code="duplicate_pack_id",
+                    pack_id=loaded.manifest.pack_id,
+                    path=pack_file,
+                )
             packs[loaded.manifest.pack_id] = loaded
         if not packs:
-            raise ValueError(f"No world packs found in {self.pack_dir}")
+            raise WorldPackError(
+                f"No world packs found in {self.pack_dir}",
+                code="empty_pack_dir",
+                path=self.pack_dir,
+            )
         return packs
 
     def _load_pack(self, manifest_path: Path) -> LoadedWorldPack:
-        raw_manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-        manifest = PackManifest.model_validate(raw_manifest)
+        manifest_path = manifest_path.resolve()
+        pack_dir_name = manifest_path.parent.name
+        raw_manifest = self._read_yaml_mapping(manifest_path, pack_id=pack_dir_name, content_key="manifest")
+        try:
+            manifest = PackManifest.model_validate(raw_manifest)
+        except ValidationError as exc:
+            raise WorldPackError(
+                f"Pack manifest is invalid at {manifest_path}: {exc}",
+                code="invalid_manifest",
+                pack_id=pack_dir_name,
+                path=manifest_path,
+            ) from exc
+        if manifest.pack_id != pack_dir_name:
+            raise WorldPackError(
+                f"Pack directory {pack_dir_name!r} contains manifest pack_id {manifest.pack_id!r}; they must match",
+                code="pack_id_mismatch",
+                pack_id=manifest.pack_id,
+                path=manifest_path,
+            )
         if manifest.engine_api_version != ENGINE_API_VERSION:
-            raise ValueError(
-                f"Pack {manifest.pack_id} uses engine_api_version {manifest.engine_api_version}, expected {ENGINE_API_VERSION}"
+            raise WorldPackError(
+                f"Pack {manifest.pack_id} uses engine_api_version {manifest.engine_api_version}, expected {ENGINE_API_VERSION}",
+                code="engine_api_version_mismatch",
+                pack_id=manifest.pack_id,
+                path=manifest_path,
             )
 
         root_dir = manifest_path.parent
@@ -368,8 +444,11 @@ class PackRegistry:
         template_ids = {template.template_id for template in manifest.world_templates}
         loaded_ids = set(templates_payload.world_templates)
         if template_ids != loaded_ids:
-            raise ValueError(
-                f"Pack {manifest.pack_id} template mismatch. manifest={sorted(template_ids)} loaded={sorted(loaded_ids)}"
+            raise WorldPackError(
+                f"Pack {manifest.pack_id} template mismatch. manifest={sorted(template_ids)} loaded={sorted(loaded_ids)}",
+                code="template_mismatch",
+                pack_id=manifest.pack_id,
+                path=manifest_path,
             )
 
         guide_name = next((npc.display_name for npc in npc_payload.npcs if npc.is_guide), "")
@@ -389,16 +468,97 @@ class PackRegistry:
             root_dir=root_dir,
         )
 
-    @staticmethod
-    def _read_content(root_dir: Path, manifest: PackManifest, key: str, model: type[BaseModel]) -> BaseModel:
+    def _read_content(self, root_dir: Path, manifest: PackManifest, key: str, model: type[BaseModel]) -> BaseModel:
         relative = manifest.content_refs.get(key)
         if not relative:
-            raise ValueError(f"Pack {manifest.pack_id} is missing content_ref for {key}")
-        content_path = root_dir / relative
+            raise WorldPackError(
+                f"Pack {manifest.pack_id} is missing content_ref for {key}",
+                code="missing_content_ref",
+                pack_id=manifest.pack_id,
+                path=root_dir,
+            )
+        content_path = self._resolve_content_ref(root_dir, manifest.pack_id, key, relative)
+        raw = self._read_yaml_mapping(content_path, pack_id=manifest.pack_id, content_key=key)
+        try:
+            return model.model_validate(raw)
+        except ValidationError as exc:
+            raise WorldPackError(
+                f"Pack {manifest.pack_id} content_ref {key!r} is invalid at {content_path}: {exc}",
+                code="invalid_content",
+                pack_id=manifest.pack_id,
+                path=content_path,
+            ) from exc
+
+    @staticmethod
+    def _resolve_content_ref(root_dir: Path, pack_id: str, key: str, relative: str) -> Path:
+        relative_path = Path(relative)
+        if relative_path.is_absolute():
+            raise WorldPackError(
+                f"Pack {pack_id} content_ref {key!r} must be relative: {relative}",
+                code="invalid_content_ref",
+                pack_id=pack_id,
+                path=relative,
+            )
+        root = root_dir.resolve()
+        content_path = (root / relative_path).resolve()
+        try:
+            content_path.relative_to(root)
+        except ValueError as exc:
+            raise WorldPackError(
+                f"Pack {pack_id} content_ref {key!r} escapes pack root: {relative}",
+                code="invalid_content_ref",
+                pack_id=pack_id,
+                path=content_path,
+            ) from exc
+        if content_path.suffix not in PACK_YAML_SUFFIXES:
+            raise WorldPackError(
+                f"Pack {pack_id} content_ref {key!r} must point to a YAML file: {relative}",
+                code="invalid_content_ref",
+                pack_id=pack_id,
+                path=content_path,
+            )
         if not content_path.exists():
-            raise FileNotFoundError(f"Pack content file not found: {content_path}")
-        raw = yaml.safe_load(content_path.read_text(encoding="utf-8")) or {}
-        return model.model_validate(raw)
+            raise WorldPackError(
+                f"Pack {pack_id} content_ref {key!r} file not found: {content_path}",
+                code="content_file_not_found",
+                pack_id=pack_id,
+                path=content_path,
+            )
+        if not content_path.is_file():
+            raise WorldPackError(
+                f"Pack {pack_id} content_ref {key!r} is not a file: {content_path}",
+                code="content_not_file",
+                pack_id=pack_id,
+                path=content_path,
+            )
+        return content_path
+
+    @staticmethod
+    def _read_yaml_mapping(path: Path, *, pack_id: str, content_key: str) -> dict[str, Any]:
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except OSError as exc:
+            raise WorldPackError(
+                f"Pack {pack_id} failed to read {content_key} YAML at {path}: {exc}",
+                code="content_read_failed",
+                pack_id=pack_id,
+                path=path,
+            ) from exc
+        except yaml.YAMLError as exc:
+            raise WorldPackError(
+                f"Pack {pack_id} has invalid {content_key} YAML at {path}: {exc}",
+                code="invalid_yaml",
+                pack_id=pack_id,
+                path=path,
+            ) from exc
+        if not isinstance(raw, dict):
+            raise WorldPackError(
+                f"Pack {pack_id} {content_key} YAML must be a mapping at {path}",
+                code="invalid_yaml",
+                pack_id=pack_id,
+                path=path,
+            )
+        return raw
 
     @staticmethod
     def _validate_followup_branches(
@@ -409,8 +569,10 @@ class PackRegistry:
         for slot, branch in template.roles.followup_branches.by_slot().items():
             missing = [name for name in branch.anchor_npcs if name not in npc_names]
             if missing:
-                raise ValueError(
-                    f"Pack {pack_id} template {template.template_id} slot {slot} references unknown anchor_npcs: {missing}"
+                raise WorldPackError(
+                    f"Pack {pack_id} template {template.template_id} slot {slot} references unknown anchor_npcs: {missing}",
+                    code="unknown_anchor_npc",
+                    pack_id=pack_id,
                 )
 
 
@@ -418,7 +580,12 @@ def load_pack_from_dir(pack_dir: Path | str, pack_id: str) -> LoadedWorldPack:
     resolved_dir = Path(pack_dir).resolve()
     manifest_path = resolved_dir / pack_id / "pack.yaml"
     if not manifest_path.exists():
-        raise KeyError(f"Unknown pack_id: {pack_id}")
+        raise WorldPackError(
+            f"Unknown pack_id {pack_id!r} in pack_dir {resolved_dir}",
+            code="unknown_pack",
+            pack_id=pack_id,
+            path=resolved_dir,
+        )
     registry = PackRegistry.__new__(PackRegistry)
     registry.pack_dir = resolved_dir
     return registry._load_pack(manifest_path)
@@ -429,8 +596,9 @@ def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:
     resolved_dir = Path(pack_dir).resolve()
     if _ACTIVE_REGISTRY is not None and _ACTIVE_PACK_DIR == resolved_dir:
         return _ACTIVE_REGISTRY
+    registry = PackRegistry(resolved_dir)
     _ACTIVE_PACK_DIR = resolved_dir
-    _ACTIVE_REGISTRY = PackRegistry(resolved_dir)
+    _ACTIVE_REGISTRY = registry
     return _ACTIVE_REGISTRY
 
 

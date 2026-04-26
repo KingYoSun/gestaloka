@@ -97,6 +97,28 @@ def test_session_requires_explicit_world_template_id(client, auth_headers):
     )
 
 
+def test_session_unknown_pack_id_returns_422(client, auth_headers):
+    payload = engine_session_payload(world_id="world-unknown-pack")
+    payload["pack_id"] = "missing_pack"
+
+    response = client.post("/sessions", json=payload, headers=auth_headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "unknown_pack"
+    assert response.json()["detail"]["pack_id"] == "missing_pack"
+
+
+def test_session_unknown_world_template_id_returns_422(client, auth_headers):
+    payload = engine_session_payload(world_id="world-unknown-template")
+    payload["world_template_id"] = "missing_template"
+
+    response = client.post("/sessions", json=payload, headers=auth_headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["error"] == "unknown_template"
+    assert response.json()["detail"]["pack_id"] == "ember_harbor"
+
+
 def test_world_membership_mismatch_returns_404(client, container):
     def resolve_token(token: str) -> UserIdentity:
         if token == "player-a":

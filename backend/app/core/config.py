@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     def normalize_paths(self) -> "Settings":
         if not self.prompt_dir.exists():
             self.prompt_dir = _default_project_path("prompts")
-        if not self.pack_dir.exists():
+        if "pack_dir" not in self.model_fields_set and not self.pack_dir.exists():
             self.pack_dir = _default_project_path("packs")
         if not self.eval_dataset_dir.exists():
             self.eval_dataset_dir = _default_project_path("evals", "datasets")

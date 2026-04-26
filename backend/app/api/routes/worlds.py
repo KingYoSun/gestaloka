@@ -3,11 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_container, get_current_user, get_db
+from app.core.container import AppContainer
 from app.modules.actor.service import user_has_world_membership
 from app.modules.event_log.service import list_world_events
 from app.modules.identity.oidc import UserIdentity
-from app.modules.world_pack.service import get_pack_registry
+from app.modules.world_pack.service import WorldPackError
 from app.modules.world_memory.service import list_world_memories
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
@@ -40,10 +41,14 @@ def get_world_memories(
 
 @router.get("/packs")
 def list_world_packs(
+    container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, list[dict]]:
     del user
-    return {"items": get_pack_registry().pack_summary_items()}
+    try:
+        return {"items": container.pack_registry.pack_summary_items()}
+    except WorldPackError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.diagnostic()) from exc
 
 
 def event_to_dict(item) -> dict:

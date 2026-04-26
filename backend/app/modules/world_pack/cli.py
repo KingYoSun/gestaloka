@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.core.config import get_settings
-from app.modules.world_pack.service import FOLLOWUP_BRANCH_SLOTS, PackRegistry, get_pack_registry, load_pack_from_dir
+from app.modules.world_pack.service import (
+    FOLLOWUP_BRANCH_SLOTS,
+    PackRegistry,
+    WorldPackError,
+    get_pack_registry,
+    load_pack_from_dir,
+)
 
 
 TEXT_SUFFIXES = {
@@ -146,6 +153,19 @@ def _pack_payload(pack: Any) -> dict[str, Any]:
     }
 
 
+def _error_payload(exc: BaseException, *, pack_dir: Path | None = None) -> dict[str, Any]:
+    if isinstance(exc, WorldPackError):
+        payload = exc.diagnostic()
+    else:
+        payload = {
+            "error": exc.__class__.__name__,
+            "message": str(exc),
+        }
+    if pack_dir is not None:
+        payload["pack_dir"] = str(pack_dir.resolve())
+    return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="GESTALOKA v2 world pack tooling")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -163,42 +183,49 @@ def main() -> None:
         help="Path to scan. Defaults to backend/app and frontend/src under the project root.",
     )
 
-    args = parser.parse_args()
-    settings = get_settings()
+    settings = None
+    try:
+        args = parser.parse_args()
+        settings = get_settings()
+        pack_dir = Path(settings.pack_dir).resolve()
 
-    if args.command == "list":
-        registry = get_pack_registry(settings)
-        payload = {
-            "pack_dir": str(settings.pack_dir),
-            "items": [_pack_payload(pack) for pack in registry.list_packs()],
-        }
-    elif args.command == "validate":
-        if args.pack_id:
-            pack = load_pack_from_dir(settings.pack_dir, args.pack_id)
-            items = [_pack_payload(pack)]
+        if args.command == "list":
+            registry = get_pack_registry(settings)
+            payload = {
+                "pack_dir": str(pack_dir),
+                "items": [_pack_payload(pack) for pack in registry.list_packs()],
+            }
+        elif args.command == "validate":
+            if args.pack_id:
+                pack = load_pack_from_dir(settings.pack_dir, args.pack_id)
+                items = [_pack_payload(pack)]
+            else:
+                registry = get_pack_registry(settings)
+                items = [_pack_payload(pack) for pack in registry.list_packs()]
+            payload = {
+                "pack_dir": str(pack_dir),
+                "validated": items,
+            }
         else:
             registry = get_pack_registry(settings)
-            items = [_pack_payload(pack) for pack in registry.list_packs()]
-        payload = {
-            "pack_dir": str(settings.pack_dir),
-            "validated": items,
-        }
-    else:
-        registry = get_pack_registry(settings)
-        scan_roots = (
-            [Path(item).resolve() for item in args.scan_roots]
-            if args.scan_roots
-            else _default_scan_roots(settings.pack_dir)
-        )
-        result = scan_pack_leaks(registry, scan_roots)
-        payload = {
-            "pack_dir": str(settings.pack_dir),
-            "scan_roots": [str(path) for path in scan_roots],
-            **result,
-        }
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        if result["leak_count"]:
-            raise SystemExit(1)
-        return
+            scan_roots = (
+                [Path(item).resolve() for item in args.scan_roots]
+                if args.scan_roots
+                else _default_scan_roots(settings.pack_dir)
+            )
+            result = scan_pack_leaks(registry, scan_roots)
+            payload = {
+                "pack_dir": str(pack_dir),
+                "scan_roots": [str(path) for path in scan_roots],
+                **result,
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            if result["leak_count"]:
+                raise SystemExit(1)
+            return
 
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    except (WorldPackError, OSError, ValueError) as exc:
+        pack_dir = Path(settings.pack_dir) if settings is not None else None
+        print(json.dumps(_error_payload(exc, pack_dir=pack_dir), ensure_ascii=False, indent=2), file=sys.stderr)
+        raise SystemExit(1) from exc
