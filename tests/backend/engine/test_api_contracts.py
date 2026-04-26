@@ -48,6 +48,13 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["sp"]["budget_scope"] == "execution_only"
     assert payload["embedding"]["dimension"] == 768
     assert payload["embedding"]["runtime_status"] == "ready"
+    assert payload["world_packs"] == {
+        "status": "ready",
+        "engine_api_version": "v2",
+        "pack_count": 2,
+        "template_count": 2,
+    }
+    assert "pack_dir" not in payload["world_packs"]
     assert {"projection_lag_seconds", "outbox_pending_count", "llm_schema_valid_rate"} <= set(payload["observability"])
     assert {"verdict", "blocked_reasons", "canary_promote_status"} <= set(payload["release_gate"])
     assert payload["llm_observability"]["stack"] == "langfuse"
@@ -157,11 +164,16 @@ def test_ops_routes_require_admin_when_dev_mode_disabled(client, container):
 
     forbidden = client.get("/ops/projection/status", headers={"Authorization": "Bearer user-token"})
     allowed = client.get("/ops/projection/status", headers={"Authorization": "Bearer admin-token"})
+    forbidden_packs = client.get("/ops/world-packs", headers={"Authorization": "Bearer user-token"})
+    allowed_packs = client.get("/ops/world-packs", headers={"Authorization": "Bearer admin-token"})
     forbidden_eval = client.get("/ops/evals/runs", headers={"Authorization": "Bearer user-token"})
     allowed_eval = client.get("/ops/evals/runs", headers={"Authorization": "Bearer admin-token"})
 
     assert forbidden.status_code == 403
     assert allowed.status_code == 200
+    assert forbidden_packs.status_code == 403
+    assert allowed_packs.status_code == 200
+    assert "pack_dir" in allowed_packs.json()
     assert forbidden_eval.status_code == 403
     assert allowed_eval.status_code == 200
 

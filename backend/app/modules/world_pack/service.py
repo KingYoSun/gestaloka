@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any, Literal, Mapping
 
 import yaml
@@ -16,6 +17,7 @@ from app.models.entities import World
 ENGINE_API_VERSION = "v2"
 FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
 PACK_YAML_SUFFIXES = {".yaml", ".yml"}
+PACK_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,119}$")
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
 _ACTIVE_PACK_DIR: Path | None = None
@@ -366,6 +368,41 @@ class PackRegistry:
             )
         return items
 
+    def catalog_diagnostic(self, *, include_paths: bool = True) -> dict[str, Any]:
+        packs = self.list_packs()
+        items: list[dict[str, Any]] = []
+        for pack in packs:
+            item = {
+                "pack_id": pack.manifest.pack_id,
+                "version": pack.manifest.version,
+                "engine_api_version": pack.manifest.engine_api_version,
+                "display_name": pack.manifest.display_name,
+                "semantic_tags": list(pack.manifest.semantic_tags),
+                "world_templates": [template.model_dump() for template in pack.manifest.world_templates],
+            }
+            if include_paths:
+                item["root_dir"] = str(pack.root_dir)
+            items.append(item)
+        payload: dict[str, Any] = {
+            "status": "ready",
+            "engine_api_version": ENGINE_API_VERSION,
+            "pack_count": len(packs),
+            "template_count": sum(len(pack.manifest.world_templates) for pack in packs),
+            "items": items,
+        }
+        if include_paths:
+            payload["pack_dir"] = str(self.pack_dir)
+        return payload
+
+    def health_summary(self) -> dict[str, Any]:
+        diagnostic = self.catalog_diagnostic(include_paths=False)
+        return {
+            "status": diagnostic["status"],
+            "engine_api_version": diagnostic["engine_api_version"],
+            "pack_count": diagnostic["pack_count"],
+            "template_count": diagnostic["template_count"],
+        }
+
     def resolve_prompt_overlay(self, *, pack_id: str, template_id: str, prompt_id: str) -> str:
         pack = self.get_pack(pack_id)
         sections = [
@@ -421,6 +458,30 @@ class PackRegistry:
                 pack_id=pack_dir_name,
                 path=manifest_path,
             ) from exc
+        self._validate_slug(
+            manifest.pack_id,
+            field_name="pack_id",
+            code="invalid_pack_id",
+            pack_id=manifest.pack_id,
+            path=manifest_path,
+        )
+        seen_template_ids: set[str] = set()
+        for template_summary in manifest.world_templates:
+            self._validate_slug(
+                template_summary.template_id,
+                field_name="world_template_id",
+                code="invalid_template_id",
+                pack_id=manifest.pack_id,
+                path=manifest_path,
+            )
+            if template_summary.template_id in seen_template_ids:
+                raise WorldPackError(
+                    f"Pack {manifest.pack_id} manifest has duplicate world_template_id {template_summary.template_id!r}",
+                    code="duplicate_template_id",
+                    pack_id=manifest.pack_id,
+                    path=manifest_path,
+                )
+            seen_template_ids.add(template_summary.template_id)
         if manifest.pack_id != pack_dir_name:
             raise WorldPackError(
                 f"Pack directory {pack_dir_name!r} contains manifest pack_id {manifest.pack_id!r}; they must match",
@@ -455,6 +516,20 @@ class PackRegistry:
         npc_names = {npc.display_name for npc in npc_payload.npcs}
         templates: dict[str, WorldTemplateDefinition] = {}
         for template_id, template in templates_payload.world_templates.items():
+            self._validate_slug(
+                template_id,
+                field_name="world_template_id",
+                code="invalid_template_id",
+                pack_id=manifest.pack_id,
+                path=root_dir / manifest.content_refs["world_templates"],
+            )
+            self._validate_slug(
+                template.template_id,
+                field_name="world_template_id",
+                code="invalid_template_id",
+                pack_id=manifest.pack_id,
+                path=root_dir / manifest.content_refs["world_templates"],
+            )
             if not template.roles.guide_npc_name and guide_name:
                 template.roles.guide_npc_name = guide_name
             self._validate_followup_branches(manifest.pack_id, template, npc_names)
@@ -559,6 +634,17 @@ class PackRegistry:
                 path=path,
             )
         return raw
+
+    @staticmethod
+    def _validate_slug(value: str, *, field_name: str, code: str, pack_id: str, path: Path | str) -> None:
+        if PACK_SLUG_RE.fullmatch(value):
+            return
+        raise WorldPackError(
+            f"Pack {pack_id} has invalid {field_name} {value!r}; use lowercase slug characters [a-z0-9_-]",
+            code=code,
+            pack_id=pack_id,
+            path=path,
+        )
 
     @staticmethod
     def _validate_followup_branches(

@@ -87,6 +87,15 @@ def get_ops_worlds(
     return list_world_contexts(db)
 
 
+@router.get("/world-packs")
+def get_ops_world_packs(
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.pack_registry.catalog_diagnostic(include_paths=True)
+
+
 @router.get("/projection/status")
 def get_projection_status(
     db: Session = Depends(get_db),

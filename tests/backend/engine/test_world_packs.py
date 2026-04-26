@@ -62,6 +62,20 @@ def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_header
     assert ember["world_templates"][0]["template_id"] == "ember_harbor"
 
 
+def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):
+    response = client.get("/ops/world-packs", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert payload["pack_dir"].endswith("/packs")
+    assert payload["pack_count"] >= 2
+    assert payload["template_count"] >= 2
+    ember = next(item for item in payload["items"] if item["pack_id"] == "ember_harbor")
+    assert ember["root_dir"].endswith("/packs/ember_harbor")
+    assert ember["world_templates"][0]["template_id"] == "ember_harbor"
+
+
 def test_pack_registry_exposes_branch_metadata_from_pack_contract():
     registry = PackRegistry(REPO_ROOT / "packs")
     assert registry.pack_dir == (REPO_ROOT / "packs").resolve()
@@ -141,6 +155,21 @@ def test_explicit_missing_pack_dir_does_not_fallback_to_bundled_packs(tmp_path: 
     assert exc.value.diagnostic()["error"] == "pack_dir_not_found"
 
 
+def test_pack_registry_catalog_diagnostic_reports_external_pack_dir(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    diagnostic = PackRegistry(pack_dir).catalog_diagnostic()
+
+    assert diagnostic["status"] == "ready"
+    assert diagnostic["pack_dir"] == str(pack_dir.resolve())
+    assert diagnostic["engine_api_version"] == "v2"
+    assert diagnostic["pack_count"] == 1
+    assert diagnostic["template_count"] == 1
+    assert diagnostic["items"][0]["pack_id"] == "ember_harbor"
+    assert diagnostic["items"][0]["root_dir"] == str((pack_dir / "ember_harbor").resolve())
+    assert diagnostic["items"][0]["world_templates"][0]["template_id"] == "ember_harbor"
+
+
 def test_pack_registry_cache_is_not_updated_after_failed_configure(tmp_path: Path):
     good_pack_dir = _copy_pack_dir(tmp_path / "good")
     registry = configure_pack_registry(good_pack_dir)
@@ -152,6 +181,45 @@ def test_pack_registry_cache_is_not_updated_after_failed_configure(tmp_path: Pat
         configure_pack_registry(missing_pack_dir)
 
     assert configure_pack_registry(good_pack_dir) is registry
+
+
+def test_pack_registry_rejects_invalid_manifest_pack_id_slug(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "Bad Pack"
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+
+    with pytest.raises(WorldPackError, match="invalid pack_id") as exc:
+        PackRegistry(pack_dir)
+    assert exc.value.diagnostic()["error"] == "invalid_pack_id"
+
+
+def test_pack_registry_rejects_invalid_manifest_template_id_slug(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["world_templates"][0]["template_id"] = "Bad Template"  # type: ignore[index]
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+
+    with pytest.raises(WorldPackError, match="invalid world_template_id") as exc:
+        PackRegistry(pack_dir)
+    assert exc.value.diagnostic()["error"] == "invalid_template_id"
+
+
+def test_pack_registry_rejects_duplicate_manifest_template_ids(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["world_templates"].append(dict(payload["world_templates"][0]))  # type: ignore[index,union-attr]
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+
+    with pytest.raises(WorldPackError, match="duplicate world_template_id") as exc:
+        PackRegistry(pack_dir)
+    assert exc.value.diagnostic()["error"] == "duplicate_template_id"
 
 
 def test_pack_registry_rejects_manifest_pack_id_mismatch(tmp_path: Path):

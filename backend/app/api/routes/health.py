@@ -61,6 +61,7 @@ def health(
             "failed_count": embedding["failed_count"],
             "runtime_status": embedding["runtime_status"],
         },
+        "world_packs": container.pack_registry.health_summary(),
         "observability": {
             "runtime_role": container.settings.app_runtime_role,
             "projection_lag_seconds": snapshot["projection_lag_seconds"],

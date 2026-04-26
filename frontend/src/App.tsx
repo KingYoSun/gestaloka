@@ -43,6 +43,12 @@ type HealthPayload = {
     failed_count: number;
     runtime_status: string;
   };
+  world_packs: {
+    status: string;
+    engine_api_version: string;
+    pack_count: number;
+    template_count: number;
+  };
   observability: {
     runtime_role: string;
     projection_lag_seconds: number;
@@ -106,6 +112,19 @@ type WorldPackItem = {
     display_name: string;
     summary: string;
   }>;
+};
+
+type OpsWorldPackItem = WorldPackItem & {
+  root_dir: string;
+};
+
+type OpsWorldPackCatalog = {
+  status: string;
+  pack_dir: string;
+  engine_api_version: string;
+  pack_count: number;
+  template_count: number;
+  items: OpsWorldPackItem[];
 };
 
 type WorldContext = {
@@ -1192,6 +1211,9 @@ function App() {
   const [npcLocationOps, setNpcLocationOps] = useState<NPCLocationSummary[]>([]);
   const [offstageBeatOps, setOffstageBeatOps] = useState<AmbientBeatOpsItem[]>([]);
   const [opsWorlds, setOpsWorlds] = useState<OpsWorldItem[]>([]);
+  const [opsPackCatalog, setOpsPackCatalog] = useState<OpsWorldPackCatalog | null>(null);
+  const [opsPackFilter, setOpsPackFilter] = useState("");
+  const [opsTemplateFilter, setOpsTemplateFilter] = useState("");
   const [observability, setObservability] = useState<ObservabilitySummary | null>(null);
   const [spOverview, setSpOverview] = useState<SPOverview | null>(null);
   const [ledgerEntries, setLedgerEntries] = useState<SPLedgerItem[]>([]);
@@ -1229,6 +1251,21 @@ function App() {
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId) ?? null;
   const selectedTemplate = selectedPack?.world_templates.find((item) => item.template_id === selectedTemplateId) ?? null;
+  const visibleOpsWorlds = opsWorlds.filter((item) => {
+    const context = item.world_context;
+    return (
+      (!opsPackFilter || context.pack_id === opsPackFilter) &&
+      (!opsTemplateFilter || context.world_template_id === opsTemplateFilter)
+    );
+  });
+  const opsTemplateOptions = (
+    opsPackFilter
+      ? (opsPackCatalog?.items.find((item) => item.pack_id === opsPackFilter)?.world_templates ?? [])
+      : (opsPackCatalog?.items.flatMap((item) => item.world_templates) ?? [])
+  ).filter(
+    (template, index, templates) =>
+      templates.findIndex((item) => item.template_id === template.template_id) === index,
+  );
   const activeWorldContext =
     graphSummary?.world_context ??
     opsWorlds.find((item) => item.world_context.world_id === activeWorldId)?.world_context ??
@@ -1295,6 +1332,9 @@ function App() {
       setNpcLocationOps([]);
       setOffstageBeatOps([]);
       setOpsWorlds([]);
+      setOpsPackCatalog(null);
+      setOpsPackFilter("");
+      setOpsTemplateFilter("");
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -1343,14 +1383,19 @@ function App() {
   }, [session, worldId]);
 
   useEffect(() => {
-    if (opsWorldId && opsWorlds.some((item) => item.world_context.world_id === opsWorldId)) {
+    if (opsWorldId && visibleOpsWorlds.some((item) => item.world_context.world_id === opsWorldId)) {
       return;
     }
-    const nextWorldId = session?.world_id || opsWorlds[0]?.world_context.world_id || "";
+    const sessionWorldIsVisible = visibleOpsWorlds.some((item) => item.world_context.world_id === session?.world_id);
+    const nextWorldId = !opsWorlds.length
+      ? (session?.world_id ?? "")
+      : ((sessionWorldIsVisible ? session?.world_id : visibleOpsWorlds[0]?.world_context.world_id) || "");
     if (nextWorldId !== opsWorldId) {
       setOpsWorldId(nextWorldId);
+      setLedgerWorldFilter(nextWorldId);
+      setAdjustWorldId(nextWorldId);
     }
-  }, [opsWorldId, opsWorlds, session]);
+  }, [opsWorldId, opsPackFilter, opsTemplateFilter, opsWorlds, session?.world_id]);
 
   useEffect(() => {
     if (!session || !token) {
@@ -1486,6 +1531,7 @@ function App() {
         gatePayload,
         councilPayload,
         worldsPayload,
+        packCatalogPayload,
       ] = await Promise.all([
         apiFetch<ProjectionStatus>("/ops/projection/status", currentToken),
         apiFetch<EmbeddingStatus>("/ops/memories/status", currentToken),
@@ -1502,6 +1548,7 @@ function App() {
           currentToken,
         ),
         apiFetch<{ items: OpsWorldItem[] }>("/ops/worlds", currentToken),
+        apiFetch<OpsWorldPackCatalog>("/ops/world-packs", currentToken),
       ]);
       setProjectionStatus(statusPayload);
       setEmbeddingStatus(embeddingPayload);
@@ -1514,6 +1561,7 @@ function App() {
       setReleaseGate(gatePayload);
       setCouncilTurns(councilPayload.items);
       setOpsWorlds(worldsPayload.items);
+      setOpsPackCatalog(packCatalogPayload);
       setOpsState("ready");
     } catch (requestError) {
       const typedError = requestError as APIError;
@@ -1536,6 +1584,7 @@ function App() {
         setNpcLocationOps([]);
         setOffstageBeatOps([]);
         setOpsWorlds([]);
+        setOpsPackCatalog(null);
         setObservability(null);
         setSpOverview(null);
         setLedgerEntries([]);
@@ -1558,6 +1607,7 @@ function App() {
       setSceneOps([]);
       setNpcRoutineOps([]);
       setAmbientBeatOps([]);
+      setOpsPackCatalog(null);
       setObservability(null);
       setSpOverview(null);
       setLedgerEntries([]);
@@ -2681,6 +2731,41 @@ function App() {
               <h2>Projection runtime</h2>
               <p data-testid="ops-status">Ops access: {opsState}</p>
               <label>
+                Pack Filter
+                <select
+                  data-testid="ops-pack-filter"
+                  value={opsPackFilter}
+                  onChange={(event) => {
+                    setOpsPackFilter(event.target.value);
+                    setOpsTemplateFilter("");
+                  }}
+                  disabled={!opsPackCatalog?.items.length}
+                >
+                  <option value="">All packs</option>
+                  {(opsPackCatalog?.items ?? []).map((item) => (
+                    <option key={item.pack_id} value={item.pack_id}>
+                      {item.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Template Filter
+                <select
+                  data-testid="ops-template-filter"
+                  value={opsTemplateFilter}
+                  onChange={(event) => setOpsTemplateFilter(event.target.value)}
+                  disabled={!opsTemplateOptions.length}
+                >
+                  <option value="">All templates</option>
+                  {opsTemplateOptions.map((item) => (
+                    <option key={item.template_id} value={item.template_id}>
+                      {item.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Admin World
                 <select
                   data-testid="ops-world-select"
@@ -2690,19 +2775,39 @@ function App() {
                     setLedgerWorldFilter(event.target.value);
                     setAdjustWorldId(event.target.value);
                   }}
-                  disabled={!opsWorlds.length}
+                  disabled={!visibleOpsWorlds.length}
                 >
-                  {opsWorlds.length ? (
-                    opsWorlds.map((item) => (
+                  {visibleOpsWorlds.length ? (
+                    visibleOpsWorlds.map((item) => (
                       <option key={item.world_context.world_id} value={item.world_context.world_id}>
                         {item.world_context.world_name} / {item.world_context.pack_display_name}
                       </option>
                     ))
                   ) : (
-                    <option value={activeWorldId}>{activeWorldId || "No worlds loaded"}</option>
+                    <option value={activeWorldId}>{activeWorldId || "No matching worlds"}</option>
                   )}
                 </select>
               </label>
+              <p data-testid="ops-pack-catalog-summary">
+                Pack catalog: {opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown"} / packs{" "}
+                {opsPackCatalog?.pack_count ?? health?.world_packs?.pack_count ?? 0} / templates{" "}
+                {opsPackCatalog?.template_count ?? health?.world_packs?.template_count ?? 0} / API{" "}
+                {opsPackCatalog?.engine_api_version ?? health?.world_packs?.engine_api_version ?? "unknown"}
+              </p>
+              <ul className="stream" data-testid="ops-pack-catalog-stream">
+                {(opsPackCatalog?.items ?? []).map((item) => (
+                  <li key={item.pack_id}>
+                    <strong>{item.display_name}</strong>
+                    <span>
+                      {item.pack_id} / {item.version} / {item.engine_api_version}
+                    </span>
+                    <span>
+                      templates: {item.world_templates.map((template) => template.display_name).join(", ")}
+                    </span>
+                    <span>tags: {item.semantic_tags.join(", ") || "none"}</span>
+                  </li>
+                ))}
+              </ul>
               <p data-testid="active-world-context">
                 Pack: {activeWorldContext?.pack_display_name ?? "unknown"} / Template:{" "}
                 {activeWorldContext?.world_template_display_name ?? "unknown"} / World:{" "}
