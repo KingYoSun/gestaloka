@@ -48,6 +48,7 @@ type HealthPayload = {
     engine_api_version: string;
     pack_count: number;
     template_count: number;
+    failure_count: number;
   };
   observability: {
     runtime_role: string;
@@ -114,8 +115,24 @@ type WorldPackItem = {
   }>;
 };
 
+type WorldPackCatalog = {
+  status: string;
+  engine_api_version: string;
+  pack_count: number;
+  template_count: number;
+  failure_count: number;
+  items: WorldPackItem[];
+};
+
 type OpsWorldPackItem = WorldPackItem & {
   root_dir: string;
+};
+
+type OpsWorldPackFailure = {
+  error: string;
+  message: string;
+  pack_id?: string;
+  path?: string;
 };
 
 type OpsWorldPackCatalog = {
@@ -124,6 +141,8 @@ type OpsWorldPackCatalog = {
   engine_api_version: string;
   pack_count: number;
   template_count: number;
+  failure_count: number;
+  failures: OpsWorldPackFailure[];
   items: OpsWorldPackItem[];
 };
 
@@ -1350,12 +1369,15 @@ function App() {
     void Promise.all([
       apiFetch<AuthMe>("/auth/me", token),
       apiFetch<SPWallet>("/economy/sp/me", token),
-      apiFetch<{ items: WorldPackItem[] }>("/worlds/packs", token),
+      apiFetch<WorldPackCatalog>("/worlds/packs", token),
     ])
       .then(([mePayload, walletPayload, packPayload]) => {
         setMe(mePayload);
         setWallet(walletPayload);
         setWorldPacks(packPayload.items);
+        if (packPayload.status === "error") {
+          setError(`World pack catalog unavailable (${packPayload.failure_count} failures)`);
+        }
         const firstPack = packPayload.items[0];
         setSelectedPackId((current) => (firstPack && packPayload.items.some((item) => item.pack_id === current) ? current : (firstPack?.pack_id ?? "")));
         setLedgerUserFilter((current) => current || walletPayload.user_sub);
@@ -2792,8 +2814,23 @@ function App() {
                 Pack catalog: {opsPackCatalog?.status ?? health?.world_packs?.status ?? "unknown"} / packs{" "}
                 {opsPackCatalog?.pack_count ?? health?.world_packs?.pack_count ?? 0} / templates{" "}
                 {opsPackCatalog?.template_count ?? health?.world_packs?.template_count ?? 0} / API{" "}
-                {opsPackCatalog?.engine_api_version ?? health?.world_packs?.engine_api_version ?? "unknown"}
+                {opsPackCatalog?.engine_api_version ?? health?.world_packs?.engine_api_version ?? "unknown"} / failures{" "}
+                {opsPackCatalog?.failure_count ?? health?.world_packs?.failure_count ?? 0}
               </p>
+              <ul className="stream" data-testid="ops-pack-failure-stream">
+                {(opsPackCatalog?.failures ?? []).length ? (
+                  (opsPackCatalog?.failures ?? []).map((item, index) => (
+                    <li key={`${item.error}-${item.pack_id ?? "pack-dir"}-${index}`}>
+                      <strong>{item.error}</strong>
+                      <span>{item.pack_id ?? "pack directory"}</span>
+                      <span>{item.message}</span>
+                      <span>{item.path ?? "path unavailable"}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li>No pack catalog failures.</li>
+                )}
+              </ul>
               <ul className="stream" data-testid="ops-pack-catalog-stream">
                 {(opsPackCatalog?.items ?? []).map((item) => (
                   <li key={item.pack_id}>

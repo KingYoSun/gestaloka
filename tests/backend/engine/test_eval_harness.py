@@ -13,6 +13,7 @@ from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult
+from app.modules.world_pack.service import PackCatalogFailure, PackRegistry
 from app.modules.world_memory.service import MemoryService
 
 
@@ -301,6 +302,36 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
     }
+
+
+def test_release_gate_blocks_when_pack_catalog_is_degraded(container):
+    degraded_registry = PackRegistry(container.settings.pack_dir)
+    degraded_registry.failures.append(
+        PackCatalogFailure(
+            error="pack_id_mismatch",
+            message="external pack failed validation",
+            pack_id="broken_pack",
+            path="/external/packs/broken_pack/pack.yaml",
+        )
+    )
+    container.pack_registry = degraded_registry
+    container.eval_service.pack_registry = degraded_registry
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+    )
+
+    with container.session_factory() as db:
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=1)
+        db.commit()
+
+    assert gate["verdict"] == "blocked"
+    assert "world pack catalog != ready" in gate["blocked_reasons"]
+    assert gate["slo_snapshot"]["world_packs"]["status"] == "degraded"
+    assert gate["slo_snapshot"]["world_packs"]["failure_count"] == 1
+    assert gate["cutover_status"]["promote_ready"] is False
 
 
 def test_scheduler_helpers_only_persist_eval_and_release_tables(client, container, auth_headers, monkeypatch):

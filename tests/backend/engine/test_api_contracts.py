@@ -53,6 +53,7 @@ def test_health_reports_database_projection_and_oidc(client):
         "engine_api_version": "v2",
         "pack_count": 2,
         "template_count": 2,
+        "failure_count": 0,
     }
     assert "pack_dir" not in payload["world_packs"]
     assert {"projection_lag_seconds", "outbox_pending_count", "llm_schema_valid_rate"} <= set(payload["observability"])

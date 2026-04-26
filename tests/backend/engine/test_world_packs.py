@@ -8,9 +8,12 @@ from typing import Callable
 
 import pytest
 import yaml
-from sqlalchemy import select
+from fastapi.testclient import TestClient
 
+from app.core.container import build_container
 from app.core.config import Settings
+from app.main import create_app
+from app.models.base import Base
 from app.models.entities import World
 from app.modules.world_pack.cli import main as world_pack_main
 from app.modules.world_pack.service import PackRegistry, WorldPackError, configure_pack_registry, world_pack_metadata
@@ -50,6 +53,20 @@ def _settings_for_pack_dir(tmp_path: Path, pack_dir: Path) -> Settings:
         oidc_dev_mode=True,
         otel_metrics_port=0,
     )
+
+
+def _only_failure(registry: PackRegistry) -> dict[str, object]:
+    diagnostic = registry.catalog_diagnostic()
+    assert diagnostic["status"] == "error"
+    assert diagnostic["pack_count"] == 0
+    assert diagnostic["failure_count"] == 1
+    return diagnostic["failures"][0]
+
+
+def _build_client_for_pack_dir(tmp_path: Path, pack_dir: Path) -> tuple[TestClient, object]:
+    container = build_container(_settings_for_pack_dir(tmp_path, pack_dir))
+    Base.metadata.create_all(bind=container.session_factory.kw["bind"])
+    return TestClient(create_app(container)), container
 
 
 def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_headers):
@@ -103,8 +120,9 @@ def test_pack_registry_rejects_missing_followup_branches(tmp_path: Path):
 
     _rewrite_world_template(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(ValueError, match="followup_branches"):
-        PackRegistry(pack_dir)
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert "followup_branches" in failure["message"]
 
 
 def test_pack_registry_rejects_missing_followup_branch_slot(tmp_path: Path):
@@ -115,8 +133,9 @@ def test_pack_registry_rejects_missing_followup_branch_slot(tmp_path: Path):
 
     _rewrite_world_template(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(ValueError, match="undercurrent_path"):
-        PackRegistry(pack_dir)
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert "undercurrent_path" in failure["message"]
 
 
 def test_pack_registry_rejects_duplicate_followup_branch_keys(tmp_path: Path):
@@ -128,8 +147,9 @@ def test_pack_registry_rejects_duplicate_followup_branch_keys(tmp_path: Path):
 
     _rewrite_world_template(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(ValueError, match="unique"):
-        PackRegistry(pack_dir)
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert "unique" in failure["message"]
 
 
 def test_pack_registry_rejects_unknown_followup_branch_anchor_npc(tmp_path: Path):
@@ -141,8 +161,9 @@ def test_pack_registry_rejects_unknown_followup_branch_anchor_npc(tmp_path: Path
 
     _rewrite_world_template(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(ValueError, match="anchor_npcs"):
-        PackRegistry(pack_dir)
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "unknown_anchor_npc"
+    assert "anchor_npcs" in failure["message"]
 
 
 def test_explicit_missing_pack_dir_does_not_fallback_to_bundled_packs(tmp_path: Path):
@@ -150,9 +171,10 @@ def test_explicit_missing_pack_dir_does_not_fallback_to_bundled_packs(tmp_path: 
     settings = _settings_for_pack_dir(tmp_path, missing_pack_dir)
 
     assert settings.pack_dir == missing_pack_dir
-    with pytest.raises(WorldPackError, match="Pack directory not found") as exc:
-        PackRegistry(settings.pack_dir)
-    assert exc.value.diagnostic()["error"] == "pack_dir_not_found"
+    registry = PackRegistry(settings.pack_dir)
+    assert registry.status == "error"
+    assert registry.pack_summary_items() == []
+    assert registry.catalog_diagnostic()["failures"][0]["error"] == "pack_dir_not_found"
 
 
 def test_pack_registry_catalog_diagnostic_reports_external_pack_dir(tmp_path: Path):
@@ -165,22 +187,101 @@ def test_pack_registry_catalog_diagnostic_reports_external_pack_dir(tmp_path: Pa
     assert diagnostic["engine_api_version"] == "v2"
     assert diagnostic["pack_count"] == 1
     assert diagnostic["template_count"] == 1
+    assert diagnostic["failure_count"] == 0
+    assert diagnostic["failures"] == []
     assert diagnostic["items"][0]["pack_id"] == "ember_harbor"
     assert diagnostic["items"][0]["root_dir"] == str((pack_dir / "ember_harbor").resolve())
     assert diagnostic["items"][0]["world_templates"][0]["template_id"] == "ember_harbor"
 
 
-def test_pack_registry_cache_is_not_updated_after_failed_configure(tmp_path: Path):
+def test_pack_registry_reports_degraded_external_pack_dir_and_keeps_valid_packs(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "not_founders_reach"
+
+    _rewrite_pack_manifest(pack_dir, "founders_reach", mutate)
+
+    registry = PackRegistry(pack_dir)
+    diagnostic = registry.catalog_diagnostic()
+
+    assert registry.status == "degraded"
+    assert diagnostic["pack_count"] == 1
+    assert diagnostic["failure_count"] == 1
+    assert [item["pack_id"] for item in diagnostic["items"]] == ["ember_harbor"]
+    assert diagnostic["failures"][0]["error"] == "pack_id_mismatch"
+    assert registry.get_template("ember_harbor", "ember_harbor").template_id == "ember_harbor"
+    with pytest.raises(WorldPackError, match="Unknown pack_id"):
+        registry.get_pack("founders_reach")
+
+
+def test_pack_registry_reports_empty_and_not_directory_pack_dir(tmp_path: Path):
+    empty_dir = tmp_path / "empty-packs"
+    empty_dir.mkdir()
+    empty_diagnostic = PackRegistry(empty_dir).catalog_diagnostic()
+    assert empty_diagnostic["status"] == "error"
+    assert empty_diagnostic["failures"][0]["error"] == "empty_pack_dir"
+
+    not_directory = tmp_path / "packs.txt"
+    not_directory.write_text("not a directory\n", encoding="utf-8")
+    file_diagnostic = PackRegistry(not_directory).catalog_diagnostic()
+    assert file_diagnostic["status"] == "error"
+    assert file_diagnostic["failures"][0]["error"] == "pack_dir_not_directory"
+
+
+def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "not_founders_reach"
+
+    _rewrite_pack_manifest(pack_dir, "founders_reach", mutate)
+    test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
+    try:
+        public_response = test_client.get("/worlds/packs", headers=auth_headers)
+        admin_response = test_client.get("/ops/world-packs", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "external-valid-world",
+                "pack_id": "ember_harbor",
+                "world_template_id": "ember_harbor",
+                "world_name": "External Valid World",
+            },
+            headers=auth_headers,
+        )
+    finally:
+        test_client.close()
+
+    assert public_response.status_code == 200
+    public_payload = public_response.json()
+    assert public_payload["status"] == "degraded"
+    assert public_payload["failure_count"] == 1
+    assert "failures" not in public_payload
+    assert [item["pack_id"] for item in public_payload["items"]] == ["ember_harbor"]
+
+    assert admin_response.status_code == 200
+    admin_payload = admin_response.json()
+    assert admin_payload["status"] == "degraded"
+    assert admin_payload["failures"][0]["error"] == "pack_id_mismatch"
+    assert admin_payload["failures"][0]["path"].endswith("founders_reach/pack.yaml")
+    assert session_response.status_code == 200
+
+
+def test_pack_registry_cache_reuses_current_pack_dir_and_switches_when_config_changes(tmp_path: Path):
     good_pack_dir = _copy_pack_dir(tmp_path / "good")
     registry = configure_pack_registry(good_pack_dir)
     missing_pack_dir = tmp_path / "missing-packs"
 
-    with pytest.raises(WorldPackError, match="Pack directory not found"):
-        configure_pack_registry(missing_pack_dir)
-    with pytest.raises(WorldPackError, match="Pack directory not found"):
-        configure_pack_registry(missing_pack_dir)
+    missing_registry = configure_pack_registry(missing_pack_dir)
+    assert missing_registry.status == "error"
+    assert configure_pack_registry(missing_pack_dir) is missing_registry
 
-    assert configure_pack_registry(good_pack_dir) is registry
+    restored_registry = configure_pack_registry(good_pack_dir)
+    assert restored_registry.status == "ready"
+    assert restored_registry.pack_dir == registry.pack_dir
 
 
 def test_pack_registry_rejects_invalid_manifest_pack_id_slug(tmp_path: Path):
@@ -191,9 +292,9 @@ def test_pack_registry_rejects_invalid_manifest_pack_id_slug(tmp_path: Path):
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(WorldPackError, match="invalid pack_id") as exc:
-        PackRegistry(pack_dir)
-    assert exc.value.diagnostic()["error"] == "invalid_pack_id"
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_pack_id"
+    assert "invalid pack_id" in failure["message"]
 
 
 def test_pack_registry_rejects_invalid_manifest_template_id_slug(tmp_path: Path):
@@ -204,9 +305,9 @@ def test_pack_registry_rejects_invalid_manifest_template_id_slug(tmp_path: Path)
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(WorldPackError, match="invalid world_template_id") as exc:
-        PackRegistry(pack_dir)
-    assert exc.value.diagnostic()["error"] == "invalid_template_id"
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_template_id"
+    assert "invalid world_template_id" in failure["message"]
 
 
 def test_pack_registry_rejects_duplicate_manifest_template_ids(tmp_path: Path):
@@ -217,9 +318,9 @@ def test_pack_registry_rejects_duplicate_manifest_template_ids(tmp_path: Path):
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(WorldPackError, match="duplicate world_template_id") as exc:
-        PackRegistry(pack_dir)
-    assert exc.value.diagnostic()["error"] == "duplicate_template_id"
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "duplicate_template_id"
+    assert "duplicate world_template_id" in failure["message"]
 
 
 def test_pack_registry_rejects_manifest_pack_id_mismatch(tmp_path: Path):
@@ -230,9 +331,9 @@ def test_pack_registry_rejects_manifest_pack_id_mismatch(tmp_path: Path):
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
 
-    with pytest.raises(WorldPackError, match="must match") as exc:
-        PackRegistry(pack_dir)
-    assert exc.value.diagnostic()["error"] == "pack_id_mismatch"
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "pack_id_mismatch"
+    assert "must match" in failure["message"]
 
 
 def test_pack_registry_rejects_unsafe_content_refs(tmp_path: Path):
@@ -242,9 +343,9 @@ def test_pack_registry_rejects_unsafe_content_refs(tmp_path: Path):
         payload["content_refs"]["npcs"] = str(tmp_path / "outside.yaml")  # type: ignore[index]
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_absolute)
-    with pytest.raises(WorldPackError, match="must be relative") as absolute_exc:
-        PackRegistry(pack_dir)
-    assert absolute_exc.value.diagnostic()["error"] == "invalid_content_ref"
+    absolute_failure = _only_failure(PackRegistry(pack_dir))
+    assert absolute_failure["error"] == "invalid_content_ref"
+    assert "must be relative" in absolute_failure["message"]
 
     pack_dir = _copy_pack_dir(tmp_path / "parent-ref")
 
@@ -252,9 +353,9 @@ def test_pack_registry_rejects_unsafe_content_refs(tmp_path: Path):
         payload["content_refs"]["npcs"] = "../outside.yaml"  # type: ignore[index]
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_parent)
-    with pytest.raises(WorldPackError, match="escapes pack root") as parent_exc:
-        PackRegistry(pack_dir)
-    assert parent_exc.value.diagnostic()["error"] == "invalid_content_ref"
+    parent_failure = _only_failure(PackRegistry(pack_dir))
+    assert parent_failure["error"] == "invalid_content_ref"
+    assert "escapes pack root" in parent_failure["message"]
 
 
 def test_pack_registry_rejects_missing_and_non_yaml_content_refs(tmp_path: Path):
@@ -264,9 +365,9 @@ def test_pack_registry_rejects_missing_and_non_yaml_content_refs(tmp_path: Path)
         payload["content_refs"]["npcs"] = "missing.yaml"  # type: ignore[index]
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_missing)
-    with pytest.raises(WorldPackError, match="file not found") as missing_exc:
-        PackRegistry(pack_dir)
-    assert missing_exc.value.diagnostic()["error"] == "content_file_not_found"
+    missing_failure = _only_failure(PackRegistry(pack_dir))
+    assert missing_failure["error"] == "content_file_not_found"
+    assert "file not found" in missing_failure["message"]
 
     pack_dir = _copy_pack_dir(tmp_path / "non-yaml")
     non_yaml = pack_dir / "ember_harbor" / "npcs.txt"
@@ -276,19 +377,18 @@ def test_pack_registry_rejects_missing_and_non_yaml_content_refs(tmp_path: Path)
         payload["content_refs"]["npcs"] = "npcs.txt"  # type: ignore[index]
 
     _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_non_yaml)
-    with pytest.raises(WorldPackError, match="YAML file") as non_yaml_exc:
-        PackRegistry(pack_dir)
-    assert non_yaml_exc.value.diagnostic()["error"] == "invalid_content_ref"
+    non_yaml_failure = _only_failure(PackRegistry(pack_dir))
+    assert non_yaml_failure["error"] == "invalid_content_ref"
+    assert "YAML file" in non_yaml_failure["message"]
 
 
 def test_pack_registry_rejects_invalid_yaml_with_diagnostic(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
     (pack_dir / "ember_harbor" / "npcs.yaml").write_text("npcs: [\n", encoding="utf-8")
 
-    with pytest.raises(WorldPackError, match="invalid npcs YAML") as exc:
-        PackRegistry(pack_dir)
-    assert exc.value.diagnostic()["error"] == "invalid_yaml"
-    assert exc.value.diagnostic()["path"].endswith("ember_harbor/npcs.yaml")
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_yaml"
+    assert str(failure["path"]).endswith("ember_harbor/npcs.yaml")
 
 
 def test_pack_cli_lists_discovered_packs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
@@ -302,6 +402,8 @@ def test_pack_cli_lists_discovered_packs(tmp_path: Path, monkeypatch: pytest.Mon
 
     payload = yaml.safe_load(capsys.readouterr().out)
     assert payload["pack_dir"] == str(pack_dir)
+    assert payload["status"] == "ready"
+    assert payload["failure_count"] == 0
     assert {item["pack_id"] for item in payload["items"]} == {"ember_harbor", "founders_reach"}
 
 
@@ -316,6 +418,37 @@ def test_pack_cli_validates_single_pack(tmp_path: Path, monkeypatch: pytest.Monk
     payload = yaml.safe_load(capsys.readouterr().out)
     assert payload["pack_dir"] == str(pack_dir)
     assert [item["pack_id"] for item in payload["validated"]] == ["ember_harbor"]
+
+
+def test_pack_cli_validate_reports_multiple_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    pack_dir = _copy_pack_dir(tmp_path)
+    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+
+    def mutate_ember(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "not_ember_harbor"
+
+    def mutate_founders(payload: dict[str, object]) -> None:
+        payload["engine_api_version"] = "v1"
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_ember)
+    _rewrite_pack_manifest(pack_dir, "founders_reach", mutate_founders)
+    settings = _settings_for_pack_dir(tmp_path, pack_dir)
+    monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
+    monkeypatch.setattr(sys, "argv", ["world_pack", "validate"])
+
+    with pytest.raises(SystemExit) as exc:
+        world_pack_main()
+
+    assert exc.value.code == 1
+    payload = yaml.safe_load(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert payload["failure_count"] == 2
+    assert payload["validated"] == []
+    assert {item["error"] for item in payload["failures"]} == {"pack_id_mismatch", "engine_api_version_mismatch"}
 
 
 def test_pack_cli_validate_failure_writes_json_diagnostic(

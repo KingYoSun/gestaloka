@@ -484,6 +484,7 @@ class EvalHarnessService:
                 "slo_snapshot": {
                     "runtime_role": self.settings.app_runtime_role,
                     "canary_health": self._probe_canary_health().__dict__,
+                    "world_packs": (self.pack_registry or get_pack_registry(self.settings)).health_summary(),
                     "projection_lag_seconds": 0.0,
                     "outbox_pending_count": 0,
                     "outbox_failed_count": 0,
@@ -1078,6 +1079,9 @@ class EvalHarnessService:
             blocked.append("projection_lag_seconds > 5")
         if slo_snapshot["canary_health"]["status"] != "healthy":
             blocked.append("canary health != healthy")
+        world_packs = slo_snapshot.get("world_packs")
+        if isinstance(world_packs, dict) and world_packs.get("status") != "ready":
+            blocked.append("world pack catalog != ready")
         if not bool(slo_snapshot["sp_reason_invariant_ok"]):
             blocked.append("sp execution budget invariant failed")
         return blocked
@@ -1110,9 +1114,11 @@ class EvalHarnessService:
         ).all()
         fallback_turns = len({row[0] for row in fallback_groups if int(row[3]) > 1})
 
+        pack_registry = self.pack_registry or get_pack_registry(self.settings)
         snapshot = {
             "runtime_role": runtime_role,
             "canary_health": canary_probe.__dict__,
+            "world_packs": pack_registry.health_summary(),
             "projection_lag_seconds": projection_lag_seconds,
             "outbox_pending_count": pending_outbox_count,
             "outbox_failed_count": failed_outbox_count,
@@ -1177,14 +1183,22 @@ class EvalHarnessService:
             key = (case.pack_id, case.world_template_id)
             if key in scoped:
                 continue
-            pack = registry.get_pack(case.pack_id)
-            template = pack.template(case.world_template_id)
-            scoped[key] = {
-                "pack_id": pack.manifest.pack_id,
-                "pack_display_name": pack.manifest.display_name,
-                "world_template_id": template.template_id,
-                "world_template_display_name": template.display_name,
-            }
+            try:
+                pack = registry.get_pack(case.pack_id)
+                template = pack.template(case.world_template_id)
+                scoped[key] = {
+                    "pack_id": pack.manifest.pack_id,
+                    "pack_display_name": pack.manifest.display_name,
+                    "world_template_id": template.template_id,
+                    "world_template_display_name": template.display_name,
+                }
+            except ValueError:
+                scoped[key] = {
+                    "pack_id": case.pack_id,
+                    "pack_display_name": case.pack_id,
+                    "world_template_id": case.world_template_id,
+                    "world_template_display_name": case.world_template_id,
+                }
         return [scoped[key] for key in sorted(scoped)]
 
     def _pack_context_for_case(self, case: EvalCaseInput) -> dict[str, object]:

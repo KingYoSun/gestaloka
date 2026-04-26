@@ -330,10 +330,51 @@ class LoadedWorldPack:
             ) from exc
 
 
+@dataclass(frozen=True)
+class PackCatalogFailure:
+    error: str
+    message: str
+    pack_id: str | None = None
+    path: str | None = None
+
+    @classmethod
+    def from_error(cls, exc: WorldPackError) -> "PackCatalogFailure":
+        return cls(
+            error=exc.code,
+            message=str(exc),
+            pack_id=exc.pack_id,
+            path=exc.path,
+        )
+
+    def diagnostic(self, *, include_path: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "error": self.error,
+            "message": self.message,
+        }
+        if self.pack_id is not None:
+            payload["pack_id"] = self.pack_id
+        if include_path and self.path is not None:
+            payload["path"] = self.path
+        return payload
+
+
 class PackRegistry:
     def __init__(self, pack_dir: Path) -> None:
         self.pack_dir = Path(pack_dir).resolve()
+        self.failures: list[PackCatalogFailure] = []
         self._packs = self._load_packs()
+
+    @property
+    def status(self) -> Literal["ready", "degraded", "error"]:
+        if self._packs and not self.failures:
+            return "ready"
+        if self._packs:
+            return "degraded"
+        return "error"
+
+    @property
+    def failure_count(self) -> int:
+        return len(self.failures)
 
     def list_packs(self) -> list[LoadedWorldPack]:
         return [self._packs[key] for key in sorted(self._packs)]
@@ -368,6 +409,16 @@ class PackRegistry:
             )
         return items
 
+    def public_catalog(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "engine_api_version": ENGINE_API_VERSION,
+            "pack_count": len(self._packs),
+            "template_count": sum(len(pack.manifest.world_templates) for pack in self.list_packs()),
+            "failure_count": self.failure_count,
+            "items": self.pack_summary_items(),
+        }
+
     def catalog_diagnostic(self, *, include_paths: bool = True) -> dict[str, Any]:
         packs = self.list_packs()
         items: list[dict[str, Any]] = []
@@ -384,10 +435,12 @@ class PackRegistry:
                 item["root_dir"] = str(pack.root_dir)
             items.append(item)
         payload: dict[str, Any] = {
-            "status": "ready",
+            "status": self.status,
             "engine_api_version": ENGINE_API_VERSION,
             "pack_count": len(packs),
             "template_count": sum(len(pack.manifest.world_templates) for pack in packs),
+            "failure_count": self.failure_count,
+            "failures": [failure.diagnostic(include_path=include_paths) for failure in self.failures],
             "items": items,
         }
         if include_paths:
@@ -401,6 +454,7 @@ class PackRegistry:
             "engine_api_version": diagnostic["engine_api_version"],
             "pack_count": diagnostic["pack_count"],
             "template_count": diagnostic["template_count"],
+            "failure_count": diagnostic["failure_count"],
         }
 
     def resolve_prompt_overlay(self, *, pack_id: str, template_id: str, prompt_id: str) -> str:
@@ -415,35 +469,79 @@ class PackRegistry:
 
     def _load_packs(self) -> dict[str, LoadedWorldPack]:
         if not self.pack_dir.exists():
-            raise WorldPackError(
-                f"Pack directory not found: {self.pack_dir}",
-                code="pack_dir_not_found",
-                path=self.pack_dir,
-            )
-        if not self.pack_dir.is_dir():
-            raise WorldPackError(
-                f"Pack directory is not a directory: {self.pack_dir}",
-                code="pack_dir_not_directory",
-                path=self.pack_dir,
-            )
-        packs: dict[str, LoadedWorldPack] = {}
-        for pack_file in sorted(self.pack_dir.glob("*/pack.yaml")):
-            loaded = self._load_pack(pack_file)
-            if loaded.manifest.pack_id in packs:
-                raise WorldPackError(
-                    f"Duplicate pack_id {loaded.manifest.pack_id!r} detected in {self.pack_dir}",
-                    code="duplicate_pack_id",
-                    pack_id=loaded.manifest.pack_id,
-                    path=pack_file,
+            self._record_failure(
+                WorldPackError(
+                    f"Pack directory not found: {self.pack_dir}",
+                    code="pack_dir_not_found",
+                    path=self.pack_dir,
                 )
+            )
+            return {}
+        if not self.pack_dir.is_dir():
+            self._record_failure(
+                WorldPackError(
+                    f"Pack directory is not a directory: {self.pack_dir}",
+                    code="pack_dir_not_directory",
+                    path=self.pack_dir,
+                )
+            )
+            return {}
+        packs: dict[str, LoadedWorldPack] = {}
+        pack_roots = [
+            path
+            for path in sorted(self.pack_dir.iterdir())
+            if path.is_dir() and not path.name.startswith(".") and path.name != "__pycache__"
+        ]
+        if not pack_roots:
+            self._record_failure(
+                WorldPackError(
+                    f"No world packs found in {self.pack_dir}",
+                    code="empty_pack_dir",
+                    path=self.pack_dir,
+                )
+            )
+            return {}
+        for pack_root in pack_roots:
+            pack_file = pack_root / "pack.yaml"
+            if not pack_file.exists():
+                self._record_failure(
+                    WorldPackError(
+                        f"Pack manifest not found: {pack_file}",
+                        code="pack_manifest_not_found",
+                        pack_id=pack_root.name,
+                        path=pack_file,
+                    )
+                )
+                continue
+            try:
+                loaded = self._load_pack(pack_file)
+            except WorldPackError as exc:
+                self._record_failure(exc)
+                continue
+            if loaded.manifest.pack_id in packs:
+                self._record_failure(
+                    WorldPackError(
+                        f"Duplicate pack_id {loaded.manifest.pack_id!r} detected in {self.pack_dir}",
+                        code="duplicate_pack_id",
+                        pack_id=loaded.manifest.pack_id,
+                        path=pack_file,
+                    )
+                )
+                continue
             packs[loaded.manifest.pack_id] = loaded
         if not packs:
-            raise WorldPackError(
-                f"No world packs found in {self.pack_dir}",
-                code="empty_pack_dir",
-                path=self.pack_dir,
-            )
+            if not self.failures:
+                self._record_failure(
+                    WorldPackError(
+                        f"No world packs found in {self.pack_dir}",
+                        code="empty_pack_dir",
+                        path=self.pack_dir,
+                    )
+                )
         return packs
+
+    def _record_failure(self, exc: WorldPackError) -> None:
+        self.failures.append(PackCatalogFailure.from_error(exc))
 
     def _load_pack(self, manifest_path: Path) -> LoadedWorldPack:
         manifest_path = manifest_path.resolve()

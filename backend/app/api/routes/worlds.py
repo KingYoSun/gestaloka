@@ -43,10 +43,10 @@ def get_world_memories(
 def list_world_packs(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
-) -> dict[str, list[dict]]:
+) -> dict[str, object]:
     del user
     try:
-        return {"items": container.pack_registry.pack_summary_items()}
+        return container.pack_registry.public_catalog()
     except WorldPackError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.diagnostic()) from exc
 

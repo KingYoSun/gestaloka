@@ -9,6 +9,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.modules.world_pack.service import (
+    ENGINE_API_VERSION,
     FOLLOWUP_BRANCH_SLOTS,
     PackRegistry,
     WorldPackError,
@@ -191,23 +192,37 @@ def main() -> None:
 
         if args.command == "list":
             registry = get_pack_registry(settings)
-            payload = {
-                "pack_dir": str(pack_dir),
-                "items": [_pack_payload(pack) for pack in registry.list_packs()],
-            }
+            payload = registry.catalog_diagnostic(include_paths=True)
         elif args.command == "validate":
             if args.pack_id:
                 pack = load_pack_from_dir(settings.pack_dir, args.pack_id)
-                items = [_pack_payload(pack)]
+                payload = {
+                    "status": "ready",
+                    "pack_dir": str(pack_dir),
+                    "engine_api_version": ENGINE_API_VERSION,
+                    "pack_count": 1,
+                    "template_count": len(pack.manifest.world_templates),
+                    "failure_count": 0,
+                    "failures": [],
+                    "validated": [_pack_payload(pack)],
+                }
             else:
                 registry = get_pack_registry(settings)
-                items = [_pack_payload(pack) for pack in registry.list_packs()]
-            payload = {
-                "pack_dir": str(pack_dir),
-                "validated": items,
-            }
+                diagnostic = registry.catalog_diagnostic(include_paths=True)
+                payload = {
+                    **diagnostic,
+                    "validated": [_pack_payload(pack) for pack in registry.list_packs()],
+                }
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                if registry.failure_count:
+                    raise SystemExit(1)
+                return
         else:
             registry = get_pack_registry(settings)
+            if registry.status == "error":
+                payload = registry.catalog_diagnostic(include_paths=True)
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                raise SystemExit(1)
             scan_roots = (
                 [Path(item).resolve() for item in args.scan_roots]
                 if args.scan_roots
