@@ -1,297 +1,299 @@
-# GESTALOKA v2 汎用テキストMMOエンジン転換プラン
+# GESTALOKA v2 Shared World Core 計画
 
 最終更新: 2026-04-27
 
 ## 1. エグゼクティブサマリ
 
-GESTALOKA v2 は、特定の世界観に密結合したアプリケーションではなく、**same-world 前提の汎用テキストMMOエンジン**として再定義する。
+GESTALOKA v2 の engine pivot は完了済みである。完了済みの旧計画は
+`documents/archive/rebuild_plan_v2_completed_engine_pivot_2026-04-27.md` に退避した。
 
-この方針転換により、`Founders Reach` は engine 本体の特例ではなく、`packs/founders_reach/` に入る **bundled reference pack** として扱う。engine 側は `sessions / actors / events / memories / prompt schema / persistence / projection / verification` を担い、世界観固有の設定は **宣言型 world pack** へ分離する。
+この文書は、今後の現行計画として **Shared World Core** を定義する。
 
-現時点では、v2 の基盤 A〜D 相当、検証 hardening、engine pivot close-out、pack-aware realtime/admin/SP surface の close-out slice は完了している。次の主戦場は、新機能追加ではなく **release hardening / canary cutover completion** である。
+Shared World Core の目的は、特定世界観に密結合したシナリオ実装ではなく、**あるプレイヤーの行動が
+同一 `world_id` 内の世界状態・勢力・NPC の記憶と関係性・歴史へ影響し、その変化が他プレイヤーの
+体験へ還流する汎用テキスト MMO エンジン**を作ることである。
+
+`legacy/v1/documents/03_worldbuilding` は、実現したい世界観の規模感を確認するための参考資料として扱う。
+ただし、v1 のコード、スキーマ、ログ NPC 生成、ログ派遣、dispatch 語彙は v2 へ持ち込まない。
 
 ## 2. 固定済み前提
 
-| 項目 | v2の固定前提 | 備考 |
+| 項目 | v2 の固定前提 | 備考 |
 |---|---|---|
 | 世界モデル | プレイヤー/NPC/イベント/記憶は同一 `world_id` 名前空間に属する | cross-world は禁止 |
 | 正本 | PostgreSQL + pgvector | 主要状態、イベント、記憶、SP、監査の正本 |
 | グラフ | NebulaGraph は投影ストア | outbox 経由で再構築可能にする |
 | 認証境界 | OIDC adapter 境界の内側に閉じ込める | domain module から Keycloak 直接依存を作らない |
 | プロンプト | `prompts/` で管理 | Python/TypeScript 直書きは禁止 |
-| world pack | 宣言型のみ | 任意コード、任意 hook、任意 prompt schema は初期版では認めない |
-| 公式検証経路 | container-first | `make build-frontend` / `make frontend-e2e` / `make verify-v2` |
+| world pack | 宣言型のみ | 任意コード、任意 hook、任意 prompt schema は認めない |
+| SP | execution budget ledger | 世界内通貨、移動力、クエスト進行力として使わない |
 | legacy | `legacy/v1/` は凍結済み参考資料 | import / copy-forward しない |
 
-## 3. 現在地
+## 3. 目標像
 
-### 3.1 進捗サマリ
+v1 世界観の規模感は、階層世界、都市、企業、教団、危険領域、汚染や浄化、称号、評判、探索、歴史化が
+並走するシェアワールドである。v2 では、その世界観固有の語彙を engine に埋め込まず、以下の汎用能力として
+再構成する。
 
-| 区分 | 状態 | 現在の到達点 | 残課題 |
-|---|---|---|---|
-| A. foundation / repo hygiene | 完了 | same-world 前提、NebulaGraph 投影、Prompt Registry、SP、legacy 凍結が repo 全体に反映済み | なし |
-| B. data foundation | 完了 | PostgreSQL 正本、pgvector、outbox、NebulaGraph 投影、`world_id` invariant が実装済み | なし |
-| C. core domain slice | 完了 | session / actor / world_state / memory / event の same-world 基盤は動作中 | engine 化に向けた残ハードコード除去は継続 |
-| D. model router / prompt / eval baseline | 完了 | model lanes、Prompt Registry、structured output 検証、eval harness、pack regression gate の基盤あり | なし |
-| verification hardening | 完了 | `make build-frontend` / `make frontend-e2e` / `make verify-v2` / CI `verify-v2` を導入済み | なし |
-| G. baseline freeze | 完了 | `Founders Reach` の既存体験を golden path として維持しつつ棚卸し開始済み | 追加棚卸しは runtime 一般化と並走 |
-| H. pack contract | 完了 | `world_pack` module、`pack.yaml` contract、loader、discovery、version check、validator CLI/target を実装済み | なし |
-| I. runtime generalization | 完了 | session bootstrap、seed、NPC 初期化、prompt overlay、branch / scene / consequence / ambient は pack-aware 化済み。pack leak scan も `verify-v2` に固定済み | なし |
-| J. engine-first surface | 完了 | `GET /worlds/packs`、`POST /sessions` の `pack_id` / `world_template_id`、frontend pack selector を実装済み | なし |
-| K. prompt / eval / tooling | 完了 | pack overlay 解決、pack validation、engine/pack test 階層、pack leak scan、pack regression dataset、release checklist 統合を実装済み | なし |
-| L. generality proof | 完了 | `packs/ember_harbor/` で backend smoke / turn flow / world pack tests、frontend smoke E2E、pack regression を `verify-v2` に固定済み | なし |
-| E/F 再定義後フェーズ | 完了 | realtime/admin/SP/admin eval と release hardening / canary cutover completion は完了 | なし |
+- プレイヤー行動が、ローカルな turn 結果で終わらず、共有世界状態へ投影される。
+- 共有世界状態は、勢力、場所、NPC、噂、歴史、称号候補として蓄積される。
+- 蓄積された変化は、別プレイヤーの session state、retrieval、prompt context、choice generation、
+  ambient NPC behavior に反映される。
+- pack は、engine の抽象語彙を世界観固有の意味へ写像する。
 
-### 3.2 実装済みの engine pivot first slice
-
-- `backend/app/modules/world_pack/` に pack registry と loader を追加済み
-- `packs/founders_reach/` を bundled reference pack として切り出し済み
-- `packs/ember_harbor/` を bundled sample pack として追加済み
-- `World.state` に `pack_id` / `world_template_id` を保持する migration を追加済み
-- `GET /worlds/packs` により pack/template catalog を取得可能
-- `POST /sessions` は `pack_id` / `world_template_id` 指定で world bootstrap 可能
-- frontend の session start UI は pack/template 選択式に更新済み
-- prompt overlay は active pack/template に応じて解決される
-- `PACK_DIR` により filesystem ベースの pack discovery を切り替え可能
-- realtime/admin/SP/eval/release gate の surface は pack/template context を表示し、eval case result と shadow failure も `pack_context` を返す
-- `eval.run` trace は pack/template dimension を持つ
-- release checklist は product cutover 用の `cutover_status` と make target ベースの runbook を返す
-- bundled pack regression authoring guide を `documents/world-pack-regression-authoring.md` に固定済み
-- external `PACK_DIR` 運用時の catalog diagnostics、pack root / manifest 境界検証、catalog error 時の session 起動抑止、admin failure severity 表示を hardening 済み
-
-### 3.3 現時点の評価
-
-現状の v2 は、もはや `Founders Reach` 専用アプリではなく、bundled pack を持つ engine-first runtime である。正しい表現は以下である。
-
-- **engine 基盤** は汎用 engine として gate 固定済み
-- **Founders Reach / Ember Harbor** は bundled pack regression として release checklist に入っている
-- **pack catalog / admin filtering UX** は admin scope / release / eval / trace の pack-aware filtering を整理済み
-- **observability dashboard long-run cleanup** は、30日保持の履歴 snapshot と admin timeline まで実装済み
-- **external pack import/export の運用設計** は完了済み
-- **pack catalog 権限・公開範囲の整理** は、public playable catalog と Ops diagnostic catalog の分離まで完了
-- **multi-pack regression scale-out の所要時間削減** は完了済み
-- **pack catalog の管理境界** は当面インスタンス Ops admin のみとし、pack 別 admin / operator 権限設計は必要になるまで追加しない
-
-## 4. 目標アーキテクチャ
-
-### 4.1 engine core と world pack の責務分離
+## 4. engine と pack の責務
 
 | 層 | 責務 |
 |---|---|
-| engine core | `sessions`, `actors`, `events`, `memories`, `relationships`, `same-world invariants`, `persistence`, `projection`, `prompt schema`, `verification`, `model lanes` |
-| world pack | `world template`, `starter roster`, `locations`, `factions`, `quest graph`, `scene graph`, `branch graph`, `consequence table`, `semantic tags`, `prompt overlays`, `bootstrap copy` |
+| engine core | shared consequence projection、public world state、faction state、NPC memory、relationship、history canonization、title recognition、retrieval、prompt context、same-world invariant、projection、verification |
+| world pack | 階層世界、都市、地域、勢力、危険領域、汚染や浄化に相当する世界軸、称号、世界観語彙、threshold、prompt overlay、starter content |
 
-### 4.2 pack contract
+engine 側の行動語彙は、世界観から独立した抽象タグとして扱う。
 
-pack manifest は少なくとも以下を持つ。
+- `help`
+- `harm`
+- `investigate`
+- `trade`
+- `negotiate`
+- `protect`
+- `explore`
+- `restore`
+- `destabilize`
+- `none`
 
-- `pack_id`
-- `version`
-- `engine_api_version`
-- `display_name`
-- `world_templates`
-- `semantic_tags`
-- `prompt_overlays`
-- `content_refs`
+pack はこれらを、例えば「浄化」「企業支援」「記憶保存」「歪みの拡大」「公共信頼の上昇」のような
+世界観固有の変化へ写像する。
 
-pack は engine の出力契約を変更しない。`session.turn_resolution` や `council.*` の `prompt_id` と schema は engine 所有とし、pack は lore/tone/context の overlay だけを注入する。
+## 5. pack contract 拡張方針
 
-### 4.3 engine-first 公開インターフェース
+現在の pack contract は opening slice に寄っており、`starter_location`、`lore_location`、
+`followup_location`、starter/followup quest、formal/undercurrent branch を中心にしている。
+Shared World Core では、これを以下の宣言へ拡張する。
 
-現時点の主な engine-first interface は以下。
+### 5.1 `world_axes`
 
-- `GET /worlds/packs`
-- `POST /sessions`
-  - `world_id`
-  - `pack_id`
-  - `world_template_id`
-  - `player_display_name`
-  - `world_overrides`
-- `PACK_DIR`
-- frontend の pack/template selector
-- `make build-frontend`
-- `make frontend-e2e`
-- `make verify-v2`
-- `make eval-pack-regressions`
-- `make pack-export`
-- `make pack-import`
-- GitHub Actions `verify-v2`
+共有世界の public state meter を定義する。
 
-## 5. 更新後のフェーズ計画
+例:
 
-### Phase A-D: v2 foundation
+- 安定度
+- 汚染度
+- 治安
+- 資源不足
+- 公共信頼
+- 忘却進行
 
-状態: 完了
+各 axis は、初期値、範囲、表示名、pack 固有説明、threshold、session context への露出方針を持つ。
 
-完了済み内容:
+### 5.2 `factions`
 
-- same-world 制約を v2 の固定前提にした
-- PostgreSQL + pgvector を正本に固定した
-- NebulaGraph を outbox 投影に固定した
-- Prompt Registry / model lanes / eval harness の基盤を導入した
-- SP ledger と observability の基礎を導入した
+複数勢力を定義する。
 
-### Phase V: verification hardening
+各 faction は、方針、影響範囲、初期 standing、勢力間関係、world_axes への関心、NPC や location との
+紐付きを持つ。
 
-状態: 完了
+### 5.3 `locations`
 
-完了済み内容:
+location 定義を opening slice 用の最低限から、共有世界用の地理・社会状態へ拡張する。
 
-- `make build-frontend` を container-first に統一
-- `make frontend-e2e` を compose ベースに整備
-- `make verify-v2` を canonical local/CI entrypoint に設定
-- `verify-v2.yml` による GitHub Actions 実行を追加
+各 location は、階層、地域、種類、危険度、施設、公開状態、発見条件、関連 faction、関連 world_axes、
+local rumor surface を持つ。
 
-### Phase G-H-J: engine pivot first slice
+### 5.4 `npc_memory_policy`
 
-状態: 完了
+NPC が何を記憶し、どの程度 session context へ露出するかを定義する。
 
-完了済み内容:
+対象:
 
-- `Founders Reach` を core から切り出して `packs/founders_reach/` へ移行
-- pack loader / discovery / version compatibility check を追加
-- sample pack `ember_harbor` を追加
-- session bootstrap を `pack_id` / `world_template_id` 中心に変更
-- frontend を pack/template 中心の起動導線へ切り替え
+- プレイヤーとの直接 interaction
+- 同じ location で起きた public event
+- faction に関わる event
+- history に昇格した event
+- NPC 自身の関係性変化
 
-### Phase I: runtime generalization
+### 5.5 `history_rules`
 
-状態: 完了
+出来事がどの段階で歴史化されるかを定義する。
 
-完了済み内容:
+段階:
 
-1. `world_state`, `scene`, `branch`, `consequence`, `ambient`, `gm_council` の runtime は pack data を参照する
-2. chapter key / branch label / reward effect / stage key は pack role / pack data から解決する
-3. engine 層の bundled pack 固有語混入を `make scan-pack-leaks` で検出する
-4. `make verify-v2` が pack leak scan を含む
+- local rumor
+- regional record
+- faction record
+- world canon
 
-完了済み条件:
+history に昇格した event は、他プレイヤーの session context、admin timeline、world memory retrieval、
+title recognition に利用される。
 
-- engine module 側に `Founders Reach` 固有名詞や固有 stage key が残らない
-- progression と branch 遷移が pack 宣言だけで成立する
-- `make verify-v2` が pack leak scan を含んで green になる
+### 5.6 `title_rules`
 
-### Phase K: prompt / eval / tooling generalization
+世界がプレイヤーの行動を承認する条件を定義する。
 
-状態: 完了
+title は、単なる装飾ではなく、NPC 反応、faction standing、prompt context、限定 choice の条件として
+扱えるようにする。ただし初期実装では数値戦闘力や課金力には接続しない。
 
-完了済み内容:
+### 5.7 `consequence_rules`
 
-1. `make verify-v2` に pack validation と pack leak scan を固定した
-2. eval harness を `engine core dataset` と `pack regression dataset` の二段構成へ拡張した
-3. bundled pack ごとの regression dataset を `make eval-pack-regressions` で隔離 SQLite DB 上に実行できるようにした
-4. release checklist に `turn_resolution_founders_regression` / `turn_resolution_ember_regression` を組み込んだ
+engine の抽象 action tag と outcome を、pack 固有の世界変化へ写像する。
 
-完了済み条件:
+対象:
 
-- engine suite が任意 pack に対して再利用できる
-- `Founders Reach` 固有の narrative regression は pack-scoped suite に隔離される
-- `Ember Harbor` も pack-scoped regression を持つ
+- world_axes delta
+- faction standing / influence delta
+- location public state delta
+- NPC memory draft
+- relationship delta
+- rumor draft
+- history candidate
+- title progress
 
-### Phase L: generality proof
+## 6. session への還流
 
-状態: 完了
+Shared World Core の session state は、現在の player-local state に加えて、他プレイヤー由来の共有状態を
+含む。
 
-完了済み内容:
+- 周辺の噂
+- 最近の local / regional / world history
+- faction pressure
+- location public state
+- world_axes snapshot
+- NPC が覚えている関連出来事
+- 他プレイヤー行動由来の memory retrieval hit
 
-1. `ember_harbor` で engine 共通テストを通す
-2. `ember_harbor` 用の smoke E2E を追加済み
-3. `Founders Reach` と異なる構造の pack でも bootstrap と progression が動くことを確認済み
-4. `make verify-v2` で pack regression と smoke E2E を継続的に固定済み
+これにより、プレイヤーは同じ世界で起きた変化を、説明的なニュース画面ではなく、通常の物語・NPC 反応・
+選択肢・場所の雰囲気として受け取る。
 
-完了済み条件:
+## 7. ロードマップ
 
-- 2 本以上の structurally different pack が同じ engine suite を通る
-- 2 本目 pack で smoke E2E が green
-- 上記が `make verify-v2` の canonical gate で維持される
+### Phase 1: plan refresh
 
-### Phase E/F 再定義: engine pivot 後の product cutover
+状態: 着手
 
-状態: 完了
+- 完了済み engine pivot plan を archive する。
+- `rebuild_plan_v2.md` を Shared World Core の現行計画へ差し替える。
+- v1 worldbuilding は規模感参照、v1 実装は持ち込まないことを明記する。
 
-再定義後の内容:
+完了条件:
 
-- realtime/admin/SP を pack-aware surface に寄せる
-- canary / shadow / release gate を engine-first contract に揃える
-- release checklist を engine core + bundled packs 前提で再整理する
+- archive ファイルが存在する。
+- root の `rebuild_plan_v2.md` が Shared World Core 計画になっている。
+- `make check-legacy` と `make scan-v1-terms` が通る。
 
-完了済み内容:
+### Phase 2: shared-world pack schema
 
-1. realtime payload と idle pass notification は `world_context` を必須化済み
-2. admin world views / SP ledger / release checklist / eval run view は pack/template 表示へ寄せ済み
-3. eval case result と release checklist shadow failure は `pack_context` を返す
-4. `eval.run` trace は `eval.pack_ids` / `eval.world_template_ids` を記録する
-5. release checklist は smoke / failure injection / shadow replay / bundled pack regressions / canary health / outbox / SP invariant を product cutover 条件として固定する
-6. admin UI は verdict / blocked reasons / pack regressions / shadow failures / canary and SLO / runbook の順で release gate を表示する
-7. 新 pack 追加時の regression dataset / smoke E2E / validation 手順を `documents/world-pack-regression-authoring.md` に固定する
+状態: 未着手
 
-### Phase M: external pack import/export operations
+- `world_axes`、multi-faction、拡張 location、NPC memory policy、history rules、title rules、
+  consequence rules を pack contract に追加する。
+- 既存 bundled pack は互換を維持しつつ、最低限の shared-world section を追加する。
+- pack validation は、参照整合性、threshold、action tag、location/faction/NPC 参照を検証する。
 
-状態: 完了
+完了条件:
 
-完了済み内容:
+- opening slice 以外の共有世界状態を pack で宣言できる。
+- `make pack-validate` が新 contract を検証する。
+- 既存 pack regression が green のまま残る。
 
-1. `world_pack export --pack <pack_id> --output <archive.tar.gz>` を追加し、検証済み pack を単一 root の `.tar.gz` 成果物として出力する
-2. `world_pack import --archive <archive.tar.gz> [--replace]` を追加し、一時展開、archive 境界検証、pack contract 検証の後だけ `PACK_DIR/<pack_id>` へ配置する
-3. tar path traversal / absolute path / symlink / hard link / 複数 root / root と `pack_id` 不一致を拒否する
-4. `make pack-export` / `make pack-import` と `documents/world-pack-operations.md` により external pack の受け渡し手順を固定する
+### Phase 3: shared consequence projection
 
-### Phase N: pack catalog visibility and permissions
+状態: 未着手
 
-状態: 完了
+- turn resolution の結果から abstract action tag と consequence signal を抽出する。
+- pack の consequence rules に従い、world_axes、faction state、location public state、NPC memory、
+  relationship、history candidate へ投影する。
+- 投影結果は PostgreSQL を正本とし、NebulaGraph は outbox 経由で再構築可能な投影に留める。
 
-完了済み内容:
+完了条件:
 
-1. pack/template に `visibility` と `publish_status` の最小 metadata を追加した
-2. `GET /worlds/packs` と `GET /worlds/playable` は public/playable かつ catalog failure のない template だけを返す
-3. `GET /ops/world-packs` は既存のインスタンス Ops admin 境界のまま hidden/unavailable metadata、diagnostics、filesystem path を返す
-4. `POST /sessions` は private / draft / archived / failed pack-template を `world_unavailable` として拒否する
-5. 公開範囲ポリシーを `documents/adr/ADR-001-pack-catalog-visibility.md` に固定した
-6. pack 別 admin / operator role、pack-scoped RBAC、追加 permission schema は当面導入しない
+- 同一 `world_id` 内の別 actor の行動が、共有 state として永続化される。
+- cross-world 参照が発生しない。
+- 失敗時に turn 自体と projection retry の境界が明確である。
 
-## 6. 直近の実行順
+### Phase 4: cross-player feedback loop
 
-### 6.1 直近で完了した縦切り
+状態: 未着手
 
-1. **multi-pack regression scale-out の所要時間削減**
-   - `make verify-v2-profile` により official gate の所要時間を JSON と標準出力に固定した
-   - `eval_harness pack-regressions` により bundled pack regression を 1 プロセスの summary runner に集約した
-   - `frontend-e2e` は `E2E_SPEC` 指定で spec 単位に実行できるようにした
-   - Ember Harbor smoke は追加 pack 向けの最小 smoke に縮小した
-   - CI `verify-v2` は backend/static、pack regression、frontend build、frontend E2E matrix に分割した
+- 共有 state を session state、retrieval query、prompt context、choice generation、ambient NPC behavior、
+  rumor surface に反映する。
+- 別プレイヤー由来の変化は、過剰に説明せず、場所の空気、NPC の記憶、噂、歴史断片として提示する。
+- session payload と admin surface は、共有 state の由来を追跡できる trace を持つ。
 
-### 6.2 Deferred non-goal
+完了条件:
 
-1. pack catalog の pack 別 admin / operator 権限設計は当面の要件から外す
-2. pack ごとの運用担当者、operator、委譲管理、tenant 分離は今回の範囲外とする
-3. 将来必要になった場合は、別 ADR またはテストで pack-scoped permission model を新規に固定する
+- player A の行動が、player B の session context に意味のある形で現れる regression が存在する。
+- 共有 state が prompt context に入り、LLM 監査ログで確認できる。
+- world_id invariant と pack context が全 payload で維持される。
 
-## 7. 完了条件
+### Phase 5: history canonization and titles
 
-汎用テキストMMOエンジンへの転換が完了したと見なす条件は以下。
+状態: 未着手
 
-1. engine module が `Founders Reach` 固有名詞・固有 stage key・固有 branch key に依存していない
-2. `Founders Reach` は 1 本の bundled reference pack としてのみ存在する
-3. 2 本目の structurally different pack が engine 共通テストと smoke E2E を通る
-4. prompt overlay は pack データだけで差し替わり、pack 側に任意コードがない
-5. `make verify-v2` と CI が engine-first contract を前提に green である
-6. その後に realtime/admin/SP/release gate の再切替が pack-aware で進められる
+- history candidate を local rumor、regional record、faction record、world canon へ昇格する。
+- title rules により、プレイヤーの行動パターンや偉業を称号候補として蓄積する。
+- title は初期段階では narrative recognition と NPC 反応の文脈として扱う。
 
-## 8. 現在の公式検証経路
+完了条件:
 
-実行コマンドは以下に固定する。
+- world canon に昇格した出来事が、他 session の retrieval と admin timeline に現れる。
+- title recognition の regression がある。
+- title が SP や課金力と結びつかない。
 
-- `PYTHONPATH=backend python -m pytest tests/backend`
-- `make scan-v1-terms`
-- `make check-legacy`
-- `make build-frontend`
-- `make frontend-e2e`
-- `make verify-v2`
-- `make scan-pack-leaks`
-- `make eval-pack-regressions`
+### Phase 6: GESTALOKA-scale reference pack slice
 
-`make verify-v2` は local / CI の公式入口とし、frontend build や Playwright smoke は host `npm` ではなく Compose 経由を正とする。
+状態: 未着手
 
-## 9. この文書の役割
+- `legacy/v1/documents/03_worldbuilding` を参考に、GESTALOKA 世界観の規模感を持つ reference pack slice を作る。
+- 初期 slice は、階層世界、複数勢力、危険領域、汚染/浄化相当の world axis、歴史化、称号候補を含む。
+- ログ NPC 生成、ログ派遣、dispatch は含めない。
 
-この文書は、v2 の詳細仕様書ではなく、**現在の方針と移行順序を固定するための作業計画**である。固定済みの土台は ADR とコード/テストを優先し、この文書は次に何をやるべきか、何が完了したかを追うために使う。
+完了条件:
+
+- 既存 starter pack より構造的に大きい pack が、同じ engine suite を通る。
+- world_axes と faction/history/title の regression が存在する。
+- v1 コードやスキーマを copy-forward していない。
+
+### Phase 7: verification hardening
+
+状態: 未着手
+
+- cross-player feedback、shared state drift、NPC memory persistence、pack-defined world-axis behavior の
+  regression / eval gate を追加する。
+- release checklist に Shared World Core の判定項目を追加する。
+- observability は pack/template/world axis/faction/history dimension で確認できるようにする。
+
+完了条件:
+
+- `make verify-v2` が Shared World Core の regression を含む。
+- release checklist が shared-world regression failure を promotion blocker として扱う。
+- long-run で shared state drift を検知できる。
+
+## 8. 検証
+
+計画更新のみの段階では、以下を実行する。
+
+```bash
+make check-legacy
+make scan-v1-terms
+```
+
+実装フェーズ開始後は、触った層に応じて以下を実行する。
+
+```bash
+PYTHONPATH=backend python -m pytest tests/backend
+make pack-validate
+make eval-pack-regressions
+make verify-v2
+```
+
+## 9. 明示的にやらないこと
+
+- `legacy/v1/` からの import
+- v1 schema の copy-forward
+- cross-world 参照
+- Neo4j / neomodel の再導入
+- Socket.IO 前提の復活
+- ログ NPC 生成の復活
+- ログ派遣 / dispatch の復活
+- SP を世界内通貨、移動力、クエスト進行力として扱うこと
+- 廃止済み/存在しない固定 model ID への依存
+
