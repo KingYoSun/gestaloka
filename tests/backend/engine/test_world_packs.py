@@ -101,10 +101,20 @@ def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_header
     response = client.get("/worlds/packs", headers=auth_headers)
 
     assert response.status_code == 200
-    items = response.json()["items"]
+    payload = response.json()
+    assert payload["status"] == "ready"
+    assert "failure_count" not in payload
+    assert "failures" not in payload
+    assert "pack_dir" not in payload
+    items = payload["items"]
     assert {item["pack_id"] for item in items} >= {"founders_reach", "ember_harbor"}
     ember = next(item for item in items if item["pack_id"] == "ember_harbor")
+    assert "root_dir" not in ember
+    assert ember["visibility"] == "public"
+    assert ember["publish_status"] == "playable"
     assert ember["world_templates"][0]["template_id"] == "ember_harbor"
+    assert ember["world_templates"][0]["effective_visibility"] == "public"
+    assert ember["world_templates"][0]["effective_publish_status"] == "playable"
 
 
 def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):
@@ -118,7 +128,11 @@ def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):
     assert payload["template_count"] >= 2
     ember = next(item for item in payload["items"] if item["pack_id"] == "ember_harbor")
     assert ember["root_dir"].endswith("/packs/ember_harbor")
+    assert ember["visibility"] == "public"
+    assert ember["publish_status"] == "playable"
     assert ember["world_templates"][0]["template_id"] == "ember_harbor"
+    assert ember["world_templates"][0]["effective_visibility"] == "public"
+    assert ember["world_templates"][0]["effective_publish_status"] == "playable"
 
 
 def test_pack_registry_exposes_branch_metadata_from_pack_contract():
@@ -244,6 +258,156 @@ def test_pack_registry_reports_degraded_external_pack_dir_and_keeps_valid_packs(
         registry.get_pack("founders_reach")
 
 
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("visibility", "friends_only"),
+        ("publish_status", "staging"),
+    ],
+)
+def test_pack_registry_rejects_invalid_catalog_visibility_metadata(
+    tmp_path: Path,
+    field_name: str,
+    value: str,
+):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload[field_name] = value
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_manifest"
+    assert field_name in failure["message"]
+
+
+def test_public_catalog_hides_private_packs_and_ops_catalog_keeps_them(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["visibility"] = "private"
+        payload["world_templates"][0]["visibility"] = "private"  # type: ignore[index]
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
+    try:
+        public_response = test_client.get("/worlds/packs", headers=auth_headers)
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        ops_response = test_client.get("/ops/world-packs", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "ember_harbor",
+                "pack_id": "ember_harbor",
+                "world_template_id": "ember_harbor",
+                "world_name": "Hidden Pack World",
+            },
+            headers=auth_headers,
+        )
+    finally:
+        test_client.close()
+
+    assert public_response.status_code == 200
+    assert public_response.json()["status"] == "error"
+    assert public_response.json()["pack_count"] == 0
+    assert public_response.json()["template_count"] == 0
+    assert public_response.json()["items"] == []
+    assert "failure_count" not in public_response.json()
+
+    assert playable_response.status_code == 200
+    assert playable_response.json()["status"] == "error"
+    assert playable_response.json()["world_count"] == 0
+    assert playable_response.json()["items"] == []
+
+    assert ops_response.status_code == 200
+    ops_payload = ops_response.json()
+    assert ops_payload["status"] == "ready"
+    assert ops_payload["items"][0]["pack_id"] == "ember_harbor"
+    assert ops_payload["items"][0]["visibility"] == "private"
+    assert ops_payload["items"][0]["root_dir"].endswith("/packs/ember_harbor")
+
+    assert session_response.status_code == 503
+    assert session_response.json()["detail"]["error"] == "world_unavailable"
+
+
+@pytest.mark.parametrize("publish_status", ["draft", "archived"])
+def test_public_catalog_hides_unplayable_templates_and_session_rejects_them(
+    tmp_path: Path,
+    auth_headers,
+    publish_status: str,
+):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["world_templates"][0]["publish_status"] = publish_status  # type: ignore[index]
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
+    try:
+        public_response = test_client.get("/worlds/packs", headers=auth_headers)
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        ops_response = test_client.get("/ops/world-packs", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "ember_harbor",
+                "pack_id": "ember_harbor",
+                "world_template_id": "ember_harbor",
+                "world_name": "Unplayable Template World",
+            },
+            headers=auth_headers,
+        )
+    finally:
+        test_client.close()
+
+    assert public_response.status_code == 200
+    assert public_response.json()["status"] == "error"
+    assert public_response.json()["items"] == []
+    assert playable_response.json()["items"] == []
+    assert ops_response.json()["items"][0]["world_templates"][0]["effective_publish_status"] == publish_status
+    assert session_response.status_code == 503
+    assert session_response.json()["detail"]["error"] == "world_unavailable"
+
+
+def test_template_catalog_metadata_overrides_pack_defaults(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["visibility"] = "private"
+        payload["publish_status"] = "draft"
+        payload["world_templates"][0]["visibility"] = "public"  # type: ignore[index]
+        payload["world_templates"][0]["publish_status"] = "playable"  # type: ignore[index]
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
+    try:
+        public_response = test_client.get("/worlds/packs", headers=auth_headers)
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "ember_harbor",
+                "pack_id": "ember_harbor",
+                "world_template_id": "ember_harbor",
+                "world_name": "Template Override World",
+            },
+            headers=auth_headers,
+        )
+    finally:
+        test_client.close()
+
+    assert public_response.status_code == 200
+    public_payload = public_response.json()
+    assert public_payload["status"] == "ready"
+    assert public_payload["items"][0]["pack_id"] == "ember_harbor"
+    assert public_payload["items"][0]["visibility"] == "private"
+    assert public_payload["items"][0]["world_templates"][0]["effective_visibility"] == "public"
+    assert public_payload["items"][0]["world_templates"][0]["effective_publish_status"] == "playable"
+    assert playable_response.json()["items"][0]["world_id"] == "ember_harbor"
+    assert session_response.status_code == 200
+
+
 def test_pack_registry_reports_empty_and_not_directory_pack_dir(tmp_path: Path):
     empty_dir = tmp_path / "empty-packs"
     empty_dir.mkdir()
@@ -314,10 +478,14 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
 
     assert public_response.status_code == 200
     public_payload = public_response.json()
-    assert public_payload["status"] == "degraded"
-    assert public_payload["failure_count"] == 1
+    assert public_payload["status"] == "ready"
+    assert public_payload["pack_count"] == 1
+    assert public_payload["template_count"] == 1
+    assert "failure_count" not in public_payload
     assert "failures" not in public_payload
+    assert "pack_dir" not in public_payload
     assert [item["pack_id"] for item in public_payload["items"]] == ["ember_harbor"]
+    assert "root_dir" not in public_payload["items"][0]
 
     assert admin_response.status_code == 200
     admin_payload = admin_response.json()

@@ -22,6 +22,8 @@ FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
 PACK_YAML_SUFFIXES = {".yaml", ".yml"}
 PACK_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,119}$")
 PACK_ARCHIVE_SUFFIX = ".tar.gz"
+PackVisibility = Literal["public", "private"]
+PackPublishStatus = Literal["playable", "draft", "archived"]
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
 _ACTIVE_PACK_DIR: Path | None = None
@@ -57,6 +59,8 @@ class TemplateSummary(BaseModel):
     template_id: str = Field(min_length=1, max_length=120)
     display_name: str = Field(min_length=1, max_length=120)
     summary: str = ""
+    visibility: PackVisibility | None = None
+    publish_status: PackPublishStatus | None = None
 
 
 class PackManifest(BaseModel):
@@ -64,6 +68,8 @@ class PackManifest(BaseModel):
     version: str = Field(min_length=1, max_length=32)
     engine_api_version: str = Field(min_length=1, max_length=16)
     display_name: str = Field(min_length=1, max_length=120)
+    visibility: PackVisibility = "public"
+    publish_status: PackPublishStatus = "playable"
     world_templates: list[TemplateSummary] = Field(min_length=1)
     semantic_tags: list[str] = Field(default_factory=list)
     prompt_overlays: list[str] = Field(default_factory=list)
@@ -406,30 +412,45 @@ class PackRegistry:
     def get_template(self, pack_id: str, template_id: str) -> WorldTemplateDefinition:
         return self.get_pack(pack_id).template(template_id)
 
-    def pack_summary_items(self) -> list[dict[str, Any]]:
+    def pack_summary_items(self, *, public_only: bool = False) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for pack in self.list_packs():
+            template_summaries = list(pack.manifest.world_templates)
+            if public_only:
+                template_summaries = [
+                    template
+                    for template in template_summaries
+                    if _template_is_public_playable(self, pack, template.template_id)
+                ]
+                if not template_summaries:
+                    continue
             items.append(
                 {
                     "pack_id": pack.manifest.pack_id,
                     "version": pack.manifest.version,
                     "engine_api_version": pack.manifest.engine_api_version,
                     "display_name": pack.manifest.display_name,
+                    "visibility": pack.manifest.visibility,
+                    "publish_status": pack.manifest.publish_status,
                     "semantic_tags": list(pack.manifest.semantic_tags),
                     "content_refs": dict(pack.manifest.content_refs),
-                    "world_templates": [template.model_dump() for template in pack.manifest.world_templates],
+                    "world_templates": [
+                        _template_summary_payload(pack, template)
+                        for template in template_summaries
+                    ],
                 }
             )
         return items
 
     def public_catalog(self) -> dict[str, Any]:
+        items = self.pack_summary_items(public_only=True)
+        template_count = sum(len(item["world_templates"]) for item in items)
         return {
-            "status": self.status,
+            "status": "ready" if template_count else "error",
             "engine_api_version": ENGINE_API_VERSION,
-            "pack_count": len(self._packs),
-            "template_count": sum(len(pack.manifest.world_templates) for pack in self.list_packs()),
-            "failure_count": self.failure_count,
-            "items": self.pack_summary_items(),
+            "pack_count": len(items),
+            "template_count": template_count,
+            "items": items,
         }
 
     def catalog_diagnostic(self, *, include_paths: bool = True) -> dict[str, Any]:
@@ -441,8 +462,13 @@ class PackRegistry:
                 "version": pack.manifest.version,
                 "engine_api_version": pack.manifest.engine_api_version,
                 "display_name": pack.manifest.display_name,
+                "visibility": pack.manifest.visibility,
+                "publish_status": pack.manifest.publish_status,
                 "semantic_tags": list(pack.manifest.semantic_tags),
-                "world_templates": [template.model_dump() for template in pack.manifest.world_templates],
+                "world_templates": [
+                    _template_summary_payload(pack, template)
+                    for template in pack.manifest.world_templates
+                ],
             }
             if include_paths:
                 item["root_dir"] = str(pack.root_dir)
@@ -838,6 +864,36 @@ def _pack_has_failures(registry: PackRegistry, pack_id: str) -> bool:
     return any(failure.pack_id == pack_id for failure in registry.failures)
 
 
+def _effective_template_visibility(pack: LoadedWorldPack, template_summary: TemplateSummary) -> PackVisibility:
+    return template_summary.visibility or pack.manifest.visibility
+
+
+def _effective_template_publish_status(pack: LoadedWorldPack, template_summary: TemplateSummary) -> PackPublishStatus:
+    return template_summary.publish_status or pack.manifest.publish_status
+
+
+def _template_is_public_playable(registry: PackRegistry, pack: LoadedWorldPack, template_id: str) -> bool:
+    template_summary = next(
+        (item for item in pack.manifest.world_templates if item.template_id == template_id),
+        None,
+    )
+    if template_summary is None:
+        return False
+    return (
+        _effective_template_visibility(pack, template_summary) == "public"
+        and _effective_template_publish_status(pack, template_summary) == "playable"
+        and not _pack_has_failures(registry, pack.manifest.pack_id)
+    )
+
+
+def _template_summary_payload(pack: LoadedWorldPack, template_summary: TemplateSummary) -> dict[str, Any]:
+    return {
+        **template_summary.model_dump(),
+        "effective_visibility": _effective_template_visibility(pack, template_summary),
+        "effective_publish_status": _effective_template_publish_status(pack, template_summary),
+    }
+
+
 def _world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack, WorldTemplateDefinition]]:
     entries: list[tuple[LoadedWorldPack, WorldTemplateDefinition]] = []
     for pack in registry.list_packs():
@@ -846,10 +902,18 @@ def _world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack
     return entries
 
 
+def _public_world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack, WorldTemplateDefinition]]:
+    return [
+        (pack, template)
+        for pack, template in _world_catalog_entries(registry)
+        if _template_is_public_playable(registry, pack, template.template_id)
+    ]
+
+
 def resolve_catalog_world(registry: PackRegistry, world_id: str) -> tuple[LoadedWorldPack, WorldTemplateDefinition]:
     matches = [
         (pack, template)
-        for pack, template in _world_catalog_entries(registry)
+        for pack, template in _public_world_catalog_entries(registry)
         if template_world_id(template) == world_id
     ]
     if not matches:
@@ -878,21 +942,20 @@ def pack_context_payload(pack: LoadedWorldPack, template: WorldTemplateDefinitio
 
 def playable_world_catalog(registry: PackRegistry) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
-    for pack, template in _world_catalog_entries(registry):
+    for pack, template in _public_world_catalog_entries(registry):
         world_id = template_world_id(template)
-        item_status = "unavailable" if _pack_has_failures(registry, pack.manifest.pack_id) else "playable"
         items.append(
             {
                 "world_id": world_id,
                 "display_name": str((template.world or {}).get("default_name") or template.display_name),
                 "summary": template.summary,
                 "health_url": f"/worlds/{world_id}/health",
-                "status": item_status,
+                "status": "playable",
                 "pack_context": pack_context_payload(pack, template),
             }
         )
     return {
-        "status": "ready" if any(item["status"] == "playable" for item in items) else "error",
+        "status": "ready" if items else "error",
         "engine_api_version": ENGINE_API_VERSION,
         "world_count": len(items),
         "items": sorted(items, key=lambda item: (item["display_name"], item["world_id"])),

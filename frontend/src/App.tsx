@@ -106,12 +106,18 @@ type WorldPackItem = {
   version: string;
   engine_api_version: string;
   display_name: string;
+  visibility: "public" | "private";
+  publish_status: "playable" | "draft" | "archived";
   semantic_tags: string[];
-  content_refs: Record<string, string>;
+  content_refs?: Record<string, string>;
   world_templates: Array<{
     template_id: string;
     display_name: string;
     summary: string;
+    visibility?: "public" | "private" | null;
+    publish_status?: "playable" | "draft" | "archived" | null;
+    effective_visibility: "public" | "private";
+    effective_publish_status: "playable" | "draft" | "archived";
   }>;
 };
 
@@ -120,7 +126,6 @@ type WorldPackCatalog = {
   engine_api_version: string;
   pack_count: number;
   template_count: number;
-  failure_count: number;
   items: WorldPackItem[];
 };
 
@@ -1320,7 +1325,7 @@ function App() {
   const [me, setMe] = useState<AuthMe | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [wallet, setWallet] = useState<SPWallet | null>(null);
-  const [worldId, setWorldId] = useState("ember_harbor");
+  const [worldId, setWorldId] = useState("");
   const [opsWorldId, setOpsWorldId] = useState("");
   const [playableWorlds, setPlayableWorlds] = useState<PlayableWorldItem[]>([]);
   const [worldCatalogStatus, setWorldCatalogStatus] = useState("unknown");
@@ -3021,8 +3026,16 @@ function App() {
                       {item.pack_id} / {item.version} / {item.engine_api_version}
                     </span>
                     <span>
+                      visibility: {item.visibility} / publish: {item.publish_status}
+                    </span>
+                    <span>
                       templates ({item.world_templates.length}):{" "}
-                      {item.world_templates.map((template) => template.display_name).join(", ")}
+                      {item.world_templates
+                        .map(
+                          (template) =>
+                            `${template.display_name} (${template.effective_visibility}/${template.effective_publish_status})`,
+                        )
+                        .join(", ")}
                     </span>
                     <span>tags: {item.semantic_tags.join(", ") || "none"}</span>
                     <span>
