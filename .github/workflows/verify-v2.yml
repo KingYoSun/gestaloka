@@ -10,9 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  verify-v2:
+  backend-static:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -34,5 +34,64 @@ jobs:
       - name: Prepare environment file
         run: cp .env.example .env
 
-      - name: Run verify-v2
-        run: make verify-v2
+      - name: Run backend and static gates
+        run: |
+          /usr/bin/time -p make backend-test
+          /usr/bin/time -p make pack-validate
+          /usr/bin/time -p make scan-pack-leaks
+          /usr/bin/time -p make scan-v1-terms
+          /usr/bin/time -p make check-legacy
+
+  eval-pack-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install backend dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e './backend[dev]'
+
+      - name: Prepare environment file
+        run: cp .env.example .env
+
+      - name: Run pack regressions
+        run: /usr/bin/time -p make eval-pack-regressions
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare environment file
+        run: cp .env.example .env
+
+      - name: Build frontend
+        run: /usr/bin/time -p make build-frontend
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        spec:
+          - /workspace/tests/e2e/founders-reach-regression.spec.ts
+          - /workspace/tests/e2e/ember-harbor-smoke.spec.ts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare environment file
+        run: cp .env.example .env
+
+      - name: Run frontend E2E
+        run: /usr/bin/time -p make frontend-e2e E2E_SPEC=${{ matrix.spec }}

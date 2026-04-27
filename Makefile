@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -7,6 +7,7 @@ PROMPT_DIR ?= $(CURDIR)/prompts
 PACK_DIR ?= $(CURDIR)/packs
 EVAL_DATASET_DIR ?= $(CURDIR)/evals/datasets
 RELEASE_CONFIG_DIR ?= $(CURDIR)/config/release
+VERIFY_V2_PROFILE ?= $(CURDIR)/.cache/verify-v2-profile.json
 HOST_PATH_ENV = PROMPT_DIR=$(PROMPT_DIR) PACK_DIR=$(PACK_DIR) EVAL_DATASET_DIR=$(EVAL_DATASET_DIR) RELEASE_CONFIG_DIR=$(RELEASE_CONFIG_DIR)
 HOST_VERIFY_ENV = $(VERIFY_ENV) $(HOST_PATH_ENV)
 EVAL_VERIFY_DB ?= $(CURDIR)/.cache/eval-verify.db
@@ -56,7 +57,7 @@ frontend-e2e:
 	trap '$(COMPOSE) down -v --remove-orphans' EXIT; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build backend; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build frontend; \
-	$(VERIFY_COMPOSE_ENV) $(COMPOSE) run --rm frontend-e2e
+	$(VERIFY_COMPOSE_ENV) E2E_SPEC="$(E2E_SPEC)" $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:
 	$(MAKE) backend-test
@@ -68,6 +69,9 @@ verify-v2:
 	$(MAKE) build-frontend
 	$(MAKE) frontend-e2e
 
+verify-v2-profile:
+	python scripts/verify_v2_profile.py --output "$(VERIFY_V2_PROFILE)"
+
 eval-smoke:
 	PYTHONPATH=backend python -m app.modules.eval_harness smoke
 
@@ -77,8 +81,7 @@ eval-verify-db-reset:
 	cd backend && $(EVAL_VERIFY_ENV) alembic upgrade head
 
 eval-pack-regressions: eval-verify-db-reset
-	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_founders_regression
-	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness dataset --dataset turn_resolution_ember_regression
+	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness pack-regressions
 
 eval-shadow:
 	PYTHONPATH=backend python -m app.modules.eval_harness shadow

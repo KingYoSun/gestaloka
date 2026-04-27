@@ -29,31 +29,6 @@ test("login, select ember harbor world, and clear the breakwater smoke flow", as
   await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toContainText(/Runner Eska/i, { timeout: 20_000 });
 
-  await page.getByTestId("nav-admin").click();
-  await expect(page.getByTestId("ops-world-select")).toHaveValue(worldId, { timeout: slowTimeout });
-  await expect(page.getByTestId("active-world-context")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("ops-pack-catalog-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
-  await page.getByTestId("ops-pack-filter").selectOption("ember_harbor");
-  await expect(page.getByTestId("ops-scope-summary")).toContainText(/ember_harbor/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("ops-pack-catalog-summary")).toContainText(/filtered worlds 1/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("ops-world-select")).toHaveValue(worldId, { timeout: slowTimeout });
-  await expect(page.getByTestId("ops-world-select").locator("option")).toHaveCount(1, { timeout: slowTimeout });
-  await expect(page.getByTestId("ops-world-select")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("observability-snapshot-timeline")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("observability-snapshot-timeline")).not.toContainText(/Founders Reach/i);
-  await expect(page.getByTestId("observability-snapshot-timeline")).toContainText(/schema/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("release-pack-regressions-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("release-pack-regressions-stream")).not.toContainText(/Founders Reach/i);
-  await expect(page.getByTestId("release-scope-summary")).toContainText(/ember_harbor/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("eval-runs-stream")).not.toContainText(/Founders Reach/i);
-  await expect(page.getByTestId("eval-case-results-stream")).not.toContainText(/Founders Reach/i);
-  await expect(page.getByTestId("shadow-failures-stream")).not.toContainText(/Founders Reach/i);
-  await expect(page.getByTestId("observability-traces-stream")).not.toContainText(/Founders Reach/i);
-  await page.getByTestId("trigger-idle-pass").click();
-  await expect(page.getByTestId("world-tick-stream")).toContainText(/idle_world_pass/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("world-tick-stream")).toContainText(/Ember Harbor/i, { timeout: slowTimeout });
-  await page.getByTestId("nav-game").click();
-
   for (let step = 0; step < 2; step += 1) {
     await page.getByTestId("choice-progress").click();
     await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });

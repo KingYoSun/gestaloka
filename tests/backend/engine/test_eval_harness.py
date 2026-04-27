@@ -153,6 +153,52 @@ def test_eval_cli_runs_named_dataset(monkeypatch: pytest.MonkeyPatch, capsys: py
     assert "turn_resolution_founders_regression" in capsys.readouterr().out
 
 
+def test_eval_cli_runs_pack_regressions_summary(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    calls: list[str] = []
+
+    class FakeSession:
+        def __enter__(self) -> "FakeSession":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def commit(self) -> None:
+            return None
+
+    class FakeEvalService:
+        def run_dataset(self, db: FakeSession, dataset_name: str) -> dict[str, object]:
+            calls.append(dataset_name)
+            return {
+                "id": f"run-{dataset_name}",
+                "summary": {
+                    "case_count": 1,
+                    "pack_scope": [{"pack_id": dataset_name}],
+                    "variants": {
+                        "current": {"gate_passed": True, "failed_case_ids": []},
+                        "candidate": {"gate_passed": True, "failed_case_ids": []},
+                    },
+                },
+            }
+
+    class FakeContainer:
+        eval_service = FakeEvalService()
+
+        def session_factory(self) -> FakeSession:
+            return FakeSession()
+
+    monkeypatch.setattr("app.modules.eval_harness.cli.build_container", lambda: FakeContainer())
+    monkeypatch.setattr("sys.argv", ["eval_harness", "pack-regressions"])
+
+    eval_cli_main()
+
+    assert calls == ["turn_resolution_founders_regression", "turn_resolution_ember_regression"]
+    output = capsys.readouterr().out
+    assert '"status": "passed"' in output
+    assert "turn_resolution_founders_regression" in output
+    assert "turn_resolution_ember_regression" in output
+
+
 def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
