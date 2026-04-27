@@ -47,6 +47,10 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "eval_case_results",
         "release_gate_reports",
         "observability_snapshots",
+        "world_axis_states",
+        "shared_history_records",
+        "actor_title_progress",
+        "shared_consequence_applications",
         "outbox_events",
     } <= tables
 
@@ -60,6 +64,9 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     memory_columns = {column["name"] for column in inspector.get_columns("memories")}
     world_tick_columns = {column["name"] for column in inspector.get_columns("world_ticks")}
     world_columns = {column["name"] for column in inspector.get_columns("worlds")}
+    world_axis_columns = {column["name"] for column in inspector.get_columns("world_axis_states")}
+    shared_history_columns = {column["name"] for column in inspector.get_columns("shared_history_records")}
+    title_progress_columns = {column["name"] for column in inspector.get_columns("actor_title_progress")}
     assert "resolution_mode" in turn_columns
     assert "action_type" in turn_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= turn_columns
@@ -102,3 +109,6 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     } <= observability_indexes
     assert {"tick_kind", "status", "seed_turn_id", "location_id", "summary", "started_at", "completed_at"} <= world_tick_columns
     assert "state" in world_columns
+    assert {"axis_id", "current_value", "thresholds", "last_event_id"} <= world_axis_columns
+    assert {"history_rule_id", "level", "status", "summary", "payload"} <= shared_history_columns
+    assert {"title_rule_id", "progress", "progress_target", "source_event_id"} <= title_progress_columns

@@ -387,6 +387,85 @@ class FactionStanding(Base, TimestampMixin):
     band: Mapped[str] = mapped_column(String(32), default="neutral")
 
 
+class WorldAxisState(Base, TimestampMixin):
+    __tablename__ = "world_axis_states"
+    __table_args__ = (
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["last_event_id", "world_id"], ["events.id", "events.world_id"]),
+        CheckConstraint("current_value >= min_value AND current_value <= max_value", name="ck_world_axis_states_value_range"),
+    )
+
+    world_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    axis_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    min_value: Mapped[float] = mapped_column(Float, default=0.0)
+    max_value: Mapped[float] = mapped_column(Float, default=1.0)
+    current_value: Mapped[float] = mapped_column(Float, default=0.0)
+    expose_to_session_context: Mapped[bool] = mapped_column(Boolean, default=True)
+    thresholds: Mapped[list] = mapped_column(JSON, default=list)
+    last_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class SharedHistoryRecord(Base, TimestampMixin):
+    __tablename__ = "shared_history_records"
+    __table_args__ = (
+        UniqueConstraint("world_id", "source_event_id", "history_rule_id", name="uq_shared_history_event_rule"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+        ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64), index=True)
+    source_event_id: Mapped[str] = mapped_column(String(36))
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    history_rule_id: Mapped[str] = mapped_column(String(120))
+    level: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), default="candidate")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    salience: Mapped[float] = mapped_column(Float, default=0.5)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ActorTitleProgress(Base, TimestampMixin):
+    __tablename__ = "actor_title_progress"
+    __table_args__ = (
+        ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+        CheckConstraint("progress >= 0", name="ck_actor_title_progress_nonnegative"),
+        CheckConstraint("progress_target > 0", name="ck_actor_title_progress_target_positive"),
+    )
+
+    actor_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    world_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title_rule_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+    progress_target: Mapped[float] = mapped_column(Float, default=1.0)
+    status: Mapped[str] = mapped_column(String(32), default="in_progress")
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class SharedConsequenceApplication(Base, TimestampMixin):
+    __tablename__ = "shared_consequence_applications"
+    __table_args__ = (
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+    )
+
+    world_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    rule_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    action_tag: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class QuestTemplate(Base, TimestampMixin):
     __tablename__ = "quest_templates"
     __table_args__ = (UniqueConstraint("id", "world_id", name="uq_quest_templates_id_world"),)

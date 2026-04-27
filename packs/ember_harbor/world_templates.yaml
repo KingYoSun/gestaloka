@@ -343,6 +343,7 @@ world_templates:
         action_tag: help
         outcome_tags:
           - public_help
+          - earned_trust
         world_axis_deltas:
           harbor_stability: 2
           rumor_current: 1
@@ -364,6 +365,7 @@ world_templates:
         action_tag: investigate
         outcome_tags:
           - noticed_report
+          - careful_observation
         world_axis_deltas:
           rumor_current: -1
           harbor_stability: 1
@@ -385,6 +387,8 @@ world_templates:
         action_tag: protect
         outcome_tags:
           - beacon_steadied
+          - kept_promise
+          - reward_item_respect
         world_axis_deltas:
           harbor_stability: 2
           breakwater_risk: -2

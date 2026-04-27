@@ -382,6 +382,8 @@ world_templates:
         outcome_tags:
           - public_help
           - promise_kept
+          - earned_trust
+          - kept_promise
         world_axis_deltas:
           public_trust: 2
           watch_pressure: -1
@@ -405,6 +407,7 @@ world_templates:
         outcome_tags:
           - record_checked
           - memory_preserved
+          - careful_observation
         world_axis_deltas:
           memory_coherence: 2
           public_trust: 1
@@ -427,6 +430,8 @@ world_templates:
         outcome_tags:
           - path_protected
           - patrol_steadied
+          - kept_promise
+          - reward_item_respect
         world_axis_deltas:
           public_trust: 1
           watch_pressure: -2

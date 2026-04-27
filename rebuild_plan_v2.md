@@ -167,7 +167,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 1: plan refresh
 
-状態: 着手
+状態: 完了
 
 - 完了済み engine pivot plan を archive する。
 - `rebuild_plan_v2.md` を Shared World Core の現行計画へ差し替える。
@@ -181,7 +181,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 2: shared-world pack schema
 
-状態: 未着手
+状態: 完了
 
 - `world_axes`、multi-faction、拡張 location、NPC memory policy、history rules、title rules、
   consequence rules を pack contract に追加する。
@@ -196,7 +196,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 3: shared consequence projection
 
-状態: 未着手
+状態: 着手
 
 - turn resolution の結果から abstract action tag と consequence signal を抽出する。
 - pack の consequence rules に従い、world_axes、faction state、location public state、NPC memory、
@@ -296,4 +296,3 @@ make verify-v2
 - ログ派遣 / dispatch の復活
 - SP を世界内通貨、移動力、クエスト進行力として扱うこと
 - 廃止済み/存在しない固定 model ID への依存
-

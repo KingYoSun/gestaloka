@@ -86,8 +86,40 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                       description string,
                       status string
                     );
+                    CREATE TAG IF NOT EXISTS WorldAxis(
+                      world_id string,
+                      axis_id string,
+                      display_name string,
+                      current_value double,
+                      min_value double,
+                      max_value double
+                    );
+                    CREATE TAG IF NOT EXISTS SharedHistory(
+                      world_id string,
+                      history_id string,
+                      history_rule_id string,
+                      level string,
+                      status string,
+                      summary string
+                    );
+                    CREATE TAG IF NOT EXISTS TitleProgress(
+                      world_id string,
+                      actor_id string,
+                      title_rule_id string,
+                      display_name string,
+                      progress double,
+                      progress_target double,
+                      status string
+                    );
                     CREATE EDGE IF NOT EXISTS LOCATED_AT(world_id string);
                     CREATE EDGE IF NOT EXISTS CAUSED(world_id string);
+                    CREATE EDGE IF NOT EXISTS UPDATED(world_id string);
+                    CREATE EDGE IF NOT EXISTS RECOGNIZES(
+                      world_id string,
+                      progress double,
+                      progress_target double,
+                      status string
+                    );
                     CREATE EDGE IF NOT EXISTS REMEMBERS(world_id string, scope string);
                     CREATE EDGE IF NOT EXISTS RUMORED_AT(world_id string);
                     CREATE EDGE IF NOT EXISTS KNOWS(world_id string, strength double);
@@ -113,8 +145,32 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
         self._bootstrapped = True
 
     def _wait_for_schema_ready(self) -> None:
-        required_tags = ("Actor", "Location", "Event", "Memory", "Faction", "Quest", "Item")
-        required_edges = ("LOCATED_AT", "CAUSED", "REMEMBERS", "RUMORED_AT", "KNOWS", "MEMBER_OF", "PURSUES", "OWNS", "REWARDS", "AFFECTS")
+        required_tags = (
+            "Actor",
+            "Location",
+            "Event",
+            "Memory",
+            "Faction",
+            "Quest",
+            "Item",
+            "WorldAxis",
+            "SharedHistory",
+            "TitleProgress",
+        )
+        required_edges = (
+            "LOCATED_AT",
+            "CAUSED",
+            "UPDATED",
+            "RECOGNIZES",
+            "REMEMBERS",
+            "RUMORED_AT",
+            "KNOWS",
+            "MEMBER_OF",
+            "PURSUES",
+            "OWNS",
+            "REWARDS",
+            "AFFECTS",
+        )
         last_error: RuntimeError | None = None
         for _ in range(20):
             try:

@@ -24,6 +24,7 @@ from app.modules.world_memory.service import build_retrieval_query_text, retriev
 from app.modules.world_state.branch import BranchCommitDraft, BranchPressureEngine, ensure_route_pressures
 from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
 from app.modules.world_state.rules import normalize_world_tags
+from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 from app.modules.world_state.service import (
     apply_scene_updates,
     apply_consequence_updates,
@@ -946,6 +947,36 @@ def _resolve_narrative_turn_for_session(
         ]
         + consequence_result.additional_memory_drafts,
     )
+    shared_consequence_tags = payload.consequence_tags or fallback_consequence_tags(
+        world_tags=resolved_world_tags,
+        action_kind="narrative",
+        fail_forward=bool(interpreted_intent.get("fail_forward")),
+    )
+    shared_result = apply_shared_consequence_rules(
+        db,
+        memory_service=container.memory_service,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        source_event_id=event.id,
+        world_tags=resolved_world_tags,
+        consequence_tags=shared_consequence_tags,
+        action_kind="narrative",
+        explicit_action_tag=getattr(payload, "shared_action_tag", "none"),
+        interpreted_intent=interpreted_intent,
+        fail_forward=bool(interpreted_intent.get("fail_forward")),
+    )
+    shared_payload = shared_result.payload()
+    turn.resolved_output = {
+        **turn.resolved_output,
+        "shared_action_tag": shared_result.action_tag,
+        "shared_consequence_updates": shared_payload,
+    }
+    event.payload = {
+        **event.payload,
+        "shared_action_tag": shared_result.action_tag,
+        "shared_consequence_updates": shared_payload,
+    }
     db.add(
         OutboxEvent(
             world_id=game_session.world_id,
@@ -1014,9 +1045,9 @@ def _resolve_narrative_turn_for_session(
     return TurnResolutionResult(
         turn=turn,
         event=event,
-        memory_ids=[memory.id for memory in [*memories, *branch_event_memories]],
+        memory_ids=[memory.id for memory in [*memories, *branch_event_memories, *shared_result.memories]],
         event_payload=_event_payload(event),
-        memories_payload=[_memory_payload(memory) for memory in [*memories, *branch_event_memories]],
+        memories_payload=[_memory_payload(memory) for memory in [*memories, *branch_event_memories, *shared_result.memories]],
         graph_context_status=graph_context.status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
@@ -1265,6 +1296,28 @@ def _resolve_reward_item_turn_for_session(
         location_id=prepared.location_id,
         drafts=outcome.memory_drafts + consequence_result.additional_memory_drafts,
     )
+    reward_consequence_tags = (
+        resolved_interpreted_intent.get("consequence_tags") if isinstance(resolved_interpreted_intent, dict) else None
+    ) or ["reward_item_respect", "kept_promise"]
+    shared_result = apply_shared_consequence_rules(
+        db,
+        memory_service=container.memory_service,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        source_event_id=event.id,
+        world_tags=["collect_reward"],
+        consequence_tags=reward_consequence_tags,
+        action_kind="use_reward_item",
+        explicit_action_tag=(
+            str(resolved_interpreted_intent.get("shared_action_tag") or "none")
+            if isinstance(resolved_interpreted_intent, dict)
+            else "none"
+        ),
+        interpreted_intent=resolved_interpreted_intent,
+        fail_forward=False,
+    )
+    shared_payload = shared_result.payload()
     outcome.item.used_event_id = event.id
     db.add(
         OutboxEvent(
@@ -1285,6 +1338,8 @@ def _resolve_reward_item_turn_for_session(
         **turn.resolved_output,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "shared_action_tag": shared_result.action_tag,
+        "shared_consequence_updates": shared_payload,
         "outcome_band": consequence_result.outcome_band,
         "scene_tone": consequence_result.scene_tone,
         "consequence_summary": consequence_result.consequence_summary,
@@ -1301,6 +1356,8 @@ def _resolve_reward_item_turn_for_session(
         **event.payload,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "shared_action_tag": shared_result.action_tag,
+        "shared_consequence_updates": shared_payload,
         "outcome_band": consequence_result.outcome_band,
         "scene_tone": consequence_result.scene_tone,
         "consequence_summary": consequence_result.consequence_summary,
@@ -1364,9 +1421,9 @@ def _resolve_reward_item_turn_for_session(
     return TurnResolutionResult(
         turn=turn,
         event=event,
-        memory_ids=[memory.id for memory in memories],
+        memory_ids=[memory.id for memory in [*memories, *shared_result.memories]],
         event_payload=_event_payload(event),
-        memories_payload=[_memory_payload(memory) for memory in memories],
+        memories_payload=[_memory_payload(memory) for memory in [*memories, *shared_result.memories]],
         graph_context_status=graph_context_status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
@@ -1521,6 +1578,28 @@ def _resolve_travel_turn_for_session(
             location_id=destination.id,
             drafts=outcome.memory_drafts + consequence_result.additional_memory_drafts,
         )
+        travel_consequence_tags = (
+            interpreted_intent.get("consequence_tags") if isinstance(interpreted_intent, dict) else None
+        ) or ["careful_observation"]
+        shared_result = apply_shared_consequence_rules(
+            db,
+            memory_service=container.memory_service,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=destination.id,
+            source_event_id=event.id,
+            world_tags=["none"],
+            consequence_tags=travel_consequence_tags,
+            action_kind="travel",
+            explicit_action_tag=(
+                str(interpreted_intent.get("shared_action_tag") or "none")
+                if isinstance(interpreted_intent, dict)
+                else "none"
+            ),
+            interpreted_intent=interpreted_intent,
+            fail_forward=False,
+        )
+        shared_payload = shared_result.payload()
         db.add(
             OutboxEvent(
                 world_id=game_session.world_id,
@@ -1551,6 +1630,8 @@ def _resolve_travel_turn_for_session(
             "consequence_summary": outcome.travel_summary,
             "relationship_updates": consequence_result.relationship_updates,
             "consequence_updates": consequence_result.consequence_updates,
+            "shared_action_tag": shared_result.action_tag,
+            "shared_consequence_updates": shared_payload,
             "scene_tone": "measured",
             "outcome_band": "steady",
             "scene_summary": scene_result["scene_summary"],
@@ -1570,6 +1651,8 @@ def _resolve_travel_turn_for_session(
             **event.payload,
             "relationship_updates": consequence_result.relationship_updates,
             "consequence_updates": consequence_result.consequence_updates,
+            "shared_action_tag": shared_result.action_tag,
+            "shared_consequence_updates": shared_payload,
             "scene_summary": scene_result["scene_summary"],
             "scene_updates": scene_result["scene_updates"],
             "chapter_updates": scene_result["chapter_updates"],
@@ -1625,9 +1708,9 @@ def _resolve_travel_turn_for_session(
         return TurnResolutionResult(
             turn=turn,
             event=event,
-            memory_ids=[memory.id for memory in memories],
+            memory_ids=[memory.id for memory in [*memories, *shared_result.memories]],
             event_payload=_event_payload(event),
-            memories_payload=[_memory_payload(memory) for memory in memories],
+            memories_payload=[_memory_payload(memory) for memory in [*memories, *shared_result.memories]],
             graph_context_status=graph_context_status,
             sp_delta=prepared.debit.delta,
             sp_balance=prepared.debit.balance_after,

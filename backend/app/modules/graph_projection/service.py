@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.models.entities import (
     Actor,
+    ActorTitleProgress,
     Event,
     Faction,
     FactionStanding,
@@ -20,6 +21,8 @@ from app.models.entities import (
     QuestAssignment,
     QuestTemplate,
     Relationship,
+    SharedHistoryRecord,
+    WorldAxisState,
     new_id,
 )
 from app.modules.graph_projection.nebula import NebulaWorldGraphRepository
@@ -303,6 +306,30 @@ class ProjectionService:
                 .order_by(Item.created_at.asc(), Item.id.asc())
             ).scalars()
         )
+        world_axis_states = list(
+            db.execute(
+                select(WorldAxisState)
+                .where(WorldAxisState.world_id == resolved_event.world_id)
+                .order_by(WorldAxisState.axis_id.asc())
+            ).scalars()
+        )
+        shared_history_records = list(
+            db.execute(
+                select(SharedHistoryRecord)
+                .where(SharedHistoryRecord.world_id == resolved_event.world_id, SharedHistoryRecord.source_event_id == resolved_event.id)
+                .order_by(SharedHistoryRecord.created_at.asc(), SharedHistoryRecord.id.asc())
+            ).scalars()
+        )
+        actor_title_progress = list(
+            db.execute(
+                select(ActorTitleProgress)
+                .where(
+                    ActorTitleProgress.world_id == resolved_event.world_id,
+                    ActorTitleProgress.actor_id.in_(actor_ids),
+                )
+                .order_by(ActorTitleProgress.updated_at.desc(), ActorTitleProgress.title_rule_id.asc())
+            ).scalars()
+        )
 
         return GraphProjectionBundle(
             world_id=resolved_event.world_id,
@@ -317,6 +344,9 @@ class ProjectionService:
             quest_assignments=quest_assignments,
             quest_templates=quest_templates,
             items=items,
+            world_axis_states=world_axis_states,
+            shared_history_records=shared_history_records,
+            actor_title_progress=actor_title_progress,
         )
 
     @staticmethod
@@ -390,6 +420,18 @@ class ProjectionService:
         vids.extend(
             nebula_vid(world_id, "item", item.id)
             for item in db.execute(select(Item).where(Item.world_id == world_id)).scalars()
+        )
+        vids.extend(
+            nebula_vid(world_id, "world_axis", item.axis_id)
+            for item in db.execute(select(WorldAxisState).where(WorldAxisState.world_id == world_id)).scalars()
+        )
+        vids.extend(
+            nebula_vid(world_id, "shared_history", item.id)
+            for item in db.execute(select(SharedHistoryRecord).where(SharedHistoryRecord.world_id == world_id)).scalars()
+        )
+        vids.extend(
+            nebula_vid(world_id, "title_progress", f"{item.actor_id}:{item.title_rule_id}")
+            for item in db.execute(select(ActorTitleProgress).where(ActorTitleProgress.world_id == world_id)).scalars()
         )
         return vids
 

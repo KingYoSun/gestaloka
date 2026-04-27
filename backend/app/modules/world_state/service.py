@@ -82,6 +82,7 @@ from app.modules.world_state.scene import (
     list_recent_scene_history,
     list_scene_frames_debug,
 )
+from app.modules.world_state.shared_consequence import ensure_shared_world_seed, pack_scoped_entity_id
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, WorldTag, standing_band
 
 
@@ -386,9 +387,12 @@ def ensure_character_sheet(db: Session, world_id: str, actor_id: str) -> Charact
 
 
 def ensure_starter_faction(db: Session, world_id: str) -> Faction:
+    _, template = resolve_world_pack(db, world_id)
     faction_seed = _seed_section(db, world_id, "faction")
     faction_base_id = str(faction_seed.get("id") or "starter_faction")
-    faction_id, candidates = _resolve_seeded_entity_id(world_id, faction_base_id)
+    shared_seed = next((item for item in template.factions if item.id == faction_base_id), None)
+    faction_id = pack_scoped_entity_id(world_id, faction_base_id)
+    candidates = [faction_id, _world_scoped_seed_id(world_id, faction_base_id), faction_base_id]
     faction = db.execute(
         select(Faction).where(
             Faction.world_id == world_id,
@@ -401,9 +405,13 @@ def ensure_starter_faction(db: Session, world_id: str) -> Faction:
     faction = Faction(
         id=faction_id,
         world_id=world_id,
-        name=str(faction_seed.get("name") or "Starter Faction"),
-        description=str(faction_seed.get("description") or ""),
-        state=dict(faction_seed.get("state") or {}),
+        name=str((shared_seed.name if shared_seed is not None else None) or faction_seed.get("name") or "Starter Faction"),
+        description=str((shared_seed.description if shared_seed is not None else None) or faction_seed.get("description") or ""),
+        state={
+            **dict(faction_seed.get("state") or {}),
+            "pack_faction_id": faction_base_id,
+            "policy": str(shared_seed.policy if shared_seed is not None else (faction_seed.get("state") or {}).get("doctrine") or ""),
+        },
     )
     db.add(faction)
     db.flush()
@@ -687,6 +695,7 @@ def ensure_world_slice_seed(
         world_id,
         location_ids_by_key={key: location.id for key, location in locations_by_key.items()},
     )
+    ensure_shared_world_seed(db, world_id=world_id, actor_id=player_actor_id)
     starter_key = _starter_location_key(db, world_id)
     guide_actor = get_guide_npc_for_location(db, world_id, location_id=locations_by_key[starter_key].id)
     faction = ensure_starter_faction(db, world_id)

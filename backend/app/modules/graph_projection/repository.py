@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import (
     Actor,
+    ActorTitleProgress,
     Event,
     Faction,
     FactionStanding,
@@ -17,6 +18,8 @@ from app.models.entities import (
     QuestAssignment,
     QuestTemplate,
     Relationship,
+    SharedHistoryRecord,
+    WorldAxisState,
 )
 
 
@@ -45,6 +48,9 @@ class GraphProjectionBundle:
     quest_assignments: list[QuestAssignment]
     quest_templates: list[QuestTemplate]
     items: list[Item]
+    world_axis_states: list[WorldAxisState]
+    shared_history_records: list[SharedHistoryRecord]
+    actor_title_progress: list[ActorTitleProgress]
 
 
 @dataclass(frozen=True)
@@ -269,6 +275,70 @@ class RecordingWorldGraphRepository:
                 )
             )
 
+        for axis in bundle.world_axis_states:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:vertex:WorldAxis:{axis.axis_id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "vertex",
+                        "label": "WorldAxis",
+                        "vid": nebula_vid(bundle.world_id, "world_axis", axis.axis_id),
+                        "properties": {
+                            "world_id": axis.world_id,
+                            "axis_id": axis.axis_id,
+                            "display_name": axis.display_name,
+                            "current_value": axis.current_value,
+                            "min_value": axis.min_value,
+                            "max_value": axis.max_value,
+                        },
+                    },
+                )
+            )
+
+        for history in bundle.shared_history_records:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:vertex:SharedHistory:{history.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "vertex",
+                        "label": "SharedHistory",
+                        "vid": nebula_vid(bundle.world_id, "shared_history", history.id),
+                        "properties": {
+                            "world_id": history.world_id,
+                            "history_id": history.id,
+                            "history_rule_id": history.history_rule_id,
+                            "level": history.level,
+                            "status": history.status,
+                            "summary": history.summary,
+                        },
+                    },
+                )
+            )
+
+        for progress in bundle.actor_title_progress:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:vertex:TitleProgress:{progress.actor_id}:{progress.title_rule_id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "vertex",
+                        "label": "TitleProgress",
+                        "vid": nebula_vid(bundle.world_id, "title_progress", f"{progress.actor_id}:{progress.title_rule_id}"),
+                        "properties": {
+                            "world_id": progress.world_id,
+                            "actor_id": progress.actor_id,
+                            "title_rule_id": progress.title_rule_id,
+                            "display_name": progress.display_name,
+                            "progress": progress.progress,
+                            "progress_target": progress.progress_target,
+                            "status": progress.status,
+                        },
+                    },
+                )
+            )
+
         if bundle.location is not None:
             for actor in actor_map.values():
                 if actor.current_location_id == bundle.location.id:
@@ -416,6 +486,57 @@ class RecordingWorldGraphRepository:
                         },
                     )
                 )
+
+        for axis in bundle.world_axis_states:
+            if axis.last_event_id == bundle.event.id:
+                records.append(
+                    ProjectedArtifact(
+                        entity_key=f"{bundle.world_id}:edge:UPDATED:{bundle.event.id}:WorldAxis:{axis.axis_id}",
+                        projection_type=bundle.projection_type,
+                        payload={
+                            "kind": "edge",
+                            "label": "UPDATED",
+                            "source_vid": nebula_vid(bundle.world_id, "event", bundle.event.id),
+                            "target_vid": nebula_vid(bundle.world_id, "world_axis", axis.axis_id),
+                            "properties": {"world_id": bundle.world_id},
+                        },
+                    )
+                )
+
+        for history in bundle.shared_history_records:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:edge:CAUSED:{bundle.event.id}:{history.id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "edge",
+                        "label": "CAUSED",
+                        "source_vid": nebula_vid(bundle.world_id, "event", bundle.event.id),
+                        "target_vid": nebula_vid(bundle.world_id, "shared_history", history.id),
+                        "properties": {"world_id": bundle.world_id},
+                    },
+                )
+            )
+
+        for progress in bundle.actor_title_progress:
+            records.append(
+                ProjectedArtifact(
+                    entity_key=f"{bundle.world_id}:edge:RECOGNIZES:{progress.actor_id}:{progress.title_rule_id}",
+                    projection_type=bundle.projection_type,
+                    payload={
+                        "kind": "edge",
+                        "label": "RECOGNIZES",
+                        "source_vid": nebula_vid(bundle.world_id, "actor", progress.actor_id),
+                        "target_vid": nebula_vid(bundle.world_id, "title_progress", f"{progress.actor_id}:{progress.title_rule_id}"),
+                        "properties": {
+                            "world_id": bundle.world_id,
+                            "progress": progress.progress,
+                            "progress_target": progress.progress_target,
+                            "status": progress.status,
+                        },
+                    },
+                )
+            )
 
         if bundle.event.location_id is not None:
             records.append(

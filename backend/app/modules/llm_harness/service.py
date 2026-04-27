@@ -18,6 +18,7 @@ from app.modules.world_pack.service import PackRegistry, world_pack_metadata
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
+from app.modules.world_pack.service import SharedWorldActionTag
 
 try:
     from google import genai
@@ -128,6 +129,7 @@ class TurnResolutionPayload(BaseModel):
     next_choices: list[NarrativeChoiceDraft] = Field(min_length=3)
     consequence_summary: str = Field(min_length=1)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    shared_action_tag: SharedWorldActionTag = "none"
     branch_signals: list[BranchSignal] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     scene_tone: str = Field(min_length=1)
