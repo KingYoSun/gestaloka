@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -65,6 +65,7 @@ verify-v2:
 	$(MAKE) scan-pack-leaks
 	$(MAKE) scan-v1-terms
 	$(MAKE) check-legacy
+	$(MAKE) shared-world-regressions
 	$(MAKE) eval-pack-regressions
 	$(MAKE) build-frontend
 	$(MAKE) frontend-e2e
@@ -82,6 +83,10 @@ eval-verify-db-reset:
 
 eval-pack-regressions: eval-verify-db-reset
 	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness pack-regressions
+
+shared-world-regressions: eval-verify-db-reset
+	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/engine/test_world_slice.py tests/backend/packs/gestaloka_reference/test_gestaloka_reference_pack.py
+	$(EVAL_VERIFY_ENV) PYTHONPATH=backend python -m app.modules.eval_harness shared-world-health
 
 eval-shadow:
 	PYTHONPATH=backend python -m app.modules.eval_harness shadow

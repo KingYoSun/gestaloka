@@ -266,7 +266,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 7: verification hardening
 
-状態: 未着手
+状態: 完了
 
 - cross-player feedback、shared state drift、NPC memory persistence、pack-defined world-axis behavior の
   regression / eval gate を追加する。
@@ -278,6 +278,12 @@ Shared World Core の session state は、現在の player-local state に加え
 - `make verify-v2` が Shared World Core の regression を含む。
 - release checklist が shared-world regression failure を promotion blocker として扱う。
 - long-run で shared state drift を検知できる。
+
+完了根拠:
+
+- `shared_world_health` が world axis drift、memory gap、event integrity gap を検知し、release checklist の promotion blocker になっている。
+- `make shared-world-regressions` と `make verify-v2` が Shared World Core regression を含む。
+- observability metric と trace に shared-world health / drift dimension が出る。
 
 ## 8. 検証
 

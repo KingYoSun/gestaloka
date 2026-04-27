@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry
-from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry
+from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry, WorldAxisState
 from app.modules.eval_harness.service import EvalHarnessService
 from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
@@ -117,6 +117,16 @@ def test_ember_pack_regression_dataset_runs(container):
     assert payload["summary"]["variants"]["candidate"]["gate_passed"] is True
 
 
+def test_gestaloka_pack_regression_dataset_runs(container):
+    with container.session_factory() as db:
+        payload = container.eval_service.run_dataset(db, "turn_resolution_gestaloka_regression")
+        db.commit()
+
+    assert payload["summary"]["case_count"] == 2
+    assert payload["summary"]["variants"]["current"]["gate_passed"] is True
+    assert payload["summary"]["variants"]["candidate"]["gate_passed"] is True
+
+
 def test_eval_cli_runs_named_dataset(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     calls: list[str] = []
 
@@ -192,11 +202,16 @@ def test_eval_cli_runs_pack_regressions_summary(monkeypatch: pytest.MonkeyPatch,
 
     eval_cli_main()
 
-    assert calls == ["turn_resolution_founders_regression", "turn_resolution_ember_regression"]
+    assert calls == [
+        "turn_resolution_founders_regression",
+        "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
+    ]
     output = capsys.readouterr().out
     assert '"status": "passed"' in output
     assert "turn_resolution_founders_regression" in output
     assert "turn_resolution_ember_regression" in output
+    assert "turn_resolution_gestaloka_regression" in output
 
 
 def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container, auth_headers):
@@ -291,8 +306,10 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
         "turn_resolution_smoke",
         "turn_resolution_failure_injection",
         "shadow_replay",
+        "shared_world_health",
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
     ]
     assert gate["runbook"]["canary_up"] == "make canary-up"
     assert gate["runbook"]["canary_probe"] == "make canary-probe"
@@ -340,11 +357,13 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
     assert set(gate["checks"]["pack_regressions"]) == {
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
     }
     assert all(item["current_passed"] and item["candidate_passed"] for item in gate["checks"]["pack_regressions"].values())
     assert set(gate["runs"]["pack_regressions"]) == {
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
     }
 
 
@@ -377,6 +396,132 @@ def test_release_gate_blocks_when_pack_catalog_is_degraded(container):
     assert gate["slo_snapshot"]["world_packs"]["status"] == "degraded"
     assert gate["slo_snapshot"]["world_packs"]["failure_count"] == 1
     assert gate["cutover_status"]["promote_ready"] is False
+
+
+def test_release_gate_blocks_on_shared_world_axis_drift(client, container, auth_headers):
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+    )
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+
+    with container.session_factory() as db:
+        axis = db.execute(
+            select(WorldAxisState).where(
+                WorldAxisState.world_id == "ember_harbor",
+                WorldAxisState.axis_id == "harbor_stability",
+            )
+        ).scalar_one()
+        axis.current_value = axis.current_value + 1
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=3)
+        db.commit()
+
+    assert gate["verdict"] == "blocked"
+    assert "shared world health != ready" in gate["blocked_reasons"]
+    assert gate["slo_snapshot"]["shared_world_health"]["axis_drift_count"] == 1
+    assert gate["cutover_status"]["promote_ready"] is False
+    assert "shared_world_health" in gate["cutover_status"]["missing_or_failed_checks"]
+
+
+def test_release_gate_blocks_on_shared_world_memory_gap(client, container, auth_headers):
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+    )
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+    event_id = turn_response.json()["event_id"]
+
+    with container.session_factory() as db:
+        db.execute(delete(Memory).where(Memory.world_id == "ember_harbor", Memory.source_event_id == event_id))
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=3)
+        db.commit()
+
+    assert gate["verdict"] == "blocked"
+    assert "shared world health != ready" in gate["blocked_reasons"]
+    assert gate["slo_snapshot"]["shared_world_health"]["memory_gap_count"] >= 1
+    assert gate["cutover_status"]["promote_ready"] is False
+
+
+def test_release_gate_blocks_on_cross_world_shared_event_link(client, container, auth_headers):
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+    )
+    ember_session = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert ember_session.status_code == 200
+    ember_payload = ember_session.json()
+    ember_turn = client.post(
+        "/turns",
+        json={"session_id": ember_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert ember_turn.status_code == 200
+    founders_session = client.post(
+        "/sessions",
+        json={
+            "world_id": "founders_reach",
+            "pack_id": "founders_reach",
+            "world_template_id": "founders_reach",
+            "world_name": "Founders Reach",
+        },
+        headers=auth_headers,
+    )
+    assert founders_session.status_code == 200
+    founders_turn = client.post(
+        "/turns",
+        json={"session_id": founders_session.json()["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert founders_turn.status_code == 200
+
+    with container.session_factory() as db:
+        memory = db.execute(
+            select(Memory).where(
+                Memory.world_id == "ember_harbor",
+                Memory.source_event_id == ember_turn.json()["event_id"],
+            )
+        ).scalars().first()
+        assert memory is not None
+
+    engine = container.session_factory.kw["bind"]
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        conn.exec_driver_sql(
+            "UPDATE memories SET source_event_id = ? WHERE id = ?",
+            (founders_turn.json()["event_id"], memory.id),
+        )
+        conn.commit()
+        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+    with container.session_factory() as db:
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=3)
+        db.commit()
+
+    assert gate["verdict"] == "blocked"
+    assert "shared world health != ready" in gate["blocked_reasons"]
+    assert gate["slo_snapshot"]["shared_world_health"]["event_integrity_gap_count"] >= 1
 
 
 def test_scheduler_helpers_only_persist_eval_and_release_tables(client, container, auth_headers, monkeypatch):
@@ -425,7 +570,7 @@ def test_scheduler_helpers_only_persist_eval_and_release_tables(client, containe
 
     assert payload["trigger_type"] == "nightly"
     assert before == {key: after[key] for key in before}
-    assert after["eval_runs"] == 5
+    assert after["eval_runs"] == 6
     assert after["release_gate_reports"] == 1
     assert seconds_until_next_run("0 3 * * *") >= 0.0
 

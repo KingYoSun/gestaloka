@@ -39,6 +39,7 @@ jobs:
           /usr/bin/time -p make backend-test
           /usr/bin/time -p make pack-validate
           /usr/bin/time -p make scan-pack-leaks
+          /usr/bin/time -p make shared-world-regressions
           /usr/bin/time -p make scan-v1-terms
           /usr/bin/time -p make check-legacy
 

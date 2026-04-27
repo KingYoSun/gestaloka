@@ -5,6 +5,7 @@ import json
 
 from app.core.container import build_container
 from app.modules.eval_harness.service import PACK_REGRESSION_DATASETS
+from app.modules.world_state.health import shared_world_health
 
 
 def _dataset_check(payload: dict[str, object]) -> dict[str, object]:
@@ -35,7 +36,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="GESTALOKA v2 eval harness")
     parser.add_argument(
         "command",
-        choices=["smoke", "dataset", "pack-regressions", "failure", "shadow", "gate", "nightly", "canary-probe"],
+        choices=[
+            "smoke",
+            "dataset",
+            "pack-regressions",
+            "failure",
+            "shadow",
+            "gate",
+            "nightly",
+            "canary-probe",
+            "shared-world-health",
+        ],
     )
     parser.add_argument("--dataset", help="Dataset id to run for the dataset command, or to override smoke")
     parser.add_argument("--detail", action="store_true", help="Print detailed run payloads for aggregate commands")
@@ -87,10 +98,15 @@ def main() -> None:
                 trigger_type="nightly",
                 shadow_limit=args.limit,
             )
+        elif args.command == "shared-world-health":
+            payload = shared_world_health(db)
         else:
             payload = container.observability_service.probe_canary_health().__dict__
         db.commit()
 
+    if args.command == "shared-world-health" and payload.get("status") != "ready":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        raise SystemExit(1)
     if args.command == "pack-regressions":
         _print_pack_regression_summary(payload)
     else:

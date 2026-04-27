@@ -1090,6 +1090,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert set(checklist_payload["checks"]["pack_regressions"]) == {
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
     }
     assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_founders_regression"]["pack_scope"] == [
         {
@@ -1107,14 +1108,25 @@ def test_ops_eval_contracts(client, container, auth_headers):
             "world_template_display_name": "Ember Harbor",
         }
     ]
+    assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_gestaloka_regression"]["pack_scope"] == [
+        {
+            "pack_id": "gestaloka_reference",
+            "pack_display_name": "GESTALOKA Reference",
+            "world_template_id": "nexus_foundation",
+            "world_template_display_name": "Nexus Foundation",
+        }
+    ]
+    assert checklist_payload["checks"]["shared_world_health"]["status"] == "ready"
     assert set(checklist_payload["runs"]["pack_regressions"]) == {
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
     }
     assert checklist_payload["cutover_status"]["promote_ready"] is True
     assert checklist_payload["cutover_status"]["bundled_pack_regressions"] == [
         "turn_resolution_founders_regression",
         "turn_resolution_ember_regression",
+        "turn_resolution_gestaloka_regression",
     ]
     assert checklist_payload["runbook"]["canary_up"] == "make canary-up"
     assert checklist_payload["runbook"]["canary_probe"] == "make canary-probe"

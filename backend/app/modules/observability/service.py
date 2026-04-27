@@ -72,6 +72,9 @@ class ObservabilityService:
             "llm_schema_valid_rate": 0.0,
             "llm_fallback_rate": 0.0,
             "release_gate_verdict": 0.0,
+            "shared_world_drift_count": 0.0,
+            "shared_world_axis_drift_count": 0.0,
+            "shared_world_memory_gap_count": 0.0,
         }
         self._langfuse_last_error: str | None = None
         self._resource = Resource.create(
@@ -112,6 +115,9 @@ class ObservabilityService:
             "llm_schema_valid_rate",
             "llm_fallback_rate",
             "release_gate_verdict",
+            "shared_world_drift_count",
+            "shared_world_axis_drift_count",
+            "shared_world_memory_gap_count",
         ):
             self.meter.create_observable_gauge(name, callbacks=[self._make_observer(name)])
 
@@ -597,6 +603,22 @@ class ObservabilityService:
             },
         )
 
+    def record_shared_world_health(self, health: dict[str, Any]) -> None:
+        self.sync_shared_world_health(health)
+        worlds = [item for item in health.get("worlds", []) if isinstance(item, dict)]
+        for world in worlds:
+            attributes = {
+                "pack_id": str(world.get("pack_id") or ""),
+                "world_template_id": str(world.get("world_template_id") or ""),
+                "world_axis_ids": ",".join(str(item) for item in world.get("world_axis_ids") or []),
+                "faction_ids": ",".join(str(item) for item in world.get("faction_ids") or []),
+                "history_levels": ",".join(str(item) for item in world.get("history_levels") or []),
+                "shared_world_health_status": str(health.get("status") or ""),
+                "runtime_role": self.settings.app_runtime_role,
+            }
+            with self.span("shared_world.health", attributes=attributes):
+                pass
+
     def sync_outbox_metrics(self, *, pending_count: int, failed_count: int, lag_seconds: float) -> None:
         with self._lock:
             self._metric_state["projection_lag_seconds"] = lag_seconds
@@ -607,6 +629,12 @@ class ObservabilityService:
         with self._lock:
             self._metric_state["llm_schema_valid_rate"] = schema_valid_rate
             self._metric_state["llm_fallback_rate"] = fallback_rate
+
+    def sync_shared_world_health(self, health: dict[str, Any]) -> None:
+        with self._lock:
+            self._metric_state["shared_world_drift_count"] = float(health.get("drift_count") or 0)
+            self._metric_state["shared_world_axis_drift_count"] = float(health.get("axis_drift_count") or 0)
+            self._metric_state["shared_world_memory_gap_count"] = float(health.get("memory_gap_count") or 0)
 
     def metric_snapshot(self) -> dict[str, float]:
         with self._lock:

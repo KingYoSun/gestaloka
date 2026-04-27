@@ -45,13 +45,19 @@ from app.modules.world_memory.service import (
 )
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, normalize_world_tags
 from app.modules.world_state.service import default_next_choices, important_inventory_affordances, narrative_state_bands
+from app.modules.world_state.health import shared_world_health
 
 
-PACK_REGRESSION_DATASETS = ["turn_resolution_founders_regression", "turn_resolution_ember_regression"]
+PACK_REGRESSION_DATASETS = [
+    "turn_resolution_founders_regression",
+    "turn_resolution_ember_regression",
+    "turn_resolution_gestaloka_regression",
+]
 PRODUCT_CUTOVER_REQUIRED_CHECKS = [
     "turn_resolution_smoke",
     "turn_resolution_failure_injection",
     "shadow_replay",
+    "shared_world_health",
     *PACK_REGRESSION_DATASETS,
 ]
 
@@ -289,6 +295,7 @@ class EvalHarnessService:
         candidate_config = self.load_release_config("candidate")
         canary_probe = self._probe_canary_health()
         slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
+        shared_health = slo_snapshot["shared_world_health"]
         blocked_reasons = self._blocked_reasons(
             smoke_summary=smoke["summary"],
             failure_summary=failure["summary"],
@@ -316,6 +323,7 @@ class EvalHarnessService:
         db.flush()
 
         if self.observability_service is not None:
+            self.observability_service.record_shared_world_health(shared_health)
             self.observability_service.record_release_gate(
                 report_id=report.id,
                 verdict=verdict,
@@ -379,6 +387,7 @@ class EvalHarnessService:
                     "outbox_failed_count": slo_snapshot["outbox_failed_count"],
                     "llm_schema_valid_rate": slo_snapshot["llm_schema_valid_rate"],
                     "llm_fallback_rate": slo_snapshot["llm_fallback_rate"],
+                    "shared_world_health": shared_health,
                 },
                 canary_health=canary_probe.__dict__,
                 langfuse_status=self.observability_service.langfuse_runtime(),
@@ -509,10 +518,12 @@ class EvalHarnessService:
             select(ReleaseGateReport).order_by(ReleaseGateReport.created_at.desc(), ReleaseGateReport.id.desc()).limit(1)
         ).scalar_one_or_none()
         if report is None:
+            shared_health = shared_world_health(db)
             all_checks = {
                 "smoke": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
                 "failure_injection": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
                 "shadow_replay": {"present": False, "current_passed": False, "candidate_passed": False, "run_id": None},
+                "shared_world_health": _shared_world_health_check(shared_health),
                 "pack_regressions": {
                     dataset_name: {
                         "present": False,
@@ -548,6 +559,7 @@ class EvalHarnessService:
                     "runtime_role": self.settings.app_runtime_role,
                     "canary_health": self._probe_canary_health().__dict__,
                     "world_packs": (self.pack_registry or get_pack_registry(self.settings)).health_summary(),
+                    "shared_world_health": shared_health,
                     "projection_lag_seconds": 0.0,
                     "outbox_pending_count": 0,
                     "outbox_failed_count": 0,
@@ -616,6 +628,7 @@ class EvalHarnessService:
             "smoke": self._extract_gate_check(smoke),
             "failure_injection": self._extract_gate_check(failure),
             "shadow_replay": self._extract_gate_check(shadow),
+            "shared_world_health": _shared_world_health_check(report.slo_snapshot.get("shared_world_health")),
             "pack_regressions": {
                 dataset_name: self._extract_gate_check(
                     pack_regression_runs.get(dataset_name),
@@ -1158,6 +1171,9 @@ class EvalHarnessService:
             blocked.append("world pack catalog != ready")
         if not bool(slo_snapshot["sp_reason_invariant_ok"]):
             blocked.append("sp execution budget invariant failed")
+        shared_health = slo_snapshot.get("shared_world_health")
+        if isinstance(shared_health, dict) and shared_health.get("status") != "ready":
+            blocked.append("shared world health != ready")
         return blocked
 
     def _build_slo_snapshot(
@@ -1193,6 +1209,7 @@ class EvalHarnessService:
             "runtime_role": runtime_role,
             "canary_health": canary_probe.__dict__,
             "world_packs": pack_registry.health_summary(),
+            "shared_world_health": shared_world_health(db),
             "projection_lag_seconds": projection_lag_seconds,
             "outbox_pending_count": pending_outbox_count,
             "outbox_failed_count": failed_outbox_count,
@@ -1219,6 +1236,7 @@ class EvalHarnessService:
                 schema_valid_rate=float(snapshot["llm_schema_valid_rate"]),
                 fallback_rate=float(snapshot["llm_fallback_rate"]),
             )
+            self.observability_service.sync_shared_world_health(snapshot["shared_world_health"])
         return snapshot
 
     def _extract_gate_check(self, run: EvalRun | None, *, dataset_name: str | None = None) -> dict[str, object]:
@@ -1730,6 +1748,7 @@ class EvalHarnessService:
             "turn_resolution_smoke": _passed("smoke"),
             "turn_resolution_failure_injection": _passed("failure_injection"),
             "shadow_replay": _passed("shadow_replay"),
+            "shared_world_health": _passed("shared_world_health"),
         }
         for dataset_name in PACK_REGRESSION_DATASETS:
             check = pack_regressions.get(dataset_name)
@@ -1800,6 +1819,33 @@ def _filter_release_checks(
     return {
         **checks,
         "pack_regressions": filtered_pack_regressions,
+    }
+
+
+def _shared_world_health_check(health: object) -> dict[str, object]:
+    payload = health if isinstance(health, dict) else {}
+    passed = payload.get("status") == "ready"
+    pack_scope = [
+        {
+            "pack_id": item.get("pack_id"),
+            "pack_display_name": item.get("pack_display_name"),
+            "world_template_id": item.get("world_template_id"),
+            "world_template_display_name": item.get("world_template_display_name"),
+        }
+        for item in payload.get("worlds", [])
+        if isinstance(item, dict)
+    ]
+    return {
+        "present": bool(payload),
+        "current_passed": passed,
+        "candidate_passed": passed,
+        "run_id": None,
+        "status": payload.get("status"),
+        "drift_count": payload.get("drift_count", 0),
+        "axis_drift_count": payload.get("axis_drift_count", 0),
+        "memory_gap_count": payload.get("memory_gap_count", 0),
+        "event_integrity_gap_count": payload.get("event_integrity_gap_count", 0),
+        "pack_scope": pack_scope,
     }
 
 
