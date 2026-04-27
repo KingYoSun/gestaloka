@@ -1,7 +1,7 @@
 # Testplay Report Template
 
 このテンプレートは、[testplay-runbook.md](testplay-runbook.md) または
-[codex-browser-use-testplay.md](codex-browser-use-testplay.md) に沿った動作テスト・UX 評価の記録用です。
+[codex-playwright-mcp-testplay.md](codex-playwright-mcp-testplay.md) に沿った動作テスト・UX 評価の記録用です。
 
 ## 1. 実施情報
 
@@ -11,7 +11,7 @@
 - branch:
 - `.env` provider 種別:
 - stack 起動方法: `docker compose up --build`
-- Browser Use 対象 URL:
+- Playwright MCP 対象 URL:
   - Player UI:
   - Admin UI:
   - Backend health:
@@ -27,7 +27,7 @@
 | canary probe | `make canary-probe` |  |  |
 | release checklist | `make release-checklist` |  |  |
 
-## 3. Browser Use 実施結果
+## 3. Playwright MCP 実施結果
 
 | Area | Target | Result | Evidence | Notes |
 | --- | --- | --- | --- | --- |

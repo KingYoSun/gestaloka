@@ -4,8 +4,8 @@
 テストプレイ手順です。手動確認は playable surface と Ops 表示を対象にし、cross-player feedback の詳細な
 正しさは `make shared-world-regressions` で固定します。
 
-Codex Desktop の Browser Use で実施する場合は、補助手順
-[codex-browser-use-testplay.md](codex-browser-use-testplay.md) と記録テンプレート
+Codex app から Playwright MCP で実施する場合は、補助手順
+[codex-playwright-mcp-testplay.md](codex-playwright-mcp-testplay.md) と記録テンプレート
 [testplay-report-template.md](testplay-report-template.md) を併用します。
 
 ## 1. 前提
