@@ -226,7 +226,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 5: history canonization and titles
 
-状態: 未着手
+状態: 完了
 
 - history candidate を local rumor、regional record、faction record、world canon へ昇格する。
 - title rules により、プレイヤーの行動パターンや偉業を称号候補として蓄積する。
@@ -238,9 +238,15 @@ Shared World Core の session state は、現在の player-local state に加え
 - title recognition の regression がある。
 - title が SP や課金力と結びつかない。
 
+完了根拠:
+
+- `SharedHistoryRecord` と `ActorTitleProgress` を PostgreSQL 正本として永続化する。
+- admin history/titles、session state、prompt context への還流 regression がある。
+- title recognition が SP ledger を変更しない regression がある。
+
 ### Phase 6: GESTALOKA-scale reference pack slice
 
-状態: 未着手
+状態: 完了
 
 - `legacy/v1/documents/03_worldbuilding` を参考に、GESTALOKA 世界観の規模感を持つ reference pack slice を作る。
 - 初期 slice は、階層世界、複数勢力、危険領域、汚染/浄化相当の world axis、歴史化、称号候補を含む。
@@ -251,6 +257,12 @@ Shared World Core の session state は、現在の player-local state に加え
 - 既存 starter pack より構造的に大きい pack が、同じ engine suite を通る。
 - world_axes と faction/history/title の regression が存在する。
 - v1 コードやスキーマを copy-forward していない。
+
+完了根拠:
+
+- `packs/gestaloka_reference/` が `world_axes`、5 factions、4 history levels、3 title rules、shared consequence rules を宣言する。
+- `tests/backend/packs/gestaloka_reference/test_gestaloka_reference_pack.py` で session flow、followup route、world canon、title recognition、SP 非連動を検証する。
+- `make pack-validate` と backend suite が reference pack を含んで通る。
 
 ### Phase 7: verification hardening
 

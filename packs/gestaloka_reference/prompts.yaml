@@ -1,0 +1,10 @@
+global:
+  "*": >-
+    The active content pack is GESTALOKA Reference. Keep the response local to Nexus Gate,
+    the lift tower concourse, archive trade, frontier risk, and restoration pressure.
+  ambient.npc_manager: >-
+    Favor steward, archivist, broker, salvager, and warden beats that expose shared state through routine behavior.
+templates:
+  nexus_foundation:
+    council.narrative: >-
+      Name Nexus Gate, Lift Tower Concourse, Archive Bazaar, Middle Edge, Oblivion Breach, and Nexus Custodians naturally when relevant.

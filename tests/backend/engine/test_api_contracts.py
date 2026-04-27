@@ -55,8 +55,8 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["world_packs"] == {
         "status": "ready",
         "engine_api_version": "v2",
-        "pack_count": 2,
-        "template_count": 2,
+        "pack_count": 3,
+        "template_count": 3,
         "failure_count": 0,
     }
     assert "pack_dir" not in payload["world_packs"]

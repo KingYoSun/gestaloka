@@ -107,7 +107,7 @@ def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_header
     assert "failures" not in payload
     assert "pack_dir" not in payload
     items = payload["items"]
-    assert {item["pack_id"] for item in items} >= {"founders_reach", "ember_harbor"}
+    assert {item["pack_id"] for item in items} >= {"founders_reach", "ember_harbor", "gestaloka_reference"}
     ember = next(item for item in items if item["pack_id"] == "ember_harbor")
     assert "root_dir" not in ember
     assert ember["visibility"] == "public"
@@ -164,6 +164,43 @@ def test_pack_registry_exposes_shared_world_contract_from_bundled_packs():
     assert {faction.id for faction in ember.factions} >= {"ember_wardens", "tide_recorders", "dockside_runners"}
     assert ember.locations["breakwater"].related_world_axes == ["harbor_stability", "breakwater_risk"]
     assert ember.consequence_rules[-1].history_candidate_level == "faction_record"
+
+    gestaloka = registry.get_template("gestaloka_reference", "nexus_foundation")
+    assert {axis.id for axis in gestaloka.world_axes} >= {
+        "archive_integrity",
+        "corruption_pressure",
+        "civic_trust",
+        "corporate_pressure",
+        "frontier_risk",
+    }
+    assert {faction.id for faction in gestaloka.factions} >= {
+        "nexus_custodians",
+        "memory_church",
+        "kronos_exchange",
+        "relic_salvagers",
+        "returner_cell",
+    }
+    assert {rule.level for rule in gestaloka.history_rules} == {
+        "local_rumor",
+        "regional_record",
+        "faction_record",
+        "world_canon",
+    }
+    assert {rule.id for rule in gestaloka.title_rules} >= {
+        "nexus_stabilizer",
+        "archive_witness",
+        "breach_restorer",
+    }
+    assert {rule.action_tag for rule in gestaloka.consequence_rules} >= {
+        "help",
+        "investigate",
+        "negotiate",
+        "trade",
+        "protect",
+        "restore",
+        "destabilize",
+    }
+    assert gestaloka.consequence_rules[-2].history_candidate_level == "world_canon"
 
 
 def test_pack_registry_synthesizes_shared_factions_for_legacy_opening_slice_shape(tmp_path: Path):

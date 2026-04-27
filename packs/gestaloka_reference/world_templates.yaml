@@ -1,0 +1,751 @@
+world_templates:
+  nexus_foundation:
+    template_id: nexus_foundation
+    display_name: Nexus Foundation
+    summary: A reference GESTALOKA slice where visitors, city factions, archive integrity, and breach pressure share one world state.
+    world:
+      world_id: gestaloka_reference
+      default_name: "GESTALOKA: Nexus Foundation"
+    roles:
+      starter_location_key: nexus_gate
+      lore_location_key: lift_tower_concourse
+      followup_location_key: oblivion_breach
+      guide_npc_name: Gate Steward Rikka
+      starter_stage_key: starter_nexus
+      followup_stage_key: breach_restoration
+      opening_chapter_key: nexus_foundation_opening
+      followup_chapter_key: breach_restoration_followup
+      reward_effect_kind: unlock_oblivion_breach_route
+      followup_branches:
+        formal_path:
+          branch_key: custodian_charter
+          label: Custodian Charter
+          summary: Custodian Charter keeps restoration work public, witnessed, and accountable to Nexus.
+          committed_summary: The follow-up route has committed to Custodian Charter, carrying breach restoration through public witness and city trust.
+          player_hint: The chapter now leans toward public restoration and city accountability.
+          signal_weights:
+            formal_trust: 0.14
+            kept_formal_promise: 0.14
+            rumor_curiosity: -0.03
+            street_pull: -0.02
+            public_scrutiny: 0.08
+            reward_item_commitment: 0.1
+          anchor_npcs:
+            - Archivist Ione
+            - Choir Warden Anse
+        undercurrent_path:
+          branch_key: edge_compact
+          label: Edge Compact
+          summary: Edge Compact follows field salvage, quiet bargains, and what the frontier reports before Nexus can certify it.
+          committed_summary: The follow-up route has committed to Edge Compact, carrying breach restoration through field reports and negotiated risk.
+          player_hint: The chapter now leans toward field bargains and frontier evidence.
+          signal_weights:
+            formal_trust: -0.02
+            kept_formal_promise: -0.02
+            rumor_curiosity: 0.11
+            street_pull: 0.12
+            public_scrutiny: 0.05
+            reward_item_commitment: 0.04
+          anchor_npcs:
+            - Broker Vell
+            - Salvager Mako
+    bootstrap:
+      start_consequence_summary: The Nexus Custodians wait to see how the new visitor affects the gate.
+      session_started_narrative: >-
+        {player_name} began at {starter_location_name} and received the first stabilizer request from {guide_npc_name}.
+      reward_unlock_summary: Nexus Writ unlocked the route toward the Oblivion Breach.
+      reward_use_narrative: >-
+        {player_name} raised {reward_name} at {starter_location_name}, and {faction_name} opened the restoration route.
+      reward_location_memory: >-
+        {reward_name} was recognized at {starter_location_name}, opening the restoration route.
+      reward_world_memory: >-
+        {player_name} used {reward_name} to open the next restoration stage for {faction_name}.
+    locations:
+      nexus_gate:
+        id: nexus_gate
+        starter: true
+        name: Nexus Gate
+        description: The protected arrival gate where visitors enter shared city records for the first time.
+        hierarchy: anchor_city
+        region: nexus_core
+        kind: arrival_gate
+        danger_level: low
+        facilities:
+          - visitor registry
+          - stabilizer rail
+        public_state:
+          arrival_clarity: 2
+          civic_trust: 1
+        related_factions:
+          - nexus_custodians
+          - memory_church
+        related_world_axes:
+          - civic_trust
+          - archive_integrity
+        rumor_surface:
+          - first visitor writs
+          - gate registry corrections
+      lift_tower_concourse:
+        id: lift_tower_concourse
+        name: Lift Tower Concourse
+        description: The tower hall where layer traffic, public testimony, and archive routing meet.
+        hierarchy: lift_tower
+        region: nexus_core
+        kind: transit_archive
+        danger_level: low
+        facilities:
+          - witness alcove
+          - route ledger
+        public_state:
+          record_clarity: 2
+          tower_flow: 1
+        related_factions:
+          - nexus_custodians
+          - memory_church
+          - kronos_exchange
+        related_world_axes:
+          - archive_integrity
+          - corporate_pressure
+        rumor_surface:
+          - delayed tower manifests
+          - witnessed route changes
+      archive_bazaar:
+        id: archive_bazaar
+        name: Archive Bazaar
+        description: A market of certified fragments, salvage contracts, and arguments over what records are worth.
+        hierarchy: anchor_city
+        region: market_ring
+        kind: contract_market
+        danger_level: low
+        facilities:
+          - contract stalls
+          - appraisal desk
+        public_state:
+          contract_noise: 2
+          salvage_prices: 1
+        related_factions:
+          - kronos_exchange
+          - relic_salvagers
+        related_world_axes:
+          - corporate_pressure
+          - archive_integrity
+        rumor_surface:
+          - underpriced fragments
+          - sealed corporate bids
+      middle_edge:
+        id: middle_edge
+        name: Middle Edge
+        description: A rough frontier below Nexus where field reports arrive before public institutions can verify them.
+        hierarchy: frontier
+        region: middle_margin
+        kind: salvage_edge
+        danger_level: medium
+        facilities:
+          - salvage marker
+          - field relay
+        public_state:
+          route_confidence: 1
+          field_noise: 2
+        related_factions:
+          - relic_salvagers
+          - kronos_exchange
+          - returner_cell
+        related_world_axes:
+          - frontier_risk
+          - corporate_pressure
+          - corruption_pressure
+        rumor_surface:
+          - broken relay maps
+          - unverified finds
+      oblivion_breach:
+        id: oblivion_breach
+        name: Oblivion Breach
+        description: A damaged boundary where restoration work can become city history if the pressure holds.
+        hierarchy: damaged_boundary
+        region: forgetting_margin
+        kind: restoration_site
+        danger_level: high
+        facilities:
+          - restoration choir
+          - breach markers
+        public_state:
+          breach_containment: 1
+          restored_names: 0
+        related_factions:
+          - memory_church
+          - nexus_custodians
+          - returner_cell
+        related_world_axes:
+          - corruption_pressure
+          - frontier_risk
+          - archive_integrity
+        rumor_surface:
+          - names nearly lost
+          - unstable boundary lights
+    routes:
+      - route_key: gate_to_tower
+        from: nexus_gate
+        to: lift_tower_concourse
+        status: open
+        travel_summary: The tower concourse opens above the gate, where public testimony and route ledgers meet.
+        unlock_requirements: {}
+      - route_key: tower_to_gate
+        from: lift_tower_concourse
+        to: nexus_gate
+        status: open
+        travel_summary: The concourse steps return to Nexus Gate with every witnessed correction in tow.
+        unlock_requirements: {}
+      - route_key: tower_to_bazaar
+        from: lift_tower_concourse
+        to: archive_bazaar
+        status: open
+        travel_summary: The route bends into the Archive Bazaar where contracts test what testimony is worth.
+        unlock_requirements: {}
+      - route_key: bazaar_to_tower
+        from: archive_bazaar
+        to: lift_tower_concourse
+        status: open
+        travel_summary: The bazaar path returns to the tower with prices, rumors, and certified fragments.
+        unlock_requirements: {}
+      - route_key: bazaar_to_middle_edge
+        from: archive_bazaar
+        to: middle_edge
+        status: open
+        travel_summary: The market road thins toward Middle Edge, where field relays replace public notices.
+        unlock_requirements: {}
+      - route_key: middle_edge_to_bazaar
+        from: middle_edge
+        to: archive_bazaar
+        status: open
+        travel_summary: The frontier trail returns to the bazaar carrying field reports that still need witnesses.
+        unlock_requirements: {}
+      - route_key: gate_to_breach
+        from: nexus_gate
+        to: oblivion_breach
+        status: locked
+        travel_summary: The breach route stays sealed until Nexus recognizes the writ.
+        unlock_requirements:
+          starter_item_effect: unlock_oblivion_breach_route
+      - route_key: breach_to_gate
+        from: oblivion_breach
+        to: nexus_gate
+        status: locked
+        travel_summary: The restoration route bends back to Nexus Gate once the writ has opened it.
+        unlock_requirements:
+          starter_item_effect: unlock_oblivion_breach_route
+    faction:
+      id: nexus_custodians
+      name: Nexus Custodians
+      description: Gate stewards and civic record keepers who protect first contact and public trust.
+      state:
+        doctrine: keep visitor actions legible enough for the shared city to answer them
+    world_axes:
+      - id: archive_integrity
+        display_name: Archive Integrity
+        description: How reliably shared records preserve events before noise or damage distorts them.
+        min_value: 0
+        max_value: 100
+        initial_value: 54
+        thresholds:
+          - key: brittle
+            label: Brittle Archive
+            value: 25
+            description: Witness accounts conflict and public records need careful repair.
+          - key: coherent
+            label: Coherent Archive
+            value: 70
+            description: Shared testimony can become reliable city memory.
+      - id: corruption_pressure
+        display_name: Corruption Pressure
+        description: The intensity of damaged context around frontier and breach sites.
+        min_value: 0
+        max_value: 100
+        initial_value: 48
+        thresholds:
+          - key: contained
+            label: Contained
+            value: 20
+            description: Damage remains local and restoration crews can work openly.
+          - key: spreading
+            label: Spreading
+            value: 75
+            description: Damage begins shaping route access, memory, and public choices.
+      - id: civic_trust
+        display_name: Civic Trust
+        description: How readily Nexus accepts visible help, public promises, and witnessed restoration.
+        min_value: 0
+        max_value: 100
+        initial_value: 50
+        thresholds:
+          - key: cautious
+            label: Cautious City
+            value: 30
+            description: Public institutions hesitate to recognize visitor actions.
+          - key: trusting
+            label: Trusting City
+            value: 65
+            description: Witnessed help can quickly become shared civic context.
+      - id: corporate_pressure
+        display_name: Corporate Pressure
+        description: How strongly market contracts and private leverage shape public recovery work.
+        min_value: 0
+        max_value: 100
+        initial_value: 44
+        thresholds:
+          - key: balanced
+            label: Balanced Exchange
+            value: 30
+            description: Contracts support recovery without drowning out witnesses.
+          - key: leveraged
+            label: Leveraged City
+            value: 75
+            description: Private bids begin to steer what the city treats as important.
+      - id: frontier_risk
+        display_name: Frontier Risk
+        description: The pressure carried by unverified field paths, salvage routes, and unstable boundaries.
+        min_value: 0
+        max_value: 100
+        initial_value: 57
+        thresholds:
+          - key: watchful
+            label: Watchful Frontier
+            value: 35
+            description: Field routes remain tense but usable.
+          - key: exposed
+            label: Exposed Frontier
+            value: 78
+            description: Risk begins returning to Nexus through rumors and route closures.
+    factions:
+      - id: nexus_custodians
+        name: Nexus Custodians
+        description: Gate stewards and civic record keepers who protect first contact and public trust.
+        policy: keep visitor actions legible enough for the shared city to answer them
+        influence_scope:
+          - nexus_gate
+          - lift_tower_concourse
+        initial_standing: 0.0
+        relationships:
+          memory_church: 0.45
+          kronos_exchange: 0.15
+          relic_salvagers: 0.25
+          returner_cell: -0.4
+        world_axis_interests:
+          civic_trust: 1.0
+          archive_integrity: 0.8
+          corruption_pressure: -0.5
+        location_keys:
+          - nexus_gate
+          - lift_tower_concourse
+        npc_names:
+          - Gate Steward Rikka
+          - Archivist Ione
+      - id: memory_church
+        name: Memory Church
+        description: Restoration witnesses who preserve names, places, and damaged public meaning.
+        policy: restore damaged records without turning restoration into coercion
+        influence_scope:
+          - lift_tower_concourse
+          - oblivion_breach
+        initial_standing: 0.0
+        relationships:
+          nexus_custodians: 0.45
+          kronos_exchange: 0.05
+          relic_salvagers: 0.25
+          returner_cell: -0.55
+        world_axis_interests:
+          archive_integrity: 1.0
+          corruption_pressure: -1.0
+          civic_trust: 0.5
+        location_keys:
+          - lift_tower_concourse
+          - oblivion_breach
+        npc_names:
+          - Archivist Ione
+          - Choir Warden Anse
+      - id: kronos_exchange
+        name: Kronos Exchange
+        description: Contract brokers who move certified information, prices, and private leverage through Nexus.
+        policy: price uncertainty before uncertainty prices the city
+        influence_scope:
+          - archive_bazaar
+          - lift_tower_concourse
+        initial_standing: 0.0
+        relationships:
+          nexus_custodians: 0.15
+          memory_church: 0.05
+          relic_salvagers: 0.35
+          returner_cell: -0.15
+        world_axis_interests:
+          corporate_pressure: 1.0
+          archive_integrity: 0.4
+        location_keys:
+          - archive_bazaar
+          - lift_tower_concourse
+        npc_names:
+          - Broker Vell
+      - id: relic_salvagers
+        name: Relic Salvagers
+        description: Field crews who recover useful evidence from unstable edges before it vanishes.
+        policy: prove field truth with practical witness and recoverable traces
+        influence_scope:
+          - archive_bazaar
+          - middle_edge
+        initial_standing: 0.0
+        relationships:
+          nexus_custodians: 0.25
+          memory_church: 0.25
+          kronos_exchange: 0.35
+          returner_cell: -0.2
+        world_axis_interests:
+          frontier_risk: -0.5
+          archive_integrity: 0.5
+          corporate_pressure: 0.3
+        location_keys:
+          - archive_bazaar
+          - middle_edge
+        npc_names:
+          - Salvager Mako
+      - id: returner_cell
+        name: Returner Cell
+        description: A fringe faction that treats spreading damage as proof the old order should return.
+        policy: keep pressure high enough that institutions lose the right to define memory
+        influence_scope:
+          - middle_edge
+          - oblivion_breach
+        initial_standing: -0.1
+        relationships:
+          nexus_custodians: -0.4
+          memory_church: -0.55
+          kronos_exchange: -0.15
+          relic_salvagers: -0.2
+        world_axis_interests:
+          corruption_pressure: 1.0
+          frontier_risk: 0.6
+          civic_trust: -0.7
+        location_keys:
+          - middle_edge
+          - oblivion_breach
+        npc_names: []
+    npc_memory_policy:
+      remember_player_interactions: true
+      remember_local_public_events: true
+      remember_faction_events: true
+      remember_history_events: true
+      remember_relationship_changes: true
+      expose_recent_limit: 6
+    history_rules:
+      - id: gate_rumor_record
+        level: local_rumor
+        description: Visible help at Nexus Gate becomes a local rumor before the city certifies it.
+        trigger_tags:
+          - public_help
+          - earned_trust
+        world_axis_refs:
+          - civic_trust
+        faction_refs:
+          - nexus_custodians
+        location_refs:
+          - nexus_gate
+        npc_refs:
+          - Gate Steward Rikka
+        minimum_salience: 0.35
+      - id: tower_regional_record
+        level: regional_record
+        description: Investigations in tower records become regional records when witnesses agree.
+        trigger_tags:
+          - careful_observation
+          - record_checked
+        world_axis_refs:
+          - archive_integrity
+        faction_refs:
+          - memory_church
+          - nexus_custodians
+        location_refs:
+          - lift_tower_concourse
+        npc_refs:
+          - Archivist Ione
+        minimum_salience: 0.5
+      - id: frontier_faction_record
+        level: faction_record
+        description: Protected frontier routes become faction records when field crews can verify them.
+        trigger_tags:
+          - kept_promise
+          - path_protected
+        world_axis_refs:
+          - frontier_risk
+        faction_refs:
+          - relic_salvagers
+          - nexus_custodians
+        location_refs:
+          - middle_edge
+          - oblivion_breach
+        npc_refs:
+          - Salvager Mako
+          - Choir Warden Anse
+        minimum_salience: 0.55
+      - id: breach_world_canon
+        level: world_canon
+        description: Restoration at the breach becomes world canon when damage recedes in public memory.
+        trigger_tags:
+          - restored_boundary
+          - breach_contained
+        world_axis_refs:
+          - corruption_pressure
+          - archive_integrity
+        faction_refs:
+          - memory_church
+          - nexus_custodians
+        location_refs:
+          - oblivion_breach
+        npc_refs:
+          - Choir Warden Anse
+        minimum_salience: 0.6
+    title_rules:
+      - id: nexus_stabilizer
+        display_name: Nexus Stabilizer
+        description: Recognized for making first contact safer and easier to witness.
+        action_tags:
+          - help
+          - protect
+        world_axis_refs:
+          - civic_trust
+        faction_refs:
+          - nexus_custodians
+        location_refs:
+          - nexus_gate
+        npc_refs:
+          - Gate Steward Rikka
+        progress_target: 3
+      - id: archive_witness
+        display_name: Archive Witness
+        description: Known for turning uncertain reports into reliable shared memory.
+        action_tags:
+          - investigate
+          - negotiate
+        world_axis_refs:
+          - archive_integrity
+        faction_refs:
+          - memory_church
+          - kronos_exchange
+        location_refs:
+          - lift_tower_concourse
+          - archive_bazaar
+        npc_refs:
+          - Archivist Ione
+          - Broker Vell
+        progress_target: 2
+      - id: breach_restorer
+        display_name: Breach Restorer
+        description: Recognized for restoring damaged boundaries without turning recovery into coercion.
+        action_tags:
+          - restore
+          - protect
+        world_axis_refs:
+          - corruption_pressure
+          - frontier_risk
+        faction_refs:
+          - memory_church
+          - nexus_custodians
+        location_refs:
+          - oblivion_breach
+        npc_refs:
+          - Choir Warden Anse
+        progress_target: 2
+    consequence_rules:
+      - id: help_gate_public_trust
+        action_tag: help
+        outcome_tags:
+          - public_help
+          - earned_trust
+        world_axis_deltas:
+          civic_trust: 2
+          archive_integrity: 1
+        faction_standing_deltas:
+          nexus_custodians: 0.03
+        location_public_state_deltas:
+          nexus_gate:
+            civic_trust: 1
+            arrival_clarity: 1
+        npc_memory_drafts:
+          - npc_name: Gate Steward Rikka
+            scope: actor
+            summary: The player helped make a first arrival easier for Nexus to witness.
+        rumor_draft: Gate stewards repeat that a new visitor made the registry clearer.
+        history_candidate_level: local_rumor
+        history_rule_id: gate_rumor_record
+        title_progress_deltas:
+          nexus_stabilizer: 1
+      - id: investigate_tower_records
+        action_tag: investigate
+        outcome_tags:
+          - careful_observation
+          - record_checked
+        world_axis_deltas:
+          archive_integrity: 2
+          corporate_pressure: -1
+        faction_standing_deltas:
+          memory_church: 0.04
+        location_public_state_deltas:
+          lift_tower_concourse:
+            record_clarity: 1
+        npc_memory_drafts:
+          - npc_name: Archivist Ione
+            scope: actor
+            summary: The player compared a tower report against public witness.
+        rumor_draft: The lift tower keeps a cleaner version of the report.
+        history_candidate_level: regional_record
+        history_rule_id: tower_regional_record
+        title_progress_deltas:
+          archive_witness: 1
+      - id: negotiate_archive_contracts
+        action_tag: negotiate
+        outcome_tags:
+          - public_attention
+          - record_checked
+        world_axis_deltas:
+          corporate_pressure: -1
+          archive_integrity: 1
+        faction_standing_deltas:
+          kronos_exchange: 0.03
+          relic_salvagers: 0.02
+        location_public_state_deltas:
+          archive_bazaar:
+            contract_noise: -1
+        npc_memory_drafts:
+          - npc_name: Broker Vell
+            scope: actor
+            summary: The player negotiated a contract toward public witness instead of private leverage.
+        rumor_draft: Bazaar brokers say the visitor made one contract easier to certify.
+        history_candidate_level: regional_record
+        history_rule_id: tower_regional_record
+        title_progress_deltas:
+          archive_witness: 1
+      - id: trade_salvage_terms
+        action_tag: trade
+        outcome_tags:
+          - earned_trust
+          - public_attention
+        world_axis_deltas:
+          corporate_pressure: 1
+          frontier_risk: -1
+        faction_standing_deltas:
+          kronos_exchange: 0.02
+          relic_salvagers: 0.03
+        location_public_state_deltas:
+          archive_bazaar:
+            salvage_prices: 1
+        npc_memory_drafts:
+          - npc_name: Salvager Mako
+            scope: actor
+            summary: The player helped move a salvage term into public view.
+        rumor_draft: Salvagers say the market paid better attention to field risk.
+        history_candidate_level: faction_record
+        history_rule_id: frontier_faction_record
+        title_progress_deltas:
+          archive_witness: 1
+      - id: protect_frontier_route
+        action_tag: protect
+        outcome_tags:
+          - kept_promise
+          - path_protected
+          - reward_item_respect
+        world_axis_deltas:
+          frontier_risk: -2
+          civic_trust: 1
+        faction_standing_deltas:
+          nexus_custodians: 0.04
+          relic_salvagers: 0.03
+        location_public_state_deltas:
+          middle_edge:
+            route_confidence: 1
+        npc_memory_drafts:
+          - npc_name: Salvager Mako
+            scope: location
+            summary: The player helped keep the frontier route useful without hiding its risk.
+        rumor_draft: Middle Edge field crews keep the player's name near the safer route markers.
+        history_candidate_level: faction_record
+        history_rule_id: frontier_faction_record
+        title_progress_deltas:
+          nexus_stabilizer: 1
+      - id: restore_breach_boundary
+        action_tag: restore
+        outcome_tags:
+          - restored_boundary
+          - breach_contained
+        world_axis_deltas:
+          corruption_pressure: -3
+          archive_integrity: 2
+          frontier_risk: -1
+        faction_standing_deltas:
+          memory_church: 0.06
+          nexus_custodians: 0.04
+        location_public_state_deltas:
+          oblivion_breach:
+            breach_containment: 1
+            restored_names: 1
+        npc_memory_drafts:
+          - npc_name: Choir Warden Anse
+            scope: actor
+            summary: The player restored a damaged boundary marker into public memory.
+        rumor_draft: Restoration witnesses say the breach gave back a name instead of taking one.
+        history_candidate_level: world_canon
+        history_rule_id: breach_world_canon
+        title_progress_deltas:
+          breach_restorer: 1
+      - id: destabilize_breach_pressure
+        action_tag: destabilize
+        outcome_tags:
+          - overreach
+          - public_attention
+        world_axis_deltas:
+          corruption_pressure: 3
+          civic_trust: -1
+          frontier_risk: 2
+        faction_standing_deltas:
+          returner_cell: 0.03
+          nexus_custodians: -0.04
+        location_public_state_deltas:
+          oblivion_breach:
+            breach_containment: -1
+        npc_memory_drafts:
+          - npc_name: Choir Warden Anse
+            scope: location
+            summary: The player pushed breach pressure into public attention before it was contained.
+        rumor_draft: Breach witnesses warn that an overreach made the boundary harder to read.
+        history_candidate_level: local_rumor
+        history_rule_id: gate_rumor_record
+    quest:
+      id: starter_nexus_stabilizer_request
+      title: First Stabilizer Request
+      description: Help at the gate, confirm a public record, and earn a writ that opens restoration work.
+      stage_key: starter_nexus
+      unlock_requirements: {}
+      completion_target: 2
+      reward_template_key: nexus_writs
+      reward_name: Nexus Writ
+      reward_description: A witnessed writ that marks the bearer as trusted for the first restoration route.
+      state:
+        reward_enabled: true
+        reward_effect_kind: unlock_oblivion_breach_route
+        reward_effect_payload:
+          unlock_stage_key: breach_restoration
+    followup_quest:
+      id: followup_breach_restoration
+      title: Breach Restoration
+      description: Carry the Nexus Writ toward the damaged boundary and help turn restoration into shared history.
+      stage_key: breach_restoration
+      unlock_requirements:
+        starter_item_effect: unlock_oblivion_breach_route
+      completion_target: 1
+      reward_template_key: none
+      reward_name: ""
+      reward_description: ""
+      state:
+        reward_enabled: false
+    character:
+      rank: Visitor
+      hp: 10
+      focus: 5
+      status_json:
+        origin: gestaloka_reference
+        onboarding: reference_slice
