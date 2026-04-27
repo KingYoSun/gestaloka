@@ -2,7 +2,7 @@
 
 GESTALOKA v2 is a same-world narrative MMO rebuild. The canonical store is PostgreSQL, world memory is retrieved through vector-friendly search, graph updates flow through an outbox projection pipeline, and every player/NPC action lives inside one `world_id` namespace.
 
-The runtime is now being cut over from a single built-in setting to an engine/core plus declarative world packs model. The repo ships with a bundled reference pack (`founders_reach`) and a second sample pack used to keep the engine surface honest.
+The runtime is now being cut over from a single built-in setting to an engine/core plus declarative world packs model. The repo ships with one bundled shared-world reference pack (`gestaloka_reference` / `nexus_foundation`).
 
 ## Repository layout
 

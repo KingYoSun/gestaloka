@@ -160,6 +160,7 @@ def test_settings(tmp_path: Path) -> Settings:
         graph_projection_backend="recording",
         model_provider="stub",
         embedding_provider="stub",
+        pack_dir=REPO_ROOT / "packs",
         prompt_dir=REPO_ROOT / "prompts",
         eval_dataset_dir=REPO_ROOT / "evals" / "datasets",
         release_config_dir=REPO_ROOT / "config" / "release",

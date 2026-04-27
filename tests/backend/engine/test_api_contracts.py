@@ -12,10 +12,10 @@ from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
 
 
-def engine_session_payload(*, world_id: str = "ember_harbor") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "gestaloka_reference") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "world_name": "Ember Harbor",
+        "world_name": "GESTALOKA: Nexus Foundation",
     }
 
 
@@ -55,8 +55,8 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["world_packs"] == {
         "status": "ready",
         "engine_api_version": "v2",
-        "pack_count": 3,
-        "template_count": 3,
+        "pack_count": 1,
+        "template_count": 1,
         "failure_count": 0,
     }
     assert "pack_dir" not in payload["world_packs"]
@@ -82,19 +82,19 @@ def test_playable_world_catalog_is_world_visible_and_keeps_pack_as_context(clien
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ready"
-    ember = next(item for item in payload["items"] if item["world_id"] == "ember_harbor")
-    assert ember["display_name"] == "Ember Harbor"
-    assert ember["health_url"] == "/worlds/ember_harbor/health"
-    assert ember["status"] == "playable"
-    assert ember["pack_context"]["pack_id"] == "ember_harbor"
+    reference = next(item for item in payload["items"] if item["world_id"] == "gestaloka_reference")
+    assert reference["display_name"] == "GESTALOKA: Nexus Foundation"
+    assert reference["health_url"] == "/worlds/gestaloka_reference/health"
+    assert reference["status"] == "playable"
+    assert reference["pack_context"]["pack_id"] == "gestaloka_reference"
 
 
 def test_world_health_reports_playable_world(client, auth_headers):
-    response = client.get("/worlds/ember_harbor/health", headers=auth_headers)
+    response = client.get("/worlds/gestaloka_reference/health", headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json()["status"] == "playable"
-    assert response.json()["pack_context"]["world_template_id"] == "ember_harbor"
+    assert response.json()["pack_context"]["world_template_id"] == "nexus_foundation"
 
 
 def test_session_rejects_unknown_world_as_unavailable(client, auth_headers):
@@ -108,8 +108,8 @@ def test_session_rejects_unknown_world_as_unavailable(client, auth_headers):
 
 def test_session_rejects_pack_candidate_mismatch_as_immutable(client, auth_headers):
     payload = engine_session_payload()
-    payload["pack_id"] = "founders_reach"
-    payload["world_template_id"] = "founders_reach"
+    payload["pack_id"] = "alternate_reference_world"
+    payload["world_template_id"] = "alternate_reference_world"
 
     response = client.post("/sessions", json=payload, headers=auth_headers)
 
@@ -122,8 +122,8 @@ def test_existing_world_pack_metadata_is_immutable(client, auth_headers):
     assert created.status_code == 200
 
     payload = engine_session_payload()
-    payload["pack_id"] = "founders_reach"
-    payload["world_template_id"] = "founders_reach"
+    payload["pack_id"] = "alternate_reference_world"
+    payload["world_template_id"] = "alternate_reference_world"
     response = client.post("/sessions", json=payload, headers=auth_headers)
 
     assert response.status_code == 409
@@ -132,10 +132,10 @@ def test_existing_world_pack_metadata_is_immutable(client, auth_headers):
 
 def test_world_health_blocks_world_with_missing_pack_metadata(client, container, auth_headers):
     with container.session_factory() as db:
-        db.add(World(id="ember_harbor", name="Ember Harbor", status="active", state={}))
+        db.add(World(id="gestaloka_reference", name="GESTALOKA: Nexus Foundation", status="active", state={}))
         db.commit()
 
-    response = client.get("/worlds/ember_harbor/health", headers=auth_headers)
+    response = client.get("/worlds/gestaloka_reference/health", headers=auth_headers)
 
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "world_pack_metadata_missing"
@@ -183,7 +183,7 @@ def test_world_membership_mismatch_returns_404(client, container):
     assert session_response.status_code == 200
 
     access_response = client.get(
-        "/worlds/ember_harbor/events",
+        "/worlds/gestaloka_reference/events",
         headers={"Authorization": "Bearer player-b"},
     )
     assert access_response.status_code == 404
@@ -244,11 +244,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert session_payload["world_context"] == {
         "world_id": session_payload["world_id"],
         "world_name": session_payload["world_name"],
-        "pack_id": "ember_harbor",
-        "pack_display_name": "Ember Harbor",
-        "world_template_id": "ember_harbor",
-        "world_template_display_name": "Ember Harbor",
-        "semantic_tags": ["harbor", "beacon", "rumor", "wardens"],
+        "pack_id": "gestaloka_reference",
+        "pack_display_name": "GESTALOKA Reference",
+        "world_template_id": "nexus_foundation",
+        "world_template_display_name": "Nexus Foundation",
+        "semantic_tags": ["layered-world", "archive", "corruption", "factions"],
     }
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
@@ -344,8 +344,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "help"
         assert turn_payload["shared_consequence_updates"]["applied_rule_ids"]
         assert turn_payload["shared_consequence_updates"]["axis_updates"]
-        assert turn_payload["world_context"]["pack_id"] == "ember_harbor"
-        assert turn_payload["world_context"]["world_template_id"] == "ember_harbor"
+        assert turn_payload["world_context"]["pack_id"] == "gestaloka_reference"
+        assert turn_payload["world_context"]["world_template_id"] == "nexus_foundation"
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"
         assert turn_payload["sp_delta"] == -1
@@ -405,8 +405,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert {"vertex_count", "edge_count"} <= set(messages[-2]["data"])
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
-        assert message["data"]["world_context"]["pack_id"] == "ember_harbor"
-        assert message["data"]["world_context"]["world_template_id"] == "ember_harbor"
+        assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
+        assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
 
 
 def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
@@ -455,7 +455,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         )
         assert use_response.status_code == 200
         payload = use_response.json()
-        assert payload["world_context"]["pack_id"] == "ember_harbor"
+        assert payload["world_context"]["pack_id"] == "gestaloka_reference"
         assert payload["action_type"] == "use_reward_item"
         assert payload["input_mode"] == "choice"
         assert payload["quest_updates"][0]["stage_key"] == world_pack["followup_stage_key"]
@@ -467,7 +467,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(20)]
+        messages = [websocket.receive_json() for _ in range(19)]
 
     assert [message["event"] for message in messages] == [
         "session.connected",
@@ -484,7 +484,6 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "faction.standing.updated",
         "inventory.changed",
         "relationship.updated",
-        "consequence.updated",
         "scene.updated",
         "chapter.updated",
         "ambient.updated",
@@ -501,8 +500,8 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
     assert messages[-1]["data"] == payload
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
-        assert message["data"]["world_context"]["pack_id"] == "ember_harbor"
-        assert message["data"]["world_context"]["world_template_id"] == "ember_harbor"
+        assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
+        assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
     assert payload["scene_updates"]
     assert payload["chapter_updates"]
 
@@ -524,8 +523,8 @@ def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
         idle_response = client.post(f"/ops/worlds/{session_payload['world_id']}/idle-pass", headers=auth_headers)
         assert idle_response.status_code == 200
         idle_payload = idle_response.json()
-        assert idle_payload["world_context"]["pack_id"] == "ember_harbor"
-        assert idle_payload["world_context"]["world_template_id"] == "ember_harbor"
+        assert idle_payload["world_context"]["pack_id"] == "gestaloka_reference"
+        assert idle_payload["world_context"]["world_template_id"] == "nexus_foundation"
 
         message = websocket.receive_json()
         moved_items = [item for item in idle_payload["idle_updates"] if item.get("moved")]
@@ -558,25 +557,6 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         headers=auth_headers,
     )
     assert turn_response.status_code == 200
-    founders_session_response = client.post(
-        "/sessions",
-        json={
-            "world_id": "founders_reach",
-            "pack_id": "founders_reach",
-            "world_template_id": "founders_reach",
-            "world_name": "Founders Reach",
-        },
-        headers=auth_headers,
-    )
-    assert founders_session_response.status_code == 200
-    founders_session_payload = founders_session_response.json()
-    founders_turn_response = client.post(
-        "/turns",
-        json={"session_id": founders_session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
-    )
-    assert founders_turn_response.status_code == 200
-
     status_response = client.get("/ops/projection/status", headers=auth_headers)
     assert status_response.status_code == 200
     status_payload = status_response.json()
@@ -601,19 +581,14 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert worlds_response.status_code == 200
     worlds_payload = worlds_response.json()
     world_item = next(item for item in worlds_payload["items"] if item["world_context"]["world_id"] == session_payload["world_id"])
-    assert world_item["world_context"]["pack_id"] == "ember_harbor"
-    assert world_item["world_context"]["world_template_id"] == "ember_harbor"
+    assert world_item["world_context"]["pack_id"] == "gestaloka_reference"
+    assert world_item["world_context"]["world_template_id"] == "nexus_foundation"
     assert world_item["status"] == "active"
     assert world_item["active_session_count"] >= 1
-    filtered_worlds_response = client.get("/ops/worlds?pack_id=ember_harbor&world_template_id=ember_harbor", headers=auth_headers)
+    filtered_worlds_response = client.get("/ops/worlds?pack_id=gestaloka_reference&world_template_id=nexus_foundation", headers=auth_headers)
     assert filtered_worlds_response.status_code == 200
     assert {item["world_context"]["world_id"] for item in filtered_worlds_response.json()["items"]} == {
         session_payload["world_id"]
-    }
-    founders_filtered_worlds_response = client.get("/ops/worlds?pack_id=founders_reach", headers=auth_headers)
-    assert founders_filtered_worlds_response.status_code == 200
-    assert {item["world_context"]["world_id"] for item in founders_filtered_worlds_response.json()["items"]} == {
-        founders_session_payload["world_id"]
     }
     assert summary_payload["vertex_count"] >= 6
     assert summary_payload["edge_count"] >= 6
@@ -664,17 +639,6 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "safety_guard",
         "narrative",
     ]
-    founders_council_turns_response = client.get(
-        f"/ops/council/turns?world_id={founders_session_payload['world_id']}",
-        headers=auth_headers,
-    )
-    assert founders_council_turns_response.status_code == 200
-    assert founders_council_turns_response.json()["items"]
-    assert {
-        item["world_context"]["pack_id"]
-        for item in founders_council_turns_response.json()["items"]
-    } == {"founders_reach"}
-
     council_turn_id = council_turns_payload["items"][0]["turn_id"]
     council_detail_response = client.get(f"/ops/council/turns/{council_turn_id}", headers=auth_headers)
     assert council_detail_response.status_code == 200
@@ -967,8 +931,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         (item["pack_id"], item["pack_display_name"], item["world_template_id"], item["world_template_display_name"])
         for item in run_payload["summary"]["pack_scope"]
     } == {
-        ("ember_harbor", "Ember Harbor", "ember_harbor", "Ember Harbor"),
-        ("founders_reach", "Founders Reach", "founders_reach", "Founders Reach"),
+        ("gestaloka_reference", "GESTALOKA Reference", "nexus_foundation", "Nexus Foundation"),
     }
     assert run_payload["summary"]["variants"]["current"]["gate_passed"] is True
     assert run_payload["langfuse_trace_id"]
@@ -981,12 +944,12 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert runs_payload["items"][0]["id"] == run_payload["id"]
     assert runs_payload["items"][0]["summary"]["pack_scope"] == run_payload["summary"]["pack_scope"]
     assert runs_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
-    ember_runs_response = client.get(
-        "/ops/evals/runs?pack_id=ember_harbor&world_template_id=ember_harbor",
+    reference_runs_response = client.get(
+        "/ops/evals/runs?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
         headers=auth_headers,
     )
-    assert ember_runs_response.status_code == 200
-    assert ember_runs_response.json()["items"][0]["id"] == run_payload["id"]
+    assert reference_runs_response.status_code == 200
+    assert reference_runs_response.json()["items"][0]["id"] == run_payload["id"]
     missing_runs_response = client.get("/ops/evals/runs?pack_id=missing_pack", headers=auth_headers)
     assert missing_runs_response.status_code == 200
     assert missing_runs_response.json()["items"] == []
@@ -1004,20 +967,19 @@ def test_ops_eval_contracts(client, container, auth_headers):
         )
         for item in detail_response.json()["results"]
     } == {
-        ("ember_harbor", "Ember Harbor", "ember_harbor", "Ember Harbor"),
-        ("founders_reach", "Founders Reach", "founders_reach", "Founders Reach"),
+        ("gestaloka_reference", "GESTALOKA Reference", "nexus_foundation", "Nexus Foundation"),
     }
     assert detail_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
-    ember_detail_response = client.get(
-        f"/ops/evals/runs/{run_payload['id']}?pack_id=ember_harbor&world_template_id=ember_harbor",
+    reference_detail_response = client.get(
+        f"/ops/evals/runs/{run_payload['id']}?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
         headers=auth_headers,
     )
-    assert ember_detail_response.status_code == 200
+    assert reference_detail_response.status_code == 200
     assert {
         item["pack_context"]["pack_id"]
-        for item in ember_detail_response.json()["results"]
-    } == {"ember_harbor"}
-    assert len(ember_detail_response.json()["results"]) < len(detail_response.json()["results"])
+        for item in reference_detail_response.json()["results"]
+    } == {"gestaloka_reference"}
+    assert len(reference_detail_response.json()["results"]) == len(detail_response.json()["results"])
 
     observability_response = client.get("/ops/observability/summary", headers=auth_headers)
     assert observability_response.status_code == 200
@@ -1026,7 +988,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert observability_payload["snapshot_id"]
     assert observability_payload["langfuse"]["runtime_status"] == "ready"
     scoped_observability_response = client.get(
-        "/ops/observability/summary?pack_id=ember_harbor&world_template_id=ember_harbor",
+        "/ops/observability/summary?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
         headers=auth_headers,
     )
     assert scoped_observability_response.status_code == 200
@@ -1036,26 +998,26 @@ def test_ops_eval_contracts(client, container, auth_headers):
     for trace in scoped_traces:
         attributes = trace["attributes"]
         assert (
-            attributes.get("pack_id") == "ember_harbor"
-            or "ember_harbor" in str(attributes.get("eval.pack_ids", "")).split(",")
+            attributes.get("pack_id") == "gestaloka_reference"
+            or "gestaloka_reference" in str(attributes.get("eval.pack_ids", "")).split(",")
         )
         assert (
-            attributes.get("world_template_id") == "ember_harbor"
-            or "ember_harbor" in str(attributes.get("eval.world_template_ids", "")).split(",")
+            attributes.get("world_template_id") == "nexus_foundation"
+            or "nexus_foundation" in str(attributes.get("eval.world_template_ids", "")).split(",")
         )
     missing_observability_response = client.get("/ops/observability/summary?pack_id=missing_pack", headers=auth_headers)
     assert missing_observability_response.status_code == 200
     assert missing_observability_response.json()["recent_traces"] == []
     scoped_snapshots_response = client.get(
-        "/ops/observability/snapshots?pack_id=ember_harbor&world_template_id=ember_harbor",
+        "/ops/observability/snapshots?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
         headers=auth_headers,
     )
     assert scoped_snapshots_response.status_code == 200
     scoped_snapshots = scoped_snapshots_response.json()["items"]
     assert scoped_snapshots[0]["id"] == scoped_observability_payload["snapshot_id"]
     assert scoped_snapshots[0]["snapshot_kind"] == "summary"
-    assert scoped_snapshots[0]["pack_id"] == "ember_harbor"
-    assert scoped_snapshots[0]["world_template_id"] == "ember_harbor"
+    assert scoped_snapshots[0]["pack_id"] == "gestaloka_reference"
+    assert scoped_snapshots[0]["world_template_id"] == "nexus_foundation"
     assert scoped_snapshots[0]["trace_count"] == len(scoped_traces)
     missing_snapshots_response = client.get("/ops/observability/snapshots?pack_id=missing_pack", headers=auth_headers)
     assert missing_snapshots_response.status_code == 200
@@ -1087,27 +1049,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "langfuse_status",
         "langfuse_delivery",
     } <= set(checklist_payload)
-    assert set(checklist_payload["checks"]["pack_regressions"]) == {
-        "turn_resolution_founders_regression",
-        "turn_resolution_ember_regression",
-        "turn_resolution_gestaloka_regression",
-    }
-    assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_founders_regression"]["pack_scope"] == [
-        {
-            "pack_id": "founders_reach",
-            "pack_display_name": "Founders Reach",
-            "world_template_id": "founders_reach",
-            "world_template_display_name": "Founders Reach",
-        }
-    ]
-    assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_ember_regression"]["pack_scope"] == [
-        {
-            "pack_id": "ember_harbor",
-            "pack_display_name": "Ember Harbor",
-            "world_template_id": "ember_harbor",
-            "world_template_display_name": "Ember Harbor",
-        }
-    ]
+    assert set(checklist_payload["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_gestaloka_regression"]["pack_scope"] == [
         {
             "pack_id": "gestaloka_reference",
@@ -1117,15 +1059,9 @@ def test_ops_eval_contracts(client, container, auth_headers):
         }
     ]
     assert checklist_payload["checks"]["shared_world_health"]["status"] == "ready"
-    assert set(checklist_payload["runs"]["pack_regressions"]) == {
-        "turn_resolution_founders_regression",
-        "turn_resolution_ember_regression",
-        "turn_resolution_gestaloka_regression",
-    }
+    assert set(checklist_payload["runs"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert checklist_payload["cutover_status"]["promote_ready"] is True
     assert checklist_payload["cutover_status"]["bundled_pack_regressions"] == [
-        "turn_resolution_founders_regression",
-        "turn_resolution_ember_regression",
         "turn_resolution_gestaloka_regression",
     ]
     assert checklist_payload["runbook"]["canary_up"] == "make canary-up"
@@ -1148,17 +1084,17 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert latest_response.json()["cutover_status"] == checklist_payload["cutover_status"]
     assert latest_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     scoped_latest_response = client.get(
-        "/ops/release/checklists/latest?pack_id=ember_harbor&world_template_id=ember_harbor",
+        "/ops/release/checklists/latest?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
         headers=auth_headers,
     )
     assert scoped_latest_response.status_code == 200
     scoped_latest_payload = scoped_latest_response.json()
     assert scoped_latest_payload["report_id"] == checklist_payload["report_id"]
     assert scoped_latest_payload["cutover_status"] == checklist_payload["cutover_status"]
-    assert set(scoped_latest_payload["checks"]["pack_regressions"]) == {"turn_resolution_ember_regression"}
-    assert set(scoped_latest_payload["runs"]["pack_regressions"]) == {"turn_resolution_ember_regression"}
+    assert set(scoped_latest_payload["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
+    assert set(scoped_latest_payload["runs"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert all(
-        item["pack_context"]["pack_id"] == "ember_harbor"
+        item["pack_context"]["pack_id"] == "gestaloka_reference"
         for item in scoped_latest_payload["shadow_failures"]
     )
     missing_latest_response = client.get("/ops/release/checklists/latest?pack_id=missing_pack", headers=auth_headers)

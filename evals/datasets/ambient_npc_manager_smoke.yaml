@@ -5,5 +5,5 @@ cases:
   - case_id: ambient-npc-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Lamplighter Sera
+    npc_name: Archivist Ione
     input_text: 広場の余韻をどう動かすか

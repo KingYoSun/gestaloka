@@ -1,0 +1,60 @@
+import { expect, test } from "@playwright/test";
+
+test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
+  test.setTimeout(240_000);
+  const worldId = "gestaloka_reference";
+  const slowTimeout = 30_000;
+
+  await page.goto("/");
+  await page.getByTestId("sign-in").click();
+
+  await page.locator("#username").fill("demo");
+  await page.locator("#password").fill("demo-password");
+  await page.getByRole("button", { name: /sign in/i }).click();
+
+  await expect(page.getByTestId("auth-status")).toContainText("authenticated");
+  await expect(page.getByTestId("sp-balance")).toContainText(/SP balance:\s*-?\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
+
+  await page.getByTestId("world-select").selectOption(worldId);
+  await page.getByTestId("start-session").click();
+
+  await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
+  await expect(page.getByTestId("session-pack")).toContainText("GESTALOKA Reference", { timeout: 20_000 });
+  await expect(page.getByTestId("session-pack")).toContainText("Nexus Foundation", { timeout: 20_000 });
+  await expect(page.getByTestId("ops-stream")).toContainText("session.connected", { timeout: 20_000 });
+  await expect(page.getByTestId("ops-stream")).toContainText("GESTALOKA Reference", { timeout: 20_000 });
+  await expect(page.getByTestId("ops-stream")).not.toContainText("missing world context");
+  await expect(page.getByTestId("ops-stream")).not.toContainText("global");
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus Gate/i, { timeout: 20_000 });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Nexus/i, { timeout: 20_000 });
+  await expect(page.getByTestId("active-quest")).toContainText("First Stabilizer Request", { timeout: 20_000 });
+  await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Gate Steward Rikka/i, { timeout: 20_000 });
+  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Lift Tower Concourse/i, { timeout: 20_000 });
+  await expect(page.getByTestId("faction-standing")).toContainText(/Nexus Custodians/i, { timeout: 20_000 });
+
+  for (let step = 0; step < 2; step += 1) {
+    await page.getByTestId("choice-progress").click();
+    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });
+  }
+
+  await expect(page.getByTestId("quest-progress")).toContainText("2/2", { timeout: slowTimeout });
+  await expect(page.getByTestId("inventory-stream")).toContainText(/Nexus Writ/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("choice-list")).toContainText(/use|writ|breach|restoration/i, { timeout: slowTimeout });
+
+  await page.getByTestId("choice-progress").click();
+  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });
+  await expect(page.getByTestId("active-quest")).toContainText("Breach Restoration", { timeout: slowTimeout });
+  await expect(page.getByTestId("quest-stage")).toContainText("breach_restoration", { timeout: slowTimeout });
+  await expect(page.getByTestId("inventory-stream")).toContainText("used", { timeout: slowTimeout });
+  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Oblivion Breach/i, { timeout: slowTimeout });
+
+  await page.getByTestId("choice-progress").click();
+  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 120_000 });
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Oblivion Breach/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("recent-travel-history")).toContainText(/Oblivion Breach|breach|restoration/i, {
+    timeout: slowTimeout,
+  });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/breach|restoration/i, { timeout: slowTimeout });
+});

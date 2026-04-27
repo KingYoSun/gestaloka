@@ -7,7 +7,7 @@ This document fixes the v2 external world pack handoff path. External packs use 
 Export a validated pack from the active `PACK_DIR`:
 
 ```bash
-make pack-export PACK_ID=ember_harbor PACK_ARCHIVE=dist/world-packs/ember_harbor-1.0.0.tar.gz
+make pack-export PACK_ID=gestaloka_reference PACK_ARCHIVE=dist/world-packs/gestaloka_reference-1.0.0.tar.gz
 ```
 
 The archive contains one root directory named `<pack_id>/` and only:
@@ -22,13 +22,13 @@ The export command validates the pack before writing the archive. Invalid manife
 Import an archive into the active `PACK_DIR`:
 
 ```bash
-PACK_DIR=/path/to/external-packs make pack-import PACK_ARCHIVE=/path/to/ember_harbor-1.0.0.tar.gz
+PACK_DIR=/path/to/external-packs make pack-import PACK_ARCHIVE=/path/to/gestaloka_reference-1.0.0.tar.gz
 ```
 
 The import command extracts into a temporary directory, validates the pack, then copies it into `PACK_DIR/<pack_id>` only after validation succeeds. Existing packs are not overwritten by the Make target. Use the CLI directly when replacement is intentional:
 
 ```bash
-PACK_DIR=/path/to/external-packs PYTHONPATH=backend python -m app.modules.world_pack import --archive /path/to/ember_harbor-1.0.0.tar.gz --replace
+PACK_DIR=/path/to/external-packs PYTHONPATH=backend python -m app.modules.world_pack import --archive /path/to/gestaloka_reference-1.0.0.tar.gz --replace
 ```
 
 ## Rejection Conditions

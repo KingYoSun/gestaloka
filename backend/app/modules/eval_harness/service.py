@@ -49,8 +49,6 @@ from app.modules.world_state.health import shared_world_health
 
 
 PACK_REGRESSION_DATASETS = [
-    "turn_resolution_founders_regression",
-    "turn_resolution_ember_regression",
     "turn_resolution_gestaloka_regression",
 ]
 PRODUCT_CUTOVER_REQUIRED_CHECKS = [

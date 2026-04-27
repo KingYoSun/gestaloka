@@ -3,8 +3,8 @@ from __future__ import annotations
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "ember_harbor",
-        "world_name": "Ember Harbor",
+        "world_id": "gestaloka_reference",
+        "world_name": "GESTALOKA: Nexus Foundation",
     }
 
 
@@ -39,17 +39,17 @@ def test_turn_execution_updates_observability_traces_and_metrics(client, contain
 
     assert {"prompt_id", "model_id", "lane", "runtime_role", "pack_id", "world_template_id"} <= set(llm_trace["attributes"])
     assert llm_trace["attributes"]["world_id"] == session_payload["world_id"]
-    assert llm_trace["attributes"]["pack_id"] == "ember_harbor"
-    assert llm_trace["attributes"]["world_template_id"] == "ember_harbor"
+    assert llm_trace["attributes"]["pack_id"] == "gestaloka_reference"
+    assert llm_trace["attributes"]["world_template_id"] == "nexus_foundation"
     assert {"world_id", "session_id", "turn_id", "graph_context_status", "runtime_role", "pack_id", "world_template_id"} <= set(
         turn_trace["attributes"]
     )
     assert turn_trace["attributes"]["session_id"] == session_payload["session_id"]
     assert turn_trace["attributes"]["turn_id"] == turn_payload["turn_id"]
-    assert turn_trace["attributes"]["pack_id"] == "ember_harbor"
-    assert turn_trace["attributes"]["world_template_id"] == "ember_harbor"
-    assert websocket_trace["attributes"]["pack_id"] == "ember_harbor"
-    assert websocket_trace["attributes"]["world_template_id"] == "ember_harbor"
+    assert turn_trace["attributes"]["pack_id"] == "gestaloka_reference"
+    assert turn_trace["attributes"]["world_template_id"] == "nexus_foundation"
+    assert websocket_trace["attributes"]["pack_id"] == "gestaloka_reference"
+    assert websocket_trace["attributes"]["world_template_id"] == "nexus_foundation"
 
     metrics = container.observability_service.metric_snapshot()
     assert {

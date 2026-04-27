@@ -5,5 +5,5 @@ cases:
   - case_id: council-rules-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Archivist Nera
+    npc_name: Gate Steward Rikka
     input_text: 広場で旅人を助け、灯をともす

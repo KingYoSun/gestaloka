@@ -32,10 +32,16 @@ from app.modules.world_pack.service import (
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
-def _copy_pack_dir(tmp_path: Path, pack_name: str = "ember_harbor") -> Path:
+def _copy_pack_dir(tmp_path: Path, pack_name: str = "gestaloka_reference") -> Path:
     pack_dir = tmp_path / "packs"
     shutil.copytree(REPO_ROOT / "packs" / pack_name, pack_dir / pack_name)
     return pack_dir
+
+
+def _copy_pack_as(pack_dir: Path, target_name: str, source_pack: str = "gestaloka_reference") -> Path:
+    target_path = pack_dir / target_name
+    shutil.copytree(REPO_ROOT / "packs" / source_pack, target_path)
+    return target_path
 
 
 def _rewrite_world_template(pack_dir: Path, pack_name: str, mutate: Callable[[dict[str, object]], None]) -> None:
@@ -97,7 +103,7 @@ def _write_tar_file(archive_path: Path, members: list[tuple[str, bytes | None, s
                 tar.addfile(info, io.BytesIO(payload))
 
 
-def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_headers):
+def test_world_pack_registry_lists_reference_pack(client, auth_headers):
     response = client.get("/worlds/packs", headers=auth_headers)
 
     assert response.status_code == 200
@@ -107,14 +113,14 @@ def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_header
     assert "failures" not in payload
     assert "pack_dir" not in payload
     items = payload["items"]
-    assert {item["pack_id"] for item in items} >= {"founders_reach", "ember_harbor", "gestaloka_reference"}
-    ember = next(item for item in items if item["pack_id"] == "ember_harbor")
-    assert "root_dir" not in ember
-    assert ember["visibility"] == "public"
-    assert ember["publish_status"] == "playable"
-    assert ember["world_templates"][0]["template_id"] == "ember_harbor"
-    assert ember["world_templates"][0]["effective_visibility"] == "public"
-    assert ember["world_templates"][0]["effective_publish_status"] == "playable"
+    assert {item["pack_id"] for item in items} == {"gestaloka_reference"}
+    reference = next(item for item in items if item["pack_id"] == "gestaloka_reference")
+    assert "root_dir" not in reference
+    assert reference["visibility"] == "public"
+    assert reference["publish_status"] == "playable"
+    assert reference["world_templates"][0]["template_id"] == "nexus_foundation"
+    assert reference["world_templates"][0]["effective_visibility"] == "public"
+    assert reference["world_templates"][0]["effective_publish_status"] == "playable"
 
 
 def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):
@@ -124,21 +130,21 @@ def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):
     payload = response.json()
     assert payload["status"] == "ready"
     assert payload["pack_dir"].endswith("/packs")
-    assert payload["pack_count"] >= 2
-    assert payload["template_count"] >= 2
-    ember = next(item for item in payload["items"] if item["pack_id"] == "ember_harbor")
-    assert ember["root_dir"].endswith("/packs/ember_harbor")
-    assert ember["visibility"] == "public"
-    assert ember["publish_status"] == "playable"
-    assert ember["world_templates"][0]["template_id"] == "ember_harbor"
-    assert ember["world_templates"][0]["effective_visibility"] == "public"
-    assert ember["world_templates"][0]["effective_publish_status"] == "playable"
+    assert payload["pack_count"] == 1
+    assert payload["template_count"] == 1
+    reference = next(item for item in payload["items"] if item["pack_id"] == "gestaloka_reference")
+    assert reference["root_dir"].endswith("/packs/gestaloka_reference")
+    assert reference["visibility"] == "public"
+    assert reference["publish_status"] == "playable"
+    assert reference["world_templates"][0]["template_id"] == "nexus_foundation"
+    assert reference["world_templates"][0]["effective_visibility"] == "public"
+    assert reference["world_templates"][0]["effective_publish_status"] == "playable"
 
 
 def test_pack_registry_exposes_branch_metadata_from_pack_contract():
     registry = PackRegistry(REPO_ROOT / "packs")
     assert registry.pack_dir == (REPO_ROOT / "packs").resolve()
-    template = registry.get_template("ember_harbor", "ember_harbor")
+    template = registry.get_template("gestaloka_reference", "nexus_foundation")
     branch = template.roles.followup_branches.formal_path
 
     assert branch.summary
@@ -149,21 +155,6 @@ def test_pack_registry_exposes_branch_metadata_from_pack_contract():
 
 def test_pack_registry_exposes_shared_world_contract_from_bundled_packs():
     registry = PackRegistry(REPO_ROOT / "packs")
-
-    founders = registry.get_template("founders_reach", "founders_reach")
-    assert {axis.id for axis in founders.world_axes} >= {"public_trust", "memory_coherence", "watch_pressure"}
-    assert {faction.id for faction in founders.factions} >= {"founders_watch", "archive_circle", "courier_ring"}
-    assert founders.npc_memory_policy.remember_history_events is True
-    assert founders.history_rules[0].level == "local_rumor"
-    assert founders.title_rules[0].action_tags == ["help", "protect"]
-    assert founders.consequence_rules[0].action_tag == "help"
-    assert founders.consequence_rules[0].world_axis_deltas["public_trust"] > 0
-
-    ember = registry.get_template("ember_harbor", "ember_harbor")
-    assert {axis.id for axis in ember.world_axes} >= {"harbor_stability", "rumor_current", "breakwater_risk"}
-    assert {faction.id for faction in ember.factions} >= {"ember_wardens", "tide_recorders", "dockside_runners"}
-    assert ember.locations["breakwater"].related_world_axes == ["harbor_stability", "breakwater_risk"]
-    assert ember.consequence_rules[-1].history_candidate_level == "faction_record"
 
     gestaloka = registry.get_template("gestaloka_reference", "nexus_foundation")
     assert {axis.id for axis in gestaloka.world_axes} >= {
@@ -207,7 +198,7 @@ def test_pack_registry_synthesizes_shared_factions_for_legacy_opening_slice_shap
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        template = payload["world_templates"]["ember_harbor"]  # type: ignore[index]
+        template = payload["world_templates"]["nexus_foundation"]  # type: ignore[index]
         for key in (
             "world_axes",
             "factions",
@@ -221,21 +212,21 @@ def test_pack_registry_synthesizes_shared_factions_for_legacy_opening_slice_shap
             location.pop("related_factions", None)
             location.pop("related_world_axes", None)
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
-    template = PackRegistry(pack_dir).get_template("ember_harbor", "ember_harbor")
-    assert [faction.id for faction in template.factions] == ["ember_wardens"]
-    assert template.factions[0].policy == "steady the harbor and reward reliable hands"
+    template = PackRegistry(pack_dir).get_template("gestaloka_reference", "nexus_foundation")
+    assert [faction.id for faction in template.factions] == ["nexus_custodians"]
+    assert template.factions[0].policy == "keep visitor actions legible enough for the shared city to answer them"
 
 
 def test_pack_registry_rejects_invalid_shared_world_action_tag(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        template = payload["world_templates"]["ember_harbor"]  # type: ignore[index]
+        template = payload["world_templates"]["nexus_foundation"]  # type: ignore[index]
         template["consequence_rules"][0]["action_tag"] = "teleport"  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -247,10 +238,10 @@ def test_pack_registry_rejects_invalid_shared_world_history_level(tmp_path: Path
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        template = payload["world_templates"]["ember_harbor"]  # type: ignore[index]
+        template = payload["world_templates"]["nexus_foundation"]  # type: ignore[index]
         template["history_rules"][0]["level"] = "private_note"  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -262,7 +253,7 @@ def test_pack_registry_rejects_invalid_shared_world_history_level(tmp_path: Path
     ("mutator", "expected_message"),
     [
         (
-            lambda template: template["locations"]["quay"]["related_factions"].append("unknown_faction"),
+            lambda template: template["locations"]["nexus_gate"]["related_factions"].append("unknown_faction"),
             "unknown_faction",
         ),
         (
@@ -283,9 +274,9 @@ def test_pack_registry_rejects_unknown_shared_world_references(tmp_path: Path, m
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        mutator(payload["world_templates"]["ember_harbor"])  # type: ignore[index]
+        mutator(payload["world_templates"]["nexus_foundation"])  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] in {"invalid_content", "unknown_shared_world_reference"}
@@ -309,9 +300,9 @@ def test_pack_registry_rejects_invalid_shared_world_axis_ranges(tmp_path: Path, 
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        mutator(payload["world_templates"]["ember_harbor"])  # type: ignore[index]
+        mutator(payload["world_templates"]["nexus_foundation"])  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -339,9 +330,9 @@ def test_pack_registry_rejects_duplicate_shared_world_ids(tmp_path: Path, mutato
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        mutator(payload["world_templates"]["ember_harbor"])  # type: ignore[index]
+        mutator(payload["world_templates"]["nexus_foundation"])  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -360,9 +351,9 @@ def test_pack_registry_rejects_missing_followup_branches(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        del payload["world_templates"]["ember_harbor"]["roles"]["followup_branches"]  # type: ignore[index]
+        del payload["world_templates"]["nexus_foundation"]["roles"]["followup_branches"]  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -373,9 +364,9 @@ def test_pack_registry_rejects_missing_followup_branch_slot(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        del payload["world_templates"]["ember_harbor"]["roles"]["followup_branches"]["undercurrent_path"]  # type: ignore[index]
+        del payload["world_templates"]["nexus_foundation"]["roles"]["followup_branches"]["undercurrent_path"]  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -386,10 +377,10 @@ def test_pack_registry_rejects_duplicate_followup_branch_keys(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        roles = payload["world_templates"]["ember_harbor"]["roles"]  # type: ignore[index]
-        roles["followup_branches"]["undercurrent_path"]["branch_key"] = "beacon_oath"  # type: ignore[index]
+        roles = payload["world_templates"]["nexus_foundation"]["roles"]  # type: ignore[index]
+        roles["followup_branches"]["undercurrent_path"]["branch_key"] = "custodian_charter"  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_content"
@@ -400,10 +391,10 @@ def test_pack_registry_rejects_unknown_followup_branch_anchor_npc(tmp_path: Path
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        roles = payload["world_templates"]["ember_harbor"]["roles"]  # type: ignore[index]
+        roles = payload["world_templates"]["nexus_foundation"]["roles"]  # type: ignore[index]
         roles["followup_branches"]["formal_path"]["anchor_npcs"] = ["Unknown Anchor"]  # type: ignore[index]
 
-    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+    _rewrite_world_template(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "unknown_anchor_npc"
@@ -433,19 +424,19 @@ def test_pack_registry_catalog_diagnostic_reports_external_pack_dir(tmp_path: Pa
     assert diagnostic["template_count"] == 1
     assert diagnostic["failure_count"] == 0
     assert diagnostic["failures"] == []
-    assert diagnostic["items"][0]["pack_id"] == "ember_harbor"
-    assert diagnostic["items"][0]["root_dir"] == str((pack_dir / "ember_harbor").resolve())
-    assert diagnostic["items"][0]["world_templates"][0]["template_id"] == "ember_harbor"
+    assert diagnostic["items"][0]["pack_id"] == "gestaloka_reference"
+    assert diagnostic["items"][0]["root_dir"] == str((pack_dir / "gestaloka_reference").resolve())
+    assert diagnostic["items"][0]["world_templates"][0]["template_id"] == "nexus_foundation"
 
 
 def test_pack_registry_reports_degraded_external_pack_dir_and_keeps_valid_packs(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
-    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+    _copy_pack_as(pack_dir, "broken_reference")
 
     def mutate(payload: dict[str, object]) -> None:
-        payload["pack_id"] = "not_founders_reach"
+        payload["pack_id"] = "not_broken_reference"
 
-    _rewrite_pack_manifest(pack_dir, "founders_reach", mutate)
+    _rewrite_pack_manifest(pack_dir, "broken_reference", mutate)
 
     registry = PackRegistry(pack_dir)
     diagnostic = registry.catalog_diagnostic()
@@ -453,11 +444,11 @@ def test_pack_registry_reports_degraded_external_pack_dir_and_keeps_valid_packs(
     assert registry.status == "degraded"
     assert diagnostic["pack_count"] == 1
     assert diagnostic["failure_count"] == 1
-    assert [item["pack_id"] for item in diagnostic["items"]] == ["ember_harbor"]
+    assert [item["pack_id"] for item in diagnostic["items"]] == ["gestaloka_reference"]
     assert diagnostic["failures"][0]["error"] == "pack_id_mismatch"
-    assert registry.get_template("ember_harbor", "ember_harbor").template_id == "ember_harbor"
+    assert registry.get_template("gestaloka_reference", "nexus_foundation").template_id == "nexus_foundation"
     with pytest.raises(WorldPackError, match="Unknown pack_id"):
-        registry.get_pack("founders_reach")
+        registry.get_pack("broken_reference")
 
 
 @pytest.mark.parametrize(
@@ -477,7 +468,7 @@ def test_pack_registry_rejects_invalid_catalog_visibility_metadata(
     def mutate(payload: dict[str, object]) -> None:
         payload[field_name] = value
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_manifest"
@@ -491,7 +482,7 @@ def test_public_catalog_hides_private_packs_and_ops_catalog_keeps_them(tmp_path:
         payload["visibility"] = "private"
         payload["world_templates"][0]["visibility"] = "private"  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
     test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
     try:
         public_response = test_client.get("/worlds/packs", headers=auth_headers)
@@ -500,9 +491,9 @@ def test_public_catalog_hides_private_packs_and_ops_catalog_keeps_them(tmp_path:
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "ember_harbor",
-                "pack_id": "ember_harbor",
-                "world_template_id": "ember_harbor",
+                "world_id": "gestaloka_reference",
+                "pack_id": "gestaloka_reference",
+                "world_template_id": "nexus_foundation",
                 "world_name": "Hidden Pack World",
             },
             headers=auth_headers,
@@ -525,9 +516,9 @@ def test_public_catalog_hides_private_packs_and_ops_catalog_keeps_them(tmp_path:
     assert ops_response.status_code == 200
     ops_payload = ops_response.json()
     assert ops_payload["status"] == "ready"
-    assert ops_payload["items"][0]["pack_id"] == "ember_harbor"
+    assert ops_payload["items"][0]["pack_id"] == "gestaloka_reference"
     assert ops_payload["items"][0]["visibility"] == "private"
-    assert ops_payload["items"][0]["root_dir"].endswith("/packs/ember_harbor")
+    assert ops_payload["items"][0]["root_dir"].endswith("/packs/gestaloka_reference")
 
     assert session_response.status_code == 503
     assert session_response.json()["detail"]["error"] == "world_unavailable"
@@ -544,7 +535,7 @@ def test_public_catalog_hides_unplayable_templates_and_session_rejects_them(
     def mutate(payload: dict[str, object]) -> None:
         payload["world_templates"][0]["publish_status"] = publish_status  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
     test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
     try:
         public_response = test_client.get("/worlds/packs", headers=auth_headers)
@@ -553,9 +544,9 @@ def test_public_catalog_hides_unplayable_templates_and_session_rejects_them(
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "ember_harbor",
-                "pack_id": "ember_harbor",
-                "world_template_id": "ember_harbor",
+                "world_id": "gestaloka_reference",
+                "pack_id": "gestaloka_reference",
+                "world_template_id": "nexus_foundation",
                 "world_name": "Unplayable Template World",
             },
             headers=auth_headers,
@@ -581,7 +572,7 @@ def test_template_catalog_metadata_overrides_pack_defaults(tmp_path: Path, auth_
         payload["world_templates"][0]["visibility"] = "public"  # type: ignore[index]
         payload["world_templates"][0]["publish_status"] = "playable"  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
     test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
     try:
         public_response = test_client.get("/worlds/packs", headers=auth_headers)
@@ -589,9 +580,9 @@ def test_template_catalog_metadata_overrides_pack_defaults(tmp_path: Path, auth_
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "ember_harbor",
-                "pack_id": "ember_harbor",
-                "world_template_id": "ember_harbor",
+                "world_id": "gestaloka_reference",
+                "pack_id": "gestaloka_reference",
+                "world_template_id": "nexus_foundation",
                 "world_name": "Template Override World",
             },
             headers=auth_headers,
@@ -602,11 +593,11 @@ def test_template_catalog_metadata_overrides_pack_defaults(tmp_path: Path, auth_
     assert public_response.status_code == 200
     public_payload = public_response.json()
     assert public_payload["status"] == "ready"
-    assert public_payload["items"][0]["pack_id"] == "ember_harbor"
+    assert public_payload["items"][0]["pack_id"] == "gestaloka_reference"
     assert public_payload["items"][0]["visibility"] == "private"
     assert public_payload["items"][0]["world_templates"][0]["effective_visibility"] == "public"
     assert public_payload["items"][0]["world_templates"][0]["effective_publish_status"] == "playable"
-    assert playable_response.json()["items"][0]["world_id"] == "ember_harbor"
+    assert playable_response.json()["items"][0]["world_id"] == "gestaloka_reference"
     assert session_response.status_code == 200
 
 
@@ -630,37 +621,37 @@ def test_pack_registry_rejects_symlink_pack_roots_and_escaped_pack_ids(tmp_path:
     pack_dir = tmp_path / "packs"
     pack_dir.mkdir()
     outside_dir = tmp_path / "outside"
-    shutil.copytree(REPO_ROOT / "packs" / "ember_harbor", outside_dir / "ember_harbor")
-    (pack_dir / "linked_pack").symlink_to(outside_dir / "ember_harbor", target_is_directory=True)
+    shutil.copytree(REPO_ROOT / "packs" / "gestaloka_reference", outside_dir / "gestaloka_reference")
+    (pack_dir / "linked_pack").symlink_to(outside_dir / "gestaloka_reference", target_is_directory=True)
 
     symlink_failure = _only_failure(PackRegistry(pack_dir))
     assert symlink_failure["error"] == "pack_root_symlink_not_allowed"
     assert symlink_failure["severity"] == "error"
 
     with pytest.raises(WorldPackError) as exc:
-        load_pack_from_dir(pack_dir, "../outside/ember_harbor")
+        load_pack_from_dir(pack_dir, "../outside/gestaloka_reference")
     assert exc.value.code == "invalid_pack_id"
 
 
 def test_pack_registry_rejects_pack_manifest_that_is_not_a_file(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
-    manifest_path = pack_dir / "ember_harbor" / "pack.yaml"
+    manifest_path = pack_dir / "gestaloka_reference" / "pack.yaml"
     manifest_path.unlink()
     manifest_path.mkdir()
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "pack_manifest_not_file"
-    assert str(failure["path"]).endswith("ember_harbor/pack.yaml")
+    assert str(failure["path"]).endswith("gestaloka_reference/pack.yaml")
 
 
 def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_path: Path, auth_headers):
     pack_dir = _copy_pack_dir(tmp_path)
-    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+    _copy_pack_as(pack_dir, "broken_reference")
 
     def mutate(payload: dict[str, object]) -> None:
-        payload["pack_id"] = "not_founders_reach"
+        payload["pack_id"] = "not_broken_reference"
 
-    _rewrite_pack_manifest(pack_dir, "founders_reach", mutate)
+    _rewrite_pack_manifest(pack_dir, "broken_reference", mutate)
     test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir)
     try:
         public_response = test_client.get("/worlds/packs", headers=auth_headers)
@@ -668,9 +659,9 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "ember_harbor",
-                "pack_id": "ember_harbor",
-                "world_template_id": "ember_harbor",
+                "world_id": "gestaloka_reference",
+                "pack_id": "gestaloka_reference",
+                "world_template_id": "nexus_foundation",
                 "world_name": "External Valid World",
             },
             headers=auth_headers,
@@ -686,7 +677,7 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
     assert "failure_count" not in public_payload
     assert "failures" not in public_payload
     assert "pack_dir" not in public_payload
-    assert [item["pack_id"] for item in public_payload["items"]] == ["ember_harbor"]
+    assert [item["pack_id"] for item in public_payload["items"]] == ["gestaloka_reference"]
     assert "root_dir" not in public_payload["items"][0]
 
     assert admin_response.status_code == 200
@@ -694,7 +685,7 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
     assert admin_payload["status"] == "degraded"
     assert admin_payload["failures"][0]["error"] == "pack_id_mismatch"
     assert admin_payload["failures"][0]["severity"] == "error"
-    assert admin_payload["failures"][0]["path"].endswith("founders_reach/pack.yaml")
+    assert admin_payload["failures"][0]["path"].endswith("broken_reference/pack.yaml")
     assert session_response.status_code == 200
 
 
@@ -718,7 +709,7 @@ def test_pack_registry_rejects_invalid_manifest_pack_id_slug(tmp_path: Path):
     def mutate(payload: dict[str, object]) -> None:
         payload["pack_id"] = "Bad Pack"
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_pack_id"
@@ -731,7 +722,7 @@ def test_pack_registry_rejects_invalid_manifest_template_id_slug(tmp_path: Path)
     def mutate(payload: dict[str, object]) -> None:
         payload["world_templates"][0]["template_id"] = "Bad Template"  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_template_id"
@@ -744,7 +735,7 @@ def test_pack_registry_rejects_duplicate_manifest_template_ids(tmp_path: Path):
     def mutate(payload: dict[str, object]) -> None:
         payload["world_templates"].append(dict(payload["world_templates"][0]))  # type: ignore[index,union-attr]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "duplicate_template_id"
@@ -755,9 +746,9 @@ def test_pack_registry_rejects_manifest_pack_id_mismatch(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        payload["pack_id"] = "not_ember_harbor"
+        payload["pack_id"] = "not_gestaloka_reference"
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "pack_id_mismatch"
@@ -770,7 +761,7 @@ def test_pack_registry_rejects_unsafe_content_refs(tmp_path: Path):
     def mutate_absolute(payload: dict[str, object]) -> None:
         payload["content_refs"]["npcs"] = str(tmp_path / "outside.yaml")  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_absolute)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate_absolute)
     absolute_failure = _only_failure(PackRegistry(pack_dir))
     assert absolute_failure["error"] == "invalid_content_ref"
     assert "must be relative" in absolute_failure["message"]
@@ -780,7 +771,7 @@ def test_pack_registry_rejects_unsafe_content_refs(tmp_path: Path):
     def mutate_parent(payload: dict[str, object]) -> None:
         payload["content_refs"]["npcs"] = "../outside.yaml"  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_parent)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate_parent)
     parent_failure = _only_failure(PackRegistry(pack_dir))
     assert parent_failure["error"] == "invalid_content_ref"
     assert "escapes pack root" in parent_failure["message"]
@@ -792,19 +783,19 @@ def test_pack_registry_rejects_missing_and_non_yaml_content_refs(tmp_path: Path)
     def mutate_missing(payload: dict[str, object]) -> None:
         payload["content_refs"]["npcs"] = "missing.yaml"  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_missing)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate_missing)
     missing_failure = _only_failure(PackRegistry(pack_dir))
     assert missing_failure["error"] == "content_file_not_found"
     assert "file not found" in missing_failure["message"]
 
     pack_dir = _copy_pack_dir(tmp_path / "non-yaml")
-    non_yaml = pack_dir / "ember_harbor" / "npcs.txt"
+    non_yaml = pack_dir / "gestaloka_reference" / "npcs.txt"
     non_yaml.write_text("not yaml\n", encoding="utf-8")
 
     def mutate_non_yaml(payload: dict[str, object]) -> None:
         payload["content_refs"]["npcs"] = "npcs.txt"  # type: ignore[index]
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_non_yaml)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate_non_yaml)
     non_yaml_failure = _only_failure(PackRegistry(pack_dir))
     assert non_yaml_failure["error"] == "invalid_content_ref"
     assert "YAML file" in non_yaml_failure["message"]
@@ -812,16 +803,15 @@ def test_pack_registry_rejects_missing_and_non_yaml_content_refs(tmp_path: Path)
 
 def test_pack_registry_rejects_invalid_yaml_with_diagnostic(tmp_path: Path):
     pack_dir = _copy_pack_dir(tmp_path)
-    (pack_dir / "ember_harbor" / "npcs.yaml").write_text("npcs: [\n", encoding="utf-8")
+    (pack_dir / "gestaloka_reference" / "npcs.yaml").write_text("npcs: [\n", encoding="utf-8")
 
     failure = _only_failure(PackRegistry(pack_dir))
     assert failure["error"] == "invalid_yaml"
-    assert str(failure["path"]).endswith("ember_harbor/npcs.yaml")
+    assert str(failure["path"]).endswith("gestaloka_reference/npcs.yaml")
 
 
 def test_pack_cli_lists_discovered_packs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     pack_dir = _copy_pack_dir(tmp_path)
-    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
     settings = _settings_for_pack_dir(tmp_path, pack_dir)
     monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
     monkeypatch.setattr(sys, "argv", ["world_pack", "list"])
@@ -832,20 +822,20 @@ def test_pack_cli_lists_discovered_packs(tmp_path: Path, monkeypatch: pytest.Mon
     assert payload["pack_dir"] == str(pack_dir)
     assert payload["status"] == "ready"
     assert payload["failure_count"] == 0
-    assert {item["pack_id"] for item in payload["items"]} == {"ember_harbor", "founders_reach"}
+    assert {item["pack_id"] for item in payload["items"]} == {"gestaloka_reference"}
 
 
 def test_pack_cli_validates_single_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     pack_dir = _copy_pack_dir(tmp_path)
     settings = _settings_for_pack_dir(tmp_path, pack_dir)
     monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
-    monkeypatch.setattr(sys, "argv", ["world_pack", "validate", "--pack", "ember_harbor"])
+    monkeypatch.setattr(sys, "argv", ["world_pack", "validate", "--pack", "gestaloka_reference"])
 
     world_pack_main()
 
     payload = yaml.safe_load(capsys.readouterr().out)
     assert payload["pack_dir"] == str(pack_dir)
-    assert [item["pack_id"] for item in payload["validated"]] == ["ember_harbor"]
+    assert [item["pack_id"] for item in payload["validated"]] == ["gestaloka_reference"]
 
 
 def test_pack_cli_validate_reports_multiple_failures(
@@ -854,16 +844,17 @@ def test_pack_cli_validate_reports_multiple_failures(
     capsys: pytest.CaptureFixture[str],
 ):
     pack_dir = _copy_pack_dir(tmp_path)
-    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
+    _copy_pack_as(pack_dir, "broken_engine")
 
-    def mutate_ember(payload: dict[str, object]) -> None:
-        payload["pack_id"] = "not_ember_harbor"
+    def mutate_reference(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "not_gestaloka_reference"
 
-    def mutate_founders(payload: dict[str, object]) -> None:
+    def mutate_engine(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "broken_engine"
         payload["engine_api_version"] = "v1"
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate_ember)
-    _rewrite_pack_manifest(pack_dir, "founders_reach", mutate_founders)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate_reference)
+    _rewrite_pack_manifest(pack_dir, "broken_engine", mutate_engine)
     settings = _settings_for_pack_dir(tmp_path, pack_dir)
     monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
     monkeypatch.setattr(sys, "argv", ["world_pack", "validate"])
@@ -887,12 +878,12 @@ def test_pack_cli_validate_failure_writes_json_diagnostic(
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        payload["pack_id"] = "not_ember_harbor"
+        payload["pack_id"] = "not_gestaloka_reference"
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
     settings = _settings_for_pack_dir(tmp_path, pack_dir)
     monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
-    monkeypatch.setattr(sys, "argv", ["world_pack", "validate", "--pack", "ember_harbor"])
+    monkeypatch.setattr(sys, "argv", ["world_pack", "validate", "--pack", "gestaloka_reference"])
 
     with pytest.raises(SystemExit) as exc:
         world_pack_main()
@@ -903,7 +894,7 @@ def test_pack_cli_validate_failure_writes_json_diagnostic(
     diagnostic = json.loads(captured.err)
     assert diagnostic["error"] == "pack_id_mismatch"
     assert diagnostic["pack_dir"] == str(pack_dir)
-    assert diagnostic["path"].endswith("ember_harbor/pack.yaml")
+    assert diagnostic["path"].endswith("gestaloka_reference/pack.yaml")
 
 
 def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
@@ -913,26 +904,26 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
     auth_headers,
 ):
     source_pack_dir = _copy_pack_dir(tmp_path / "source")
-    archive = tmp_path / "dist" / "world-packs" / "ember_harbor-1.0.0.tar.gz"
+    archive = tmp_path / "dist" / "world-packs" / "gestaloka_reference-1.0.0.tar.gz"
     source_settings = _settings_for_pack_dir(tmp_path / "source", source_pack_dir)
     monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: source_settings)
-    monkeypatch.setattr(sys, "argv", ["world_pack", "export", "--pack", "ember_harbor", "--output", str(archive)])
+    monkeypatch.setattr(sys, "argv", ["world_pack", "export", "--pack", "gestaloka_reference", "--output", str(archive)])
 
     world_pack_main()
 
     export_payload = yaml.safe_load(capsys.readouterr().out)
     assert export_payload["status"] == "exported"
-    assert export_payload["pack_id"] == "ember_harbor"
+    assert export_payload["pack_id"] == "gestaloka_reference"
     assert export_payload["version"] == "1.0.0"
     assert export_payload["engine_api_version"] == "v2"
     assert export_payload["archive"] == str(archive.resolve())
     assert archive.is_file()
     with tarfile.open(archive, "r:gz") as tar:
         assert sorted(tar.getnames()) == [
-            "ember_harbor/npcs.yaml",
-            "ember_harbor/pack.yaml",
-            "ember_harbor/prompts.yaml",
-            "ember_harbor/world_templates.yaml",
+            "gestaloka_reference/npcs.yaml",
+            "gestaloka_reference/pack.yaml",
+            "gestaloka_reference/prompts.yaml",
+            "gestaloka_reference/world_templates.yaml",
         ]
 
     target_pack_dir = tmp_path / "external" / "packs"
@@ -944,14 +935,14 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
 
     import_payload = yaml.safe_load(capsys.readouterr().out)
     assert import_payload["status"] == "imported"
-    assert import_payload["pack_id"] == "ember_harbor"
+    assert import_payload["pack_id"] == "gestaloka_reference"
     assert import_payload["archive"] == str(archive.resolve())
-    assert import_payload["root_dir"] == str((target_pack_dir / "ember_harbor").resolve())
+    assert import_payload["root_dir"] == str((target_pack_dir / "gestaloka_reference").resolve())
 
     diagnostic = PackRegistry(target_pack_dir).catalog_diagnostic()
     assert diagnostic["status"] == "ready"
     assert diagnostic["pack_count"] == 1
-    assert diagnostic["items"][0]["pack_id"] == "ember_harbor"
+    assert diagnostic["items"][0]["pack_id"] == "gestaloka_reference"
 
     test_client, _ = _build_client_for_pack_dir(tmp_path / "external", target_pack_dir)
     try:
@@ -959,9 +950,9 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "ember_harbor",
-                "pack_id": "ember_harbor",
-                "world_template_id": "ember_harbor",
+                "world_id": "gestaloka_reference",
+                "pack_id": "gestaloka_reference",
+                "world_template_id": "nexus_foundation",
                 "world_name": "Imported Pack World",
             },
             headers=auth_headers,
@@ -970,15 +961,15 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
         test_client.close()
 
     assert catalog_response.status_code == 200
-    assert catalog_response.json()["items"][0]["pack_id"] == "ember_harbor"
+    assert catalog_response.json()["items"][0]["pack_id"] == "gestaloka_reference"
     assert session_response.status_code == 200
-    assert session_response.json()["world_context"]["pack_id"] == "ember_harbor"
+    assert session_response.json()["world_context"]["pack_id"] == "gestaloka_reference"
 
 
 def test_pack_import_requires_replace_for_existing_pack(tmp_path: Path):
     source_pack_dir = _copy_pack_dir(tmp_path / "source")
-    archive = tmp_path / "ember_harbor-1.0.0.tar.gz"
-    export_pack_archive(source_pack_dir, "ember_harbor", archive)
+    archive = tmp_path / "gestaloka_reference-1.0.0.tar.gz"
+    export_pack_archive(source_pack_dir, "gestaloka_reference", archive)
     target_pack_dir = _copy_pack_dir(tmp_path / "target")
 
     with pytest.raises(WorldPackError) as exc:
@@ -987,7 +978,7 @@ def test_pack_import_requires_replace_for_existing_pack(tmp_path: Path):
 
     payload = import_pack_archive(target_pack_dir, archive, replace=True)
     assert payload["status"] == "imported"
-    assert payload["pack_id"] == "ember_harbor"
+    assert payload["pack_id"] == "gestaloka_reference"
     assert PackRegistry(target_pack_dir).status == "ready"
 
 
@@ -996,10 +987,10 @@ def test_pack_import_requires_replace_for_existing_pack(tmp_path: Path):
     [
         ([("../escape/pack.yaml", b"pack_id: bad\n", "file")], "unsafe_pack_archive_member"),
         ([("/absolute/pack.yaml", b"pack_id: bad\n", "file")], "unsafe_pack_archive_member"),
-        ([("ember_harbor/linked.yaml", None, "symlink")], "unsafe_pack_archive_member"),
+        ([("gestaloka_reference/linked.yaml", None, "symlink")], "unsafe_pack_archive_member"),
         (
             [
-                ("ember_harbor/pack.yaml", b"pack_id: ember_harbor\n", "file"),
+                ("gestaloka_reference/pack.yaml", b"pack_id: gestaloka_reference\n", "file"),
                 ("other_pack/pack.yaml", b"pack_id: other_pack\n", "file"),
             ],
             "multiple_pack_archive_roots",
@@ -1021,7 +1012,7 @@ def test_pack_import_rejects_unsafe_archive_members(
 
 
 def test_pack_import_rejects_archive_root_manifest_pack_id_mismatch(tmp_path: Path):
-    source_root = REPO_ROOT / "packs" / "ember_harbor"
+    source_root = REPO_ROOT / "packs" / "gestaloka_reference"
     archive = tmp_path / "mismatch.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         for path in sorted(source_root.glob("*.yaml")):
@@ -1041,13 +1032,13 @@ def test_pack_export_and_import_reject_invalid_pack_payloads(
     pack_dir = _copy_pack_dir(tmp_path)
 
     def mutate(payload: dict[str, object]) -> None:
-        payload["pack_id"] = "not_ember_harbor"
+        payload["pack_id"] = "not_gestaloka_reference"
 
-    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    _rewrite_pack_manifest(pack_dir, "gestaloka_reference", mutate)
     settings = _settings_for_pack_dir(tmp_path, pack_dir)
     monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
     archive = tmp_path / "invalid.tar.gz"
-    monkeypatch.setattr(sys, "argv", ["world_pack", "export", "--pack", "ember_harbor", "--output", str(archive)])
+    monkeypatch.setattr(sys, "argv", ["world_pack", "export", "--pack", "gestaloka_reference", "--output", str(archive)])
 
     with pytest.raises(SystemExit) as exc:
         world_pack_main()
@@ -1061,8 +1052,8 @@ def test_pack_export_and_import_reject_invalid_pack_payloads(
 
     invalid_archive = tmp_path / "invalid-import.tar.gz"
     with tarfile.open(invalid_archive, "w:gz") as tar:
-        for path in sorted((pack_dir / "ember_harbor").glob("*.yaml")):
-            tar.add(path, arcname=f"ember_harbor/{path.name}", recursive=False)
+        for path in sorted((pack_dir / "gestaloka_reference").glob("*.yaml")):
+            tar.add(path, arcname=f"gestaloka_reference/{path.name}", recursive=False)
 
     with pytest.raises(WorldPackError) as import_exc:
         import_pack_archive(tmp_path / "target" / "packs", invalid_archive)
@@ -1075,7 +1066,6 @@ def test_pack_cli_scans_runtime_source_for_pack_specific_literals(
     capsys: pytest.CaptureFixture[str],
 ):
     pack_dir = _copy_pack_dir(tmp_path)
-    shutil.copytree(REPO_ROOT / "packs" / "founders_reach", pack_dir / "founders_reach")
     scan_root = tmp_path / "runtime"
     scan_root.mkdir()
     runtime_file = scan_root / "service.py"
@@ -1090,7 +1080,7 @@ def test_pack_cli_scans_runtime_source_for_pack_specific_literals(
     assert clean_payload["leak_count"] == 0
     assert clean_payload["term_count"] > 0
 
-    runtime_file.write_text('DEFAULT_WORLD_LABEL = "Founders Reach"\n', encoding="utf-8")
+    runtime_file.write_text('DEFAULT_WORLD_LABEL = "GESTALOKA: Nexus Foundation"\n', encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["world_pack", "scan-leaks", "--scan-root", str(scan_root)])
 
     with pytest.raises(SystemExit) as exc:
@@ -1098,5 +1088,5 @@ def test_pack_cli_scans_runtime_source_for_pack_specific_literals(
 
     assert exc.value.code == 1
     leak_payload = yaml.safe_load(capsys.readouterr().out)
-    assert leak_payload["leak_count"] == 1
-    assert leak_payload["leaks"][0]["term"] == "Founders Reach"
+    assert leak_payload["leak_count"] >= 1
+    assert "GESTALOKA: Nexus Foundation" in {item["term"] for item in leak_payload["leaks"]}

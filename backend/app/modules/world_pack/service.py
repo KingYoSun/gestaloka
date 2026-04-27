@@ -1624,6 +1624,8 @@ def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:
 
 
 def get_pack_registry(settings: Settings | None = None) -> PackRegistry:
+    if settings is None and _ACTIVE_REGISTRY is not None:
+        return _ACTIVE_REGISTRY
     resolved_settings = settings or get_settings()
     return configure_pack_registry(resolved_settings.pack_dir)
 
