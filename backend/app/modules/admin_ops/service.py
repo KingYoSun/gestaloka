@@ -23,6 +23,7 @@ from app.modules.world_state.ambient import (
 from app.modules.world_state.branch import list_route_pressures_debug
 from app.modules.world_state.scene import list_chapter_tracks_debug, list_scene_frames_debug
 from app.modules.world_state.service import (
+    build_shared_world_context,
     list_consequence_threads_debug,
     list_locations_debug,
     list_relationship_debug,
@@ -674,6 +675,20 @@ def world_locations(db: Session, *, world_id: str) -> dict[str, object]:
     return _with_world_context(db, world_id, {
         "world_id": world_id,
         "items": list_locations_debug(db, world_id),
+    })
+
+
+def world_shared_context(db: Session, *, world_id: str) -> dict[str, object]:
+    return _with_world_context(db, world_id, {
+        "world_id": world_id,
+        "shared_world_context": build_shared_world_context(
+            db,
+            world_id=world_id,
+            actor_id=None,
+            location_id=None,
+            include_all_axes=True,
+            limit=12,
+        ),
     })
 
 

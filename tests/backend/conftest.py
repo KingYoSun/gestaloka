@@ -53,6 +53,7 @@ class _FakeLangfuseObservation:
                 "name": self.name,
                 "as_type": self.as_type,
                 "metadata": dict(self.metadata),
+                "input": self.input,
             }
         )
         return self

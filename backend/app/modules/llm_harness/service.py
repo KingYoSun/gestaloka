@@ -391,6 +391,17 @@ class StubModelProvider(BaseModelProvider):
         nearby_routes = [item for item in input_payload.get("nearby_routes") or [] if isinstance(item, dict)]
         local_figures = [item for item in input_payload.get("local_figures") or [] if isinstance(item, dict)]
         recent_travel_history = [str(item) for item in input_payload.get("recent_travel_history") or [] if str(item)]
+        shared_world_context = input_payload.get("shared_world_context") or {}
+        shared_history = [
+            str(item.get("summary") or "")
+            for item in (shared_world_context.get("recent_history") or [])
+            if isinstance(item, dict) and item.get("summary")
+        ] if isinstance(shared_world_context, dict) else []
+        shared_rumors = [
+            str(item.get("summary") or "")
+            for item in (shared_world_context.get("rumor_surface") or [])
+            if isinstance(item, dict) and item.get("summary")
+        ] if isinstance(shared_world_context, dict) else []
         summary_parts = []
         if memories:
             summary_parts.append(f"memory={' / '.join(memories[:2])}")
@@ -429,6 +440,10 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"travel_echo={recent_travel_history[0]}")
         if recent_scene_history:
             summary_parts.append(f"scene_echo={recent_scene_history[0]}")
+        if shared_history:
+            summary_parts.append(f"shared_history={shared_history[0]}")
+        if shared_rumors:
+            summary_parts.append(f"shared_rumor={shared_rumors[0]}")
         if consequence_flags:
             summary_parts.append(f"consequence_flags={', '.join(consequence_flags[:2])}")
         summary = " | ".join(summary_parts) if summary_parts else "no prior context"
@@ -701,6 +716,14 @@ class StubModelProvider(BaseModelProvider):
         current_location = input_payload.get("current_location") or input_payload.get("location") or {}
         current_location_name = str(current_location.get("name") or "the current place")
         recent_world_beats = [str(item) for item in input_payload.get("recent_world_beats") or [] if str(item)]
+        shared_world_context = input_payload.get("shared_world_context") or {}
+        shared_rumors = [
+            str(item.get("summary") or "")
+            for item in (shared_world_context.get("rumor_surface") or [])
+            if isinstance(item, dict) and item.get("summary")
+        ] if isinstance(shared_world_context, dict) else []
+        if shared_rumors and rumor_focus == "the current place":
+            rumor_focus = shared_rumors[0]
         summary_parts = [f"{npc_name} keeps {current_location_name} in mind through {rumor_focus}."]
         if relevant_memories:
             summary_parts.append(f"Recent memory: {relevant_memories[0]}")
@@ -726,6 +749,14 @@ class StubModelProvider(BaseModelProvider):
         rumor_focus = str(input_payload.get("rumor_focus") or routine_state.get("rumor_focus") or "the current place")
         current_location = input_payload.get("current_location") or input_payload.get("location") or {}
         current_location_name = str(current_location.get("name") or "the current place")
+        shared_world_context = input_payload.get("shared_world_context") or {}
+        shared_rumors = [
+            str(item.get("summary") or "")
+            for item in (shared_world_context.get("rumor_surface") or [])
+            if isinstance(item, dict) and item.get("summary")
+        ] if isinstance(shared_world_context, dict) else []
+        if shared_rumors and rumor_focus == "the current place":
+            rumor_focus = shared_rumors[0]
 
         if "promise" in thread_types:
             beat_kind = "murmur"

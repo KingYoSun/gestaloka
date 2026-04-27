@@ -17,11 +17,14 @@ from app.models.entities import (
     Item,
     Location,
     LocationRoute,
+    Memory,
     QuestAssignment,
     QuestTemplate,
     Relationship,
+    SharedHistoryRecord,
     Turn,
     World,
+    WorldAxisState,
     new_id,
     route_id,
 )
@@ -967,6 +970,87 @@ def list_faction_summaries(db: Session, world_id: str, actor_id: str) -> list[di
     return [faction_summary_to_dict(standing, faction) for standing, faction in rows]
 
 
+def build_shared_world_context(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str | None = None,
+    location_id: str | None = None,
+    include_all_axes: bool = False,
+    limit: int = 5,
+) -> dict[str, Any]:
+    axis_stmt = select(WorldAxisState).where(WorldAxisState.world_id == world_id)
+    if not include_all_axes:
+        axis_stmt = axis_stmt.where(WorldAxisState.expose_to_session_context.is_(True))
+    axes = list(db.execute(axis_stmt.order_by(WorldAxisState.axis_id.asc())).scalars())
+    world_axes = [_world_axis_context(axis) for axis in axes]
+
+    factions = list(
+        db.execute(select(Faction).where(Faction.world_id == world_id).order_by(Faction.updated_at.desc(), Faction.id.asc())).scalars()
+    )
+    standings: dict[str, FactionStanding] = {}
+    if actor_id is not None:
+        standings = {
+            standing.faction_id: standing
+            for standing in db.execute(
+                select(FactionStanding).where(FactionStanding.world_id == world_id, FactionStanding.actor_id == actor_id)
+            ).scalars()
+        }
+    faction_pressure = [
+        _faction_pressure_context(faction, standings.get(faction.id))
+        for faction in factions
+    ]
+
+    location_context = _location_public_context(db, world_id=world_id, location_id=location_id)
+    recent_history = _recent_shared_history_context(db, world_id=world_id, location_id=location_id, limit=limit)
+    memory_rumors = _rumor_memory_context(db, world_id=world_id, location_id=location_id, limit=limit)
+    pack_rumors = [
+        str(item).strip()
+        for item in (location_context.get("rumor_surface") or [])
+        if str(item).strip()
+    ]
+    rumor_surface = [
+        *[
+            {
+                "source": "pack_location",
+                "summary": rumor,
+                "location_id": location_id,
+                "memory_id": None,
+                "source_event_id": None,
+            }
+            for rumor in pack_rumors[:limit]
+        ],
+        *memory_rumors,
+    ][:limit]
+
+    source_event_ids = _dedupe(
+        [
+            *[str(axis.get("last_event_id") or "") for axis in world_axes],
+            str(location_context.get("last_public_state_event_id") or ""),
+            *[str(item.get("source_event_id") or "") for item in recent_history],
+            *[str(item.get("source_event_id") or "") for item in rumor_surface],
+        ]
+    )
+    memory_ids = _dedupe([str(item.get("memory_id") or "") for item in rumor_surface])
+    axis_event_ids = _dedupe([str(axis.get("last_event_id") or "") for axis in world_axes])
+
+    return {
+        "world_axes": world_axes,
+        "faction_pressure": faction_pressure,
+        "location_public_state": location_context,
+        "recent_history": recent_history,
+        "rumor_surface": rumor_surface,
+        "trace": {
+            "world_id": world_id,
+            "actor_id": actor_id,
+            "location_id": location_id,
+            "source_event_ids": source_event_ids,
+            "memory_ids": memory_ids,
+            "axis_event_ids": axis_event_ids,
+        },
+    }
+
+
 def list_quest_summaries(db: Session, world_id: str, actor_id: str) -> list[dict[str, Any]]:
     rows = list(
         db.execute(
@@ -980,6 +1064,185 @@ def list_quest_summaries(db: Session, world_id: str, actor_id: str) -> list[dict
     )
     rows.sort(key=lambda item: (item[0].status != "active", item[0].created_at, item[0].id))
     return [quest_summary_to_dict(assignment, template) for assignment, template in rows]
+
+
+def _world_axis_context(axis: WorldAxisState) -> dict[str, Any]:
+    threshold = _active_axis_threshold(float(axis.current_value), axis.thresholds or [])
+    return {
+        "axis_id": axis.axis_id,
+        "display_name": axis.display_name,
+        "description": axis.description,
+        "current_value": axis.current_value,
+        "min_value": axis.min_value,
+        "max_value": axis.max_value,
+        "threshold": threshold,
+        "last_event_id": axis.last_event_id,
+    }
+
+
+def _active_axis_threshold(current_value: float, thresholds: list[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = [
+        threshold
+        for threshold in thresholds
+        if isinstance(threshold, dict) and float(threshold.get("value") or 0.0) <= current_value
+    ]
+    if not candidates:
+        return None
+    selected = max(candidates, key=lambda item: float(item.get("value") or 0.0))
+    return {
+        "key": str(selected.get("key") or ""),
+        "label": str(selected.get("label") or ""),
+        "value": float(selected.get("value") or 0.0),
+        "description": str(selected.get("description") or ""),
+    }
+
+
+def _faction_pressure_context(faction: Faction, standing: FactionStanding | None) -> dict[str, Any]:
+    state = dict(faction.state or {})
+    influence = float(state.get("influence") or 0.0)
+    return {
+        "faction_id": faction.id,
+        "pack_faction_id": str(state.get("pack_faction_id") or faction.id),
+        "name": faction.name,
+        "description": faction.description,
+        "policy": str(state.get("policy") or ""),
+        "influence": influence,
+        "standing": None if standing is None else standing.standing,
+        "standing_band": None if standing is None else standing.band,
+        "world_axis_interests": dict(state.get("world_axis_interests") or {}),
+        "location_keys": list(state.get("location_keys") or []),
+        "last_influence_event_id": state.get("last_influence_event_id"),
+    }
+
+
+def _location_public_context(db: Session, *, world_id: str, location_id: str | None) -> dict[str, Any]:
+    if location_id is None:
+        return {
+            "location_id": None,
+            "location_key": None,
+            "name": None,
+            "public_state": {},
+            "rumor_surface": [],
+            "related_factions": [],
+            "related_world_axes": [],
+            "last_public_state_event_id": None,
+        }
+    location = db.execute(
+        select(Location).where(Location.world_id == world_id, Location.id == location_id)
+    ).scalar_one_or_none()
+    if location is None:
+        return {
+            "location_id": location_id,
+            "location_key": None,
+            "name": None,
+            "public_state": {},
+            "rumor_surface": [],
+            "related_factions": [],
+            "related_world_axes": [],
+            "last_public_state_event_id": None,
+        }
+    state = dict(location.state or {})
+    return {
+        "location_id": location.id,
+        "location_key": str(state.get("key") or ""),
+        "name": location.name,
+        "public_state": dict(state.get("public_state") or {}),
+        "rumor_surface": list(state.get("rumor_surface") or []),
+        "related_factions": list(state.get("related_factions") or []),
+        "related_world_axes": list(state.get("related_world_axes") or []),
+        "last_public_state_event_id": state.get("last_public_state_event_id"),
+    }
+
+
+def _recent_shared_history_context(
+    db: Session,
+    *,
+    world_id: str,
+    location_id: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(SharedHistoryRecord)
+            .where(SharedHistoryRecord.world_id == world_id)
+            .order_by(
+                (SharedHistoryRecord.location_id == location_id).desc(),
+                SharedHistoryRecord.salience.desc(),
+                SharedHistoryRecord.created_at.desc(),
+                SharedHistoryRecord.id.desc(),
+            )
+            .limit(limit)
+        ).scalars()
+    )
+    rows.sort(key=lambda item: (item.location_id != location_id, -float(item.salience), -item.created_at.timestamp(), item.id))
+    return [
+        {
+            "id": record.id,
+            "source_event_id": record.source_event_id,
+            "actor_id": record.actor_id,
+            "location_id": record.location_id,
+            "history_rule_id": record.history_rule_id,
+            "level": record.level,
+            "status": record.status,
+            "summary": record.summary,
+            "salience": record.salience,
+            "tags": list(record.tags or []),
+        }
+        for record in rows
+    ]
+
+
+def _rumor_memory_context(
+    db: Session,
+    *,
+    world_id: str,
+    location_id: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(Memory)
+            .where(
+                Memory.world_id == world_id,
+                Memory.actor_id.is_(None),
+                Memory.scope.in_(("location", "world")),
+            )
+            .order_by(
+                (Memory.location_id == location_id).desc(),
+                Memory.salience.desc(),
+                Memory.created_at.desc(),
+                Memory.id.desc(),
+            )
+            .limit(limit * 2)
+        ).scalars()
+    )
+    rows = [
+        memory
+        for memory in rows
+        if memory.location_id in {location_id, None}
+    ][:limit]
+    return [
+        {
+            "source": memory.scope,
+            "summary": memory.text,
+            "location_id": memory.location_id,
+            "memory_id": memory.id,
+            "source_event_id": memory.source_event_id,
+            "salience": memory.salience,
+        }
+        for memory in rows
+    ]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
 
 
 def list_inventory_summaries(db: Session, world_id: str, actor_id: str) -> list[dict[str, Any]]:
@@ -1372,11 +1635,34 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     recent_branch_echoes = session_state.get("recent_branch_echoes") or []
     recent_world_beats = session_state.get("recent_world_beats") or []
     ambient_murmurs = session_state.get("ambient_murmurs") or []
+    shared_world_context = session_state.get("shared_world_context") or {}
+    shared_rumors = [
+        str(item.get("summary") or "").strip()
+        for item in (shared_world_context.get("rumor_surface") or [])
+        if isinstance(item, dict) and str(item.get("summary") or "").strip()
+    ]
+    shared_history = [
+        str(item.get("summary") or "").strip()
+        for item in (shared_world_context.get("recent_history") or [])
+        if isinstance(item, dict) and str(item.get("summary") or "").strip()
+    ]
+    location_public_state = shared_world_context.get("location_public_state") or {}
+    public_state = (
+        location_public_state.get("public_state")
+        if isinstance(location_public_state, dict)
+        else {}
+    ) or {}
+    public_state_hint = ", ".join(
+        f"{key}={value}"
+        for key, value in list(public_state.items())[:3]
+    )
     recent_offstage_beats = session_state.get("recent_offstage_beats") or []
     offstage_murmurs = session_state.get("offstage_murmurs") or []
     npc_locations = session_state.get("npc_locations") or []
     leading_world_beat = str(recent_world_beats[0]) if recent_world_beats else ""
     leading_murmur = str(ambient_murmurs[0]) if ambient_murmurs else ""
+    leading_shared_rumor = shared_rumors[0] if shared_rumors else ""
+    leading_shared_history = shared_history[0] if shared_history else ""
     leading_offstage = str(recent_offstage_beats[0]) if recent_offstage_beats else ""
     leading_offstage_murmur = str(offstage_murmurs[0]) if offstage_murmurs else ""
     leading_npc_location = str((npc_locations[0] or {}).get("summary") or "") if npc_locations else ""
@@ -1661,6 +1947,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             leading_travel if str(choice.get("action_kind") or "") == "travel" else "",
             leading_route if str(choice.get("action_kind") or "") == "travel" else "",
             leading_world_beat if choice["choice_id"] != "safe" else leading_murmur,
+            public_state_hint if choice["choice_id"] == "safe" else "",
+            leading_shared_history if choice["choice_id"] == "safe" else leading_shared_rumor,
             leading_offstage if choice["choice_id"] == "progress" else leading_offstage_murmur,
             leading_npc_location if choice["choice_id"] == "explore" else "",
             leading_local_figure if choice["choice_id"] == "explore" else "",
@@ -1700,6 +1988,12 @@ def build_session_state(
     offstage_murmurs = list_offstage_murmurs(db, world_id, location_id)
     nearby_routes = list_nearby_routes(db, world_id, location_id)
     recent_travel_history = list_recent_travel_history(db, world_id, actor_id)
+    shared_world_context = build_shared_world_context(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        location_id=location_id,
+    )
     chapter_key = str((chapter or {}).get("key") or "")
     followup_chapter_key = str(world_info.get("followup_chapter_key") or "")
     route_pressures = (
@@ -1758,6 +2052,7 @@ def build_session_state(
         "plaza_figures": local_figures,
         "nearby_routes": nearby_routes,
         "recent_travel_history": recent_travel_history,
+        "shared_world_context": shared_world_context,
         "recent_world_beats": recent_world_beats,
         "ambient_murmurs": ambient_murmurs,
         "npc_locations": npc_locations,

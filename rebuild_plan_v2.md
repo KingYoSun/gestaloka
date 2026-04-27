@@ -211,7 +211,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 4: cross-player feedback loop
 
-状態: 未着手
+状態: 完了
 
 - 共有 state を session state、retrieval query、prompt context、choice generation、ambient NPC behavior、
   rumor surface に反映する。

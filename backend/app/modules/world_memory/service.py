@@ -194,6 +194,37 @@ def build_retrieval_query_text(
     branch_echoes = [str(item) for item in (state.get("recent_branch_echoes") or []) if str(item).strip()]
     if branch_echoes:
         lines.append(f"branch_echoes={'; '.join(branch_echoes[:2])}")
+    shared_world = state.get("shared_world_context") or {}
+    if isinstance(shared_world, dict):
+        world_axes = [
+            f"{item.get('display_name') or item.get('axis_id')}={item.get('current_value')}"
+            for item in (shared_world.get("world_axes") or [])
+            if isinstance(item, dict) and (item.get("axis_id") or item.get("display_name"))
+        ]
+        if world_axes:
+            lines.append(f"world_axes={'; '.join(world_axes[:3])}")
+        location_public_state = shared_world.get("location_public_state") or {}
+        if isinstance(location_public_state, dict):
+            public_state = location_public_state.get("public_state") or {}
+            if isinstance(public_state, dict) and public_state:
+                lines.append(
+                    "location_public_state="
+                    + "; ".join(f"{key}={value}" for key, value in list(public_state.items())[:4])
+                )
+        shared_history = [
+            str(item.get("summary") or "").strip()
+            for item in (shared_world.get("recent_history") or [])
+            if isinstance(item, dict) and str(item.get("summary") or "").strip()
+        ]
+        if shared_history:
+            lines.append(f"shared_history={'; '.join(shared_history[:2])}")
+        rumors = [
+            str(item.get("summary") or "").strip()
+            for item in (shared_world.get("rumor_surface") or [])
+            if isinstance(item, dict) and str(item.get("summary") or "").strip()
+        ]
+        if rumors:
+            lines.append(f"rumor_surface={'; '.join(rumors[:2])}")
     lines.extend((relation_context or [])[:6])
     return "\n".join(item for item in lines if item)
 

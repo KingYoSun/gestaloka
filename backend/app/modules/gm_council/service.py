@@ -272,6 +272,7 @@ class GMCouncilService:
         plaza_figures = request.session_state.get("plaza_figures") or local_figures
         recent_world_beats = request.session_state.get("recent_world_beats") or []
         ambient_murmurs = request.session_state.get("ambient_murmurs") or []
+        shared_world_context = request.session_state.get("shared_world_context") or {}
 
         intent_input = {
             "world_id": request.world_id,
@@ -301,6 +302,7 @@ class GMCouncilService:
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
+            "shared_world_context": shared_world_context,
         }
         if request.input_mode == "choice" and request.selected_choice:
             intent_result = self._choice_intent_outcome(request=request, input_payload=intent_input)
@@ -369,6 +371,7 @@ class GMCouncilService:
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
+            "shared_world_context": shared_world_context,
         }
         memory_result = self.model_router.execute_structured_prompt(
             prompt_id="council.memory_manager",
@@ -425,6 +428,7 @@ class GMCouncilService:
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
+            "shared_world_context": shared_world_context,
         }
         npc_result = self.model_router.execute_structured_prompt(
             prompt_id="council.npc_manager",
@@ -487,6 +491,7 @@ class GMCouncilService:
             "plaza_figures": plaza_figures,
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
+            "shared_world_context": shared_world_context,
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",
@@ -537,6 +542,7 @@ class GMCouncilService:
             "inventory": inventory,
             "input_mode": request.input_mode,
             "consequence_flags": intent_payload.consequence_flags,
+            "shared_world_context": shared_world_context,
         }
         rules_result = self.model_router.execute_structured_prompt(
             prompt_id="council.rules_arbiter",
@@ -585,6 +591,7 @@ class GMCouncilService:
             "world_tags": rules_payload.normalized_world_tags,
             "risk_level": rules_payload.risk_level,
             "input_mode": request.input_mode,
+            "shared_world_context": shared_world_context,
         }
         safety_result = self.model_router.execute_structured_prompt(
             prompt_id="council.safety_guard",
@@ -635,6 +642,7 @@ class GMCouncilService:
             "outcome_band": world_progress_payload.outcome_band,
             "current_scene_summary": str(current_scene.get("summary") or ""),
             "current_chapter_summary": str(current_chapter.get("summary") or ""),
+            "shared_world_context": shared_world_context,
         }
         narrative_result = self.model_router.execute_structured_prompt(
             prompt_id="council.narrative",

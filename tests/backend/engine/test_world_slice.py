@@ -13,11 +13,13 @@ from app.models.entities import (
     ProjectionRecord,
     QuestAssignment,
     QuestTemplate,
+    Turn,
     SharedConsequenceApplication,
     SharedHistoryRecord,
     WorldAxisState,
     SceneFrame,
 )
+from app.modules.identity.oidc import UserIdentity
 from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput, ConsequenceThreadSnapshot
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
@@ -276,6 +278,108 @@ def test_shared_consequence_projection_does_not_cross_worlds(client, container, 
                 ProjectionRecord.event_id == turn_payload["event_id"],
             )
         ).scalar_one() == 0
+
+
+def test_shared_world_context_flows_between_players_without_crossing_worlds(client, container):
+    def resolve_token(token: str) -> UserIdentity:
+        if token == "player-a":
+            return UserIdentity(sub="player-a", name="Player A")
+        if token == "player-b":
+            return UserIdentity(sub="player-b", name="Player B")
+        if token == "ops-token":
+            return UserIdentity(sub="ops-sub", name="Ops")
+        raise AssertionError(f"Unexpected token: {token}")
+
+    container.oidc_adapter.resolve_token = resolve_token  # type: ignore[method-assign]
+    headers_a = {"Authorization": "Bearer player-a"}
+    headers_b = {"Authorization": "Bearer player-b"}
+    ops_headers = {"Authorization": "Bearer ops-token"}
+
+    player_a_session = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=headers_a,
+    )
+    assert player_a_session.status_code == 200
+    player_a_payload = player_a_session.json()
+
+    player_a_turn = client.post(
+        "/turns",
+        json={"session_id": player_a_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=headers_a,
+    )
+    assert player_a_turn.status_code == 200
+    player_a_turn_payload = player_a_turn.json()
+    assert player_a_turn_payload["shared_action_tag"] == "help"
+
+    player_b_session = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=headers_b,
+    )
+    assert player_b_session.status_code == 200
+    player_b_payload = player_b_session.json()
+    player_b_state = client.get(f"/sessions/{player_b_payload['session_id']}/state", headers=headers_b)
+    assert player_b_state.status_code == 200
+    shared_context = player_b_state.json()["shared_world_context"]
+
+    assert player_a_turn_payload["event_id"] in shared_context["trace"]["source_event_ids"]
+    assert any(item["axis_id"] == "harbor_stability" and item["current_value"] == 58 for item in shared_context["world_axes"])
+    assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in shared_context["recent_history"])
+    assert any("steady the quay" in item["summary"] for item in shared_context["rumor_surface"])
+    assert shared_context["location_public_state"]["public_state"]["public_trust"] == 2
+    assert "user_sub" not in str(shared_context)
+
+    player_b_turn = client.post(
+        "/turns",
+        json={
+            "session_id": player_b_payload["session_id"],
+            "input_mode": "free_text",
+            "input_text": "Dockside runners repeat who helped steady the quay.",
+        },
+        headers=headers_b,
+    )
+    assert player_b_turn.status_code == 200
+
+    with container.session_factory() as db:
+        resolved_turn = db.execute(select(Turn).where(Turn.id == player_b_turn.json()["turn_id"])).scalar_one()
+        retrieval_trace = resolved_turn.resolved_output["retrieval_trace"]
+        assert retrieval_trace["status"] == "ready"
+        retrieved_memories = [
+            db.execute(select(Memory).where(Memory.id == memory_id)).scalar_one()
+            for memory_id in retrieval_trace["retrieved_memory_ids"]
+        ]
+        assert any(memory.source_event_id == player_a_turn_payload["event_id"] for memory in retrieved_memories)
+
+    langfuse_records = container.observability_service._langfuse_client.records
+    generation_inputs = [
+        record.get("input") or {}
+        for record in langfuse_records
+        if record.get("event") == "enter" and record.get("as_type") == "generation"
+    ]
+    assert any(payload.get("shared_world_context", {}).get("trace", {}).get("source_event_ids") for payload in generation_inputs)
+
+    ops_shared = client.get("/ops/worlds/ember_harbor/shared-world", headers=ops_headers)
+    assert ops_shared.status_code == 200
+    assert player_a_turn_payload["event_id"] in ops_shared.json()["shared_world_context"]["trace"]["source_event_ids"]
+
+    founders_session = client.post(
+        "/sessions",
+        json={
+            "world_id": "founders_reach",
+            "pack_id": "founders_reach",
+            "world_template_id": "founders_reach",
+            "world_name": "Founders Reach",
+        },
+        headers=headers_b,
+    )
+    assert founders_session.status_code == 200
+    founders_state = client.get(f"/sessions/{founders_session.json()['session_id']}/state", headers=headers_b)
+    assert founders_state.status_code == 200
+    assert player_a_turn_payload["event_id"] not in founders_state.json()["shared_world_context"]["trace"]["source_event_ids"]
+    founders_ops_shared = client.get("/ops/worlds/founders_reach/shared-world", headers=ops_headers)
+    assert founders_ops_shared.status_code == 200
+    assert player_a_turn_payload["event_id"] not in founders_ops_shared.json()["shared_world_context"]["trace"]["source_event_ids"]
 
 
 def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():

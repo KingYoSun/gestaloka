@@ -37,6 +37,7 @@ from app.modules.admin_ops.service import (
     world_route_pressures,
     world_relationships,
     world_scenes,
+    world_shared_context,
     world_travel_log,
     world_chapter_branches,
     world_consequence_threads,
@@ -428,6 +429,17 @@ def get_world_locations(
 ) -> dict[str, object]:
     del container, user
     return world_locations(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/shared-world")
+def get_world_shared_world(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_shared_context(db, world_id=world_id)
 
 
 @router.get("/worlds/{world_id}/travel-log")
