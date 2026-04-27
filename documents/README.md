@@ -6,4 +6,5 @@ This directory only contains v2 documentation. Historical material lives under `
 
 - `../rebuild_plan_v2.md` rebuild plan
 - `adr/ADR-000-v2-foundation.md` fixed v2 architectural premises
+- `testplay-runbook.md` full-smoke manual testplay runbook
 - `world-pack-regression-authoring.md` bundled pack regression and smoke authoring guide
