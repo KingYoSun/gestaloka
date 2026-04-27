@@ -3,9 +3,15 @@
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
 VERIFY_COMPOSE_ENV = $(VERIFY_ENV)
+PROMPT_DIR ?= $(CURDIR)/prompts
+PACK_DIR ?= $(CURDIR)/packs
+EVAL_DATASET_DIR ?= $(CURDIR)/evals/datasets
+RELEASE_CONFIG_DIR ?= $(CURDIR)/config/release
+HOST_PATH_ENV = PROMPT_DIR=$(PROMPT_DIR) PACK_DIR=$(PACK_DIR) EVAL_DATASET_DIR=$(EVAL_DATASET_DIR) RELEASE_CONFIG_DIR=$(RELEASE_CONFIG_DIR)
+HOST_VERIFY_ENV = $(VERIFY_ENV) $(HOST_PATH_ENV)
 EVAL_VERIFY_DB ?= $(CURDIR)/.cache/eval-verify.db
 EVAL_VERIFY_DATABASE_URL ?= sqlite:///$(EVAL_VERIFY_DB)
-EVAL_VERIFY_ENV = $(VERIFY_ENV) DATABASE_URL=$(EVAL_VERIFY_DATABASE_URL) ALEMBIC_DATABASE_URL=$(EVAL_VERIFY_DATABASE_URL)
+EVAL_VERIFY_ENV = $(HOST_VERIFY_ENV) DATABASE_URL=$(EVAL_VERIFY_DATABASE_URL) ALEMBIC_DATABASE_URL=$(EVAL_VERIFY_DATABASE_URL)
 
 compose-up:
 	$(COMPOSE) up --build
@@ -14,22 +20,22 @@ compose-down:
 	$(COMPOSE) down -v --remove-orphans
 
 backend-test:
-	$(VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend
+	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend
 
 backend-test-engine:
-	$(VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/engine
+	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/engine
 
 backend-test-packs:
-	$(VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/packs/founders_reach tests/backend/packs/ember_harbor
+	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/packs/founders_reach tests/backend/packs/ember_harbor
 
 pack-list:
-	PYTHONPATH=backend python -m app.modules.world_pack list
+	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack list
 
 pack-validate:
-	PYTHONPATH=backend python -m app.modules.world_pack validate
+	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack validate
 
 scan-pack-leaks:
-	PYTHONPATH=backend python -m app.modules.world_pack scan-leaks
+	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack scan-leaks
 
 build-frontend:
 	$(COMPOSE) build frontend
