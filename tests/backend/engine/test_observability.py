@@ -3,9 +3,7 @@ from __future__ import annotations
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "world-alpha",
-        "pack_id": "ember_harbor",
-        "world_template_id": "ember_harbor",
+        "world_id": "ember_harbor",
         "world_name": "Ember Harbor",
     }
 

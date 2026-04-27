@@ -5,7 +5,7 @@ def test_ember_harbor_starter_slice_unlocks_breakwater_and_travels_there(client,
     session_response = client.post(
         "/sessions",
         json={
-            "world_id": "world-ember-smoke",
+            "world_id": "ember_harbor",
             "pack_id": "ember_harbor",
             "world_template_id": "ember_harbor",
         },

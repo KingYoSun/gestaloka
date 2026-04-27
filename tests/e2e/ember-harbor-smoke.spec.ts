@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("login, select ember harbor explicitly, and clear the breakwater smoke flow", async ({ page }) => {
+test("login, select ember harbor world, and clear the breakwater smoke flow", async ({ page }) => {
   test.setTimeout(240_000);
-  const worldId = `e2e-ember-${Date.now()}`;
+  const worldId = "ember_harbor";
   const slowTimeout = 30_000;
 
   await page.goto("/");
@@ -15,9 +15,7 @@ test("login, select ember harbor explicitly, and clear the breakwater smoke flow
   await expect(page.getByTestId("auth-status")).toContainText("authenticated");
   await expect(page.getByTestId("sp-balance")).toContainText(/SP balance:\s*-?\d+/, { timeout: slowTimeout });
 
-  await page.getByTestId("pack-select").selectOption("ember_harbor");
-  await page.getByTestId("template-select").selectOption("ember_harbor");
-  await page.getByTestId("world-id-input").fill(worldId);
+  await page.getByTestId("world-select").selectOption(worldId);
   await page.getByTestId("start-session").click();
 
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });

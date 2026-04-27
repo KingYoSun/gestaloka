@@ -18,7 +18,7 @@ def founders_session_payload(*, world_id: str) -> dict[str, str]:
 def test_turn_flow_materializes_memory_and_projection(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(world_id="world-alpha"),
+        json=founders_session_payload(world_id="founders_reach"),
         headers=auth_headers,
     )
     assert session_response.status_code == 200
@@ -170,7 +170,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
 def test_consequence_threads_affect_state_and_fail_forward_without_422(client, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(world_id="world-threads"),
+        json=founders_session_payload(world_id="founders_reach"),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -224,7 +224,7 @@ def test_consequence_threads_affect_state_and_fail_forward_without_422(client, a
 def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_can_recover(container, client, auth_headers, monkeypatch):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(world_id="world-alpha"),
+        json=founders_session_payload(world_id="founders_reach"),
         headers=auth_headers,
     )
     session_payload = session_response.json()
@@ -339,7 +339,7 @@ def test_reward_item_memory_is_retrieved_on_followup_turn_and_worker_backfill_ca
 def test_manual_idle_world_pass_updates_offstage_state_without_mutating_progression(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(world_id="world-idle"),
+        json=founders_session_payload(world_id="founders_reach"),
         headers=auth_headers,
     )
     assert session_response.status_code == 200
@@ -427,7 +427,7 @@ def test_watch_path_followup_can_commit_to_watch_oath_branch_and_retrieval_becom
 ):
     session_response = client.post(
         "/sessions",
-        json=founders_session_payload(world_id="world-branch"),
+        json=founders_session_payload(world_id="founders_reach"),
         headers=auth_headers,
     )
     assert session_response.status_code == 200

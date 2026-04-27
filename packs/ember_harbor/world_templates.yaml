@@ -4,6 +4,7 @@ world_templates:
     display_name: Ember Harbor
     summary: A tide-marked harbor where favors, notices, and sealed routes shape the opening slice.
     world:
+      world_id: ember_harbor
       default_name: Ember Harbor
     roles:
       starter_location_key: quay

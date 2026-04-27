@@ -8,7 +8,7 @@ from app.core.container import AppContainer
 from app.modules.actor.service import user_has_world_membership
 from app.modules.event_log.service import list_world_events
 from app.modules.identity.oidc import UserIdentity
-from app.modules.world_pack.service import WorldPackError
+from app.modules.world_pack.service import WorldAvailabilityError, WorldPackError, playable_world_catalog, world_health
 from app.modules.world_memory.service import list_world_memories
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
@@ -47,6 +47,31 @@ def list_world_packs(
     del user
     try:
         return container.pack_registry.public_catalog()
+    except WorldPackError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.diagnostic()) from exc
+
+
+@router.get("/playable")
+def list_playable_worlds(
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_user),
+) -> dict[str, object]:
+    del user
+    return playable_world_catalog(container.pack_registry)
+
+
+@router.get("/{world_id}/health")
+def get_world_health(
+    world_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_user),
+) -> dict[str, object]:
+    del user
+    try:
+        return world_health(db, container.pack_registry, world_id)
+    except WorldAvailabilityError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.diagnostic()) from exc
     except WorldPackError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.diagnostic()) from exc
 

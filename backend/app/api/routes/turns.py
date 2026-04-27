@@ -14,7 +14,7 @@ from app.core.realtime import realtime_hub, with_world_context
 from app.models.entities import Session as GameSession
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import prepare_turn_for_session, resolve_turn_for_session
-from app.modules.world_pack.service import world_context_for_world
+from app.modules.world_pack.service import WorldAvailabilityError, world_context_for_world, world_health
 
 router = APIRouter(tags=["turns"])
 
@@ -75,6 +75,12 @@ async def resolve_turn(
 ) -> dict:
     ensure_primary_runtime(container)
     prepared_input_mode = "choice" if payload.action_type == "use_reward_item" else payload.input_mode
+    game_session = db.execute(select(GameSession).where(GameSession.id == payload.session_id)).scalar_one_or_none()
+    if game_session is not None:
+        try:
+            world_health(db, container.pack_registry, game_session.world_id)
+        except WorldAvailabilityError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.diagnostic()) from exc
     try:
         prepared = prepare_turn_for_session(db, container, user, payload.session_id, input_mode=prepared_input_mode)
     except HTTPException as exc:

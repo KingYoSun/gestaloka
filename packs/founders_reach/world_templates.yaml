@@ -4,6 +4,7 @@ world_templates:
     display_name: Founders Reach
     summary: A lantern-lit plaza watched by archivists, couriers, and wardens.
     world:
+      world_id: founders_reach
       default_name: Founders Reach
     roles:
       starter_location_key: square

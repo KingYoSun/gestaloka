@@ -480,6 +480,7 @@ class PackRegistry:
         ]
         return "\n\n".join(section for section in sections if section)
 
+
     def _load_packs(self) -> dict[str, LoadedWorldPack]:
         if not self.pack_dir.exists():
             self._record_failure(
@@ -813,6 +814,185 @@ class PackRegistry:
                     code="unknown_anchor_npc",
                     pack_id=pack_id,
                 )
+
+
+class WorldAvailabilityError(WorldPackError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int = 503,
+        code: str = "world_unavailable",
+        pack_id: str | None = None,
+        path: Path | str | None = None,
+    ) -> None:
+        super().__init__(message, code=code, pack_id=pack_id, path=path)
+        self.status_code = status_code
+
+
+def template_world_id(template: WorldTemplateDefinition) -> str:
+    return str((template.world or {}).get("world_id") or template.template_id).strip()
+
+
+def _pack_has_failures(registry: PackRegistry, pack_id: str) -> bool:
+    return any(failure.pack_id == pack_id for failure in registry.failures)
+
+
+def _world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack, WorldTemplateDefinition]]:
+    entries: list[tuple[LoadedWorldPack, WorldTemplateDefinition]] = []
+    for pack in registry.list_packs():
+        for template_id in sorted(pack.templates):
+            entries.append((pack, pack.templates[template_id]))
+    return entries
+
+
+def resolve_catalog_world(registry: PackRegistry, world_id: str) -> tuple[LoadedWorldPack, WorldTemplateDefinition]:
+    matches = [
+        (pack, template)
+        for pack, template in _world_catalog_entries(registry)
+        if template_world_id(template) == world_id
+    ]
+    if not matches:
+        raise WorldAvailabilityError(
+            f"World {world_id!r} is not present in the playable world catalog",
+            status_code=503,
+            code="world_unavailable",
+        )
+    if len(matches) > 1:
+        raise WorldAvailabilityError(
+            f"World {world_id!r} is defined by more than one pack/template",
+            status_code=503,
+            code="duplicate_catalog_world",
+        )
+    return matches[0]
+
+
+def pack_context_payload(pack: LoadedWorldPack, template: WorldTemplateDefinition) -> dict[str, Any]:
+    return {
+        "pack_id": pack.manifest.pack_id,
+        "pack_display_name": pack.manifest.display_name,
+        "world_template_id": template.template_id,
+        "world_template_display_name": template.display_name,
+    }
+
+
+def playable_world_catalog(registry: PackRegistry) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for pack, template in _world_catalog_entries(registry):
+        world_id = template_world_id(template)
+        item_status = "unavailable" if _pack_has_failures(registry, pack.manifest.pack_id) else "playable"
+        items.append(
+            {
+                "world_id": world_id,
+                "display_name": str((template.world or {}).get("default_name") or template.display_name),
+                "summary": template.summary,
+                "health_url": f"/worlds/{world_id}/health",
+                "status": item_status,
+                "pack_context": pack_context_payload(pack, template),
+            }
+        )
+    return {
+        "status": "ready" if any(item["status"] == "playable" for item in items) else "error",
+        "engine_api_version": ENGINE_API_VERSION,
+        "world_count": len(items),
+        "items": sorted(items, key=lambda item: (item["display_name"], item["world_id"])),
+    }
+
+
+def world_health(db: Session, registry: PackRegistry, world_id: str) -> dict[str, Any]:
+    try:
+        pack, template = resolve_catalog_world(registry, world_id)
+    except WorldAvailabilityError:
+        world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+        if world is None:
+            raise
+        try:
+            metadata = world_pack_metadata(world)
+        except ValueError as exc:
+            raise WorldAvailabilityError(
+                f"World {world_id!r} is missing pack metadata",
+                status_code=503,
+                code="world_pack_metadata_missing",
+            ) from exc
+        try:
+            pack = registry.get_pack(metadata["pack_id"])
+            pack.template(metadata["world_template_id"])
+        except WorldPackError as exc:
+            raise WorldAvailabilityError(
+                f"World {world_id!r} references unavailable pack/template metadata",
+                status_code=503,
+                code="world_unavailable",
+                pack_id=exc.pack_id or metadata["pack_id"],
+                path=exc.path,
+            ) from exc
+        raise WorldAvailabilityError(
+            f"World {world_id!r} is not present in the playable world catalog",
+            status_code=503,
+            code="world_unavailable",
+            pack_id=pack.manifest.pack_id,
+        )
+
+    if _pack_has_failures(registry, pack.manifest.pack_id):
+        raise WorldAvailabilityError(
+            f"World {world_id!r} pack catalog is degraded for pack {pack.manifest.pack_id!r}",
+            status_code=503,
+            code="world_unavailable",
+            pack_id=pack.manifest.pack_id,
+        )
+
+    world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    if world is not None:
+        try:
+            metadata = world_pack_metadata(world)
+        except ValueError as exc:
+            raise WorldAvailabilityError(
+                f"World {world_id!r} is missing pack metadata",
+                status_code=503,
+                code="world_pack_metadata_missing",
+            ) from exc
+        if metadata["pack_id"] != pack.manifest.pack_id or metadata["world_template_id"] != template.template_id:
+            raise WorldAvailabilityError(
+                f"World {world_id!r} is already bound to a different pack/template",
+                status_code=409,
+                code="world_pack_immutable",
+                pack_id=metadata["pack_id"],
+            )
+
+    return {
+        "status": "playable",
+        "world_id": world_id,
+        "display_name": str((template.world or {}).get("default_name") or template.display_name),
+        "summary": template.summary,
+        "pack_context": pack_context_payload(pack, template),
+    }
+
+
+def ensure_requested_world_is_playable(
+    db: Session,
+    registry: PackRegistry,
+    world_id: str,
+    *,
+    requested_pack_id: str | None = None,
+    requested_world_template_id: str | None = None,
+) -> tuple[LoadedWorldPack, WorldTemplateDefinition, dict[str, Any]]:
+    health = world_health(db, registry, world_id)
+    pack = registry.get_pack(str(health["pack_context"]["pack_id"]))
+    template = pack.template(str(health["pack_context"]["world_template_id"]))
+    if requested_pack_id and requested_pack_id != pack.manifest.pack_id:
+        raise WorldAvailabilityError(
+            f"World {world_id!r} is bound to pack {pack.manifest.pack_id!r}, not {requested_pack_id!r}",
+            status_code=409,
+            code="world_pack_immutable",
+            pack_id=pack.manifest.pack_id,
+        )
+    if requested_world_template_id and requested_world_template_id != template.template_id:
+        raise WorldAvailabilityError(
+            f"World {world_id!r} is bound to template {template.template_id!r}, not {requested_world_template_id!r}",
+            status_code=409,
+            code="world_pack_immutable",
+            pack_id=pack.manifest.pack_id,
+        )
+    return pack, template, health
 
 
 def load_pack_from_dir(pack_dir: Path | str, pack_id: str) -> LoadedWorldPack:

@@ -16,7 +16,7 @@ from app.modules.llm_harness.service import ModelRouter
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
-def founders_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+def founders_session_payload(*, world_id: str = "founders_reach") -> dict[str, str]:
     return {
         "world_id": world_id,
         "pack_id": "founders_reach",

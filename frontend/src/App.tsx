@@ -124,6 +124,22 @@ type WorldPackCatalog = {
   items: WorldPackItem[];
 };
 
+type PlayableWorldItem = {
+  world_id: string;
+  display_name: string;
+  summary: string;
+  health_url: string;
+  status: string;
+  pack_context: PackScope;
+};
+
+type PlayableWorldCatalog = {
+  status: string;
+  engine_api_version: string;
+  world_count: number;
+  items: PlayableWorldItem[];
+};
+
 type OpsWorldPackItem = WorldPackItem & {
   root_dir: string;
 };
@@ -1304,12 +1320,10 @@ function App() {
   const [me, setMe] = useState<AuthMe | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [wallet, setWallet] = useState<SPWallet | null>(null);
-  const [worldId, setWorldId] = useState("world-alpha");
+  const [worldId, setWorldId] = useState("ember_harbor");
   const [opsWorldId, setOpsWorldId] = useState("");
-  const [worldPacks, setWorldPacks] = useState<WorldPackItem[]>([]);
-  const [worldPackCatalogStatus, setWorldPackCatalogStatus] = useState("unknown");
-  const [selectedPackId, setSelectedPackId] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [playableWorlds, setPlayableWorlds] = useState<PlayableWorldItem[]>([]);
+  const [worldCatalogStatus, setWorldCatalogStatus] = useState("unknown");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
@@ -1376,9 +1390,8 @@ function App() {
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
   const activeWorldId = route === "admin" ? (opsWorldId || session?.world_id || worldId) : (session?.world_id ?? worldId);
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
-  const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId) ?? null;
-  const selectedTemplate = selectedPack?.world_templates.find((item) => item.template_id === selectedTemplateId) ?? null;
-  const worldPackCatalogUnavailable = worldPackCatalogStatus === "error";
+  const selectedWorld = playableWorlds.find((item) => item.world_id === worldId) ?? null;
+  const worldCatalogUnavailable = worldCatalogStatus === "error";
   const visibleOpsWorlds = opsWorlds.filter((item) => {
     const context = item.world_context;
     return (
@@ -1473,10 +1486,8 @@ function App() {
     if (!authenticated || !token) {
       setMe(null);
       setWallet(null);
-      setWorldPacks([]);
-      setWorldPackCatalogStatus("unknown");
-      setSelectedPackId("");
-      setSelectedTemplateId("");
+      setPlayableWorlds([]);
+      setWorldCatalogStatus("unknown");
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -1514,18 +1525,20 @@ function App() {
     void Promise.all([
       apiFetch<AuthMe>("/auth/me", token),
       apiFetch<SPWallet>("/economy/sp/me", token),
-      apiFetch<WorldPackCatalog>("/worlds/packs", token),
+      apiFetch<PlayableWorldCatalog>("/worlds/playable", token),
     ])
-      .then(([mePayload, walletPayload, packPayload]) => {
+      .then(([mePayload, walletPayload, worldPayload]) => {
         setMe(mePayload);
         setWallet(walletPayload);
-        setWorldPacks(packPayload.items);
-        setWorldPackCatalogStatus(packPayload.status);
-        if (packPayload.status === "error") {
-          setError(`World pack catalog unavailable (${packPayload.failure_count} failures)`);
+        setPlayableWorlds(worldPayload.items);
+        setWorldCatalogStatus(worldPayload.status);
+        if (worldPayload.status === "error") {
+          setError("Playable world catalog unavailable");
         }
-        const firstPack = packPayload.items[0];
-        setSelectedPackId((current) => (firstPack && packPayload.items.some((item) => item.pack_id === current) ? current : (firstPack?.pack_id ?? "")));
+        const firstPlayableWorld = worldPayload.items.find((item) => item.status === "playable") ?? worldPayload.items[0];
+        setWorldId((current) =>
+          worldPayload.items.some((item) => item.world_id === current) ? current : (firstPlayableWorld?.world_id ?? ""),
+        );
         setLedgerUserFilter((current) => current || walletPayload.user_sub);
         setAdjustUserSub((current) => current || walletPayload.user_sub);
       })
@@ -1533,18 +1546,11 @@ function App() {
   }, [authenticated, token]);
 
   useEffect(() => {
-    const selectedPack = worldPacks.find((item) => item.pack_id === selectedPackId);
-    const firstTemplate = selectedPack?.world_templates[0];
-    if (!selectedPack || !firstTemplate) {
-      if (selectedTemplateId) {
-        setSelectedTemplateId("");
-      }
+    if (!playableWorlds.length || playableWorlds.some((item) => item.world_id === worldId)) {
       return;
     }
-    if (!selectedPack.world_templates.some((item) => item.template_id === selectedTemplateId)) {
-      setSelectedTemplateId(firstTemplate.template_id);
-    }
-  }, [selectedPackId, selectedTemplateId, worldPacks]);
+    setWorldId(playableWorlds[0].world_id);
+  }, [playableWorlds, worldId]);
 
   useEffect(() => {
     setAdjustWorldId(session?.world_id ?? worldId);
@@ -1916,12 +1922,12 @@ function App() {
       setError("Sign in before starting a world session");
       return;
     }
-    if (worldPackCatalogUnavailable) {
-      setError("World pack catalog is unavailable");
+    if (worldCatalogUnavailable) {
+      setError("Playable world catalog is unavailable");
       return;
     }
-    if (!selectedPack || !selectedTemplate) {
-      setError("Choose a content pack and world template before starting a session");
+    if (!selectedWorld || selectedWorld.status !== "playable") {
+      setError("Choose a playable world before starting a session");
       return;
     }
 
@@ -1936,8 +1942,6 @@ function App() {
         method: "POST",
         body: JSON.stringify({
           world_id: worldId,
-          pack_id: selectedPack.pack_id,
-          world_template_id: selectedTemplate.template_id,
         }),
       });
       setSession(created);
@@ -2335,58 +2339,32 @@ function App() {
           <h2>2. World start</h2>
           <form onSubmit={handleStartSession} className="stack">
             <label>
-              Content Pack
+              World
               <select
-                data-testid="pack-select"
-                value={selectedPackId}
-                onChange={(event) => setSelectedPackId(event.target.value)}
-                disabled={worldPackCatalogUnavailable || !worldPacks.length}
-              >
-                <option value="" disabled>
-                  Select a content pack
-                </option>
-                {worldPacks.map((item) => (
-                  <option key={item.pack_id} value={item.pack_id}>
-                    {item.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              World Template
-              <select
-                data-testid="template-select"
-                value={selectedTemplateId}
-                onChange={(event) => setSelectedTemplateId(event.target.value)}
-                disabled={worldPackCatalogUnavailable || !selectedPack}
-              >
-                <option value="" disabled>
-                  Select a world template
-                </option>
-                {(selectedPack?.world_templates ?? []).map((item) => (
-                  <option key={item.template_id} value={item.template_id}>
-                    {item.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              World ID
-              <input
-                data-testid="world-id-input"
+                data-testid="world-select"
                 value={worldId}
                 onChange={(event) => setWorldId(event.target.value)}
-              />
+                disabled={worldCatalogUnavailable || !playableWorlds.length}
+              >
+                <option value="" disabled>
+                  Select a world
+                </option>
+                {playableWorlds.map((item) => (
+                  <option key={item.world_id} value={item.world_id} disabled={item.status !== "playable"}>
+                    {item.display_name}
+                  </option>
+                ))}
+              </select>
             </label>
             <button
               data-testid="start-session"
               type="submit"
-              disabled={!authenticated || worldPackCatalogUnavailable || !selectedPack || !selectedTemplate}
+              disabled={!authenticated || worldCatalogUnavailable || !selectedWorld || selectedWorld.status !== "playable"}
             >
               Start session
             </button>
           </form>
-          <p data-testid="pack-catalog-status">Pack catalog: {worldPackCatalogStatus}</p>
+          <p data-testid="world-catalog-status">World catalog: {worldCatalogStatus}</p>
           {session ? (
             <dl className="meta">
               <div>

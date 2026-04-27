@@ -7,9 +7,7 @@ from app.models.entities import Event, Memory, SPLedgerEntry, Turn
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "world-alpha",
-        "pack_id": "ember_harbor",
-        "world_template_id": "ember_harbor",
+        "world_id": "ember_harbor",
         "world_name": "Ember Harbor",
     }
 
@@ -141,7 +139,7 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
             "user_sub": "local-player",
             "delta": 3,
             "reason_code": "admin_adjustment",
-            "world_id": "world-alpha",
+            "world_id": "ember_harbor",
             "note": "bonus grant",
         },
         headers=auth_headers,
@@ -150,7 +148,7 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
     assert adjustment_response.json()["balance"] == 13
 
     ledger_response = client.get(
-        "/ops/sp/ledger?user_sub=local-player&world_id=world-alpha&limit=20",
+        "/ops/sp/ledger?user_sub=local-player&world_id=ember_harbor&limit=20",
         headers=auth_headers,
     )
     assert ledger_response.status_code == 200

@@ -9,9 +9,7 @@ from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "world-alpha",
-        "pack_id": "ember_harbor",
-        "world_template_id": "ember_harbor",
+        "world_id": "ember_harbor",
         "world_name": "Ember Harbor",
     }
 

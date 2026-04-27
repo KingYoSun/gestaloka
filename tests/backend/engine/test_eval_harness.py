@@ -20,11 +20,9 @@ from app.modules.world_memory.service import MemoryService
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
 
 
-def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "ember_harbor") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "pack_id": "ember_harbor",
-        "world_template_id": "ember_harbor",
         "world_name": "Ember Harbor",
     }
 

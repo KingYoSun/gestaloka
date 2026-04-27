@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-test("login, select founders reach explicitly, and keep the founders regression flow green", async ({ page }) => {
+test("login, select founders reach world, and keep the founders regression flow green", async ({ page }) => {
   test.setTimeout(420_000);
-  const worldId = `e2e-founders-${Date.now()}`;
+  const worldId = "founders_reach";
   const slowTimeout = 30_000;
 
   const readBalance = async () => {
@@ -49,9 +49,7 @@ test("login, select founders reach explicitly, and keep the founders regression 
   await expect(page.getByTestId("sp-balance")).toContainText(/SP balance:\s*-?\d+/, { timeout: slowTimeout });
   await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
 
-  await page.getByTestId("pack-select").selectOption("founders_reach");
-  await page.getByTestId("template-select").selectOption("founders_reach");
-  await page.getByTestId("world-id-input").fill(worldId);
+  await page.getByTestId("world-select").selectOption(worldId);
   await page.getByTestId("start-session").click();
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
   await expect(page.getByTestId("session-pack")).toContainText("Founders Reach", { timeout: 20_000 });

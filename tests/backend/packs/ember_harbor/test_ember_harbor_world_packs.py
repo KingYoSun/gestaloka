@@ -9,7 +9,7 @@ def test_session_can_start_from_sample_pack_and_persist_pack_metadata(client, co
     response = client.post(
         "/sessions",
         json={
-            "world_id": "world-ember",
+            "world_id": "ember_harbor",
             "pack_id": "ember_harbor",
             "world_template_id": "ember_harbor",
         },
@@ -35,7 +35,7 @@ def test_session_can_start_from_sample_pack_and_persist_pack_metadata(client, co
     assert any("Tide Market" in item["label"] for item in state_payload["next_choices"])
 
     with container.session_factory() as db:
-        world = db.execute(select(World).where(World.id == "world-ember")).scalar_one()
+        world = db.execute(select(World).where(World.id == "ember_harbor")).scalar_one()
         assert world.state["pack_id"] == "ember_harbor"
         assert world.state["world_template_id"] == "ember_harbor"
 
@@ -44,7 +44,7 @@ def test_model_router_applies_world_pack_prompt_overlay(client, container, auth_
     session_response = client.post(
         "/sessions",
         json={
-            "world_id": "world-ember-overlay",
+            "world_id": "ember_harbor",
             "pack_id": "ember_harbor",
             "world_template_id": "ember_harbor",
         },
@@ -52,7 +52,7 @@ def test_model_router_applies_world_pack_prompt_overlay(client, container, auth_
     )
     assert session_response.status_code == 200
 
-    prompt = container.model_router._resolve_prompt_for_world("council.narrative", "world-ember-overlay")
+    prompt = container.model_router._resolve_prompt_for_world("council.narrative", "ember_harbor")
     assert "Ember Harbor" in prompt.instructions
     assert "Cinder Breakwater" in prompt.instructions
 
@@ -61,7 +61,7 @@ def test_sample_pack_choice_progression_reaches_breakwater_without_schema_failur
     session_response = client.post(
         "/sessions",
         json={
-            "world_id": "world-ember-runtime",
+            "world_id": "ember_harbor",
             "pack_id": "ember_harbor",
             "world_template_id": "ember_harbor",
         },

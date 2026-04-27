@@ -10,15 +10,20 @@ from app.api.deps import ensure_primary_runtime, get_container, get_current_user
 from app.core.container import AppContainer
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
-from app.modules.world_pack.service import WorldPackError, world_context_for_world
+from app.modules.world_pack.service import (
+    WorldAvailabilityError,
+    WorldPackError,
+    ensure_requested_world_is_playable,
+    world_context_for_world,
+)
 
 router = APIRouter(tags=["sessions"])
 
 
 class CreateSessionRequest(BaseModel):
     world_id: str = Field(min_length=1, max_length=64)
-    pack_id: str = Field(min_length=1, max_length=120)
-    world_template_id: str = Field(min_length=1, max_length=120)
+    pack_id: str | None = Field(default=None, min_length=1, max_length=120)
+    world_template_id: str | None = Field(default=None, min_length=1, max_length=120)
     world_name: str | None = Field(default=None, min_length=1, max_length=120)
     player_display_name: str | None = Field(default=None, max_length=120)
     world_overrides: dict[str, Any] = Field(default_factory=dict)
@@ -43,21 +48,32 @@ def create_session(
         )
     requested_world_name = str(payload.world_overrides.get("world_name") or payload.world_name or "").strip() or None
     try:
+        pack, template, _ = ensure_requested_world_is_playable(
+            db,
+            container.pack_registry,
+            payload.world_id,
+            requested_pack_id=payload.pack_id,
+            requested_world_template_id=payload.world_template_id,
+        )
         result = create_session_for_user(
             db,
             container,
             user,
             payload.world_id,
-            pack_id=payload.pack_id,
-            world_template_id=payload.world_template_id,
+            pack_id=pack.manifest.pack_id,
+            world_template_id=template.template_id,
             world_name=requested_world_name,
             player_display_name=payload.player_display_name,
         )
         container.projection_service.process_pending(db)
         world_context = world_context_for_world(db, result.world.id)
+    except WorldAvailabilityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.diagnostic()) from exc
     except WorldPackError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.diagnostic()) from exc
+        status_code = status.HTTP_409_CONFLICT if exc.code == "world_pack_immutable" else status.HTTP_422_UNPROCESSABLE_CONTENT
+        raise HTTPException(status_code=status_code, detail=exc.diagnostic()) from exc
     except KeyError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
@@ -67,8 +83,8 @@ def create_session(
         "session_id": result.session.id,
         "world_id": result.world.id,
         "world_name": result.world.name,
-        "pack_id": str(world_state.get("pack_id") or payload.pack_id),
-        "world_template_id": str(world_state.get("world_template_id") or payload.world_template_id),
+        "pack_id": str(world_state.get("pack_id") or pack.manifest.pack_id),
+        "world_template_id": str(world_state.get("world_template_id") or template.template_id),
         "player_actor_id": result.player_actor.id,
         "npc_actor_id": result.guide_npc.id,
         "location_id": result.starter_location.id,

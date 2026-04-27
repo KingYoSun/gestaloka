@@ -302,7 +302,7 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "external-valid-world",
+                "world_id": "ember_harbor",
                 "pack_id": "ember_harbor",
                 "world_template_id": "ember_harbor",
                 "world_name": "External Valid World",
@@ -589,7 +589,7 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
         session_response = test_client.post(
             "/sessions",
             json={
-                "world_id": "imported-pack-world",
+                "world_id": "ember_harbor",
                 "pack_id": "ember_harbor",
                 "world_template_id": "ember_harbor",
                 "world_name": "Imported Pack World",

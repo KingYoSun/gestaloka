@@ -6,17 +6,15 @@ from pathlib import Path
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
-from app.models.entities import ObservabilitySnapshot
+from app.models.entities import ObservabilitySnapshot, World
 from app.modules.identity.oidc import UserIdentity
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
 
 
-def engine_session_payload(*, world_id: str = "world-alpha") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "ember_harbor") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "pack_id": "ember_harbor",
-        "world_template_id": "ember_harbor",
         "world_name": "Ember Harbor",
     }
 
@@ -78,59 +76,69 @@ def test_missing_bearer_token_returns_401(client):
     assert response.json()["detail"] == "Missing bearer token"
 
 
-def test_session_requires_explicit_pack_id(client, auth_headers):
-    response = client.post(
-        "/sessions",
-        json={
-            "world_id": "world-alpha",
-            "world_template_id": "ember_harbor",
-            "world_name": "Ember Harbor",
-        },
-        headers=auth_headers,
-    )
+def test_playable_world_catalog_is_world_visible_and_keeps_pack_as_context(client, auth_headers):
+    response = client.get("/worlds/playable", headers=auth_headers)
 
-    assert response.status_code == 422
-    assert any(item["loc"] == ["body", "pack_id"] and item["type"] == "missing" for item in response.json()["detail"])
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready"
+    ember = next(item for item in payload["items"] if item["world_id"] == "ember_harbor")
+    assert ember["display_name"] == "Ember Harbor"
+    assert ember["health_url"] == "/worlds/ember_harbor/health"
+    assert ember["status"] == "playable"
+    assert ember["pack_context"]["pack_id"] == "ember_harbor"
 
 
-def test_session_requires_explicit_world_template_id(client, auth_headers):
-    response = client.post(
-        "/sessions",
-        json={
-            "world_id": "world-alpha",
-            "pack_id": "ember_harbor",
-            "world_name": "Ember Harbor",
-        },
-        headers=auth_headers,
-    )
+def test_world_health_reports_playable_world(client, auth_headers):
+    response = client.get("/worlds/ember_harbor/health", headers=auth_headers)
 
-    assert response.status_code == 422
-    assert any(
-        item["loc"] == ["body", "world_template_id"] and item["type"] == "missing"
-        for item in response.json()["detail"]
-    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "playable"
+    assert response.json()["pack_context"]["world_template_id"] == "ember_harbor"
 
 
-def test_session_unknown_pack_id_returns_422(client, auth_headers):
-    payload = engine_session_payload(world_id="world-unknown-pack")
-    payload["pack_id"] = "missing_pack"
+def test_session_rejects_unknown_world_as_unavailable(client, auth_headers):
+    payload = engine_session_payload(world_id="world-unknown")
 
     response = client.post("/sessions", json=payload, headers=auth_headers)
 
-    assert response.status_code == 422
-    assert response.json()["detail"]["error"] == "unknown_pack"
-    assert response.json()["detail"]["pack_id"] == "missing_pack"
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "world_unavailable"
 
 
-def test_session_unknown_world_template_id_returns_422(client, auth_headers):
-    payload = engine_session_payload(world_id="world-unknown-template")
-    payload["world_template_id"] = "missing_template"
+def test_session_rejects_pack_candidate_mismatch_as_immutable(client, auth_headers):
+    payload = engine_session_payload()
+    payload["pack_id"] = "founders_reach"
+    payload["world_template_id"] = "founders_reach"
 
     response = client.post("/sessions", json=payload, headers=auth_headers)
 
-    assert response.status_code == 422
-    assert response.json()["detail"]["error"] == "unknown_template"
-    assert response.json()["detail"]["pack_id"] == "ember_harbor"
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "world_pack_immutable"
+
+
+def test_existing_world_pack_metadata_is_immutable(client, auth_headers):
+    created = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert created.status_code == 200
+
+    payload = engine_session_payload()
+    payload["pack_id"] = "founders_reach"
+    payload["world_template_id"] = "founders_reach"
+    response = client.post("/sessions", json=payload, headers=auth_headers)
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["error"] == "world_pack_immutable"
+
+
+def test_world_health_blocks_world_with_missing_pack_metadata(client, container, auth_headers):
+    with container.session_factory() as db:
+        db.add(World(id="ember_harbor", name="Ember Harbor", status="active", state={}))
+        db.commit()
+
+    response = client.get("/worlds/ember_harbor/health", headers=auth_headers)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error"] == "world_pack_metadata_missing"
 
 
 def test_session_pack_catalog_error_returns_503(client, container, tmp_path: Path, auth_headers):
@@ -140,6 +148,21 @@ def test_session_pack_catalog_error_returns_503(client, container, tmp_path: Pat
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "world_pack_catalog_unavailable"
     assert response.json()["detail"]["failure_count"] == 1
+
+
+def test_turn_rejects_when_world_health_is_not_playable(client, container, tmp_path: Path, auth_headers):
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    container.pack_registry = PackRegistry(tmp_path / "missing-packs")
+
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_response.json()["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+
+    assert turn_response.status_code == 503
+    assert turn_response.json()["detail"]["error"] == "world_unavailable"
 
 
 def test_world_membership_mismatch_returns_404(client, container):
@@ -160,7 +183,7 @@ def test_world_membership_mismatch_returns_404(client, container):
     assert session_response.status_code == 200
 
     access_response = client.get(
-        "/worlds/world-alpha/events",
+        "/worlds/ember_harbor/events",
         headers={"Authorization": "Bearer player-b"},
     )
     assert access_response.status_code == 404
@@ -481,7 +504,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
     session_response = client.post(
         "/sessions",
-        json=engine_session_payload(world_id="world-idle-realtime"),
+        json=engine_session_payload(),
         headers=auth_headers,
     )
     assert session_response.status_code == 200
@@ -532,7 +555,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     founders_session_response = client.post(
         "/sessions",
         json={
-            "world_id": "ops-founders-world",
+            "world_id": "founders_reach",
             "pack_id": "founders_reach",
             "world_template_id": "founders_reach",
             "world_name": "Founders Reach",

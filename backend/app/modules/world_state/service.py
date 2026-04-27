@@ -32,6 +32,7 @@ from app.modules.actor.service import (
     get_relationship,
 )
 from app.modules.world_pack.service import (
+    WorldPackError,
     branch_labels_from_followup_branches,
     get_pack_registry,
     resolve_world_pack,
@@ -321,11 +322,22 @@ def ensure_world(
     template = registry.get_template(pack_id, world_template_id)
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is not None:
-        world.state = {
-            **dict(world.state or {}),
-            "pack_id": pack_id,
-            "world_template_id": world_template_id,
-        }
+        state = dict(world.state or {})
+        existing_pack_id = str(state.get("pack_id") or "").strip()
+        existing_template_id = str(state.get("world_template_id") or "").strip()
+        if not existing_pack_id or not existing_template_id:
+            raise WorldPackError(
+                f"World {world_id!r} is missing immutable pack metadata",
+                code="world_pack_metadata_missing",
+                pack_id=pack_id,
+            )
+        if existing_pack_id != pack_id or existing_template_id != world_template_id:
+            raise WorldPackError(
+                f"World {world_id!r} is already bound to pack/template "
+                f"{existing_pack_id!r}/{existing_template_id!r}",
+                code="world_pack_immutable",
+                pack_id=existing_pack_id,
+            )
         locations = ensure_seeded_locations(db, world_id)
         ensure_location_routes(db, world_id, locations_by_key=locations)
         db.flush()
