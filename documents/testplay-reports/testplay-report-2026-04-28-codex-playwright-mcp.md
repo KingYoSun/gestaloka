@@ -28,7 +28,7 @@
 
 | Area | Target | Result | Evidence | Notes |
 | --- | --- | --- | --- | --- |
-| Preflight | login / health / initial render | pass with issue | `artifacts/testplay/01-backend-health.png`, `09-clean-player-initial.png`, `10-clean-login-page.png`, `11-clean-authenticated.png` | health ok; login ok; SP 10; catalog ready. Initial signed-out render shows Keycloak init error banner. |
+| Preflight | login / health / initial render | pass with issue | `artifacts/testplay-report-2026-04-28-codex-playwright-mcp/01-backend-health.png`, `09-clean-player-initial.png`, `10-clean-login-page.png`, `11-clean-authenticated.png` | health ok; login ok; SP 10; catalog ready. Initial signed-out render shows Keycloak init error banner. |
 | GESTALOKA Reference | reference smoke flow | pass | `12-clean-session-started.png`, `13-after-two-progress.png`, `14-after-writ-use.png`, `15-after-oblivion-travel.png` | Confirmed session.connected, Nexus Gate, First Stabilizer Request 0/2, Rikka, Lift Tower Concourse, 2/2, Nexus Writ, Breach Restoration, writ used, Oblivion Breach travel. |
 | Admin / Ops | catalog / projection / graph / SP / observability | pass with note | `16-admin-initial.png`, `17-admin-idle-pass.png` | catalog ready, packs 1/templates 1/failures 0, graph/embedding/langfuse ready, projection not accumulating failures, SP ledger shows turn costs. `world-tick-stream` remained empty; NPC location and ambient beat streams reflected state. |
 | Release Dry-run | release gate / runbook display | fail | `18-admin-release-after-checklist.png` | Checklist completed but release gate is blocked by shadow replay failures. Pack regression passed and runbook commands are displayed. |
@@ -65,7 +65,7 @@ Rating values: `good`, `acceptable`, `needs work`, `blocked`.
 - Operation: open Player UI, login, navigate Admin
 - Expected: no global error banner during normal auth flow
 - Actual: `Error: A 'Keycloak' instance can only be initialized once.`
-- Evidence: `artifacts/testplay/09-clean-player-initial.png`, `11-clean-authenticated.png`, `18-admin-release-after-checklist.png`
+- Evidence: `artifacts/testplay-report-2026-04-28-codex-playwright-mcp/09-clean-player-initial.png`, `11-clean-authenticated.png`, `18-admin-release-after-checklist.png`
 - Reproduction steps: clear browser storage; open http://localhost:5173; observe `error-banner`; login with demo credentials; navigate to Admin and observe possible recurrence
 - Suggested fix: guard `keycloak.init()` against React StrictMode double effect execution or move initialization behind a singleton init promise
 
@@ -80,7 +80,7 @@ Rating values: `good`, `acceptable`, `needs work`, `blocked`.
 - Operation: run pre-promote release checklist
 - Expected: guide expects `release-gate-verdict` passed and promote ready
 - Actual: verdict `blocked`; missing/failed check `shadow_replay`; blocked reason `shadow replay gate failed`
-- Evidence: `artifacts/testplay/18-admin-release-after-checklist.png`
+- Evidence: `artifacts/testplay-report-2026-04-28-codex-playwright-mcp/18-admin-release-after-checklist.png`
 - Reproduction steps: run canary, run release checklist with host path/env overrides, refresh Admin release gate
 - Suggested fix: inspect shadow replay failures with degraded graph/retrieval context for generated shadow cases and decide whether gate criteria or retrieval setup is wrong
 
