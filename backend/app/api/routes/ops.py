@@ -20,6 +20,7 @@ from app.modules.admin_ops.service import (
     observability_summary,
     projection_status,
     rebuild_projection,
+    retry_failed_projection,
     reindex_memories,
     recent_runtime_failures,
     sp_ledger,
@@ -51,6 +52,11 @@ router = APIRouter(prefix="/ops", tags=["ops"])
 
 class RebuildProjectionRequest(BaseModel):
     world_id: str = Field(min_length=1, max_length=64)
+
+
+class RetryFailedProjectionRequest(BaseModel):
+    world_id: str | None = Field(default=None, max_length=64)
+    limit: int = Field(default=100, ge=1, le=1000)
 
 
 class SPAdjustmentRequest(BaseModel):
@@ -196,6 +202,24 @@ def post_projection_rebuild(
 ) -> dict[str, object]:
     del user
     result = rebuild_projection(db, container.projection_service, payload.world_id)
+    db.commit()
+    return result
+
+
+@router.post("/projection/retry-failed")
+def post_projection_retry_failed(
+    payload: RetryFailedProjectionRequest,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    result = retry_failed_projection(
+        db,
+        container.projection_service,
+        world_id=payload.world_id,
+        limit=payload.limit,
+    )
     db.commit()
     return result
 

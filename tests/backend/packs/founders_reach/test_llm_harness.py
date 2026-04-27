@@ -255,6 +255,18 @@ def test_turn_council_reject_returns_422_and_persists_audit_records(client, cont
     assert payload["quest_updates"] == []
     assert payload["faction_updates"] == []
     assert payload["inventory_updates"] == []
+    assert payload["shared_action_tag"] == "none"
+    assert payload["shared_consequence_updates"] == {
+        "shared_action_tag": "none",
+        "applied_rule_ids": [],
+        "axis_updates": [],
+        "faction_updates": [],
+        "location_updates": [],
+        "relationship_updates": [],
+        "history_records": [],
+        "title_progress": [],
+        "memory_ids": [],
+    }
 
     with container.session_factory() as db:
         llm_runs = list(

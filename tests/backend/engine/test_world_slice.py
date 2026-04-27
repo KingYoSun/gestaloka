@@ -205,6 +205,79 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
         assert {"WorldAxis", "SharedHistory", "TitleProgress"} <= projection_labels
 
 
+def test_shared_consequence_projection_does_not_cross_worlds(client, container, auth_headers):
+    ember_session = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    assert ember_session.status_code == 200
+    ember_payload = ember_session.json()
+    founders_session = client.post(
+        "/sessions",
+        json={
+            "world_id": "founders_reach",
+            "pack_id": "founders_reach",
+            "world_template_id": "founders_reach",
+            "world_name": "Founders Reach",
+        },
+        headers=auth_headers,
+    )
+    assert founders_session.status_code == 200
+
+    with container.session_factory() as db:
+        founders_axis_before = {
+            axis.axis_id: axis.current_value
+            for axis in db.execute(select(WorldAxisState).where(WorldAxisState.world_id == "founders_reach")).scalars()
+        }
+        founders_memory_before = db.execute(
+            select(func.count(Memory.id)).where(Memory.world_id == "founders_reach")
+        ).scalar_one()
+        founders_projection_before = db.execute(
+            select(func.count(ProjectionRecord.id)).where(ProjectionRecord.world_id == "founders_reach")
+        ).scalar_one()
+
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": ember_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+    turn_payload = turn_response.json()
+    assert turn_payload["shared_action_tag"] == "help"
+
+    with container.session_factory() as db:
+        founders_axis_after = {
+            axis.axis_id: axis.current_value
+            for axis in db.execute(select(WorldAxisState).where(WorldAxisState.world_id == "founders_reach")).scalars()
+        }
+        assert founders_axis_after == founders_axis_before
+        assert db.execute(
+            select(func.count(Memory.id)).where(Memory.world_id == "founders_reach")
+        ).scalar_one() == founders_memory_before
+        assert db.execute(
+            select(func.count(ProjectionRecord.id)).where(ProjectionRecord.world_id == "founders_reach")
+        ).scalar_one() == founders_projection_before
+        assert db.execute(
+            select(func.count(Memory.id)).where(
+                Memory.world_id == "founders_reach",
+                Memory.source_event_id == turn_payload["event_id"],
+            )
+        ).scalar_one() == 0
+        assert db.execute(
+            select(func.count(SharedHistoryRecord.id)).where(
+                SharedHistoryRecord.world_id == "founders_reach",
+                SharedHistoryRecord.source_event_id == turn_payload["event_id"],
+            )
+        ).scalar_one() == 0
+        assert db.execute(
+            select(func.count(ProjectionRecord.id)).where(
+                ProjectionRecord.world_id == "founders_reach",
+                ProjectionRecord.event_id == turn_payload["event_id"],
+            )
+        ).scalar_one() == 0
+
+
 def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():
     steady = ConsequenceRuleEngine.evaluate(
         ConsequenceRuleInput(

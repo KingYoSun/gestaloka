@@ -143,8 +143,36 @@ class ProjectionService:
         started_at = self.observability_service.timer() if self.observability_service is not None else None
         stmt = select(OutboxEvent).where(OutboxEvent.status == "pending").order_by(OutboxEvent.created_at.asc())
         pending = list(db.execute(stmt).scalars())
+        return self._process_outbox_events(db, pending, started_at=started_at)
+
+    def retry_failed(self, db: Session, *, world_id: str | None = None, limit: int = 100) -> dict[str, object]:
+        started_at = self.observability_service.timer() if self.observability_service is not None else None
+        stmt = select(OutboxEvent).where(OutboxEvent.status == "failed")
+        if world_id is not None:
+            stmt = stmt.where(OutboxEvent.world_id == world_id)
+        failed = list(db.execute(stmt.order_by(OutboxEvent.updated_at.asc(), OutboxEvent.id.asc()).limit(limit)).scalars())
+        processed = self._process_outbox_events(db, failed, started_at=started_at)
+        remaining_stmt = select(func.count(OutboxEvent.id)).where(OutboxEvent.status == "failed")
+        if world_id is not None:
+            remaining_stmt = remaining_stmt.where(OutboxEvent.world_id == world_id)
+        return {
+            "world_id": world_id,
+            "target_count": len(failed),
+            "processed_count": len(processed),
+            "remaining_failed": int(db.execute(remaining_stmt).scalar_one()),
+            "records": processed,
+            **self.summarize_records(processed, world_id=world_id),
+        }
+
+    def _process_outbox_events(
+        self,
+        db: Session,
+        outbox_events: list[OutboxEvent],
+        *,
+        started_at: object | None,
+    ) -> list[dict]:
         processed: list[dict] = []
-        for outbox_event in pending:
+        for outbox_event in outbox_events:
             outbox_event.status = "processing"
             db.flush()
             try:

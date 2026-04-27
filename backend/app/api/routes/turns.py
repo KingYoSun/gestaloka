@@ -19,6 +19,19 @@ from app.modules.world_pack.service import WorldAvailabilityError, world_context
 router = APIRouter(tags=["turns"])
 
 
+EMPTY_SHARED_CONSEQUENCE_UPDATES = {
+    "shared_action_tag": "none",
+    "applied_rule_ids": [],
+    "axis_updates": [],
+    "faction_updates": [],
+    "location_updates": [],
+    "relationship_updates": [],
+    "history_records": [],
+    "title_progress": [],
+    "memory_ids": [],
+}
+
+
 class ResolveTurnRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=36)
     input_mode: Literal["choice", "free_text"] = "choice"
@@ -64,6 +77,17 @@ def _world_context_for_session_id(db: Session, session_id: str) -> dict[str, obj
     if game_session is None:
         return None
     return world_context_for_world(db, game_session.world_id)
+
+
+def _shared_consequence_response(resolved_output: dict) -> dict[str, object]:
+    shared_action_tag = str(resolved_output.get("shared_action_tag") or "none")
+    raw_updates = resolved_output.get("shared_consequence_updates")
+    updates = dict(raw_updates) if isinstance(raw_updates, dict) else dict(EMPTY_SHARED_CONSEQUENCE_UPDATES)
+    updates["shared_action_tag"] = shared_action_tag
+    return {
+        "shared_action_tag": shared_action_tag,
+        "shared_consequence_updates": updates,
+    }
 
 
 @router.post("/turns")
@@ -217,6 +241,7 @@ async def resolve_turn(
     )
 
     if not result.succeeded:
+        shared_response = _shared_consequence_response(result.turn.resolved_output or {})
         return JSONResponse(
             status_code=result.status_code,
             content={
@@ -251,9 +276,11 @@ async def resolve_turn(
                 "recent_offstage_beats": result.recent_offstage_beats,
                 "idle_updates": result.idle_updates,
                 "world_context": world_context,
+                **shared_response,
             },
         )
 
+    shared_response = _shared_consequence_response(result.turn.resolved_output or {})
     response = {
         "turn_id": result.turn.id,
         "action_type": result.action_type,
@@ -287,6 +314,7 @@ async def resolve_turn(
         "recent_offstage_beats": result.recent_offstage_beats,
         "idle_updates": result.idle_updates,
         "world_context": world_context,
+        **shared_response,
     }
     await realtime_hub.emit_with_world_context(payload.session_id, "turn.resolved", response, world_context)
 

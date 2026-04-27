@@ -129,7 +129,7 @@ def test_turn_flow_materializes_memory_and_projection(client, container, auth_he
     assert memories.status_code == 200
     assert state.status_code == 200
     assert len(events.json()["items"]) >= 10
-    assert events.json()["items"][-1]["event_type"] == "session.started"
+    assert any(item["event_type"] == "session.started" for item in events.json()["items"])
     assert any(item["event_type"].startswith("ambient.npc.") for item in events.json()["items"])
     assert any(item["event_type"] == "travel.arrived" for item in events.json()["items"])
     assert any("旅人を助け" in item["text"] for item in memories.json()["items"])

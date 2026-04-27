@@ -196,7 +196,7 @@ Shared World Core の session state は、現在の player-local state に加え
 
 ### Phase 3: shared consequence projection
 
-状態: 着手
+状態: 完了
 
 - turn resolution の結果から abstract action tag と consequence signal を抽出する。
 - pack の consequence rules に従い、world_axes、faction state、location public state、NPC memory、

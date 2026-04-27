@@ -212,6 +212,27 @@ def rebuild_projection(db: Session, projection_service: ProjectionService, world
     })
 
 
+def retry_failed_projection(
+    db: Session,
+    projection_service: ProjectionService,
+    *,
+    world_id: str | None,
+    limit: int,
+) -> dict[str, object]:
+    result = projection_service.retry_failed(db, world_id=world_id, limit=limit)
+    payload = {
+        "world_id": world_id,
+        "target_count": result["target_count"],
+        "processed_count": result["processed_count"],
+        "remaining_failed": result["remaining_failed"],
+        "vertex_count": result["vertex_count"],
+        "edge_count": result["edge_count"],
+        "records": result["records"],
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return _with_world_context(db, world_id, payload) if world_id is not None else payload
+
+
 def world_graph_summary(db: Session, projection_service: ProjectionService, world_id: str) -> dict[str, object]:
     records = list(
         db.execute(

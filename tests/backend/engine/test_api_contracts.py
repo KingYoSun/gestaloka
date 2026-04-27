@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
-from app.models.entities import ObservabilitySnapshot, World
+from app.models.entities import ObservabilitySnapshot, OutboxEvent, ProjectionRecord, World
 from app.modules.identity.oidc import UserIdentity
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
@@ -337,7 +337,13 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "recent_offstage_beats",
             "idle_updates",
             "world_context",
+            "shared_action_tag",
+            "shared_consequence_updates",
         }
+        assert turn_payload["shared_action_tag"] == "help"
+        assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "help"
+        assert turn_payload["shared_consequence_updates"]["applied_rule_ids"]
+        assert turn_payload["shared_consequence_updates"]["axis_updates"]
         assert turn_payload["world_context"]["pack_id"] == "ember_harbor"
         assert turn_payload["world_context"]["world_template_id"] == "ember_harbor"
         assert turn_payload["action_type"] == "narrative"
@@ -625,6 +631,19 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert rebuild_payload["world_context"] == session_payload["world_context"]
     assert rebuild_payload["records"] >= 1
 
+    retry_response = client.post(
+        "/ops/projection/retry-failed",
+        json={"world_id": session_payload["world_id"], "limit": 10},
+        headers=auth_headers,
+    )
+    assert retry_response.status_code == 200
+    retry_payload = retry_response.json()
+    assert retry_payload["world_id"] == session_payload["world_id"]
+    assert retry_payload["world_context"] == session_payload["world_context"]
+    assert retry_payload["target_count"] == 0
+    assert retry_payload["remaining_failed"] == 0
+    assert {"vertex_count", "edge_count", "records"} <= set(retry_payload)
+
     council_turns_response = client.get(
         f"/ops/council/turns?session_id={session_payload['session_id']}",
         headers=auth_headers,
@@ -669,6 +688,80 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "http://langfuse.test/project/gestaloka-v2/traces/"
     )
     assert council_detail_payload["roles"][-1]["attempts"][-1]["langfuse_observation_id"]
+
+
+def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(client, container, auth_headers, monkeypatch):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    original_project_bundle = container.projection_service.repository.project_bundle
+
+    def fail_projection(bundle):
+        del bundle
+        raise RuntimeError("forced projection failure")
+
+    monkeypatch.setattr(container.projection_service.repository, "project_bundle", fail_projection)
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+    monkeypatch.setattr(container.projection_service.repository, "project_bundle", original_project_bundle)
+
+    with container.session_factory() as db:
+        failed_before = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "failed")).scalars())
+        failed_ids = [item.id for item in failed_before]
+        assert failed_ids
+        assert {item.world_id for item in failed_before} == {session_payload["world_id"]}
+        assert {item.last_error for item in failed_before} == {"forced projection failure"}
+
+        assert container.projection_service.process_pending(db) == []
+        db.flush()
+        assert {
+            item.status
+            for item in db.execute(select(OutboxEvent).where(OutboxEvent.id.in_(failed_ids))).scalars()
+        } == {"failed"}
+
+    retry_response = client.post(
+        "/ops/projection/retry-failed",
+        json={"world_id": session_payload["world_id"], "limit": 10},
+        headers=auth_headers,
+    )
+    assert retry_response.status_code == 200
+    retry_payload = retry_response.json()
+    assert retry_payload["world_context"] == session_payload["world_context"]
+    assert retry_payload["target_count"] == len(failed_ids)
+    assert retry_payload["processed_count"] >= 1
+    assert retry_payload["remaining_failed"] == 0
+    assert retry_payload["vertex_count"] >= 1
+
+    with container.session_factory() as db:
+        assert {
+            item.status
+            for item in db.execute(select(OutboxEvent).where(OutboxEvent.id.in_(failed_ids))).scalars()
+        } == {"projected"}
+        assert db.execute(select(ProjectionRecord).where(ProjectionRecord.outbox_event_id.in_(failed_ids))).scalars().first()
+
+
+def test_ops_relationship_chapter_scene_and_memory_contracts(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
 
     relationships_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/relationships",
