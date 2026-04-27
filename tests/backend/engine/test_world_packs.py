@@ -147,6 +147,171 @@ def test_pack_registry_exposes_branch_metadata_from_pack_contract():
     assert branch.signal_weights["kept_formal_promise"] > 0
 
 
+def test_pack_registry_exposes_shared_world_contract_from_bundled_packs():
+    registry = PackRegistry(REPO_ROOT / "packs")
+
+    founders = registry.get_template("founders_reach", "founders_reach")
+    assert {axis.id for axis in founders.world_axes} >= {"public_trust", "memory_coherence", "watch_pressure"}
+    assert {faction.id for faction in founders.factions} >= {"founders_watch", "archive_circle", "courier_ring"}
+    assert founders.npc_memory_policy.remember_history_events is True
+    assert founders.history_rules[0].level == "local_rumor"
+    assert founders.title_rules[0].action_tags == ["help", "protect"]
+    assert founders.consequence_rules[0].action_tag == "help"
+    assert founders.consequence_rules[0].world_axis_deltas["public_trust"] > 0
+
+    ember = registry.get_template("ember_harbor", "ember_harbor")
+    assert {axis.id for axis in ember.world_axes} >= {"harbor_stability", "rumor_current", "breakwater_risk"}
+    assert {faction.id for faction in ember.factions} >= {"ember_wardens", "tide_recorders", "dockside_runners"}
+    assert ember.locations["breakwater"].related_world_axes == ["harbor_stability", "breakwater_risk"]
+    assert ember.consequence_rules[-1].history_candidate_level == "faction_record"
+
+
+def test_pack_registry_synthesizes_shared_factions_for_legacy_opening_slice_shape(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        template = payload["world_templates"]["ember_harbor"]  # type: ignore[index]
+        for key in (
+            "world_axes",
+            "factions",
+            "npc_memory_policy",
+            "history_rules",
+            "title_rules",
+            "consequence_rules",
+        ):
+            template.pop(key, None)
+        for location in template["locations"].values():  # type: ignore[index, union-attr]
+            location.pop("related_factions", None)
+            location.pop("related_world_axes", None)
+
+    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+
+    template = PackRegistry(pack_dir).get_template("ember_harbor", "ember_harbor")
+    assert [faction.id for faction in template.factions] == ["ember_wardens"]
+    assert template.factions[0].policy == "steady the harbor and reward reliable hands"
+
+
+def test_pack_registry_rejects_invalid_shared_world_action_tag(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        template = payload["world_templates"]["ember_harbor"]  # type: ignore[index]
+        template["consequence_rules"][0]["action_tag"] = "teleport"  # type: ignore[index]
+
+    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert "action_tag" in failure["message"]
+    assert "teleport" in failure["message"]
+
+
+def test_pack_registry_rejects_invalid_shared_world_history_level(tmp_path: Path):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        template = payload["world_templates"]["ember_harbor"]  # type: ignore[index]
+        template["history_rules"][0]["level"] = "private_note"  # type: ignore[index]
+
+    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert "level" in failure["message"]
+    assert "private_note" in failure["message"]
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_message"),
+    [
+        (
+            lambda template: template["locations"]["quay"]["related_factions"].append("unknown_faction"),
+            "unknown_faction",
+        ),
+        (
+            lambda template: template["factions"][0]["location_keys"].append("unknown_location"),
+            "unknown_location",
+        ),
+        (
+            lambda template: template["consequence_rules"][0]["world_axis_deltas"].__setitem__("unknown_axis", 1),
+            "unknown_axis",
+        ),
+        (
+            lambda template: template["history_rules"][0]["npc_refs"].append("Unknown NPC"),
+            "Unknown NPC",
+        ),
+    ],
+)
+def test_pack_registry_rejects_unknown_shared_world_references(tmp_path: Path, mutator, expected_message: str):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        mutator(payload["world_templates"]["ember_harbor"])  # type: ignore[index]
+
+    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] in {"invalid_content", "unknown_shared_world_reference"}
+    assert expected_message in failure["message"]
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_message"),
+    [
+        (
+            lambda template: template["world_axes"][0].__setitem__("initial_value", 200),
+            "initial_value",
+        ),
+        (
+            lambda template: template["world_axes"][0]["thresholds"][0].__setitem__("value", -1),
+            "threshold",
+        ),
+    ],
+)
+def test_pack_registry_rejects_invalid_shared_world_axis_ranges(tmp_path: Path, mutator, expected_message: str):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        mutator(payload["world_templates"]["ember_harbor"])  # type: ignore[index]
+
+    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert expected_message in failure["message"]
+
+
+@pytest.mark.parametrize(
+    ("mutator", "expected_message"),
+    [
+        (
+            lambda template: template["world_axes"].append(dict(template["world_axes"][0])),
+            "world_axes",
+        ),
+        (
+            lambda template: template["factions"].append(dict(template["factions"][0])),
+            "factions",
+        ),
+        (
+            lambda template: template["title_rules"].append(dict(template["title_rules"][0])),
+            "title_rules",
+        ),
+    ],
+)
+def test_pack_registry_rejects_duplicate_shared_world_ids(tmp_path: Path, mutator, expected_message: str):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        mutator(payload["world_templates"]["ember_harbor"])  # type: ignore[index]
+
+    _rewrite_world_template(pack_dir, "ember_harbor", mutate)
+
+    failure = _only_failure(PackRegistry(pack_dir))
+    assert failure["error"] == "invalid_content"
+    assert expected_message in failure["message"]
+    assert "unique ids" in failure["message"]
+
+
 def test_world_pack_metadata_rejects_worlds_without_explicit_pack_metadata():
     world = World(id="world-missing-pack", name="Missing Pack", status="active", state={})
 

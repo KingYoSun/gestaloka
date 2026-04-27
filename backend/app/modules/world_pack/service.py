@@ -24,6 +24,19 @@ PACK_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,119}$")
 PACK_ARCHIVE_SUFFIX = ".tar.gz"
 PackVisibility = Literal["public", "private"]
 PackPublishStatus = Literal["playable", "draft", "archived"]
+SharedWorldActionTag = Literal[
+    "help",
+    "harm",
+    "investigate",
+    "trade",
+    "negotiate",
+    "protect",
+    "explore",
+    "restore",
+    "destabilize",
+    "none",
+]
+HistoryLevel = Literal["local_rumor", "regional_record", "faction_record", "world_canon"]
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
 _ACTIVE_PACK_DIR: Path | None = None
@@ -155,6 +168,16 @@ class PackLocation(BaseModel):
     starter: bool = False
     name: str = Field(min_length=1, max_length=120)
     description: str = ""
+    hierarchy: str = ""
+    region: str = ""
+    kind: str = ""
+    danger_level: str = "low"
+    facilities: list[str] = Field(default_factory=list)
+    public_state: dict[str, Any] = Field(default_factory=dict)
+    discovery: dict[str, Any] = Field(default_factory=dict)
+    related_factions: list[str] = Field(default_factory=list)
+    related_world_axes: list[str] = Field(default_factory=list)
+    rumor_surface: list[str] = Field(default_factory=list)
 
 
 class PackRoute(BaseModel):
@@ -173,6 +196,111 @@ class PackFaction(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = ""
     state: dict[str, Any] = Field(default_factory=dict)
+
+
+class PackWorldAxisThreshold(BaseModel):
+    key: str = Field(min_length=1, max_length=120)
+    label: str = Field(min_length=1, max_length=120)
+    value: float
+    description: str = ""
+
+
+class PackWorldAxis(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    min_value: float = 0.0
+    max_value: float = 1.0
+    initial_value: float = 0.0
+    expose_to_session_context: bool = True
+    thresholds: list[PackWorldAxisThreshold] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "PackWorldAxis":
+        if self.min_value >= self.max_value:
+            raise ValueError(f"world axis {self.id!r} min_value must be less than max_value")
+        if self.initial_value < self.min_value or self.initial_value > self.max_value:
+            raise ValueError(f"world axis {self.id!r} initial_value must be within min_value/max_value")
+        for threshold in self.thresholds:
+            if threshold.value < self.min_value or threshold.value > self.max_value:
+                raise ValueError(
+                    f"world axis {self.id!r} threshold {threshold.key!r} value must be within min_value/max_value"
+                )
+        _ensure_unique_ids(self.thresholds, label=f"world axis {self.id!r} thresholds")
+        return self
+
+
+class PackSharedFaction(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    policy: str = ""
+    influence_scope: list[str] = Field(default_factory=list)
+    initial_standing: float = Field(default=0.0, ge=-1.0, le=1.0)
+    relationships: dict[str, float] = Field(default_factory=dict)
+    world_axis_interests: dict[str, float] = Field(default_factory=dict)
+    location_keys: list[str] = Field(default_factory=list)
+    npc_names: list[str] = Field(default_factory=list)
+    state: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_primary_faction(cls, faction: PackFaction) -> "PackSharedFaction":
+        return cls(
+            id=faction.id,
+            name=faction.name,
+            description=faction.description,
+            policy=str((faction.state or {}).get("doctrine") or ""),
+            state=dict(faction.state or {}),
+        )
+
+
+class PackNPCMemoryPolicy(BaseModel):
+    remember_player_interactions: bool = True
+    remember_local_public_events: bool = True
+    remember_faction_events: bool = True
+    remember_history_events: bool = True
+    remember_relationship_changes: bool = True
+    expose_recent_limit: int = Field(default=5, ge=0, le=20)
+
+
+class PackHistoryRule(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    level: HistoryLevel
+    description: str = ""
+    trigger_tags: list[str] = Field(default_factory=list)
+    world_axis_refs: list[str] = Field(default_factory=list)
+    faction_refs: list[str] = Field(default_factory=list)
+    location_refs: list[str] = Field(default_factory=list)
+    npc_refs: list[str] = Field(default_factory=list)
+    minimum_salience: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class PackTitleRule(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    action_tags: list[SharedWorldActionTag] = Field(default_factory=list)
+    world_axis_refs: list[str] = Field(default_factory=list)
+    faction_refs: list[str] = Field(default_factory=list)
+    location_refs: list[str] = Field(default_factory=list)
+    npc_refs: list[str] = Field(default_factory=list)
+    progress_target: float = Field(default=1.0, gt=0.0)
+
+
+class PackConsequenceRule(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    action_tag: SharedWorldActionTag
+    outcome_tags: list[str] = Field(default_factory=list)
+    world_axis_deltas: dict[str, float] = Field(default_factory=dict)
+    faction_standing_deltas: dict[str, float] = Field(default_factory=dict)
+    faction_influence_deltas: dict[str, float] = Field(default_factory=dict)
+    location_public_state_deltas: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    npc_memory_drafts: list[dict[str, Any]] = Field(default_factory=list)
+    relationship_deltas: list[dict[str, Any]] = Field(default_factory=list)
+    rumor_draft: str = ""
+    history_candidate_level: HistoryLevel | None = None
+    history_rule_id: str | None = None
+    title_progress_deltas: dict[str, float] = Field(default_factory=dict)
 
 
 class PackQuest(BaseModel):
@@ -204,6 +332,30 @@ class PackNPCSeed(BaseModel):
     is_guide: bool = False
 
 
+def _ensure_unique_ids(items: list[Any], *, label: str) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for item in items:
+        item_id = str(getattr(item, "id", "") or "").strip()
+        if not item_id:
+            continue
+        if item_id in seen:
+            duplicates.append(item_id)
+        seen.add(item_id)
+    if duplicates:
+        raise ValueError(f"{label} must have unique ids; duplicates={sorted(set(duplicates))}")
+
+
+def _unknown_values(values: list[str] | set[str], allowed: set[str]) -> list[str]:
+    return sorted({str(value) for value in values if str(value) not in allowed})
+
+
+def _raise_unknown_refs(*, label: str, values: list[str] | set[str], allowed: set[str]) -> None:
+    unknown = _unknown_values(values, allowed)
+    if unknown:
+        raise ValueError(f"{label} references unknown ids: {unknown}")
+
+
 class WorldTemplateDefinition(BaseModel):
     template_id: str = Field(min_length=1, max_length=120)
     display_name: str = Field(min_length=1, max_length=120)
@@ -214,6 +366,12 @@ class WorldTemplateDefinition(BaseModel):
     locations: dict[str, PackLocation]
     routes: list[PackRoute]
     faction: PackFaction
+    world_axes: list[PackWorldAxis] = Field(default_factory=list)
+    factions: list[PackSharedFaction] = Field(default_factory=list)
+    npc_memory_policy: PackNPCMemoryPolicy = Field(default_factory=PackNPCMemoryPolicy)
+    history_rules: list[PackHistoryRule] = Field(default_factory=list)
+    title_rules: list[PackTitleRule] = Field(default_factory=list)
+    consequence_rules: list[PackConsequenceRule] = Field(default_factory=list)
     quest: PackQuest
     followup_quest: PackQuest
     character: PackCharacter = Field(default_factory=PackCharacter)
@@ -232,6 +390,120 @@ class WorldTemplateDefinition(BaseModel):
         npc_reward_effect = str((self.quest.state or {}).get("reward_effect_kind") or self.roles.reward_effect_kind)
         if npc_reward_effect != self.roles.reward_effect_kind:
             self.roles.reward_effect_kind = npc_reward_effect
+        if not self.factions:
+            self.factions = [PackSharedFaction.from_primary_faction(self.faction)]
+
+        _ensure_unique_ids(self.world_axes, label=f"world template {self.template_id} world_axes")
+        _ensure_unique_ids(self.factions, label=f"world template {self.template_id} factions")
+        _ensure_unique_ids(self.history_rules, label=f"world template {self.template_id} history_rules")
+        _ensure_unique_ids(self.title_rules, label=f"world template {self.template_id} title_rules")
+        _ensure_unique_ids(self.consequence_rules, label=f"world template {self.template_id} consequence_rules")
+
+        axis_ids = {axis.id for axis in self.world_axes}
+        faction_ids = {faction.id for faction in self.factions}
+        history_rule_ids = {rule.id for rule in self.history_rules}
+        location_keys = set(self.locations)
+        title_ids = {rule.id for rule in self.title_rules}
+
+        if self.faction.id not in faction_ids:
+            raise ValueError(
+                f"world template {self.template_id} factions must include primary faction id {self.faction.id!r}"
+            )
+
+        for location_key, location in self.locations.items():
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} location {location_key!r} related_factions",
+                values=location.related_factions,
+                allowed=faction_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} location {location_key!r} related_world_axes",
+                values=location.related_world_axes,
+                allowed=axis_ids,
+            )
+
+        for faction in self.factions:
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} faction {faction.id!r} relationships",
+                values=set(faction.relationships),
+                allowed=faction_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} faction {faction.id!r} world_axis_interests",
+                values=set(faction.world_axis_interests),
+                allowed=axis_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} faction {faction.id!r} location_keys",
+                values=faction.location_keys,
+                allowed=location_keys,
+            )
+
+        for rule in self.history_rules:
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} history_rule {rule.id!r} world_axis_refs",
+                values=rule.world_axis_refs,
+                allowed=axis_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} history_rule {rule.id!r} faction_refs",
+                values=rule.faction_refs,
+                allowed=faction_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} history_rule {rule.id!r} location_refs",
+                values=rule.location_refs,
+                allowed=location_keys,
+            )
+
+        for rule in self.title_rules:
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} title_rule {rule.id!r} world_axis_refs",
+                values=rule.world_axis_refs,
+                allowed=axis_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} title_rule {rule.id!r} faction_refs",
+                values=rule.faction_refs,
+                allowed=faction_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} title_rule {rule.id!r} location_refs",
+                values=rule.location_refs,
+                allowed=location_keys,
+            )
+
+        for rule in self.consequence_rules:
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} consequence_rule {rule.id!r} world_axis_deltas",
+                values=set(rule.world_axis_deltas),
+                allowed=axis_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} consequence_rule {rule.id!r} faction_standing_deltas",
+                values=set(rule.faction_standing_deltas),
+                allowed=faction_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} consequence_rule {rule.id!r} faction_influence_deltas",
+                values=set(rule.faction_influence_deltas),
+                allowed=faction_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} consequence_rule {rule.id!r} location_public_state_deltas",
+                values=set(rule.location_public_state_deltas),
+                allowed=location_keys,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} consequence_rule {rule.id!r} title_progress_deltas",
+                values=set(rule.title_progress_deltas),
+                allowed=title_ids,
+            )
+            if rule.history_rule_id is not None and rule.history_rule_id not in history_rule_ids:
+                raise ValueError(
+                    f"world template {self.template_id} consequence_rule {rule.id!r} references unknown "
+                    f"history_rule_id {rule.history_rule_id!r}"
+                )
         return self
 
 
@@ -701,6 +973,7 @@ class PackRegistry:
             if not template.roles.guide_npc_name and guide_name:
                 template.roles.guide_npc_name = guide_name
             self._validate_followup_branches(manifest.pack_id, template, npc_names)
+            self._validate_shared_world_references(manifest.pack_id, template, npc_names)
             templates[template_id] = template
 
         return LoadedWorldPack(
@@ -838,6 +1111,44 @@ class PackRegistry:
                 raise WorldPackError(
                     f"Pack {pack_id} template {template.template_id} slot {slot} references unknown anchor_npcs: {missing}",
                     code="unknown_anchor_npc",
+                    pack_id=pack_id,
+                )
+
+    @staticmethod
+    def _validate_shared_world_references(
+        pack_id: str,
+        template: WorldTemplateDefinition,
+        npc_names: set[str],
+    ) -> None:
+        references: list[tuple[str, list[str]]] = []
+        for faction in template.factions:
+            references.append((f"faction {faction.id!r} npc_names", faction.npc_names))
+        for rule in template.history_rules:
+            references.append((f"history_rule {rule.id!r} npc_refs", rule.npc_refs))
+        for rule in template.title_rules:
+            references.append((f"title_rule {rule.id!r} npc_refs", rule.npc_refs))
+        for rule in template.consequence_rules:
+            draft_refs = [
+                str(draft.get(key) or "").strip()
+                for draft in rule.npc_memory_drafts
+                for key in ("npc_name", "target_npc_name", "display_name")
+                if str(draft.get(key) or "").strip()
+            ]
+            relationship_refs = [
+                str(delta.get(key) or "").strip()
+                for delta in rule.relationship_deltas
+                for key in ("npc_name", "target_npc_name", "counterpart_npc_name", "display_name")
+                if str(delta.get(key) or "").strip()
+            ]
+            references.append((f"consequence_rule {rule.id!r} npc_memory_drafts", draft_refs))
+            references.append((f"consequence_rule {rule.id!r} relationship_deltas", relationship_refs))
+
+        for label, values in references:
+            missing = [name for name in values if name not in npc_names]
+            if missing:
+                raise WorldPackError(
+                    f"Pack {pack_id} template {template.template_id} {label} references unknown NPCs: {sorted(set(missing))}",
+                    code="unknown_shared_world_reference",
                     pack_id=pack_id,
                 )
 

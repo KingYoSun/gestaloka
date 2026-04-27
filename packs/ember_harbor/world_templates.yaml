@@ -67,14 +67,70 @@ world_templates:
         starter: true
         name: Ember Quay
         description: The harborfront landing where new arrivals meet the wardens and the tide's first rumors.
+        hierarchy: city
+        region: inner_harbor
+        kind: landing
+        danger_level: low
+        facilities:
+          - notice rail
+          - warden booth
+        public_state:
+          public_trust: 1
+          crowd_tension: 1
+        related_factions:
+          - ember_wardens
+          - dockside_runners
+        related_world_axes:
+          - harbor_stability
+          - rumor_current
+        rumor_surface:
+          - stamped favors
+          - missing tide notices
       tide_market:
         id: tide_market
         name: Tide Market
         description: Salt-marked stalls and notice rails where records, bargains, and half-heard reports collect.
+        hierarchy: city
+        region: inner_harbor
+        kind: market
+        danger_level: low
+        facilities:
+          - scribe table
+          - tide stalls
+        public_state:
+          record_clarity: 1
+          rumor_density: 2
+        related_factions:
+          - tide_recorders
+          - dockside_runners
+        related_world_axes:
+          - rumor_current
+          - harbor_stability
+        rumor_surface:
+          - contradictory manifests
+          - paid messages
       breakwater:
         id: breakwater
         name: Cinder Breakwater
         description: A sealed outer path along the harbor wall, opened only when the wardens recognize a seal.
+        hierarchy: outer_route
+        region: harbor_wall
+        kind: sealed_path
+        danger_level: medium
+        facilities:
+          - beacon housing
+          - locked gate
+        public_state:
+          gate_status: sealed
+          beacon_confidence: 1
+        related_factions:
+          - ember_wardens
+        related_world_axes:
+          - harbor_stability
+          - breakwater_risk
+        rumor_surface:
+          - dimmed beacon reports
+          - names near the gate
     routes:
       - route_key: quay_to_market
         from: quay
@@ -108,6 +164,244 @@ world_templates:
       description: Harbor keepers who turn small favors into standing and keep the outer wall secure.
       state:
         doctrine: steady the harbor and reward reliable hands
+    world_axes:
+      - id: harbor_stability
+        display_name: Harbor Stability
+        description: How steadily the public harbor keeps routes, trust, and notices moving.
+        min_value: 0
+        max_value: 100
+        initial_value: 56
+        thresholds:
+          - key: strained
+            label: Strained Harbor
+            value: 30
+            description: Wardens narrow access and rumors travel faster than records.
+          - key: steady
+            label: Steady Harbor
+            value: 60
+            description: Public trust is strong enough for favors to become routes.
+      - id: rumor_current
+        display_name: Rumor Current
+        description: How strongly dockside reports move through the market and quay.
+        min_value: 0
+        max_value: 100
+        initial_value: 34
+        thresholds:
+          - key: low_tide
+            label: Low Tide
+            value: 20
+            description: Rumors stay local and easy to verify.
+          - key: flood_tide
+            label: Flood Tide
+            value: 70
+            description: Half-heard notices start shaping public choices.
+      - id: breakwater_risk
+        display_name: Breakwater Risk
+        description: Pressure around the sealed outer wall and the harbor lights beyond it.
+        min_value: 0
+        max_value: 100
+        initial_value: 62
+        thresholds:
+          - key: watchful
+            label: Watchful
+            value: 45
+            description: The wall is tense but controlled.
+          - key: exposed
+            label: Exposed
+            value: 75
+            description: The outer wall begins drawing urgent attention.
+    factions:
+      - id: ember_wardens
+        name: Ember Wardens
+        description: Harbor keepers who turn small favors into standing and keep the outer wall secure.
+        policy: steady the harbor and reward reliable hands
+        influence_scope:
+          - quay
+          - breakwater
+        initial_standing: 0.0
+        relationships:
+          tide_recorders: 0.35
+          dockside_runners: 0.2
+        world_axis_interests:
+          harbor_stability: 1.0
+          breakwater_risk: -0.6
+        location_keys:
+          - quay
+          - breakwater
+        npc_names:
+          - Runner Eska
+          - Beacon-Keeper Sol
+      - id: tide_recorders
+        name: Tide Recorders
+        description: Scribes and market witnesses who keep conflicting harbor reports coherent.
+        policy: preserve public records before rumors overwrite them
+        influence_scope:
+          - tide_market
+        initial_standing: 0.0
+        relationships:
+          ember_wardens: 0.35
+          dockside_runners: 0.15
+        world_axis_interests:
+          rumor_current: -0.5
+          harbor_stability: 0.7
+        location_keys:
+          - tide_market
+        npc_names:
+          - Tide-Scribe Miro
+      - id: dockside_runners
+        name: Dockside Runners
+        description: Message carriers and quay regulars who move notices before officials can sort them.
+        policy: keep information moving even when the harbor hesitates
+        influence_scope:
+          - quay
+          - tide_market
+        initial_standing: 0.0
+        relationships:
+          ember_wardens: 0.2
+          tide_recorders: 0.15
+        world_axis_interests:
+          rumor_current: 0.8
+          harbor_stability: 0.2
+        location_keys:
+          - quay
+          - tide_market
+        npc_names:
+          - Runner Eska
+    npc_memory_policy:
+      remember_player_interactions: true
+      remember_local_public_events: true
+      remember_faction_events: true
+      remember_history_events: true
+      remember_relationship_changes: true
+      expose_recent_limit: 5
+    history_rules:
+      - id: harbor_rumor_record
+        level: local_rumor
+        description: Public harbor actions become local rumor when they touch the quay or market.
+        trigger_tags:
+          - public_help
+          - noticed_report
+        world_axis_refs:
+          - rumor_current
+        faction_refs:
+          - dockside_runners
+        location_refs:
+          - quay
+          - tide_market
+        npc_refs:
+          - Runner Eska
+        minimum_salience: 0.35
+      - id: breakwater_faction_record
+        level: faction_record
+        description: Breakwater actions become warden records when they affect the outer wall.
+        trigger_tags:
+          - route_unsealed
+          - beacon_steadied
+        world_axis_refs:
+          - harbor_stability
+          - breakwater_risk
+        faction_refs:
+          - ember_wardens
+        location_refs:
+          - breakwater
+        npc_refs:
+          - Beacon-Keeper Sol
+        minimum_salience: 0.6
+    title_rules:
+      - id: harbor_seal_bearer
+        display_name: Harbor Seal Bearer
+        description: Recognized by wardens for turning small help into public trust.
+        action_tags:
+          - help
+          - protect
+        world_axis_refs:
+          - harbor_stability
+        faction_refs:
+          - ember_wardens
+        location_refs:
+          - quay
+        npc_refs:
+          - Runner Eska
+        progress_target: 3
+      - id: tide_listener
+        display_name: Tide Listener
+        description: Known for tracing rumors before they become harbor fact.
+        action_tags:
+          - investigate
+          - negotiate
+        world_axis_refs:
+          - rumor_current
+        faction_refs:
+          - tide_recorders
+        location_refs:
+          - tide_market
+        npc_refs:
+          - Tide-Scribe Miro
+        progress_target: 2
+    consequence_rules:
+      - id: steady_harbor_help
+        action_tag: help
+        outcome_tags:
+          - public_help
+        world_axis_deltas:
+          harbor_stability: 2
+          rumor_current: 1
+        faction_standing_deltas:
+          ember_wardens: 0.03
+        location_public_state_deltas:
+          quay:
+            public_trust: 1
+        npc_memory_drafts:
+          - npc_name: Runner Eska
+            scope: actor
+            summary: The player helped turn a quay favor into public trust.
+        rumor_draft: Dockside runners repeat who helped steady the quay.
+        history_candidate_level: local_rumor
+        history_rule_id: harbor_rumor_record
+        title_progress_deltas:
+          harbor_seal_bearer: 1
+      - id: investigate_tide_reports
+        action_tag: investigate
+        outcome_tags:
+          - noticed_report
+        world_axis_deltas:
+          rumor_current: -1
+          harbor_stability: 1
+        faction_standing_deltas:
+          tide_recorders: 0.04
+        location_public_state_deltas:
+          tide_market:
+            record_clarity: 1
+        npc_memory_drafts:
+          - npc_name: Tide-Scribe Miro
+            scope: actor
+            summary: The player helped sort a conflicting tide report.
+        rumor_draft: Market scribes note which reports were checked before spreading.
+        history_candidate_level: local_rumor
+        history_rule_id: harbor_rumor_record
+        title_progress_deltas:
+          tide_listener: 1
+      - id: protect_breakwater
+        action_tag: protect
+        outcome_tags:
+          - beacon_steadied
+        world_axis_deltas:
+          harbor_stability: 2
+          breakwater_risk: -2
+        faction_standing_deltas:
+          ember_wardens: 0.05
+        location_public_state_deltas:
+          breakwater:
+            beacon_confidence: 1
+        npc_memory_drafts:
+          - npc_name: Beacon-Keeper Sol
+            scope: location
+            summary: The player helped keep the breakwater lights steady.
+        rumor_draft: The outer wall keeps the player's name near the beacon.
+        history_candidate_level: faction_record
+        history_rule_id: breakwater_faction_record
+        title_progress_deltas:
+          harbor_seal_bearer: 1
     quest:
       id: starter_harbor_request
       title: First Harbor Request
