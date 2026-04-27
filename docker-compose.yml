@@ -262,7 +262,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "node -e \"fetch('http://127.0.0.1:3000').then((response) => process.exit(response.status === 200 || response.status === 302 ? 0 : 1)).catch(() => process.exit(1))\"",
+          "node -e \"fetch('http://langfuse-web:3000').then((response) => process.exit(response.status === 200 || response.status === 302 ? 0 : 1)).catch(() => process.exit(1))\"",
         ]
       interval: 10s
       timeout: 5s
