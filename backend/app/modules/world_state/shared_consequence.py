@@ -22,6 +22,7 @@ from app.models.entities import (
 from app.modules.actor.service import adjust_relationship_strength
 from app.modules.world_memory.service import MemoryService
 from app.modules.world_pack.service import PackConsequenceRule, SharedWorldActionTag, resolve_world_pack
+from app.modules.world_state.history import canonize_history_candidates
 from app.modules.world_state.rules import standing_band
 
 
@@ -342,6 +343,25 @@ def apply_shared_consequence_rules(
         )
         applied_rule_ids.append(rule.id)
 
+    canonize_history_candidates(db, world_id=world_id, source_event_ids=[source_event_id])
+    refreshed_history_records = list(
+        db.execute(
+            select(SharedHistoryRecord)
+            .where(SharedHistoryRecord.world_id == world_id, SharedHistoryRecord.source_event_id == source_event_id)
+            .order_by(SharedHistoryRecord.created_at.asc(), SharedHistoryRecord.id.asc())
+        ).scalars()
+    )
+    history_records = [
+        {
+            "id": history_record.id,
+            "history_rule_id": history_record.history_rule_id,
+            "level": history_record.level,
+            "status": history_record.status,
+            "summary": history_record.summary,
+        }
+        for history_record in refreshed_history_records
+    ]
+
     db.flush()
     return SharedConsequenceResult(
         action_tag=action_tag,
@@ -635,7 +655,7 @@ def _apply_title_progress(
         progress.description = title_rule.description
         progress.progress_target = title_rule.progress_target
         progress.progress = min(progress.progress_target, max(0.0, before + float(delta)))
-        progress.status = "candidate" if progress.progress >= progress.progress_target else "in_progress"
+        progress.status = "recognized" if progress.progress >= progress.progress_target else "in_progress"
         progress.source_event_id = source_event_id
         progress.payload = {"last_delta": float(delta), "consequence_rule_id": rule.id}
         updates.append(

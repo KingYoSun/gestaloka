@@ -30,6 +30,7 @@ from app.modules.admin_ops.service import (
     world_offstage_beats,
     world_memory_search,
     world_graph_summary,
+    world_history,
     world_chapters,
     world_locations,
     world_npc_locations,
@@ -38,6 +39,7 @@ from app.modules.admin_ops.service import (
     world_relationships,
     world_scenes,
     world_shared_context,
+    world_titles,
     world_travel_log,
     world_chapter_branches,
     world_consequence_threads,
@@ -440,6 +442,34 @@ def get_world_shared_world(
 ) -> dict[str, object]:
     del container, user
     return world_shared_context(db, world_id=world_id)
+
+
+@router.get("/worlds/{world_id}/history")
+def get_world_history(
+    world_id: str,
+    status: str | None = Query(default=None, max_length=32),
+    level: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_history(db, world_id=world_id, status=status, level=level, limit=limit)
+
+
+@router.get("/worlds/{world_id}/titles")
+def get_world_titles(
+    world_id: str,
+    actor_id: str | None = Query(default=None, max_length=36),
+    status: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del container, user
+    return world_titles(db, world_id=world_id, actor_id=actor_id, status=status, limit=limit)
 
 
 @router.get("/worlds/{world_id}/travel-log")

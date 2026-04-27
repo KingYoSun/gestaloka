@@ -191,6 +191,13 @@ def build_retrieval_query_text(
     inventory = [item.get("name", "") for item in (state.get("inventory") or []) if isinstance(item, dict) and item.get("name")]
     if inventory:
         lines.append(f"inventory={', '.join(inventory[:3])}")
+    recognized_titles = [
+        str(item.get("display_name") or item.get("title_rule_id") or "").strip()
+        for item in (state.get("recognized_titles") or [])
+        if isinstance(item, dict) and str(item.get("display_name") or item.get("title_rule_id") or "").strip()
+    ]
+    if recognized_titles:
+        lines.append(f"recognized_titles={'; '.join(recognized_titles[:3])}")
     branch_echoes = [str(item) for item in (state.get("recent_branch_echoes") or []) if str(item).strip()]
     if branch_echoes:
         lines.append(f"branch_echoes={'; '.join(branch_echoes[:2])}")

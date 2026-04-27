@@ -6,6 +6,7 @@ from app.models.entities import (
     ActorTitleProgress,
     ChapterTrack,
     CharacterSheet,
+    Event,
     Faction,
     FactionStanding,
     Location,
@@ -13,6 +14,7 @@ from app.models.entities import (
     ProjectionRecord,
     QuestAssignment,
     QuestTemplate,
+    SPLedgerEntry,
     Turn,
     SharedConsequenceApplication,
     SharedHistoryRecord,
@@ -158,7 +160,14 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
             select(func.count(SharedHistoryRecord.id)).where(
                 SharedHistoryRecord.world_id == "ember_harbor",
                 SharedHistoryRecord.source_event_id == turn_payload["event_id"],
-                SharedHistoryRecord.status == "candidate",
+                SharedHistoryRecord.status == "canonized",
+            )
+        ).scalar_one() == 2
+        assert db.execute(
+            select(func.count(SharedHistoryRecord.id)).where(
+                SharedHistoryRecord.world_id == "ember_harbor",
+                SharedHistoryRecord.source_event_id == turn_payload["event_id"],
+                SharedHistoryRecord.level == "world_canon",
             )
         ).scalar_one() == 1
         title_progress = db.execute(
@@ -326,7 +335,13 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
     assert player_a_turn_payload["event_id"] in shared_context["trace"]["source_event_ids"]
     assert any(item["axis_id"] == "harbor_stability" and item["current_value"] == 58 for item in shared_context["world_axes"])
     assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in shared_context["recent_history"])
-    assert any("steady the quay" in item["summary"] for item in shared_context["rumor_surface"])
+    assert any(
+        item["source_event_id"] == player_a_turn_payload["event_id"]
+        and item["level"] == "world_canon"
+        and item["status"] == "canonized"
+        for item in shared_context["recent_history"]
+    )
+    assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in shared_context["rumor_surface"])
     assert shared_context["location_public_state"]["public_state"]["public_trust"] == 2
     assert "user_sub" not in str(shared_context)
 
@@ -358,10 +373,26 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
         if record.get("event") == "enter" and record.get("as_type") == "generation"
     ]
     assert any(payload.get("shared_world_context", {}).get("trace", {}).get("source_event_ids") for payload in generation_inputs)
+    assert any(
+        any(
+            item.get("level") == "world_canon" and item.get("status") == "canonized"
+            for item in payload.get("shared_world_context", {}).get("recent_history", [])
+        )
+        for payload in generation_inputs
+    )
 
     ops_shared = client.get("/ops/worlds/ember_harbor/shared-world", headers=ops_headers)
     assert ops_shared.status_code == 200
     assert player_a_turn_payload["event_id"] in ops_shared.json()["shared_world_context"]["trace"]["source_event_ids"]
+    ops_history = client.get("/ops/worlds/ember_harbor/history?level=world_canon&status=canonized", headers=ops_headers)
+    assert ops_history.status_code == 200
+    assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in ops_history.json()["items"])
+    ops_titles = client.get(
+        f"/ops/worlds/ember_harbor/titles?actor_id={player_a_payload['player_actor_id']}&status=in_progress",
+        headers=ops_headers,
+    )
+    assert ops_titles.status_code == 200
+    assert any(item["title_rule_id"] == "harbor_seal_bearer" for item in ops_titles.json()["items"])
 
     founders_session = client.post(
         "/sessions",
@@ -380,6 +411,110 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
     founders_ops_shared = client.get("/ops/worlds/founders_reach/shared-world", headers=ops_headers)
     assert founders_ops_shared.status_code == 200
     assert player_a_turn_payload["event_id"] not in founders_ops_shared.json()["shared_world_context"]["trace"]["source_event_ids"]
+    founders_ops_history = client.get("/ops/worlds/founders_reach/history?level=world_canon", headers=ops_headers)
+    assert founders_ops_history.status_code == 200
+    assert player_a_turn_payload["event_id"] not in [item["source_event_id"] for item in founders_ops_history.json()["items"]]
+    founders_ops_titles = client.get("/ops/worlds/founders_reach/titles?status=in_progress", headers=ops_headers)
+    assert founders_ops_titles.status_code == 200
+    assert player_a_payload["player_actor_id"] not in [item["actor_id"] for item in founders_ops_titles.json()["items"]]
+
+
+def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_effects(client, container, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        sp_count_before = db.execute(
+            select(func.count(SPLedgerEntry.id)).where(
+                SPLedgerEntry.world_id == "ember_harbor",
+                SPLedgerEntry.actor_id == session_payload["player_actor_id"],
+            )
+        ).scalar_one()
+        for index in range(3):
+            turn = Turn(
+                world_id="ember_harbor",
+                session_id=session_payload["session_id"],
+                actor_id=session_payload["player_actor_id"],
+                input_text=f"recognized harbor help {index}",
+                resolved_output={"status": "resolved"},
+                model_lane="test",
+                action_type="narrative",
+                resolution_mode="test",
+            )
+            db.add(turn)
+            db.flush()
+            event = Event(
+                world_id="ember_harbor",
+                session_id=session_payload["session_id"],
+                turn_id=turn.id,
+                event_type="player.turn.resolved",
+                source_actor_id=session_payload["player_actor_id"],
+                location_id=session_payload["location_id"],
+                payload={"world_tags": ["aid_local"], "consequence_tags": ["earned_trust"]},
+                narrative=f"The player helped the harbor enough to be recognized {index}.",
+            )
+            db.add(event)
+            db.flush()
+            apply_shared_consequence_rules(
+                db,
+                memory_service=container.memory_service,
+                world_id="ember_harbor",
+                actor_id=session_payload["player_actor_id"],
+                location_id=session_payload["location_id"],
+                source_event_id=event.id,
+                world_tags=["aid_local"],
+                consequence_tags=["earned_trust"],
+                action_kind="narrative",
+                interpreted_intent={"consequence_tags": ["earned_trust"]},
+            )
+        db.commit()
+
+    state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state_response.status_code == 200
+    recognized_titles = state_response.json()["recognized_titles"]
+    assert any(item["title_rule_id"] == "harbor_seal_bearer" and item["status"] == "recognized" for item in recognized_titles)
+
+    with container.session_factory() as db:
+        title_progress = db.execute(
+            select(ActorTitleProgress).where(
+                ActorTitleProgress.world_id == "ember_harbor",
+                ActorTitleProgress.actor_id == session_payload["player_actor_id"],
+                ActorTitleProgress.title_rule_id == "harbor_seal_bearer",
+            )
+        ).scalar_one()
+        assert title_progress.progress == title_progress.progress_target
+        assert title_progress.status == "recognized"
+        assert db.execute(
+            select(func.count(SPLedgerEntry.id)).where(
+                SPLedgerEntry.world_id == "ember_harbor",
+                SPLedgerEntry.actor_id == session_payload["player_actor_id"],
+            )
+        ).scalar_one() == sp_count_before
+
+    prompt_turn = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_mode": "free_text",
+            "input_text": "Harbor Seal Bearerとして岸壁の様子を確かめる",
+        },
+        headers=auth_headers,
+    )
+    assert prompt_turn.status_code == 200
+    generation_inputs = [
+        record.get("input") or {}
+        for record in container.observability_service._langfuse_client.records
+        if record.get("event") == "enter" and record.get("as_type") == "generation"
+    ]
+    assert any(
+        any(item.get("title_rule_id") == "harbor_seal_bearer" for item in payload.get("recognized_titles", []))
+        for payload in generation_inputs
+    )
 
 
 def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():

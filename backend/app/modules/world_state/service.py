@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.models.entities import (
     Actor,
+    ActorTitleProgress,
     CharacterSheet,
     ConsequenceThread,
     Event,
@@ -28,6 +29,7 @@ from app.models.entities import (
     new_id,
     route_id,
 )
+from app.modules.world_state.history import title_progress_to_dict
 from app.modules.actor.service import (
     adjust_relationship_strength,
     ensure_pack_npcs,
@@ -968,6 +970,21 @@ def list_faction_summaries(db: Session, world_id: str, actor_id: str) -> list[di
         ).all()
     )
     return [faction_summary_to_dict(standing, faction) for standing, faction in rows]
+
+
+def list_recognized_titles(db: Session, world_id: str, actor_id: str) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(ActorTitleProgress)
+            .where(
+                ActorTitleProgress.world_id == world_id,
+                ActorTitleProgress.actor_id == actor_id,
+                ActorTitleProgress.status == "recognized",
+            )
+            .order_by(ActorTitleProgress.updated_at.desc(), ActorTitleProgress.title_rule_id.asc())
+        ).scalars()
+    )
+    return [title_progress_to_dict(row) for row in rows]
 
 
 def build_shared_world_context(
@@ -1973,6 +1990,7 @@ def build_session_state(
     factions = list_faction_summaries(db, world_id, actor_id)
     inventory = list_inventory_summaries(db, world_id, actor_id)
     relationships = list_relationship_summaries(db, world_id, actor_id)
+    recognized_titles = list_recognized_titles(db, world_id, actor_id)
     active_consequence_threads = list_active_consequence_threads(db, world_id, actor_id)
     recent_consequence_history = list_recent_consequence_history(db, world_id, actor_id)
     chapter_full = get_current_chapter_summary(db, world_id, actor_id, include_internal=True)
@@ -2060,6 +2078,7 @@ def build_session_state(
         "offstage_murmurs": offstage_murmurs,
         "recent_branch_echoes": recent_branch_echoes,
         "relationships": relationships,
+        "recognized_titles": recognized_titles,
         "active_consequence_threads": active_consequence_threads,
         "recent_consequence_history": recent_consequence_history,
         "narrative_state_bands": narrative_state_bands(character, factions),

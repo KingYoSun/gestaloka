@@ -376,6 +376,11 @@ class StubModelProvider(BaseModelProvider):
         quests = [item.get("title", "") for item in input_payload.get("quests") or [] if item.get("title")]
         factions = [item.get("name", "") for item in input_payload.get("factions") or [] if item.get("name")]
         inventory = [item.get("name", "") for item in input_payload.get("inventory") or [] if item.get("name")]
+        recognized_titles = [
+            item.get("display_name", "")
+            for item in input_payload.get("recognized_titles") or []
+            if isinstance(item, dict) and item.get("display_name")
+        ]
         active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
         usable_items = [item.get("name", "") for item in input_payload.get("usable_reward_items") or [] if item.get("name")]
         used_items = [item.get("name", "") for item in input_payload.get("used_reward_items") or [] if item.get("name")]
@@ -414,6 +419,8 @@ class StubModelProvider(BaseModelProvider):
             summary_parts.append(f"faction={factions[0]}")
         if inventory:
             summary_parts.append(f"inventory={', '.join(inventory[:2])}")
+        if recognized_titles:
+            summary_parts.append(f"recognized_titles={', '.join(recognized_titles[:2])}")
         if usable_items:
             summary_parts.append(f"usable_reward={', '.join(usable_items[:2])}")
         if used_items:

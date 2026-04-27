@@ -258,6 +258,7 @@ class GMCouncilService:
         important_inventory_affordances = request.session_state.get("important_inventory_affordances") or []
         default_choice_templates = request.session_state.get("next_choices") or []
         relationship_summaries = request.session_state.get("relationships") or []
+        recognized_titles = request.session_state.get("recognized_titles") or []
         active_consequence_threads = request.session_state.get("active_consequence_threads") or []
         recent_consequence_history = request.session_state.get("recent_consequence_history") or []
         current_scene = request.session_state.get("current_scene") or {}
@@ -290,6 +291,7 @@ class GMCouncilService:
             "important_inventory_affordances": important_inventory_affordances,
             "default_choice_templates": default_choice_templates,
             "relationship_summaries": relationship_summaries,
+            "recognized_titles": recognized_titles,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
             "current_scene": current_scene,
@@ -361,6 +363,7 @@ class GMCouncilService:
             "important_inventory_affordances": [item.get("summary", "") for item in important_inventory_affordances if item.get("summary")],
             "consequence_flags": intent_payload.consequence_flags,
             "relationship_summaries": relationship_summaries,
+            "recognized_titles": recognized_titles,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
             "current_scene": current_scene,
@@ -417,6 +420,7 @@ class GMCouncilService:
             "factions": request.session_state.get("factions") or [],
             "consequence_summary": intent_payload.consequence_summary,
             "relationship_summaries": relationship_summaries,
+            "recognized_titles": recognized_titles,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
             "current_location": current_location,
@@ -475,6 +479,7 @@ class GMCouncilService:
             "consequence_tags": intent_payload.consequence_tags,
             "default_choice_templates": default_choice_templates,
             "relationship_summaries": relationship_summaries,
+            "recognized_titles": recognized_titles,
             "active_consequence_threads": active_consequence_threads,
             "recent_consequence_history": recent_consequence_history,
             "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
@@ -542,6 +547,7 @@ class GMCouncilService:
             "inventory": inventory,
             "input_mode": request.input_mode,
             "consequence_flags": intent_payload.consequence_flags,
+            "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
         }
         rules_result = self.model_router.execute_structured_prompt(
@@ -591,6 +597,7 @@ class GMCouncilService:
             "world_tags": rules_payload.normalized_world_tags,
             "risk_level": rules_payload.risk_level,
             "input_mode": request.input_mode,
+            "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
         }
         safety_result = self.model_router.execute_structured_prompt(
@@ -642,6 +649,7 @@ class GMCouncilService:
             "outcome_band": world_progress_payload.outcome_band,
             "current_scene_summary": str(current_scene.get("summary") or ""),
             "current_chapter_summary": str(current_chapter.get("summary") or ""),
+            "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
         }
         narrative_result = self.model_router.execute_structured_prompt(

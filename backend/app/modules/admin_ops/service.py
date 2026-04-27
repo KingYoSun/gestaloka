@@ -7,12 +7,24 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.models.entities import Actor, LLMRun, ObservabilitySnapshot, OutboxEvent, ProjectionRecord, Session as GameSession, Turn, World
+from app.models.entities import (
+    Actor,
+    ActorTitleProgress,
+    LLMRun,
+    ObservabilitySnapshot,
+    OutboxEvent,
+    ProjectionRecord,
+    Session as GameSession,
+    SharedHistoryRecord,
+    Turn,
+    World,
+)
 from app.modules.economy_sp.service import EconomyService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.observability.service import CanaryProbeResult, ObservabilityService
 from app.modules.world_pack.service import get_pack_registry, nullable_world_context_for_world, world_context_for_world
 from app.modules.world_memory.service import MemoryService
+from app.modules.world_state.history import history_record_to_dict, title_progress_to_dict
 from app.modules.world_state.ambient import (
     list_ambient_beats_debug,
     list_npc_locations,
@@ -689,6 +701,61 @@ def world_shared_context(db: Session, *, world_id: str) -> dict[str, object]:
             include_all_axes=True,
             limit=12,
         ),
+    })
+
+
+def world_history(
+    db: Session,
+    *,
+    world_id: str,
+    status: str | None = None,
+    level: str | None = None,
+    limit: int = 50,
+) -> dict[str, object]:
+    stmt = select(SharedHistoryRecord).where(SharedHistoryRecord.world_id == world_id)
+    if status:
+        stmt = stmt.where(SharedHistoryRecord.status == status)
+    if level:
+        stmt = stmt.where(SharedHistoryRecord.level == level)
+    rows = list(
+        db.execute(
+            stmt.order_by(
+                SharedHistoryRecord.created_at.desc(),
+                SharedHistoryRecord.id.desc(),
+            ).limit(limit)
+        ).scalars()
+    )
+    return _with_world_context(db, world_id, {
+        "world_id": world_id,
+        "items": [history_record_to_dict(row) for row in rows],
+    })
+
+
+def world_titles(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict[str, object]:
+    stmt = select(ActorTitleProgress).where(ActorTitleProgress.world_id == world_id)
+    if actor_id:
+        stmt = stmt.where(ActorTitleProgress.actor_id == actor_id)
+    if status:
+        stmt = stmt.where(ActorTitleProgress.status == status)
+    rows = list(
+        db.execute(
+            stmt.order_by(
+                ActorTitleProgress.updated_at.desc(),
+                ActorTitleProgress.actor_id.asc(),
+                ActorTitleProgress.title_rule_id.asc(),
+            ).limit(limit)
+        ).scalars()
+    )
+    return _with_world_context(db, world_id, {
+        "world_id": world_id,
+        "items": [title_progress_to_dict(row) for row in rows],
     })
 
 

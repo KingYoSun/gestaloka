@@ -307,6 +307,23 @@ world_templates:
         npc_refs:
           - Beacon-Keeper Sol
         minimum_salience: 0.6
+      - id: harbor_public_canon
+        level: world_canon
+        description: Highly visible harbor aid can become a canon event for the whole harbor.
+        trigger_tags:
+          - public_help
+          - earned_trust
+        world_axis_refs:
+          - harbor_stability
+          - rumor_current
+        faction_refs:
+          - ember_wardens
+          - dockside_runners
+        location_refs:
+          - quay
+        npc_refs:
+          - Runner Eska
+        minimum_salience: 0.6
     title_rules:
       - id: harbor_seal_bearer
         display_name: Harbor Seal Bearer
@@ -383,6 +400,14 @@ world_templates:
         history_rule_id: harbor_rumor_record
         title_progress_deltas:
           tide_listener: 1
+      - id: canonize_public_harbor_aid
+        action_tag: help
+        outcome_tags:
+          - public_help
+          - earned_trust
+        rumor_draft: Harbor records now keep the player's help as part of the shared harbor story.
+        history_candidate_level: world_canon
+        history_rule_id: harbor_public_canon
       - id: protect_breakwater
         action_tag: protect
         outcome_tags:
