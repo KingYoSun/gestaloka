@@ -36,6 +36,7 @@ password: demo-password
 - `make frontend-e2e` is the official full-stack Playwright smoke path. It runs the Playwright smoke specs under `tests/e2e/` through Compose, waits for `backend` / `frontend` / `keycloak` readiness, and cleans the stack afterward.
 - `make verify-v2` is the canonical local and CI verification entrypoint. It runs backend tests, v1 terminology checks, legacy layout checks, the containerized frontend build, and the containerized E2E smoke in order.
 - `GET /worlds/packs` exposes the bundled pack and template catalog used by the session bootstrap UI.
+- `make pack-export` and `make pack-import` move validated external world packs as `.tar.gz` artifacts; see [World Pack Operations](documents/world-pack-operations.md).
 - Host `npm run build` remains a convenience path only. In mixed WSL/Windows environments it is non-authoritative and may fail even when the Compose verification path is healthy.
 
 ## Initial public interfaces

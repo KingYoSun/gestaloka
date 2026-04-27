@@ -13,7 +13,9 @@ from app.modules.world_pack.service import (
     FOLLOWUP_BRANCH_SLOTS,
     PackRegistry,
     WorldPackError,
+    export_pack_archive,
     get_pack_registry,
+    import_pack_archive,
     load_pack_from_dir,
 )
 
@@ -154,7 +156,7 @@ def _pack_payload(pack: Any) -> dict[str, Any]:
     }
 
 
-def _error_payload(exc: BaseException, *, pack_dir: Path | None = None) -> dict[str, Any]:
+def _error_payload(exc: BaseException, *, pack_dir: Path | None = None, archive: Path | None = None) -> dict[str, Any]:
     if isinstance(exc, WorldPackError):
         payload = exc.diagnostic()
     else:
@@ -164,6 +166,8 @@ def _error_payload(exc: BaseException, *, pack_dir: Path | None = None) -> dict[
         }
     if pack_dir is not None:
         payload["pack_dir"] = str(pack_dir.resolve())
+    if archive is not None:
+        payload["archive"] = str(archive.resolve())
     return payload
 
 
@@ -176,6 +180,14 @@ def main() -> None:
     validate_parser = subparsers.add_parser("validate", help="Validate discovered packs")
     validate_parser.add_argument("--pack", dest="pack_id", help="Validate only one pack_id")
 
+    export_parser = subparsers.add_parser("export", help="Export one validated pack as a .tar.gz archive")
+    export_parser.add_argument("--pack", dest="pack_id", required=True, help="Pack id to export")
+    export_parser.add_argument("--output", dest="output", required=True, help="Output .tar.gz archive path")
+
+    import_parser = subparsers.add_parser("import", help="Import one validated .tar.gz pack archive")
+    import_parser.add_argument("--archive", dest="archive", required=True, help="Input .tar.gz archive path")
+    import_parser.add_argument("--replace", action="store_true", help="Replace an existing pack with the same pack_id")
+
     scan_parser = subparsers.add_parser("scan-leaks", help="Scan runtime source for bundled pack-specific literals")
     scan_parser.add_argument(
         "--scan-root",
@@ -185,6 +197,7 @@ def main() -> None:
     )
 
     settings = None
+    args = None
     try:
         args = parser.parse_args()
         settings = get_settings()
@@ -217,6 +230,10 @@ def main() -> None:
                 if registry.failure_count:
                     raise SystemExit(1)
                 return
+        elif args.command == "export":
+            payload = export_pack_archive(settings.pack_dir, args.pack_id, args.output)
+        elif args.command == "import":
+            payload = import_pack_archive(settings.pack_dir, args.archive, replace=args.replace)
         else:
             registry = get_pack_registry(settings)
             if registry.status == "error":
@@ -242,5 +259,9 @@ def main() -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     except (WorldPackError, OSError, ValueError) as exc:
         pack_dir = Path(settings.pack_dir) if settings is not None else None
-        print(json.dumps(_error_payload(exc, pack_dir=pack_dir), ensure_ascii=False, indent=2), file=sys.stderr)
+        archive = None
+        if args is not None:
+            raw_archive = getattr(args, "archive", None) or getattr(args, "output", None)
+            archive = Path(raw_archive) if raw_archive else None
+        print(json.dumps(_error_payload(exc, pack_dir=pack_dir, archive=archive), ensure_ascii=False, indent=2), file=sys.stderr)
         raise SystemExit(1) from exc

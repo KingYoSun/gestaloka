@@ -2,6 +2,8 @@
 
 This guide fixes the minimum release-gate work for adding a bundled world pack.
 
+For external pack archive export/import operations, see [world-pack-operations.md](world-pack-operations.md).
+
 ## Required artifacts
 
 - Add the declarative pack under `packs/<pack_id>/`.

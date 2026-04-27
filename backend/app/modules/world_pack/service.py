@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
+import shutil
+import tarfile
+import tempfile
 from typing import Any, Literal, Mapping
 
 import yaml
@@ -18,6 +21,7 @@ ENGINE_API_VERSION = "v2"
 FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
 PACK_YAML_SUFFIXES = {".yaml", ".yml"}
 PACK_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,119}$")
+PACK_ARCHIVE_SUFFIX = ".tar.gz"
 
 _ACTIVE_REGISTRY: PackRegistry | None = None
 _ACTIVE_PACK_DIR: Path | None = None
@@ -831,6 +835,227 @@ def load_pack_from_dir(pack_dir: Path | str, pack_id: str) -> LoadedWorldPack:
     registry = PackRegistry.__new__(PackRegistry)
     registry.pack_dir = resolved_dir
     return registry._load_pack(manifest_path)
+
+
+def _pack_archive_payload(
+    *,
+    status: str,
+    pack: LoadedWorldPack,
+    archive_path: Path,
+    pack_dir: Path,
+    root_dir: Path,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "pack_id": pack.manifest.pack_id,
+        "version": pack.manifest.version,
+        "engine_api_version": pack.manifest.engine_api_version,
+        "archive": str(archive_path.resolve()),
+        "pack_dir": str(pack_dir.resolve()),
+        "root_dir": str(root_dir.resolve()),
+    }
+
+
+def _validate_archive_path(path: Path, *, must_exist: bool) -> Path:
+    archive_path = Path(path).resolve()
+    if not archive_path.name.endswith(PACK_ARCHIVE_SUFFIX):
+        raise WorldPackError(
+            f"World pack archive must end with {PACK_ARCHIVE_SUFFIX}: {archive_path}",
+            code="invalid_pack_archive",
+            path=archive_path,
+        )
+    if must_exist:
+        if not archive_path.exists():
+            raise WorldPackError(
+                f"World pack archive not found: {archive_path}",
+                code="pack_archive_not_found",
+                path=archive_path,
+            )
+        if not archive_path.is_file():
+            raise WorldPackError(
+                f"World pack archive is not a file: {archive_path}",
+                code="pack_archive_not_file",
+                path=archive_path,
+            )
+    return archive_path
+
+
+def export_pack_archive(pack_dir: Path | str, pack_id: str, archive_path: Path | str) -> dict[str, Any]:
+    resolved_pack_dir = Path(pack_dir).resolve()
+    archive = _validate_archive_path(Path(archive_path), must_exist=False)
+    pack = load_pack_from_dir(resolved_pack_dir, pack_id)
+    root_dir = pack.root_dir.resolve()
+    content_paths = {root_dir / "pack.yaml"}
+    for key, relative in pack.manifest.content_refs.items():
+        content_paths.add(PackRegistry._resolve_content_ref(root_dir, pack.manifest.pack_id, key, relative))
+    for path in content_paths:
+        if path.is_symlink():
+            raise WorldPackError(
+                f"Pack {pack.manifest.pack_id} export cannot include symlink content: {path}",
+                code="content_symlink_not_allowed",
+                pack_id=pack.manifest.pack_id,
+                path=path,
+            )
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "w:gz") as tar:
+        for path in sorted(content_paths):
+            relative = path.resolve().relative_to(root_dir).as_posix()
+            tar.add(path, arcname=f"{pack.manifest.pack_id}/{relative}", recursive=False)
+    return _pack_archive_payload(
+        status="exported",
+        pack=pack,
+        archive_path=archive,
+        pack_dir=resolved_pack_dir,
+        root_dir=root_dir,
+    )
+
+
+def _safe_tar_member_parts(member: tarfile.TarInfo, *, archive_path: Path) -> tuple[str, ...]:
+    if member.issym() or member.islnk() or not (member.isfile() or member.isdir()):
+        raise WorldPackError(
+            f"World pack archive contains unsupported member type: {member.name}",
+            code="unsafe_pack_archive_member",
+            path=archive_path,
+        )
+    candidate = PurePosixPath(member.name)
+    if candidate.is_absolute():
+        raise WorldPackError(
+            f"World pack archive contains absolute member path: {member.name}",
+            code="unsafe_pack_archive_member",
+            path=archive_path,
+        )
+    parts = tuple(part for part in candidate.parts if part not in {"", "."})
+    if not parts or ".." in parts:
+        raise WorldPackError(
+            f"World pack archive contains escaping member path: {member.name}",
+            code="unsafe_pack_archive_member",
+            path=archive_path,
+        )
+    return parts
+
+
+def _extract_pack_archive_safely(archive_path: Path, staging_dir: Path) -> str:
+    roots: set[str] = set()
+    seen_targets: set[Path] = set()
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            members = tar.getmembers()
+            if not members:
+                raise WorldPackError(
+                    f"World pack archive is empty: {archive_path}",
+                    code="empty_pack_archive",
+                    path=archive_path,
+                )
+            for member in members:
+                parts = _safe_tar_member_parts(member, archive_path=archive_path)
+                roots.add(parts[0])
+                if len(roots) > 1:
+                    raise WorldPackError(
+                        f"World pack archive must contain a single root directory: {sorted(roots)}",
+                        code="multiple_pack_archive_roots",
+                        path=archive_path,
+                    )
+                PackRegistry._validate_slug(
+                    parts[0],
+                    field_name="pack archive root",
+                    code="invalid_pack_archive_root",
+                    pack_id=parts[0],
+                    path=archive_path,
+                )
+                target = (staging_dir / Path(*parts)).resolve()
+                try:
+                    target.relative_to(staging_dir.resolve())
+                except ValueError as exc:
+                    raise WorldPackError(
+                        f"World pack archive member escapes staging directory: {member.name}",
+                        code="unsafe_pack_archive_member",
+                        path=archive_path,
+                    ) from exc
+                if target in seen_targets:
+                    raise WorldPackError(
+                        f"World pack archive contains duplicate member path: {member.name}",
+                        code="duplicate_pack_archive_member",
+                        path=archive_path,
+                    )
+                seen_targets.add(target)
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    source = tar.extractfile(member)
+                    if source is None:
+                        raise WorldPackError(
+                            f"World pack archive failed to read member: {member.name}",
+                            code="pack_archive_read_failed",
+                            path=archive_path,
+                        )
+                    with source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+    except tarfile.TarError as exc:
+        raise WorldPackError(
+            f"World pack archive is invalid: {archive_path}: {exc}",
+            code="invalid_pack_archive",
+            path=archive_path,
+        ) from exc
+    if len(roots) != 1:
+        raise WorldPackError(
+            f"World pack archive must contain a single root directory: {archive_path}",
+            code="invalid_pack_archive_root",
+            path=archive_path,
+        )
+    root_name = next(iter(roots))
+    if not (staging_dir / root_name / "pack.yaml").is_file():
+        raise WorldPackError(
+            f"World pack archive root {root_name!r} is missing pack.yaml",
+            code="pack_manifest_not_found",
+            pack_id=root_name,
+            path=archive_path,
+        )
+    return root_name
+
+
+def import_pack_archive(pack_dir: Path | str, archive_path: Path | str, *, replace: bool = False) -> dict[str, Any]:
+    resolved_pack_dir = Path(pack_dir).resolve()
+    archive = _validate_archive_path(Path(archive_path), must_exist=True)
+    with tempfile.TemporaryDirectory(prefix="gestaloka-pack-import-") as temp_dir:
+        staging_dir = Path(temp_dir).resolve()
+        root_name = _extract_pack_archive_safely(archive, staging_dir)
+        pack = load_pack_from_dir(staging_dir, root_name)
+        if pack.manifest.pack_id != root_name:
+            raise WorldPackError(
+                f"World pack archive root {root_name!r} contains manifest pack_id {pack.manifest.pack_id!r}",
+                code="pack_id_mismatch",
+                pack_id=pack.manifest.pack_id,
+                path=archive,
+            )
+        target_root = resolved_pack_dir / pack.manifest.pack_id
+        if target_root.exists() and not replace:
+            raise WorldPackError(
+                f"Pack {pack.manifest.pack_id!r} already exists in {resolved_pack_dir}; use --replace to overwrite",
+                code="pack_already_exists",
+                pack_id=pack.manifest.pack_id,
+                path=target_root,
+            )
+        resolved_pack_dir.mkdir(parents=True, exist_ok=True)
+        if target_root.exists():
+            if target_root.is_symlink() or not target_root.is_dir():
+                raise WorldPackError(
+                    f"Existing pack target is not a directory: {target_root}",
+                    code="pack_target_not_directory",
+                    pack_id=pack.manifest.pack_id,
+                    path=target_root,
+                )
+            shutil.rmtree(target_root)
+        shutil.copytree(staging_dir / root_name, target_root, symlinks=False)
+        imported = load_pack_from_dir(resolved_pack_dir, pack.manifest.pack_id)
+    configure_pack_registry(resolved_pack_dir)
+    return _pack_archive_payload(
+        status="imported",
+        pack=imported,
+        archive_path=archive,
+        pack_dir=resolved_pack_dir,
+        root_dir=target_root,
+    )
 
 
 def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import sys
+import tarfile
 from pathlib import Path
 from typing import Callable
 
@@ -20,6 +22,8 @@ from app.modules.world_pack.service import (
     PackRegistry,
     WorldPackError,
     configure_pack_registry,
+    export_pack_archive,
+    import_pack_archive,
     load_pack_from_dir,
     world_pack_metadata,
 )
@@ -73,6 +77,24 @@ def _build_client_for_pack_dir(tmp_path: Path, pack_dir: Path) -> tuple[TestClie
     container = build_container(_settings_for_pack_dir(tmp_path, pack_dir))
     Base.metadata.create_all(bind=container.session_factory.kw["bind"])
     return TestClient(create_app(container)), container
+
+
+def _write_tar_file(archive_path: Path, members: list[tuple[str, bytes | None, str]]) -> None:
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive_path, "w:gz") as tar:
+        for name, content, member_type in members:
+            info = tarfile.TarInfo(name)
+            if member_type == "dir":
+                info.type = tarfile.DIRTYPE
+                tar.addfile(info)
+            elif member_type == "symlink":
+                info.type = tarfile.SYMTYPE
+                info.linkname = "pack.yaml"
+                tar.addfile(info)
+            else:
+                payload = content or b""
+                info.size = len(payload)
+                tar.addfile(info, io.BytesIO(payload))
 
 
 def test_world_pack_registry_lists_reference_and_sample_pack(client, auth_headers):
@@ -512,6 +534,169 @@ def test_pack_cli_validate_failure_writes_json_diagnostic(
     assert diagnostic["error"] == "pack_id_mismatch"
     assert diagnostic["pack_dir"] == str(pack_dir)
     assert diagnostic["path"].endswith("ember_harbor/pack.yaml")
+
+
+def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    auth_headers,
+):
+    source_pack_dir = _copy_pack_dir(tmp_path / "source")
+    archive = tmp_path / "dist" / "world-packs" / "ember_harbor-1.0.0.tar.gz"
+    source_settings = _settings_for_pack_dir(tmp_path / "source", source_pack_dir)
+    monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: source_settings)
+    monkeypatch.setattr(sys, "argv", ["world_pack", "export", "--pack", "ember_harbor", "--output", str(archive)])
+
+    world_pack_main()
+
+    export_payload = yaml.safe_load(capsys.readouterr().out)
+    assert export_payload["status"] == "exported"
+    assert export_payload["pack_id"] == "ember_harbor"
+    assert export_payload["version"] == "1.0.0"
+    assert export_payload["engine_api_version"] == "v2"
+    assert export_payload["archive"] == str(archive.resolve())
+    assert archive.is_file()
+    with tarfile.open(archive, "r:gz") as tar:
+        assert sorted(tar.getnames()) == [
+            "ember_harbor/npcs.yaml",
+            "ember_harbor/pack.yaml",
+            "ember_harbor/prompts.yaml",
+            "ember_harbor/world_templates.yaml",
+        ]
+
+    target_pack_dir = tmp_path / "external" / "packs"
+    target_settings = _settings_for_pack_dir(tmp_path / "external", target_pack_dir)
+    monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: target_settings)
+    monkeypatch.setattr(sys, "argv", ["world_pack", "import", "--archive", str(archive)])
+
+    world_pack_main()
+
+    import_payload = yaml.safe_load(capsys.readouterr().out)
+    assert import_payload["status"] == "imported"
+    assert import_payload["pack_id"] == "ember_harbor"
+    assert import_payload["archive"] == str(archive.resolve())
+    assert import_payload["root_dir"] == str((target_pack_dir / "ember_harbor").resolve())
+
+    diagnostic = PackRegistry(target_pack_dir).catalog_diagnostic()
+    assert diagnostic["status"] == "ready"
+    assert diagnostic["pack_count"] == 1
+    assert diagnostic["items"][0]["pack_id"] == "ember_harbor"
+
+    test_client, _ = _build_client_for_pack_dir(tmp_path / "external", target_pack_dir)
+    try:
+        catalog_response = test_client.get("/worlds/packs", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "imported-pack-world",
+                "pack_id": "ember_harbor",
+                "world_template_id": "ember_harbor",
+                "world_name": "Imported Pack World",
+            },
+            headers=auth_headers,
+        )
+    finally:
+        test_client.close()
+
+    assert catalog_response.status_code == 200
+    assert catalog_response.json()["items"][0]["pack_id"] == "ember_harbor"
+    assert session_response.status_code == 200
+    assert session_response.json()["world_context"]["pack_id"] == "ember_harbor"
+
+
+def test_pack_import_requires_replace_for_existing_pack(tmp_path: Path):
+    source_pack_dir = _copy_pack_dir(tmp_path / "source")
+    archive = tmp_path / "ember_harbor-1.0.0.tar.gz"
+    export_pack_archive(source_pack_dir, "ember_harbor", archive)
+    target_pack_dir = _copy_pack_dir(tmp_path / "target")
+
+    with pytest.raises(WorldPackError) as exc:
+        import_pack_archive(target_pack_dir, archive)
+    assert exc.value.code == "pack_already_exists"
+
+    payload = import_pack_archive(target_pack_dir, archive, replace=True)
+    assert payload["status"] == "imported"
+    assert payload["pack_id"] == "ember_harbor"
+    assert PackRegistry(target_pack_dir).status == "ready"
+
+
+@pytest.mark.parametrize(
+    ("members", "expected_code"),
+    [
+        ([("../escape/pack.yaml", b"pack_id: bad\n", "file")], "unsafe_pack_archive_member"),
+        ([("/absolute/pack.yaml", b"pack_id: bad\n", "file")], "unsafe_pack_archive_member"),
+        ([("ember_harbor/linked.yaml", None, "symlink")], "unsafe_pack_archive_member"),
+        (
+            [
+                ("ember_harbor/pack.yaml", b"pack_id: ember_harbor\n", "file"),
+                ("other_pack/pack.yaml", b"pack_id: other_pack\n", "file"),
+            ],
+            "multiple_pack_archive_roots",
+        ),
+    ],
+)
+def test_pack_import_rejects_unsafe_archive_members(
+    tmp_path: Path,
+    members: list[tuple[str, bytes | None, str]],
+    expected_code: str,
+):
+    archive = tmp_path / "unsafe.tar.gz"
+    _write_tar_file(archive, members)
+
+    with pytest.raises(WorldPackError) as exc:
+        import_pack_archive(tmp_path / "packs", archive)
+
+    assert exc.value.code == expected_code
+
+
+def test_pack_import_rejects_archive_root_manifest_pack_id_mismatch(tmp_path: Path):
+    source_root = REPO_ROOT / "packs" / "ember_harbor"
+    archive = tmp_path / "mismatch.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for path in sorted(source_root.glob("*.yaml")):
+            tar.add(path, arcname=f"renamed_pack/{path.name}", recursive=False)
+
+    with pytest.raises(WorldPackError) as exc:
+        import_pack_archive(tmp_path / "packs", archive)
+
+    assert exc.value.code == "pack_id_mismatch"
+
+
+def test_pack_export_and_import_reject_invalid_pack_payloads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["pack_id"] = "not_ember_harbor"
+
+    _rewrite_pack_manifest(pack_dir, "ember_harbor", mutate)
+    settings = _settings_for_pack_dir(tmp_path, pack_dir)
+    monkeypatch.setattr("app.modules.world_pack.cli.get_settings", lambda: settings)
+    archive = tmp_path / "invalid.tar.gz"
+    monkeypatch.setattr(sys, "argv", ["world_pack", "export", "--pack", "ember_harbor", "--output", str(archive)])
+
+    with pytest.raises(SystemExit) as exc:
+        world_pack_main()
+
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    export_diagnostic = json.loads(captured.err)
+    assert export_diagnostic["error"] == "pack_id_mismatch"
+    assert export_diagnostic["archive"] == str(archive.resolve())
+
+    invalid_archive = tmp_path / "invalid-import.tar.gz"
+    with tarfile.open(invalid_archive, "w:gz") as tar:
+        for path in sorted((pack_dir / "ember_harbor").glob("*.yaml")):
+            tar.add(path, arcname=f"ember_harbor/{path.name}", recursive=False)
+
+    with pytest.raises(WorldPackError) as import_exc:
+        import_pack_archive(tmp_path / "target" / "packs", invalid_archive)
+    assert import_exc.value.code == "pack_id_mismatch"
 
 
 def test_pack_cli_scans_runtime_source_for_pack_specific_literals(

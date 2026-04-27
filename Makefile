@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend frontend-e2e verify-v2 scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -33,6 +33,15 @@ pack-list:
 
 pack-validate:
 	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack validate
+
+pack-export:
+	@test -n "$(PACK_ID)" || (echo "PACK_ID is required" >&2; exit 1)
+	@test -n "$(PACK_ARCHIVE)" || (echo "PACK_ARCHIVE is required" >&2; exit 1)
+	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack export --pack "$(PACK_ID)" --output "$(PACK_ARCHIVE)"
+
+pack-import:
+	@test -n "$(PACK_ARCHIVE)" || (echo "PACK_ARCHIVE is required" >&2; exit 1)
+	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack import --archive "$(PACK_ARCHIVE)"
 
 scan-pack-leaks:
 	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack scan-leaks
