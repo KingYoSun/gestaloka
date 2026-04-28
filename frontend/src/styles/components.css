@@ -20,6 +20,18 @@
   flex: 0 0 auto;
 }
 
+.button-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.secondary-button {
+  border-color: var(--color-border-default);
+  background: var(--color-surface-normal);
+  color: var(--color-text-primary);
+}
+
 .card {
   min-width: 0;
   border: 1px solid var(--color-border-default);
@@ -27,6 +39,118 @@
   padding: var(--space-5);
   background: var(--color-surface-normal);
   box-shadow: var(--elevation-1);
+}
+
+.start-copy h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 36px;
+  letter-spacing: 1.12px;
+  font-feature-settings: var(--font-feature-settings-palt);
+}
+
+.start-copy p:not(.eyebrow) {
+  margin-top: var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: 18px;
+  line-height: 36px;
+}
+
+.start-meta {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.scene-panel,
+.narrative-feed,
+.turn-composer,
+.rail-section {
+  min-width: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-normal);
+}
+
+.scene-panel,
+.narrative-feed,
+.turn-composer {
+  padding: var(--space-6);
+  box-shadow: var(--elevation-1);
+}
+
+.rail-section {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.scene-panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.scene-place,
+.scene-compact,
+.narrative-copy {
+  max-width: var(--width-reading);
+}
+
+.scene-place h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 36px;
+  letter-spacing: 1.12px;
+  font-feature-settings: var(--font-feature-settings-palt);
+}
+
+.scene-place p:not(.scene-kicker),
+.scene-compact,
+.narrative-copy p {
+  font-size: 18px;
+  line-height: 36px;
+}
+
+.scene-place > * + *,
+.scene-compact > * + *,
+.narrative-feed > * + *,
+.narrative-copy > * + *,
+.turn-composer > * + * {
+  margin-top: var(--space-3);
+}
+
+.narrative-feed h2,
+.turn-composer h2,
+.rail-section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.narrative-feed h3 {
+  margin-top: var(--space-5);
+}
+
+.composer-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.rail-section > span,
+.rail-section li {
+  color: var(--color-text-secondary);
 }
 
 .card > * + * {
@@ -117,7 +241,14 @@
   align-items: start;
 }
 
-.choice-item button {
+.stream[data-testid="choice-list"] li {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+  align-items: start;
+}
+
+.choice-item button,
+.stream[data-testid="choice-list"] button {
   grid-column: 2;
   grid-row: 1 / span 3;
 }
@@ -130,10 +261,47 @@
 
 .choice-summary,
 .result p,
+[data-testid="last-consequence-summary"],
 [data-testid="latest-narrative"],
 [data-testid="latest-reaction"] {
   font-size: 18px;
   line-height: 36px;
+}
+
+.reading-block {
+  max-width: var(--width-reading);
+  font-size: 18px;
+  line-height: 36px;
+}
+
+.reading-block > * + * {
+  margin-top: var(--space-3);
+}
+
+.reading-form {
+  max-width: var(--width-timeline);
+}
+
+.scene-kicker,
+.assistive-copy {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.kpi-grid p {
+  min-width: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-control);
+  padding: var(--space-3);
+  background: var(--color-background-secondary);
 }
 
 .turn-progress {
@@ -172,11 +340,28 @@
     padding: var(--space-4);
   }
 
+  .scene-panel,
+  .narrative-feed,
+  .turn-composer {
+    padding: var(--space-4);
+  }
+
+  .start-copy h2,
+  .scene-place h2 {
+    font-size: 24px;
+    line-height: 32px;
+  }
+
   .choice-item {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .stream[data-testid="choice-list"] li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .choice-item button,
+  .stream[data-testid="choice-list"] button,
   .choice-label,
   .choice-summary,
   .choice-posture {
@@ -185,6 +370,12 @@
   }
 
   button {
+    width: 100%;
+  }
+
+  .mode-switch {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
   }
 }

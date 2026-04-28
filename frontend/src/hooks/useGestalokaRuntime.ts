@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import keycloak, { initKeycloak } from "../lib/keycloak";
+import keycloak, { initKeycloak, isKeycloakConfigured } from "../lib/keycloak";
 import { apiFetch, formatError } from "../api/client";
 import {
   buildQuery,
@@ -218,7 +218,10 @@ export function useGestalokaRuntime() {
         setToken(keycloak.token ?? "");
       })
       .catch((initError: unknown) => {
-        setError(String(initError));
+        const message = String(initError);
+        if (!message.includes("3rd party check iframe")) {
+          setError(message);
+        }
       })
       .finally(() => setReady(true));
   }, []);
@@ -650,10 +653,18 @@ export function useGestalokaRuntime() {
   }
 
   async function handleLogin() {
+    if (!isKeycloakConfigured()) {
+      setError("Authentication is not configured");
+      return;
+    }
     await keycloak.login();
   }
 
   async function handleLogout() {
+    if (!isKeycloakConfigured()) {
+      setError("");
+      return;
+    }
     await keycloak.logout({ redirectUri: `${window.location.origin}/` });
   }
 

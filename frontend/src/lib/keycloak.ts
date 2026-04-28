@@ -8,7 +8,18 @@ const keycloak = new Keycloak({
 
 let initPromise: Promise<boolean> | null = null;
 
+export function isKeycloakConfigured(): boolean {
+  return Boolean(
+    import.meta.env.VITE_KEYCLOAK_URL &&
+      import.meta.env.VITE_KEYCLOAK_REALM &&
+      import.meta.env.VITE_KEYCLOAK_CLIENT_ID,
+  );
+}
+
 export function initKeycloak(): Promise<boolean> {
+  if (!isKeycloakConfigured()) {
+    return Promise.resolve(false);
+  }
   if (!initPromise) {
     initPromise = keycloak.init({
       onLoad: "check-sso",
