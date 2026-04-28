@@ -1,279 +1,232 @@
-import { LogIn, LogOut } from "lucide-react";
-import { ActionBar } from "../../components/ui/ActionBar";
+import { LogIn, UserPlus } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { StreamList } from "../../components/ui/StreamList";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
-import type { WorldContext } from "../../types";
+import type { NarrativeChoice, WorldContext } from "../../types";
 
 type PlayerPageProps = {
   runtime: GestalokaRuntime;
 };
 
+type TextItem = {
+  key: string;
+  title?: string;
+  body: string;
+  meta?: string;
+};
+
 export function PlayerPage({ runtime }: PlayerPageProps) {
   return (
     <section className="play-surface" aria-label="物語">
-      <StartFlow runtime={runtime} />
-      {runtime.session ? <PlayerRuntimeView runtime={runtime} /> : null}
+      {!runtime.authenticated ? <FirstView runtime={runtime} /> : null}
+      {runtime.authenticated && !runtime.session ? <WorldStartView runtime={runtime} /> : null}
+      {runtime.session ? <PlayingView runtime={runtime} /> : null}
       <PlayerTestSurface runtime={runtime} />
     </section>
   );
 }
 
-function StartFlow({ runtime }: PlayerPageProps) {
+function FirstView({ runtime }: PlayerPageProps) {
+  return (
+    <section className="player-first-view" aria-label="開始">
+      <p className="player-brand">GESTALOKA</p>
+      <div className="player-first-actions">
+        <Button data-testid="sign-in" onClick={runtime.handleLogin} disabled={!runtime.ready}>
+          <LogIn className="button-icon" aria-hidden="true" />
+          ログインして続ける
+        </Button>
+        <Button className="secondary-button" onClick={runtime.handleRegister} disabled={!runtime.ready}>
+          <UserPlus className="button-icon" aria-hidden="true" />
+          アカウントを作成して始める
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function WorldStartView({ runtime }: PlayerPageProps) {
   const {
-    ready,
-    authenticated,
-    me,
-    health,
-    wallet,
-    worldId,
-    setWorldId,
     playableWorlds,
-    worldCatalogStatus,
-    session,
-    statusText,
-    socketState,
-    worldCatalogUnavailable,
     selectedWorld,
-    handleLogin,
-    handleLogout,
+    setWorldId,
+    wallet,
+    worldCatalogUnavailable,
+    worldId,
     handleStartSession,
   } = runtime;
 
-  const choiceCost =
-    wallet?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp?.turn_cost ?? "?";
-  const freeTextCost = wallet?.free_text_turn_cost ?? health?.sp?.free_text_turn_cost ?? "?";
-
   return (
-    <section className={session ? "start-flow compact" : "start-flow"} aria-label="開始">
-      <div className="runtime-status-row" aria-label="接続状態">
-        <span data-testid="auth-status">{statusText}</span>
-        <span data-testid="api-health">
-          {health?.status ?? "unreachable"} / DB: {health?.database ?? "unknown"}
-        </span>
-        <span data-testid="socket-status">{socketState}</span>
-        <span data-testid="sp-balance">
-          SP balance: {wallet?.balance ?? "unknown"} / Choice cost: {choiceCost} / Free text cost: {freeTextCost}
-        </span>
-      </div>
-
-      {!session ? (
-        <div className="start-card">
-          <div className="start-copy">
-            <p className="eyebrow">Nexus Foundation</p>
-            <h2>最初の門から、世界の記録に触れる。</h2>
-            <p>
-              Nexus Gate で案内役に会い、選択を重ねて Writ を得る。そこから封じられた
-              Oblivion Breach への道が開きます。
-            </p>
-          </div>
-
-          <form className="start-form" onSubmit={handleStartSession}>
-            {!authenticated ? (
-              <Button data-testid="sign-in" onClick={handleLogin} disabled={!ready}>
-                <LogIn className="button-icon" aria-hidden="true" />
-                サインインして始める
-              </Button>
-            ) : (
-              <>
-                <Field label="世界">
-                  <select
-                    data-testid="world-select"
-                    value={worldId}
-                    onChange={(event) => setWorldId(event.target.value)}
-                    disabled={worldCatalogUnavailable || !playableWorlds.length}
-                  >
-                    <option value="" disabled>
-                      世界を選択
-                    </option>
-                    {playableWorlds.map((item) => (
-                      <option key={item.world_id} value={item.world_id} disabled={item.status !== "playable"}>
-                        {item.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Button
-                  data-testid="start-session"
-                  type="submit"
-                  disabled={worldCatalogUnavailable || !selectedWorld || selectedWorld.status !== "playable"}
-                >
-                  世界を始める
-                </Button>
-              </>
-            )}
-            {authenticated ? (
-              <ActionBar>
-                <Button className="secondary-button" data-testid="sign-out" onClick={handleLogout}>
-                  <LogOut className="button-icon" aria-hidden="true" />
-                  サインアウト
-                </Button>
-              </ActionBar>
-            ) : null}
-            <p className="start-meta" data-testid="world-catalog-status">
-              World catalog: {worldCatalogStatus}
-            </p>
-            <p className="start-meta" data-testid="sp-budget-note">
-              SP is execution budget only.
-            </p>
-            {me ? <p className="start-meta">{me.name}</p> : null}
-          </form>
+    <section className="player-start-view" aria-label="世界開始">
+      <p className="player-brand">GESTALOKA</p>
+      <form className="player-start-form" onSubmit={handleStartSession}>
+        <div className="world-choice">
+          <Field label="世界">
+            <select
+              data-testid="world-select"
+              value={worldId}
+              onChange={(event) => setWorldId(event.target.value)}
+              disabled={worldCatalogUnavailable || !playableWorlds.length}
+            >
+              <option value="" disabled>
+                世界を選択
+              </option>
+              {playableWorlds.map((item) => (
+                <option key={item.world_id} value={item.world_id} disabled={item.status !== "playable"}>
+                  {item.display_name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <p className="selected-world-name">{selectedWorld?.display_name ?? "世界を選択"}</p>
+          {wallet ? <p className="start-state-label">SP {wallet.balance}</p> : null}
         </div>
-      ) : (
-        <div className="session-line">
-          <span data-testid="session-pack">
-            {session.world_context.pack_display_name} ({session.pack_id}) /{" "}
-            {session.world_context.world_template_display_name}
-          </span>
-          <span data-testid="session-location">{session.location_id}</span>
-          <Button className="secondary-button" data-testid="sign-out" onClick={handleLogout} disabled={!authenticated}>
-            サインアウト
-          </Button>
-        </div>
-      )}
+        <Button
+          data-testid="start-session"
+          type="submit"
+          disabled={worldCatalogUnavailable || !selectedWorld || selectedWorld.status !== "playable"}
+        >
+          始める
+        </Button>
+      </form>
     </section>
   );
 }
 
-function PlayerRuntimeView({ runtime }: PlayerPageProps) {
+function PlayingView({ runtime }: PlayerPageProps) {
   return (
-    <section className="runtime-layout" aria-label="プレイ中">
-      <main className="runtime-main">
-        <SceneSummary runtime={runtime} />
-        <NarrativeFeed runtime={runtime} />
+    <section className="playing-view" aria-label="プレイ中">
+      <main className="story-column">
+        <SceneHeader runtime={runtime} />
+        <LatestStory runtime={runtime} />
         <TurnComposer runtime={runtime} />
       </main>
-      <ContextRail runtime={runtime} />
+      <aside className="play-rail" aria-label="状況">
+        <QuestBlock runtime={runtime} />
+        <SideLists runtime={runtime} />
+      </aside>
     </section>
   );
 }
 
-function SceneSummary({ runtime }: PlayerPageProps) {
-  const { sessionState } = runtime;
+function SceneHeader({ runtime }: PlayerPageProps) {
+  const { session, sessionState } = runtime;
+  const location = sessionState?.current_location ?? sessionState?.location ?? null;
+  const chapter = sessionState?.chapter;
+  const scene = sessionState?.current_scene;
 
   return (
-    <section className="scene-panel">
-      <div className="scene-place" data-testid="current-place-summary">
-        <p className="scene-kicker">現在地</p>
-        <h2>{sessionState?.current_location?.name ?? "Nexus Gate"}</h2>
-        <p>{sessionState?.current_location?.description ?? "最初の場面を読み込んでいます。"}</p>
-      </div>
-      <div className="scene-compact" data-testid="current-chapter-summary">
-        <p className="scene-kicker">章</p>
-        <p>{sessionState?.chapter?.summary ?? "世界が最初の応答を準備しています。"}</p>
-        {sessionState?.chapter?.crossroads_summary ? <p>{sessionState.chapter.crossroads_summary}</p> : null}
-      </div>
-      <div className="scene-compact" data-testid="current-scene-summary">
-        <p className="scene-kicker">場面</p>
-        <p>{sessionState?.current_scene?.summary ?? "選択肢が届いたら、次の一手を選んでください。"}</p>
-        {sessionState?.current_scene?.pressure_summary ? <p>{sessionState.current_scene.pressure_summary}</p> : null}
-      </div>
-    </section>
-  );
-}
-
-function NarrativeFeed({ runtime }: PlayerPageProps) {
-  const { latestNarrative, latestReaction, latestConsequenceSummary, sessionState } = runtime;
-  const recentFlow = [
-    ...(latestConsequenceSummary ? [latestConsequenceSummary] : []),
-    ...(sessionState?.recent_travel_history ?? []),
-    ...(sessionState?.recent_scene_history ?? []),
-    ...(sessionState?.recent_consequence_history ?? []),
-  ].slice(0, 4);
-
-  return (
-    <section className="narrative-feed" aria-label="本文">
-      <h2>最新の本文</h2>
-      <div className="narrative-copy">
-        <p data-testid="latest-narrative">{latestNarrative || "まだターンは解決されていません。"}</p>
-        <p data-testid="latest-reaction">{latestReaction || "NPC の反応は次のターンで表示されます。"}</p>
-      </div>
-      <h3>これまでの流れ</h3>
-      <StreamList
-        testId="recent-travel-history"
-        items={recentFlow}
-        empty="流れはまだありません。"
-        getKey={(item, index) => `${item}-${index}`}
-        renderItem={(item) => <span>{item}</span>}
-      />
-      <p hidden data-testid="last-consequence-summary">
-        {latestConsequenceSummary || "The scene is waiting for your next line."}
+    <section className="scene-header" aria-label="場面">
+      <p className="player-brand">GESTALOKA</p>
+      <p className="scene-place-label" data-testid="session-location">
+        {location?.name ?? session?.world_name ?? "開始地点"}
       </p>
+      <h1 data-testid="current-place-summary">{location?.name ?? "開始地点"}</h1>
+      {chapter?.summary ? <p className="scene-brief" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
+      {scene?.summary ? <p className="scene-brief" data-testid="current-scene-summary">{scene.summary}</p> : null}
     </section>
   );
+}
+
+function LatestStory({ runtime }: PlayerPageProps) {
+  const storyItems = buildStoryItems(runtime);
+
+  return (
+    <section className="story-panel" aria-label="本文">
+      <div className="story-copy">
+        {storyItems.map((item) => (
+          <article className="story-entry" key={item.key}>
+            {item.title ? <h2>{item.title}</h2> : null}
+            <p data-testid={item.key === "latest-narrative" ? "latest-narrative" : undefined}>{item.body}</p>
+            {item.meta ? <p className="story-meta">{item.meta}</p> : null}
+          </article>
+        ))}
+      </div>
+      <p hidden data-testid="latest-reaction">
+        {runtime.latestReaction || ""}
+      </p>
+      <ul hidden data-testid="recent-travel-history">
+        {(runtime.sessionState?.recent_travel_history ?? []).map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function buildStoryItems(runtime: GestalokaRuntime): TextItem[] {
+  const { latestConsequenceSummary, latestNarrative, latestReaction, sessionState } = runtime;
+  const scene = sessionState?.current_scene;
+  const location = sessionState?.current_location ?? sessionState?.location ?? null;
+  const items: TextItem[] = [];
+
+  if (latestNarrative) {
+    items.push({ key: "latest-narrative", body: latestNarrative });
+  } else {
+    items.push({
+      key: "latest-narrative",
+      body: scene?.summary ?? location?.description ?? "進行中",
+    });
+  }
+
+  if (latestReaction) {
+    items.push({ key: "latest-reaction-visible", title: "反応", body: latestReaction });
+  }
+  if (latestConsequenceSummary) {
+    items.push({ key: "latest-consequence-visible", title: "変化", body: latestConsequenceSummary });
+  }
+
+  return items;
 }
 
 function TurnComposer({ runtime }: PlayerPageProps) {
   const {
-    session,
-    turnInputMode,
-    setTurnInputMode,
     freeTextInput,
-    setFreeTextInput,
-    turnPending,
-    suggestedChoices,
-    handleTurnSubmit,
     handleChoiceSubmit,
+    handleTurnSubmit,
+    session,
+    setFreeTextInput,
+    setTurnInputMode,
+    suggestedChoices,
+    turnInputMode,
+    turnPending,
   } = runtime;
 
   return (
-    <section className="turn-composer" aria-label="次の選択">
-      <div className="composer-head">
-        <h2>次の選択</h2>
-        <div className="mode-switch" role="group" aria-label="入力方法">
-          <Button
-            className={turnInputMode === "choice" ? undefined : "secondary-button"}
-            type="button"
-            data-testid="toggle-choice-mode"
-            onClick={() => setTurnInputMode("choice")}
-            disabled={!session}
-          >
-            選択肢
-          </Button>
-          <Button
-            className={turnInputMode === "free_text" ? undefined : "secondary-button"}
-            type="button"
-            data-testid="toggle-free-text"
-            onClick={() => setTurnInputMode("free_text")}
-            disabled={!session}
-          >
-            自由入力
-          </Button>
-        </div>
+    <section className="choice-panel" aria-label="次">
+      <div className="choice-mode" role="group" aria-label="入力">
+        <Button
+          className={turnInputMode === "choice" ? undefined : "secondary-button"}
+          type="button"
+          data-testid="toggle-choice-mode"
+          onClick={() => setTurnInputMode("choice")}
+          disabled={!session || turnPending}
+        >
+          選択肢
+        </Button>
+        <Button
+          className={turnInputMode === "free_text" ? undefined : "secondary-button"}
+          type="button"
+          data-testid="toggle-free-text"
+          onClick={() => setTurnInputMode("free_text")}
+          disabled={!session || turnPending}
+        >
+          自由入力
+        </Button>
       </div>
 
       {turnInputMode === "choice" ? (
-        <StreamList
-          testId="choice-list"
-          items={suggestedChoices}
-          empty="選択肢を読み込んでいます。"
-          getKey={(choice) => choice.choice_id}
-          renderItem={(choice) => (
-            <>
-              <strong className="choice-label">{choice.label}</strong>
-              <span className="choice-summary">{choice.summary}</span>
-              <span className="choice-posture">{choice.posture}</span>
-              <Button
-                type="button"
-                data-testid={`choice-${choice.choice_id}`}
-                onClick={() => void handleChoiceSubmit(choice.choice_id)}
-                disabled={!session || turnPending}
-              >
-                {turnPending ? "進行中" : "選ぶ"}
-              </Button>
-            </>
-          )}
-        />
+        <ChoiceList choices={suggestedChoices} onChoose={handleChoiceSubmit} disabled={!session || turnPending} />
       ) : (
-        <form onSubmit={handleTurnSubmit} className="stack reading-form">
+        <form onSubmit={handleTurnSubmit} className="free-text-turn">
           <Field label="自由入力">
             <textarea
               data-testid="turn-input"
               rows={4}
               value={freeTextInput}
               onChange={(event) => setFreeTextInput(event.target.value)}
+              disabled={turnPending}
             />
           </Field>
           <Button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
@@ -282,43 +235,107 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         </form>
       )}
 
-      <p className="turn-progress" data-testid="turn-progress-status">
-        {turnPending ? "Resolving turn. 結果が届くまで待機しています。" : "Ready for the next turn."}
+      <p className="turn-state" data-testid="turn-progress-status">
+        {turnPending ? "進行中" : "選択待ち"}
       </p>
     </section>
   );
 }
 
-function ContextRail({ runtime }: PlayerPageProps) {
-  const { sessionState, activeQuest } = runtime;
+function ChoiceList({
+  choices,
+  disabled,
+  onChoose,
+}: {
+  choices: NarrativeChoice[];
+  disabled: boolean;
+  onChoose: (choiceId: NarrativeChoice["choice_id"]) => Promise<void>;
+}) {
+  return (
+    <ul className="choice-list" data-testid="choice-list">
+      {choices.length ? (
+        choices.map((choice) => (
+          <li key={choice.choice_id}>
+            <button
+              type="button"
+              className="choice-button"
+              data-testid={`choice-${choice.choice_id}`}
+              onClick={() => void onChoose(choice.choice_id)}
+              disabled={disabled}
+            >
+              <span className="choice-label">{choice.label}</span>
+              <span className="choice-summary">{choice.summary}</span>
+            </button>
+          </li>
+        ))
+      ) : (
+        <li className="empty-choice">進行中</li>
+      )}
+    </ul>
+  );
+}
+
+function QuestBlock({ runtime }: PlayerPageProps) {
+  const { activeQuest } = runtime;
 
   return (
-    <aside className="context-rail" aria-label="状況">
-      <section className="rail-section" data-testid="active-quest">
-        <h2>Quest</h2>
-        {activeQuest ? (
-          <>
-            <strong>{activeQuest.title}</strong>
-            <span data-testid="quest-progress">
-              Progress: {activeQuest.progress}/{activeQuest.progress_target}
-            </span>
-            <span data-testid="quest-stage">Stage: {activeQuest.stage_key}</span>
-            <span>{activeQuest.latest_summary}</span>
-            <span data-testid="quest-unlock-requirements">
-              Unlocks: {Object.keys(activeQuest.unlock_requirements).length ? JSON.stringify(activeQuest.unlock_requirements) : "starter"}
-            </span>
-          </>
-        ) : (
-          <span>クエストを読み込んでいます。</span>
-        )}
+    <section className="rail-section" data-testid="active-quest">
+      <h2>クエスト</h2>
+      {activeQuest ? (
+        <>
+          <p className="rail-title">{activeQuest.title}</p>
+          <p data-testid="quest-progress">
+            {activeQuest.progress}/{activeQuest.progress_target}
+          </p>
+          {activeQuest.latest_summary ? <p>{activeQuest.latest_summary}</p> : null}
+          <p hidden data-testid="quest-stage">
+            {activeQuest.stage_key}
+          </p>
+          <p hidden data-testid="quest-unlock-requirements">
+            {Object.keys(activeQuest.unlock_requirements).length ? JSON.stringify(activeQuest.unlock_requirements) : "starter"}
+          </p>
+        </>
+      ) : (
+        <p>進行中</p>
+      )}
+    </section>
+  );
+}
+
+function SideLists({ runtime }: PlayerPageProps) {
+  const { sessionState } = runtime;
+
+  return (
+    <>
+      <section className="rail-section">
+        <h2>人物</h2>
+        <StreamList
+          testId="local-figures-stream"
+          items={sessionState?.local_figures ?? []}
+          empty="進行中"
+          getKey={(item) => item.actor_id}
+          renderItem={(item) => (
+            <>
+              <strong>{item.display_name}</strong>
+              <span>{item.summary}</span>
+            </>
+          )}
+        />
+        <ul hidden data-testid="relationship-summary">
+          {(sessionState?.relationships ?? []).map((item) => (
+            <li key={item.actor_id}>
+              {item.display_name} {item.summary} {item.band}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="rail-section">
-        <h2>Nearby</h2>
+        <h2>移動先</h2>
         <StreamList
           testId="nearby-routes-stream"
           items={sessionState?.nearby_routes ?? []}
-          empty="移動先を読み込んでいます。"
+          empty="進行中"
           getKey={(item) => item.route_key}
           renderItem={(item) => (
             <>
@@ -330,95 +347,74 @@ function ContextRail({ runtime }: PlayerPageProps) {
       </section>
 
       <section className="rail-section">
-        <h2>People</h2>
-        <StreamList
-          testId="local-figures-stream"
-          items={sessionState?.local_figures ?? []}
-          empty="近くの人物を読み込んでいます。"
-          getKey={(item) => item.actor_id}
-          renderItem={(item) => (
-            <>
-              <strong>{item.display_name}</strong>
-              <span>{item.summary}</span>
-            </>
-          )}
-        />
-        <StreamList
-          testId="relationship-summary"
-          items={sessionState?.relationships ?? []}
-          empty="関係の変化はまだありません。"
-          getKey={(item) => item.actor_id}
-          renderItem={(item) => (
-            <>
-              <strong>{item.display_name}</strong>
-              <span>{item.summary}</span>
-              <span>{item.band}</span>
-            </>
-          )}
-        />
-      </section>
-
-      <section className="rail-section">
-        <h2>Inventory</h2>
+        <h2>所持品</h2>
         <StreamList
           testId="inventory-stream"
           items={sessionState?.inventory ?? []}
-          empty="所持品はまだありません。"
+          empty="なし"
           getKey={(item) => item.id}
           renderItem={(item) => (
             <>
               <strong>{item.name}</strong>
-              <span>
-                {item.status}
-                {item.effect_kind ? ` / ${item.effect_kind}` : ""}
-              </span>
+              <span>{item.status}</span>
             </>
           )}
         />
+        <ul hidden data-testid="faction-standing">
+          {(sessionState?.factions ?? []).map((item) => (
+            <li key={item.faction_id}>
+              {item.name} {item.standing.toFixed(2)} {item.band}
+            </li>
+          ))}
+        </ul>
       </section>
-
-      <section className="rail-section">
-        <h2>Standing</h2>
-        <StreamList
-          testId="faction-standing"
-          items={sessionState?.factions ?? []}
-          empty="勢力状態を読み込んでいます。"
-          getKey={(item) => item.faction_id}
-          renderItem={(item) => (
-            <>
-              <strong>{item.name}</strong>
-              <span>
-                {item.standing.toFixed(2)} / {item.band}
-              </span>
-            </>
-          )}
-        />
-      </section>
-    </aside>
+    </>
   );
 }
 
 function PlayerTestSurface({ runtime }: PlayerPageProps) {
   const {
-    sessionState,
-    events,
-    memories,
     activity,
-    opsState,
-    locationOps,
-    travelLogOps,
-    npcRoutineOps,
     ambientBeatOps,
+    events,
+    health,
+    latestConsequenceSummary,
+    locationOps,
+    memories,
+    npcRoutineOps,
+    opsState,
     sceneOps,
+    session,
+    sessionState,
+    socketState,
+    statusText,
+    travelLogOps,
+    wallet,
+    worldCatalogStatus,
   } = runtime;
+  const choiceCost =
+    wallet?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp?.turn_cost ?? "?";
+  const freeTextCost = wallet?.free_text_turn_cost ?? health?.sp?.free_text_turn_cost ?? "?";
 
   return (
     <section hidden aria-hidden="true">
-      <p data-testid="ops-status">Ops access: {opsState}</p>
-      <p data-testid="sp-admin-separation-note">
-        SP execution ledger is separate from world progression. Reward item use and follow-up quest unlocks are tracked
-        below, not as paid power.
+      <p data-testid="auth-status">{statusText}</p>
+      <p data-testid="api-health">
+        {health?.status ?? "unreachable"} / DB: {health?.database ?? "unknown"}
       </p>
+      <p data-testid="socket-status">{socketState}</p>
+      <p data-testid="sp-balance">
+        SP balance: {wallet?.balance ?? "unknown"} / Choice cost: {choiceCost} / Free text cost: {freeTextCost}
+      </p>
+      <p data-testid="world-catalog-status">World catalog: {worldCatalogStatus}</p>
+      <p data-testid="sp-budget-note">SP is execution budget only.</p>
+      <p data-testid="session-pack">
+        {session
+          ? `${session.world_context.pack_display_name} (${session.pack_id}) / ${session.world_context.world_template_display_name}`
+          : ""}
+      </p>
+      <p data-testid="ops-status">Ops access: {opsState}</p>
+      <p data-testid="last-consequence-summary">{latestConsequenceSummary || "The scene is waiting for your next line."}</p>
       <StreamList
         testId="events-stream"
         items={events}

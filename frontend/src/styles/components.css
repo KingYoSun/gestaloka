@@ -41,8 +41,17 @@
   box-shadow: var(--elevation-1);
 }
 
-.start-copy h2 {
+.player-brand {
   margin: 0;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 21px;
+  letter-spacing: normal;
+}
+
+.selected-world-name {
+  color: var(--color-text-primary);
   font-size: 28px;
   font-weight: 700;
   line-height: 36px;
@@ -50,23 +59,19 @@
   font-feature-settings: var(--font-feature-settings-palt);
 }
 
-.start-copy p:not(.eyebrow) {
-  margin-top: var(--space-4);
-  color: var(--color-text-secondary);
-  font-size: 18px;
-  line-height: 36px;
-}
-
-.start-meta {
+.start-state-label,
+.scene-place-label,
+.story-meta,
+.turn-state {
   color: var(--color-text-secondary);
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 18px;
 }
 
-.scene-panel,
-.narrative-feed,
-.turn-composer,
+.scene-header,
+.story-panel,
+.choice-panel,
 .rail-section {
   min-width: 0;
   border: 1px solid var(--color-border-default);
@@ -74,9 +79,9 @@
   background: var(--color-surface-normal);
 }
 
-.scene-panel,
-.narrative-feed,
-.turn-composer {
+.scene-header,
+.story-panel,
+.choice-panel {
   padding: var(--space-6);
   box-shadow: var(--elevation-1);
 }
@@ -87,70 +92,106 @@
   padding: var(--space-4);
 }
 
-.scene-panel {
+.scene-header,
+.story-copy,
+.choice-panel {
   display: grid;
   gap: var(--space-4);
 }
 
-.scene-place,
-.scene-compact,
-.narrative-copy {
-  max-width: var(--width-reading);
-}
-
-.scene-place h2 {
+.scene-header h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
-  line-height: 36px;
-  letter-spacing: 1.12px;
+  line-height: 48px;
+  letter-spacing: 1.28px;
   font-feature-settings: var(--font-feature-settings-palt);
 }
 
-.scene-place p:not(.scene-kicker),
-.scene-compact,
-.narrative-copy p {
+.scene-brief,
+.story-entry p,
+.choice-summary {
   font-size: 18px;
   line-height: 36px;
 }
 
-.scene-place > * + *,
-.scene-compact > * + *,
-.narrative-feed > * + *,
-.narrative-copy > * + *,
-.turn-composer > * + * {
-  margin-top: var(--space-3);
+.story-entry {
+  display: grid;
+  gap: var(--space-3);
 }
 
-.narrative-feed h2,
-.turn-composer h2,
+.story-entry h2,
 .rail-section h2 {
   font-size: 16px;
   font-weight: 600;
   line-height: 24px;
 }
 
-.narrative-feed h3 {
-  margin-top: var(--space-5);
-}
-
-.composer-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
-  justify-content: space-between;
-}
-
-.mode-switch {
+.choice-mode {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
+.choice-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.choice-list li {
+  min-width: 0;
+}
+
+.choice-button {
+  width: 100%;
+  justify-content: start;
+  display: grid;
+  gap: var(--space-2);
+  min-height: auto;
+  border-color: var(--color-border-default);
+  padding: var(--space-4);
+  background: var(--color-surface-normal);
+  color: var(--color-text-primary);
+  text-align: left;
+  box-shadow: none;
+}
+
+.choice-button:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-background-secondary);
+}
+
+.choice-label {
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.choice-summary {
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.empty-choice {
+  color: var(--color-text-secondary);
+}
+
+.free-text-turn {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .rail-section > span,
+.rail-section > p,
 .rail-section li {
   color: var(--color-text-secondary);
+}
+
+.rail-title {
+  color: var(--color-text-primary);
+  font-weight: 700;
 }
 
 .card > * + * {
@@ -229,37 +270,10 @@
   font-weight: 600;
 }
 
-.stream span,
-.choice-summary,
-.choice-posture {
+.stream span {
   color: var(--color-text-secondary);
 }
 
-.choice-item {
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--space-4);
-  align-items: start;
-}
-
-.stream[data-testid="choice-list"] li {
-  grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: var(--space-4);
-  align-items: start;
-}
-
-.choice-item button,
-.stream[data-testid="choice-list"] button {
-  grid-column: 2;
-  grid-row: 1 / span 3;
-}
-
-.choice-label,
-.choice-summary,
-.choice-posture {
-  grid-column: 1;
-}
-
-.choice-summary,
 .result p,
 [data-testid="last-consequence-summary"],
 [data-testid="latest-narrative"],
@@ -340,40 +354,27 @@
     padding: var(--space-4);
   }
 
-  .scene-panel,
-  .narrative-feed,
-  .turn-composer {
+  .scene-header,
+  .story-panel,
+  .choice-panel {
     padding: var(--space-4);
   }
 
-  .start-copy h2,
-  .scene-place h2 {
+  .selected-world-name {
     font-size: 24px;
     line-height: 32px;
   }
 
-  .choice-item {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .stream[data-testid="choice-list"] li {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .choice-item button,
-  .stream[data-testid="choice-list"] button,
-  .choice-label,
-  .choice-summary,
-  .choice-posture {
-    grid-column: 1;
-    grid-row: auto;
+  .scene-header h1 {
+    font-size: 28px;
+    line-height: 36px;
   }
 
   button {
     width: 100%;
   }
 
-  .mode-switch {
+  .choice-mode {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     width: 100%;

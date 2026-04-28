@@ -660,6 +660,14 @@ export function useGestalokaRuntime() {
     await keycloak.login();
   }
 
+  async function handleRegister() {
+    if (!isKeycloakConfigured()) {
+      setError("Authentication is not configured");
+      return;
+    }
+    await keycloak.register();
+  }
+
   async function handleLogout() {
     if (!isKeycloakConfigured()) {
       setError("");
@@ -1129,6 +1137,7 @@ export function useGestalokaRuntime() {
     latestRetrievalTrace,
     navigate,
     handleLogin,
+    handleRegister,
     handleLogout,
     handleStartSession,
     handleTurnSubmit,

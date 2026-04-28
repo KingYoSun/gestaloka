@@ -36,11 +36,11 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("local-figures-stream")).toContainText(/Gate Steward Rikka/i, { timeout: 20_000 });
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Lift Tower Concourse/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus Custodians/i, { timeout: 20_000 });
-  await expect(page.getByTestId("turn-progress-status")).toContainText("Ready for the next turn.");
+  await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち");
 
   for (let step = 0; step < 2; step += 1) {
     await page.getByTestId("choice-progress").click();
-    await expect(page.getByTestId("turn-progress-status")).toContainText("Resolving turn.", { timeout: 5_000 });
+    await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
     await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   }
 
@@ -49,7 +49,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("choice-list")).toContainText(/use|writ|breach|restoration/i, { timeout: slowTimeout });
 
   await page.getByTestId("choice-progress").click();
-  await expect(page.getByTestId("turn-progress-status")).toContainText("Resolving turn.", { timeout: 5_000 });
+  await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   await expect(page.getByTestId("active-quest")).toContainText("Breach Restoration", { timeout: slowTimeout });
   await expect(page.getByTestId("quest-stage")).toContainText("breach_restoration", { timeout: slowTimeout });
@@ -57,7 +57,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Oblivion Breach/i, { timeout: slowTimeout });
 
   await page.getByTestId("choice-progress").click();
-  await expect(page.getByTestId("turn-progress-status")).toContainText("Resolving turn.", { timeout: 5_000 });
+  await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   await expect(page.getByTestId("current-place-summary")).toContainText(/Oblivion Breach/i, { timeout: slowTimeout });
   await expect(page.getByTestId("recent-travel-history")).toContainText(/Oblivion Breach|breach|restoration/i, {
@@ -70,9 +70,8 @@ test("mobile player shell does not overflow at 375px", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
 
-  await expect(page.getByTestId("auth-status")).toBeVisible();
-  await expect(page.getByTestId("api-health")).toBeVisible();
   await expect(page.getByTestId("sign-in")).toBeVisible();
+  await expect(page.getByRole("button", { name: "アカウントを作成して始める" })).toBeVisible();
   await expect(page.getByTestId("error-banner").filter({ hasText: "A 'Keycloak' instance can only be initialized once." })).toHaveCount(0);
 
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

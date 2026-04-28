@@ -4,16 +4,14 @@
   padding: 0 0 var(--space-10);
 }
 
-.app-header,
-.hero {
+.app-header {
   min-height: var(--nav-height);
   margin: 0 calc(50% - 50vw) var(--space-6);
   border-bottom: 1px solid var(--color-border-default);
   background: var(--color-surface-normal);
 }
 
-.app-header-inner,
-.hero-top {
+.app-header-inner {
   width: min(100% - 2rem, var(--width-main));
   min-height: var(--nav-height);
   margin: 0 auto;
@@ -50,134 +48,65 @@
   align-items: start;
 }
 
-.session-strip {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, var(--width-sidebar));
-  gap: var(--space-4);
-  align-items: start;
-  margin-bottom: var(--space-6);
-}
-
 .play-surface {
   display: grid;
-  gap: var(--space-6);
+  min-height: calc(100vh - var(--space-10));
 }
 
-.start-flow {
+.player-first-view {
+  min-height: calc(100vh - var(--space-10));
+  display: grid;
+  grid-template-rows: auto 1fr;
+  padding-block: var(--space-5);
+}
+
+.player-first-actions {
+  align-self: center;
   display: grid;
   gap: var(--space-4);
+  width: min(100%, 320px);
+  min-width: 0;
 }
 
-.start-flow.compact {
-  gap: var(--space-3);
+.player-start-view {
+  min-height: calc(100vh - var(--space-10));
+  display: grid;
+  grid-template-rows: auto 1fr;
+  padding-block: var(--space-5);
 }
 
-.runtime-status-row {
-  display: flex;
-  flex-wrap: wrap;
+.player-start-form {
+  align-self: center;
+  display: grid;
+  grid-template-columns: minmax(0, var(--width-reading)) minmax(148px, auto);
+  gap: var(--space-4);
+  align-items: end;
+  min-width: 0;
+}
+
+.world-choice {
+  display: grid;
   gap: var(--space-2);
-  align-items: center;
-  color: var(--color-text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.runtime-status-row span {
   min-width: 0;
-  border: 1px solid var(--color-border-default);
-  border-radius: 999px;
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-background-secondary);
-  overflow-wrap: anywhere;
 }
 
-.start-card {
+.playing-view {
   display: grid;
   grid-template-columns: minmax(0, var(--width-reading)) minmax(240px, var(--width-sidebar));
   gap: var(--space-6);
-  align-items: center;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-panel);
-  padding: var(--space-8);
-  background: var(--color-surface-normal);
-  box-shadow: var(--elevation-1);
-}
-
-.start-copy {
-  max-width: var(--width-reading);
-}
-
-.start-form {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.session-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-control);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-background-secondary);
-  color: var(--color-text-secondary);
-  font-size: 0.875rem;
-}
-
-.runtime-layout {
-  display: grid;
-  grid-template-columns: minmax(0, var(--width-reading)) minmax(240px, var(--width-sidebar));
-  gap: var(--space-4);
   align-items: start;
+  padding-block: var(--space-5) var(--space-10);
 }
 
-.runtime-main {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-  max-width: var(--width-reading);
-}
-
-.context-rail {
-  display: grid;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.session-strip-main,
-.session-actions {
-  min-width: 0;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-panel);
-  padding: var(--space-5);
-  background: var(--color-surface-normal);
-}
-
-.session-actions {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.player-layout {
-  display: grid;
-  grid-template-columns: minmax(0, var(--width-reading)) minmax(240px, var(--width-sidebar));
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.narrative-column,
-.side-column,
+.story-column,
+.play-rail,
 .admin-layout {
   display: grid;
   gap: var(--space-4);
   min-width: 0;
 }
 
-.narrative-column {
+.story-column {
   max-width: var(--width-reading);
 }
 
@@ -221,24 +150,17 @@
 
 @media (max-width: 940px) {
   .grid,
-  .session-strip,
-  .player-layout,
-  .start-card,
-  .runtime-layout {
+  .playing-view,
+  .player-start-form {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .app-header-inner,
-  .hero-top {
+  .app-header-inner {
     grid-template-columns: minmax(0, 1fr);
     padding-block: var(--space-3);
   }
 
-  .narrative-column {
-    max-width: none;
-  }
-
-  .runtime-main {
+  .story-column {
     max-width: none;
   }
 
@@ -253,7 +175,7 @@
   }
 
   .shell,
-  .hero-top {
+  .app-header-inner {
     width: min(100% - 1rem, var(--width-main));
   }
 
@@ -261,8 +183,7 @@
     padding-bottom: var(--space-8);
   }
 
-  .app-header,
-  .hero {
+  .app-header {
     margin-bottom: var(--space-5);
   }
 
@@ -276,14 +197,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .session-strip-main,
-  .session-actions,
-  .start-card {
-    padding: var(--space-4);
-  }
-
-  .runtime-status-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+  .player-first-actions {
+    width: 100%;
   }
 }
