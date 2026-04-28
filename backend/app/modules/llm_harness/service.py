@@ -135,6 +135,7 @@ class TurnResolutionPayload(BaseModel):
     scene_tone: str = Field(min_length=1)
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
     scene_pressure: Literal["low", "medium", "high"] = "medium"
+    broadcast_draft: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -495,6 +496,10 @@ class StubModelProvider(BaseModelProvider):
         relation_summary = str(input_payload.get("relation_summary") or "")
         consequence_tags = normalize_consequence_tags([str(item) for item in input_payload.get("consequence_tags") or []])
         world_tags = normalize_world_tags(infer_world_tags(interpreted_intent))
+        resource_constraints = [item for item in input_payload.get("resource_constraints") or [] if isinstance(item, dict)]
+        broadcast_constraints = [
+            item for item in input_payload.get("world_broadcast_constraints") or [] if isinstance(item, dict)
+        ]
         active_quest_stage = str(input_payload.get("active_quest_stage") or "none")
         current_scene = input_payload.get("current_scene") or {}
         current_chapter = input_payload.get("current_chapter") or {}
@@ -644,6 +649,25 @@ class StubModelProvider(BaseModelProvider):
             "next_choices": next_choices,
             "scene_move": scene_move,
             "scene_pressure": scene_pressure,
+            "broadcast_draft": {
+                "summary": (
+                    str(broadcast_constraints[0].get("summary"))
+                    if broadcast_constraints
+                    else f"{player_name}の行動がこの場所と隣接路に短く伝わる。"
+                ),
+                "constraint_text": (
+                    str(broadcast_constraints[0].get("constraint_text"))
+                    if broadcast_constraints
+                    else (
+                        f"{player_name}の直近の行動が周囲の人物の判断を少し制約している。"
+                        if not resource_constraints
+                        else "同じ共有資源が別の場面で動いているため、応答は慎重に迂回する。"
+                    )
+                ),
+                "scope_kind": "location",
+                "lifecycle_kind": "scene",
+                "relevance_tags": [*world_tags[:3], *consequence_tags[:3]],
+            },
         }
 
     def _rules_arbiter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:

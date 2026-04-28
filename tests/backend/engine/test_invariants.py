@@ -7,6 +7,7 @@ from app.models.entities import (
     Actor,
     ChapterTrack,
     ConsequenceThread,
+    Event,
     Faction,
     FactionStanding,
     Item,
@@ -15,7 +16,12 @@ from app.models.entities import (
     QuestTemplate,
     SceneFrame,
     Session as GameSession,
+    Turn,
     World,
+    WorldBroadcastDelivery,
+    WorldBroadcastEvent,
+    WorldResourceLock,
+    WorldTimelineEntry,
     starter_location_id,
 )
 
@@ -260,6 +266,106 @@ def test_scene_frame_cannot_reference_chapter_from_another_world(container):
                 focus_actor_id=None,
                 stakes_summary="bad",
                 pressure_summary="bad",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def _seed_event_for_world(db, world_id: str, user_sub: str) -> tuple[Actor, GameSession, Turn, Event]:
+    db.add(World(id=world_id, name=world_id, status="active"))
+    db.flush()
+    actor = Actor(world_id=world_id, actor_type="player", user_sub=user_sub, display_name=user_sub)
+    db.add(actor)
+    db.flush()
+    session = GameSession(world_id=world_id, player_actor_id=actor.id, status="active")
+    db.add(session)
+    db.flush()
+    turn = Turn(
+        world_id=world_id,
+        session_id=session.id,
+        actor_id=actor.id,
+        input_text="fixture",
+        resolved_output={"status": "resolved"},
+        model_lane="test",
+    )
+    db.add(turn)
+    db.flush()
+    event = Event(
+        world_id=world_id,
+        session_id=session.id,
+        turn_id=turn.id,
+        event_type="player.turn.resolved",
+        source_actor_id=actor.id,
+        payload={},
+        narrative="Fixture event.",
+    )
+    db.add(event)
+    db.flush()
+    return actor, session, turn, event
+
+
+def test_timeline_entry_cannot_reference_source_event_from_another_world(container):
+    with container.session_factory() as db:
+        _seed_event_for_world(db, "world-a", "a")
+        _, _, _, event_b = _seed_event_for_world(db, "world-b", "b")
+        db.add(
+            WorldTimelineEntry(
+                world_id="world-a",
+                sequence=1,
+                entry_kind="event",
+                source_event_id=event_b.id,
+                scope_kind="event",
+                status="canon",
+                narrative_constraint="bad",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_resource_lock_cannot_reference_holder_from_another_world(container):
+    from datetime import datetime, timedelta, timezone
+
+    with container.session_factory() as db:
+        _seed_event_for_world(db, "world-a", "a")
+        _, session_b, turn_b, _ = _seed_event_for_world(db, "world-b", "b")
+        db.add(
+            WorldResourceLock(
+                world_id="world-a",
+                resource_type="npc",
+                resource_id="npc-b",
+                holder_turn_id=turn_b.id,
+                holder_session_id=session_b.id,
+                status="active",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+
+
+def test_broadcast_delivery_cannot_reference_session_from_another_world(container):
+    with container.session_factory() as db:
+        _, _, _, event_a = _seed_event_for_world(db, "world-a", "a")
+        actor_b, session_b, _, _ = _seed_event_for_world(db, "world-b", "b")
+        broadcast = WorldBroadcastEvent(
+            world_id="world-a",
+            source_event_id=event_a.id,
+            semantic_key="world-a:help:test",
+            status="active",
+            summary="A nearby change spreads.",
+            constraint_text="A nearby change must be honored.",
+        )
+        db.add(broadcast)
+        db.flush()
+        db.add(
+            WorldBroadcastDelivery(
+                world_id="world-a",
+                broadcast_event_id=broadcast.id,
+                session_id=session_b.id,
+                actor_id=actor_b.id,
+                status="pending",
             )
         )
         with pytest.raises(IntegrityError):

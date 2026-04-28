@@ -26,7 +26,21 @@ from app.modules.world_memory.service import build_retrieval_query_text, retriev
 from app.modules.world_state.branch import BranchCommitDraft, BranchPressureEngine, ensure_route_pressures
 from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
 from app.modules.world_state.rules import normalize_world_tags
-from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
+from app.modules.world_state.shared_consequence import SharedConsequenceResult, apply_shared_consequence_rules
+from app.modules.world_state.timeline import (
+    ResourceRef,
+    canonicalize_event,
+    consume_broadcast_constraints,
+    create_broadcast_from_turn,
+    create_timeline_entry,
+    create_timeline_constraint,
+    pending_broadcast_constraints,
+    plan_shared_resources,
+    release_resources,
+    reserve_resources,
+    skipped_resource_constraints,
+    sync_active_broadcast_deliveries,
+)
 from app.modules.world_state.service import (
     apply_scene_updates,
     apply_consequence_updates,
@@ -237,6 +251,14 @@ def create_session_for_user(
         )
     )
     db.flush()
+    _finalize_event_timeline_and_broadcast(db, event=bootstrap_event)
+    sync_active_broadcast_deliveries(
+        db,
+        world_id=world.id,
+        session_id=session.id,
+        actor_id=player_actor.id,
+        location_id=starter_location.id,
+    )
 
     websocket_url = f"{container.settings.public_ws_base_url.rstrip('/')}/ws/sessions/{session.id}"
     return SessionCreationResult(
@@ -323,6 +345,7 @@ def _materialize_player_profile_setup(
         )
     )
     db.flush()
+    _finalize_event_timeline_and_broadcast(db, event=event)
     return event
 
 
@@ -585,6 +608,14 @@ def _persist_branch_commit(
         )
     )
     db.flush()
+    canonicalize_event(
+        db,
+        event,
+        entry_kind="branch_commit",
+        scope_kind="chapter",
+        affected_location_ids=[location_id] if location_id else [],
+        payload={"turn_id": turn.id, "branch_commit": True},
+    )
     return event, memories
 
 
@@ -607,6 +638,127 @@ def _branch_response_from_state(session_state: dict[str, Any]) -> tuple[list[dic
         ],
         crossroads_summary,
     )
+
+
+def _pre_intent_action_kind(selected_choice: dict[str, Any] | None, input_mode: str, input_text: str) -> str:
+    if selected_choice:
+        action_kind = str(selected_choice.get("action_kind") or "narrative").strip()
+        return action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative"
+    normalized = input_text.lower()
+    if any(token in normalized for token in ("向か", "行く", "進む", "移動", "go to", "head to", "walk to", "toward")):
+        return "travel"
+    return "narrative"
+
+
+def _pre_intent_consequence_tags(selected_choice: dict[str, Any] | None) -> list[str]:
+    posture = str((selected_choice or {}).get("posture") or "")
+    if posture == "progress":
+        return ["earned_trust"]
+    if posture in {"safe", "explore"}:
+        return ["careful_observation"]
+    return []
+
+
+def _reserve_turn_resources(
+    db: Session,
+    *,
+    prepared: PreparedTurnContext,
+    session_state: dict[str, Any],
+    selected_choice: dict[str, Any] | None,
+    input_mode: str,
+    input_text: str,
+    interpreted_intent: dict[str, Any] | None = None,
+) -> tuple[list[ResourceRef], list[Any], list[dict[str, Any]]]:
+    action_kind = str((interpreted_intent or {}).get("canonical_action_kind") or "").strip()
+    if action_kind not in {"narrative", "use_reward_item", "travel"}:
+        action_kind = _pre_intent_action_kind(selected_choice, input_mode, input_text)
+    consequence_tags = [
+        str(item) for item in ((interpreted_intent or {}).get("consequence_tags") or _pre_intent_consequence_tags(selected_choice))
+    ]
+    resources = plan_shared_resources(
+        db,
+        world_id=prepared.session.world_id,
+        location_id=prepared.location_id,
+        guide_actor_id=prepared.guide_npc.id if prepared.guide_npc is not None else None,
+        session_state=session_state,
+        selected_choice=selected_choice,
+        action_kind=action_kind,
+        consequence_tags=consequence_tags,
+    )
+    reservation = reserve_resources(
+        db,
+        world_id=prepared.session.world_id,
+        session_id=prepared.session.id,
+        turn_id=prepared.turn_id,
+        resources=resources,
+    )
+    constraints = reservation.constraints
+    if constraints:
+        session_state["resource_constraints"] = constraints
+        shared_context = dict(session_state.get("shared_world_context") or {})
+        shared_context["resource_constraints"] = constraints
+        session_state["shared_world_context"] = shared_context
+    return resources, reservation.held, constraints
+
+
+def _finalize_event_timeline_and_broadcast(
+    db: Session,
+    *,
+    event: Event,
+    resource_constraints: list[dict[str, Any]] | None = None,
+    broadcast_draft: dict[str, Any] | None = None,
+    shared_action_tag: str = "none",
+    relevance_tags: list[str] | None = None,
+) -> None:
+    affected_locations = [event.location_id] if event.location_id else []
+    canonicalize_event(
+        db,
+        event,
+        entry_kind="event",
+        scope_kind=str((event.payload or {}).get("action_type") or "event"),
+        affected_location_ids=affected_locations,
+        narrative_constraint=str((event.payload or {}).get("consequence_summary") or ""),
+        payload={"event_type": event.event_type, "turn_id": event.turn_id},
+    )
+    if resource_constraints:
+        create_timeline_constraint(
+            db,
+            world_id=event.world_id,
+            source_event_id=event.id,
+            location_id=event.location_id,
+            constraints=resource_constraints,
+        )
+    broadcast, deliveries = create_broadcast_from_turn(
+        db,
+        event=event,
+        broadcast_draft=broadcast_draft,
+        action_tag=shared_action_tag,
+        relevance_tags=relevance_tags,
+    )
+    if broadcast is not None:
+        event.payload = {
+            **dict(event.payload or {}),
+            "world_broadcast_event": {
+                "id": broadcast.id,
+                "semantic_key": broadcast.semantic_key,
+                "status": broadcast.status,
+                "affected_location_ids": list(broadcast.affected_location_ids or []),
+                "delivery_session_ids": [delivery.session_id for delivery in deliveries],
+            },
+        }
+        create_timeline_entry(
+            db,
+            world_id=event.world_id,
+            entry_kind="world_broadcast_event",
+            source_event_id=event.id,
+            scope_kind=broadcast.scope_kind,
+            location_id=event.location_id,
+            affected_location_ids=list(broadcast.affected_location_ids or []),
+            status=broadcast.status,
+            narrative_constraint=broadcast.constraint_text,
+            payload={"broadcast_event_id": broadcast.id, "semantic_key": broadcast.semantic_key},
+        )
+    db.flush()
 
 
 def _resolve_narrative_turn_for_session(
@@ -643,6 +795,63 @@ def _resolve_narrative_turn_for_session(
         actor_id=player_actor.id,
         location_id=prepared.location_id,
     )
+    intent_phase = container.council_service.resolve_intent(
+        CouncilRequest(
+            world_id=game_session.world_id,
+            turn_id=turn.id,
+            player_name=player_actor.display_name,
+            npc_name=guide_npc.display_name,
+            input_text=input_text,
+            input_mode=input_mode if input_mode in {"choice", "free_text"} else "choice",
+            selected_choice=selected_choice,
+            relevant_memories=[],
+            relation_context=[],
+            graph_context_status="intent_phase",
+            session_state=session_state,
+        )
+    )
+    if not intent_phase.succeeded:
+        _persist_role_runs(
+            db,
+            world_id=game_session.world_id,
+            turn_id=turn.id,
+            workflow_name="gm_council",
+            role_runs=[intent_phase.role_run],
+            graph_context_status="intent_phase",
+        )
+        failed_result = _build_failed_turn_result(
+            db,
+            container,
+            prepared,
+            turn=turn,
+            action_type="narrative",
+            resolution_mode="gm_council",
+            action_label=input_text,
+            graph_context_status="intent_phase",
+            failure_reason=intent_phase.failure_reason or "Intent interpretation failed",
+            model_lane=intent_phase.final_lane,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            input_mode=input_mode,
+            interpreted_intent={},
+            next_choices=session_state.get("next_choices") or [],
+            consequence_summary="The attempted line cannot be made coherent enough to enter the world.",
+            progress_phases=["intent_interpreter"],
+            failure_payload={
+                "failure_reason": intent_phase.failure_reason,
+                "council_trace": [
+                    {
+                        "role": intent_phase.role_run.council_role,
+                        "approval_status": intent_phase.role_run.approval_status,
+                        "final_lane": intent_phase.role_run.final_lane,
+                    }
+                ],
+            },
+        )
+        _finalize_event_timeline_and_broadcast(db, event=failed_result.event)
+        return failed_result
+    intent_payload = intent_phase.payload
+    assert intent_payload is not None
+    reservation_intent = intent_payload.model_dump()
     if input_mode == "choice" and selected_choice:
         selected_action_kind = str(selected_choice.get("action_kind") or "").strip()
         if selected_action_kind == "use_reward_item":
@@ -702,6 +911,15 @@ def _resolve_narrative_turn_for_session(
                     resolution_mode="choice_travel",
                     graph_context_status="ready",
                 )
+    resource_refs, held_locks, resource_constraints = _reserve_turn_resources(
+        db,
+        prepared=prepared,
+        session_state=session_state,
+        selected_choice=selected_choice,
+        input_mode=input_mode,
+        input_text=input_text,
+        interpreted_intent=reservation_intent,
+    )
     graph_context = container.projection_service.resolve_relation_context(
         db,
         world_id=game_session.world_id,
@@ -733,6 +951,8 @@ def _resolve_narrative_turn_for_session(
             relation_context=graph_context.context.prompt_lines(),
             graph_context_status=graph_context.status,
             session_state=session_state,
+            prepared_intent_payload=intent_payload,
+            prepared_intent_role_run=intent_phase.role_run,
         )
     )
 
@@ -747,7 +967,7 @@ def _resolve_narrative_turn_for_session(
 
     if not resolution.succeeded:
         progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
-        return _build_failed_turn_result(
+        failed_result = _build_failed_turn_result(
             db,
             container,
             prepared,
@@ -783,6 +1003,13 @@ def _resolve_narrative_turn_for_session(
                 ],
             },
         )
+        _finalize_event_timeline_and_broadcast(
+            db,
+            event=failed_result.event,
+            resource_constraints=resource_constraints,
+        )
+        release_resources(db, held_locks)
+        return failed_result
 
     payload = resolution.final_payload
     assert payload is not None
@@ -803,7 +1030,7 @@ def _resolve_narrative_turn_for_session(
     if interpreted_intent.get("canonical_action_kind") == "use_reward_item":
         resolved_item_id = _resolve_usable_reward_item_id(session_state)
         if resolved_item_id is not None:
-            return _resolve_reward_item_turn_for_session(
+            redirected = _resolve_reward_item_turn_for_session(
                 db,
                 container,
                 prepared,
@@ -830,6 +1057,8 @@ def _resolve_narrative_turn_for_session(
                     ],
                 },
             )
+            release_resources(db, held_locks)
+            return redirected
     if interpreted_intent.get("canonical_action_kind") == "travel":
         travel_target_key = _resolve_travel_target_key(
             interpreted_intent,
@@ -837,7 +1066,7 @@ def _resolve_narrative_turn_for_session(
             session_state=session_state,
         )
         if travel_target_key is not None:
-            return _resolve_travel_turn_for_session(
+            redirected = _resolve_travel_turn_for_session(
                 db,
                 container,
                 prepared,
@@ -864,6 +1093,8 @@ def _resolve_narrative_turn_for_session(
                     ],
                 },
             )
+            release_resources(db, held_locks)
+            return redirected
 
     resolved_world_tags = _coerce_choice_world_tags(
         session_state=session_state,
@@ -967,6 +1198,7 @@ def _resolve_narrative_turn_for_session(
         scene_pressure=getattr(payload, "scene_pressure", None),
     )
     combined_faction_updates = [*state_updates["faction_updates"], *consequence_result.faction_updates]
+    skipped_resources = skipped_resource_constraints(resource_refs, held_locks, resource_constraints)
 
     turn.model_lane = resolution.final_lane
     turn.resolved_output = {
@@ -999,6 +1231,8 @@ def _resolve_narrative_turn_for_session(
         "inventory_updates": state_updates["inventory_updates"],
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "resource_constraints": resource_constraints,
+        "skipped_shared_resources": skipped_resources,
         "scene_move": getattr(payload, "scene_move", None),
         "scene_pressure": getattr(payload, "scene_pressure", None),
         "council_trace": [
@@ -1026,6 +1260,8 @@ def _resolve_narrative_turn_for_session(
         "faction_updates": combined_faction_updates,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "resource_constraints": resource_constraints,
+        "skipped_shared_resources": skipped_resources,
     }
 
     memories = container.memory_service.materialize_memories(
@@ -1047,20 +1283,23 @@ def _resolve_narrative_turn_for_session(
         action_kind="narrative",
         fail_forward=bool(interpreted_intent.get("fail_forward")),
     )
-    shared_result = apply_shared_consequence_rules(
-        db,
-        memory_service=container.memory_service,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-        source_event_id=event.id,
-        world_tags=resolved_world_tags,
-        consequence_tags=shared_consequence_tags,
-        action_kind="narrative",
-        explicit_action_tag=getattr(payload, "shared_action_tag", "none"),
-        interpreted_intent=interpreted_intent,
-        fail_forward=bool(interpreted_intent.get("fail_forward")),
-    )
+    if skipped_resources:
+        shared_result = SharedConsequenceResult(action_tag="none")
+    else:
+        shared_result = apply_shared_consequence_rules(
+            db,
+            memory_service=container.memory_service,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+            source_event_id=event.id,
+            world_tags=resolved_world_tags,
+            consequence_tags=shared_consequence_tags,
+            action_kind="narrative",
+            explicit_action_tag=getattr(payload, "shared_action_tag", "none"),
+            interpreted_intent=interpreted_intent,
+            fail_forward=bool(interpreted_intent.get("fail_forward")),
+        )
     shared_payload = shared_result.payload()
     turn.resolved_output = {
         **turn.resolved_output,
@@ -1071,6 +1310,8 @@ def _resolve_narrative_turn_for_session(
         **event.payload,
         "shared_action_tag": shared_result.action_tag,
         "shared_consequence_updates": shared_payload,
+        "resource_constraints": resource_constraints,
+        "skipped_shared_resources": skipped_resources,
     }
     db.add(
         OutboxEvent(
@@ -1136,6 +1377,16 @@ def _resolve_narrative_turn_for_session(
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
     }
+    _finalize_event_timeline_and_broadcast(
+        db,
+        event=event,
+        resource_constraints=resource_constraints,
+        broadcast_draft=getattr(payload, "broadcast_draft", None),
+        shared_action_tag=shared_result.action_tag,
+        relevance_tags=list(payload.consequence_tags or []),
+    )
+    release_resources(db, held_locks)
+    consume_broadcast_constraints(db, world_id=game_session.world_id, session_id=game_session.id)
 
     return TurnResolutionResult(
         turn=turn,
@@ -1512,6 +1763,20 @@ def _resolve_reward_item_turn_for_session(
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
     }
+    _finalize_event_timeline_and_broadcast(
+        db,
+        event=event,
+        broadcast_draft={
+            "summary": outcome.travel_summary if hasattr(outcome, "travel_summary") else outcome.event_narrative,
+            "constraint_text": outcome.event_narrative,
+            "scope_kind": "location",
+            "lifecycle_kind": "scene",
+            "relevance_tags": ["reward_item_respect", "kept_promise"],
+        },
+        shared_action_tag=shared_result.action_tag,
+        relevance_tags=reward_consequence_tags,
+    )
+    consume_broadcast_constraints(db, world_id=game_session.world_id, session_id=game_session.id)
 
     return TurnResolutionResult(
         turn=turn,
@@ -1800,6 +2065,20 @@ def _resolve_travel_turn_for_session(
             "ambient_updates": ambient_result["ambient_updates"],
             "recent_world_beats": ambient_result["recent_world_beats"],
         }
+        _finalize_event_timeline_and_broadcast(
+            db,
+            event=event,
+            broadcast_draft={
+                "summary": outcome.travel_summary,
+                "constraint_text": outcome.travel_summary,
+                "scope_kind": "location",
+                "lifecycle_kind": "scene",
+                "relevance_tags": travel_consequence_tags,
+            },
+            shared_action_tag=shared_result.action_tag,
+            relevance_tags=travel_consequence_tags,
+        )
+        consume_broadcast_constraints(db, world_id=game_session.world_id, session_id=game_session.id)
         return TurnResolutionResult(
             turn=turn,
             event=event,
@@ -1992,6 +2271,20 @@ def _resolve_travel_turn_for_session(
             "ambient_updates": ambient_result["ambient_updates"],
             "recent_world_beats": ambient_result["recent_world_beats"],
         }
+        _finalize_event_timeline_and_broadcast(
+            db,
+            event=event,
+            broadcast_draft={
+                "summary": travel_summary,
+                "constraint_text": consequence_result.consequence_summary,
+                "scope_kind": "location",
+                "lifecycle_kind": "scene",
+                "relevance_tags": ["public_attention", "overreach"],
+            },
+            shared_action_tag="destabilize",
+            relevance_tags=["public_attention", "overreach"],
+        )
+        consume_broadcast_constraints(db, world_id=game_session.world_id, session_id=game_session.id)
         return TurnResolutionResult(
             turn=turn,
             event=event,
@@ -2132,6 +2425,7 @@ def _build_failed_turn_result(
         cost=abs(prepared.debit.delta),
     )
     db.flush()
+    _finalize_event_timeline_and_broadcast(db, event=failure_event)
     return TurnResolutionResult(
         turn=turn,
         event=failure_event,
@@ -2278,6 +2572,9 @@ def _event_payload(event: Event) -> dict:
         "id": event.id,
         "world_id": event.world_id,
         "event_type": event.event_type,
+        "canonical_sequence": event.canonical_sequence,
+        "canonical_status": event.canonical_status,
+        "timeline_entry_id": event.timeline_entry_id,
         "narrative": event.narrative,
         "location_id": event.location_id,
         "payload": event.payload,
@@ -2310,6 +2607,13 @@ def _session_state_with_latest_choices(
     actor_id: str,
     location_id: str | None,
 ) -> dict[str, Any]:
+    sync_active_broadcast_deliveries(
+        db,
+        world_id=world_id,
+        session_id=session_id,
+        actor_id=actor_id,
+        location_id=location_id,
+    )
     state = build_session_state(
         db,
         world_id=world_id,
@@ -2319,6 +2623,11 @@ def _session_state_with_latest_choices(
     )
     fallback_choices = state.get("next_choices") or []
     state["next_choices"] = _latest_session_choices(db, session_id=session_id, fallback_choices=fallback_choices)
+    broadcast_constraints = pending_broadcast_constraints(db, world_id=world_id, session_id=session_id)
+    state["world_broadcast_constraints"] = broadcast_constraints
+    shared_context = dict(state.get("shared_world_context") or {})
+    shared_context["active_broadcast_constraints"] = broadcast_constraints
+    state["shared_world_context"] = shared_context
     return state
 
 

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     JSON,
     String,
@@ -190,6 +191,7 @@ class Event(Base, TimestampMixin):
     __tablename__ = "events"
     __table_args__ = (
         UniqueConstraint("id", "world_id", name="uq_events_id_world"),
+        UniqueConstraint("world_id", "canonical_sequence", name="uq_events_world_canonical_sequence"),
         ForeignKeyConstraint(["session_id", "world_id"], ["sessions.id", "sessions.world_id"]),
         ForeignKeyConstraint(["turn_id", "world_id"], ["turns.id", "turns.world_id"]),
         ForeignKeyConstraint(["source_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
@@ -206,6 +208,114 @@ class Event(Base, TimestampMixin):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     narrative: Mapped[str] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    canonical_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    canonical_status: Mapped[str] = mapped_column(String(32), default="pending", server_default="pending")
+    timeline_entry_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class WorldTimelineCounter(Base, TimestampMixin):
+    __tablename__ = "world_timeline_counters"
+
+    world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"), primary_key=True)
+    next_sequence: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class WorldTimelineEntry(Base, TimestampMixin):
+    __tablename__ = "world_timeline_entries"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_world_timeline_entries_id_world"),
+        UniqueConstraint("world_id", "sequence", name="uq_world_timeline_entries_world_sequence"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+        ForeignKeyConstraint(["location_id", "world_id"], ["locations.id", "locations.world_id"]),
+        Index("ix_world_timeline_entries_world_status", "world_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    sequence: Mapped[int] = mapped_column(Integer)
+    entry_kind: Mapped[str] = mapped_column(String(32))
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    scope_kind: Mapped[str] = mapped_column(String(32), default="event")
+    location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    affected_location_ids: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="canon")
+    narrative_constraint: Mapped[str] = mapped_column(Text, default="")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class WorldResourceLock(Base, TimestampMixin):
+    __tablename__ = "world_resource_locks"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_world_resource_locks_id_world"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["holder_turn_id", "world_id"], ["turns.id", "turns.world_id"]),
+        ForeignKeyConstraint(["holder_session_id", "world_id"], ["sessions.id", "sessions.world_id"]),
+        Index("ix_world_resource_locks_resource", "world_id", "resource_type", "resource_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str] = mapped_column(String(32))
+    resource_id: Mapped[str] = mapped_column(String(120))
+    holder_turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    holder_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    constraint_summary: Mapped[str] = mapped_column(Text, default="")
+
+
+class WorldBroadcastEvent(Base, TimestampMixin):
+    __tablename__ = "world_broadcast_events"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_world_broadcast_events_id_world"),
+        UniqueConstraint("world_id", "semantic_key", name="uq_world_broadcast_events_semantic_key"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+        ForeignKeyConstraint(["origin_location_id", "world_id"], ["locations.id", "locations.world_id"]),
+        Index("ix_world_broadcast_events_world_status", "world_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    source_event_id: Mapped[str] = mapped_column(String(36))
+    semantic_key: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    scope_kind: Mapped[str] = mapped_column(String(32), default="location")
+    lifecycle_kind: Mapped[str] = mapped_column(String(32), default="scene")
+    origin_location_id: Mapped[str | None] = mapped_column(String(96), nullable=True)
+    affected_location_ids: Mapped[list] = mapped_column(JSON, default=list)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    constraint_text: Mapped[str] = mapped_column(Text, default="")
+    relevance_tags: Mapped[list] = mapped_column(JSON, default=list)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class WorldBroadcastDelivery(Base, TimestampMixin):
+    __tablename__ = "world_broadcast_deliveries"
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_world_broadcast_deliveries_id_world"),
+        UniqueConstraint("world_id", "broadcast_event_id", "session_id", name="uq_world_broadcast_delivery_session"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["broadcast_event_id", "world_id"], ["world_broadcast_events.id", "world_broadcast_events.world_id"]),
+        ForeignKeyConstraint(["session_id", "world_id"], ["sessions.id", "sessions.world_id"]),
+        ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        Index("ix_world_broadcast_deliveries_session_status", "world_id", "session_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    broadcast_event_id: Mapped[str] = mapped_column(String(36))
+    session_id: Mapped[str] = mapped_column(String(36))
+    actor_id: Mapped[str] = mapped_column(String(36))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Memory(Base, TimestampMixin):

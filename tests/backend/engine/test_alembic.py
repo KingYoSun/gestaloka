@@ -51,9 +51,15 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "shared_history_records",
         "actor_title_progress",
         "shared_consequence_applications",
+        "world_timeline_counters",
+        "world_timeline_entries",
+        "world_resource_locks",
+        "world_broadcast_events",
+        "world_broadcast_deliveries",
         "outbox_events",
     } <= tables
 
+    event_columns = {column["name"] for column in inspector.get_columns("events")}
     turn_columns = {column["name"] for column in inspector.get_columns("turns")}
     quest_template_columns = {column["name"] for column in inspector.get_columns("quest_templates")}
     item_columns = {column["name"] for column in inspector.get_columns("items")}
@@ -67,6 +73,11 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     world_axis_columns = {column["name"] for column in inspector.get_columns("world_axis_states")}
     shared_history_columns = {column["name"] for column in inspector.get_columns("shared_history_records")}
     title_progress_columns = {column["name"] for column in inspector.get_columns("actor_title_progress")}
+    timeline_entry_columns = {column["name"] for column in inspector.get_columns("world_timeline_entries")}
+    resource_lock_columns = {column["name"] for column in inspector.get_columns("world_resource_locks")}
+    broadcast_event_columns = {column["name"] for column in inspector.get_columns("world_broadcast_events")}
+    broadcast_delivery_columns = {column["name"] for column in inspector.get_columns("world_broadcast_deliveries")}
+    assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
     assert "resolution_mode" in turn_columns
     assert "action_type" in turn_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= turn_columns
@@ -112,3 +123,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     assert {"axis_id", "current_value", "thresholds", "last_event_id"} <= world_axis_columns
     assert {"history_rule_id", "level", "status", "summary", "payload"} <= shared_history_columns
     assert {"title_rule_id", "progress", "progress_target", "source_event_id"} <= title_progress_columns
+    assert {"sequence", "entry_kind", "source_event_id", "affected_location_ids", "narrative_constraint"} <= timeline_entry_columns
+    assert {"resource_type", "resource_id", "holder_turn_id", "expires_at", "constraint_summary"} <= resource_lock_columns
+    assert {"semantic_key", "lifecycle_kind", "affected_location_ids", "constraint_text"} <= broadcast_event_columns
+    assert {"broadcast_event_id", "session_id", "actor_id", "status", "consumed_at"} <= broadcast_delivery_columns

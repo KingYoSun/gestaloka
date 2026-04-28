@@ -15,6 +15,7 @@ from app.models.entities import (
     WorldAxisState,
 )
 from app.modules.world_pack.service import resolve_world_pack
+from app.modules.world_state.timeline import stale_active_lock_count
 
 
 def shared_world_health(db: Session) -> dict[str, Any]:
@@ -25,6 +26,7 @@ def shared_world_health(db: Session) -> dict[str, Any]:
         "axis_drift_count": 0,
         "memory_gap_count": 0,
         "event_integrity_gap_count": 0,
+        "stale_resource_lock_count": 0,
     }
 
     worlds = list(db.execute(select(World).order_by(World.id.asc())).scalars())
@@ -47,6 +49,7 @@ def shared_world_health(db: Session) -> dict[str, Any]:
                 "axis_drift_count": 0,
                 "memory_gap_count": 0,
                 "event_integrity_gap_count": 1,
+                "stale_resource_lock_count": 0,
                 "axis_drift": [],
                 "memory_gaps": [],
                 "event_integrity_gaps": [
@@ -63,8 +66,14 @@ def shared_world_health(db: Session) -> dict[str, Any]:
         totals["axis_drift_count"] += int(summary["axis_drift_count"])
         totals["memory_gap_count"] += int(summary["memory_gap_count"])
         totals["event_integrity_gap_count"] += int(summary["event_integrity_gap_count"])
+        totals["stale_resource_lock_count"] += int(summary["stale_resource_lock_count"])
 
-    drift_count = totals["axis_drift_count"] + totals["memory_gap_count"] + totals["event_integrity_gap_count"]
+    drift_count = (
+        totals["axis_drift_count"]
+        + totals["memory_gap_count"]
+        + totals["event_integrity_gap_count"]
+        + totals["stale_resource_lock_count"]
+    )
     return {
         "status": "ready" if drift_count == 0 else "drift_detected",
         "drift_count": drift_count,
@@ -78,6 +87,7 @@ def _world_health(db: Session, world: World) -> dict[str, Any]:
     axis_drift = _axis_drift(db, world_id=world.id, template=template)
     memory_gaps = _memory_gaps(db, world_id=world.id, template=template)
     event_integrity_gaps = _event_integrity_gaps(db, world_id=world.id)
+    stale_locks = stale_active_lock_count(db, world_id=world.id)
     history_levels = sorted(
         {
             str(level)
@@ -106,6 +116,7 @@ def _world_health(db: Session, world: World) -> dict[str, Any]:
         "axis_drift_count": len(axis_drift),
         "memory_gap_count": len(memory_gaps),
         "event_integrity_gap_count": len(event_integrity_gaps),
+        "stale_resource_lock_count": stale_locks,
         "axis_drift": axis_drift,
         "memory_gaps": memory_gaps,
         "event_integrity_gaps": event_integrity_gaps,

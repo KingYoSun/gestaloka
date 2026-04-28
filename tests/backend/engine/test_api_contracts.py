@@ -478,7 +478,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = [websocket.receive_json() for _ in range(23)]
+        messages = [websocket.receive_json() for _ in range(24)]
 
     assert [message["event"] for message in messages] == [
         "session.connected",
@@ -496,6 +496,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "turn.progress",
         "turn.narrative.delta",
         "world.event.created",
+        "world.broadcast.available",
         "memory.materialized",
         "quest.updated",
         "faction.standing.updated",
@@ -523,6 +524,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "choice_generation",
     ]
     assert messages[-1]["data"] == turn_payload
+    broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
+    assert broadcast_message["data"]["semantic_key"]
+    assert broadcast_message["data"]["status"] == "active"
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
@@ -587,7 +591,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(18)]
+        messages = [websocket.receive_json() for _ in range(19)]
 
     assert [message["event"] for message in messages] == [
         "session.connected",
@@ -599,6 +603,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "turn.progress",
         "turn.narrative.delta",
         "world.event.created",
+        "world.broadcast.available",
         "memory.materialized",
         "quest.updated",
         "faction.standing.updated",
@@ -617,6 +622,9 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "choice_generation",
     ]
     assert messages[-1]["data"] == payload
+    broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
+    assert broadcast_message["data"]["semantic_key"]
+    assert broadcast_message["data"]["status"] == "active"
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"

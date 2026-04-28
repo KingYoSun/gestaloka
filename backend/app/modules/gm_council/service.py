@@ -49,6 +49,7 @@ class CouncilWorldProgressPayload(BaseModel):
     next_choices: list[NarrativeChoiceDraft] = Field(min_length=3, max_length=3)
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
     scene_pressure: Literal["low", "medium", "high"] = "medium"
+    broadcast_draft: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -92,6 +93,20 @@ class CouncilRequest:
     session_state: dict[str, Any]
     input_mode: Literal["choice", "free_text"] = "choice"
     selected_choice: dict[str, Any] | None = None
+    prepared_intent_payload: CouncilIntentInterpreterPayload | None = None
+    prepared_intent_role_run: CouncilRoleRun | None = None
+
+
+@dataclass(frozen=True)
+class CouncilIntentPhase:
+    role_run: CouncilRoleRun
+    payload: CouncilIntentInterpreterPayload | None
+    final_lane: str
+    failure_reason: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.payload is not None
 
 
 class GMCouncilService:
@@ -108,6 +123,85 @@ class GMCouncilService:
     def __init__(self, settings: Settings, model_router: ModelRouter) -> None:
         self.settings = settings
         self.model_router = model_router
+
+    def resolve_intent(self, request: CouncilRequest) -> CouncilIntentPhase:
+        intent_input = self._intent_input_payload(request)
+        if request.input_mode == "choice" and request.selected_choice:
+            intent_result = self._choice_intent_outcome(request=request, input_payload=intent_input)
+        else:
+            intent_result = self.model_router.execute_structured_prompt(
+                prompt_id="council.intent_interpreter",
+                response_model=CouncilIntentInterpreterPayload,
+                input_payload=intent_input,
+                world_id=request.world_id,
+                turn_id=request.turn_id,
+                graph_context_status=request.graph_context_status,
+            )
+        payload = intent_result.final_payload
+        if payload is not None:
+            payload.consequence_tags = self._canonical_intent_consequence_tags(
+                input_mode=request.input_mode,
+                input_text=request.input_text,
+                selected_choice=request.selected_choice,
+                action_kind=payload.canonical_action_kind,
+                raw_tags=list(payload.consequence_tags),
+            )
+        return CouncilIntentPhase(
+            role_run=self._role_run(
+                council_role="intent_interpreter",
+                stage_index=1,
+                prompt_id="council.intent_interpreter",
+                approval_status="prepared" if intent_result.succeeded else "failed",
+                result=intent_result,
+            ),
+            payload=payload,
+            final_lane=intent_result.final_lane,
+            failure_reason=intent_result.failure_reason,
+        )
+
+    def _intent_input_payload(self, request: CouncilRequest) -> dict[str, Any]:
+        inventory = request.session_state.get("inventory") or []
+        current_scene = request.session_state.get("current_scene") or {}
+        current_chapter = request.session_state.get("chapter") or {}
+        current_location = request.session_state.get("current_location") or request.session_state.get("location") or {}
+        local_figures = request.session_state.get("local_figures") or request.session_state.get("plaza_figures") or []
+        player_profile = request.session_state.get("player_profile") or {}
+        narrative_preferences = (
+            player_profile.get("narrative_preferences") if isinstance(player_profile, dict) else {}
+        ) or {}
+        return {
+            "world_id": request.world_id,
+            "input_mode": request.input_mode,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
+            "npc_name": request.npc_name,
+            "selected_choice": request.selected_choice or {},
+            "world_pack": request.session_state.get("world_pack") or {},
+            "quests": request.session_state.get("quests") or [],
+            "factions": request.session_state.get("factions") or [],
+            "inventory": inventory,
+            "usable_reward_items": [item for item in inventory if item.get("usable")],
+            "used_reward_items": [item for item in inventory if item.get("status") == "used"],
+            "important_inventory_affordances": request.session_state.get("important_inventory_affordances") or [],
+            "default_choice_templates": request.session_state.get("next_choices") or [],
+            "relationship_summaries": request.session_state.get("relationships") or [],
+            "recognized_titles": request.session_state.get("recognized_titles") or [],
+            "active_consequence_threads": request.session_state.get("active_consequence_threads") or [],
+            "recent_consequence_history": request.session_state.get("recent_consequence_history") or [],
+            "current_scene": current_scene,
+            "current_chapter": current_chapter,
+            "recent_scene_history": request.session_state.get("recent_scene_history") or [],
+            "current_location": current_location,
+            "local_figures": local_figures,
+            "nearby_routes": request.session_state.get("nearby_routes") or [],
+            "recent_travel_history": request.session_state.get("recent_travel_history") or [],
+            "plaza_figures": request.session_state.get("plaza_figures") or local_figures,
+            "recent_world_beats": request.session_state.get("recent_world_beats") or [],
+            "ambient_murmurs": request.session_state.get("ambient_murmurs") or [],
+            "shared_world_context": request.session_state.get("shared_world_context") or {},
+        }
 
     @staticmethod
     def _active_quest(session_state: dict[str, Any]) -> dict[str, Any]:
@@ -279,41 +373,38 @@ class GMCouncilService:
             player_profile.get("narrative_preferences") if isinstance(player_profile, dict) else {}
         ) or {}
 
-        intent_input = {
-            "world_id": request.world_id,
-            "input_mode": request.input_mode,
-            "input_text": request.input_text,
-            "player_name": request.player_name,
-            "player_profile": player_profile,
-            "narrative_preferences": narrative_preferences,
-            "npc_name": request.npc_name,
-            "selected_choice": request.selected_choice or {},
-            "world_pack": request.session_state.get("world_pack") or {},
-            "quests": quests,
-            "factions": request.session_state.get("factions") or [],
-            "inventory": inventory,
-            "usable_reward_items": usable_reward_items,
-            "used_reward_items": used_reward_items,
-            "important_inventory_affordances": important_inventory_affordances,
-            "default_choice_templates": default_choice_templates,
-            "relationship_summaries": relationship_summaries,
-            "recognized_titles": recognized_titles,
-            "active_consequence_threads": active_consequence_threads,
-            "recent_consequence_history": recent_consequence_history,
-            "current_scene": current_scene,
-            "current_chapter": current_chapter,
-            "recent_scene_history": recent_scene_history,
-            "current_location": current_location,
-            "local_figures": local_figures,
-            "nearby_routes": nearby_routes,
-            "recent_travel_history": recent_travel_history,
-            "plaza_figures": plaza_figures,
-            "recent_world_beats": recent_world_beats,
-            "ambient_murmurs": ambient_murmurs,
-            "shared_world_context": shared_world_context,
-        }
-        if request.input_mode == "choice" and request.selected_choice:
+        intent_input = self._intent_input_payload(request)
+        if request.prepared_intent_payload is not None and request.prepared_intent_role_run is not None:
+            intent_payload = request.prepared_intent_payload
+            role_runs.append(request.prepared_intent_role_run)
+        elif request.input_mode == "choice" and request.selected_choice:
             intent_result = self._choice_intent_outcome(request=request, input_payload=intent_input)
+            role_runs.append(
+                self._role_run(
+                    council_role="intent_interpreter",
+                    stage_index=1,
+                    prompt_id="council.intent_interpreter",
+                    approval_status="prepared" if intent_result.succeeded else "failed",
+                    result=intent_result,
+                )
+            )
+            if not intent_result.succeeded:
+                return TurnResolutionOutcome(
+                    role_runs=role_runs,
+                    final_lane=intent_result.final_lane,
+                    final_payload=None,
+                    failure_reason=intent_result.failure_reason,
+                    rejection_role="intent_interpreter",
+                )
+            intent_payload = intent_result.final_payload
+            assert intent_payload is not None
+            intent_payload.consequence_tags = self._canonical_intent_consequence_tags(
+                input_mode=request.input_mode,
+                input_text=request.input_text,
+                selected_choice=request.selected_choice,
+                action_kind=intent_payload.canonical_action_kind,
+                raw_tags=list(intent_payload.consequence_tags),
+            )
         else:
             intent_result = self.model_router.execute_structured_prompt(
                 prompt_id="council.intent_interpreter",
@@ -323,33 +414,32 @@ class GMCouncilService:
                 turn_id=request.turn_id,
                 graph_context_status=request.graph_context_status,
             )
-        role_runs.append(
-            self._role_run(
-                council_role="intent_interpreter",
-                stage_index=1,
-                prompt_id="council.intent_interpreter",
-                approval_status="prepared" if intent_result.succeeded else "failed",
-                result=intent_result,
+            role_runs.append(
+                self._role_run(
+                    council_role="intent_interpreter",
+                    stage_index=1,
+                    prompt_id="council.intent_interpreter",
+                    approval_status="prepared" if intent_result.succeeded else "failed",
+                    result=intent_result,
+                )
             )
-        )
-        if not intent_result.succeeded:
-            return TurnResolutionOutcome(
-                role_runs=role_runs,
-                final_lane=intent_result.final_lane,
-                final_payload=None,
-                failure_reason=intent_result.failure_reason,
-                rejection_role="intent_interpreter",
+            if not intent_result.succeeded:
+                return TurnResolutionOutcome(
+                    role_runs=role_runs,
+                    final_lane=intent_result.final_lane,
+                    final_payload=None,
+                    failure_reason=intent_result.failure_reason,
+                    rejection_role="intent_interpreter",
+                )
+            intent_payload = intent_result.final_payload
+            assert intent_payload is not None
+            intent_payload.consequence_tags = self._canonical_intent_consequence_tags(
+                input_mode=request.input_mode,
+                input_text=request.input_text,
+                selected_choice=request.selected_choice,
+                action_kind=intent_payload.canonical_action_kind,
+                raw_tags=list(intent_payload.consequence_tags),
             )
-
-        intent_payload = intent_result.final_payload
-        assert intent_payload is not None
-        intent_payload.consequence_tags = self._canonical_intent_consequence_tags(
-            input_mode=request.input_mode,
-            input_text=request.input_text,
-            selected_choice=request.selected_choice,
-            action_kind=intent_payload.canonical_action_kind,
-            raw_tags=list(intent_payload.consequence_tags),
-        )
 
         memory_input = {
             "world_id": request.world_id,
@@ -509,6 +599,8 @@ class GMCouncilService:
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
             "shared_world_context": shared_world_context,
+            "resource_constraints": request.session_state.get("resource_constraints") or [],
+            "world_broadcast_constraints": request.session_state.get("world_broadcast_constraints") or [],
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",
@@ -561,6 +653,8 @@ class GMCouncilService:
             "consequence_flags": intent_payload.consequence_flags,
             "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
+            "resource_constraints": request.session_state.get("resource_constraints") or [],
+            "world_broadcast_constraints": request.session_state.get("world_broadcast_constraints") or [],
         }
         rules_result = self.model_router.execute_structured_prompt(
             prompt_id="council.rules_arbiter",
@@ -611,6 +705,8 @@ class GMCouncilService:
             "input_mode": request.input_mode,
             "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
+            "resource_constraints": request.session_state.get("resource_constraints") or [],
+            "world_broadcast_constraints": request.session_state.get("world_broadcast_constraints") or [],
         }
         safety_result = self.model_router.execute_structured_prompt(
             prompt_id="council.safety_guard",
@@ -718,6 +814,7 @@ class GMCouncilService:
             scene_tone=narrative_payload.tone,
             scene_move=world_progress_payload.scene_move,
             scene_pressure=world_progress_payload.scene_pressure,
+            broadcast_draft=world_progress_payload.broadcast_draft,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,

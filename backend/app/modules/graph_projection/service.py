@@ -208,7 +208,15 @@ class ProjectionService:
 
         created: list[dict] = []
         events = list(
-            db.execute(select(Event).where(Event.world_id == world_id).order_by(Event.occurred_at.asc(), Event.id.asc())).scalars()
+            db.execute(
+                select(Event)
+                .where(Event.world_id == world_id)
+                .order_by(
+                    Event.canonical_sequence.asc().nullslast(),
+                    Event.occurred_at.asc(),
+                    Event.id.asc(),
+                )
+            ).scalars()
         )
         for event in events:
             synthetic_outbox = OutboxEvent(

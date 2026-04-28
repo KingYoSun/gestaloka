@@ -90,6 +90,25 @@ def _shared_consequence_response(resolved_output: dict) -> dict[str, object]:
     }
 
 
+async def _emit_broadcast_available(result, world_context: dict[str, object]) -> None:
+    event_payload = result.event_payload.get("payload") if isinstance(result.event_payload, dict) else {}
+    if not isinstance(event_payload, dict):
+        return
+    broadcast = event_payload.get("world_broadcast_event")
+    if not isinstance(broadcast, dict):
+        return
+    delivery_session_ids = [str(item) for item in broadcast.get("delivery_session_ids") or [] if str(item)]
+    if not delivery_session_ids:
+        return
+    notification = {
+        "semantic_key": broadcast.get("semantic_key"),
+        "status": broadcast.get("status"),
+        "affected_location_ids": broadcast.get("affected_location_ids") or [],
+    }
+    for session_id in delivery_session_ids:
+        await realtime_hub.emit_with_world_context(session_id, "world.broadcast.available", notification, world_context)
+
+
 @router.post("/turns")
 async def resolve_turn(
     payload: ResolveTurnRequest,
@@ -156,6 +175,7 @@ async def resolve_turn(
         )
 
     await realtime_hub.emit_with_world_context(payload.session_id, "world.event.created", result.event_payload, world_context)
+    await _emit_broadcast_available(result, world_context)
     if result.memories_payload:
         await realtime_hub.emit_with_world_context(
             payload.session_id,
