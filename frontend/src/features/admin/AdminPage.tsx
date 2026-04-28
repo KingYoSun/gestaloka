@@ -508,7 +508,7 @@ export function AdminPage({ runtime }: AdminPageProps) {
                 {item.roles
                   .map(
                     (role) =>
-                      `${role.stage_index}.${role.council_role}:${role.approval_status ?? "unknown"}/${role.model_lane}/${role.output_schema_status}`,
+                      `${role.stage_index}.${role.council_role}:${role.approval_status ?? "unknown"}/${role.model_lane}/${role.output_schema_status}/cache ${role.prompt_cache_hit_tokens ?? 0}:${role.prompt_cache_miss_tokens ?? 0}`,
                   )
                   .join(" | ")}
               </span>

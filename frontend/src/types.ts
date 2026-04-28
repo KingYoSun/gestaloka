@@ -910,6 +910,8 @@ export type CouncilRoleSummary = {
   model_lane: string;
   provider_name: string | null;
   provider_response_id: string | null;
+  prompt_cache_hit_tokens?: number | null;
+  prompt_cache_miss_tokens?: number | null;
   output_schema_status: string;
   langfuse_trace_id?: string | null;
   langfuse_observation_id?: string | null;
@@ -922,6 +924,8 @@ export type CouncilRoleSummary = {
     model_id: string;
     provider_name: string | null;
     provider_response_id: string | null;
+    prompt_cache_hit_tokens?: number | null;
+    prompt_cache_miss_tokens?: number | null;
     approval_status: string | null;
     output_schema_status: string;
     langfuse_trace_id?: string | null;

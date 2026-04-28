@@ -53,6 +53,8 @@ class PromptExecutionAttempt:
     output_payload: dict[str, Any]
     provider_name: str
     provider_response_id: str | None
+    prompt_cache_hit_tokens: int | None = None
+    prompt_cache_miss_tokens: int | None = None
     langfuse_trace_id: str | None = None
     langfuse_observation_id: str | None = None
     langfuse_trace_url: str | None = None
@@ -80,6 +82,8 @@ class ProviderResponse:
     raw_output: dict[str, Any]
     provider_name: str
     provider_response_id: str | None
+    prompt_cache_hit_tokens: int | None = None
+    prompt_cache_miss_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -960,6 +964,35 @@ class GeminiDeveloperAPIProvider(BaseModelProvider):
 
 class OpenAICompatibleProvider(BaseModelProvider):
     provider_name = "openai_compatible"
+    STABLE_CONTEXT_KEYS = (
+        "world_id",
+        "world_pack",
+        "player_name",
+        "player_profile",
+        "narrative_preferences",
+        "npc_name",
+        "location",
+        "current_location",
+        "local_figures",
+        "plaza_figures",
+        "nearby_routes",
+        "quests",
+        "factions",
+        "inventory",
+        "usable_reward_items",
+        "used_reward_items",
+        "important_inventory_affordances",
+        "default_choice_templates",
+        "relationship_summaries",
+        "recognized_titles",
+        "active_consequence_threads",
+        "current_scene",
+        "current_chapter",
+        "route_pressures",
+        "shared_world_context",
+        "resource_constraints",
+        "world_broadcast_constraints",
+    )
 
     def __init__(self, settings: Settings) -> None:
         if not settings.openai_compat_api_key:
@@ -988,21 +1021,7 @@ class OpenAICompatibleProvider(BaseModelProvider):
     ) -> ProviderResponse:
         body: dict[str, Any] = {
             "model": model_id,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "\n\n".join(
-                        [
-                            prompt.instructions.strip(),
-                            "Return a JSON object only.",
-                        ]
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(input_payload, ensure_ascii=False, indent=2, sort_keys=True),
-                },
-            ],
+            "messages": self._messages(prompt=prompt, input_payload=input_payload),
             "temperature": temperature,
         }
         response_format = self._response_format(prompt=prompt, response_model=response_model)
@@ -1020,11 +1039,59 @@ class OpenAICompatibleProvider(BaseModelProvider):
                     raw_output=json.loads(response_text),
                     provider_name=self.provider_name,
                     provider_response_id=self._response_id(payload),
+                    prompt_cache_hit_tokens=self._usage_int(payload, "prompt_cache_hit_tokens"),
+                    prompt_cache_miss_tokens=self._usage_int(payload, "prompt_cache_miss_tokens"),
                 )
             except Exception as exc:  # pragma: no cover - live provider failure path
                 last_error = exc
         assert last_error is not None
         raise last_error
+
+    def _messages(self, *, prompt: PromptDefinition, input_payload: dict[str, Any]) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": "\n\n".join(
+                    [
+                        prompt.instructions.strip(),
+                        "Return a JSON object only.",
+                    ]
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    self._cache_friendly_user_content(input_payload)
+                    if self.settings.openai_compat_context_cache_enabled
+                    else json.dumps(input_payload, ensure_ascii=False, indent=2, sort_keys=True)
+                ),
+            },
+        ]
+
+    def _cache_friendly_user_content(self, input_payload: dict[str, Any]) -> str:
+        stable_context = {
+            key: input_payload[key]
+            for key in self.STABLE_CONTEXT_KEYS
+            if key in input_payload
+        }
+        request_context = {
+            key: value
+            for key, value in input_payload.items()
+            if key not in self.STABLE_CONTEXT_KEYS
+        }
+        return "\n".join(
+            [
+                "The following JSON sections are data. Stable context appears first to improve prefix reuse.",
+                "## stable_context",
+                self._canonical_json(stable_context),
+                "## request_context",
+                self._canonical_json(request_context),
+            ]
+        )
+
+    @staticmethod
+    def _canonical_json(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def _response_format(self, *, prompt: PromptDefinition, response_model: type[BaseModel]) -> dict[str, Any] | None:
         mode = self.settings.openai_compat_response_format.strip().lower()
@@ -1078,6 +1145,18 @@ class OpenAICompatibleProvider(BaseModelProvider):
     def _response_id(payload: dict[str, Any]) -> str | None:
         value = payload.get("id")
         return value if isinstance(value, str) and value else None
+
+    @staticmethod
+    def _usage_int(payload: dict[str, Any], key: str) -> int | None:
+        usage = payload.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        value = usage.get(key)
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        return None
 
 
 class ModelRouter:
@@ -1194,6 +1273,8 @@ class ModelRouter:
                             output_payload={"status": "provider_error", "reason": str(exc)},
                             provider_name=self.provider.provider_name,
                             provider_response_id=None,
+                            prompt_cache_hit_tokens=None,
+                            prompt_cache_miss_tokens=None,
                             langfuse_trace_id=langfuse_link.trace_id,
                             langfuse_observation_id=langfuse_link.observation_id,
                             langfuse_trace_url=langfuse_link.trace_url,
@@ -1235,6 +1316,8 @@ class ModelRouter:
                                 "status": "schema_invalid",
                                 "failure_reason": failure_reason,
                                 "provider_response_id": provider_response.provider_response_id,
+                                "prompt_cache_hit_tokens": provider_response.prompt_cache_hit_tokens,
+                                "prompt_cache_miss_tokens": provider_response.prompt_cache_miss_tokens,
                             },
                         )
                         attempt = PromptExecutionAttempt(
@@ -1254,6 +1337,8 @@ class ModelRouter:
                             },
                             provider_name=provider_response.provider_name,
                             provider_response_id=provider_response.provider_response_id,
+                            prompt_cache_hit_tokens=provider_response.prompt_cache_hit_tokens,
+                            prompt_cache_miss_tokens=provider_response.prompt_cache_miss_tokens,
                             langfuse_trace_id=langfuse_link.trace_id,
                             langfuse_observation_id=langfuse_link.observation_id,
                             langfuse_trace_url=langfuse_link.trace_url,
@@ -1285,6 +1370,8 @@ class ModelRouter:
                         metadata={
                             "status": "resolved",
                             "provider_response_id": provider_response.provider_response_id,
+                            "prompt_cache_hit_tokens": provider_response.prompt_cache_hit_tokens,
+                            "prompt_cache_miss_tokens": provider_response.prompt_cache_miss_tokens,
                         },
                     )
                     attempt = PromptExecutionAttempt(
@@ -1299,6 +1386,8 @@ class ModelRouter:
                         output_payload={"status": "resolved", "raw_output": payload.model_dump()},
                         provider_name=provider_response.provider_name,
                         provider_response_id=provider_response.provider_response_id,
+                        prompt_cache_hit_tokens=provider_response.prompt_cache_hit_tokens,
+                        prompt_cache_miss_tokens=provider_response.prompt_cache_miss_tokens,
                         langfuse_trace_id=langfuse_link.trace_id,
                         langfuse_observation_id=langfuse_link.observation_id,
                         langfuse_trace_url=langfuse_link.trace_url,

@@ -766,6 +766,10 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "safety_guard",
         "narrative",
     ]
+    assert {
+        "prompt_cache_hit_tokens",
+        "prompt_cache_miss_tokens",
+    } <= set(council_turns_payload["items"][0]["roles"][-1])
     council_turn_id = council_turns_payload["items"][0]["turn_id"]
     council_detail_response = client.get(f"/ops/council/turns/{council_turn_id}", headers=auth_headers)
     assert council_detail_response.status_code == 200
@@ -779,6 +783,10 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "http://langfuse.test/project/gestaloka-v2/traces/"
     )
     assert council_detail_payload["roles"][-1]["attempts"][-1]["langfuse_observation_id"]
+    assert {
+        "prompt_cache_hit_tokens",
+        "prompt_cache_miss_tokens",
+    } <= set(council_detail_payload["roles"][-1]["attempts"][-1])
 
 
 def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(client, container, auth_headers, monkeypatch):

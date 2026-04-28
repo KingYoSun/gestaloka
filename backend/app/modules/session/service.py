@@ -464,6 +464,8 @@ def _persist_role_runs(
                     model_lane=attempt.model_lane,
                     provider_name=attempt.provider_name,
                     provider_response_id=attempt.provider_response_id,
+                    prompt_cache_hit_tokens=attempt.prompt_cache_hit_tokens,
+                    prompt_cache_miss_tokens=attempt.prompt_cache_miss_tokens,
                     input_hash=attempt.input_hash,
                     input_context_hash=attempt.input_context_hash,
                     schema_version=attempt.schema_version,

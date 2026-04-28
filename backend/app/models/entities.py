@@ -692,6 +692,8 @@ class LLMRun(Base, TimestampMixin):
     model_lane: Mapped[str] = mapped_column(String(32))
     provider_name: Mapped[str] = mapped_column(String(64), default="stub")
     provider_response_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    prompt_cache_hit_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_cache_miss_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     input_hash: Mapped[str] = mapped_column(String(128))
     input_context_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     schema_version: Mapped[str] = mapped_column(String(32))

@@ -92,6 +92,8 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "approval_status",
         "provider_name",
         "provider_response_id",
+        "prompt_cache_hit_tokens",
+        "prompt_cache_miss_tokens",
         "input_context_hash",
         "langfuse_trace_id",
         "langfuse_observation_id",
