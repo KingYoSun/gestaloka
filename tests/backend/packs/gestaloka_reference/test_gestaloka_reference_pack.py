@@ -91,6 +91,15 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
         item["destination_key"] == "oblivion_breach" and item["available"]
         for item in post_use_state.json()["nearby_routes"]
     )
+    assert not any(
+        "The breach route stays sealed until Nexus recognizes the writ." in item["summary"]
+        for item in post_use_state.json()["nearby_routes"]
+    )
+    assert any(
+        item["destination_key"] == "oblivion_breach"
+        and "recognized writ opens the restoration route" in item["summary"]
+        for item in post_use_state.json()["nearby_routes"]
+    )
     assert all(len(item["summary"]) <= 80 for item in post_use_state.json()["next_choices"])
     assert not any("arrival_clarity" in item["summary"] for item in post_use_state.json()["next_choices"])
 
@@ -103,6 +112,18 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
     travel_payload = travel_turn.json()
     assert travel_payload["action_type"] == "travel"
     assert travel_payload["current_location"]["key"] == "oblivion_breach"
+    assert "The breach route stays sealed until Nexus recognizes the writ." not in travel_payload["travel_summary"]
+
+    post_travel_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert post_travel_state.status_code == 200
+    assert any(
+        "recognized writ opens the restoration route" in item
+        for item in post_travel_state.json()["recent_travel_history"]
+    )
+    assert not any(
+        "The breach route stays sealed until Nexus recognizes the writ." in item
+        for item in post_travel_state.json()["recent_travel_history"]
+    )
 
 
 def test_gestaloka_reference_restore_canonizes_history_and_recognizes_title_without_sp_side_effects(

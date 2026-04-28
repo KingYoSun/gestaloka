@@ -187,6 +187,39 @@ def _seed_routes(db: Session, world_id: str) -> list[dict[str, Any]]:
     return [item.model_dump(by_alias=True) for item in template.routes]
 
 
+def _route_unlock_requirements_from_seed(payload: dict[str, Any]) -> dict[str, Any]:
+    requirements = dict(payload.get("unlock_requirements") or {})
+    locked_summary = str(payload.get("locked_travel_summary") or "").strip()
+    unlocked_summary = str(payload.get("unlocked_travel_summary") or "").strip()
+    if locked_summary:
+        requirements["locked_travel_summary"] = locked_summary
+    if unlocked_summary:
+        requirements["unlocked_travel_summary"] = unlocked_summary
+    return requirements
+
+
+def _route_seed_display_summary(payload: dict[str, Any], *, status_value: str) -> str:
+    summary = str(payload.get("travel_summary") or "").strip()
+    locked_summary = str(payload.get("locked_travel_summary") or "").strip()
+    unlocked_summary = str(payload.get("unlocked_travel_summary") or "").strip()
+    if status_value == ROUTE_STATUS_OPEN:
+        return summary or unlocked_summary or locked_summary
+    return locked_summary or summary or unlocked_summary
+
+
+def _route_display_summary(route: LocationRoute) -> str:
+    metadata = dict(route.unlock_requirements_json or {})
+    if route.status == ROUTE_STATUS_OPEN:
+        summary = str(metadata.get("unlocked_travel_summary") or "").strip()
+        if summary:
+            return summary
+    else:
+        summary = str(metadata.get("locked_travel_summary") or "").strip()
+        if summary:
+            return summary
+    return route.travel_summary.strip()
+
+
 def _starter_location_key(db: Session, world_id: str) -> str:
     return str(_seed_section(db, world_id, "roles").get("starter_location_key") or "starter")
 
@@ -293,6 +326,7 @@ def ensure_location_routes(db: Session, world_id: str, *, locations_by_key: dict
             select(LocationRoute).where(LocationRoute.world_id == world_id, LocationRoute.route_key == route_key_name)
         ).scalar_one_or_none()
         default_status = str(payload.get("status") or ROUTE_STATUS_OPEN)
+        unlock_requirements = _route_unlock_requirements_from_seed(payload)
         if route is None:
             route = LocationRoute(
                 id=route_id(world_id, route_key_name),
@@ -301,16 +335,16 @@ def ensure_location_routes(db: Session, world_id: str, *, locations_by_key: dict
                 to_location_id=resolved_locations[to_key].id,
                 route_key=route_key_name,
                 status=default_status,
-                travel_summary=str(payload.get("travel_summary") or ""),
-                unlock_requirements_json=dict(payload.get("unlock_requirements") or {}),
+                travel_summary=_route_seed_display_summary(payload, status_value=default_status),
+                unlock_requirements_json=unlock_requirements,
             )
             db.add(route)
             db.flush()
         else:
             route.from_location_id = resolved_locations[from_key].id
             route.to_location_id = resolved_locations[to_key].id
-            route.travel_summary = str(payload.get("travel_summary") or route.travel_summary or "")
-            route.unlock_requirements_json = dict(payload.get("unlock_requirements") or route.unlock_requirements_json or {})
+            route.travel_summary = _route_seed_display_summary(payload, status_value=route.status) or route.travel_summary
+            route.unlock_requirements_json = unlock_requirements or dict(route.unlock_requirements_json or {})
             if route.status not in {ROUTE_STATUS_OPEN, ROUTE_STATUS_LOCKED}:
                 route.status = default_status
             db.flush()
@@ -774,7 +808,7 @@ def get_location_route(
 
 def _route_summary(route: LocationRoute, to_location: Location) -> dict[str, Any]:
     available = route.status == ROUTE_STATUS_OPEN
-    summary = route.travel_summary.strip()
+    summary = _route_display_summary(route)
     destination_key = str((to_location.state or {}).get("key") or "")
     if not summary:
         summary = (
@@ -903,15 +937,16 @@ def travel_to_location(
         raise ValueError("Travel route is not open")
 
     actor.current_location_id = destination.id
+    route_summary = _route_display_summary(route)
     location_updates = [
         {
             "from_location": get_location_summary(db, world_id, origin_location.id),
             "to_location": get_location_summary(db, world_id, destination.id),
-            "summary": route.travel_summary or f"{origin_location.name}から{destination.name}へ移動した。",
+            "summary": route_summary or f"{origin_location.name}から{destination.name}へ移動した。",
             "action": "arrived",
         }
     ]
-    travel_summary = str(route.travel_summary or f"{destination.name}へ移動した。").strip()
+    travel_summary = str(route_summary or f"{destination.name}へ移動した。").strip()
     event_payload = {
         "world_id": world_id,
         "route_id": route.id,
@@ -1478,7 +1513,7 @@ def list_locations_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
                 "route_id": route.id,
                 "route_key": route.route_key,
                 "status": route.status,
-                "travel_summary": route.travel_summary,
+                "travel_summary": _route_display_summary(route),
                 "to_location_id": to_location.id,
                 "to_location_name": to_location.name,
             }

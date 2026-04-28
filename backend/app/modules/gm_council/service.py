@@ -246,6 +246,45 @@ class GMCouncilService:
         return "steady"
 
     @staticmethod
+    def _scene_move_for_context(
+        *,
+        session_state: dict[str, Any],
+        selected_choice: dict[str, Any] | None,
+        action_kind: str,
+        consequence_tags: list[str],
+        raw_scene_move: str,
+    ) -> Literal["hold", "deepen", "pivot", "close"]:
+        if "overreach" in set(normalize_consequence_tags(consequence_tags)):
+            return "deepen"
+        if action_kind != "narrative":
+            return raw_scene_move if raw_scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
+        posture = str((selected_choice or {}).get("posture") or "")
+        if posture != "progress":
+            return raw_scene_move if raw_scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
+        active_quest = GMCouncilService._active_quest(session_state)
+        world_pack = session_state.get("world_pack") or {}
+        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
+        stage_key = str(active_quest.get("stage_key") or starter_stage_key)
+        if stage_key == starter_stage_key:
+            return "hold"
+        return raw_scene_move if raw_scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
+
+    @staticmethod
+    def _risk_level_for_context(
+        *,
+        input_text: str,
+        consequence_tags: list[str],
+        raw_risk_level: str,
+    ) -> Literal["low", "medium", "high"]:
+        normalized_text = input_text.lower()
+        normalized_tags = set(normalize_consequence_tags(consequence_tags))
+        if "overreach" in normalized_tags or any(
+            token in input_text or token in normalized_text for token in ("無理", "impossible", "空を飛", "teleport", "爆破")
+        ):
+            return "low"
+        return raw_risk_level if raw_risk_level in {"low", "medium", "high"} else "low"
+
+    @staticmethod
     def _canonical_intent_consequence_tags(
         *,
         input_mode: Literal["choice", "free_text"],
@@ -639,6 +678,18 @@ class GMCouncilService:
             raw_world_tags=list(world_progress_payload.world_tags),
         )
         world_progress_payload.outcome_band = self._outcome_band_from_tags(list(world_progress_payload.consequence_tags))
+        world_progress_payload.scene_move = self._scene_move_for_context(
+            session_state=request.session_state,
+            selected_choice=request.selected_choice,
+            action_kind=intent_payload.canonical_action_kind,
+            consequence_tags=list(world_progress_payload.consequence_tags),
+            raw_scene_move=world_progress_payload.scene_move,
+        )
+        world_progress_payload.risk_level = self._risk_level_for_context(
+            input_text=request.input_text,
+            consequence_tags=list(world_progress_payload.consequence_tags),
+            raw_risk_level=world_progress_payload.risk_level,
+        )
         high_risk = world_progress_payload.risk_level == "high"
 
         rules_input = {

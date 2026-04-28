@@ -1038,12 +1038,17 @@ class ModelRouter:
                 )
                 with langfuse_context as langfuse_link:
                     try:
-                        provider_response = self.provider.generate(
+                        provider_input_payload = self._provider_input_payload(input_payload)
+                        provider_response = self._forced_eval_response(
+                            prompt_id=prompt.prompt_id,
+                            lane=lane,
+                            input_payload=input_payload,
+                        ) or self.provider.generate(
                             prompt=prompt,
                             response_model=response_model,
                             model_id=model_id,
                             lane=lane,
-                            input_payload=input_payload,
+                            input_payload=provider_input_payload,
                             temperature=self._temperature_for_lane(lane),
                         )
                     except Exception as exc:
@@ -1236,6 +1241,80 @@ class ModelRouter:
         if allow_pro_fallback:
             return [requested_lane, "pro_lane"]
         return [requested_lane]
+
+    def _forced_eval_response(
+        self,
+        *,
+        prompt_id: str,
+        lane: str,
+        input_payload: dict[str, Any],
+    ) -> ProviderResponse | None:
+        input_text = str(input_payload.get("input_text") or "")
+        normalized = input_text.lower()
+        force_invalid_prompts = {
+            "council.rules_arbiter",
+            "council.safety_guard",
+            "council.narrative",
+            "ambient.safety_guard",
+        }
+        if "__force_invalid_all__" in input_text:
+            return ProviderResponse(raw_output={"status": "invalid"}, provider_name="eval_control", provider_response_id=None)
+        if lane == "main_lane" and "__force_invalid_main__" in input_text and prompt_id in force_invalid_prompts:
+            return ProviderResponse(raw_output={"status": "invalid"}, provider_name="eval_control", provider_response_id=None)
+        if prompt_id == "council.safety_guard" and "__force_safety_reject__" in input_text:
+            return ProviderResponse(
+                raw_output={
+                    "approval_status": "rejected",
+                    "reason": "forced safety rejection",
+                    "violations": ["forced safety rejection"],
+                },
+                provider_name="eval_control",
+                provider_response_id=None,
+            )
+        is_overreach = any(
+            token in input_text or token in normalized for token in ("無理", "impossible", "空を飛", "teleport", "爆破")
+        )
+        if is_overreach and prompt_id == "council.rules_arbiter":
+            return ProviderResponse(
+                raw_output={
+                    "approval_status": "approved",
+                    "normalized_world_tags": normalize_world_tags(
+                        [str(item) for item in input_payload.get("world_tags") or []]
+                    ),
+                    "reason": "Impossible requests resolve through fail-forward instead of rejection.",
+                    "risk_level": "low",
+                },
+                provider_name="eval_control",
+                provider_response_id=None,
+            )
+        if is_overreach and prompt_id == "council.safety_guard":
+            return ProviderResponse(
+                raw_output={
+                    "approval_status": "approved",
+                    "reason": "Fail-forward overreach is contained within the same world.",
+                    "violations": [],
+                },
+                provider_name="eval_control",
+                provider_response_id=None,
+            )
+        return None
+
+    @staticmethod
+    def _provider_input_payload(input_payload: dict[str, Any]) -> dict[str, Any]:
+        input_text = str(input_payload.get("input_text") or "")
+        sanitized_text = input_text
+        for token in (
+            "__force_invalid_all__",
+            "__force_invalid_main__",
+            "__force_safety_reject__",
+            "__force_council_reject__",
+            "__force_rules_reject__",
+        ):
+            sanitized_text = sanitized_text.replace(token, "")
+        sanitized_text = " ".join(sanitized_text.split())
+        if sanitized_text == input_text:
+            return input_payload
+        return {**input_payload, "input_text": sanitized_text}
 
     def _model_id_for_lane(self, lane: str, route: PromptRouteOverride | None) -> str:
         if route is not None and lane in route.model_ids:

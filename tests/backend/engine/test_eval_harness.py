@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry
-from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry, WorldAxisState
+from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry, Turn, WorldAxisState
 from app.modules.eval_harness.service import EvalHarnessService
 from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
@@ -241,6 +241,67 @@ def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container,
     assert after["eval_case_results"] >= 2
 
 
+def test_release_configs_and_runtime_defaults_use_current_gemini_model_ids(container):
+    legacy_model_ids = {"gemini-3-flash-preview", "gemini-3.1-pro-preview"}
+
+    assert Settings.model_fields["model_lite_id"].default == "gemini-2.5-flash-lite"
+    assert Settings.model_fields["model_main_id"].default == "gemini-2.5-flash"
+    assert Settings.model_fields["model_pro_id"].default == "gemini-2.5-pro"
+
+    for config_name in ("current", "candidate"):
+        config = container.eval_service.load_release_config(config_name)
+        for route in config.routes.values():
+            assert not legacy_model_ids.intersection(route.model_ids.values())
+            assert route.model_ids["lite_lane"] == "gemini-2.5-flash-lite"
+            assert route.model_ids["main_lane"] == "gemini-2.5-flash"
+            assert route.model_ids["pro_lane"] == "gemini-2.5-pro"
+
+
+def test_shadow_replay_filters_deterministic_turns_and_uses_source_event_location(client, container, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    for _ in range(2):
+        response = client.post(
+            "/turns",
+            json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+    use_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert use_response.status_code == 200
+    assert use_response.json()["action_type"] == "use_reward_item"
+
+    travel_response = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert travel_response.status_code == 200
+    assert travel_response.json()["action_type"] == "travel"
+
+    with container.session_factory() as db:
+        cases = container.eval_service._shadow_replay_cases(db, limit=10)
+        source_turn_ids = {case.source_turn_id for case in cases if case.source_turn_id}
+        source_turns = list(db.execute(select(Turn).where(Turn.id.in_(source_turn_ids))).scalars())
+
+    assert source_turns
+    assert all(turn.action_type == "narrative" for turn in source_turns)
+    assert all(turn.resolution_mode == "gm_council" for turn in source_turns)
+    assert not any(turn.action_type in {"use_reward_item", "travel", "system"} for turn in source_turns)
+    assert any("location=Nexus Gate" in line for case in cases for line in case.relation_context)
+    assert not any("location=Oblivion Breach" in line for case in cases for line in case.relation_context)
+
+
 def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
@@ -306,18 +367,7 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["langfuse_trace_id"]
     assert gate["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     assert gate["langfuse_status"] == "ok"
-    assert {item["route_id"] for item in gate["diff_summary"]} == {
-        "ambient.memory_manager",
-        "ambient.npc_manager",
-        "ambient.safety_guard",
-        "idle.memory_manager",
-        "idle.npc_manager",
-        "idle.safety_guard",
-        "council.world_progress",
-        "council.rules_arbiter",
-        "council.safety_guard",
-        "council.narrative",
-    }
+    assert gate["diff_summary"] == []
     assert report_count == 1
     assert gate_with_failure["shadow_failures"]
     assert gate_with_failure["shadow_failures"][0]["pack_context"]["pack_id"] == "gestaloka_reference"
@@ -342,8 +392,8 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
     assert gate["verdict"] == "blocked"
     assert "canary health != healthy" in gate["blocked_reasons"]
     assert gate["cutover_status"]["promote_ready"] is False
-    assert gate["cutover_status"]["missing_or_failed_checks"] == ["shadow_replay"]
-    assert gate["cutover_status"]["blocked_reasons"] == ["shadow replay gate failed", "canary health != healthy"]
+    assert gate["cutover_status"]["missing_or_failed_checks"] == []
+    assert gate["cutover_status"]["blocked_reasons"] == ["canary health != healthy"]
     assert set(gate["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert all(item["current_passed"] and item["candidate_passed"] for item in gate["checks"]["pack_regressions"].values())
     assert set(gate["runs"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}

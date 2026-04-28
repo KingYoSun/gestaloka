@@ -186,6 +186,8 @@ class PackRoute(BaseModel):
     to_location_key: str = Field(alias="to", min_length=1, max_length=120)
     status: str = "open"
     travel_summary: str = ""
+    locked_travel_summary: str = ""
+    unlocked_travel_summary: str = ""
     unlock_requirements: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)

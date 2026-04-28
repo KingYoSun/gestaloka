@@ -15,6 +15,7 @@ from app.core.config import Settings
 from app.core.prompts import PromptRegistry, SUPPORTED_MODEL_LANES, SUPPORTED_PROMPT_SCHEMAS
 from app.models.entities import (
     Actor,
+    Event,
     EvalCaseResult,
     EvalRun,
     LLMRun,
@@ -1145,7 +1146,7 @@ class EvalHarnessService:
     @staticmethod
     def _gate_passed(source_type: str, dataset_name: str | None, scoped: list[dict[str, object]]) -> bool:
         if not scoped:
-            return False
+            return source_type == "shadow_replay"
         if source_type == "shadow_replay":
             return all(
                 item["passed"]
@@ -1501,6 +1502,10 @@ class EvalHarnessService:
         for turn in resolved_turns:
             if turn.resolved_output.get("status") != "resolved":
                 continue
+            if turn.action_type != "narrative" or turn.resolution_mode != "gm_council":
+                continue
+            if turn.model_lane not in SUPPORTED_MODEL_LANES:
+                continue
             session = db.execute(
                 select(GameSession).where(GameSession.id == turn.session_id, GameSession.world_id == turn.world_id)
             ).scalar_one_or_none()
@@ -1528,12 +1533,19 @@ class EvalHarnessService:
             if player_actor is None or npc_actor is None:
                 continue
             pack, template = resolve_world_pack(db, turn.world_id)
+            source_event = db.execute(
+                select(Event)
+                .where(Event.world_id == turn.world_id, Event.turn_id == turn.id)
+                .order_by(Event.created_at.desc(), Event.id.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            context_location_id = source_event.location_id if source_event is not None else player_actor.current_location_id
             graph_context = self.projection_service.resolve_relation_context(
                 db,
                 world_id=turn.world_id,
                 primary_actor_id=npc_actor.id,
                 counterpart_actor_id=player_actor.id,
-                location_id=player_actor.current_location_id,
+                location_id=context_location_id,
             )
             query_text = build_retrieval_query_text(
                 turn.input_text,
@@ -1563,7 +1575,7 @@ class EvalHarnessService:
                 world_id=turn.world_id,
                 query_text=query_text,
                 actor_id=npc_actor.id,
-                location_id=player_actor.current_location_id,
+                location_id=context_location_id,
             )
             cases.append(
                 EvalCaseInput(

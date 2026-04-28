@@ -223,14 +223,18 @@ world_templates:
         from: nexus_gate
         to: oblivion_breach
         status: locked
-        travel_summary: The breach route stays sealed until Nexus recognizes the writ.
+        travel_summary: The recognized writ opens the restoration route toward Oblivion Breach.
+        locked_travel_summary: The breach route stays sealed until Nexus recognizes the writ.
+        unlocked_travel_summary: The recognized writ opens the restoration route toward Oblivion Breach.
         unlock_requirements:
           starter_item_effect: unlock_oblivion_breach_route
       - route_key: breach_to_gate
         from: oblivion_breach
         to: nexus_gate
         status: locked
-        travel_summary: The restoration route bends back to Nexus Gate once the writ has opened it.
+        travel_summary: The restoration route bends back to Nexus Gate under the recognized writ.
+        locked_travel_summary: The restoration route waits until the writ opens the breach path from Nexus Gate.
+        unlocked_travel_summary: The restoration route bends back to Nexus Gate under the recognized writ.
         unlock_requirements:
           starter_item_effect: unlock_oblivion_breach_route
     faction:
