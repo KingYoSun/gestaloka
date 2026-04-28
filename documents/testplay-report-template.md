@@ -1,7 +1,7 @@
-# Testplay Report Template
+# テストプレイレポートテンプレート
 
 このテンプレートは、[testplay-runbook.md](testplay-runbook.md) または
-[codex-playwright-mcp-testplay.md](codex-playwright-mcp-testplay.md) に沿った動作テスト・UX 評価の記録用です。
+[codex-playwright-mcp-testplay.md](codex-playwright-mcp-testplay.md) に沿った手動テストプレイ、Playwright MCP 確認、UX 評価の記録用です。
 
 ## 1. 実施情報
 
@@ -16,87 +16,103 @@
   - Admin UI:
   - Backend health:
   - Langfuse:
+- 対象 bundled pack:
+  - `GESTALOKA Reference / Nexus Foundation`
 
 ## 2. 事前検証
 
-| Check | Command | Result | Notes |
+| 確認 | コマンド | 結果 | メモ |
 | --- | --- | --- | --- |
-| v2 verify | `make verify-v2` |  |  |
-| shared world regressions | `make shared-world-regressions` |  |  |
-| frontend e2e | `make frontend-e2e` |  |  |
-| canary probe | `make canary-probe` |  |  |
-| release checklist | `make release-checklist` |  |  |
+| v2 公式検証 | `make verify-v2` |  | backend / pack / leak scan / v1 term scan / legacy check / shared-world / pack regression / frontend build / E2E |
+| pack catalog | `make pack-validate` |  | `status=ready`、`failure_count=0` を確認 |
+| pack leak scan | `make scan-pack-leaks` |  | engine/frontend runtime への bundled pack 固有語混入を確認 |
+| shared-world regressions | `make shared-world-regressions` |  | shared-world health と pack smoke を確認 |
+| pack regressions | `make eval-pack-regressions` |  | `turn_resolution_gestaloka_regression` を確認 |
+| frontend E2E | `make frontend-e2e` |  | `gestaloka-reference-smoke.spec.ts` と mobile overflow を確認 |
+| canary probe | `make canary-probe` |  | `make canary-up` 後に実行 |
+| release checklist | `make release-checklist` |  | compose stack の `backend` container 内で gate を実行 |
+
+結果値: `pass`, `fail`, `blocked`, `not run`。
 
 ## 3. Playwright MCP 実施結果
 
-| Area | Target | Result | Evidence | Notes |
+| 領域 | 対象 | 結果 | 証跡 | メモ |
 | --- | --- | --- | --- | --- |
-| Preflight | login / health / initial render |  |  |  |
-| GESTALOKA Reference | reference smoke flow |  |  |  |
-| Admin / Ops | catalog / projection / graph / SP / observability |  |  |  |
-| Release Dry-run | release gate / runbook display |  |  |  |
-
-Result values: `pass`, `fail`, `blocked`, `not run`.
+| Preflight | login / health / 初期描画 |  |  |  |
+| Player profile | profile 作成・選択 / start-session 無効状態 |  |  |  |
+| GESTALOKA Reference | Nexus Gate から Oblivion Breach までの smoke flow |  |  |  |
+| Player state | quest / inventory / route / travel / relationship / world beats |  |  |  |
+| Admin / Packs | dashboard / pack catalog / scaffold / archive import / publish status |  |  |  |
+| Admin / Config | users / LLM settings / model lanes / prompts / SP |  |  |  |
+| Release Dry-run | canary / release gate / runbook 表示 |  |  |  |
+| Responsive | desktop / 375x812 mobile |  |  |  |
 
 ## 4. UX 評価
 
-| Area | Rating | Observation | Suggested change |
+| 領域 | 評価 | 観察 | 改善案 |
 | --- | --- | --- | --- |
 | Login |  |  |  |
 | World select |  |  |  |
+| Player profile |  |  |  |
 | Turn execution wait |  |  |  |
 | Choice / free text switch |  |  |  |
 | SP shortage recovery |  |  |  |
 | Player streams readability |  |  |  |
+| Admin navigation |  |  |  |
 | Admin information density |  |  |  |
+| Admin world-pack operations |  |  |  |
 | Error display |  |  |  |
 | Responsive layout |  |  |  |
 | Release gate readability |  |  |  |
 
-Rating values: `good`, `acceptable`, `needs work`, `blocked`.
+評価値: `good`, `acceptable`, `needs work`, `blocked`。
 
-## 5. Bugs / Regressions
+## 5. 不具合 / 回帰
 
 ### Issue 1
 
-- Severity:
-- Status:
-- Area:
+- 重大度:
+- 状態:
+- 領域:
 - URL:
-- World pack:
-- Session id:
-- Operation:
-- Expected:
-- Actual:
-- Evidence:
-- Reproduction steps:
-- Suggested fix:
+- world pack:
+- world template:
+- session id:
+- world id:
+- 操作:
+- 期待:
+- 実際:
+- 証跡:
+- 再現手順:
+- 推奨修正:
 
 ### Issue 2
 
-- Severity:
-- Status:
-- Area:
+- 重大度:
+- 状態:
+- 領域:
 - URL:
-- World pack:
-- Session id:
-- Operation:
-- Expected:
-- Actual:
-- Evidence:
-- Reproduction steps:
-- Suggested fix:
+- world pack:
+- world template:
+- session id:
+- world id:
+- 操作:
+- 期待:
+- 実際:
+- 証跡:
+- 再現手順:
+- 推奨修正:
 
-## 6. Commands Run
+## 6. 実行コマンド
 
 ```bash
-# Paste commands and final result summaries here.
+# 実行したコマンドと最終結果の要約を貼る。
 ```
 
-## 7. Final Summary
+## 7. 最終まとめ
 
-- Overall result:
-- Packs completed:
-- Release readiness:
-- Remaining risks:
-- Follow-up tickets / tasks:
+- 総合結果:
+- 完了した pack / template:
+- release readiness:
+- 残リスク:
+- follow-up ticket / task:
