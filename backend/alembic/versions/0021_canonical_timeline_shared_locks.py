@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "0021_canonical_timeline_shared_locks"
+revision = "0021_timeline_locks"
 down_revision = "0020_player_profiles"
 branch_labels = None
 depends_on = None

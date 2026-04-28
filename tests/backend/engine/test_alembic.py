@@ -4,6 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 
 
@@ -127,3 +128,18 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     assert {"resource_type", "resource_id", "holder_turn_id", "expires_at", "constraint_summary"} <= resource_lock_columns
     assert {"semantic_key", "lifecycle_kind", "affected_location_ids", "constraint_text"} <= broadcast_event_columns
     assert {"broadcast_event_id", "session_id", "actor_id", "status", "consumed_at"} <= broadcast_delivery_columns
+
+
+def test_alembic_revision_ids_fit_default_version_table():
+    repo_root = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists() and (parent / "backend").is_dir())
+    alembic_path = repo_root / "backend" / "alembic.ini"
+
+    config = Config(str(alembic_path))
+    config.set_main_option("script_location", str(repo_root / "backend" / "alembic"))
+
+    overlong_revisions = [
+        script.revision
+        for script in ScriptDirectory.from_config(config).walk_revisions()
+        if script.revision is not None and len(script.revision) > 32
+    ]
+    assert overlong_revisions == []
