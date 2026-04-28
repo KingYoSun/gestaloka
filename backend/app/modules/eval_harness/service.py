@@ -642,22 +642,37 @@ class EvalHarnessService:
             for dataset_name in PACK_REGRESSION_DATASETS
             if dataset_name in filtered_pack_regression_names
         }
-        shadow_failures = [
-            {
-                "case_id": item.case_id,
-                "variant": item.variant,
-                "lane": item.lane,
-                "pack_context": _pack_context_from_raw_output(item.raw_output),
-                "graph_context_status": item.graph_context_status,
-                "retrieval_status": item.raw_output.get("retrieval_trace", {}).get("status"),
-                "retrieval_hit_count": len(item.raw_output.get("retrieval_trace", {}).get("retrieved_memory_ids", [])),
-                "failure_reason": item.failure_reason,
-            }
-            for item in shadow_results
-            if not item.passed
-            or item.graph_context_status != "ready"
-            or item.raw_output.get("retrieval_trace", {}).get("status") != "ready"
-        ]
+        shadow_failures = []
+        for item in shadow_results:
+            raw_output = item.raw_output if isinstance(item.raw_output, dict) else {}
+            retrieval_trace = raw_output.get("retrieval_trace", {})
+            retrieval_trace = retrieval_trace if isinstance(retrieval_trace, dict) else {}
+            retrieval_status = retrieval_trace.get("status")
+            retrieval_hit_count = len(retrieval_trace.get("retrieved_memory_ids", []))
+            retrieval_required = bool(raw_output.get("retrieval_required", False))
+            if (
+                item.passed
+                and item.graph_context_status == "ready"
+                and retrieval_status == "ready"
+                and (not retrieval_required or retrieval_hit_count >= 1)
+            ):
+                continue
+            failure_categories = self._case_failure_categories_from_result(item)
+            shadow_failures.append(
+                {
+                    "case_id": item.case_id,
+                    "variant": item.variant,
+                    "lane": item.lane,
+                    "pack_context": _pack_context_from_raw_output(raw_output),
+                    "graph_context_status": item.graph_context_status,
+                    "retrieval_status": retrieval_status,
+                    "retrieval_hit_count": retrieval_hit_count,
+                    "retrieval_required": retrieval_required,
+                    "failure_categories": failure_categories,
+                    "failure_diagnostics": ", ".join(failure_categories) or "unclassified failure",
+                    "failure_reason": item.failure_reason,
+                }
+            )
         shadow_failures = [
             item
             for item in shadow_failures
@@ -889,7 +904,15 @@ class EvalHarnessService:
             "relevant_memories": case.relevant_memories,
             "retrieved_memories": retrieved_memories,
             "retrieval_trace": retrieval_trace_to_dict(retrieval_trace),
+            "retrieval_required": bool(case.expect_retrieval_min_hits or case.expect_retrieval_hit_substring),
             "relation_context": case.relation_context,
+            "expectations": {
+                "final_lane": case.expect_final_lane,
+                "fallback": case.expect_fallback,
+                "retrieval_status": case.expect_retrieval_status,
+                "retrieval_min_hits": case.expect_retrieval_min_hits,
+                "retrieval_hit_substring": case.expect_retrieval_hit_substring,
+            },
             "role_runs": [
                 {
                     "council_role": role_run.council_role,
@@ -1138,6 +1161,38 @@ class EvalHarnessService:
         if dataset_name == "turn_resolution_failure_injection":
             return all(item["passed"] for item in scoped)
         return all(item["passed"] for item in scoped)
+
+    @staticmethod
+    def _case_failure_categories_from_result(result: EvalCaseResult) -> list[str]:
+        categories: list[str] = []
+        raw_output = result.raw_output if isinstance(result.raw_output, dict) else {}
+        retrieval_trace = raw_output.get("retrieval_trace", {})
+        retrieval_trace = retrieval_trace if isinstance(retrieval_trace, dict) else {}
+        expectations = raw_output.get("expectations", {})
+        expectations = expectations if isinstance(expectations, dict) else {}
+        retrieval_status = retrieval_trace.get("status")
+        retrieval_hit_count = len(retrieval_trace.get("retrieved_memory_ids", []))
+        retrieval_required = bool(raw_output.get("retrieval_required", False))
+        expected_lane = expectations.get("final_lane")
+        expected_fallback = expectations.get("fallback")
+
+        if not result.schema_valid:
+            categories.append("schema")
+        if not result.same_world_invariant:
+            categories.append("same-world")
+        if result.graph_context_status != "ready":
+            categories.append("graph")
+        if retrieval_status != "ready" or (retrieval_required and retrieval_hit_count < 1):
+            categories.append("retrieval")
+        if expected_lane is not None and result.lane != expected_lane:
+            categories.append("lane")
+        if expected_fallback is not None and result.used_fallback != expected_fallback:
+            categories.append("fallback")
+        if result.failure_reason and not categories:
+            categories.append("model")
+        if not result.passed and not categories:
+            categories.append("domain")
+        return categories
 
     def _blocked_reasons(
         self,

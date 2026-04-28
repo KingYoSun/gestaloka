@@ -94,6 +94,8 @@ Admin UI:
 ### Release Dry-run
 
 Terminal で以下を実行した後、Admin UI の release gate 表示を Playwright MCP で確認する。
+各 target は host からそのまま実行する。`canary-up` は detached で canary health を待ち、
+`canary-probe` / `release-checklist` は起動済み compose stack の `backend` container 内で実行される。
 
 ```bash
 make canary-up
@@ -109,6 +111,8 @@ make canary-down
 - blocked reasons と missing checks が空。
 - bundled pack regressions が GESTALOKA Reference 分 pass。
 - shared world health、shadow failures、canary health が想定内。
+- shadow failures がある場合は `schema` / `same-world` / `graph` / `retrieval` / `lane` / `fallback`
+  の診断分類、retrieval required、hit count を控える。
 - `release-runbook` の `canary_up`, `canary_probe`, `pre_promote_checklist`, `nightly_gate`, `promote_condition`,
   `promote`, `rollback` が runbook と一致する。
 
@@ -122,7 +126,8 @@ make canary-down
 - Streams: ops、history、beats、relationship、inventory が長くなっても読めるか。
 - Admin density: catalog、projection、graph、observability、SP、release gate の情報量が過密すぎないか。
 - Error banner: 発生時に原因、対象操作、次の切り分けが推測できるか。
-- Responsive layout: text の折返し、button label、stream item、form input が重ならないか。
+- Responsive layout: desktop に加え 375x812 mobile viewport で text の折返し、button label、stream item、
+  form input が重ならず横スクロールしないか。
 - Release gate: promote / rollback の判断材料と runbook command が迷わず読めるか。
 
 ## 6. 記録ルール

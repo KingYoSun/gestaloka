@@ -98,16 +98,33 @@ nightly-eval:
 	PYTHONPATH=backend python -m app.modules.eval_harness nightly
 
 release-checklist:
-	PYTHONPATH=backend python -m app.modules.eval_harness gate
+	$(COMPOSE) exec -T backend python -m app.modules.eval_harness gate
 
 canary-up:
-	docker compose up --build backend-canary
+	$(COMPOSE) up --build -d backend-canary
+	@set -eu; \
+	cid="$$( $(COMPOSE) ps -q backend-canary )"; \
+	for attempt in $$(seq 1 60); do \
+		status="$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$$cid" 2>/dev/null || true)"; \
+		if [ "$$status" = "healthy" ]; then \
+			echo "backend-canary is healthy"; \
+			exit 0; \
+		fi; \
+		if [ "$$status" = "exited" ] || [ "$$status" = "dead" ]; then \
+			$(COMPOSE) logs --tail=80 backend-canary; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done; \
+	$(COMPOSE) logs --tail=80 backend-canary; \
+	echo "backend-canary did not become healthy" >&2; \
+	exit 1
 
 canary-down:
-	docker compose rm -sf backend-canary
+	$(COMPOSE) rm -sf backend-canary
 
 canary-probe:
-	PYTHONPATH=backend python -m app.modules.eval_harness canary-probe
+	$(COMPOSE) exec -T backend python -m app.modules.eval_harness canary-probe
 
 observability-up:
 	$(COMPOSE) up -d otel-collector prometheus grafana

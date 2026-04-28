@@ -318,6 +318,9 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate_with_failure["shadow_failures"]
     assert gate_with_failure["shadow_failures"][0]["pack_context"]["pack_id"] == "gestaloka_reference"
     assert gate_with_failure["shadow_failures"][0]["pack_context"]["world_template_display_name"] == "Nexus Foundation"
+    assert gate_with_failure["shadow_failures"][0]["retrieval_required"] in {True, False}
+    assert "graph" in gate_with_failure["shadow_failures"][0]["failure_categories"]
+    assert gate_with_failure["shadow_failures"][0]["failure_diagnostics"]
 
 
 def test_release_gate_blocks_when_canary_is_unhealthy(container):

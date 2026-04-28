@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import keycloak from "./lib/keycloak";
+import keycloak, { initKeycloak } from "./lib/keycloak";
 
 type AppRoute = "game" | "admin";
 
@@ -863,6 +863,9 @@ type ReleaseGateReport = {
     graph_context_status: string;
     retrieval_status?: string;
     retrieval_hit_count?: number;
+    retrieval_required?: boolean;
+    failure_categories?: string[];
+    failure_diagnostics?: string;
     failure_reason: string | null;
   }>;
   runbook: {
@@ -1472,11 +1475,7 @@ function App() {
   useEffect(() => {
     void refreshHealth();
 
-    keycloak
-      .init({
-        onLoad: "check-sso",
-        pkceMethod: "S256",
-      })
+    initKeycloak()
       .then((isAuthenticated: boolean) => {
         setAuthenticated(isAuthenticated);
         setToken(keycloak.token ?? "");
@@ -2746,10 +2745,10 @@ function App() {
                 <ul className="stream" data-testid="choice-list">
                   {suggestedChoices.length ? (
                     suggestedChoices.map((choice) => (
-                      <li key={choice.choice_id}>
-                        <strong>{choice.label}</strong>
-                        <span>{choice.summary}</span>
-                        <span>{choice.posture}</span>
+                      <li key={choice.choice_id} className="choice-item">
+                        <strong className="choice-label">{choice.label}</strong>
+                        <span className="choice-summary">{choice.summary}</span>
+                        <span className="choice-posture">{choice.posture}</span>
                         <button
                           type="button"
                           data-testid={`choice-${choice.choice_id}`}
@@ -2764,6 +2763,9 @@ function App() {
                     <li>No suggested choices yet.</li>
                   )}
                 </ul>
+                <p className="turn-progress" data-testid="turn-progress-status">
+                  {turnPending ? "Resolving turn. New choices will appear when the scene updates." : "Ready for the next turn."}
+                </p>
               </div>
               {turnInputMode === "free_text" ? (
                 <form onSubmit={handleTurnSubmit} className="stack">
@@ -3640,7 +3642,12 @@ function App() {
                       <span>{formatPackContext(item.pack_context)}</span>
                       <span>{item.variant}</span>
                       <span>{item.graph_context_status}</span>
-                      <span>{item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0}</span>
+                      <span>
+                        {item.retrieval_status ?? "unknown"} / hits {item.retrieval_hit_count ?? 0} / required{" "}
+                        {String(item.retrieval_required ?? false)}
+                      </span>
+                      <span>{(item.failure_categories ?? []).join(", ") || "unclassified"}</span>
+                      <span>{item.failure_diagnostics ?? "no diagnostics"}</span>
                       <span>{item.failure_reason ?? "none"}</span>
                     </li>
                   ))
@@ -3777,7 +3784,7 @@ function App() {
               </ul>
             </article>
 
-            <article className="card">
+            <article className="card wide">
               <h2>SP overview</h2>
               <p data-testid="sp-world-context">
                 Pack dimension: {activeWorldContext?.pack_display_name ?? "unknown"} /{" "}
@@ -3809,47 +3816,7 @@ function App() {
                   </li>
                 ))}
               </ul>
-            </article>
-
-            <article className="card wide">
-              <h2>Ledger filters</h2>
-              <form className="stack compact-form" onSubmit={handleLedgerRefresh}>
-                <label>
-                  User sub
-                  <input
-                    data-testid="ledger-user-filter"
-                    value={ledgerUserFilter}
-                    onChange={(event) => setLedgerUserFilter(event.target.value)}
-                  />
-                </label>
-                <label>
-                  World ID
-                  <input
-                    data-testid="ledger-world-filter"
-                    value={ledgerWorldFilter}
-                    onChange={(event) => setLedgerWorldFilter(event.target.value)}
-                  />
-                </label>
-                <button data-testid="refresh-ledger" type="submit" disabled={!token}>
-                  Refresh ledger
-                </button>
-              </form>
-              <ul className="stream" data-testid="admin-ledger">
-                {ledgerEntries.map((item) => (
-                  <li key={item.id}>
-                    <strong>{item.reason_code}</strong>
-                    <span>{item.user_sub}</span>
-                    <span>
-                      delta {item.delta} / balance {item.balance_after}
-                    </span>
-                    <span>{item.world_context?.pack_display_name ?? item.world_id ?? "unknown"}</span>
-                  </li>
-                ))}
-              </ul>
-            </article>
-
-            <article className="card wide">
-              <h2>Adjustment form</h2>
+              <h3>Adjustment form</h3>
               <form className="stack compact-form" onSubmit={handleAdjustmentSubmit}>
                 <label>
                   User sub
@@ -3896,6 +3863,43 @@ function App() {
                   {adjustPending ? "Applying..." : "Apply adjustment"}
                 </button>
               </form>
+            </article>
+
+            <article className="card wide">
+              <h2>Ledger filters</h2>
+              <form className="stack compact-form" onSubmit={handleLedgerRefresh}>
+                <label>
+                  User sub
+                  <input
+                    data-testid="ledger-user-filter"
+                    value={ledgerUserFilter}
+                    onChange={(event) => setLedgerUserFilter(event.target.value)}
+                  />
+                </label>
+                <label>
+                  World ID
+                  <input
+                    data-testid="ledger-world-filter"
+                    value={ledgerWorldFilter}
+                    onChange={(event) => setLedgerWorldFilter(event.target.value)}
+                  />
+                </label>
+                <button data-testid="refresh-ledger" type="submit" disabled={!token}>
+                  Refresh ledger
+                </button>
+              </form>
+              <ul className="stream" data-testid="admin-ledger">
+                {ledgerEntries.map((item) => (
+                  <li key={item.id}>
+                    <strong>{item.reason_code}</strong>
+                    <span>{item.user_sub}</span>
+                    <span>
+                      delta {item.delta} / balance {item.balance_after}
+                    </span>
+                    <span>{item.world_context?.pack_display_name ?? item.world_id ?? "unknown"}</span>
+                  </li>
+                ))}
+              </ul>
             </article>
           </>
         )}
