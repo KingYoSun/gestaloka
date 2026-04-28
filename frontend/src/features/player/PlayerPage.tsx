@@ -18,6 +18,34 @@ type TextItem = {
   meta?: string;
 };
 
+function formatOpsEventSummary(data: Record<string, unknown>): string {
+  const keys = [
+    "world_id",
+    "session_id",
+    "location_id",
+    "status",
+    "graph_runtime_status",
+    "release_gate_verdict",
+    "verdict",
+    "report_id",
+  ];
+  const parts = keys
+    .map((key) => {
+      const value = data[key];
+      return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? `${key}: ${value}` : "";
+    })
+    .filter(Boolean);
+  return parts.join(" / ") || "event received";
+}
+
+function formatRoutineState(state: Record<string, unknown>): string {
+  const parts = Object.entries(state)
+    .filter(([, value]) => typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${String(value)}`);
+  return parts.join(" / ") || "routine state summarized";
+}
+
 export function PlayerPage({ runtime }: PlayerPageProps) {
   return (
     <section className="play-surface" aria-label="物語">
@@ -662,7 +690,7 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
               <span>
                 {context?.pack_display_name ?? "unknown"} / {context?.world_template_display_name ?? "unknown"}
               </span>
-              <span>{JSON.stringify(item.data)}</span>
+              <span>{formatOpsEventSummary(item.data)}</span>
             </>
           );
         }}
@@ -766,7 +794,7 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
           <>
             <strong>{item.display_name}</strong>
             <span>{item.location_id ?? "no location"}</span>
-            <span>{JSON.stringify(item.routine_state)}</span>
+            <span>{formatRoutineState(item.routine_state)}</span>
           </>
         )}
       />

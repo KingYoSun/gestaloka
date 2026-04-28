@@ -14,7 +14,20 @@ from app.core.config import Settings
 from app.core.prompts import PromptDefinition
 from app.models.base import Base
 from app.models.entities import LLMRun
-from app.modules.llm_harness.service import CouncilRoleRun, OpenAICompatibleProvider, PromptExecutionAttempt
+from app.modules.gm_council.service import (
+    CouncilMemoryManagerPayload,
+    CouncilNarrativePayload,
+    CouncilNPCManagerPayload,
+    CouncilRulesArbiterPayload,
+    CouncilSafetyGuardPayload,
+    CouncilWorldProgressPayload,
+)
+from app.modules.llm_harness.service import (
+    CouncilIntentInterpreterPayload,
+    CouncilRoleRun,
+    OpenAICompatibleProvider,
+    PromptExecutionAttempt,
+)
 from app.modules.session.service import _persist_role_runs
 from app.modules.world_memory.service import OpenAICompatibleEmbeddingProvider
 
@@ -221,6 +234,155 @@ def test_openai_compatible_provider_keeps_stable_prefix_when_only_input_text_cha
     second_content = _FakeClient.instances[-1].requests[-1]["json"]["messages"][1]["content"]
     assert first_content.split("## request_context", 1)[0] == second_content.split("## request_context", 1)[0]
     assert first_content != second_content
+
+
+def test_live_intent_payload_shape_is_normalized_before_validation():
+    payload = CouncilIntentInterpreterPayload.model_validate(
+        {
+            "label": "到着記録の処理を手伝い、門番の信頼を得る",
+            "posture": "progress",
+            "summary": "到着記録を手伝うことで、次の進展を促す。",
+            "action_kind": "narrative",
+            "consequence_tags": ["trust:minor", "public_scrutiny"],
+            "canonical_input_text": "Nexus Gateで到着記録の処理を手伝う",
+            "narrative_consequence": "Gate Steward Rikka acknowledges the help.",
+        },
+        context={"input_payload": {"input_mode": "free_text", "input_text": "Nexus Gateで到着記録を助ける"}},
+    )
+
+    assert payload.input_mode == "free_text"
+    assert payload.canonical_action_kind == "narrative"
+    assert payload.intent_summary == "Nexus Gateで到着記録の処理を手伝う"
+    assert payload.requested_choice_posture == "progress"
+    assert payload.consequence_tags == ["earned_trust"]
+    assert payload.consequence_summary == "Gate Steward Rikka acknowledges the help."
+
+
+def test_live_memory_payload_shape_is_normalized_before_validation():
+    payload = CouncilMemoryManagerPayload.model_validate(
+        {
+            "same_world_memory": "Demo Player helped with arrival records.",
+            "relation": "Gate Steward Rikka KNOWS Demo Player (0.65)",
+            "quest": "First Stabilizer Request [active 1/2]",
+            "faction": "Nexus Custodians standing=0.40",
+            "inventory": [],
+            "scene": "Nexus Gate is waiting on the current request.",
+            "chapter": "The opening chapter is gathering momentum.",
+        },
+        context={"input_payload": {"relevant_memories": ["Demo Player helped with arrival records."]}},
+    )
+
+    assert payload.memory_summary == "Demo Player helped with arrival records."
+    assert payload.focus_memories == ["Demo Player helped with arrival records."]
+    assert payload.relation_summary == "Gate Steward Rikka KNOWS Demo Player (0.65)"
+    assert "First Stabilizer Request" in payload.state_summary
+    assert "Nexus Gate" in payload.state_summary
+
+
+def test_live_memory_payload_normalizes_wrong_scalar_and_mapping_types():
+    payload = CouncilMemoryManagerPayload.model_validate(
+        {
+            "memory_summary": "No significant memories recorded yet.",
+            "focus_memories": "Player's intent: help arrival records at Nexus Gate.",
+            "relation_summary": "Gate Steward Rikka knows Demo Player.",
+            "state_summary": {"location": "Nexus Gate", "active_quest": "First Stabilizer Request"},
+        }
+    )
+
+    assert payload.focus_memories == ["Player's intent: help arrival records at Nexus Gate."]
+    assert "location: Nexus Gate" in payload.state_summary
+    assert "active_quest: First Stabilizer Request" in payload.state_summary
+
+
+def test_live_npc_payload_shape_is_normalized_before_validation():
+    payload = CouncilNPCManagerPayload.model_validate(
+        {
+            "intent": "Guide the player toward the intended quest sequence.",
+            "npc_reaction_outline": {
+                "initial_reaction": "Rikka nods.",
+                "dialogue_summary": "She explains the next proper step.",
+            },
+        }
+    )
+
+    assert payload.npc_intent == "Guide the player toward the intended quest sequence."
+    assert payload.reaction_style == "measured"
+    assert payload.focus_memories == []
+    assert "initial_reaction: Rikka nods." in payload.reaction_outline
+
+
+def test_live_rules_arbiter_payload_shape_is_normalized_before_validation():
+    payload = CouncilRulesArbiterPayload.model_validate(
+        {
+            "approval_status": "approve",
+            "world_tags": ["aid_local"],
+            "reason": "",
+        },
+        context={"input_payload": {"input_text": "到着記録を整える"}},
+    )
+
+    assert payload.approval_status == "approved"
+    assert payload.normalized_world_tags == ["aid_local"]
+    assert payload.reason
+    assert payload.risk_level == "low"
+
+
+def test_live_safety_guard_payload_shape_is_normalized_before_validation():
+    payload = CouncilSafetyGuardPayload.model_validate({"approval_status": True, "reason": ""})
+
+    assert payload.approval_status == "approved"
+    assert payload.reason == "Same-world safety check passed."
+    assert payload.violations == []
+
+
+def test_live_narrative_payload_shape_is_normalized_before_validation():
+    payload = CouncilNarrativePayload.model_validate(
+        {
+            "narrative": "Rikka steadies the desk and points to the next form.",
+            "npc_reaction": {"gesture": "Rikka gives a short approving nod."},
+        },
+        context={
+            "input_payload": {
+                "npc_name": "Rikka",
+                "outcome_band": "steady",
+            }
+        },
+    )
+
+    assert payload.narrative.startswith("Rikka steadies")
+    assert payload.npc_reaction == "gesture: Rikka gives a short approving nod."
+    assert payload.tone == "measured"
+
+
+def test_live_world_progress_payload_shape_is_normalized_before_validation():
+    payload = CouncilWorldProgressPayload.model_validate(
+        {
+            "event_type": "player.turn.resolved",
+            "scene_move": "advance",
+            "world_tags": ["nexus_gate_activity", "stabilizer_request_progress"],
+            "outcome_band": "steady",
+            "memory_drafts": ["Demo Player helped Gate Steward Rikka with arrival records."],
+            "scene_pressure": "eval: slight escalation",
+            "consequence_tags": ["earned_trust", "quest_progress"],
+            "canonical_event_draft": "Rikka acknowledges the help and marks the request forward.",
+            "next_three_diegetic_player_choices": {
+                "safe": {"label": "Observe the gate", "summary": "Keep the flow steady."},
+                "forward_progress": {"label": "Help with the next record", "summary": "Advance the request."},
+                "exploration_relationship": {"label": "Ask Rikka about the gate", "summary": "Learn more."},
+            },
+        },
+        context={"input_payload": {"world_id": "gestaloka_reference", "input_text": "Nexus Gateで到着記録を助ける"}},
+    )
+
+    assert payload.event_payload["world_id"] == "gestaloka_reference"
+    assert payload.memories[0].text == "Demo Player helped Gate Steward Rikka with arrival records."
+    assert payload.world_tags == ["aid_local"]
+    assert payload.consequence_tags == ["earned_trust"]
+    assert payload.resolution_summary == "Rikka acknowledges the help and marks the request forward."
+    assert payload.risk_level == "low"
+    assert payload.scene_move == "deepen"
+    assert payload.scene_pressure == "medium"
+    assert [item.posture for item in payload.next_choices] == ["safe", "progress", "explore"]
 
 
 def test_llm_run_persistence_keeps_prompt_cache_token_counts(tmp_path):

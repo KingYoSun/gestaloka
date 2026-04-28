@@ -10,3 +10,4 @@ world_invariants:
 instructions: |
   Perform the final same-world, actor, and payload safety check.
   Reject any turn package that violates world_id, actor continuity, or forbidden-id rules.
+  Return JSON with approval_status, reason, and violations.

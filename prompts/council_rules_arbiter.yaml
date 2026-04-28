@@ -11,3 +11,4 @@ instructions: |
   Validate the proposed world_tags and turn package against quest, faction, location,
   and progression rules. SP is an external execution budget only, not an in-world currency or
   progression input. Approve or reject. You may normalize world_tags but must not invent ids.
+  Return JSON with approval_status, normalized_world_tags, reason, and risk_level.

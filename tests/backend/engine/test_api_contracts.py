@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
+import app.modules.identity.oidc as oidc_module
+from app.core.config import Settings
 from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, ProjectionRecord, World
-from app.modules.identity.oidc import UserIdentity
+from app.modules.identity.oidc import KeycloakOIDCAdapter, UserIdentity
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
 
@@ -75,6 +78,58 @@ def test_missing_bearer_token_returns_401(client):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Missing bearer token"
+
+
+def test_keycloak_oidc_allows_configured_admin_client_id(monkeypatch):
+    settings = Settings(
+        oidc_public_issuer_url="http://issuer.test/realms/gestaloka",
+        oidc_client_id="gestaloka-frontend",
+        oidc_allowed_client_ids="gestaloka-admin-frontend",
+        oidc_audience="account",
+    )
+    adapter = KeycloakOIDCAdapter(settings)
+    adapter.__dict__["_jwk_client"] = SimpleNamespace(
+        get_signing_key_from_jwt=lambda token: SimpleNamespace(key="test-key")
+    )
+
+    def decode(*args, **kwargs):
+        del args, kwargs
+        return {
+            "sub": "demo-player-sub",
+            "name": "Demo Player",
+            "azp": "gestaloka-admin-frontend",
+            "aud": ["not-account"],
+        }
+
+    monkeypatch.setattr(oidc_module.jwt, "decode", decode)
+
+    assert adapter.resolve_token("admin-token").sub == "demo-player-sub"
+
+
+def test_keycloak_oidc_rejects_unknown_client_id(monkeypatch):
+    settings = Settings(
+        oidc_public_issuer_url="http://issuer.test/realms/gestaloka",
+        oidc_client_id="gestaloka-frontend",
+        oidc_allowed_client_ids="gestaloka-admin-frontend",
+        oidc_audience="account",
+    )
+    adapter = KeycloakOIDCAdapter(settings)
+    adapter.__dict__["_jwk_client"] = SimpleNamespace(
+        get_signing_key_from_jwt=lambda token: SimpleNamespace(key="test-key")
+    )
+    monkeypatch.setattr(
+        oidc_module.jwt,
+        "decode",
+        lambda *args, **kwargs: {"sub": "demo-player-sub", "azp": "unknown-client", "aud": ["not-account"]},
+    )
+
+    try:
+        adapter.resolve_token("unknown-token")
+    except HTTPException as exc:
+        assert exc.status_code == status.HTTP_401_UNAUTHORIZED
+        assert exc.detail == "Unexpected token audience"
+    else:
+        raise AssertionError("unknown OIDC client should be rejected")
 
 
 def test_playable_world_catalog_is_world_visible_and_keeps_pack_as_context(client, auth_headers):

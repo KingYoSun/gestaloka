@@ -32,6 +32,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("ops-stream")).toContainText("GESTALOKA Reference", { timeout: 20_000 });
   await expect(page.getByTestId("ops-stream")).not.toContainText("missing world context");
   await expect(page.getByTestId("ops-stream")).not.toContainText("global");
+  await expect(page.getByTestId("ops-stream")).not.toContainText("{");
+  await expect(page.getByTestId("npc-routine-stream")).not.toContainText("{");
   await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus Gate/i, { timeout: 20_000 });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Nexus/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("First Stabilizer Request", { timeout: 20_000 });

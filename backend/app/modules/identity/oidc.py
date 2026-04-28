@@ -74,7 +74,10 @@ class KeycloakOIDCAdapter:
 
         audience = decoded.get("aud")
         audience_values = audience if isinstance(audience, list) else [audience]
-        allowed = self.settings.oidc_audience in audience_values or decoded.get("azp") == self.settings.oidc_client_id
+        allowed = (
+            self.settings.oidc_audience in audience_values
+            or decoded.get("azp") in self.settings.oidc_allowed_client_id_list
+        )
         if not allowed:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unexpected token audience")
 

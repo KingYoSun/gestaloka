@@ -313,6 +313,7 @@ services:
       PUBLIC_WS_BASE_URL: ws://localhost:8000
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
+      OIDC_ALLOWED_CLIENT_IDS: gestaloka-frontend,gestaloka-admin-frontend
       PROMPT_DIR: /workspace/prompts
       PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets
@@ -537,6 +538,7 @@ services:
       PUBLIC_WS_BASE_URL: ws://localhost:8001
       OIDC_ISSUER_URL: http://keycloak:8080/realms/gestaloka
       OIDC_PUBLIC_ISSUER_URL: http://localhost:8080/realms/gestaloka
+      OIDC_ALLOWED_CLIENT_IDS: gestaloka-frontend,gestaloka-admin-frontend
       PROMPT_DIR: /workspace/prompts
       PACK_DIR: /workspace/packs
       EVAL_DATASET_DIR: /workspace/evals/datasets

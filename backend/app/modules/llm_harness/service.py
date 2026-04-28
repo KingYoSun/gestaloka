@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, Literal, TypeVar
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, ValidationInfo, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -98,6 +98,58 @@ class CouncilRoleRun:
     failure_reason: str | None = None
 
 
+def _first_non_empty_text(*values: Any) -> str:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+        elif isinstance(value, (int, float, bool)):
+            text = str(value)
+        else:
+            continue
+        if text:
+            return text
+    return ""
+
+
+def _normalize_live_consequence_tags(raw_tags: Any) -> list[ConsequenceTag]:
+    candidates: list[str] = []
+    if isinstance(raw_tags, dict):
+        for key, value in raw_tags.items():
+            if isinstance(value, (int, float)) and value <= 0:
+                continue
+            if value in {False, None, ""}:
+                continue
+            candidates.append(str(key))
+    elif isinstance(raw_tags, list):
+        candidates = [str(item) for item in raw_tags]
+    elif isinstance(raw_tags, str):
+        candidates = [raw_tags]
+
+    mapped: list[str] = []
+    for tag in candidates:
+        token = tag.strip().lower().replace("-", "_")
+        base = token.split(":", 1)[0]
+        if base in {"trust", "earned_trust", "formal_trust"}:
+            mapped.append("earned_trust")
+        elif base in {"promise", "promise_pressure", "promise_followup", "kept_promise"}:
+            mapped.append("kept_promise")
+        elif base in {"public_attention", "public_scrutiny", "scrutiny"}:
+            mapped.append("public_attention")
+        elif base in {"overreach", "impossible"}:
+            mapped.append("overreach")
+        elif base in {"careful_observation", "observation", "investigate"}:
+            mapped.append("careful_observation")
+        elif base in {"reward", "reward_item", "reward_item_respect"}:
+            mapped.append("reward_item_respect")
+        elif base in {"missed_timing", "timing"}:
+            mapped.append("missed_timing")
+        else:
+            mapped.append(tag)
+    return normalize_consequence_tags(mapped)
+
+
 class MemoryDraft(BaseModel):
     scope: str = Field(min_length=1)
     text: str = Field(min_length=1)
@@ -122,6 +174,76 @@ class CouncilIntentInterpreterPayload(BaseModel):
     consequence_flags: list[str] = Field(default_factory=list)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
     consequence_summary: str = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any, info: ValidationInfo) -> Any:
+        if not isinstance(value, dict):
+            return value
+
+        input_payload = info.context.get("input_payload", {}) if info.context else {}
+        input_payload = input_payload if isinstance(input_payload, dict) else {}
+        selected_choice = input_payload.get("selected_choice")
+        selected_choice = selected_choice if isinstance(selected_choice, dict) else {}
+        narrative_intent = value.get("narrative_intent")
+        narrative_intent = narrative_intent if isinstance(narrative_intent, dict) else {}
+
+        normalized = dict(value)
+        input_mode = str(normalized.get("input_mode") or input_payload.get("input_mode") or "choice")
+        normalized["input_mode"] = input_mode if input_mode in {"choice", "free_text"} else "choice"
+
+        action_kind = str(
+            normalized.get("canonical_action_kind")
+            or normalized.get("action_kind")
+            or narrative_intent.get("action_kind")
+            or selected_choice.get("action_kind")
+            or "narrative"
+        )
+        normalized["canonical_action_kind"] = (
+            action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative"
+        )
+
+        normalized["intent_summary"] = _first_non_empty_text(
+            normalized.get("intent_summary"),
+            normalized.get("normalized_action"),
+            normalized.get("canonical_input_text"),
+            narrative_intent.get("canonical_input_text"),
+            narrative_intent.get("canonical_text"),
+            narrative_intent.get("summary"),
+            selected_choice.get("canonical_input_text"),
+            selected_choice.get("summary"),
+            selected_choice.get("label"),
+            input_payload.get("input_text"),
+            "The player acts within the current scene.",
+        )
+        normalized["travel_target_key"] = (
+            normalized.get("travel_target_key")
+            or narrative_intent.get("travel_target_key")
+            or selected_choice.get("travel_target_key")
+        )
+
+        posture = str(
+            normalized.get("requested_choice_posture")
+            or normalized.get("posture")
+            or narrative_intent.get("posture")
+            or selected_choice.get("posture")
+            or "none"
+        )
+        normalized["requested_choice_posture"] = posture if posture in {"safe", "progress", "explore"} else "none"
+        normalized["consequence_tags"] = _normalize_live_consequence_tags(normalized.get("consequence_tags"))
+        normalized["consequence_summary"] = _first_non_empty_text(
+            normalized.get("consequence_summary"),
+            normalized.get("consequence_text"),
+            normalized.get("consequence"),
+            normalized.get("narrative_consequence"),
+            normalized.get("narrative_shift"),
+            narrative_intent.get("summary"),
+            normalized.get("intent_summary"),
+            "The scene registers the player's action.",
+        )
+        if not isinstance(normalized.get("consequence_flags"), list):
+            normalized["consequence_flags"] = []
+        return normalized
 
 
 class TurnResolutionPayload(BaseModel):
@@ -1302,7 +1424,7 @@ class ModelRouter:
 
                     raw_output = provider_response.raw_output
                     try:
-                        payload = response_model.model_validate(raw_output)
+                        payload = response_model.model_validate(raw_output, context={"input_payload": input_payload})
                     except ValidationError as exc:
                         failure_reason = f"{lane} output failed schema validation"
                         _update_langfuse_observation(
@@ -1494,6 +1616,50 @@ class ModelRouter:
             return ProviderResponse(raw_output={"status": "invalid"}, provider_name="eval_control", provider_response_id=None)
         if lane == "main_lane" and "__force_invalid_main__" in input_text and prompt_id in force_invalid_prompts:
             return ProviderResponse(raw_output={"status": "invalid"}, provider_name="eval_control", provider_response_id=None)
+        if lane == "pro_lane" and "__force_invalid_main__" in input_text and prompt_id in force_invalid_prompts:
+            if prompt_id == "council.rules_arbiter":
+                return ProviderResponse(
+                    raw_output={
+                        "approval_status": "approved",
+                        "normalized_world_tags": normalize_world_tags(
+                            [str(item) for item in input_payload.get("world_tags") or []]
+                        ),
+                        "reason": "Eval fallback pro lane approved the canonical turn package.",
+                        "risk_level": str(input_payload.get("risk_level") or "low"),
+                    },
+                    provider_name="eval_control",
+                    provider_response_id=None,
+                )
+            if prompt_id == "council.safety_guard":
+                return ProviderResponse(
+                    raw_output={
+                        "approval_status": "approved",
+                        "reason": "Eval fallback pro lane preserved same-world safety.",
+                        "violations": [],
+                    },
+                    provider_name="eval_control",
+                    provider_response_id=None,
+                )
+            if prompt_id == "council.narrative":
+                return ProviderResponse(
+                    raw_output={
+                        "narrative": "The fallback lane resolves the turn inside the same world and keeps the request moving.",
+                        "npc_reaction": "Gate Steward Rikka acknowledges the fallback result and keeps the procedure steady.",
+                        "tone": "measured",
+                    },
+                    provider_name="eval_control",
+                    provider_response_id=None,
+                )
+            if prompt_id == "ambient.safety_guard":
+                return ProviderResponse(
+                    raw_output={
+                        "approval_status": "approved",
+                        "reason": "Eval fallback pro lane preserved ambient safety.",
+                        "violations": [],
+                    },
+                    provider_name="eval_control",
+                    provider_response_id=None,
+                )
         if prompt_id == "council.safety_guard" and "__force_safety_reject__" in input_text:
             return ProviderResponse(
                 raw_output={

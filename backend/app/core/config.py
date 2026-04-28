@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     oidc_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_public_issuer_url: str = "http://localhost:8080/realms/gestaloka"
     oidc_client_id: str = "gestaloka-frontend"
+    oidc_allowed_client_ids: str = "gestaloka-admin-frontend"
     oidc_audience: str = "account"
     oidc_dev_mode: bool = False
     dev_oidc_sub: str = "local-player"
@@ -94,6 +95,16 @@ class Settings(BaseSettings):
     @property
     def ops_admin_sub_list(self) -> list[str]:
         return [item.strip() for item in self.ops_admin_subs.split(",") if item.strip()]
+
+    @property
+    def oidc_allowed_client_id_list(self) -> list[str]:
+        allowed = [self.oidc_client_id, *self.oidc_allowed_client_ids.split(",")]
+        deduped: list[str] = []
+        for item in allowed:
+            client_id = item.strip()
+            if client_id and client_id not in deduped:
+                deduped.append(client_id)
+        return deduped
 
     @property
     def openai_compat_embedding_effective_api_key(self) -> str:
