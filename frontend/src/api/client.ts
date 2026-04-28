@@ -2,7 +2,11 @@ import type { APIError } from "../types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
-async function apiFetch<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
+type ApiFetchOptions = {
+  timeoutMs?: number;
+};
+
+async function apiFetch<T>(path: string, token?: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
   const headers = new Headers(init?.headers ?? undefined);
   if (!headers.has("Content-Type") && init?.body) {
     headers.set("Content-Type", "application/json");
@@ -11,10 +15,21 @@ async function apiFetch<T>(path: string, token?: string, init?: RequestInit): Pr
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers,
-  });
+  const timeoutMs = options?.timeoutMs;
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      ...init,
+      headers,
+      signal: controller?.signal ?? init?.signal,
+    });
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
 
   if (!response.ok) {
     const contentType = response.headers.get("content-type") ?? "";
@@ -45,6 +60,9 @@ async function apiFetch<T>(path: string, token?: string, init?: RequestInit): Pr
 
 function formatError(error: unknown): string {
   const typed = error as APIError;
+  if (typed.name === "AbortError") {
+    return "応答がありません";
+  }
   if (typed.status === 409 && typed.body && typeof typed.body === "object") {
     const body = typed.body as {
       detail?: string;

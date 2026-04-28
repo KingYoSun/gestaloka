@@ -473,4 +473,6 @@ class ProjectionService:
         ).scalar_one_or_none()
         if oldest_pending is None:
             return 0.0
+        if oldest_pending.tzinfo is None:
+            oldest_pending = oldest_pending.replace(tzinfo=timezone.utc)
         return max((datetime.now(timezone.utc) - oldest_pending).total_seconds(), 0.0)

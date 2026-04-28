@@ -355,7 +355,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = [websocket.receive_json() for _ in range(24)]
+        messages = [websocket.receive_json() for _ in range(23)]
 
     assert [message["event"] for message in messages] == [
         "session.connected",
@@ -380,7 +380,6 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "scene.updated",
         "chapter.updated",
         "ambient.updated",
-        "graph.projection.updated",
         "turn.resolved",
     ]
     assert messages[0]["data"] == {
@@ -401,8 +400,6 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "choice_generation",
     ]
     assert messages[-1]["data"] == turn_payload
-    assert messages[-2]["data"]["world_id"] == session_payload["world_id"]
-    assert {"vertex_count", "edge_count"} <= set(messages[-2]["data"])
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
@@ -467,7 +464,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(19)]
+        messages = [websocket.receive_json() for _ in range(18)]
 
     assert [message["event"] for message in messages] == [
         "session.connected",
@@ -487,7 +484,6 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "scene.updated",
         "chapter.updated",
         "ambient.updated",
-        "graph.projection.updated",
         "turn.resolved",
     ]
     assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == [
@@ -676,21 +672,20 @@ def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(cli
         headers=auth_headers,
     )
     assert turn_response.status_code == 200
-    monkeypatch.setattr(container.projection_service.repository, "project_bundle", original_project_bundle)
 
     with container.session_factory() as db:
-        failed_before = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "failed")).scalars())
-        failed_ids = [item.id for item in failed_before]
+        pending_before = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "pending")).scalars())
+        failed_ids = [item.id for item in pending_before]
         assert failed_ids
-        assert {item.world_id for item in failed_before} == {session_payload["world_id"]}
-        assert {item.last_error for item in failed_before} == {"forced projection failure"}
-
+        assert {item.world_id for item in pending_before} == {session_payload["world_id"]}
         assert container.projection_service.process_pending(db) == []
         db.flush()
-        assert {
-            item.status
-            for item in db.execute(select(OutboxEvent).where(OutboxEvent.id.in_(failed_ids))).scalars()
-        } == {"failed"}
+        failed_before = list(db.execute(select(OutboxEvent).where(OutboxEvent.id.in_(failed_ids))).scalars())
+        assert {item.status for item in failed_before} == {"failed"}
+        assert {item.last_error for item in failed_before} == {"forced projection failure"}
+        db.commit()
+
+    monkeypatch.setattr(container.projection_service.repository, "project_bundle", original_project_bundle)
 
     retry_response = client.post(
         "/ops/projection/retry-failed",

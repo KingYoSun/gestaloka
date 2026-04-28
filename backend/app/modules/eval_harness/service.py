@@ -1246,6 +1246,8 @@ class EvalHarnessService:
         ).scalar_one_or_none()
         projection_lag_seconds = 0.0
         if oldest_pending is not None:
+            if oldest_pending.tzinfo is None:
+                oldest_pending = oldest_pending.replace(tzinfo=self._now().tzinfo)
             projection_lag_seconds = max((self._now() - oldest_pending).total_seconds(), 0.0)
 
         llm_total = int(db.execute(select(func.count(LLMRun.id))).scalar_one())

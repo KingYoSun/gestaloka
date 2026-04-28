@@ -738,7 +738,7 @@ export function useGestalokaRuntime() {
           session_id: session.session_id,
           ...payload,
         }),
-      });
+      }, { timeoutMs: 120_000 });
       setLatestNarrative(response.narrative);
       setLatestReaction(response.npc_reaction);
       setLatestConsequenceSummary(response.consequence_summary);
@@ -752,7 +752,6 @@ export function useGestalokaRuntime() {
             }
           : current,
       );
-      setTurnPending(false);
       await refreshWorldState(session, token);
       const backgroundRefresh = Promise.all([
         refreshWallet(token),
@@ -771,7 +770,6 @@ export function useGestalokaRuntime() {
       return;
     } catch (requestError) {
       setError(formatError(requestError));
-      setTurnPending(false);
       await Promise.all([
         refreshWallet(token),
         refreshAdminData(
@@ -782,8 +780,10 @@ export function useGestalokaRuntime() {
           session.session_id,
         ),
         refreshHealth(),
-      ]);
+      ]).catch(() => undefined);
       return;
+    } finally {
+      setTurnPending(false);
     }
   }
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 
 from app.core.container import build_container
 from app.modules.eval_harness.service import PACK_REGRESSION_DATASETS
@@ -53,6 +54,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=5)
     args = parser.parse_args()
 
+    os.environ["OTEL_METRICS_PORT"] = "0"
     container = build_container()
     with container.session_factory() as db:
         if args.command == "smoke":

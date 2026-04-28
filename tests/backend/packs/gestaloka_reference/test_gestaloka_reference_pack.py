@@ -71,6 +71,7 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
     post_reward_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert post_reward_state.status_code == 200
     assert any(item["action_kind"] == "use_reward_item" for item in post_reward_state.json()["next_choices"])
+    assert all(len(item["summary"]) <= 80 for item in post_reward_state.json()["next_choices"])
 
     use_turn = client.post(
         "/turns",
@@ -89,6 +90,8 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
         item["destination_key"] == "oblivion_breach" and item["available"]
         for item in post_use_state.json()["nearby_routes"]
     )
+    assert all(len(item["summary"]) <= 80 for item in post_use_state.json()["next_choices"])
+    assert not any("arrival_clarity" in item["summary"] for item in post_use_state.json()["next_choices"])
 
     travel_turn = client.post(
         "/turns",

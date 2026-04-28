@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -142,6 +143,7 @@ def test_eval_cli_runs_named_dataset(monkeypatch: pytest.MonkeyPatch, capsys: py
         def session_factory(self) -> FakeSession:
             return FakeSession()
 
+    monkeypatch.setenv("OTEL_METRICS_PORT", "9464")
     monkeypatch.setattr("app.modules.eval_harness.cli.build_container", lambda: FakeContainer())
     monkeypatch.setattr(
         "sys.argv",
@@ -151,6 +153,7 @@ def test_eval_cli_runs_named_dataset(monkeypatch: pytest.MonkeyPatch, capsys: py
     eval_cli_main()
 
     assert calls == ["turn_resolution_gestaloka_regression"]
+    assert os.environ["OTEL_METRICS_PORT"] == "0"
     assert "turn_resolution_gestaloka_regression" in capsys.readouterr().out
 
 

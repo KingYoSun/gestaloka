@@ -98,7 +98,7 @@ nightly-eval:
 	PYTHONPATH=backend python -m app.modules.eval_harness nightly
 
 release-checklist:
-	$(COMPOSE) exec -T backend python -m app.modules.eval_harness gate
+	$(COMPOSE) exec -T -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness gate
 
 canary-up:
 	$(COMPOSE) up --build -d backend-canary
@@ -124,7 +124,7 @@ canary-down:
 	$(COMPOSE) rm -sf backend-canary
 
 canary-probe:
-	$(COMPOSE) exec -T backend python -m app.modules.eval_harness canary-probe
+	$(COMPOSE) exec -T -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness canary-probe
 
 observability-up:
 	$(COMPOSE) up -d otel-collector prometheus grafana

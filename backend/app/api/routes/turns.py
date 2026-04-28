@@ -224,21 +224,7 @@ async def resolve_turn(
             world_context,
         )
 
-    processed = container.projection_service.process_pending(db)
     db.commit()
-
-    projection_summary = container.projection_service.summarize_records(processed, world_id=result.event.world_id)
-    await realtime_hub.emit_with_world_context(
-        payload.session_id,
-        "graph.projection.updated",
-        {
-            "records": processed,
-            "world_id": projection_summary["world_id"],
-            "vertex_count": projection_summary["vertex_count"],
-            "edge_count": projection_summary["edge_count"],
-        },
-        world_context,
-    )
 
     if not result.succeeded:
         shared_response = _shared_consequence_response(result.turn.resolved_output or {})

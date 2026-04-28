@@ -53,9 +53,13 @@ function WorldStartView({ runtime }: PlayerPageProps) {
     setWorldId,
     wallet,
     worldCatalogUnavailable,
+    worldCatalogStatus,
     worldId,
     handleStartSession,
   } = runtime;
+  const catalogStateLabel = worldCatalogUnavailable
+    ? "世界を読み込めません"
+    : (!playableWorlds.length && worldCatalogStatus !== "ready" ? "読込中" : "");
 
   return (
     <section className="player-start-view" aria-label="世界開始">
@@ -80,6 +84,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
             </select>
           </Field>
           <p className="selected-world-name">{selectedWorld?.display_name ?? "世界を選択"}</p>
+          {catalogStateLabel ? <p className="start-state-label">{catalogStateLabel}</p> : null}
           {wallet ? <p className="start-state-label">SP {wallet.balance}</p> : null}
         </div>
         <Button

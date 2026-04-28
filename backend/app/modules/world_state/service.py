@@ -1954,24 +1954,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         }
 
     for choice in (safe_choice, progress_choice, explore_choice):
-        ambient_parts = [
-            scene_summary,
-            pressure_summary,
-            chapter_summary,
-            crossroads_summary,
-            branch_hint,
-            leading_branch_echo,
-            leading_travel if str(choice.get("action_kind") or "") == "travel" else "",
-            leading_route if str(choice.get("action_kind") or "") == "travel" else "",
-            leading_world_beat if choice["choice_id"] != "safe" else leading_murmur,
-            public_state_hint if choice["choice_id"] == "safe" else "",
-            leading_shared_history if choice["choice_id"] == "safe" else leading_shared_rumor,
-            leading_offstage if choice["choice_id"] == "progress" else leading_offstage_murmur,
-            leading_npc_location if choice["choice_id"] == "explore" else "",
-            leading_local_figure if choice["choice_id"] == "explore" else "",
-            str(choice.get("summary") or "").strip(),
-        ]
-        choice["summary"] = " ".join(part for part in ambient_parts if part).strip()
+        summary = " ".join(str(choice.get("summary") or "").split()).strip()
+        choice["summary"] = summary or "次の行動を選ぶ。"
 
     return [safe_choice, progress_choice, explore_choice]
 
