@@ -29,7 +29,7 @@ from app.modules.world_pack.service import (
 )
 
 
-REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists() and (parent / "backend").is_dir())
 
 
 def _copy_pack_dir(tmp_path: Path, pack_name: str = "gestaloka_reference") -> Path:

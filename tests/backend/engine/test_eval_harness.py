@@ -18,7 +18,7 @@ from app.modules.world_pack.service import PackCatalogFailure, PackRegistry
 from app.modules.world_memory.service import MemoryService
 
 
-REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "rebuild_plan_v2.md").exists())
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists() and (parent / "backend").is_dir())
 
 
 def engine_session_payload(*, world_id: str = "gestaloka_reference") -> dict[str, str]:

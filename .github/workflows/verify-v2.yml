@@ -85,8 +85,7 @@ jobs:
       fail-fast: false
       matrix:
         spec:
-          - /workspace/tests/e2e/founders-reach-regression.spec.ts
-          - /workspace/tests/e2e/ember-harbor-smoke.spec.ts
+          - /workspace/tests/e2e/gestaloka-reference-smoke.spec.ts
 
     steps:
       - uses: actions/checkout@v4

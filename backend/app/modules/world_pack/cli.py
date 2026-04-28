@@ -41,7 +41,7 @@ class LeakTerm:
 
 def _project_root_from_pack_dir(pack_dir: Path) -> Path:
     for candidate in [pack_dir.resolve(), *pack_dir.resolve().parents]:
-        if (candidate / "rebuild_plan_v2.md").exists():
+        if (candidate / "AGENTS.md").exists() and (candidate / "backend").is_dir():
             return candidate
     return pack_dir.resolve().parent
 
