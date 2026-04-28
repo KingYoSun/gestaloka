@@ -1,7 +1,7 @@
 # v2 Testplay Runbook
 
-この runbook は、`rebuild_plan_v2.md` の Shared World Core 完了後に人間が実施する Full smoke
-テストプレイ手順です。手動確認は playable surface と Ops 表示を対象にし、cross-player feedback の詳細な
+この runbook は、Shared World Core 完了後に人間が実施する Full smoke テストプレイ手順です。
+手動確認は playable surface と Ops 表示を対象にし、cross-player feedback の詳細な
 正しさは `make shared-world-regressions` で固定します。
 
 Codex app から Playwright MCP で実施する場合は、補助手順
