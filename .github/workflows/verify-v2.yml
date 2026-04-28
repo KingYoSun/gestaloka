@@ -41,7 +41,6 @@ jobs:
           /usr/bin/time -p make scan-pack-leaks
           /usr/bin/time -p make shared-world-regressions
           /usr/bin/time -p make scan-v1-terms
-          /usr/bin/time -p make check-legacy
 
   eval-pack-regressions:
     runs-on: ubuntu-latest

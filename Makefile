@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -73,7 +73,6 @@ verify-v2:
 	$(MAKE) pack-validate
 	$(MAKE) scan-pack-leaks
 	$(MAKE) scan-v1-terms
-	$(MAKE) check-legacy
 	$(MAKE) shared-world-regressions
 	$(MAKE) eval-pack-regressions
 	$(MAKE) build-frontend
@@ -143,14 +142,8 @@ observability-down:
 
 scan-v1-terms:
 	@! rg -n "(Neo4j|neomodel|Socket\\.IO|他世界|NPC化|dispatch)" . \
-		--glob '!legacy/**' \
 		--glob '!Makefile' \
 		--glob '!AGENTS.md' \
+		--glob '!documents/archive/**' \
 		--glob '!rebuild_plan_v2.md' \
 		--glob '!tests/e2e/**'
-
-check-legacy:
-	test -d legacy/v1/backend
-	test -d legacy/v1/frontend
-	test -d legacy/v1/documents
-	test -f legacy/v1/README.md

@@ -7,7 +7,6 @@
 - 実装の最終的な真実はコードとテストです。
 - 固定済み前提は [documents/adr/ADR-000-v2-foundation.md](documents/adr/ADR-000-v2-foundation.md) を参照してください。
 - フロントエンドの視覚設計ルールは [DESIGN.md](DESIGN.md) を参照してください。
-- `legacy/v1/` は凍結済みの参考資料です。v2 から import / copy-forward しないでください。
 
 ## Architecture Rules
 
@@ -19,7 +18,7 @@
 
 ## Forbidden
 
-- `legacy/v1/` からの import
+- v1 archived code からの import / copy-forward
 - cross-world 参照
 - Neo4j / neomodel の再導入
 - 廃止済み/存在しない固定 model ID への依存
@@ -30,7 +29,6 @@
 
 - バックエンド変更後: `PYTHONPATH=backend python -m pytest tests/backend`
 - v1 用語の残骸確認: `make scan-v1-terms`
-- 退避構成確認: `make check-legacy`
 - フロント変更後: `cd frontend && npm run build`
 - フルスタック確認: `docker compose up --build`
 

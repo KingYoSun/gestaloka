@@ -1644,7 +1644,7 @@ class ModelRouter:
                 return ProviderResponse(
                     raw_output={
                         "narrative": "The fallback lane resolves the turn inside the same world and keeps the request moving.",
-                        "npc_reaction": "Gate Steward Rikka acknowledges the fallback result and keeps the procedure steady.",
+                        "npc_reaction": "The guide NPC acknowledges the fallback result and keeps the procedure steady.",
                         "tone": "measured",
                     },
                     provider_name="eval_control",

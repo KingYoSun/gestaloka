@@ -6,7 +6,6 @@ The runtime is now being cut over from a single built-in setting to an engine/co
 
 ## Repository layout
 
-- `legacy/v1/` archived v1 code and documents
 - `backend/` FastAPI modular monolith for the v2 slice
 - `frontend/` player React client for login, world start, and turn play
 - `admin-frontend/` separate React admin client for pack, user, LLM, prompt, SP, and release management
@@ -35,7 +34,7 @@ password: demo-password
 - `PYTHONPATH=backend pytest tests/backend` verifies the backend slice directly.
 - `make build-frontend` is the official frontend build path. It runs inside Docker/Compose instead of the host shell.
 - `make frontend-e2e` is the official full-stack Playwright smoke path. It runs the Playwright smoke specs under `tests/e2e/` through Compose, waits for `backend` / `player-frontend` / `keycloak` readiness, and cleans the stack afterward.
-- `make verify-v2` is the canonical local and CI verification entrypoint. It runs backend tests, v1 terminology checks, legacy layout checks, the containerized frontend build, and the containerized E2E smoke in order.
+- `make verify-v2` is the canonical local and CI verification entrypoint. It runs backend tests, v1 terminology checks, pack checks, shared-world regressions, the containerized frontend build, and the containerized E2E smoke in order.
 - `GET /worlds/packs` exposes the bundled pack and template catalog used by the session bootstrap UI.
 - `make pack-export` and `make pack-import` move validated external world packs as `.tar.gz` artifacts; see [World Pack Operations](documents/world-pack-operations.md).
 - Host `npm run build` remains a convenience path only. In mixed WSL/Windows environments it is non-authoritative and may fail even when the Compose verification path is healthy.
@@ -75,7 +74,6 @@ password: demo-password
 
 ## Notes
 
-- v1 assets are frozen under `legacy/v1/` and are not imported by v2.
 - The graph projection path is outbox-driven. The standard compose stack now targets NebulaGraph, while lightweight test settings still use the recording backend.
 - Runtime stabilization for NebulaGraph includes an init step that registers the storage host before backend and projection worker start.
 - LLM observability uses self-hosted Langfuse for prompt/generation/retrieval/eval traces, while OpenTelemetry remains the infra/metrics layer.

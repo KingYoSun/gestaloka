@@ -1,6 +1,6 @@
 # GESTALOKA v2 documents
 
-This directory only contains v2 documentation. Historical material lives under `legacy/v1/documents/`.
+This directory contains v2 documentation and archived v2 planning material.
 
 ## Current source of truth
 
