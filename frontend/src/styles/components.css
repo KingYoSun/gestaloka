@@ -59,6 +59,26 @@
   font-feature-settings: var(--font-feature-settings-palt);
 }
 
+.selected-profile-name {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.profile-summary {
+  min-width: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-panel);
+  padding: var(--space-3);
+  background: var(--color-surface-normal);
+}
+
+.profile-summary > * + * {
+  margin-top: var(--space-1);
+}
+
 .start-state-label,
 .scene-place-label,
 .story-meta,

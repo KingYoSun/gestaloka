@@ -495,6 +495,7 @@ def test_public_catalog_hides_private_packs_and_ops_catalog_keeps_them(tmp_path:
                 "pack_id": "gestaloka_reference",
                 "world_template_id": "nexus_foundation",
                 "world_name": "Hidden Pack World",
+                "player_display_name": "Demo Player",
             },
             headers=auth_headers,
         )
@@ -548,6 +549,7 @@ def test_public_catalog_hides_unplayable_templates_and_session_rejects_them(
                 "pack_id": "gestaloka_reference",
                 "world_template_id": "nexus_foundation",
                 "world_name": "Unplayable Template World",
+                "player_display_name": "Demo Player",
             },
             headers=auth_headers,
         )
@@ -584,6 +586,7 @@ def test_template_catalog_metadata_overrides_pack_defaults(tmp_path: Path, auth_
                 "pack_id": "gestaloka_reference",
                 "world_template_id": "nexus_foundation",
                 "world_name": "Template Override World",
+                "player_display_name": "Demo Player",
             },
             headers=auth_headers,
         )
@@ -663,6 +666,7 @@ def test_pack_catalog_apis_sanitize_public_failures_and_expose_admin_paths(tmp_p
                 "pack_id": "gestaloka_reference",
                 "world_template_id": "nexus_foundation",
                 "world_name": "External Valid World",
+                "player_display_name": "Demo Player",
             },
             headers=auth_headers,
         )
@@ -954,6 +958,7 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
                 "pack_id": "gestaloka_reference",
                 "world_template_id": "nexus_foundation",
                 "world_name": "Imported Pack World",
+                "player_display_name": "Demo Player",
             },
             headers=auth_headers,
         )

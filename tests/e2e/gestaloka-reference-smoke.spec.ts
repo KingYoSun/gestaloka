@@ -20,6 +20,9 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
 
   await page.getByTestId("world-select").selectOption(worldId);
+  await page.getByTestId("profile-display-name").fill("Demo Player");
+  await page.getByTestId("create-player-profile").click();
+  await expect(page.getByTestId("player-profile-select")).toContainText("Demo Player", { timeout: slowTimeout });
   await page.getByTestId("start-session").click();
 
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });

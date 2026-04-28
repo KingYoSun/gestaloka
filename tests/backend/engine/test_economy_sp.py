@@ -9,6 +9,7 @@ def engine_session_payload() -> dict[str, str]:
     return {
         "world_id": "gestaloka_reference",
         "world_name": "GESTALOKA: Nexus Foundation",
+        "player_display_name": "Demo Player",
     }
 
 

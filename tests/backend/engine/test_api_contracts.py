@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
-from app.models.entities import ObservabilitySnapshot, OutboxEvent, ProjectionRecord, World
+from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, ProjectionRecord, World
 from app.modules.identity.oidc import UserIdentity
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
@@ -16,6 +16,7 @@ def engine_session_payload(*, world_id: str = "gestaloka_reference") -> dict[str
     return {
         "world_id": world_id,
         "world_name": "GESTALOKA: Nexus Foundation",
+        "player_display_name": "Demo Player",
     }
 
 
@@ -141,6 +142,123 @@ def test_world_health_blocks_world_with_missing_pack_metadata(client, container,
     assert response.json()["detail"]["error"] == "world_pack_metadata_missing"
 
 
+def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(client, container, auth_headers):
+    first = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={
+            "display_name": "Akari",
+            "gender": "female",
+            "background": "境界標識を読む旅人。",
+            "free_text": "静かに観察する。",
+            "narrative_preferences": {
+                "perspective": "first_person",
+                "tone": "logical",
+                "density": "ornate",
+                "dialogue_style": "dialogue_forward",
+            },
+        },
+        headers=auth_headers,
+    )
+    second = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={"display_name": "Ren", "gender": "other"},
+        headers=auth_headers,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    profile_list = client.get("/worlds/gestaloka_reference/player-profiles", headers=auth_headers)
+    assert [item["display_name"] for item in profile_list.json()["items"]] == ["Akari", "Ren"]
+
+    session_payload = {
+        "world_id": "gestaloka_reference",
+        "player_actor_id": first.json()["actor_id"],
+        "world_name": "GESTALOKA: Nexus Foundation",
+    }
+    first_session = client.post("/sessions", json=session_payload, headers=auth_headers)
+    second_session = client.post("/sessions", json=session_payload, headers=auth_headers)
+    assert first_session.status_code == 200
+    assert second_session.status_code == 200
+    assert first_session.json()["player_profile"]["locked"] is True
+    state = client.get(f"/sessions/{first_session.json()['session_id']}/state", headers=auth_headers)
+    assert state.json()["player_profile"]["narrative_preferences"]["perspective"] == "first_person"
+
+    identity_patch = client.patch(
+        f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
+        json={"display_name": "Changed"},
+        headers=auth_headers,
+    )
+    style_patch = client.patch(
+        f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
+        json={"narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"}},
+        headers=auth_headers,
+    )
+    assert identity_patch.status_code == 409
+    assert style_patch.status_code == 200
+    assert style_patch.json()["narrative_preferences"]["perspective"] == "third_person"
+
+    with container.session_factory() as db:
+        profile = db.get(PlayerProfile, {"actor_id": first.json()["actor_id"], "world_id": "gestaloka_reference"})
+        profile_events = list(
+            db.execute(
+                select(Event).where(
+                    Event.world_id == "gestaloka_reference",
+                    Event.source_actor_id == first.json()["actor_id"],
+                    Event.event_type == "player.profile.created",
+                )
+            ).scalars()
+        )
+        profile_memories = list(
+            db.execute(
+                select(Memory).where(
+                    Memory.world_id == "gestaloka_reference",
+                    Memory.source_event_id == profile.profile_setup_event_id,
+                )
+            ).scalars()
+        )
+    assert len(profile_events) == 1
+    assert {item.scope for item in profile_memories} == {"actor", "world"}
+
+
+def test_player_profile_ownership_is_enforced(client, container, auth_headers):
+    profile_response = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={"display_name": "Owner"},
+        headers=auth_headers,
+    )
+    assert profile_response.status_code == 200
+
+    def resolve_token(token: str) -> UserIdentity:
+        if token == "owner":
+            return UserIdentity(sub="local-player", name="Owner")
+        if token == "other":
+            return UserIdentity(sub="other-player", name="Other")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    container.oidc_adapter.resolve_token = resolve_token  # type: ignore[method-assign]
+    other_headers = {"Authorization": "Bearer other"}
+
+    assert client.get("/worlds/gestaloka_reference/player-profiles", headers=other_headers).json()["items"] == []
+    edit_response = client.patch(
+        f"/worlds/gestaloka_reference/player-profiles/{profile_response.json()['actor_id']}",
+        json={"narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"}},
+        headers=other_headers,
+    )
+    start_response = client.post(
+        "/sessions",
+        json={"world_id": "gestaloka_reference", "player_actor_id": profile_response.json()["actor_id"]},
+        headers=other_headers,
+    )
+    missing_response = client.post(
+        "/sessions",
+        json={"world_id": "gestaloka_reference"},
+        headers={"Authorization": "Bearer owner"},
+    )
+    assert edit_response.status_code == 404
+    assert start_response.status_code == 404
+    assert missing_response.status_code == 422
+
+
 def test_session_pack_catalog_error_returns_503(client, container, tmp_path: Path, auth_headers):
     container.pack_registry = PackRegistry(tmp_path / "missing-packs")
     response = client.post("/sessions", json=engine_session_payload(world_id="world-catalog-error"), headers=auth_headers)
@@ -236,6 +354,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "pack_id",
         "world_template_id",
         "player_actor_id",
+        "player_profile",
         "npc_actor_id",
         "location_id",
         "websocket_url",
@@ -250,6 +369,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "world_template_display_name": "Nexus Foundation",
         "semantic_tags": ["layered-world", "archive", "corruption", "factions"],
     }
+    assert session_payload["player_profile"]["display_name"] == "Demo Player"
+    assert session_payload["player_profile"]["locked"] is True
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
     assert {
@@ -257,6 +378,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "location",
         "current_location",
         "character",
+        "player_profile",
         "quests",
         "factions",
         "inventory",
@@ -281,6 +403,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "important_inventory_affordances",
     } <= set(state_response.json())
     world_pack = state_response.json()["world_pack"]
+    assert state_response.json()["player_profile"]["actor_id"] == session_payload["player_actor_id"]
     assert state_response.json()["quests"][0]["progress"] == 0
     assert state_response.json()["quests"][0]["stage_key"] == world_pack["starter_stage_key"]
     assert state_response.json()["chapter"]["key"] == world_pack["opening_chapter_key"]

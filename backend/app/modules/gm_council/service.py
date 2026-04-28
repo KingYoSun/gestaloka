@@ -274,12 +274,18 @@ class GMCouncilService:
         recent_world_beats = request.session_state.get("recent_world_beats") or []
         ambient_murmurs = request.session_state.get("ambient_murmurs") or []
         shared_world_context = request.session_state.get("shared_world_context") or {}
+        player_profile = request.session_state.get("player_profile") or {}
+        narrative_preferences = (
+            player_profile.get("narrative_preferences") if isinstance(player_profile, dict) else {}
+        ) or {}
 
         intent_input = {
             "world_id": request.world_id,
             "input_mode": request.input_mode,
             "input_text": request.input_text,
             "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
             "npc_name": request.npc_name,
             "selected_choice": request.selected_choice or {},
             "world_pack": request.session_state.get("world_pack") or {},
@@ -350,6 +356,8 @@ class GMCouncilService:
             "input_text": request.input_text,
             "intent_summary": intent_payload.intent_summary,
             "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
             "npc_name": request.npc_name,
             "relevant_memories": request.relevant_memories,
             "relation_context": request.relation_context,
@@ -409,6 +417,8 @@ class GMCouncilService:
             "world_id": request.world_id,
             "input_text": request.input_text,
             "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
             "npc_name": request.npc_name,
             "memory_summary": memory_payload.memory_summary,
             "focus_memories": memory_payload.focus_memories,
@@ -467,6 +477,8 @@ class GMCouncilService:
             "world_id": request.world_id,
             "input_text": request.input_text,
             "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
             "npc_name": request.npc_name,
             "memory_summary": memory_payload.memory_summary,
             "relation_summary": memory_payload.relation_summary,
@@ -640,6 +652,8 @@ class GMCouncilService:
             "world_id": request.world_id,
             "input_text": request.input_text,
             "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
             "npc_name": request.npc_name,
             "memory_summary": memory_payload.memory_summary,
             "reaction_outline": npc_payload.reaction_outline,

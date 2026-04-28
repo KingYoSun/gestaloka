@@ -1,10 +1,11 @@
 import { LogIn, UserPlus } from "lucide-react";
+import type { FormEvent } from "react";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { StreamList } from "../../components/ui/StreamList";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
-import type { NarrativeChoice, WorldContext } from "../../types";
+import type { NarrativeChoice, PlayerProfile, WorldContext } from "../../types";
 
 type PlayerPageProps = {
   runtime: GestalokaRuntime;
@@ -48,8 +49,19 @@ function FirstView({ runtime }: PlayerPageProps) {
 
 function WorldStartView({ runtime }: PlayerPageProps) {
   const {
+    beginProfileEdit,
+    cancelProfileEdit,
+    editingPlayerActorId,
+    handleCreatePlayerProfile,
     playableWorlds,
+    playerProfiles,
+    profileDraft,
+    profilePending,
     selectedWorld,
+    selectedPlayerActorId,
+    selectedPlayerProfile,
+    setProfileDraft,
+    setSelectedPlayerActorId,
     setWorldId,
     wallet,
     worldCatalogUnavailable,
@@ -64,7 +76,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
   return (
     <section className="player-start-view" aria-label="世界開始">
       <p className="player-brand">GESTALOKA</p>
-      <form className="player-start-form" onSubmit={handleStartSession}>
+      <div className="player-start-form">
         <div className="world-choice">
           <Field label="世界">
             <select
@@ -87,15 +99,206 @@ function WorldStartView({ runtime }: PlayerPageProps) {
           {catalogStateLabel ? <p className="start-state-label">{catalogStateLabel}</p> : null}
           {wallet ? <p className="start-state-label">SP {wallet.balance}</p> : null}
         </div>
-        <Button
-          data-testid="start-session"
-          type="submit"
-          disabled={worldCatalogUnavailable || !selectedWorld || selectedWorld.status !== "playable"}
-        >
-          始める
-        </Button>
-      </form>
+        <div className="profile-start-panel">
+          {playerProfiles.length ? (
+            <Field label="プレイヤー">
+              <select
+                data-testid="player-profile-select"
+                value={selectedPlayerActorId}
+                onChange={(event) => setSelectedPlayerActorId(event.target.value)}
+              >
+                {playerProfiles.map((profile) => (
+                  <option key={profile.actor_id} value={profile.actor_id}>
+                    {profile.display_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+          {selectedPlayerProfile ? <ProfileSummary onEdit={beginProfileEdit} profile={selectedPlayerProfile} /> : null}
+          <ProfileForm
+            editingPlayerActorId={editingPlayerActorId}
+            onCancelEdit={cancelProfileEdit}
+            profileDraft={profileDraft}
+            profilePending={profilePending}
+            setProfileDraft={setProfileDraft}
+            onSubmit={handleCreatePlayerProfile}
+          />
+          <form onSubmit={handleStartSession}>
+            <Button
+              data-testid="start-session"
+              type="submit"
+              disabled={
+                worldCatalogUnavailable ||
+                !selectedWorld ||
+                selectedWorld.status !== "playable" ||
+                !selectedPlayerProfile
+              }
+            >
+              始める
+            </Button>
+          </form>
+        </div>
+      </div>
     </section>
+  );
+}
+
+function ProfileSummary({ onEdit, profile }: { onEdit: (profile: PlayerProfile) => void; profile: PlayerProfile }) {
+  const styleLabel = [
+    profile.narrative_preferences.perspective === "first_person" ? "一人称" : "三人称",
+    profile.narrative_preferences.tone === "lyrical" ? "叙情的" : "論理的",
+    profile.narrative_preferences.density === "concise" ? "簡素" : "重厚",
+    profile.narrative_preferences.dialogue_style === "dialogue_forward" ? "セリフ中心" : "文語的",
+  ].join(" / ");
+  return (
+    <div className="profile-summary">
+      <p className="selected-profile-name">{profile.display_name}</p>
+      <p className="start-state-label">{styleLabel}</p>
+      {!profile.locked ? (
+        <Button className="secondary-button" type="button" onClick={() => onEdit(profile)}>
+          編集
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ProfileForm({
+  onSubmit,
+  editingPlayerActorId,
+  onCancelEdit,
+  profileDraft,
+  profilePending,
+  setProfileDraft,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  editingPlayerActorId: string;
+  onCancelEdit: () => void;
+  profileDraft: GestalokaRuntime["profileDraft"];
+  profilePending: boolean;
+  setProfileDraft: GestalokaRuntime["setProfileDraft"];
+}) {
+  return (
+    <form className="profile-form" onSubmit={onSubmit}>
+      <Field label="名前">
+        <input
+          data-testid="profile-display-name"
+          value={profileDraft.display_name}
+          maxLength={40}
+          onChange={(event) => setProfileDraft((current) => ({ ...current, display_name: event.target.value }))}
+        />
+      </Field>
+      <Field label="性別">
+        <select
+          value={profileDraft.gender}
+          onChange={(event) =>
+            setProfileDraft((current) => ({ ...current, gender: event.target.value as PlayerProfile["gender"] }))
+          }
+        >
+          <option value="unspecified">未指定</option>
+          <option value="male">男</option>
+          <option value="female">女</option>
+          <option value="other">その他</option>
+        </select>
+      </Field>
+      <Field label="背景">
+        <textarea
+          rows={3}
+          value={profileDraft.background}
+          maxLength={1200}
+          onChange={(event) => setProfileDraft((current) => ({ ...current, background: event.target.value }))}
+        />
+      </Field>
+      <Field label="自由記述">
+        <textarea
+          rows={3}
+          value={profileDraft.free_text}
+          maxLength={2000}
+          onChange={(event) => setProfileDraft((current) => ({ ...current, free_text: event.target.value }))}
+        />
+      </Field>
+      <div className="profile-style-grid">
+        <Field label="視点">
+          <select
+            value={profileDraft.narrative_preferences.perspective}
+            onChange={(event) =>
+              setProfileDraft((current) => ({
+                ...current,
+                narrative_preferences: {
+                  ...current.narrative_preferences,
+                  perspective: event.target.value as PlayerProfile["narrative_preferences"]["perspective"],
+                },
+              }))
+            }
+          >
+            <option value="third_person">三人称</option>
+            <option value="first_person">一人称</option>
+          </select>
+        </Field>
+        <Field label="調子">
+          <select
+            value={profileDraft.narrative_preferences.tone}
+            onChange={(event) =>
+              setProfileDraft((current) => ({
+                ...current,
+                narrative_preferences: {
+                  ...current.narrative_preferences,
+                  tone: event.target.value as PlayerProfile["narrative_preferences"]["tone"],
+                },
+              }))
+            }
+          >
+            <option value="lyrical">叙情的</option>
+            <option value="logical">論理的</option>
+          </select>
+        </Field>
+        <Field label="密度">
+          <select
+            value={profileDraft.narrative_preferences.density}
+            onChange={(event) =>
+              setProfileDraft((current) => ({
+                ...current,
+                narrative_preferences: {
+                  ...current.narrative_preferences,
+                  density: event.target.value as PlayerProfile["narrative_preferences"]["density"],
+                },
+              }))
+            }
+          >
+            <option value="concise">簡素</option>
+            <option value="ornate">重厚</option>
+          </select>
+        </Field>
+        <Field label="文">
+          <select
+            value={profileDraft.narrative_preferences.dialogue_style}
+            onChange={(event) =>
+              setProfileDraft((current) => ({
+                ...current,
+                narrative_preferences: {
+                  ...current.narrative_preferences,
+                  dialogue_style: event.target.value as PlayerProfile["narrative_preferences"]["dialogue_style"],
+                },
+              }))
+            }
+          >
+            <option value="literary">文語的</option>
+            <option value="dialogue_forward">セリフ中心</option>
+          </select>
+        </Field>
+      </div>
+      <div className="profile-form-actions">
+        <Button data-testid="create-player-profile" type="submit" disabled={profilePending || !profileDraft.display_name.trim()}>
+          {editingPlayerActorId ? "保存" : "作成"}
+        </Button>
+        {editingPlayerActorId ? (
+          <Button className="secondary-button" type="button" onClick={onCancelEdit} disabled={profilePending}>
+            取消
+          </Button>
+        ) : null}
+      </div>
+    </form>
   );
 }
 

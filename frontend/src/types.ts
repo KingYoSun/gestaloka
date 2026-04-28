@@ -93,9 +93,32 @@ export type SessionInfo = {
   world_template_id: string;
   world_context: WorldContext;
   player_actor_id: string;
+  player_profile: PlayerProfile;
   npc_actor_id: string;
   location_id: string;
   websocket_url: string;
+};
+
+export type NarrativePreferences = {
+  perspective: "first_person" | "third_person";
+  tone: "lyrical" | "logical";
+  density: "concise" | "ornate";
+  dialogue_style: "dialogue_forward" | "literary";
+};
+
+export type PlayerProfile = {
+  actor_id: string;
+  world_id: string;
+  display_name: string;
+  gender: "male" | "female" | "unspecified" | "other";
+  background: string;
+  free_text: string;
+  narrative_preferences: NarrativePreferences;
+  locked: boolean;
+  locked_at: string | null;
+  profile_setup_event_id: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type WorldPackItem = {
@@ -325,6 +348,7 @@ export type SessionState = {
   location: CurrentLocationSummary;
   current_location: CurrentLocationSummary;
   character: CharacterSummary;
+  player_profile: PlayerProfile | null;
   quests: QuestSummary[];
   factions: FactionSummary[];
   inventory: InventorySummary[];

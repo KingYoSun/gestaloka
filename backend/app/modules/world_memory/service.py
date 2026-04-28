@@ -547,6 +547,17 @@ class MemoryService:
         }
 
     def _embed_memory(self, memory: Memory, *, allow_pending: bool) -> bool:
+        try:
+            provider = self.provider
+            provider_model = provider.model_name
+        except Exception as exc:
+            if allow_pending:
+                memory.embedding = None
+                memory.embedding_status = "pending"
+                memory.embedding_model = None
+                memory.embedded_at = None
+                return False
+            raise exc
         langfuse_context = self._langfuse_observation(
             name="memory.embed",
             as_type="embedding",
@@ -558,7 +569,7 @@ class MemoryService:
                 "location_id": memory.location_id,
                 "runtime_role": self.settings.app_runtime_role,
             },
-            model=self.provider.model_name,
+            model=provider_model,
             model_parameters={
                 "dimension": self.settings.memory_embedding_dim,
                 "task_type": "RETRIEVAL_DOCUMENT",
@@ -567,23 +578,23 @@ class MemoryService:
         )
         with langfuse_context as langfuse_link:
             try:
-                embedding = self.provider.embed_document(memory.text)
+                embedding = provider.embed_document(memory.text)
                 memory.embedding = embedding
                 memory.embedding_status = "ready"
-                memory.embedding_model = self.provider.model_name
+                memory.embedding_model = provider_model
                 memory.embedded_at = datetime.now(timezone.utc)
                 _update_langfuse_embedding(
                     langfuse_link,
                     status="ready",
                     memory_id=memory.id,
-                    embedding_model=self.provider.model_name,
+                    embedding_model=provider_model,
                 )
                 return True
             except Exception as exc:
                 if allow_pending:
                     memory.embedding = None
                     memory.embedding_status = "pending"
-                    memory.embedding_model = self.provider.model_name if self._provider is not None else None
+                    memory.embedding_model = provider_model if self._provider is not None else None
                     memory.embedded_at = None
                 _update_langfuse_embedding(
                     langfuse_link,

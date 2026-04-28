@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
+from app.modules.actor.service import create_player_profile_for_user
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
 from app.modules.world_pack.service import (
@@ -16,16 +17,18 @@ from app.modules.world_pack.service import (
     ensure_requested_world_is_playable,
     world_context_for_world,
 )
+from app.modules.world_state.service import ensure_world
 
 router = APIRouter(tags=["sessions"])
 
 
 class CreateSessionRequest(BaseModel):
     world_id: str = Field(min_length=1, max_length=64)
+    player_actor_id: str | None = Field(default=None, min_length=1, max_length=36)
     pack_id: str | None = Field(default=None, min_length=1, max_length=120)
     world_template_id: str | None = Field(default=None, min_length=1, max_length=120)
     world_name: str | None = Field(default=None, min_length=1, max_length=120)
-    player_display_name: str | None = Field(default=None, max_length=120)
+    player_display_name: str | None = Field(default=None, min_length=1, max_length=40)
     world_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -55,6 +58,28 @@ def create_session(
             requested_pack_id=payload.pack_id,
             requested_world_template_id=payload.world_template_id,
         )
+        player_actor_id = payload.player_actor_id
+        if player_actor_id is None:
+            legacy_display_name = str(payload.player_display_name or "").strip()
+            if not legacy_display_name:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="player_actor_id is required",
+                )
+            ensure_world(
+                db,
+                payload.world_id,
+                pack_id=pack.manifest.pack_id,
+                world_template_id=template.template_id,
+                world_name=requested_world_name,
+            )
+            actor, _ = create_player_profile_for_user(
+                db,
+                world_id=payload.world_id,
+                user_sub=user.sub,
+                display_name=legacy_display_name,
+            )
+            player_actor_id = actor.id
         result = create_session_for_user(
             db,
             container,
@@ -63,7 +88,7 @@ def create_session(
             pack_id=pack.manifest.pack_id,
             world_template_id=template.template_id,
             world_name=requested_world_name,
-            player_display_name=payload.player_display_name,
+            player_actor_id=player_actor_id,
         )
         container.projection_service.process_pending(db)
         world_context = world_context_for_world(db, result.world.id)
@@ -86,6 +111,7 @@ def create_session(
         "pack_id": str(world_state.get("pack_id") or pack.manifest.pack_id),
         "world_template_id": str(world_state.get("world_template_id") or template.template_id),
         "player_actor_id": result.player_actor.id,
+        "player_profile": result.player_profile,
         "npc_actor_id": result.guide_npc.id,
         "location_id": result.starter_location.id,
         "websocket_url": result.websocket_url,

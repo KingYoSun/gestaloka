@@ -32,6 +32,7 @@ def engine_session_payload() -> dict[str, str]:
     return {
         "world_id": "gestaloka_reference",
         "world_name": "GESTALOKA: Nexus Foundation",
+        "player_display_name": "Demo Player",
     }
 
 
@@ -83,7 +84,7 @@ def test_session_seed_is_idempotent_for_character_faction_and_quest(client, cont
     )
     second = client.post(
         "/sessions",
-        json=engine_session_payload(),
+        json={**engine_session_payload(), "player_actor_id": first.json()["player_actor_id"]},
         headers=auth_headers,
     )
 

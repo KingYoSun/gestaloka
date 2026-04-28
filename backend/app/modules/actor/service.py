@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Mapping
 
 from sqlalchemy import Select, select
@@ -8,6 +9,34 @@ from sqlalchemy.orm import Session
 from app.models.entities import Actor, NPCProfile, PlayerProfile, Relationship
 from app.modules.world_pack.service import PackNPCSeed, resolve_world_pack
 
+GENDER_VALUES = {"male", "female", "unspecified", "other"}
+NARRATIVE_PREFERENCE_OPTIONS = {
+    "perspective": {"first_person", "third_person"},
+    "tone": {"lyrical", "logical"},
+    "density": {"concise", "ornate"},
+    "dialogue_style": {"dialogue_forward", "literary"},
+}
+DEFAULT_NARRATIVE_PREFERENCES = {
+    "perspective": "third_person",
+    "tone": "lyrical",
+    "density": "concise",
+    "dialogue_style": "literary",
+}
+
+
+def normalize_narrative_preferences(value: Mapping[str, object] | None) -> dict[str, str]:
+    preferences = dict(DEFAULT_NARRATIVE_PREFERENCES)
+    for key, allowed_values in NARRATIVE_PREFERENCE_OPTIONS.items():
+        candidate = str((value or {}).get(key) or "").strip()
+        if candidate in allowed_values:
+            preferences[key] = candidate
+    return preferences
+
+
+def normalize_gender(value: str | None) -> str:
+    candidate = str(value or "unspecified").strip()
+    return candidate if candidate in GENDER_VALUES else "unspecified"
+
 
 def get_player_actor_for_user(db: Session, world_id: str, user_sub: str) -> Actor | None:
     stmt: Select[tuple[Actor]] = select(Actor).where(
@@ -15,7 +44,104 @@ def get_player_actor_for_user(db: Session, world_id: str, user_sub: str) -> Acto
         Actor.user_sub == user_sub,
         Actor.actor_type == "player",
     )
-    return db.execute(stmt).scalar_one_or_none()
+    return db.execute(stmt.order_by(Actor.created_at.asc(), Actor.id.asc()).limit(1)).scalar_one_or_none()
+
+
+def list_player_profiles_for_user(db: Session, world_id: str, user_sub: str) -> list[tuple[Actor, PlayerProfile]]:
+    stmt = (
+        select(Actor, PlayerProfile)
+        .join(PlayerProfile, (PlayerProfile.actor_id == Actor.id) & (PlayerProfile.world_id == Actor.world_id))
+        .where(Actor.world_id == world_id, Actor.user_sub == user_sub, Actor.actor_type == "player")
+        .order_by(Actor.created_at.asc(), Actor.id.asc())
+    )
+    return list(db.execute(stmt).all())
+
+
+def get_player_profile_for_user(db: Session, world_id: str, user_sub: str, actor_id: str) -> tuple[Actor, PlayerProfile] | None:
+    stmt = (
+        select(Actor, PlayerProfile)
+        .join(PlayerProfile, (PlayerProfile.actor_id == Actor.id) & (PlayerProfile.world_id == Actor.world_id))
+        .where(
+            Actor.id == actor_id,
+            Actor.world_id == world_id,
+            Actor.user_sub == user_sub,
+            Actor.actor_type == "player",
+        )
+    )
+    return db.execute(stmt).one_or_none()
+
+
+def get_player_profile(db: Session, world_id: str, actor_id: str) -> tuple[Actor, PlayerProfile] | None:
+    stmt = (
+        select(Actor, PlayerProfile)
+        .join(PlayerProfile, (PlayerProfile.actor_id == Actor.id) & (PlayerProfile.world_id == Actor.world_id))
+        .where(Actor.id == actor_id, Actor.world_id == world_id, Actor.actor_type == "player")
+    )
+    return db.execute(stmt).one_or_none()
+
+
+def create_player_profile_for_user(
+    db: Session,
+    *,
+    world_id: str,
+    user_sub: str,
+    display_name: str,
+    gender: str = "unspecified",
+    background: str = "",
+    free_text: str = "",
+    narrative_preferences: Mapping[str, object] | None = None,
+) -> tuple[Actor, PlayerProfile]:
+    actor = Actor(
+        world_id=world_id,
+        current_location_id=None,
+        actor_type="player",
+        user_sub=user_sub,
+        display_name=display_name.strip(),
+    )
+    db.add(actor)
+    db.flush()
+    profile = PlayerProfile(
+        actor_id=actor.id,
+        world_id=world_id,
+        gender=normalize_gender(gender),
+        background=background.strip(),
+        free_text=free_text.strip(),
+        narrative_preferences=normalize_narrative_preferences(narrative_preferences),
+        preferences={},
+    )
+    db.add(profile)
+    db.flush()
+    return actor, profile
+
+
+def update_player_profile_for_user(
+    db: Session,
+    *,
+    world_id: str,
+    user_sub: str,
+    actor_id: str,
+    display_name: str | None = None,
+    gender: str | None = None,
+    background: str | None = None,
+    free_text: str | None = None,
+    narrative_preferences: Mapping[str, object] | None = None,
+) -> tuple[Actor, PlayerProfile] | None:
+    row = get_player_profile_for_user(db, world_id, user_sub, actor_id)
+    if row is None:
+        return None
+    actor, profile = row
+    profile.narrative_preferences = normalize_narrative_preferences(narrative_preferences or profile.narrative_preferences)
+    if profile.locked_at is None:
+        if display_name is not None:
+            actor.display_name = display_name.strip()
+        if gender is not None:
+            profile.gender = normalize_gender(gender)
+        if background is not None:
+            profile.background = background.strip()
+        if free_text is not None:
+            profile.free_text = free_text.strip()
+    db.flush()
+    return actor, profile
 
 
 def ensure_player_actor(
@@ -42,9 +168,41 @@ def ensure_player_actor(
     )
     db.add(actor)
     db.flush()
-    db.add(PlayerProfile(actor_id=actor.id, world_id=world_id, preferences={}))
+    db.add(
+        PlayerProfile(
+            actor_id=actor.id,
+            world_id=world_id,
+            gender="unspecified",
+            background="",
+            free_text="",
+            narrative_preferences=dict(DEFAULT_NARRATIVE_PREFERENCES),
+            preferences={},
+        )
+    )
     db.flush()
     return actor
+
+
+def lock_player_profile(profile: PlayerProfile) -> None:
+    if profile.locked_at is None:
+        profile.locked_at = datetime.now(timezone.utc)
+
+
+def player_profile_to_dict(actor: Actor, profile: PlayerProfile) -> dict[str, object]:
+    return {
+        "actor_id": actor.id,
+        "world_id": actor.world_id,
+        "display_name": actor.display_name,
+        "gender": profile.gender,
+        "background": profile.background,
+        "free_text": profile.free_text,
+        "narrative_preferences": normalize_narrative_preferences(profile.narrative_preferences),
+        "locked": profile.locked_at is not None,
+        "locked_at": profile.locked_at.isoformat() if profile.locked_at is not None else None,
+        "profile_setup_event_id": profile.profile_setup_event_id,
+        "created_at": actor.created_at.isoformat(),
+        "updated_at": profile.updated_at.isoformat(),
+    }
 
 
 def _merge_routine_state(

@@ -39,6 +39,7 @@ import type {
   OpsWorldPackCatalog,
   PlayableWorldCatalog,
   PlayableWorldItem,
+  PlayerProfile,
   ProjectionStatus,
   RebuildSummary,
   RelationshipOpsItem,
@@ -57,6 +58,19 @@ import type {
   WorldTickItem,
 } from "../types";
 
+const defaultProfileDraft = {
+  display_name: "",
+  gender: "unspecified" as PlayerProfile["gender"],
+  background: "",
+  free_text: "",
+  narrative_preferences: {
+    perspective: "third_person",
+    tone: "lyrical",
+    density: "concise",
+    dialogue_style: "literary",
+  } as PlayerProfile["narrative_preferences"],
+};
+
 export function useGestalokaRuntime() {
   const [route, setRoute] = useState<AppRoute>(() => resolveRoute());
   const [ready, setReady] = useState(false);
@@ -69,6 +83,11 @@ export function useGestalokaRuntime() {
   const [opsWorldId, setOpsWorldId] = useState("");
   const [playableWorlds, setPlayableWorlds] = useState<PlayableWorldItem[]>([]);
   const [worldCatalogStatus, setWorldCatalogStatus] = useState("unknown");
+  const [playerProfiles, setPlayerProfiles] = useState<PlayerProfile[]>([]);
+  const [selectedPlayerActorId, setSelectedPlayerActorId] = useState("");
+  const [editingPlayerActorId, setEditingPlayerActorId] = useState("");
+  const [profileDraft, setProfileDraft] = useState(defaultProfileDraft);
+  const [profilePending, setProfilePending] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
@@ -136,6 +155,7 @@ export function useGestalokaRuntime() {
   const activeWorldId = route === "admin" ? (opsWorldId || session?.world_id || worldId) : (session?.world_id ?? worldId);
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const selectedWorld = playableWorlds.find((item) => item.world_id === worldId) ?? null;
+  const selectedPlayerProfile = playerProfiles.find((item) => item.actor_id === selectedPlayerActorId) ?? null;
   const worldCatalogUnavailable = worldCatalogStatus === "error";
   const visibleOpsWorlds = opsWorlds.filter((item) => {
     const context = item.world_context;
@@ -232,6 +252,10 @@ export function useGestalokaRuntime() {
       setWallet(null);
       setPlayableWorlds([]);
       setWorldCatalogStatus("unknown");
+      setPlayerProfiles([]);
+      setSelectedPlayerActorId("");
+      setEditingPlayerActorId("");
+      setProfileDraft(defaultProfileDraft);
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -295,6 +319,15 @@ export function useGestalokaRuntime() {
     }
     setWorldId(playableWorlds[0].world_id);
   }, [playableWorlds, worldId]);
+
+  useEffect(() => {
+    if (!authenticated || !token || !worldId || worldCatalogUnavailable) {
+      setPlayerProfiles([]);
+      setSelectedPlayerActorId("");
+      return;
+    }
+    void refreshPlayerProfiles(worldId, token);
+  }, [authenticated, token, worldId, worldCatalogUnavailable]);
 
   useEffect(() => {
     setAdjustWorldId(session?.world_id ?? worldId);
@@ -399,6 +432,18 @@ export function useGestalokaRuntime() {
     const payload = await apiFetch<SPWallet>("/economy/sp/me", currentToken);
     setWallet(payload);
     return payload;
+  }
+
+  async function refreshPlayerProfiles(currentWorldId: string, currentToken: string) {
+    const payload = await apiFetch<{ items: PlayerProfile[] }>(
+      `/worlds/${currentWorldId}/player-profiles`,
+      currentToken,
+    );
+    setPlayerProfiles(payload.items);
+    setSelectedPlayerActorId((current) =>
+      payload.items.some((item) => item.actor_id === current) ? current : (payload.items[0]?.actor_id ?? ""),
+    );
+    return payload.items;
   }
 
   async function refreshWorldState(currentSession: SessionInfo, currentToken: string) {
@@ -676,6 +721,65 @@ export function useGestalokaRuntime() {
     await keycloak.logout({ redirectUri: `${window.location.origin}/` });
   }
 
+  async function handleCreatePlayerProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !worldId) {
+      setError("Sign in before creating a player profile");
+      return;
+    }
+    if (!profileDraft.display_name.trim()) {
+      setError("名前を入力してください");
+      return;
+    }
+    try {
+      setProfilePending(true);
+      setError("");
+      const path = editingPlayerActorId
+        ? `/worlds/${worldId}/player-profiles/${editingPlayerActorId}`
+        : `/worlds/${worldId}/player-profiles`;
+      const saved = await apiFetch<PlayerProfile>(path, token, {
+        method: editingPlayerActorId ? "PATCH" : "POST",
+        body: JSON.stringify({
+          ...profileDraft,
+          display_name: profileDraft.display_name.trim(),
+          background: profileDraft.background.trim(),
+          free_text: profileDraft.free_text.trim(),
+        }),
+      });
+      setPlayerProfiles((current) =>
+        editingPlayerActorId
+          ? current.map((item) => (item.actor_id === saved.actor_id ? saved : item))
+          : [...current, saved],
+      );
+      setSelectedPlayerActorId(saved.actor_id);
+      setProfileDraft(defaultProfileDraft);
+      setEditingPlayerActorId("");
+    } catch (requestError) {
+      setError(formatError(requestError));
+    } finally {
+      setProfilePending(false);
+    }
+  }
+
+  function beginProfileEdit(profile: PlayerProfile) {
+    if (profile.locked) {
+      return;
+    }
+    setEditingPlayerActorId(profile.actor_id);
+    setProfileDraft({
+      display_name: profile.display_name,
+      gender: profile.gender,
+      background: profile.background,
+      free_text: profile.free_text,
+      narrative_preferences: profile.narrative_preferences,
+    });
+  }
+
+  function cancelProfileEdit() {
+    setEditingPlayerActorId("");
+    setProfileDraft(defaultProfileDraft);
+  }
+
   async function handleStartSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
@@ -690,6 +794,10 @@ export function useGestalokaRuntime() {
       setError("Choose a playable world before starting a session");
       return;
     }
+    if (!selectedPlayerProfile) {
+      setError("プレイヤープロフィールを選択してください");
+      return;
+    }
 
     try {
       setError("");
@@ -702,9 +810,13 @@ export function useGestalokaRuntime() {
         method: "POST",
         body: JSON.stringify({
           world_id: worldId,
+          player_actor_id: selectedPlayerProfile.actor_id,
         }),
       });
       setSession(created);
+      setPlayerProfiles((current) =>
+        current.map((item) => (item.actor_id === created.player_profile.actor_id ? created.player_profile : item)),
+      );
       setOpsWorldId(created.world_id);
       setLedgerWorldFilter(created.world_id);
       setAdjustWorldId(created.world_id);
@@ -1042,6 +1154,14 @@ export function useGestalokaRuntime() {
     setOpsWorldId,
     playableWorlds,
     worldCatalogStatus,
+    playerProfiles,
+    selectedPlayerActorId,
+    selectedPlayerProfile,
+    setSelectedPlayerActorId,
+    editingPlayerActorId,
+    profileDraft,
+    setProfileDraft,
+    profilePending,
     session,
     sessionState,
     turnInputMode,
@@ -1139,6 +1259,9 @@ export function useGestalokaRuntime() {
     handleLogin,
     handleRegister,
     handleLogout,
+    handleCreatePlayerProfile,
+    beginProfileEdit,
+    cancelProfileEdit,
     handleStartSession,
     handleTurnSubmit,
     handleChoiceSubmit,

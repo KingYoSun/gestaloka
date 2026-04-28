@@ -93,7 +93,6 @@ class Actor(Base, TimestampMixin):
     __tablename__ = "actors"
     __table_args__ = (
         UniqueConstraint("id", "world_id", name="uq_actors_id_world"),
-        UniqueConstraint("world_id", "user_sub", name="uq_actors_world_user_sub"),
         ForeignKeyConstraint(["current_location_id", "world_id"], ["locations.id", "locations.world_id"]),
     )
 
@@ -112,7 +111,13 @@ class PlayerProfile(Base, TimestampMixin):
 
     actor_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     world_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    gender: Mapped[str] = mapped_column(String(32), default="unspecified")
+    background: Mapped[str] = mapped_column(Text, default="")
+    free_text: Mapped[str] = mapped_column(Text, default="")
+    narrative_preferences: Mapped[dict] = mapped_column(JSON, default=dict)
     preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    profile_setup_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class NPCProfile(Base, TimestampMixin):

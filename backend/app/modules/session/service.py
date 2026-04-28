@@ -8,14 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
-from app.models.entities import Actor, Event, LLMRun, OutboxEvent, Session as GameSession, Turn, new_id
+from app.models.entities import Actor, Event, LLMRun, OutboxEvent, PlayerProfile, Session as GameSession, Turn, new_id
 from app.modules.world_pack.service import resolve_world_pack
 from app.modules.actor.service import (
-    ensure_player_actor,
     ensure_relationship,
+    get_player_profile,
+    get_player_profile_for_user,
     get_or_create_guide_npc,
     get_guide_npc_for_location,
-    get_player_actor_for_user,
+    lock_player_profile,
+    player_profile_to_dict,
 )
 from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.gm_council.service import CouncilRequest
@@ -47,6 +49,7 @@ class SessionCreationResult:
     session: GameSession
     world: object
     player_actor: object
+    player_profile: dict[str, object]
     guide_npc: object
     starter_location: object
     websocket_url: str
@@ -115,7 +118,7 @@ def create_session_for_user(
     pack_id: str,
     world_template_id: str,
     world_name: str | None = None,
-    player_display_name: str | None,
+    player_actor_id: str,
 ) -> SessionCreationResult:
     world = ensure_world(
         db,
@@ -126,13 +129,13 @@ def create_session_for_user(
     )
     _, template = resolve_world_pack(db, world_id)
     starter_location = ensure_starter_location(db, world_id)
-    player_actor = ensure_player_actor(
-        db,
-        world_id,
-        user.sub,
-        player_display_name or user.name,
-        location_id=starter_location.id,
-    )
+    player_row = get_player_profile_for_user(db, world_id, user.sub, player_actor_id)
+    if player_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player profile not found")
+    player_actor, profile = player_row
+    if player_actor.current_location_id != starter_location.id:
+        player_actor.current_location_id = starter_location.id
+        db.flush()
     seeded = ensure_world_slice_seed(
         db,
         world_id=world_id,
@@ -184,6 +187,20 @@ def create_session_for_user(
     db.add(bootstrap_turn)
     db.flush()
 
+    if profile.profile_setup_event_id is None:
+        profile_event = _materialize_player_profile_setup(
+            db,
+            container,
+            session=session,
+            turn=bootstrap_turn,
+            player_actor=player_actor,
+            profile=profile,
+            location_id=starter_location.id,
+        )
+        profile.profile_setup_event_id = profile_event.id
+    lock_player_profile(profile)
+    profile_payload = player_profile_to_dict(player_actor, profile)
+
     bootstrap_event = Event(
         world_id=world.id,
         session_id=session.id,
@@ -200,6 +217,7 @@ def create_session_for_user(
             "location_id": starter_location.id,
             "faction_id": seeded.faction.id,
             "quest_assignment_id": seeded.quest_assignment.id,
+            "player_profile": profile_payload,
         },
         narrative=str(template.bootstrap.session_started_narrative).format(
             player_name=player_actor.display_name,
@@ -225,10 +243,87 @@ def create_session_for_user(
         session=session,
         world=world,
         player_actor=player_actor,
+        player_profile=profile_payload,
         guide_npc=guide_npc,
         starter_location=starter_location,
         websocket_url=websocket_url,
     )
+
+
+def _materialize_player_profile_setup(
+    db: Session,
+    container: AppContainer,
+    *,
+    session: GameSession,
+    turn: Turn,
+    player_actor: Actor,
+    profile: PlayerProfile,
+    location_id: str | None,
+) -> Event:
+    profile_payload = player_profile_to_dict(player_actor, profile)
+    narrative_preferences = dict(profile_payload.get("narrative_preferences") or {})
+    background = str(profile.background or "").strip()
+    free_text = str(profile.free_text or "").strip()
+    actor_memory_parts = [
+        f"{player_actor.display_name} enters this world with gender={profile.gender}.",
+    ]
+    if background:
+        actor_memory_parts.append(f"Self-declared background: {background}")
+    if free_text:
+        actor_memory_parts.append(f"Self-declared notes: {free_text}")
+    actor_memory_parts.append(
+        "Narrative preferences: "
+        f"perspective={narrative_preferences.get('perspective')}; "
+        f"tone={narrative_preferences.get('tone')}; "
+        f"density={narrative_preferences.get('density')}; "
+        f"dialogue_style={narrative_preferences.get('dialogue_style')}."
+    )
+    public_summary = f"{player_actor.display_name} has entered the world as a player-authored profile."
+    event = Event(
+        world_id=session.world_id,
+        session_id=session.id,
+        turn_id=turn.id,
+        event_type="player.profile.created",
+        source_actor_id=player_actor.id,
+        location_id=location_id,
+        payload={
+            "actor_id": player_actor.id,
+            "player_profile": profile_payload,
+            "profile_source": "self_declared",
+        },
+        narrative=public_summary,
+    )
+    db.add(event)
+    db.flush()
+    container.memory_service.materialize_memories(
+        db,
+        world_id=session.world_id,
+        source_event_id=event.id,
+        location_id=location_id,
+        drafts=[
+            {
+                "scope": "actor",
+                "actor_id": player_actor.id,
+                "text": " ".join(actor_memory_parts),
+                "salience": 0.95,
+            },
+            {
+                "scope": "world",
+                "text": public_summary,
+                "salience": 0.65,
+            },
+        ],
+    )
+    db.add(
+        OutboxEvent(
+            world_id=session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={"reason": "player_profile_created", "session_id": session.id, "actor_id": player_actor.id},
+        )
+    )
+    db.flush()
+    return event
 
 
 def resolve_turn_for_session(
@@ -2095,9 +2190,10 @@ def prepare_turn_for_session(
     if game_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
-    if player_actor is None or player_actor.id != game_session.player_actor_id:
+    player_row = get_player_profile_for_user(db, game_session.world_id, user.sub, game_session.player_actor_id)
+    if player_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
+    player_actor, _ = player_row
 
     current_location = ensure_starter_location(db, game_session.world_id)
     if player_actor.current_location_id is None:
@@ -2154,9 +2250,10 @@ def get_session_state_for_user(
     if game_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
-    player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
-    if player_actor is None or player_actor.id != game_session.player_actor_id:
+    player_row = get_player_profile_for_user(db, game_session.world_id, user.sub, game_session.player_actor_id)
+    if player_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
+    player_actor, _ = player_row
 
     current_location = ensure_starter_location(db, game_session.world_id)
     if player_actor.current_location_id is None:

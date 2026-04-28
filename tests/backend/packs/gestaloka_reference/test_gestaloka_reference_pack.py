@@ -12,6 +12,7 @@ def gestaloka_session_payload() -> dict[str, str]:
         "pack_id": "gestaloka_reference",
         "world_template_id": "nexus_foundation",
         "world_name": "GESTALOKA: Nexus Foundation",
+        "player_display_name": "Demo Player",
     }
 
 

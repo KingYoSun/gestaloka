@@ -42,7 +42,10 @@ Player UI:
 - `sp-balance`: SP balance を確認する。
 - `sp-budget-note`: SP が execution budget として説明されていることを確認する。
 - `world-select`: playable world を選択する。
-- `start-session`: session を開始する。
+- `player-profile-select`: 作成済み player profile を選択する。
+- `profile-display-name`: 新規 player profile の名前を入力する。
+- `create-player-profile`: player profile を作成または保存する。
+- `start-session`: player profile 選択後に session を開始する。
 - `session-pack`: 選択した pack 名を確認する。
 - `current-place-summary`, `current-chapter-summary`, `current-scene-summary`: 現在地と narrative 状態を確認する。
 - `active-quest`, `quest-progress`, `quest-stage`: quest 状態を確認する。
@@ -75,11 +78,13 @@ Admin UI:
 ### GESTALOKA Reference
 
 1. 必要なら page refresh し、Player UI で新しい session を開始できる状態にする。
-2. `world-select` で `GESTALOKA Reference` を選び、`start-session` を実行する。
-3. `socket-status=open`、`session-pack`、`session.connected`、`Nexus Gate`、`First Stabilizer Request`、`0/2`、`Gate Steward Rikka`、`Lift Tower Concourse`、faction standing を確認する。
-4. `choice-progress` を 2 回実行し、`2/2`、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。
-5. `choice-progress` を実行し、`Breach Restoration`、`breach_restoration`、used 表示、`Oblivion Breach` route を確認する。
-6. さらに `choice-progress` を実行し、`Oblivion Breach`、travel history、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。
+2. `world-select` で `GESTALOKA Reference` を選ぶ。
+3. 既存 profile がある場合は `player-profile-select` で選択する。ない場合は `profile-display-name` に名前を入れ、必要なら性別・背景・自由記述・文体を設定し、`create-player-profile` を実行する。
+4. `start-session` を実行する。
+5. `socket-status=open`、`session-pack`、`session.connected`、`Nexus Gate`、`First Stabilizer Request`、`0/2`、`Gate Steward Rikka`、`Lift Tower Concourse`、faction standing を確認する。
+6. `choice-progress` を 2 回実行し、`2/2`、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。
+7. `choice-progress` を実行し、`Breach Restoration`、`breach_restoration`、used 表示、`Oblivion Breach` route を確認する。
+8. さらに `choice-progress` を実行し、`Oblivion Breach`、travel history、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。
 
 ### Admin / Ops
 
@@ -120,6 +125,7 @@ make canary-down
 
 - Login: `Sign in` から認証完了まで、待ち状態や失敗時の戻り方が分かるか。
 - World select: playable pack の選択肢、無効状態、catalog unavailable 表示が理解できるか。
+- Player profile: 作成、既存選択、開始前編集、文体指定が迷わずでき、`start-session` が profile 未選択時に無効化されるか。
 - Turn execution: choice 実行中に二重送信しにくく、完了後に次の操作が明確か。
 - Choice / free text: mode 切替、入力欄、submit の関係が分かりやすいか。
 - SP recovery: SP 不足時に Admin UI で補充すべきことが追えるか。SP が世界内報酬に見えないか。

@@ -33,8 +33,10 @@ from app.modules.world_state.history import title_progress_to_dict
 from app.modules.actor.service import (
     adjust_relationship_strength,
     ensure_pack_npcs,
+    get_player_profile,
     get_guide_npc_for_location,
     get_relationship,
+    player_profile_to_dict,
 )
 from app.modules.world_pack.service import (
     WorldPackError,
@@ -1969,6 +1971,12 @@ def build_session_state(
     include_internal: bool = False,
 ) -> dict[str, Any]:
     world_info = _world_pack_state(db, world_id)
+    player_profile_row = get_player_profile(db, world_id, actor_id)
+    player_profile = (
+        player_profile_to_dict(player_profile_row[0], player_profile_row[1])
+        if player_profile_row is not None
+        else None
+    )
     character = get_character_summary(db, world_id, actor_id)
     quests = list_quest_summaries(db, world_id, actor_id)
     factions = list_faction_summaries(db, world_id, actor_id)
@@ -2044,6 +2052,7 @@ def build_session_state(
         "location": current_location,
         "current_location": current_location,
         "character": character,
+        "player_profile": player_profile,
         "quests": quests,
         "factions": factions,
         "inventory": inventory,

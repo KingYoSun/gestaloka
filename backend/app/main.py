@@ -9,7 +9,7 @@ from app.api.deps import resolve_current_user_from_token
 from app.core.container import AppContainer, build_container
 from app.core.realtime import realtime_hub
 from app.models.entities import Session as GameSession
-from app.modules.actor.service import get_player_actor_for_user
+from app.modules.actor.service import get_player_profile_for_user
 from app.modules.world_pack.service import world_context_for_world
 
 
@@ -110,8 +110,8 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
             world_context = world_context_for_world(db, world_id)
             pack_id = str(world_context["pack_id"])
             world_template_id = str(world_context["world_template_id"])
-            player_actor = get_player_actor_for_user(db, game_session.world_id, user.sub)
-            if player_actor is None or player_actor.id != game_session.player_actor_id:
+            player_row = get_player_profile_for_user(db, game_session.world_id, user.sub, game_session.player_actor_id)
+            if player_row is None:
                 close_code = 4403
                 outcome = "forbidden"
                 await websocket.close(code=close_code)

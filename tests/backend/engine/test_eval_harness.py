@@ -26,6 +26,7 @@ def engine_session_payload(*, world_id: str = "gestaloka_reference") -> dict[str
     return {
         "world_id": world_id,
         "world_name": "GESTALOKA: Nexus Foundation",
+        "player_display_name": "Demo Player",
     }
 
 
