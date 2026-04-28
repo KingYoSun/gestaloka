@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from "react";
+import { Alert, AlertDescription } from "./alert";
 
 type StatusNoticeProps = PropsWithChildren<{
   kind?: "neutral" | "caution" | "danger";
@@ -6,10 +7,9 @@ type StatusNoticeProps = PropsWithChildren<{
 }>;
 
 export function StatusNotice({ children, kind = "neutral", testId }: StatusNoticeProps) {
-  const className = kind === "danger" ? "error" : kind === "caution" ? "turn-progress" : "turn-progress";
   return (
-    <p className={className} data-testid={testId}>
-      {children}
-    </p>
+    <Alert variant={kind === "danger" ? "destructive" : kind === "caution" ? "caution" : "default"} data-testid={testId}>
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }

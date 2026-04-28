@@ -1,8 +1,12 @@
 import { LogIn, UserPlus } from "lucide-react";
 import type { FormEvent } from "react";
-import { Button } from "../../components/ui/Button";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent } from "../../components/ui/card";
 import { Field } from "../../components/ui/Field";
+import { Input } from "../../components/ui/input";
+import { NativeSelect } from "../../components/ui/native-select";
 import { StreamList } from "../../components/ui/StreamList";
+import { Textarea } from "../../components/ui/textarea";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
 import type { NarrativeChoice, PlayerProfile, WorldContext } from "../../types";
@@ -48,7 +52,7 @@ function formatRoutineState(state: Record<string, unknown>): string {
 
 export function PlayerPage({ runtime }: PlayerPageProps) {
   return (
-    <section className="play-surface" aria-label="物語">
+    <section className="grid min-h-[calc(100vh-2.5rem)]" aria-label="物語">
       {!runtime.authenticated ? <FirstView runtime={runtime} /> : null}
       {runtime.authenticated && !runtime.session ? <WorldStartView runtime={runtime} /> : null}
       {runtime.session ? <PlayingView runtime={runtime} /> : null}
@@ -59,15 +63,15 @@ export function PlayerPage({ runtime }: PlayerPageProps) {
 
 function FirstView({ runtime }: PlayerPageProps) {
   return (
-    <section className="player-first-view" aria-label="開始">
-      <p className="player-brand">GESTALOKA</p>
-      <div className="player-first-actions">
+    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label="開始">
+      <p className="text-sm font-bold leading-[21px] text-foreground">GESTALOKA</p>
+      <div className="grid w-full max-w-80 min-w-0 self-center gap-4 max-[480px]:max-w-none">
         <Button data-testid="sign-in" onClick={runtime.handleLogin} disabled={!runtime.ready}>
-          <LogIn className="button-icon" aria-hidden="true" />
+          <LogIn aria-hidden="true" />
           ログインして続ける
         </Button>
-        <Button className="secondary-button" onClick={runtime.handleRegister} disabled={!runtime.ready}>
-          <UserPlus className="button-icon" aria-hidden="true" />
+        <Button variant="secondary" onClick={runtime.handleRegister} disabled={!runtime.ready}>
+          <UserPlus aria-hidden="true" />
           アカウントを作成して始める
         </Button>
       </div>
@@ -102,12 +106,12 @@ function WorldStartView({ runtime }: PlayerPageProps) {
     : (!playableWorlds.length && worldCatalogStatus !== "ready" ? "読込中" : "");
 
   return (
-    <section className="player-start-view" aria-label="世界開始">
-      <p className="player-brand">GESTALOKA</p>
-      <div className="player-start-form">
-        <div className="world-choice">
+    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label="世界開始">
+      <p className="text-sm font-bold leading-[21px] text-foreground">GESTALOKA</p>
+      <div className="grid min-w-0 grid-cols-[minmax(0,320px)_minmax(0,620px)] items-start gap-4 self-center max-[940px]:grid-cols-1">
+        <div className="grid min-w-0 gap-3">
           <Field label="世界">
-            <select
+            <NativeSelect
               data-testid="world-select"
               value={worldId}
               onChange={(event) => setWorldId(event.target.value)}
@@ -121,16 +125,18 @@ function WorldStartView({ runtime }: PlayerPageProps) {
                   {item.display_name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </Field>
-          <p className="selected-world-name">{selectedWorld?.display_name ?? "世界を選択"}</p>
-          {catalogStateLabel ? <p className="start-state-label">{catalogStateLabel}</p> : null}
-          {wallet ? <p className="start-state-label">SP {wallet.balance}</p> : null}
+          <p className="text-[28px] font-bold leading-9 tracking-[1.12px] text-foreground max-[480px]:text-2xl max-[480px]:leading-8">
+            {selectedWorld?.display_name ?? "世界を選択"}
+          </p>
+          {catalogStateLabel ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{catalogStateLabel}</p> : null}
+          {wallet ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">SP {wallet.balance}</p> : null}
         </div>
-        <div className="profile-start-panel">
+        <div className="grid min-w-0 gap-3">
           {playerProfiles.length ? (
             <Field label="プレイヤー">
-              <select
+              <NativeSelect
                 data-testid="player-profile-select"
                 value={selectedPlayerActorId}
                 onChange={(event) => setSelectedPlayerActorId(event.target.value)}
@@ -140,7 +146,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
                     {profile.display_name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </Field>
           ) : null}
           {selectedPlayerProfile ? <ProfileSummary onEdit={beginProfileEdit} profile={selectedPlayerProfile} /> : null}
@@ -180,15 +186,17 @@ function ProfileSummary({ onEdit, profile }: { onEdit: (profile: PlayerProfile) 
     profile.narrative_preferences.dialogue_style === "dialogue_forward" ? "セリフ中心" : "文語的",
   ].join(" / ");
   return (
-    <div className="profile-summary">
-      <p className="selected-profile-name">{profile.display_name}</p>
-      <p className="start-state-label">{styleLabel}</p>
-      {!profile.locked ? (
-        <Button className="secondary-button" type="button" onClick={() => onEdit(profile)}>
-          編集
-        </Button>
-      ) : null}
-    </div>
+    <Card>
+      <CardContent className="grid gap-1 p-3">
+        <p className="text-base font-bold leading-6 text-foreground">{profile.display_name}</p>
+        <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{styleLabel}</p>
+        {!profile.locked ? (
+          <Button className="mt-1 w-fit" variant="secondary" type="button" onClick={() => onEdit(profile)}>
+            編集
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -208,9 +216,9 @@ function ProfileForm({
   setProfileDraft: GestalokaRuntime["setProfileDraft"];
 }) {
   return (
-    <form className="profile-form" onSubmit={onSubmit}>
+    <form className="grid min-w-0 gap-3" onSubmit={onSubmit}>
       <Field label="名前">
-        <input
+        <Input
           data-testid="profile-display-name"
           value={profileDraft.display_name}
           maxLength={40}
@@ -218,7 +226,7 @@ function ProfileForm({
         />
       </Field>
       <Field label="性別">
-        <select
+        <NativeSelect
           value={profileDraft.gender}
           onChange={(event) =>
             setProfileDraft((current) => ({ ...current, gender: event.target.value as PlayerProfile["gender"] }))
@@ -228,10 +236,10 @@ function ProfileForm({
           <option value="male">男</option>
           <option value="female">女</option>
           <option value="other">その他</option>
-        </select>
+        </NativeSelect>
       </Field>
       <Field label="背景">
-        <textarea
+        <Textarea
           rows={3}
           value={profileDraft.background}
           maxLength={1200}
@@ -239,16 +247,16 @@ function ProfileForm({
         />
       </Field>
       <Field label="自由記述">
-        <textarea
+        <Textarea
           rows={3}
           value={profileDraft.free_text}
           maxLength={2000}
           onChange={(event) => setProfileDraft((current) => ({ ...current, free_text: event.target.value }))}
         />
       </Field>
-      <div className="profile-style-grid">
+      <div className="grid grid-cols-2 gap-3 max-[480px]:grid-cols-1">
         <Field label="視点">
-          <select
+          <NativeSelect
             value={profileDraft.narrative_preferences.perspective}
             onChange={(event) =>
               setProfileDraft((current) => ({
@@ -262,10 +270,10 @@ function ProfileForm({
           >
             <option value="third_person">三人称</option>
             <option value="first_person">一人称</option>
-          </select>
+          </NativeSelect>
         </Field>
         <Field label="調子">
-          <select
+          <NativeSelect
             value={profileDraft.narrative_preferences.tone}
             onChange={(event) =>
               setProfileDraft((current) => ({
@@ -279,10 +287,10 @@ function ProfileForm({
           >
             <option value="lyrical">叙情的</option>
             <option value="logical">論理的</option>
-          </select>
+          </NativeSelect>
         </Field>
         <Field label="密度">
-          <select
+          <NativeSelect
             value={profileDraft.narrative_preferences.density}
             onChange={(event) =>
               setProfileDraft((current) => ({
@@ -296,10 +304,10 @@ function ProfileForm({
           >
             <option value="concise">簡素</option>
             <option value="ornate">重厚</option>
-          </select>
+          </NativeSelect>
         </Field>
         <Field label="文">
-          <select
+          <NativeSelect
             value={profileDraft.narrative_preferences.dialogue_style}
             onChange={(event) =>
               setProfileDraft((current) => ({
@@ -313,15 +321,15 @@ function ProfileForm({
           >
             <option value="literary">文語的</option>
             <option value="dialogue_forward">セリフ中心</option>
-          </select>
+          </NativeSelect>
         </Field>
       </div>
-      <div className="profile-form-actions">
+      <div className="flex flex-wrap gap-3 max-[480px]:grid max-[480px]:grid-cols-1">
         <Button data-testid="create-player-profile" type="submit" disabled={profilePending || !profileDraft.display_name.trim()}>
           {editingPlayerActorId ? "保存" : "作成"}
         </Button>
         {editingPlayerActorId ? (
-          <Button className="secondary-button" type="button" onClick={onCancelEdit} disabled={profilePending}>
+          <Button variant="secondary" type="button" onClick={onCancelEdit} disabled={profilePending}>
             取消
           </Button>
         ) : null}
@@ -332,13 +340,16 @@ function ProfileForm({
 
 function PlayingView({ runtime }: PlayerPageProps) {
   return (
-    <section className="playing-view" aria-label="プレイ中">
-      <main className="story-column">
+    <section
+      className="grid grid-cols-[minmax(0,620px)_minmax(240px,280px)] items-start gap-6 py-5 pb-10 max-[940px]:grid-cols-1"
+      aria-label="プレイ中"
+    >
+      <main className="grid max-w-[620px] min-w-0 gap-4 max-[940px]:max-w-none">
         <SceneHeader runtime={runtime} />
         <LatestStory runtime={runtime} />
         <TurnComposer runtime={runtime} />
       </main>
-      <aside className="play-rail" aria-label="状況">
+      <aside className="grid min-w-0 gap-4" aria-label="状況">
         <QuestBlock runtime={runtime} />
         <SideLists runtime={runtime} />
       </aside>
@@ -353,15 +364,17 @@ function SceneHeader({ runtime }: PlayerPageProps) {
   const scene = sessionState?.current_scene;
 
   return (
-    <section className="scene-header" aria-label="場面">
-      <p className="player-brand">GESTALOKA</p>
-      <p className="scene-place-label" data-testid="session-location">
+    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label="場面">
+      <p className="text-sm font-bold leading-[21px] text-foreground">GESTALOKA</p>
+      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="session-location">
         {location?.name ?? session?.world_name ?? "開始地点"}
       </p>
-      <h1 data-testid="current-place-summary">{location?.name ?? "開始地点"}</h1>
-      {chapter?.summary ? <p className="scene-brief" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
-      {scene?.summary ? <p className="scene-brief" data-testid="current-scene-summary">{scene.summary}</p> : null}
-    </section>
+      <h1 className="text-[32px] font-bold leading-[48px] tracking-[1.28px] text-foreground max-[480px]:text-[28px] max-[480px]:leading-9" data-testid="current-place-summary">
+        {location?.name ?? "開始地点"}
+      </h1>
+      {chapter?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
+      {scene?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
+    </Card>
   );
 }
 
@@ -369,13 +382,15 @@ function LatestStory({ runtime }: PlayerPageProps) {
   const storyItems = buildStoryItems(runtime);
 
   return (
-    <section className="story-panel" aria-label="本文">
-      <div className="story-copy">
+    <Card className="min-w-0 p-6 max-[480px]:p-4" aria-label="本文">
+      <div className="grid gap-4">
         {storyItems.map((item) => (
-          <article className="story-entry" key={item.key}>
-            {item.title ? <h2>{item.title}</h2> : null}
-            <p data-testid={item.key === "latest-narrative" ? "latest-narrative" : undefined}>{item.body}</p>
-            {item.meta ? <p className="story-meta">{item.meta}</p> : null}
+          <article className="grid gap-3" key={item.key}>
+            {item.title ? <h2 className="text-base font-semibold leading-6 text-foreground">{item.title}</h2> : null}
+            <p className="text-lg leading-9 text-foreground" data-testid={item.key === "latest-narrative" ? "latest-narrative" : undefined}>
+              {item.body}
+            </p>
+            {item.meta ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{item.meta}</p> : null}
           </article>
         ))}
       </div>
@@ -387,7 +402,7 @@ function LatestStory({ runtime }: PlayerPageProps) {
           <li key={`${item}-${index}`}>{item}</li>
         ))}
       </ul>
-    </section>
+    </Card>
   );
 }
 
@@ -430,10 +445,10 @@ function TurnComposer({ runtime }: PlayerPageProps) {
   } = runtime;
 
   return (
-    <section className="choice-panel" aria-label="次">
-      <div className="choice-mode" role="group" aria-label="入力">
+    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label="次">
+      <div className="flex flex-wrap gap-2 max-[480px]:grid max-[480px]:grid-cols-1" role="group" aria-label="入力">
         <Button
-          className={turnInputMode === "choice" ? undefined : "secondary-button"}
+          variant={turnInputMode === "choice" ? "default" : "secondary"}
           type="button"
           data-testid="toggle-choice-mode"
           onClick={() => setTurnInputMode("choice")}
@@ -442,7 +457,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
           選択肢
         </Button>
         <Button
-          className={turnInputMode === "free_text" ? undefined : "secondary-button"}
+          variant={turnInputMode === "free_text" ? "default" : "secondary"}
           type="button"
           data-testid="toggle-free-text"
           onClick={() => setTurnInputMode("free_text")}
@@ -455,9 +470,9 @@ function TurnComposer({ runtime }: PlayerPageProps) {
       {turnInputMode === "choice" ? (
         <ChoiceList choices={suggestedChoices} onChoose={handleChoiceSubmit} disabled={!session || turnPending} />
       ) : (
-        <form onSubmit={handleTurnSubmit} className="free-text-turn">
+        <form onSubmit={handleTurnSubmit} className="grid gap-4">
           <Field label="自由入力">
-            <textarea
+            <Textarea
               data-testid="turn-input"
               rows={4}
               value={freeTextInput}
@@ -471,10 +486,10 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         </form>
       )}
 
-      <p className="turn-state" data-testid="turn-progress-status">
+      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-progress-status">
         {turnPending ? "進行中" : "選択待ち"}
       </p>
-    </section>
+    </Card>
   );
 }
 
@@ -488,24 +503,24 @@ function ChoiceList({
   onChoose: (choiceId: NarrativeChoice["choice_id"]) => Promise<void>;
 }) {
   return (
-    <ul className="choice-list" data-testid="choice-list">
+    <ul className="grid gap-3" data-testid="choice-list">
       {choices.length ? (
         choices.map((choice) => (
-          <li key={choice.choice_id}>
+          <li className="min-w-0" key={choice.choice_id}>
             <button
               type="button"
-              className="choice-button"
+              className="grid min-h-0 w-full gap-2 rounded-lg border border-border bg-card p-4 text-left text-foreground shadow-none outline-none transition-colors hover:border-border/80 hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/80 disabled:pointer-events-none disabled:opacity-50"
               data-testid={`choice-${choice.choice_id}`}
               onClick={() => void onChoose(choice.choice_id)}
               disabled={disabled}
             >
-              <span className="choice-label">{choice.label}</span>
-              <span className="choice-summary">{choice.summary}</span>
+              <span className="font-bold leading-6">{choice.label}</span>
+              <span className="text-lg font-normal leading-9 text-muted-foreground">{choice.summary}</span>
             </button>
           </li>
         ))
       ) : (
-        <li className="empty-choice">進行中</li>
+        <li className="text-muted-foreground">進行中</li>
       )}
     </ul>
   );
@@ -515,15 +530,15 @@ function QuestBlock({ runtime }: PlayerPageProps) {
   const { activeQuest } = runtime;
 
   return (
-    <section className="rail-section" data-testid="active-quest">
-      <h2>クエスト</h2>
+    <Card className="grid min-w-0 gap-3 p-4" data-testid="active-quest">
+      <h2 className="text-base font-semibold leading-6 text-foreground">クエスト</h2>
       {activeQuest ? (
         <>
-          <p className="rail-title">{activeQuest.title}</p>
-          <p data-testid="quest-progress">
+          <p className="font-bold leading-6 text-foreground">{activeQuest.title}</p>
+          <p className="text-sm leading-5 text-muted-foreground" data-testid="quest-progress">
             {activeQuest.progress}/{activeQuest.progress_target}
           </p>
-          {activeQuest.latest_summary ? <p>{activeQuest.latest_summary}</p> : null}
+          {activeQuest.latest_summary ? <p className="text-sm leading-5 text-muted-foreground">{activeQuest.latest_summary}</p> : null}
           <p hidden data-testid="quest-stage">
             {activeQuest.stage_key}
           </p>
@@ -532,9 +547,9 @@ function QuestBlock({ runtime }: PlayerPageProps) {
           </p>
         </>
       ) : (
-        <p>進行中</p>
+        <p className="text-sm leading-5 text-muted-foreground">進行中</p>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -543,8 +558,8 @@ function SideLists({ runtime }: PlayerPageProps) {
 
   return (
     <>
-      <section className="rail-section">
-        <h2>人物</h2>
+      <Card className="grid min-w-0 gap-3 p-4">
+        <h2 className="text-base font-semibold leading-6 text-foreground">人物</h2>
         <StreamList
           testId="local-figures-stream"
           items={sessionState?.local_figures ?? []}
@@ -564,10 +579,10 @@ function SideLists({ runtime }: PlayerPageProps) {
             </li>
           ))}
         </ul>
-      </section>
+      </Card>
 
-      <section className="rail-section">
-        <h2>移動先</h2>
+      <Card className="grid min-w-0 gap-3 p-4">
+        <h2 className="text-base font-semibold leading-6 text-foreground">移動先</h2>
         <StreamList
           testId="nearby-routes-stream"
           items={sessionState?.nearby_routes ?? []}
@@ -580,10 +595,10 @@ function SideLists({ runtime }: PlayerPageProps) {
             </>
           )}
         />
-      </section>
+      </Card>
 
-      <section className="rail-section">
-        <h2>所持品</h2>
+      <Card className="grid min-w-0 gap-3 p-4">
+        <h2 className="text-base font-semibold leading-6 text-foreground">所持品</h2>
         <StreamList
           testId="inventory-stream"
           items={sessionState?.inventory ?? []}
@@ -603,7 +618,7 @@ function SideLists({ runtime }: PlayerPageProps) {
             </li>
           ))}
         </ul>
-      </section>
+      </Card>
     </>
   );
 }

@@ -1,4 +1,5 @@
 import type { PropsWithChildren } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "./card";
 
 type PanelProps = PropsWithChildren<{
   title: string;
@@ -7,9 +8,11 @@ type PanelProps = PropsWithChildren<{
 
 export function Panel({ title, wide = false, children }: PanelProps) {
   return (
-    <article className={wide ? "card wide" : "card"}>
-      <h2>{title}</h2>
-      {children}
-    </article>
+    <Card className={wide ? "col-span-full" : undefined}>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">{children}</CardContent>
+    </Card>
   );
 }

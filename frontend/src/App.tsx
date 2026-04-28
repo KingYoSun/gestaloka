@@ -11,7 +11,10 @@ function App() {
       header={null}
       error={
         error ? (
-          <aside className="error" data-testid="error-banner">
+          <aside
+            className="sticky bottom-4 z-10 mt-5 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm leading-5 text-destructive shadow-sm"
+            data-testid="error-banner"
+          >
             {error}
           </aside>
         ) : null

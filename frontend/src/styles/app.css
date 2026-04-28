@@ -1,4 +1,152 @@
-@import "./tokens.css";
-@import "./base.css";
-@import "./layout.css";
-@import "./components.css";
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-caution: var(--caution);
+  --color-success: var(--success);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #08131a;
+  --card: #ffffff;
+  --card-foreground: #08131a;
+  --popover: #ffffff;
+  --popover-foreground: #08131a;
+  --primary: #08131a;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f8fa;
+  --secondary-foreground: #08131a;
+  --muted: #f5f8fa;
+  --muted-foreground: rgba(8, 19, 26, 0.66);
+  --accent: #5ac8b8;
+  --accent-foreground: #08131a;
+  --destructive: #b22323;
+  --border: rgba(8, 19, 26, 0.14);
+  --input: rgba(8, 19, 26, 0.14);
+  --ring: #292d9e;
+  --caution: #916626;
+  --success: #1e7b65;
+  --radius: 8px;
+  --font-sans: "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Arial, "Noto Sans JP", Meiryo, sans-serif;
+  --font-serif: "Hiragino Mincho ProN", "Hiragino Mincho Pro", HGSMinchoE, "Yu Mincho", YuMincho, "MS PMincho", serif;
+  --font-mono: SFMono-Regular, Consolas, Menlo, Courier, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --background: #08131a;
+    --foreground: hsla(0, 0%, 100%, 0.9);
+    --card: #101a21;
+    --card-foreground: hsla(0, 0%, 100%, 0.9);
+    --popover: #101a21;
+    --popover-foreground: hsla(0, 0%, 100%, 0.9);
+    --primary: #f5f8fa;
+    --primary-foreground: #08131a;
+    --secondary: #101a21;
+    --secondary-foreground: hsla(0, 0%, 100%, 0.9);
+    --muted: #101a21;
+    --muted-foreground: hsla(0, 0%, 100%, 0.66);
+    --accent: #5ac8b8;
+    --accent-foreground: #08131a;
+    --border: hsla(0, 0%, 100%, 0.16);
+    --input: hsla(0, 0%, 100%, 0.16);
+  }
+}
+
+.theme-dark {
+  color-scheme: dark;
+  --background: #08131a;
+  --foreground: hsla(0, 0%, 100%, 0.9);
+  --card: #101a21;
+  --card-foreground: hsla(0, 0%, 100%, 0.9);
+  --popover: #101a21;
+  --popover-foreground: hsla(0, 0%, 100%, 0.9);
+  --primary: #f5f8fa;
+  --primary-foreground: #08131a;
+  --secondary: #101a21;
+  --secondary-foreground: hsla(0, 0%, 100%, 0.9);
+  --muted: #101a21;
+  --muted-foreground: hsla(0, 0%, 100%, 0.66);
+  --accent: #5ac8b8;
+  --accent-foreground: #08131a;
+  --border: hsla(0, 0%, 100%, 0.16);
+  --input: hsla(0, 0%, 100%, 0.16);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 24px;
+    overflow-wrap: break-word;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-kerning: auto;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    max-width: 100%;
+    font: inherit;
+    letter-spacing: normal;
+    font-feature-settings: normal;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: var(--foreground);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+}

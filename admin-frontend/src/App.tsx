@@ -13,6 +13,15 @@ import {
 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { apiFetch, formatError } from "./api";
+import { Alert, AlertDescription } from "./components/ui/alert";
+import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import { Checkbox } from "./components/ui/checkbox";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
+import { NativeSelect } from "./components/ui/native-select";
+import { Textarea } from "./components/ui/textarea";
 import keycloak, { initKeycloak } from "./lib/keycloak";
 import type {
   AdminUser,
@@ -141,63 +150,76 @@ function App() {
   const title = navItems.find((item) => item.id === section)?.label ?? "Dashboard";
 
   if (!ready) {
-    return <div className="boot">Loading admin session</div>;
+    return <div className="grid min-h-screen place-items-center p-6 text-sm text-muted-foreground">Loading admin session</div>;
   }
 
   if (!authenticated) {
     return (
-      <main className="login-screen">
-        <section className="login-panel">
-          <p className="eyebrow">GESTALOKA Admin</p>
-          <h1>運用管理</h1>
-          <button data-testid="admin-sign-in" onClick={login}>
+      <main className="grid min-h-screen place-items-center bg-background p-6">
+        <Card className="grid w-full max-w-[360px] gap-4 p-5">
+          <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA Admin</p>
+          <h1 className="text-2xl font-bold leading-8 text-foreground">運用管理</h1>
+          <Button data-testid="admin-sign-in" onClick={login}>
             <KeyRound aria-hidden="true" />
             ログイン
-          </button>
-          {error ? <p className="notice danger">{error}</p> : null}
-        </section>
+          </Button>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+        </Card>
       </main>
     );
   }
 
   return (
-    <main className="admin-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span>GESTALOKA</span>
-          <strong>Admin</strong>
+    <main className="grid min-h-screen grid-cols-[260px_minmax(0,1fr)] bg-muted max-[900px]:grid-cols-1">
+      <aside className="sticky top-0 grid h-screen grid-rows-[auto_1fr] gap-4 border-r border-border bg-card p-3 max-[900px]:static max-[900px]:h-auto">
+        <div className="grid gap-0.5 px-2 pb-3">
+          <span className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA</span>
+          <strong className="text-lg leading-6 text-foreground">Admin</strong>
         </div>
-        <nav aria-label="Admin sections">
+        <nav className="grid content-start gap-1 max-[900px]:grid-cols-2" aria-label="Admin sections">
           {navItems.map((item) => (
-            <button
+            <Button
               key={item.id}
-              className={section === item.id ? "nav-item active" : "nav-item"}
+              className="w-full justify-start"
+              variant={section === item.id ? "default" : "ghost"}
               data-testid={`admin-nav-${item.id}`}
               onClick={() => setSection(item.id)}
             >
               {item.icon}
               <span>{item.label}</span>
-            </button>
+            </Button>
           ))}
         </nav>
       </aside>
-      <section className="workspace">
-        <header className="topbar">
+      <section className="grid min-w-0 content-start gap-4 p-6 max-[640px]:p-4">
+        <header className="flex items-center justify-between gap-4 max-[640px]:items-start">
           <div>
-            <p className="eyebrow">運用管理</p>
-            <h1>{title}</h1>
+            <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">運用管理</p>
+            <h1 className="text-2xl font-bold leading-8 text-foreground">{title}</h1>
           </div>
-          <div className="topbar-actions">
-            <button className="icon-button" aria-label="Refresh" data-testid="admin-refresh" onClick={() => void refreshAll()}>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="icon" variant="secondary" aria-label="Refresh" data-testid="admin-refresh" onClick={() => void refreshAll()}>
               <RefreshCcw aria-hidden="true" />
-            </button>
-            <button className="secondary" onClick={logout}>
+            </Button>
+            <Button variant="secondary" onClick={logout}>
               ログアウト
-            </button>
+            </Button>
           </div>
         </header>
-        {error ? <p className="notice danger" data-testid="admin-error">{error}</p> : null}
-        {pending ? <p className="notice">更新中</p> : null}
+        {error ? (
+          <Alert variant="destructive" data-testid="admin-error">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        {pending ? (
+          <Alert>
+            <AlertDescription>更新中</AlertDescription>
+          </Alert>
+        ) : null}
         <AdminBody section={section} state={state} token={token} setState={setState} setError={setError} refreshAll={refreshAll} />
       </section>
     </main>
@@ -249,13 +271,13 @@ function AdminBody({
 function Dashboard({ state }: { state: AppState }) {
   const overview = state.overview;
   return (
-    <div className="content-grid" data-testid="admin-dashboard">
+    <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-dashboard">
       <Metric label="Pack status" value={overview?.packs.status ?? "unknown"} detail={`${overview?.packs.pack_count ?? 0} packs`} />
       <Metric label="Templates" value={String(overview?.packs.template_count ?? 0)} detail={`${overview?.packs.failure_count ?? 0} failures`} />
       <Metric label="Graph runtime" value={overview?.projection.graph_runtime_status ?? "unknown"} detail={`${overview?.projection.pending ?? 0} pending`} />
       <Metric label="Release" value={overview?.release.verdict ?? "unknown"} detail={overview?.release.canary_promote_status ?? "unknown"} />
       <Panel title="Operations">
-        <p>Admin は pack、ユーザー権限、LLM 設定、prompt、SP、release 操作を扱います。</p>
+        <p className="text-sm leading-5 text-muted-foreground">Admin は pack、ユーザー権限、LLM 設定、prompt、SP、release 操作を扱います。</p>
       </Panel>
     </div>
   );
@@ -300,37 +322,37 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
   }
 
   return (
-    <div className="content-grid" data-testid="admin-packs">
+    <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-packs">
       <Panel title="Pack Catalog">
-        <div className="table-list">
+        <div className="grid gap-2">
           {(state.packs?.items ?? []).map((pack) => (
-            <article key={pack.pack_id} className="row-card">
-              <div>
-                <strong>{pack.display_name}</strong>
-                <span>{pack.pack_id} / {pack.version}</span>
+            <article key={pack.pack_id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
+              <div className="grid min-w-0 gap-0.5">
+                <strong className="truncate text-sm font-semibold text-foreground">{pack.display_name}</strong>
+                <span className="truncate text-xs leading-5 text-muted-foreground">{pack.pack_id} / {pack.version}</span>
               </div>
               <Status value={`${pack.visibility} / ${pack.publish_status}`} />
-              <button className="secondary" onClick={() => void patchPack(pack.pack_id, pack.publish_status === "playable" ? "draft" : "playable")}>
+              <Button variant="secondary" onClick={() => void patchPack(pack.pack_id, pack.publish_status === "playable" ? "draft" : "playable")}>
                 {pack.publish_status === "playable" ? "Draft" : "Playable"}
-              </button>
+              </Button>
             </article>
           ))}
         </div>
       </Panel>
       <Panel title="Create Pack">
-        <form className="form-grid" onSubmit={createPack}>
-          <Field label="Pack ID"><input value={draft.pack_id} onChange={(event) => setDraft({ ...draft, pack_id: event.target.value })} /></Field>
-          <Field label="Display Name"><input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></Field>
-          <Field label="Template ID"><input value={draft.template_id} onChange={(event) => setDraft({ ...draft, template_id: event.target.value })} /></Field>
-          <Field label="Template Name"><input value={draft.template_display_name} onChange={(event) => setDraft({ ...draft, template_display_name: event.target.value })} /></Field>
-          <Field label="Summary"><textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></Field>
-          <button type="submit">作成</button>
+        <form className="grid gap-2.5" onSubmit={createPack}>
+          <Field label="Pack ID"><Input value={draft.pack_id} onChange={(event) => setDraft({ ...draft, pack_id: event.target.value })} /></Field>
+          <Field label="Display Name"><Input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></Field>
+          <Field label="Template ID"><Input value={draft.template_id} onChange={(event) => setDraft({ ...draft, template_id: event.target.value })} /></Field>
+          <Field label="Template Name"><Input value={draft.template_display_name} onChange={(event) => setDraft({ ...draft, template_display_name: event.target.value })} /></Field>
+          <Field label="Summary"><Textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></Field>
+          <Button type="submit">作成</Button>
         </form>
       </Panel>
       <Panel title="Import Archive">
-        <form className="form-grid" onSubmit={importPack}>
-          <Field label="Archive Path"><input value={archivePath} onChange={(event) => setArchivePath(event.target.value)} /></Field>
-          <button type="submit">Import</button>
+        <form className="grid gap-2.5" onSubmit={importPack}>
+          <Field label="Archive Path"><Input value={archivePath} onChange={(event) => setArchivePath(event.target.value)} /></Field>
+          <Button type="submit">Import</Button>
         </form>
       </Panel>
     </div>
@@ -351,17 +373,17 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
   }
   return (
     <Panel title="World Templates">
-      <div className="table-list" data-testid="admin-world-templates">
+      <div className="grid gap-2" data-testid="admin-world-templates">
         {state.templates.map((template) => (
-          <article key={`${template.pack_id}-${template.template_id}`} className="row-card">
-            <div>
-              <strong>{template.display_name}</strong>
-              <span>{template.pack_display_name} / {template.template_id}</span>
+          <article key={`${template.pack_id}-${template.template_id}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
+            <div className="grid min-w-0 gap-0.5">
+              <strong className="truncate text-sm font-semibold text-foreground">{template.display_name}</strong>
+              <span className="truncate text-xs leading-5 text-muted-foreground">{template.pack_display_name} / {template.template_id}</span>
             </div>
             <Status value={`${template.effective_visibility} / ${template.effective_publish_status}`} />
-            <button className="secondary" onClick={() => void patchTemplate(template, template.effective_publish_status === "playable" ? "draft" : "playable")}>
+            <Button variant="secondary" onClick={() => void patchTemplate(template, template.effective_publish_status === "playable" ? "draft" : "playable")}>
               {template.effective_publish_status === "playable" ? "Draft" : "Playable"}
-            </button>
+            </Button>
           </article>
         ))}
       </div>
@@ -386,14 +408,14 @@ function UsersPage({ state, token, setError, refreshAll }: PageProps) {
     }
   }
   return (
-    <div className="content-grid" data-testid="admin-users">
+    <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-users">
       <Panel title="Users">
-        <div className="table-list">
+        <div className="grid gap-2">
           {state.users.map((user) => (
-            <article key={user.user_sub} className="row-card">
-              <div>
-                <strong>{user.display_name || user.user_sub}</strong>
-                <span>{user.user_sub}</span>
+            <article key={user.user_sub} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
+              <div className="grid min-w-0 gap-0.5">
+                <strong className="truncate text-sm font-semibold text-foreground">{user.display_name || user.user_sub}</strong>
+                <span className="truncate text-xs leading-5 text-muted-foreground">{user.user_sub}</span>
               </div>
               <Status value={`${user.role} / ${user.status}`} />
             </article>
@@ -401,16 +423,16 @@ function UsersPage({ state, token, setError, refreshAll }: PageProps) {
         </div>
       </Panel>
       <Panel title="Grant Permission">
-        <form className="form-grid" onSubmit={submit}>
-          <Field label="User sub"><input value={userSub} onChange={(event) => setUserSub(event.target.value)} /></Field>
+        <form className="grid gap-2.5" onSubmit={submit}>
+          <Field label="User sub"><Input value={userSub} onChange={(event) => setUserSub(event.target.value)} /></Field>
           <Field label="Role">
-            <select value={role} onChange={(event) => setRole(event.target.value as AdminUser["role"])}>
+            <NativeSelect value={role} onChange={(event) => setRole(event.target.value as AdminUser["role"])}>
               <option value="operator">operator</option>
               <option value="admin">admin</option>
               <option value="viewer">viewer</option>
-            </select>
+            </NativeSelect>
           </Field>
-          <button type="submit">保存</button>
+          <Button type="submit">保存</Button>
         </form>
       </Panel>
     </div>
@@ -434,13 +456,16 @@ function LLMPage({ state, token, setError, refreshAll }: PageProps) {
   }
   return (
     <Panel title="LLM Provider Settings">
-      <form className="form-grid" data-testid="admin-llm-settings" onSubmit={submit}>
-        <Field label="Provider"><input value={draft.provider} onChange={(event) => setDraft({ ...draft, provider: event.target.value })} /></Field>
-        <Field label="Base URL secret ref"><input value={draft.base_url_secret_ref} onChange={(event) => setDraft({ ...draft, base_url_secret_ref: event.target.value })} /></Field>
-        <Field label="API key secret ref"><input value={draft.api_key_secret_ref} onChange={(event) => setDraft({ ...draft, api_key_secret_ref: event.target.value })} /></Field>
-        <Field label="Embedding provider"><input value={draft.embedding_provider} onChange={(event) => setDraft({ ...draft, embedding_provider: event.target.value })} /></Field>
-        <label className="check-row"><input type="checkbox" checked={draft.admin_debug_enabled} onChange={(event) => setDraft({ ...draft, admin_debug_enabled: event.target.checked })} /> Diagnostics を有効化</label>
-        <button type="submit">保存</button>
+      <form className="grid gap-2.5" data-testid="admin-llm-settings" onSubmit={submit}>
+        <Field label="Provider"><Input value={draft.provider} onChange={(event) => setDraft({ ...draft, provider: event.target.value })} /></Field>
+        <Field label="Base URL secret ref"><Input value={draft.base_url_secret_ref} onChange={(event) => setDraft({ ...draft, base_url_secret_ref: event.target.value })} /></Field>
+        <Field label="API key secret ref"><Input value={draft.api_key_secret_ref} onChange={(event) => setDraft({ ...draft, api_key_secret_ref: event.target.value })} /></Field>
+        <Field label="Embedding provider"><Input value={draft.embedding_provider} onChange={(event) => setDraft({ ...draft, embedding_provider: event.target.value })} /></Field>
+        <label className="flex items-center gap-2 text-sm leading-5 text-foreground">
+          <Checkbox checked={draft.admin_debug_enabled} onCheckedChange={(checked) => setDraft({ ...draft, admin_debug_enabled: checked === true })} />
+          Diagnostics を有効化
+        </label>
+        <Button type="submit">保存</Button>
       </form>
     </Panel>
   );
@@ -460,13 +485,13 @@ function LanesPage({ state, token, setError, refreshAll }: PageProps) {
   }
   return (
     <Panel title="Model Lanes">
-      <form className="form-grid" data-testid="admin-model-lanes" onSubmit={submit}>
+      <form className="grid gap-2.5" data-testid="admin-model-lanes" onSubmit={submit}>
         {(state.lanes?.supported_lanes ?? ["lite_lane", "main_lane", "pro_lane"]).map((lane) => (
           <Field key={lane} label={lane}>
-            <input value={modelIds[lane] ?? ""} onChange={(event) => setModelIds({ ...modelIds, [lane]: event.target.value })} />
+            <Input value={modelIds[lane] ?? ""} onChange={(event) => setModelIds({ ...modelIds, [lane]: event.target.value })} />
           </Field>
         ))}
-        <button type="submit">保存</button>
+        <Button type="submit">保存</Button>
       </form>
     </Panel>
   );
@@ -508,27 +533,35 @@ function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps
   }
 
   return (
-    <div className="split" data-testid="admin-prompts">
+    <div className="grid grid-cols-[minmax(260px,360px)_minmax(0,1fr)] gap-3 max-[900px]:grid-cols-1" data-testid="admin-prompts">
       <Panel title="Prompt Registry">
-        <div className="table-list">
+        <div className="grid gap-2">
           {state.prompts.map((prompt) => (
-            <button key={prompt.prompt_id} className={prompt.prompt_id === selected ? "prompt-row active" : "prompt-row"} onClick={() => void loadPrompt(prompt.prompt_id)}>
-              <strong>{prompt.prompt_id}</strong>
-              <span>{prompt.model_lane} / {prompt.expected_output_schema}</span>
-            </button>
+            <Button
+              key={prompt.prompt_id}
+              className="grid h-auto min-h-0 w-full justify-stretch gap-0.5 px-3 py-2 text-left"
+              variant={prompt.prompt_id === selected ? "default" : "secondary"}
+              onClick={() => void loadPrompt(prompt.prompt_id)}
+            >
+              <strong className="truncate text-sm font-semibold">{prompt.prompt_id}</strong>
+              <span className="truncate text-xs font-normal leading-5 opacity-80">{prompt.model_lane} / {prompt.expected_output_schema}</span>
+            </Button>
           ))}
         </div>
       </Panel>
       <Panel title={selectedPrompt?.prompt_id ?? "Prompt Override"}>
         {state.promptDetail ? (
-          <form className="form-grid" onSubmit={submit}>
-            <p className="muted">{state.promptDetail.owner_module} / {state.promptDetail.eval_dataset_ref}</p>
-            <label className="check-row"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /> Override enabled</label>
-            <Field label="Override instructions"><textarea rows={10} value={overrideText} onChange={(event) => setOverrideText(event.target.value)} /></Field>
-            <button type="submit">保存</button>
+          <form className="grid gap-2.5" onSubmit={submit}>
+            <p className="text-sm leading-5 text-muted-foreground">{state.promptDetail.owner_module} / {state.promptDetail.eval_dataset_ref}</p>
+            <label className="flex items-center gap-2 text-sm leading-5 text-foreground">
+              <Checkbox checked={enabled} onCheckedChange={(checked) => setEnabled(checked === true)} />
+              Override enabled
+            </label>
+            <Field label="Override instructions"><Textarea rows={10} value={overrideText} onChange={(event) => setOverrideText(event.target.value)} /></Field>
+            <Button type="submit">保存</Button>
           </form>
         ) : (
-          <p>Prompt を選択</p>
+          <p className="text-sm leading-5 text-muted-foreground">Prompt を選択</p>
         )}
       </Panel>
     </div>
@@ -550,16 +583,16 @@ function SPPage({ state, token, setError, refreshAll }: PageProps) {
     }
   }
   return (
-    <div className="content-grid" data-testid="admin-sp">
+    <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-sp">
       <Metric label="Accounts" value={String(state.sp?.total_accounts ?? 0)} detail={`${state.sp?.total_ledger_entries ?? 0} ledger entries`} />
       <Panel title="SP Adjustment">
-        <form className="form-grid" onSubmit={submit}>
-          <Field label="User sub"><input value={draft.user_sub} onChange={(event) => setDraft({ ...draft, user_sub: event.target.value })} /></Field>
-          <Field label="Delta"><input value={draft.delta} onChange={(event) => setDraft({ ...draft, delta: event.target.value })} /></Field>
-          <Field label="Reason"><input value={draft.reason_code} onChange={(event) => setDraft({ ...draft, reason_code: event.target.value })} /></Field>
-          <Field label="World ID"><input value={draft.world_id} onChange={(event) => setDraft({ ...draft, world_id: event.target.value })} /></Field>
-          <Field label="Note"><textarea value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></Field>
-          <button type="submit">適用</button>
+        <form className="grid gap-2.5" onSubmit={submit}>
+          <Field label="User sub"><Input value={draft.user_sub} onChange={(event) => setDraft({ ...draft, user_sub: event.target.value })} /></Field>
+          <Field label="Delta"><Input value={draft.delta} onChange={(event) => setDraft({ ...draft, delta: event.target.value })} /></Field>
+          <Field label="Reason"><Input value={draft.reason_code} onChange={(event) => setDraft({ ...draft, reason_code: event.target.value })} /></Field>
+          <Field label="World ID"><Input value={draft.world_id} onChange={(event) => setDraft({ ...draft, world_id: event.target.value })} /></Field>
+          <Field label="Note"><Textarea value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></Field>
+          <Button type="submit">適用</Button>
         </form>
       </Panel>
     </div>
@@ -576,12 +609,12 @@ function ReleasePage({ state, token, setError, refreshAll }: PageProps) {
     }
   }
   return (
-    <div className="content-grid" data-testid="admin-release">
+    <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-release">
       <Metric label="Verdict" value={state.release?.verdict ?? "unknown"} detail={state.release?.canary_promote_status ?? "unknown"} />
       <Panel title="Release Checklist">
-        <p>Created: {state.release?.created_at ?? "not run"}</p>
-        <p>Blocked: {(state.release?.blocked_reasons ?? []).join(", ") || "none"}</p>
-        <button onClick={() => void runChecklist()}>Run checklist</button>
+        <p className="text-sm leading-5 text-muted-foreground">Created: {state.release?.created_at ?? "not run"}</p>
+        <p className="text-sm leading-5 text-muted-foreground">Blocked: {(state.release?.blocked_reasons ?? []).join(", ") || "none"}</p>
+        <Button onClick={() => void runChecklist()}>Run checklist</Button>
       </Panel>
     </div>
   );
@@ -596,34 +629,36 @@ type PageProps = {
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="panel">
-      <h2>{title}</h2>
-      {children}
-    </section>
+    <Card className="col-span-full min-w-0">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">{children}</CardContent>
+    </Card>
   );
 }
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <section className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </section>
+    <Card className="grid min-w-0 gap-1 p-4">
+      <span className="text-sm leading-5 text-muted-foreground">{label}</span>
+      <strong className="truncate text-[22px] font-bold leading-[30px] text-foreground">{value}</strong>
+      <small className="truncate text-sm leading-5 text-muted-foreground">{detail}</small>
+    </Card>
   );
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="field">
+    <Label>
       <span>{label}</span>
       {children}
-    </label>
+    </Label>
   );
 }
 
 function Status({ value }: { value: string }) {
-  return <span className="status-pill">{value}</span>;
+  return <Badge variant="outline">{value}</Badge>;
 }
 
 export default App;
