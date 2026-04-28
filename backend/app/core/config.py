@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     release_shadow_limit: int = 5
     world_idle_interval_seconds: int = 60
     world_idle_grace_seconds: int = 60
-    model_provider: str = "stub"
-    embedding_provider: str = "stub"
+    model_provider: str = "openai_compatible"
+    embedding_provider: str = "openai_compatible"
     gemini_api_key: str = ""
     gemini_timeout_seconds: float = 30.0
     gemini_max_retries: int = 2
@@ -59,12 +59,21 @@ class Settings(BaseSettings):
     gemini_temperature_main: float = 0.3
     gemini_temperature_pro: float = 0.1
     gemini_embedding_model: str = "gemini-embedding-001"
+    openai_compat_api_key: str = ""
+    openai_compat_base_url: str = ""
+    openai_compat_timeout_seconds: float = 30.0
+    openai_compat_max_retries: int = 2
+    openai_compat_response_format: str = "json_schema"
+    openai_compat_embedding_api_key: str = ""
+    openai_compat_embedding_base_url: str = ""
+    openai_compat_embedding_model: str = ""
+    openai_compat_send_embedding_dimensions: bool = True
     memory_embedding_dim: int = 768
     memory_retrieval_limit: int = 8
     memory_retrieval_min_score: float = 0.1
-    model_lite_id: str = "gemini-2.5-flash-lite"
-    model_main_id: str = "gemini-2.5-flash"
-    model_pro_id: str = "gemini-2.5-pro"
+    model_lite_id: str = ""
+    model_main_id: str = ""
+    model_pro_id: str = ""
     otel_service_name: str = "gestaloka-backend"
     otel_exporter_otlp_endpoint: str = ""
     otel_metrics_host: str = "0.0.0.0"
@@ -84,6 +93,14 @@ class Settings(BaseSettings):
     @property
     def ops_admin_sub_list(self) -> list[str]:
         return [item.strip() for item in self.ops_admin_subs.split(",") if item.strip()]
+
+    @property
+    def openai_compat_embedding_effective_api_key(self) -> str:
+        return self.openai_compat_embedding_api_key or self.openai_compat_api_key
+
+    @property
+    def openai_compat_embedding_effective_base_url(self) -> str:
+        return self.openai_compat_embedding_base_url or self.openai_compat_base_url
 
     @model_validator(mode="after")
     def normalize_paths(self) -> "Settings":

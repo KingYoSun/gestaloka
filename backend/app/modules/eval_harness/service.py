@@ -199,7 +199,7 @@ class EvalHarnessService:
             if default_lane not in SUPPORTED_MODEL_LANES:
                 raise ValueError(f"Route {route_id} in {config_path.name} uses unsupported lane {default_lane}")
             if not isinstance(model_ids_raw, dict):
-                raise ValueError(f"Route {route_id} in {config_path.name} must define model_ids")
+                raise ValueError(f"Route {route_id} in {config_path.name} model_ids must be a mapping when defined")
             model_ids = {str(key): str(value) for key, value in model_ids_raw.items()}
             unknown_lanes = set(model_ids) - SUPPORTED_MODEL_LANES
             if unknown_lanes:

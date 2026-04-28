@@ -38,6 +38,42 @@ class AppContainer:
 
 def build_container(settings: Settings | None = None) -> AppContainer:
     resolved_settings = settings or get_settings()
+    if resolved_settings.model_provider == "openai_compatible":
+        missing = [
+            name
+            for name, value in (
+                ("OPENAI_COMPAT_API_KEY", resolved_settings.openai_compat_api_key),
+                ("OPENAI_COMPAT_BASE_URL", resolved_settings.openai_compat_base_url),
+                ("MODEL_LITE_ID", resolved_settings.model_lite_id),
+                ("MODEL_MAIN_ID", resolved_settings.model_main_id),
+                ("MODEL_PRO_ID", resolved_settings.model_pro_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "OpenAI-compatible LLM runtime requires " + ", ".join(missing)
+            )
+    if resolved_settings.embedding_provider == "openai_compatible":
+        missing = [
+            name
+            for name, value in (
+                (
+                    "OPENAI_COMPAT_EMBEDDING_API_KEY or OPENAI_COMPAT_API_KEY",
+                    resolved_settings.openai_compat_embedding_effective_api_key,
+                ),
+                (
+                    "OPENAI_COMPAT_EMBEDDING_BASE_URL or OPENAI_COMPAT_BASE_URL",
+                    resolved_settings.openai_compat_embedding_effective_base_url,
+                ),
+                ("OPENAI_COMPAT_EMBEDDING_MODEL", resolved_settings.openai_compat_embedding_model),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "OpenAI-compatible embedding runtime requires " + ", ".join(missing)
+            )
     if (
         resolved_settings.model_provider == "gemini_developer_api"
         or resolved_settings.embedding_provider == "gemini_developer_api"

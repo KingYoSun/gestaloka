@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Generic, Literal, TypeVar
 
+import httpx
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -956,6 +958,128 @@ class GeminiDeveloperAPIProvider(BaseModelProvider):
         return None
 
 
+class OpenAICompatibleProvider(BaseModelProvider):
+    provider_name = "openai_compatible"
+
+    def __init__(self, settings: Settings) -> None:
+        if not settings.openai_compat_api_key:
+            raise ValueError("OPENAI_COMPAT_API_KEY is required when MODEL_PROVIDER=openai_compatible")
+        if not settings.openai_compat_base_url:
+            raise ValueError("OPENAI_COMPAT_BASE_URL is required when MODEL_PROVIDER=openai_compatible")
+        self.settings = settings
+        self.client = httpx.Client(
+            base_url=settings.openai_compat_base_url.rstrip("/"),
+            timeout=settings.openai_compat_timeout_seconds,
+            headers={
+                "Authorization": f"Bearer {settings.openai_compat_api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    def generate(
+        self,
+        *,
+        prompt: PromptDefinition,
+        response_model: type[T],
+        model_id: str,
+        lane: str,
+        input_payload: dict[str, Any],
+        temperature: float,
+    ) -> ProviderResponse:
+        body: dict[str, Any] = {
+            "model": model_id,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "\n\n".join(
+                        [
+                            prompt.instructions.strip(),
+                            "Return a JSON object only.",
+                        ]
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(input_payload, ensure_ascii=False, indent=2, sort_keys=True),
+                },
+            ],
+            "temperature": temperature,
+        }
+        response_format = self._response_format(prompt=prompt, response_model=response_model)
+        if response_format is not None:
+            body["response_format"] = response_format
+
+        last_error: Exception | None = None
+        for _ in range(max(self.settings.openai_compat_max_retries, 1)):
+            try:
+                response = self.client.post("/chat/completions", json=body)
+                response.raise_for_status()
+                payload = response.json()
+                response_text = self._response_text(payload)
+                return ProviderResponse(
+                    raw_output=json.loads(response_text),
+                    provider_name=self.provider_name,
+                    provider_response_id=self._response_id(payload),
+                )
+            except Exception as exc:  # pragma: no cover - live provider failure path
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+    def _response_format(self, *, prompt: PromptDefinition, response_model: type[BaseModel]) -> dict[str, Any] | None:
+        mode = self.settings.openai_compat_response_format.strip().lower()
+        if mode == "none":
+            return None
+        if mode == "json_object":
+            return {"type": "json_object"}
+        if mode != "json_schema":
+            raise ValueError(
+                "OPENAI_COMPAT_RESPONSE_FORMAT must be one of json_schema, json_object, or none"
+            )
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": self._schema_name(prompt.prompt_id),
+                "schema": response_model.model_json_schema(),
+                "strict": True,
+            },
+        }
+
+    @staticmethod
+    def _schema_name(prompt_id: str) -> str:
+        name = re.sub(r"[^a-zA-Z0-9_-]+", "_", prompt_id).strip("_")
+        return name or "structured_response"
+
+    @staticmethod
+    def _response_text(payload: dict[str, Any]) -> str:
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("OpenAI-compatible response did not include choices")
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise ValueError("OpenAI-compatible response choice was not an object")
+        message = first_choice.get("message")
+        if not isinstance(message, dict):
+            raise ValueError("OpenAI-compatible response did not include a message")
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") in {None, "text"} and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+            text = "".join(parts).strip()
+            if text:
+                return text
+        raise ValueError("OpenAI-compatible response did not include JSON text")
+
+    @staticmethod
+    def _response_id(payload: dict[str, Any]) -> str | None:
+        value = payload.get("id")
+        return value if isinstance(value, str) and value else None
+
+
 class ModelRouter:
     def __init__(
         self,
@@ -1225,6 +1349,8 @@ class ModelRouter:
         return self.prompt_registry.compose(prompt, overlay_instructions=overlay)
 
     def _build_provider(self) -> BaseModelProvider:
+        if self.settings.model_provider == "openai_compatible":
+            return OpenAICompatibleProvider(self.settings)
         if self.settings.model_provider == "gemini_developer_api":
             return GeminiDeveloperAPIProvider(self.settings)
         return StubModelProvider()

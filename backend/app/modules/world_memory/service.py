@@ -7,6 +7,7 @@ import math
 import re
 from typing import Any
 
+import httpx
 from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
@@ -159,6 +160,81 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         raise last_error
 
 
+class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
+    provider_name = "openai_compatible"
+
+    def __init__(self, settings: Settings) -> None:
+        api_key = settings.openai_compat_embedding_effective_api_key
+        base_url = settings.openai_compat_embedding_effective_base_url
+        if not api_key:
+            raise ValueError(
+                "OPENAI_COMPAT_EMBEDDING_API_KEY or OPENAI_COMPAT_API_KEY is required "
+                "when EMBEDDING_PROVIDER=openai_compatible"
+            )
+        if not base_url:
+            raise ValueError(
+                "OPENAI_COMPAT_EMBEDDING_BASE_URL or OPENAI_COMPAT_BASE_URL is required "
+                "when EMBEDDING_PROVIDER=openai_compatible"
+            )
+        if not settings.openai_compat_embedding_model:
+            raise ValueError("OPENAI_COMPAT_EMBEDDING_MODEL is required when EMBEDDING_PROVIDER=openai_compatible")
+        self.settings = settings
+        self.model_name = settings.openai_compat_embedding_model
+        self.client = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            timeout=settings.openai_compat_timeout_seconds,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    def embed_document(self, text: str) -> list[float]:
+        return self._embed(text)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed(text)
+
+    def _embed(self, text: str) -> list[float]:
+        body: dict[str, Any] = {
+            "model": self.settings.openai_compat_embedding_model,
+            "input": text,
+        }
+        if self.settings.openai_compat_send_embedding_dimensions:
+            body["dimensions"] = self.settings.memory_embedding_dim
+
+        last_error: Exception | None = None
+        for _ in range(max(self.settings.openai_compat_max_retries, 1)):
+            try:
+                response = self.client.post("/embeddings", json=body)
+                response.raise_for_status()
+                payload = response.json()
+                embedding = self._embedding_values(payload)
+                if len(embedding) != self.settings.memory_embedding_dim:
+                    raise ValueError(
+                        "OpenAI-compatible embedding dimension mismatch: "
+                        f"expected {self.settings.memory_embedding_dim}, got {len(embedding)}"
+                    )
+                return embedding
+            except Exception as exc:  # pragma: no cover - live provider failure path
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+    @staticmethod
+    def _embedding_values(payload: dict[str, Any]) -> list[float]:
+        data = payload.get("data")
+        if not isinstance(data, list) or not data:
+            raise ValueError("OpenAI-compatible embedding response did not include data")
+        first_item = data[0]
+        if not isinstance(first_item, dict):
+            raise ValueError("OpenAI-compatible embedding response item was not an object")
+        values = first_item.get("embedding")
+        if not isinstance(values, list):
+            raise ValueError("OpenAI-compatible embedding response did not include embedding values")
+        return [float(item) for item in values]
+
+
 def build_retrieval_query_text(
     input_text: str,
     *,
@@ -249,6 +325,8 @@ class MemoryService:
         return self._provider
 
     def _build_provider(self) -> BaseEmbeddingProvider:
+        if self.settings.embedding_provider == "openai_compatible":
+            return OpenAICompatibleEmbeddingProvider(self.settings)
         if self.settings.embedding_provider == "gemini_developer_api":
             return GeminiEmbeddingProvider(self.settings)
         return StubEmbeddingProvider(self.settings)
@@ -270,9 +348,14 @@ class MemoryService:
                 "runtime_error": None,
             }
         except Exception as exc:
+            model = (
+                self.settings.openai_compat_embedding_model
+                if self.settings.embedding_provider == "openai_compatible"
+                else self.settings.gemini_embedding_model
+            )
             return {
                 "provider": self.settings.embedding_provider,
-                "model": self.settings.gemini_embedding_model,
+                "model": model,
                 "runtime_status": "degraded",
                 "runtime_error": str(exc),
             }

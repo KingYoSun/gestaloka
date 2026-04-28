@@ -241,20 +241,21 @@ def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container,
     assert after["eval_case_results"] >= 2
 
 
-def test_release_configs_and_runtime_defaults_use_current_gemini_model_ids(container):
-    legacy_model_ids = {"gemini-3-flash-preview", "gemini-3.1-pro-preview"}
-
-    assert Settings.model_fields["model_lite_id"].default == "gemini-2.5-flash-lite"
-    assert Settings.model_fields["model_main_id"].default == "gemini-2.5-flash"
-    assert Settings.model_fields["model_pro_id"].default == "gemini-2.5-pro"
+def test_release_configs_and_runtime_defaults_use_openai_compatible_fallbacks(container):
+    assert Settings.model_fields["model_provider"].default == "openai_compatible"
+    assert Settings.model_fields["embedding_provider"].default == "openai_compatible"
+    assert Settings.model_fields["model_lite_id"].default == ""
+    assert Settings.model_fields["model_main_id"].default == ""
+    assert Settings.model_fields["model_pro_id"].default == ""
 
     for config_name in ("current", "candidate"):
         config = container.eval_service.load_release_config(config_name)
+        router = container.eval_service.router_for_config(config_name)
         for route in config.routes.values():
-            assert not legacy_model_ids.intersection(route.model_ids.values())
-            assert route.model_ids["lite_lane"] == "gemini-2.5-flash-lite"
-            assert route.model_ids["main_lane"] == "gemini-2.5-flash"
-            assert route.model_ids["pro_lane"] == "gemini-2.5-pro"
+            assert route.model_ids == {}
+            assert router._model_id_for_lane("lite_lane", route) == "test-lite-model"
+            assert router._model_id_for_lane("main_lane", route) == "test-main-model"
+            assert router._model_id_for_lane("pro_lane", route) == "test-pro-model"
 
 
 def test_shadow_replay_filters_deterministic_turns_and_uses_source_event_location(client, container, auth_headers):
