@@ -7,6 +7,7 @@
 - 実装の最終的な真実はコードとテストです。
 - v2 の全体方針は [rebuild_plan_v2.md](rebuild_plan_v2.md) を参照してください。
 - 固定済み前提は [documents/adr/ADR-000-v2-foundation.md](documents/adr/ADR-000-v2-foundation.md) を参照してください。
+- フロントエンドの視覚設計ルールは [DESIGN.md](DESIGN.md) を参照してください。
 - `legacy/v1/` は凍結済みの参考資料です。v2 から import / copy-forward しないでください。
 
 ## Architecture Rules
