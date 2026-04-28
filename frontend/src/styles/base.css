@@ -1,0 +1,130 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--color-background-primary);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  word-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-kerning: auto;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+  font: inherit;
+  letter-spacing: normal;
+  font-feature-settings: normal;
+}
+
+button {
+  min-height: 44px;
+  border: 1px solid var(--color-surface-primary);
+  border-radius: var(--radius-control);
+  padding: 0.625rem 1rem;
+  background: var(--color-surface-primary);
+  color: var(--color-text-invert);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 24px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  min-height: 44px;
+  margin-top: var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-control);
+  padding: 0.625rem 0.75rem;
+  background: var(--color-surface-normal);
+  color: var(--color-text-primary);
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+a {
+  color: var(--color-surface-secondary);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-feature-settings: var(--font-feature-settings-palt);
+}
+
+h1 {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 48px;
+  letter-spacing: 1.28px;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: normal;
+}
+
+h3 {
+  margin-top: var(--space-5);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0.64px;
+}
+
+p {
+  margin: 0;
+}
+
+label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 21px;
+}

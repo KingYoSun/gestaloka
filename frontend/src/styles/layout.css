@@ -1,0 +1,122 @@
+.shell {
+  width: min(100% - 2rem, var(--width-main));
+  margin: 0 auto;
+  padding: 0 0 var(--space-10);
+}
+
+.hero {
+  min-height: var(--nav-height);
+  margin: 0 calc(50% - 50vw) var(--space-8);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-normal);
+}
+
+.hero-top {
+  width: min(100% - 2rem, var(--width-main));
+  min-height: var(--nav-height);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 18px;
+  text-transform: uppercase;
+}
+
+.lede {
+  max-width: var(--width-reading);
+  margin-top: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.compact-form {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: end;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.route-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.card.wide {
+  grid-column: 1 / -1;
+}
+
+.card.wide .result,
+.card.wide > [data-testid="last-consequence-summary"],
+.card.wide > .stack {
+  max-width: var(--width-reading);
+}
+
+@media (max-width: 940px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-top {
+    grid-template-columns: minmax(0, 1fr);
+    padding-block: var(--space-3);
+  }
+
+  .route-nav {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --nav-height: 48px;
+  }
+
+  .shell,
+  .hero-top {
+    width: min(100% - 1rem, var(--width-main));
+  }
+
+  .shell {
+    padding-bottom: var(--space-8);
+  }
+
+  .hero {
+    margin-bottom: var(--space-5);
+  }
+
+  .compact-form,
+  .scope-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
