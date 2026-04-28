@@ -152,7 +152,7 @@ export function useGestalokaRuntime() {
   const socketRef = useRef<WebSocket | null>(null);
 
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
-  const activeWorldId = route === "admin" ? (opsWorldId || session?.world_id || worldId) : (session?.world_id ?? worldId);
+  const activeWorldId = session?.world_id ?? worldId;
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const selectedWorld = playableWorlds.find((item) => item.world_id === worldId) ?? null;
   const selectedPlayerProfile = playerProfiles.find((item) => item.actor_id === selectedPlayerActorId) ?? null;
@@ -692,8 +692,7 @@ export function useGestalokaRuntime() {
   }
 
   function navigate(nextRoute: AppRoute) {
-    const path = nextRoute === "admin" ? "/admin" : "/";
-    window.history.pushState({}, "", path);
+    window.history.pushState({}, "", "/");
     setRoute(nextRoute);
   }
 
@@ -1129,16 +1128,6 @@ export function useGestalokaRuntime() {
       setChecklistPending(false);
     }
   }
-
-  useEffect(() => {
-    if (route !== "admin" || !token) {
-      return;
-    }
-    void refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
-    if (activeWorldId) {
-      void runMemorySearch(token, activeWorldId);
-    }
-  }, [route, token, activeWorldId, session?.session_id, opsPackFilter, opsTemplateFilter]);
 
   return {
     route,

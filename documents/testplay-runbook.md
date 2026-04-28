@@ -1,7 +1,7 @@
 # v2 Testplay Runbook
 
 この runbook は、Shared World Core 完了後に人間が実施する Full smoke テストプレイ手順です。
-手動確認は playable surface と Ops 表示を対象にし、cross-player feedback の詳細な
+手動確認は Player surface と独立 Admin 管理画面を対象にし、cross-player feedback の詳細な
 正しさは `make shared-world-regressions` で固定します。
 
 Codex app から Playwright MCP で実施する場合は、補助手順
@@ -13,7 +13,7 @@ Codex app から Playwright MCP で実施する場合は、補助手順
 - `.env` は `.env.example` から作成しておく。
 - 起動は container-first を正とする。
 - Player UI: `http://localhost:5173`
-- Admin UI: `http://localhost:5173/admin`
+- Admin UI: `http://localhost:5174`
 - Langfuse: `http://localhost:3001`
 - Demo login: `demo / demo-password`
 - Bundled playable packs:
@@ -52,7 +52,7 @@ docker compose up --build
 起動後、以下を確認する。
 
 - `http://localhost:5173` が開ける。
-- `http://localhost:5173/admin` が login 後に開ける。
+- `http://localhost:5174` が login 後に開ける。
 - `http://localhost:8000/health` が `status` と database / projection / world pack health を返す。
 - `http://localhost:3001` で Langfuse が開ける。
 
@@ -91,22 +91,25 @@ docker compose up --build
    - recent consequence history または recent scene history に Shared World Core の反映
    - faction standing、relationship summary、recent world beats のいずれかに turn 結果が反映される
 
-## 5. Admin / Ops 確認
+## 5. Admin 管理画面確認
 
 Admin UI で以下を確認する。
 
-- Catalog health が ready。
-- Catalog の pack 数が 1、template 数が 1、failure が 0。
-- Pack/template context が world ごとに表示される。
-- Projection の pending / failed が増え続けない。
-- Graph runtime が ready または想定内の状態。
-- Embedding runtime が ready または想定内の状態。
-- Graph summary または Ops stream で faction projection が確認できる。
-- Relationship ops、consequence threads、history / title の Ops 表示または regression 結果で Shared World Core の state が追える。
-- SP overview と SP ledger で、turn 実行に応じた消費と調整が追える。
+- Dashboard に pack status、template 数、projection pending、release summary が表示される。
+- Packs で `GESTALOKA Reference` が表示され、Catalog の pack 数が 1、template 数が 1、failure が 0 相当で読める。
+- Packs から scaffold 作成、archive import、publish status 更新のフォームや操作が見える。
+- World Templates で pack/template context と publish status が表示される。
+- Users & Permissions で app-level PostgreSQL permission を管理する画面が表示される。Keycloak Admin API の user creation 画面ではない。
+- LLM Settings で provider、base URL secret ref、API key secret ref、embedding provider、admin debug flag が表示される。
+- LLM Settings は API key 本体を表示または保存する導線になっていない。
+- Model Lanes で lane ごとの model id が編集できる。
+- Prompts で prompt registry と override 編集画面が表示される。
+- SP で account summary と adjustment form が表示される。
 - SP は execution budget であり、世界内通貨、quest 進行力、title power として扱われていない。
-- Operations health timeline が更新される。
-- LLM observability が enabled の場合、Langfuse runtime status と base URL が表示される。
+- Release で release summary と checklist 実行操作が表示される。
+- 通常 Admin 画面に raw JSON dump、raw trace stream、raw memory dump、projection internals の垂れ流しがない。
+
+低レベルの Ops 診断が必要な場合は、Admin 通常画面ではなく `/ops` API、backend logs、regression command で切り分ける。
 
 異常がある場合は、該当 world の session id、world id、pack id、template id、時刻、直前の操作を控える。
 
@@ -142,20 +145,23 @@ shared_world_health
 turn_resolution_gestaloka_regression
 ```
 
-Admin UI の release gate でも以下を確認する。
+Admin UI の Release 画面でも以下を確認する。
 
 - verdict が passed。
 - canary_promote_status が ready。
-- blocked reasons が空。
+- blocked reasons が空または `none`。
+- checklist 実行後、created timestamp が更新される。
+
+詳細な release gate 判定は CLI output を正とし、以下を terminal output で確認する。
+
 - cutover_status.promote_ready が true。
 - missing checks がない。
 - bundled pack regressions が `turn_resolution_gestaloka_regression` を含み、pass。
 - shared_world_health が ready。
 - shadow failures がない。
 - canary health が healthy。
-- runbook 表示の `canary_up`, `canary_probe`, `pre_promote_checklist`, `nightly_gate`, `promote_condition`, `promote`, `rollback` が実装と一致する。
-- promote 表示が `cp config/release/candidate.yaml config/release/current.yaml && docker compose up -d --build backend`。
-- rollback 表示が `make canary-down && docker compose up -d --build backend`。
+- promote command は `cp config/release/candidate.yaml config/release/current.yaml && docker compose up -d --build backend`。
+- rollback command は `make canary-down && docker compose up -d --build backend`。
 
 ## 7. Cleanup
 
@@ -201,7 +207,14 @@ docker compose logs projection-worker
 docker compose logs nebula-init
 ```
 
-- SP 不足で turn が進まない場合は、Admin UI の SP adjustment で demo player の balance を補充する。
+- SP 不足で turn が進まない場合は、`http://localhost:5174` の Admin UI の SP adjustment で demo player の balance を補充する。
+- Admin UI が開けない場合は、Admin frontend container と Keycloak admin client 設定を確認する。
+
+```bash
+docker compose logs admin-frontend
+docker compose logs keycloak
+```
+
 - Shared World Core の health が ready ではない場合は、focused check で axis drift、memory gap、event integrity gap を確認する。
 
 ```bash

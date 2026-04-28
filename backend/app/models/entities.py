@@ -58,6 +58,39 @@ class World(Base, TimestampMixin):
     state: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class AdminAppUser(Base, TimestampMixin):
+    __tablename__ = "admin_app_users"
+
+    user_sub: Mapped[str] = mapped_column(String(128), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), default="")
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    role: Mapped[str] = mapped_column(String(32), default="viewer")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    permissions: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AdminRuntimeConfig(Base, TimestampMixin):
+    __tablename__ = "admin_runtime_configs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), default="settings")
+    base_url_secret_ref: Mapped[str] = mapped_column(String(160), default="")
+    api_key_secret_ref: Mapped[str] = mapped_column(String(160), default="")
+    embedding_provider: Mapped[str] = mapped_column(String(64), default="settings")
+    embedding_base_url_secret_ref: Mapped[str] = mapped_column(String(160), default="")
+    embedding_api_key_secret_ref: Mapped[str] = mapped_column(String(160), default="")
+    model_ids: Mapped[dict] = mapped_column(JSON, default=dict)
+    admin_debug_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AdminPromptOverride(Base, TimestampMixin):
+    __tablename__ = "admin_prompt_overrides"
+
+    prompt_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    instructions: Mapped[str] = mapped_column(Text, default="")
+
+
 class Location(Base, TimestampMixin):
     __tablename__ = "locations"
     __table_args__ = (UniqueConstraint("id", "world_id", name="uq_locations_id_world"),)

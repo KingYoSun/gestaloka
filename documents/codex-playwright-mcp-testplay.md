@@ -16,7 +16,7 @@ docker compose up --build
 
 - 確認対象 URL:
   - Player UI: `http://localhost:5173`
-  - Admin UI: `http://localhost:5173/admin`
+  - Admin UI: `http://localhost:5174`
   - Backend health: `http://localhost:8000/health`
   - Langfuse: `http://localhost:3001`
 - Demo login: `demo / demo-password`
@@ -24,7 +24,8 @@ docker compose up --build
 
 ## 2. Playwright MCP 方針
 
-- Playwright MCP で `http://localhost:5173` を開く。
+- Player 確認では Playwright MCP で `http://localhost:5173` を開く。
+- Admin 確認では別ページまたは別 context で `http://localhost:5174` を開く。Admin は Player route ではなく独立 frontend container として扱う。
 - 操作前に accessibility / DOM snapshot で対象の存在と一意性を確認する。
 - 操作対象は `data-testid` を優先する。role / text は snapshot 上で一意に判断できる場合だけ使う。
 - 主要 checkpoint、表示崩れ、迷いが生じる操作、エラー表示は screenshot を残す。
@@ -57,14 +58,20 @@ Player UI:
 
 Admin UI:
 
-- `nav-admin`, `nav-game`: Player / Admin の往復。
-- `ops-catalog-health`, `ops-pack-catalog-status`, `ops-pack-catalog-summary`: catalog readiness。
-- `ops-pack-filter`, `ops-template-filter`, `ops-world-select`: Admin scope の切替。
-- `graph-runtime-status`, `embedding-status-summary`, `langfuse-status-summary`: runtime 状態。
-- `trigger-idle-pass`, `world-tick-stream`, `npc-location-stream`, `offstage-beat-stream`: idle pass の反映。
-- `sp-overview`, `admin-ledger`, `adjust-delta`, `submit-adjustment`: SP 消費と調整。
-- `release-gate-verdict`, `release-cutover-readiness`, `release-checks-stream`, `release-pack-regressions-stream`,
-  `shadow-failures-stream`, `release-runbook`: release gate と runbook 表示。
+- `admin-sign-in`: Admin frontend から Keycloak login へ進む。
+- `admin-nav-dashboard`, `admin-dashboard`: 集約 KPI、pack / projection / release summary。
+- `admin-nav-packs`, `admin-packs`: pack 一覧、scaffold 作成、archive import、publish status 更新。
+- `admin-nav-templates`, `admin-world-templates`: world template 一覧と playable / draft 更新。
+- `admin-nav-users`, `admin-users`: app-level admin user / permission 一覧と付与。
+- `admin-nav-llm`, `admin-llm-settings`: provider、base URL secret ref、API key secret ref、debug flag。
+- `admin-nav-lanes`, `admin-model-lanes`: lane ごとの model id 設定。
+- `admin-nav-prompts`, `admin-prompts`: prompt registry と override 編集。
+- `admin-nav-sp`, `admin-sp`: SP account summary と adjustment。
+- `admin-nav-release`, `admin-release`: release summary と checklist 実行。
+- `admin-refresh`, `admin-error`: 再取得とエラー表示。
+
+Admin の通常画面では raw JSON dump、raw trace stream、低レベル projection dump を観測点にしない。
+低レベル診断が必要な場合は、Admin ではなく `/ops` API や backend logs へ切り分ける。
 
 ## 4. Runbook 対応手順
 
@@ -86,19 +93,22 @@ Admin UI:
 7. `choice-progress` を実行し、`Breach Restoration`、`breach_restoration`、used 表示、`Oblivion Breach` route を確認する。
 8. さらに `choice-progress` を実行し、`Oblivion Breach`、travel history、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。
 
-### Admin / Ops
+### Admin
 
-1. `nav-admin` で Admin UI を開く。
-2. Catalog health が ready、pack 数 1、template 数 1、failure 0 であることを確認する。
-3. Admin scope selector で world ごとの context が読めることを確認する。
-4. Projection pending / failed が増え続けていないことを確認する。
-5. Graph runtime、embedding runtime、Langfuse runtime が ready または想定内の状態であることを確認する。
-6. Graph summary、relationship ops、consequence threads、history / title、SP overview / ledger が turn 結果を追える表示になっていることを確認する。
-7. Operations health timeline が更新されることを確認する。
+1. `http://localhost:5174` を開き、必要なら `admin-sign-in` から `demo / demo-password` で login する。
+2. `admin-dashboard` で pack status、template 数、projection pending、release summary が管理向け KPI として読めることを確認する。
+3. 左サイドバーで `admin-nav-packs`、`admin-nav-templates`、`admin-nav-users`、`admin-nav-llm`、`admin-nav-lanes`、`admin-nav-prompts`、`admin-nav-sp`、`admin-nav-release` を順に開き、各画面の `data-testid` が一意に存在することを確認する。
+4. `admin-packs` で `GESTALOKA Reference` が表示され、pack 数 1、template 数 1、failure 0 相当の状態が読めることを確認する。
+5. `admin-world-templates` で template の publish 状態が読めることを確認する。
+6. `admin-users` で app-level permission 管理画面が表示され、Keycloak Admin API 作成画面になっていないことを確認する。
+7. `admin-llm-settings` で secret 本体ではなく secret/env 参照名だけを扱っていることを確認する。
+8. `admin-model-lanes` と `admin-prompts` で lane model id と prompt override を編集できる形になっていることを確認する。
+9. `admin-sp` で SP が execution budget の調整として扱われ、世界内報酬や quest 進行力に見えないことを確認する。
+10. 通常画面に raw JSON dump、raw trace 垂れ流し、projection internals の dump が表示されていないことを確認する。
 
 ### Release Dry-run
 
-Terminal で以下を実行した後、Admin UI の release gate 表示を Playwright MCP で確認する。
+Terminal で以下を実行した後、Admin UI の release summary 表示を Playwright MCP で確認する。
 各 target は host からそのまま実行する。`canary-up` は detached で canary health を待ち、
 `canary-probe` / `release-checklist` は起動済み compose stack の `backend` container 内で実行される。
 
@@ -111,15 +121,13 @@ make canary-down
 
 確認項目:
 
-- `release-gate-verdict` が `passed`。
-- `release-cutover-readiness` が promote ready を示す。
-- blocked reasons と missing checks が空。
-- bundled pack regressions が GESTALOKA Reference 分 pass。
-- shared world health、shadow failures、canary health が想定内。
+- `admin-nav-release` で Release 画面を開き、`admin-release` が表示される。
+- Admin summary の verdict が `passed`、canary promote status が ready 相当である。
+- blocked reasons が空または `none`。
+- checklist run button から `/admin/release/checklists/run` が実行でき、再取得後に created timestamp が更新される。
+- bundled pack regressions、shared world health、shadow failures、canary health の詳細判定は CLI output を正として控える。
 - shadow failures がある場合は `schema` / `same-world` / `graph` / `retrieval` / `lane` / `fallback`
   の診断分類、retrieval required、hit count を控える。
-- `release-runbook` の `canary_up`, `canary_probe`, `pre_promote_checklist`, `nightly_gate`, `promote_condition`,
-  `promote`, `rollback` が runbook と一致する。
 
 ## 5. UX 評価観点
 
@@ -128,13 +136,14 @@ make canary-down
 - Player profile: 作成、既存選択、開始前編集、文体指定が迷わずでき、`start-session` が profile 未選択時に無効化されるか。
 - Turn execution: choice 実行中に二重送信しにくく、完了後に次の操作が明確か。
 - Choice / free text: mode 切替、入力欄、submit の関係が分かりやすいか。
-- SP recovery: SP 不足時に Admin UI で補充すべきことが追えるか。SP が世界内報酬に見えないか。
+- SP recovery: SP 不足時に Admin UI `admin-sp` で補充すべきことが追えるか。SP が世界内報酬に見えないか。
 - Streams: ops、history、beats、relationship、inventory が長くなっても読めるか。
-- Admin density: catalog、projection、graph、observability、SP、release gate の情報量が過密すぎないか。
+- Admin navigation: 左サイドバーから Dashboard、Packs、World Templates、Users & Permissions、LLM Settings、Model Lanes、Prompts、SP、Release へ迷わず移動できるか。
+- Admin density: 管理 KPI、一覧、フォーム、明示的な管理操作が過密すぎず、raw dump に見えないか。
 - Error banner: 発生時に原因、対象操作、次の切り分けが推測できるか。
 - Responsive layout: desktop に加え 375x812 mobile viewport で text の折返し、button label、stream item、
   form input が重ならず横スクロールしないか。
-- Release gate: promote / rollback の判断材料と runbook command が迷わず読めるか。
+- Release gate: Admin summary と CLI checklist の役割分担が分かり、promote / rollback 判断を CLI 詳細で追えるか。
 
 ## 6. 記録ルール
 

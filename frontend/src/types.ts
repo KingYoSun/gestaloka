@@ -1,4 +1,4 @@
-export type AppRoute = "game" | "admin";
+export type AppRoute = "game";
 
 export type AuthMe = {
   sub: string;

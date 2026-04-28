@@ -1604,7 +1604,7 @@ def import_pack_archive(pack_dir: Path | str, archive_path: Path | str, *, repla
             shutil.rmtree(target_root)
         shutil.copytree(staging_dir / root_name, target_root, symlinks=False)
         imported = load_pack_from_dir(resolved_pack_dir, pack.manifest.pack_id)
-    configure_pack_registry(resolved_pack_dir)
+    configure_pack_registry(resolved_pack_dir, force_reload=True)
     return _pack_archive_payload(
         status="imported",
         pack=imported,
@@ -1614,10 +1614,10 @@ def import_pack_archive(pack_dir: Path | str, archive_path: Path | str, *, repla
     )
 
 
-def configure_pack_registry(pack_dir: Path | str) -> PackRegistry:
+def configure_pack_registry(pack_dir: Path | str, *, force_reload: bool = False) -> PackRegistry:
     global _ACTIVE_PACK_DIR, _ACTIVE_REGISTRY
     resolved_dir = Path(pack_dir).resolve()
-    if _ACTIVE_REGISTRY is not None and _ACTIVE_PACK_DIR == resolved_dir:
+    if not force_reload and _ACTIVE_REGISTRY is not None and _ACTIVE_PACK_DIR == resolved_dir:
         return _ACTIVE_REGISTRY
     registry = PackRegistry(resolved_dir)
     _ACTIVE_PACK_DIR = resolved_dir

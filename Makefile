@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms check-legacy eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -48,15 +48,24 @@ scan-pack-leaks:
 	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack scan-leaks
 
 build-frontend:
-	$(COMPOSE) build frontend
-	$(COMPOSE) run --rm --no-deps frontend npm run build
+	$(MAKE) build-player-frontend
+	$(MAKE) build-admin-frontend
+
+build-player-frontend:
+	$(COMPOSE) build player-frontend
+	$(COMPOSE) run --rm --no-deps player-frontend npm run build
+
+build-admin-frontend:
+	$(COMPOSE) build admin-frontend
+	$(COMPOSE) run --rm --no-deps admin-frontend npm run build
 
 frontend-e2e:
 	@set -eu; \
 	$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true; \
 	trap '$(COMPOSE) down -v --remove-orphans' EXIT; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build backend; \
-	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build frontend; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build player-frontend; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build admin-frontend; \
 	$(VERIFY_COMPOSE_ENV) E2E_SPEC="$(E2E_SPEC)" $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:

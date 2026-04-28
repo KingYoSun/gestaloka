@@ -58,6 +58,9 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "world_broadcast_events",
         "world_broadcast_deliveries",
         "outbox_events",
+        "admin_app_users",
+        "admin_runtime_configs",
+        "admin_prompt_overrides",
     } <= tables
 
     event_columns = {column["name"] for column in inspector.get_columns("events")}

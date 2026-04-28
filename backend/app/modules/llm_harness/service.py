@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.prompts import PromptDefinition, PromptRegistry
-from app.models.entities import World
+from app.models.entities import AdminPromptOverride, AdminRuntimeConfig, World
 from app.modules.observability.service import ObservabilityService
 from app.modules.world_pack.service import PackRegistry, world_pack_metadata
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
@@ -1417,6 +1417,9 @@ class ModelRouter:
 
     def _resolve_prompt_for_world(self, prompt_id: str, world_id: str) -> PromptDefinition:
         prompt = self.prompt_registry.get(prompt_id)
+        admin_overlay = self._admin_prompt_overlay(prompt_id)
+        if admin_overlay:
+            prompt = self.prompt_registry.compose(prompt, overlay_instructions=admin_overlay)
         if self.pack_registry is None or self.session_factory is None:
             return prompt
         try:
@@ -1436,6 +1439,21 @@ class ModelRouter:
         except Exception:
             return prompt
         return self.prompt_registry.compose(prompt, overlay_instructions=overlay)
+
+    def _admin_prompt_overlay(self, prompt_id: str) -> str:
+        if self.session_factory is None:
+            return ""
+        try:
+            with self.session_factory() as db:
+                row = db.execute(
+                    select(AdminPromptOverride).where(
+                        AdminPromptOverride.prompt_id == prompt_id,
+                        AdminPromptOverride.enabled.is_(True),
+                    )
+                ).scalar_one_or_none()
+        except Exception:
+            return ""
+        return row.instructions.strip() if row is not None else ""
 
     def _build_provider(self) -> BaseModelProvider:
         if self.settings.model_provider == "openai_compatible":
@@ -1534,11 +1552,30 @@ class ModelRouter:
     def _model_id_for_lane(self, lane: str, route: PromptRouteOverride | None) -> str:
         if route is not None and lane in route.model_ids:
             return route.model_ids[lane]
+        admin_model_id = self._admin_model_id_for_lane(lane)
+        if admin_model_id:
+            return admin_model_id
         if lane == "lite_lane":
             return self.settings.model_lite_id
         if lane == "pro_lane":
             return self.settings.model_pro_id
         return self.settings.model_main_id
+
+    def _admin_model_id_for_lane(self, lane: str) -> str:
+        if self.session_factory is None:
+            return ""
+        try:
+            with self.session_factory() as db:
+                config = db.execute(
+                    select(AdminRuntimeConfig).where(AdminRuntimeConfig.id == "default")
+                ).scalar_one_or_none()
+        except Exception:
+            return ""
+        if config is None:
+            return ""
+        model_ids = dict(config.model_ids or {})
+        value = model_ids.get(lane)
+        return str(value).strip() if value is not None else ""
 
     def _temperature_for_lane(self, lane: str) -> float:
         if lane == "lite_lane":

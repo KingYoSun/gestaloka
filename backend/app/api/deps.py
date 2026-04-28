@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
+from app.models.entities import AdminAppUser
 from app.modules.identity.oidc import UserIdentity
 
 
@@ -42,10 +44,14 @@ def resolve_current_user_from_token(container: AppContainer, token: str) -> User
 def get_current_ops_user(
     user: UserIdentity = Depends(get_current_user),
     container: AppContainer = Depends(get_container),
+    db: Session = Depends(get_db),
 ) -> UserIdentity:
     if container.settings.oidc_dev_mode:
         return user
     if user.sub in container.settings.ops_admin_sub_list:
+        return user
+    admin_user = db.execute(select(AdminAppUser).where(AdminAppUser.user_sub == user.sub)).scalar_one_or_none()
+    if admin_user is not None and admin_user.status == "active" and admin_user.role in {"admin", "operator"}:
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ops access is restricted")
 

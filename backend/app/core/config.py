@@ -87,7 +87,7 @@ class Settings(BaseSettings):
     langfuse_project: str = ""
     langfuse_env: str = "development"
     canary_health_url: str = ""
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

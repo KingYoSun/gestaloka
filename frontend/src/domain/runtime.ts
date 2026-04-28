@@ -9,7 +9,7 @@ import type {
 } from "../types";
 
 export function resolveRoute(): AppRoute {
-  return window.location.pathname.startsWith("/admin") ? "admin" : "game";
+  return "game";
 }
 
 export function formatPackScope(scope?: PackScope[] | null): string {

@@ -463,10 +463,10 @@ services:
         condition: service_started
     command: python -m app.worker
 
-  frontend:
+  player-frontend:
     build:
       context: ./frontend
-    container_name: gestaloka-v2-frontend
+    container_name: gestaloka-v2-player-frontend
     env_file:
       - .env
     environment:
@@ -493,6 +493,36 @@ services:
       timeout: 5s
       retries: 10
     command: npm run dev -- --host 0.0.0.0 --port 5173
+
+  admin-frontend:
+    build:
+      context: ./admin-frontend
+    container_name: gestaloka-v2-admin-frontend
+    env_file:
+      - .env
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+      VITE_KEYCLOAK_URL: http://localhost:8080
+      VITE_KEYCLOAK_REALM: gestaloka
+      VITE_KEYCLOAK_CLIENT_ID: gestaloka-admin-frontend
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./admin-frontend:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:5174').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command: npm run dev -- --host 0.0.0.0 --port 5174
 
   backend-canary:
     build:
@@ -751,7 +781,7 @@ services:
       - ./frontend:/workspace/frontend
       - ./tests:/workspace/tests
     depends_on:
-      frontend:
+      player-frontend:
         condition: service_healthy
       backend:
         condition: service_healthy
@@ -773,7 +803,7 @@ services:
             done
           }
           wait_for http://127.0.0.1:8000/health backend
-          wait_for http://127.0.0.1:5173 frontend
+          wait_for http://127.0.0.1:5173 player-frontend
           wait_for http://127.0.0.1:8080/realms/gestaloka/.well-known/openid-configuration keycloak
           if [ -n "$${E2E_SPEC:-}" ]; then
             npx playwright test "$$E2E_SPEC" --reporter=line
