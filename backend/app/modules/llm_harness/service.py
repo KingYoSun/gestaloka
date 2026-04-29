@@ -53,6 +53,9 @@ class PromptExecutionAttempt:
     output_payload: dict[str, Any]
     provider_name: str
     provider_response_id: str | None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
     prompt_cache_hit_tokens: int | None = None
     prompt_cache_miss_tokens: int | None = None
     langfuse_trace_id: str | None = None
@@ -82,6 +85,9 @@ class ProviderResponse:
     raw_output: dict[str, Any]
     provider_name: str
     provider_response_id: str | None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
     prompt_cache_hit_tokens: int | None = None
     prompt_cache_miss_tokens: int | None = None
 
@@ -1162,8 +1168,11 @@ class OpenAICompatibleProvider(BaseModelProvider):
                     raw_output=json.loads(response_text),
                     provider_name=self.provider_name,
                     provider_response_id=self._response_id(payload),
-                    prompt_cache_hit_tokens=self._usage_int(payload, "prompt_cache_hit_tokens"),
-                    prompt_cache_miss_tokens=self._usage_int(payload, "prompt_cache_miss_tokens"),
+                    prompt_tokens=self._usage_int(payload, "prompt_tokens"),
+                    completion_tokens=self._usage_int(payload, "completion_tokens"),
+                    total_tokens=self._usage_int(payload, "total_tokens"),
+                    prompt_cache_hit_tokens=self._prompt_cache_hit_tokens(payload),
+                    prompt_cache_miss_tokens=self._prompt_cache_miss_tokens(payload),
                 )
             except Exception as exc:  # pragma: no cover - live provider failure path
                 last_error = exc
@@ -1281,6 +1290,35 @@ class OpenAICompatibleProvider(BaseModelProvider):
             return value
         return None
 
+    @classmethod
+    def _prompt_cache_hit_tokens(cls, payload: dict[str, Any]) -> int | None:
+        explicit = cls._usage_int(payload, "prompt_cache_hit_tokens")
+        if explicit is not None:
+            return explicit
+        usage = payload.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        prompt_details = usage.get("prompt_tokens_details")
+        if not isinstance(prompt_details, dict):
+            return None
+        value = prompt_details.get("cached_tokens")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        return None
+
+    @classmethod
+    def _prompt_cache_miss_tokens(cls, payload: dict[str, Any]) -> int | None:
+        explicit = cls._usage_int(payload, "prompt_cache_miss_tokens")
+        if explicit is not None:
+            return explicit
+        prompt_tokens = cls._usage_int(payload, "prompt_tokens")
+        cache_hit_tokens = cls._prompt_cache_hit_tokens(payload)
+        if prompt_tokens is None or cache_hit_tokens is None:
+            return None
+        return max(prompt_tokens - cache_hit_tokens, 0)
+
 
 class ModelRouter:
     def __init__(
@@ -1396,6 +1434,9 @@ class ModelRouter:
                             output_payload={"status": "provider_error", "reason": str(exc)},
                             provider_name=self.provider.provider_name,
                             provider_response_id=None,
+                            prompt_tokens=None,
+                            completion_tokens=None,
+                            total_tokens=None,
                             prompt_cache_hit_tokens=None,
                             prompt_cache_miss_tokens=None,
                             langfuse_trace_id=langfuse_link.trace_id,
@@ -1439,6 +1480,9 @@ class ModelRouter:
                                 "status": "schema_invalid",
                                 "failure_reason": failure_reason,
                                 "provider_response_id": provider_response.provider_response_id,
+                                "prompt_tokens": provider_response.prompt_tokens,
+                                "completion_tokens": provider_response.completion_tokens,
+                                "total_tokens": provider_response.total_tokens,
                                 "prompt_cache_hit_tokens": provider_response.prompt_cache_hit_tokens,
                                 "prompt_cache_miss_tokens": provider_response.prompt_cache_miss_tokens,
                             },
@@ -1460,6 +1504,9 @@ class ModelRouter:
                             },
                             provider_name=provider_response.provider_name,
                             provider_response_id=provider_response.provider_response_id,
+                            prompt_tokens=provider_response.prompt_tokens,
+                            completion_tokens=provider_response.completion_tokens,
+                            total_tokens=provider_response.total_tokens,
                             prompt_cache_hit_tokens=provider_response.prompt_cache_hit_tokens,
                             prompt_cache_miss_tokens=provider_response.prompt_cache_miss_tokens,
                             langfuse_trace_id=langfuse_link.trace_id,
@@ -1493,6 +1540,9 @@ class ModelRouter:
                         metadata={
                             "status": "resolved",
                             "provider_response_id": provider_response.provider_response_id,
+                            "prompt_tokens": provider_response.prompt_tokens,
+                            "completion_tokens": provider_response.completion_tokens,
+                            "total_tokens": provider_response.total_tokens,
                             "prompt_cache_hit_tokens": provider_response.prompt_cache_hit_tokens,
                             "prompt_cache_miss_tokens": provider_response.prompt_cache_miss_tokens,
                         },
@@ -1509,6 +1559,9 @@ class ModelRouter:
                         output_payload={"status": "resolved", "raw_output": payload.model_dump()},
                         provider_name=provider_response.provider_name,
                         provider_response_id=provider_response.provider_response_id,
+                        prompt_tokens=provider_response.prompt_tokens,
+                        completion_tokens=provider_response.completion_tokens,
+                        total_tokens=provider_response.total_tokens,
                         prompt_cache_hit_tokens=provider_response.prompt_cache_hit_tokens,
                         prompt_cache_miss_tokens=provider_response.prompt_cache_miss_tokens,
                         langfuse_trace_id=langfuse_link.trace_id,

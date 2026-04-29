@@ -64,8 +64,10 @@ class _FakeClient:
                 {
                     "id": "chatcmpl-test",
                     "usage": {
-                        "prompt_cache_hit_tokens": 12,
-                        "prompt_cache_miss_tokens": 34,
+                        "prompt_tokens": 46,
+                        "completion_tokens": 7,
+                        "total_tokens": 53,
+                        "prompt_tokens_details": {"cached_tokens": 12},
                     },
                     "choices": [
                         {
@@ -132,6 +134,9 @@ def test_openai_compatible_provider_posts_chat_completion_json_schema(monkeypatc
 
     assert response.raw_output == {"answer": "ok"}
     assert response.provider_response_id == "chatcmpl-test"
+    assert response.prompt_tokens == 46
+    assert response.completion_tokens == 7
+    assert response.total_tokens == 53
     assert response.prompt_cache_hit_tokens == 12
     assert response.prompt_cache_miss_tokens == 34
     client = _FakeClient.instances[-1]
@@ -400,6 +405,9 @@ def test_llm_run_persistence_keeps_prompt_cache_token_counts(tmp_path):
         output_payload={"status": "resolved", "raw_output": {"answer": "ok"}},
         provider_name="openai_compatible",
         provider_response_id="chatcmpl-test",
+        prompt_tokens=46,
+        completion_tokens=7,
+        total_tokens=53,
         prompt_cache_hit_tokens=12,
         prompt_cache_miss_tokens=34,
     )
@@ -425,6 +433,9 @@ def test_llm_run_persistence_keeps_prompt_cache_token_counts(tmp_path):
         db.commit()
         row = db.execute(select(LLMRun)).scalar_one()
 
+    assert row.prompt_tokens == 46
+    assert row.completion_tokens == 7
+    assert row.total_tokens == 53
     assert row.prompt_cache_hit_tokens == 12
     assert row.prompt_cache_miss_tokens == 34
 

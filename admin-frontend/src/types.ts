@@ -63,6 +63,44 @@ export type LLMSettings = {
   effective_embedding_provider?: string;
 };
 
+export type LLMUsageRange = "24h" | "30d";
+
+export type LLMUsageSeriesPoint = {
+  bucket_start: string;
+  run_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+  cache_hit_rate: number | null;
+  missing_usage_count: number;
+};
+
+export type LLMUsageModel = {
+  model_id: string;
+  model_lane: string;
+  provider_name: string;
+  run_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+  cache_hit_rate: number | null;
+  missing_usage_count: number;
+  series: LLMUsageSeriesPoint[];
+};
+
+export type LLMUsage = {
+  range: LLMUsageRange;
+  bucket: "hour" | "day";
+  start_at: string;
+  end_at: string;
+  totals: Omit<LLMUsageSeriesPoint, "bucket_start">;
+  models: LLMUsageModel[];
+};
+
 export type ModelLanes = {
   supported_lanes: string[];
   model_ids: Record<string, string>;

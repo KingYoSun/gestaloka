@@ -44,6 +44,7 @@ from app.modules.world_state.service import (
 
 
 OBSERVABILITY_SNAPSHOT_RETENTION_DAYS = 30
+LLM_USAGE_RANGES = {"24h", "30d"}
 
 
 def runtime_snapshot(db: Session, settings: Settings, projection_service: ProjectionService) -> dict[str, object]:
@@ -91,6 +92,142 @@ def projection_status(db: Session, settings: Settings, projection_service: Proje
         "graph_read_mode": snapshot["graph_read_mode"],
         "graph_runtime_status": snapshot["graph_runtime_status"],
         "projection_lag_seconds": snapshot["projection_lag_seconds"],
+    }
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _floor_hour(value: datetime) -> datetime:
+    return _as_utc(value).replace(minute=0, second=0, microsecond=0)
+
+
+def _floor_day(value: datetime) -> datetime:
+    return _as_utc(value).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _empty_usage_bucket(bucket_start: datetime) -> dict[str, object]:
+    return {
+        "bucket_start": bucket_start.isoformat(),
+        "run_count": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "cache_hit_tokens": 0,
+        "cache_miss_tokens": 0,
+        "cache_hit_rate": None,
+        "missing_usage_count": 0,
+    }
+
+
+def _usage_hit_rate(cache_hit_tokens: int, cache_miss_tokens: int) -> float | None:
+    denominator = cache_hit_tokens + cache_miss_tokens
+    if denominator <= 0:
+        return None
+    return cache_hit_tokens / denominator
+
+
+def _finalize_usage_bucket(bucket: dict[str, object]) -> dict[str, object]:
+    cache_hit_tokens = int(bucket["cache_hit_tokens"])
+    cache_miss_tokens = int(bucket["cache_miss_tokens"])
+    bucket["cache_hit_rate"] = _usage_hit_rate(cache_hit_tokens, cache_miss_tokens)
+    return bucket
+
+
+def llm_usage_timeline(db: Session, *, range_name: str) -> dict[str, object]:
+    if range_name not in LLM_USAGE_RANGES:
+        range_name = "24h"
+
+    now = datetime.now(timezone.utc)
+    if range_name == "30d":
+        bucket = "day"
+        step = timedelta(days=1)
+        bucket_count = 30
+        start_at = _floor_day(now) - (step * (bucket_count - 1))
+    else:
+        bucket = "hour"
+        step = timedelta(hours=1)
+        bucket_count = 24
+        start_at = _floor_hour(now) - (step * (bucket_count - 1))
+    end_at = start_at + (step * bucket_count)
+    bucket_starts = [start_at + (step * index) for index in range(bucket_count)]
+    bucket_index = {item: index for index, item in enumerate(bucket_starts)}
+
+    rows = list(
+        db.execute(
+            select(LLMRun)
+            .where(LLMRun.created_at >= start_at, LLMRun.created_at < end_at)
+            .order_by(LLMRun.created_at.asc(), LLMRun.id.asc())
+        ).scalars()
+    )
+
+    totals = _empty_usage_bucket(start_at)
+    totals.pop("bucket_start")
+    models: dict[tuple[str, str, str], dict[str, object]] = {}
+
+    for row in rows:
+        row_created_at = _as_utc(row.created_at)
+        bucket_start = _floor_day(row_created_at) if bucket == "day" else _floor_hour(row_created_at)
+        if bucket_start not in bucket_index:
+            continue
+
+        key = (row.model_id, row.model_lane, row.provider_name)
+        if key not in models:
+            models[key] = {
+                "model_id": row.model_id,
+                "model_lane": row.model_lane,
+                "provider_name": row.provider_name,
+                "run_count": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cache_hit_tokens": 0,
+                "cache_miss_tokens": 0,
+                "cache_hit_rate": None,
+                "missing_usage_count": 0,
+                "series": [_empty_usage_bucket(item) for item in bucket_starts],
+            }
+        model = models[key]
+        series_item = model["series"][bucket_index[bucket_start]]  # type: ignore[index]
+
+        prompt_tokens = row.prompt_tokens or 0
+        completion_tokens = row.completion_tokens or 0
+        total_tokens = row.total_tokens or 0
+        cache_hit_tokens = row.prompt_cache_hit_tokens or 0
+        cache_miss_tokens = (
+            row.prompt_cache_miss_tokens
+            if row.prompt_cache_miss_tokens is not None
+            else max(prompt_tokens - cache_hit_tokens, 0)
+        )
+        missing_usage = row.prompt_tokens is None and row.completion_tokens is None and row.total_tokens is None
+
+        for target in (totals, model, series_item):
+            target["run_count"] = int(target["run_count"]) + 1
+            target["prompt_tokens"] = int(target["prompt_tokens"]) + prompt_tokens
+            target["completion_tokens"] = int(target["completion_tokens"]) + completion_tokens
+            target["total_tokens"] = int(target["total_tokens"]) + total_tokens
+            target["cache_hit_tokens"] = int(target["cache_hit_tokens"]) + cache_hit_tokens
+            target["cache_miss_tokens"] = int(target["cache_miss_tokens"]) + cache_miss_tokens
+            target["missing_usage_count"] = int(target["missing_usage_count"]) + (1 if missing_usage else 0)
+
+    _finalize_usage_bucket(totals)
+    model_items = []
+    for model in models.values():
+        _finalize_usage_bucket(model)
+        model["series"] = [_finalize_usage_bucket(item) for item in model["series"]]  # type: ignore[index]
+        model_items.append(model)
+    model_items.sort(key=lambda item: (-int(item["total_tokens"]), str(item["model_id"]), str(item["model_lane"])))
+
+    return {
+        "range": range_name,
+        "bucket": bucket,
+        "start_at": start_at.isoformat(),
+        "end_at": end_at.isoformat(),
+        "totals": totals,
+        "models": model_items,
     }
 
 

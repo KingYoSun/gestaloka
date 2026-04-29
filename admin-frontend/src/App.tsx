@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Boxes,
   Gauge,
   KeyRound,
@@ -28,6 +29,8 @@ import keycloak, { initKeycloak } from "./lib/keycloak";
 import type {
   AdminUser,
   LLMSettings,
+  LLMUsage,
+  LLMUsageRange,
   ModelLanes,
   Overview,
   PackCatalog,
@@ -39,7 +42,7 @@ import type {
   TemplateItem,
 } from "./types";
 
-type AdminSection = "dashboard" | "packs" | "templates" | "users" | "llm" | "lanes" | "prompts" | "sp" | "release";
+type AdminSection = "dashboard" | "packs" | "templates" | "users" | "llm" | "usage" | "lanes" | "prompts" | "sp" | "release";
 
 type AppState = {
   overview: Overview | null;
@@ -47,6 +50,7 @@ type AppState = {
   templates: TemplateItem[];
   users: AdminUser[];
   llm: LLMSettings | null;
+  llmUsage: LLMUsage | null;
   lanes: ModelLanes | null;
   prompts: PromptListItem[];
   promptDetail: PromptDetail | null;
@@ -60,6 +64,7 @@ const emptyState: AppState = {
   templates: [],
   users: [],
   llm: null,
+  llmUsage: null,
   lanes: null,
   prompts: [],
   promptDetail: null,
@@ -73,6 +78,7 @@ const navItems: Array<{ id: AdminSection; labelKey: string; icon: ReactNode }> =
   { id: "templates", labelKey: "nav.templates", icon: <ListChecks /> },
   { id: "users", labelKey: "nav.users", icon: <Users /> },
   { id: "llm", labelKey: "nav.llm", icon: <Settings /> },
+  { id: "usage", labelKey: "nav.usage", icon: <BarChart3 /> },
   { id: "lanes", labelKey: "nav.lanes", icon: <Gauge /> },
   { id: "prompts", labelKey: "nav.prompts", icon: <MessageSquareText /> },
   { id: "sp", labelKey: "nav.sp", icon: <WalletCards /> },
@@ -86,6 +92,7 @@ function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [token, setToken] = useState("");
   const [state, setState] = useState<AppState>(emptyState);
+  const [llmUsageRange, setLlmUsageRange] = useState<LLMUsageRange>("24h");
   const [error, setError] = useState("");
   const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false);
   const [pending, setPending] = useState(false);
@@ -114,7 +121,7 @@ function App() {
     void refreshAll(token);
   }, [token]);
 
-  async function refreshAll(currentToken = token) {
+  async function refreshAll(currentToken = token, usageRange = llmUsageRange) {
     if (!currentToken) {
       return;
     }
@@ -122,12 +129,13 @@ function App() {
     setError("");
     setAuthRecoveryRequired(false);
     try {
-      const [overview, packs, templates, users, llm, lanes, prompts, sp, release] = await Promise.all([
+      const [overview, packs, templates, users, llm, llmUsage, lanes, prompts, sp, release] = await Promise.all([
         apiFetch<Overview>("/admin/overview", currentToken),
         apiFetch<PackCatalog>("/admin/packs", currentToken),
         apiFetch<{ items: TemplateItem[] }>("/admin/world-templates", currentToken),
         apiFetch<{ items: AdminUser[] }>("/admin/users", currentToken),
         apiFetch<LLMSettings>("/admin/settings/llm", currentToken),
+        apiFetch<LLMUsage>(`/admin/llm-usage?range=${usageRange}`, currentToken),
         apiFetch<ModelLanes>("/admin/model-lanes", currentToken),
         apiFetch<{ items: PromptListItem[] }>("/admin/prompts", currentToken),
         apiFetch<SPOverview>("/admin/sp/overview", currentToken),
@@ -140,6 +148,7 @@ function App() {
         templates: templates.items,
         users: users.items,
         llm,
+        llmUsage,
         lanes,
         prompts: prompts.items,
         sp,
@@ -246,6 +255,8 @@ function App() {
           section={section}
           state={state}
           token={token}
+          llmUsageRange={llmUsageRange}
+          setLlmUsageRange={setLlmUsageRange}
           setState={setState}
           setError={setError}
           setAuthRecoveryRequired={setAuthRecoveryRequired}
@@ -260,6 +271,8 @@ function AdminBody({
   section,
   state,
   token,
+  llmUsageRange,
+  setLlmUsageRange,
   setState,
   setError,
   setAuthRecoveryRequired,
@@ -268,6 +281,8 @@ function AdminBody({
   section: AdminSection;
   state: AppState;
   token: string;
+  llmUsageRange: LLMUsageRange;
+  setLlmUsageRange: (range: LLMUsageRange) => void;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
   setError: (message: string) => void;
   setAuthRecoveryRequired: (required: boolean) => void;
@@ -284,6 +299,18 @@ function AdminBody({
   }
   if (section === "llm") {
     return <LLMPage state={state} token={token} setError={setError} refreshAll={refreshAll} />;
+  }
+  if (section === "usage") {
+    return (
+      <LLMUsagePage
+        state={state}
+        token={token}
+        range={llmUsageRange}
+        setRange={setLlmUsageRange}
+        setState={setState}
+        setError={setError}
+      />
+    );
   }
   if (section === "lanes") {
     return <LanesPage state={state} token={token} setError={setError} refreshAll={refreshAll} />;
@@ -513,6 +540,205 @@ function LLMPage({ state, token, setError, refreshAll }: PageProps) {
         <Button type="submit">{t("common.save")}</Button>
       </form>
     </Panel>
+  );
+}
+
+const chartColors = ["#1e7b65", "#916626", "#292d9e", "#b22323", "#5ac8b8", "#08131a"];
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat().format(value);
+}
+
+function formatRate(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return `${Math.round(value * 1000) / 10}%`;
+}
+
+function LLMUsagePage({
+  state,
+  token,
+  range,
+  setRange,
+  setState,
+  setError,
+}: {
+  state: AppState;
+  token: string;
+  range: LLMUsageRange;
+  setRange: (range: LLMUsageRange) => void;
+  setState: React.Dispatch<React.SetStateAction<AppState>>;
+  setError: (message: string) => void;
+}) {
+  const { t } = useTranslation();
+  const usage = state.llmUsage;
+
+  async function changeRange(nextRange: LLMUsageRange) {
+    setRange(nextRange);
+    try {
+      const payload = await apiFetch<LLMUsage>(`/admin/llm-usage?range=${nextRange}`, token);
+      setState((current) => ({ ...current, llmUsage: payload }));
+    } catch (requestError) {
+      setError(formatError(requestError));
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-llm-usage">
+      <Metric label={t("usage.totalTokens")} value={formatNumber(usage?.totals.total_tokens ?? 0)} detail={t("usage.promptCompletion", { prompt: formatNumber(usage?.totals.prompt_tokens ?? 0), completion: formatNumber(usage?.totals.completion_tokens ?? 0) })} />
+      <Metric label={t("usage.cacheHitRate")} value={formatRate(usage?.totals.cache_hit_rate)} detail={t("usage.cacheTokens", { hit: formatNumber(usage?.totals.cache_hit_tokens ?? 0), miss: formatNumber(usage?.totals.cache_miss_tokens ?? 0) })} />
+      <Metric label={t("usage.runs")} value={formatNumber(usage?.totals.run_count ?? 0)} detail={t("usage.bucket", { bucket: usage?.bucket ?? "hour" })} />
+      <Metric label={t("usage.missing")} value={formatNumber(usage?.totals.missing_usage_count ?? 0)} detail={t("usage.range", { range })} />
+      <Panel title={t("usage.title")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex overflow-hidden rounded-lg border border-border bg-background p-1" data-testid="admin-llm-usage-range">
+            {(["24h", "30d"] as LLMUsageRange[]).map((item) => (
+              <Button
+                key={item}
+                size="sm"
+                variant={range === item ? "default" : "ghost"}
+                onClick={() => void changeRange(item)}
+              >
+                {t(`usage.ranges.${item}`)}
+              </Button>
+            ))}
+          </div>
+          <span className="text-sm leading-5 text-muted-foreground">
+            {usage ? `${new Date(usage.start_at).toLocaleString()} - ${new Date(usage.end_at).toLocaleString()}` : t("common.unknown")}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 max-[900px]:grid-cols-1">
+          <UsageLineChart
+            title={t("usage.tokenVolume")}
+            models={usage?.models ?? []}
+            valueForPoint={(point) => point.total_tokens}
+            valueLabel={(value) => formatNumber(value)}
+          />
+          <UsageLineChart
+            title={t("usage.cacheRate")}
+            models={usage?.models ?? []}
+            valueForPoint={(point) => Math.round((point.cache_hit_rate ?? 0) * 100)}
+            valueLabel={(value) => `${value}%`}
+            fixedMax={100}
+          />
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="min-w-[760px] w-full border-collapse text-sm leading-5">
+            <thead className="bg-muted text-left text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-semibold">{t("usage.model")}</th>
+                <th className="px-3 py-2 font-semibold">{t("usage.provider")}</th>
+                <th className="px-3 py-2 text-right font-semibold">{t("usage.totalTokens")}</th>
+                <th className="px-3 py-2 text-right font-semibold">{t("usage.promptTokens")}</th>
+                <th className="px-3 py-2 text-right font-semibold">{t("usage.completionTokens")}</th>
+                <th className="px-3 py-2 text-right font-semibold">{t("usage.cacheHitRate")}</th>
+                <th className="px-3 py-2 text-right font-semibold">{t("usage.runs")}</th>
+                <th className="px-3 py-2 text-right font-semibold">{t("usage.missing")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(usage?.models ?? []).map((model, index) => (
+                <tr className="border-t border-border" key={`${model.provider_name}-${model.model_lane}-${model.model_id}`}>
+                  <td className="px-3 py-2">
+                    <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
+                    <strong>{model.model_id}</strong>
+                    <span className="ml-2 text-muted-foreground">{model.model_lane}</span>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{model.provider_name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(model.total_tokens)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(model.prompt_tokens)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(model.completion_tokens)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatRate(model.cache_hit_rate)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(model.run_count)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatNumber(model.missing_usage_count)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function UsageLineChart({
+  title,
+  models,
+  valueForPoint,
+  valueLabel,
+  fixedMax,
+}: {
+  title: string;
+  models: LLMUsage["models"];
+  valueForPoint: (point: LLMUsage["models"][number]["series"][number]) => number;
+  valueLabel: (value: number) => string;
+  fixedMax?: number;
+}) {
+  const width = 720;
+  const height = 260;
+  const padding = { top: 22, right: 24, bottom: 34, left: 58 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const maxValue = fixedMax ?? Math.max(1, ...models.flatMap((model) => model.series.map(valueForPoint)));
+  const topValue = fixedMax ?? Math.max(1, Math.ceil(maxValue * 1.1));
+  const firstSeriesLength = models[0]?.series.length ?? 0;
+
+  function pointX(index: number) {
+    if (firstSeriesLength <= 1) {
+      return padding.left;
+    }
+    return padding.left + (index / (firstSeriesLength - 1)) * plotWidth;
+  }
+
+  function pointY(value: number) {
+    return padding.top + plotHeight - (Math.min(value, topValue) / topValue) * plotHeight;
+  }
+
+  return (
+    <div className="grid min-w-0 gap-2 rounded-lg border border-border bg-background p-3">
+      <div className="flex items-center justify-between gap-3">
+        <strong className="text-sm leading-5 text-foreground">{title}</strong>
+        <span className="text-xs leading-[18px] text-muted-foreground">{valueLabel(topValue)}</span>
+      </div>
+      <svg className="h-[260px] w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
+        <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + plotHeight} stroke="var(--border)" />
+        <line x1={padding.left} y1={padding.top + plotHeight} x2={padding.left + plotWidth} y2={padding.top + plotHeight} stroke="var(--border)" />
+        {[0, 0.5, 1].map((ratio) => {
+          const y = padding.top + plotHeight - ratio * plotHeight;
+          return (
+            <g key={ratio}>
+              <line x1={padding.left} y1={y} x2={padding.left + plotWidth} y2={y} stroke="var(--border)" strokeDasharray="4 6" opacity={0.65} />
+              <text x={padding.left - 10} y={y + 4} textAnchor="end" className="fill-muted-foreground text-[11px]">
+                {valueLabel(Math.round(topValue * ratio))}
+              </text>
+            </g>
+          );
+        })}
+        {models.map((model, modelIndex) => {
+          const points = model.series.map((point, index) => `${pointX(index)},${pointY(valueForPoint(point))}`).join(" ");
+          return (
+            <polyline
+              key={`${model.provider_name}-${model.model_lane}-${model.model_id}`}
+              fill="none"
+              stroke={chartColors[modelIndex % chartColors.length]}
+              strokeWidth="3"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              points={points}
+            />
+          );
+        })}
+      </svg>
+      <div className="flex flex-wrap gap-3">
+        {models.map((model, index) => (
+          <span className="inline-flex items-center gap-1.5 text-xs leading-[18px] text-muted-foreground" key={`${model.provider_name}-${model.model_lane}-${model.model_id}`}>
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
+            {model.model_id}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 

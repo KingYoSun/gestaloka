@@ -73,6 +73,7 @@ Admin UI:
 - `admin-nav-templates`, `admin-world-templates`: world template 一覧と playable / draft 更新。
 - `admin-nav-users`, `admin-users`: app-level admin user / permission 一覧と付与。
 - `admin-nav-llm`, `admin-llm-settings`: provider、base URL secret ref、API key secret ref、debug flag。
+- `admin-nav-usage`, `admin-llm-usage`, `admin-llm-usage-range`: model ごとの token 消費、prompt cache hit rate、24h / 30d 切替。
 - `admin-nav-lanes`, `admin-model-lanes`: lane ごとの model id 設定。
 - `admin-nav-prompts`, `admin-prompts`: prompt registry と override 編集。
 - `admin-nav-sp`, `admin-sp`: SP account summary と adjustment。
@@ -117,14 +118,16 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 1. `http://localhost:5174` を開き、必要なら `admin-sign-in` から `demo / demo-password` で login する。
 2. Admin UI の表示言語 switcher で `JA` / `EN` を切り替え、固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
 3. `admin-dashboard` で pack status、template 数、projection pending、release summary が管理向け KPI として読めることを確認する。
-4. 左サイドバーで `admin-nav-packs`、`admin-nav-templates`、`admin-nav-users`、`admin-nav-llm`、`admin-nav-lanes`、`admin-nav-prompts`、`admin-nav-sp`、`admin-nav-release` を順に開き、各画面の `data-testid` が一意に存在することを確認する。
+4. 左サイドバーで `admin-nav-packs`、`admin-nav-templates`、`admin-nav-users`、`admin-nav-llm`、`admin-nav-usage`、`admin-nav-lanes`、`admin-nav-prompts`、`admin-nav-sp`、`admin-nav-release` を順に開き、各画面の `data-testid` が一意に存在することを確認する。
 5. `admin-packs` で `GESTALOKA Reference` が表示され、pack 数 1、template 数 1、failure 0 相当の状態が読めることを確認する。
 6. `admin-world-templates` で template の publish 状態が読めることを確認する。
 7. `admin-users` で app-level permission 管理画面が表示され、Keycloak Admin API 作成画面になっていないことを確認する。
 8. `admin-llm-settings` で secret 本体ではなく secret/env 参照名だけを扱っていることを確認する。
-9. `admin-model-lanes` と `admin-prompts` で lane model id と prompt override を編集できる形になっていることを確認する。
-10. `admin-sp` で SP が execution budget の調整として扱われ、世界内報酬や quest 進行力に見えないことを確認する。
-11. 通常画面に raw JSON dump、raw trace 垂れ流し、projection internals の dump が表示されていないことを確認する。
+9. `admin-llm-usage` で total tokens、cache hit rate、run count、usage missing count が表示され、モデル別の token volume / cache hit rate グラフと summary table が raw JSON ではなく管理 KPI として読めることを確認する。
+10. `admin-llm-usage-range` で `24h` と `30d` を切り替え、表示期間、bucket、グラフ、summary table が再取得後も崩れないことを確認する。
+11. `admin-model-lanes` と `admin-prompts` で lane model id と prompt override を編集できる形になっていることを確認する。
+12. `admin-sp` で SP が execution budget の調整として扱われ、世界内報酬や quest 進行力に見えないことを確認する。
+13. 通常画面に raw JSON dump、raw trace 垂れ流し、projection internals の dump が表示されていないことを確認する。
 
 ### Release Dry-run
 
@@ -160,8 +163,9 @@ make canary-down
 - Choice / free text: mode 切替、入力欄、submit の関係が分かりやすいか。
 - SP recovery: SP 不足時に Admin UI `admin-sp` で補充すべきことが追えるか。SP が世界内報酬に見えないか。
 - Streams: ops、history、beats、relationship、inventory が長くなっても読めるか。
-- Admin navigation: 左サイドバーから Dashboard、Packs、World Templates、Users & Permissions、LLM Settings、Model Lanes、Prompts、SP、Release へ迷わず移動できるか。
+- Admin navigation: 左サイドバーから Dashboard、Packs、World Templates、Users & Permissions、LLM Settings、LLM Usage、Model Lanes、Prompts、SP、Release へ迷わず移動できるか。
 - Admin density: 管理 KPI、一覧、フォーム、明示的な管理操作が過密すぎず、raw dump に見えないか。
+- LLM Usage: モデルごとの token 消費、prompt cache hit rate、usage missing count が時系列と表の両方で読め、24h / 30d 切替後も横スクロールや重なりがないか。
 - Error banner: 発生時に原因、対象操作、次の切り分けが推測できるか。
 - Responsive layout: desktop に加え 375x812 mobile viewport で text の折返し、button label、stream item、
   form input が重ならず横スクロールしないか。

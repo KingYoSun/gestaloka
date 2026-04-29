@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from app.api.deps import get_container, get_current_ops_user, get_db
 from app.core.container import AppContainer
 from app.core.prompts import SUPPORTED_MODEL_LANES
 from app.models.entities import AdminAppUser, AdminPromptOverride, AdminRuntimeConfig, World
-from app.modules.admin_ops.service import projection_status, sp_overview
+from app.modules.admin_ops.service import llm_usage_timeline, projection_status, sp_overview
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_pack.service import ENGINE_API_VERSION, PackRegistry, WorldPackError, configure_pack_registry, import_pack_archive, load_pack_from_dir
@@ -556,6 +556,16 @@ def get_admin_model_lanes(
     }
     db.commit()
     return {"supported_lanes": sorted(SUPPORTED_MODEL_LANES), "model_ids": model_ids}
+
+
+@router.get("/llm-usage")
+def get_admin_llm_usage(
+    range_name: Literal["24h", "30d"] = Query(default="24h", alias="range"),
+    db: Session = Depends(get_db),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return llm_usage_timeline(db, range_name=range_name)
 
 
 @router.put("/model-lanes")

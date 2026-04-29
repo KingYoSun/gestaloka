@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api.deps import get_current_ops_user
-from app.models.entities import AdminAppUser, AdminPromptOverride, AdminRuntimeConfig
+from app.models.entities import AdminAppUser, AdminPromptOverride, AdminRuntimeConfig, LLMRun, Turn
 from app.modules.identity.oidc import UserIdentity
 
 
@@ -100,3 +101,116 @@ def test_admin_pack_and_template_lists_are_available(client, auth_headers):
     assert packs.json()["items"][0]["pack_id"] == "gestaloka_reference"
     assert templates.json()["items"][0]["template_id"] == "nexus_foundation"
     assert all("raw" not in item for item in templates.json()["items"])
+
+
+def test_admin_llm_usage_returns_model_timeline(client, container, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json={
+            "world_id": "gestaloka_reference",
+            "world_name": "GESTALOKA: Nexus Foundation",
+            "player_display_name": "Demo Player",
+        },
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": session_response.json()["session_id"], "input_mode": "choice", "choice_id": "safe"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+
+    now = datetime.now(timezone.utc)
+    with container.session_factory() as db:
+        turn = db.execute(select(Turn).order_by(Turn.created_at.desc(), Turn.id.desc()).limit(1)).scalar_one()
+        db.execute(delete(LLMRun).where(LLMRun.turn_id == turn.id, LLMRun.world_id == turn.world_id))
+        db.add_all(
+            [
+                LLMRun(
+                    world_id=turn.world_id,
+                    turn_id=turn.id,
+                    prompt_id="test.prompt",
+                    workflow_name="gm_council",
+                    model_id="model-a",
+                    model_lane="main_lane",
+                    provider_name="openai_compatible",
+                    provider_response_id="response-a",
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                    total_tokens=150,
+                    prompt_cache_hit_tokens=20,
+                    prompt_cache_miss_tokens=80,
+                    input_hash="hash-a",
+                    input_context_hash="context-a",
+                    schema_version="1",
+                    graph_context_status="ready",
+                    output_schema_status="valid",
+                    output_payload={"status": "resolved"},
+                    created_at=now - timedelta(minutes=20),
+                ),
+                LLMRun(
+                    world_id=turn.world_id,
+                    turn_id=turn.id,
+                    prompt_id="test.prompt",
+                    workflow_name="gm_council",
+                    model_id="model-b",
+                    model_lane="pro_lane",
+                    provider_name="openai_compatible",
+                    provider_response_id="response-b",
+                    prompt_tokens=40,
+                    completion_tokens=10,
+                    total_tokens=50,
+                    prompt_cache_hit_tokens=10,
+                    prompt_cache_miss_tokens=30,
+                    input_hash="hash-b",
+                    input_context_hash="context-b",
+                    schema_version="1",
+                    graph_context_status="ready",
+                    output_schema_status="valid",
+                    output_payload={"status": "resolved"},
+                    created_at=now - timedelta(hours=2),
+                ),
+                LLMRun(
+                    world_id=turn.world_id,
+                    turn_id=turn.id,
+                    prompt_id="test.prompt",
+                    workflow_name="gm_council",
+                    model_id="model-a",
+                    model_lane="main_lane",
+                    provider_name="stub",
+                    provider_response_id=None,
+                    input_hash="hash-missing",
+                    input_context_hash="context-missing",
+                    schema_version="1",
+                    graph_context_status="ready",
+                    output_schema_status="valid",
+                    output_payload={"status": "resolved"},
+                    created_at=now - timedelta(minutes=10),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/admin/llm-usage?range=24h", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["range"] == "24h"
+    assert payload["bucket"] == "hour"
+    assert payload["totals"]["run_count"] == 3
+    assert payload["totals"]["total_tokens"] == 200
+    assert payload["totals"]["prompt_tokens"] == 140
+    assert payload["totals"]["completion_tokens"] == 60
+    assert payload["totals"]["cache_hit_tokens"] == 30
+    assert payload["totals"]["cache_miss_tokens"] == 110
+    assert payload["totals"]["cache_hit_rate"] == pytest.approx(30 / 140)
+    assert payload["totals"]["missing_usage_count"] == 1
+    assert len(payload["models"]) == 3
+    assert payload["models"][0]["model_id"] == "model-a"
+    assert payload["models"][0]["total_tokens"] == 150
+    assert sum(item["total_tokens"] for item in payload["models"][0]["series"]) == 150
+
+    daily_response = client.get("/admin/llm-usage?range=30d", headers=auth_headers)
+    assert daily_response.status_code == 200
+    assert daily_response.json()["bucket"] == "day"
