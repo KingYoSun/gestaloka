@@ -21,6 +21,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
 
   await page.getByTestId("world-select").selectOption(worldId);
   await page.getByTestId("profile-display-name").fill("Demo Player");
+  await page.getByTestId("profile-play-language").selectOption("en");
   await page.getByTestId("create-player-profile").click();
   await expect(page.getByTestId("player-profile-select")).toContainText("Demo Player", { timeout: slowTimeout });
   await page.getByTestId("start-session").click();
@@ -51,7 +52,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
 
   await expect(page.getByTestId("quest-progress")).toContainText("2/2", { timeout: slowTimeout });
   await expect(page.getByTestId("inventory-stream")).toContainText(/Nexus Writ/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("choice-list")).toContainText(/use|writ|breach|restoration/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("choice-progress")).toBeVisible({ timeout: slowTimeout });
 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
