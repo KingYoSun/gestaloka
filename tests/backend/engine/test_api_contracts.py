@@ -1272,6 +1272,15 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert latest_response.json()["report_id"] == checklist_payload["report_id"]
     assert latest_response.json()["cutover_status"] == checklist_payload["cutover_status"]
     assert latest_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
+    progress_response = client.get("/ops/release/checklists/progress", headers=auth_headers)
+    assert progress_response.status_code == 200
+    progress_payload = progress_response.json()
+    assert progress_payload["status"] == "completed"
+    assert progress_payload["completed_report_id"] == checklist_payload["report_id"]
+    assert "elapsed_seconds" in progress_payload
+    admin_progress_response = client.get("/admin/release/checklists/progress", headers=auth_headers)
+    assert admin_progress_response.status_code == 200
+    assert admin_progress_response.json()["completed_report_id"] == checklist_payload["report_id"]
     scoped_latest_response = client.get(
         "/ops/release/checklists/latest?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
         headers=auth_headers,

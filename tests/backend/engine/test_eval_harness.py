@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -370,12 +371,55 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["langfuse_status"] == "ok"
     assert gate["diff_summary"] == []
     assert report_count == 1
+    progress = container.eval_service.release_checklist_progress()
+    assert progress["status"] == "completed"
+    assert progress["completed_report_id"] == gate["report_id"]
+    assert progress["elapsed_seconds"] >= 0
     assert gate_with_failure["shadow_failures"]
     assert gate_with_failure["shadow_failures"][0]["pack_context"]["pack_id"] == "gestaloka_reference"
     assert gate_with_failure["shadow_failures"][0]["pack_context"]["world_template_display_name"] == "Nexus Foundation"
     assert gate_with_failure["shadow_failures"][0]["retrieval_required"] in {True, False}
     assert "graph" in gate_with_failure["shadow_failures"][0]["failure_categories"]
     assert gate_with_failure["shadow_failures"][0]["failure_diagnostics"]
+
+
+def test_release_checklist_timeout_creates_blocked_report(container, monkeypatch: pytest.MonkeyPatch):
+    container.settings.release_check_timeout_seconds = 0.001
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+        graph_runtime_status="ready",
+        release_gate_verdict="passed",
+        projection_lag_seconds=0.0,
+        outbox_pending_count=0,
+        outbox_failed_count=0,
+        llm_schema_valid_rate=1.0,
+        llm_fallback_rate=0.0,
+    )
+    original_run_dataset = container.eval_service.run_dataset
+
+    def slow_run_dataset(db, dataset_name: str, **kwargs):
+        if dataset_name == "turn_resolution_smoke":
+            time.sleep(0.01)
+        return original_run_dataset(db, dataset_name, **kwargs)
+
+    monkeypatch.setattr(container.eval_service, "run_dataset", slow_run_dataset)
+
+    with container.session_factory() as db:
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=1)
+        db.commit()
+        smoke_run = db.execute(select(EvalRun).where(EvalRun.id == gate["runs"]["smoke"])).scalar_one()
+        report_count = db.execute(select(func.count(ReleaseGateReport.id))).scalar_one()
+
+    assert gate["verdict"] == "blocked"
+    assert smoke_run.status == "timeout"
+    assert any("turn_resolution_smoke timed out" in reason for reason in gate["blocked_reasons"])
+    assert report_count == 1
+    progress = container.eval_service.release_checklist_progress()
+    assert progress["status"] == "completed"
+    assert progress["completed_report_id"] == gate["report_id"]
 
 
 def test_release_gate_blocks_when_canary_is_unhealthy(container):

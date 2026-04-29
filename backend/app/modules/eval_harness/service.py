@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import signal
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from contextlib import nullcontext
-from typing import Literal
+from typing import Callable, Literal
 
 import yaml
 from sqlalchemy import func, select
@@ -130,6 +134,18 @@ class ReleaseConfig:
         return changes
 
 
+@dataclass(frozen=True)
+class ReleaseChecklistCheckResult:
+    payload: dict[str, object]
+    elapsed_seconds: float
+    status: str
+    blocked_reason: str | None = None
+
+
+class ReleaseCheckTimeout(BaseException):
+    pass
+
+
 def _route_to_dict(route: PromptRouteOverride | None) -> dict[str, object] | None:
     if route is None:
         return None
@@ -160,6 +176,61 @@ class EvalHarnessService:
         self.pack_registry = pack_registry
         self.session_factory = session_factory
         self.datasets = self._load_datasets(settings.eval_dataset_dir)
+        self._release_progress_lock = threading.Lock()
+        self._release_progress: dict[str, object] = {
+            "status": "idle",
+            "current_check": None,
+            "started_at": None,
+            "updated_at": None,
+            "completed_report_id": None,
+            "error": None,
+        }
+
+    def release_checklist_progress(self) -> dict[str, object]:
+        with self._release_progress_lock:
+            payload = dict(self._release_progress)
+        started_at = payload.get("started_at")
+        updated_at = payload.get("updated_at")
+        if isinstance(started_at, str):
+            end_at = self._now()
+            if payload.get("status") != "running" and isinstance(updated_at, str):
+                try:
+                    end_at = datetime.fromisoformat(updated_at)
+                except ValueError:
+                    end_at = self._now()
+            try:
+                elapsed = (end_at - datetime.fromisoformat(started_at)).total_seconds()
+            except ValueError:
+                elapsed = 0.0
+        else:
+            elapsed = 0.0
+        payload["elapsed_seconds"] = max(elapsed, 0.0)
+        return payload
+
+    def _set_release_checklist_progress(
+        self,
+        *,
+        status: str,
+        current_check: str | None = None,
+        completed_report_id: str | None = None,
+        error: str | None = None,
+    ) -> dict[str, object]:
+        now = self._now().isoformat()
+        with self._release_progress_lock:
+            started_at = self._release_progress.get("started_at")
+            if status == "running" and self._release_progress.get("status") != "running":
+                started_at = now
+            if status != "running" and started_at is None:
+                started_at = now
+            self._release_progress = {
+                "status": status,
+                "current_check": current_check,
+                "started_at": started_at,
+                "updated_at": now,
+                "completed_report_id": completed_report_id,
+                "error": error,
+            }
+            return dict(self._release_progress)
 
     def router_for_config(self, config_name: str) -> ModelRouter:
         release_config = self.load_release_config(config_name)
@@ -260,141 +331,434 @@ class EvalHarnessService:
         trigger_type: Literal["manual", "nightly", "pre_promote"] = "manual",
         runtime_role: str | None = None,
         shadow_limit: int | None = None,
+        progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         resolved_runtime_role = runtime_role or self.settings.app_runtime_role
-        smoke = self.run_dataset(
-            db,
-            "turn_resolution_smoke",
-            trigger_type=trigger_type,
-            runtime_role=resolved_runtime_role,
-        )
-        failure = self.run_dataset(
-            db,
-            "turn_resolution_failure_injection",
-            trigger_type=trigger_type,
-            runtime_role=resolved_runtime_role,
-        )
-        shadow = self.run_shadow_replay(
-            db,
-            limit=shadow_limit or self.settings.release_shadow_limit,
-            trigger_type=trigger_type,
-            runtime_role=resolved_runtime_role,
-        )
-        pack_regressions = {
-            dataset_name: self.run_dataset(
-                db,
-                dataset_name,
-                trigger_type=trigger_type,
-                runtime_role=resolved_runtime_role,
-            )
-            for dataset_name in PACK_REGRESSION_DATASETS
-        }
+        timeout_seconds = max(float(self.settings.release_check_timeout_seconds), 0.0)
+        timeout_reasons: list[str] = []
+        self._set_release_checklist_progress(status="running", current_check="starting")
+
+        def emit(event: str, check_name: str, **payload: object) -> None:
+            message = {
+                "event": event,
+                "check": check_name,
+                "elapsed_seconds": round(float(payload.pop("elapsed_seconds", 0.0)), 3),
+                **payload,
+            }
+            if progress_callback is not None:
+                progress_callback(message)
 
         current_config = self.load_release_config("current")
         candidate_config = self.load_release_config("candidate")
-        canary_probe = self._probe_canary_health()
-        slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
-        shared_health = slo_snapshot["shared_world_health"]
-        blocked_reasons = self._blocked_reasons(
-            smoke_summary=smoke["summary"],
-            failure_summary=failure["summary"],
-            shadow_summary=shadow["summary"],
-            pack_regression_summaries={
-                dataset_name: payload["summary"] for dataset_name, payload in pack_regressions.items()
-            },
-            slo_snapshot=slo_snapshot,
-        )
-        verdict = "passed" if not blocked_reasons else "blocked"
 
-        report = ReleaseGateReport(
-            smoke_run_id=smoke["id"],
-            failure_run_id=failure["id"],
-            shadow_run_id=shadow["id"],
-            pack_regression_run_ids={
-                dataset_name: payload["id"] for dataset_name, payload in pack_regressions.items()
-            },
-            verdict=verdict,
-            blocked_reasons=blocked_reasons,
-            slo_snapshot=slo_snapshot,
-            trigger_type=trigger_type,
-        )
-        db.add(report)
-        db.flush()
+        try:
+            smoke_result = self._run_release_eval_check(
+                db,
+                check_name="turn_resolution_smoke",
+                source_type="dataset",
+                dataset_name="turn_resolution_smoke",
+                trigger_type=trigger_type,
+                runtime_role=resolved_runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                timeout_seconds=timeout_seconds,
+                runner=lambda: self.run_dataset(
+                    db,
+                    "turn_resolution_smoke",
+                    trigger_type=trigger_type,
+                    runtime_role=resolved_runtime_role,
+                ),
+                emit=emit,
+            )
+            if smoke_result.blocked_reason:
+                timeout_reasons.append(smoke_result.blocked_reason)
+            smoke = smoke_result.payload
 
-        if self.observability_service is not None:
-            self.observability_service.record_shared_world_health(shared_health)
-            self.observability_service.record_release_gate(
-                report_id=report.id,
+            failure_result = self._run_release_eval_check(
+                db,
+                check_name="turn_resolution_failure_injection",
+                source_type="dataset",
+                dataset_name="turn_resolution_failure_injection",
+                trigger_type=trigger_type,
+                runtime_role=resolved_runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                timeout_seconds=timeout_seconds,
+                runner=lambda: self.run_dataset(
+                    db,
+                    "turn_resolution_failure_injection",
+                    trigger_type=trigger_type,
+                    runtime_role=resolved_runtime_role,
+                ),
+                emit=emit,
+            )
+            if failure_result.blocked_reason:
+                timeout_reasons.append(failure_result.blocked_reason)
+            failure = failure_result.payload
+
+            shadow_result = self._run_release_eval_check(
+                db,
+                check_name="shadow_replay",
+                source_type="shadow_replay",
+                dataset_name=None,
+                trigger_type=trigger_type,
+                runtime_role=resolved_runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                timeout_seconds=timeout_seconds,
+                runner=lambda: self.run_shadow_replay(
+                    db,
+                    limit=shadow_limit or self.settings.release_shadow_limit,
+                    trigger_type=trigger_type,
+                    runtime_role=resolved_runtime_role,
+                ),
+                emit=emit,
+            )
+            if shadow_result.blocked_reason:
+                timeout_reasons.append(shadow_result.blocked_reason)
+            shadow = shadow_result.payload
+
+            pack_regressions: dict[str, dict[str, object]] = {}
+            for dataset_name in PACK_REGRESSION_DATASETS:
+                result = self._run_release_eval_check(
+                    db,
+                    check_name=f"pack_regression:{dataset_name}",
+                    source_type="dataset",
+                    dataset_name=dataset_name,
+                    trigger_type=trigger_type,
+                    runtime_role=resolved_runtime_role,
+                    current_config=current_config,
+                    candidate_config=candidate_config,
+                    timeout_seconds=timeout_seconds,
+                    runner=lambda dataset_name=dataset_name: self.run_dataset(
+                        db,
+                        dataset_name,
+                        trigger_type=trigger_type,
+                        runtime_role=resolved_runtime_role,
+                    ),
+                    emit=emit,
+                )
+                if result.blocked_reason:
+                    timeout_reasons.append(result.blocked_reason)
+                pack_regressions[dataset_name] = result.payload
+
+            self._set_release_checklist_progress(status="running", current_check="slo_canary_snapshot")
+            slo_started = time.monotonic()
+            emit("start", "slo_canary_snapshot")
+            canary_probe = self._probe_canary_health()
+            slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
+            slo_elapsed = time.monotonic() - slo_started
+            if timeout_seconds and slo_elapsed > timeout_seconds:
+                reason = f"release check slo_canary_snapshot timed out after {timeout_seconds:g}s"
+                timeout_reasons.append(reason)
+                emit("timeout", "slo_canary_snapshot", elapsed_seconds=slo_elapsed, reason=reason)
+            else:
+                emit("pass", "slo_canary_snapshot", elapsed_seconds=slo_elapsed)
+
+            shared_health = slo_snapshot["shared_world_health"]
+            blocked_reasons = self._blocked_reasons(
+                smoke_summary=smoke["summary"],
+                failure_summary=failure["summary"],
+                shadow_summary=shadow["summary"],
+                pack_regression_summaries={
+                    dataset_name: payload["summary"] for dataset_name, payload in pack_regressions.items()
+                },
+                slo_snapshot=slo_snapshot,
+            )
+            for reason in timeout_reasons:
+                if reason not in blocked_reasons:
+                    blocked_reasons.append(reason)
+            verdict = "passed" if not blocked_reasons else "blocked"
+
+            report = ReleaseGateReport(
+                smoke_run_id=str(smoke["id"]),
+                failure_run_id=str(failure["id"]),
+                shadow_run_id=str(shadow["id"]),
+                pack_regression_run_ids={
+                    dataset_name: payload["id"] for dataset_name, payload in pack_regressions.items()
+                },
                 verdict=verdict,
                 blocked_reasons=blocked_reasons,
+                slo_snapshot=slo_snapshot,
                 trigger_type=trigger_type,
             )
-            with self.observability_service.langfuse_trace(
-                seed_id=report.id,
-                name="release_checklist",
-                input_payload={
-                    "report_id": report.id,
-                    "trigger_type": trigger_type,
-                    "runtime_role": resolved_runtime_role,
-                },
-                metadata={
-                    "runtime_role": resolved_runtime_role,
-                    "trigger_type": trigger_type,
-                    "report_id": report.id,
-                },
-                tags=[resolved_runtime_role, trigger_type],
-            ) as trace_link:
-                observation = getattr(trace_link, "observation", None)
-                if observation is not None:
-                    try:
-                        observation.update(
-                            output={
-                                "verdict": verdict,
-                                "blocked_reasons": blocked_reasons,
-                                "runs": {
-                                    "smoke": smoke["id"],
-                                    "failure": failure["id"],
-                                    "shadow": shadow["id"],
-                                    "pack_regressions": {
-                                        dataset_name: payload["id"]
-                                        for dataset_name, payload in pack_regressions.items()
+            db.add(report)
+            db.flush()
+
+            if self.observability_service is not None:
+                self.observability_service.record_shared_world_health(shared_health)
+                self.observability_service.record_release_gate(
+                    report_id=report.id,
+                    verdict=verdict,
+                    blocked_reasons=blocked_reasons,
+                    trigger_type=trigger_type,
+                )
+                with self.observability_service.langfuse_trace(
+                    seed_id=report.id,
+                    name="release_checklist",
+                    input_payload={
+                        "report_id": report.id,
+                        "trigger_type": trigger_type,
+                        "runtime_role": resolved_runtime_role,
+                    },
+                    metadata={
+                        "runtime_role": resolved_runtime_role,
+                        "trigger_type": trigger_type,
+                        "report_id": report.id,
+                    },
+                    tags=[resolved_runtime_role, trigger_type],
+                ) as trace_link:
+                    observation = getattr(trace_link, "observation", None)
+                    if observation is not None:
+                        try:
+                            observation.update(
+                                output={
+                                    "verdict": verdict,
+                                    "blocked_reasons": blocked_reasons,
+                                    "runs": {
+                                        "smoke": smoke["id"],
+                                        "failure": failure["id"],
+                                        "shadow": shadow["id"],
+                                        "pack_regressions": {
+                                            dataset_name: payload["id"]
+                                            for dataset_name, payload in pack_regressions.items()
+                                        },
                                     },
                                 },
-                            },
-                            metadata={
-                                "runtime_role": resolved_runtime_role,
-                                "trigger_type": trigger_type,
-                                "report_id": report.id,
-                                "langfuse_delivery": "ok" if trace_link.status == "ok" else trace_link.status,
-                            },
-                        )
-                    except Exception:
-                        trace_link.status = "degraded"
-            report.langfuse_trace_id = trace_link.trace_id
-            report.langfuse_trace_url = trace_link.trace_url
-            report.langfuse_status = trace_link.status
-            create_observability_snapshot(
+                                metadata={
+                                    "runtime_role": resolved_runtime_role,
+                                    "trigger_type": trigger_type,
+                                    "report_id": report.id,
+                                    "langfuse_delivery": "ok" if trace_link.status == "ok" else trace_link.status,
+                                },
+                            )
+                        except Exception:
+                            trace_link.status = "degraded"
+                report.langfuse_trace_id = trace_link.trace_id
+                report.langfuse_trace_url = trace_link.trace_url
+                report.langfuse_status = trace_link.status
+                create_observability_snapshot(
+                    db,
+                    self.settings,
+                    snapshot_kind="release_checklist",
+                    runtime_role=resolved_runtime_role,
+                    release_gate_report_id=report.id,
+                    primary_slo={
+                        "runtime_role": resolved_runtime_role,
+                        "projection_lag_seconds": slo_snapshot["projection_lag_seconds"],
+                        "outbox_pending_count": slo_snapshot["outbox_pending_count"],
+                        "outbox_failed_count": slo_snapshot["outbox_failed_count"],
+                        "llm_schema_valid_rate": slo_snapshot["llm_schema_valid_rate"],
+                        "llm_fallback_rate": slo_snapshot["llm_fallback_rate"],
+                        "shared_world_health": shared_health,
+                    },
+                    canary_health=canary_probe.__dict__,
+                    langfuse_status=self.observability_service.langfuse_runtime(),
+                    metrics=self.observability_service.metric_snapshot(),
+                    trace_count=len(self.observability_service.recent_trace_attributes(limit=200)),
+                )
+
+            self._set_release_checklist_progress(
+                status="completed",
+                current_check=None,
+                completed_report_id=report.id,
+                error=None,
+            )
+            emit("completed", "release_checklist", report_id=report.id, verdict=verdict)
+            return self._report_to_dict(db, report, current_config=current_config, candidate_config=candidate_config)
+        except Exception as exc:
+            self._set_release_checklist_progress(status="failed", current_check=None, error=str(exc))
+            emit("failed", "release_checklist", error=str(exc))
+            raise
+
+    def _run_release_eval_check(
+        self,
+        db: Session,
+        *,
+        check_name: str,
+        source_type: Literal["dataset", "shadow_replay"],
+        dataset_name: str | None,
+        trigger_type: Literal["manual", "nightly", "pre_promote"],
+        runtime_role: str,
+        current_config: ReleaseConfig,
+        candidate_config: ReleaseConfig,
+        timeout_seconds: float,
+        runner: Callable[[], dict[str, object]],
+        emit: Callable[..., None],
+    ) -> ReleaseChecklistCheckResult:
+        self._set_release_checklist_progress(status="running", current_check=check_name)
+        started = time.monotonic()
+        emit("start", check_name)
+        try:
+            payload = self._run_with_release_timeout(runner, timeout_seconds=timeout_seconds)
+        except ReleaseCheckTimeout:
+            elapsed = time.monotonic() - started
+            reason = f"release check {check_name} timed out after {timeout_seconds:g}s"
+            timeout_payload = self._synthetic_eval_run(
                 db,
-                self.settings,
-                snapshot_kind="release_checklist",
-                runtime_role=resolved_runtime_role,
-                release_gate_report_id=report.id,
-                primary_slo={
-                    "runtime_role": resolved_runtime_role,
-                    "projection_lag_seconds": slo_snapshot["projection_lag_seconds"],
-                    "outbox_pending_count": slo_snapshot["outbox_pending_count"],
-                    "outbox_failed_count": slo_snapshot["outbox_failed_count"],
-                    "llm_schema_valid_rate": slo_snapshot["llm_schema_valid_rate"],
-                    "llm_fallback_rate": slo_snapshot["llm_fallback_rate"],
-                    "shared_world_health": shared_health,
-                },
-                canary_health=canary_probe.__dict__,
-                langfuse_status=self.observability_service.langfuse_runtime(),
-                metrics=self.observability_service.metric_snapshot(),
-                trace_count=len(self.observability_service.recent_trace_attributes(limit=200)),
+                source_type=source_type,
+                dataset_name=dataset_name,
+                trigger_type=trigger_type,
+                runtime_role=runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                status="timeout",
+                reason=reason,
+            )
+            emit("timeout", check_name, elapsed_seconds=elapsed, run_id=timeout_payload["id"], reason=reason)
+            return ReleaseChecklistCheckResult(
+                payload=timeout_payload,
+                elapsed_seconds=elapsed,
+                status="timeout",
+                blocked_reason=reason,
+            )
+        except Exception as exc:
+            elapsed = time.monotonic() - started
+            reason = f"release check {check_name} failed: {exc}"
+            failed_payload = self._synthetic_eval_run(
+                db,
+                source_type=source_type,
+                dataset_name=dataset_name,
+                trigger_type=trigger_type,
+                runtime_role=runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                status="failed",
+                reason=reason,
+            )
+            emit("fail", check_name, elapsed_seconds=elapsed, run_id=failed_payload["id"], reason=reason)
+            return ReleaseChecklistCheckResult(
+                payload=failed_payload,
+                elapsed_seconds=elapsed,
+                status="failed",
+                blocked_reason=reason,
             )
 
-        return self._report_to_dict(db, report, current_config=current_config, candidate_config=candidate_config)
+        elapsed = time.monotonic() - started
+        if timeout_seconds and elapsed > timeout_seconds:
+            reason = f"release check {check_name} timed out after {timeout_seconds:g}s"
+            timeout_payload = self._synthetic_eval_run(
+                db,
+                source_type=source_type,
+                dataset_name=dataset_name,
+                trigger_type=trigger_type,
+                runtime_role=runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                status="timeout",
+                reason=reason,
+            )
+            emit("timeout", check_name, elapsed_seconds=elapsed, run_id=timeout_payload["id"], reason=reason)
+            return ReleaseChecklistCheckResult(
+                payload=timeout_payload,
+                elapsed_seconds=elapsed,
+                status="timeout",
+                blocked_reason=reason,
+            )
+
+        summary = payload.get("summary") if isinstance(payload, dict) else {}
+        summary = summary if isinstance(summary, dict) else {}
+        variants = summary.get("variants")
+        variants = variants if isinstance(variants, dict) else {}
+        current = variants.get("current")
+        candidate = variants.get("candidate")
+        current = current if isinstance(current, dict) else {}
+        candidate = candidate if isinstance(candidate, dict) else {}
+        passed = bool(current.get("gate_passed")) and bool(candidate.get("gate_passed"))
+        emit("pass" if passed else "fail", check_name, elapsed_seconds=elapsed, run_id=payload.get("id"))
+        return ReleaseChecklistCheckResult(
+            payload=payload,
+            elapsed_seconds=elapsed,
+            status="passed" if passed else "failed",
+        )
+
+    @staticmethod
+    def _run_with_release_timeout(
+        runner: Callable[[], dict[str, object]],
+        *,
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        if timeout_seconds <= 0 or threading.current_thread() is not threading.main_thread():
+            return runner()
+
+        previous_handler = signal.getsignal(signal.SIGALRM)
+
+        def timeout_handler(signum, frame):  # type: ignore[no-untyped-def]
+            del signum, frame
+            raise ReleaseCheckTimeout("release check timed out")
+
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+        try:
+            return runner()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
+
+    def _synthetic_eval_run(
+        self,
+        db: Session,
+        *,
+        source_type: Literal["dataset", "shadow_replay"],
+        dataset_name: str | None,
+        trigger_type: Literal["manual", "nightly", "pre_promote"],
+        runtime_role: str,
+        current_config: ReleaseConfig,
+        candidate_config: ReleaseConfig,
+        status: str,
+        reason: str,
+    ) -> dict[str, object]:
+        summary = self._synthetic_run_summary(source_type, dataset_name, reason)
+        run = EvalRun(
+            source_type=source_type,
+            dataset_name=dataset_name,
+            trigger_type=trigger_type,
+            runtime_role=runtime_role,
+            current_config_name=current_config.name,
+            current_config_hash=current_config.content_hash,
+            candidate_config_name=candidate_config.name,
+            candidate_config_hash=candidate_config.content_hash,
+            git_sha=self._git_sha(),
+            status=status,
+            summary=summary,
+            completed_at=self._now(),
+        )
+        db.add(run)
+        db.flush()
+        return self.get_run_detail(db, run.id)
+
+    def _synthetic_run_summary(
+        self,
+        source_type: str,
+        dataset_name: str | None,
+        reason: str,
+    ) -> dict[str, object]:
+        pack_scope = self._pack_scope_for_dataset_name(dataset_name) if dataset_name else []
+        variant = {
+            "total": 0,
+            "passed": 0,
+            "failed": 0,
+            "failed_case_ids": [],
+            "retrieval_ready": 0,
+            "retrieval_degraded": 0,
+            "gate_passed": False,
+        }
+        return {
+            "source_type": source_type,
+            "dataset_name": dataset_name,
+            "case_count": 0,
+            "pack_scope": pack_scope,
+            "variants": {
+                "current": dict(variant),
+                "candidate": dict(variant),
+            },
+            "comparison": {
+                "passed_delta": 0,
+                "current_failed_case_ids": [],
+                "candidate_failed_case_ids": [],
+            },
+            "failure_reason": reason,
+        }
 
     def list_runs(
         self,

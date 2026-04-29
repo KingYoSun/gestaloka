@@ -141,6 +141,9 @@ export function useGestalokaRuntime() {
   const [adjustNote, setAdjustNote] = useState("Phase E admin adjustment");
   const [error, setError] = useState("");
   const [turnPending, setTurnPending] = useState(false);
+  const [turnProgressPhase, setTurnProgressPhase] = useState<"idle" | "submitting" | "resolving" | "refreshing">("idle");
+  const [turnProgressElapsedSeconds, setTurnProgressElapsedSeconds] = useState(0);
+  const [turnProgressStartedAt, setTurnProgressStartedAt] = useState<number | null>(null);
   const [rebuildPending, setRebuildPending] = useState(false);
   const [memorySearchPending, setMemorySearchPending] = useState(false);
   const [memoryReindexPending, setMemoryReindexPending] = useState(false);
@@ -228,6 +231,19 @@ export function useGestalokaRuntime() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!turnProgressStartedAt || turnProgressPhase === "idle") {
+      setTurnProgressElapsedSeconds(0);
+      return;
+    }
+    const updateElapsed = () => {
+      setTurnProgressElapsedSeconds(Math.max(Math.floor((Date.now() - turnProgressStartedAt) / 1000), 0));
+    };
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(interval);
+  }, [turnProgressPhase, turnProgressStartedAt]);
 
   useEffect(() => {
     void refreshHealth();
@@ -840,9 +856,18 @@ export function useGestalokaRuntime() {
       return;
     }
 
+    const setTurnPhase = (phase: "submitting" | "resolving" | "refreshing") => {
+      setTurnProgressPhase(phase);
+      setTurnProgressStartedAt((current) => current ?? Date.now());
+    };
+
     try {
       setTurnPending(true);
+      setTurnProgressStartedAt(Date.now());
+      setTurnProgressElapsedSeconds(0);
+      setTurnProgressPhase("submitting");
       setError("");
+      setTurnPhase("resolving");
       const response = await apiFetch<TurnResponse>("/turns", token, {
         method: "POST",
         body: JSON.stringify({
@@ -863,6 +888,7 @@ export function useGestalokaRuntime() {
             }
           : current,
       );
+      setTurnPhase("refreshing");
       await refreshWorldState(session, token);
       const backgroundRefresh = Promise.all([
         refreshWallet(token),
@@ -895,6 +921,8 @@ export function useGestalokaRuntime() {
       return;
     } finally {
       setTurnPending(false);
+      setTurnProgressPhase("idle");
+      setTurnProgressStartedAt(null);
     }
   }
 
@@ -1215,6 +1243,8 @@ export function useGestalokaRuntime() {
     setAdjustNote,
     error,
     turnPending,
+    turnProgressPhase,
+    turnProgressElapsedSeconds,
     rebuildPending,
     memorySearchPending,
     memoryReindexPending,

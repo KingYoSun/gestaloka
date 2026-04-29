@@ -18,7 +18,7 @@ The runtime is now being cut over from a single built-in setting to an engine/co
 ## Quick start
 
 1. Copy `.env.example` to `.env`.
-2. Start the stack with `docker compose up --build`.
+2. Start the stack with `docker compose up --build`. The default stack does not run the Playwright E2E service, so manual play state stays isolated from automated smoke runs.
 3. Open `http://localhost:5173`.
 4. Open `http://localhost:5174` for the admin surface after login.
 5. Open `http://localhost:3001` for Langfuse trace browsing.
@@ -33,7 +33,7 @@ password: demo-password
 
 - `PYTHONPATH=backend pytest tests/backend` verifies the backend slice directly.
 - `make build-frontend` is the official frontend build path. It runs inside Docker/Compose instead of the host shell.
-- `make frontend-e2e` is the official full-stack Playwright smoke path. It runs the Playwright smoke specs under `tests/e2e/` through Compose, waits for `backend` / `player-frontend` / `keycloak` readiness, and cleans the stack afterward.
+- `make frontend-e2e` is the official full-stack Playwright smoke path. It enables the Compose `e2e` profile, runs the Playwright smoke specs under `tests/e2e/`, waits for `backend` / `player-frontend` / `keycloak` readiness, and cleans the stack afterward.
 - `make verify-v2` is the canonical local and CI verification entrypoint. It runs backend tests, v1 terminology checks, pack checks, shared-world regressions, the containerized frontend build, and the containerized E2E smoke in order.
 - `GET /worlds/packs` exposes the bundled pack and template catalog used by the session bootstrap UI.
 - `make pack-export` and `make pack-import` move validated external world packs as `.tar.gz` artifacts; see [World Pack Operations](documents/world-pack-operations.md).

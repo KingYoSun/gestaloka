@@ -102,3 +102,13 @@ export type ReleaseSummary = {
   created_at: string | null;
   cutover_status?: { promote_ready: boolean; missing_or_failed_checks: string[] };
 };
+
+export type ReleaseProgress = {
+  status: string;
+  current_check: string | null;
+  started_at: string | null;
+  updated_at: string | null;
+  elapsed_seconds: number;
+  completed_report_id: string | null;
+  error: string | null;
+};

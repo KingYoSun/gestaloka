@@ -3,7 +3,10 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 export type APIError = Error & {
   status?: number;
   body?: unknown;
+  requiresReauth?: boolean;
 };
+
+const AUTH_RECOVERY_MESSAGES = new Set(["Token validation failed", "Unexpected token audience"]);
 
 export async function apiFetch<T>(path: string, token?: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? undefined);
@@ -33,6 +36,7 @@ export async function apiFetch<T>(path: string, token?: string, init?: RequestIn
     const error = new Error(message) as APIError;
     error.status = response.status;
     error.body = body;
+    error.requiresReauth = response.status === 401 && AUTH_RECOVERY_MESSAGES.has(message);
     throw error;
   }
   return (await response.json()) as T;
@@ -40,5 +44,12 @@ export async function apiFetch<T>(path: string, token?: string, init?: RequestIn
 
 export function formatError(error: unknown) {
   const typed = error as APIError;
+  if (typed.requiresReauth) {
+    return `${typed.message}. Backend restart or token audience drift can invalidate the current admin session. 再ログインしてください。`;
+  }
   return typed.message || String(error);
+}
+
+export function requiresReauth(error: unknown) {
+  return Boolean((error as APIError).requiresReauth);
 }

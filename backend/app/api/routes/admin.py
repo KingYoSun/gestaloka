@@ -735,3 +735,12 @@ def post_admin_release_checklist(
     )
     db.commit()
     return result
+
+
+@router.get("/release/checklists/progress")
+def get_admin_release_checklist_progress(
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.release_checklist_progress()

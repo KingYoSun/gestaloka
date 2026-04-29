@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     release_runtime_config_name: str = "current"
     release_scheduler_cron: str = "0 3 * * *"
     release_shadow_limit: int = 5
+    release_check_timeout_seconds: float = 180.0
     world_idle_interval_seconds: int = 60
     world_idle_grace_seconds: int = 60
     model_provider: str = "openai_compatible"

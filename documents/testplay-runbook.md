@@ -49,6 +49,8 @@ make frontend-e2e
 docker compose up --build
 ```
 
+通常起動では `frontend-e2e` service は起動しない。E2E smoke は `make frontend-e2e` が Compose `e2e` profile を明示的に有効化して実行する。
+
 起動後、以下を確認する。
 
 - `http://localhost:5173` が開ける。

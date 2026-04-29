@@ -33,6 +33,10 @@ def _print_pack_regression_summary(payload: dict[str, object]) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _print_release_progress(payload: dict[str, object]) -> None:
+    print(json.dumps({"release_check": payload}, ensure_ascii=False), flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="GESTALOKA v2 eval harness")
     parser.add_argument(
@@ -93,12 +97,14 @@ def main() -> None:
                 db,
                 trigger_type="pre_promote",
                 shadow_limit=args.limit,
+                progress_callback=_print_release_progress,
             )
         elif args.command == "nightly":
             payload = container.eval_service.run_release_checklist(
                 db,
                 trigger_type="nightly",
                 shadow_limit=args.limit,
+                progress_callback=_print_release_progress,
             )
         elif args.command == "shared-world-health":
             payload = shared_world_health(db)

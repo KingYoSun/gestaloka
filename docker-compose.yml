@@ -319,6 +319,7 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
+      RELEASE_CHECK_TIMEOUT_SECONDS: ${RELEASE_CHECK_TIMEOUT_SECONDS:-180}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-openai_compatible}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai_compatible}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
@@ -405,6 +406,7 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
+      RELEASE_CHECK_TIMEOUT_SECONDS: ${RELEASE_CHECK_TIMEOUT_SECONDS:-180}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-openai_compatible}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai_compatible}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
@@ -544,6 +546,7 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: candidate
+      RELEASE_CHECK_TIMEOUT_SECONDS: ${RELEASE_CHECK_TIMEOUT_SECONDS:-180}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-openai_compatible}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai_compatible}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
@@ -631,6 +634,7 @@ services:
       RELEASE_RUNTIME_CONFIG_NAME: current
       RELEASE_SCHEDULER_CRON: "0 3 * * *"
       RELEASE_SHADOW_LIMIT: 5
+      RELEASE_CHECK_TIMEOUT_SECONDS: ${RELEASE_CHECK_TIMEOUT_SECONDS:-180}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-openai_compatible}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai_compatible}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
@@ -708,6 +712,7 @@ services:
       EVAL_DATASET_DIR: /workspace/evals/datasets
       RELEASE_CONFIG_DIR: /workspace/config/release
       RELEASE_RUNTIME_CONFIG_NAME: current
+      RELEASE_CHECK_TIMEOUT_SECONDS: ${RELEASE_CHECK_TIMEOUT_SECONDS:-180}
       WORLD_IDLE_INTERVAL_SECONDS: ${WORLD_IDLE_INTERVAL_SECONDS:-60}
       WORLD_IDLE_GRACE_SECONDS: ${WORLD_IDLE_GRACE_SECONDS:-60}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-openai_compatible}
@@ -773,6 +778,8 @@ services:
   frontend-e2e:
     image: mcr.microsoft.com/playwright:v1.59.1-noble
     container_name: gestaloka-v2-frontend-e2e
+    profiles:
+      - e2e
     working_dir: /workspace/frontend
     network_mode: host
     environment:

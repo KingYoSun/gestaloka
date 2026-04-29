@@ -588,6 +588,15 @@ def post_release_checklist_run(
     return result
 
 
+@router.get("/release/checklists/progress")
+def get_release_checklist_progress(
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return container.eval_service.release_checklist_progress()
+
+
 @router.get("/evals/runs")
 def get_eval_runs(
     limit: int = Query(default=12, ge=1, le=50),

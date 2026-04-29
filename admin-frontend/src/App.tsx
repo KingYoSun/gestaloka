@@ -12,7 +12,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
-import { apiFetch, formatError } from "./api";
+import { apiFetch, formatError, requiresReauth } from "./api";
 import { Alert, AlertDescription } from "./components/ui/alert";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -31,6 +31,7 @@ import type {
   PackCatalog,
   PromptDetail,
   PromptListItem,
+  ReleaseProgress,
   ReleaseSummary,
   SPOverview,
   TemplateItem,
@@ -83,6 +84,7 @@ function App() {
   const [token, setToken] = useState("");
   const [state, setState] = useState<AppState>(emptyState);
   const [error, setError] = useState("");
+  const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -91,7 +93,10 @@ function App() {
         setAuthenticated(isAuthenticated);
         setToken(keycloak.token ?? "");
       })
-      .catch((initError) => setError(formatError(initError)))
+      .catch((initError) => {
+        setAuthRecoveryRequired(requiresReauth(initError));
+        setError(formatError(initError));
+      })
       .finally(() => setReady(true));
   }, []);
 
@@ -108,6 +113,7 @@ function App() {
     }
     setPending(true);
     setError("");
+    setAuthRecoveryRequired(false);
     try {
       const [overview, packs, templates, users, llm, lanes, prompts, sp, release] = await Promise.all([
         apiFetch<Overview>("/admin/overview", currentToken),
@@ -133,6 +139,7 @@ function App() {
         release,
       }));
     } catch (requestError) {
+      setAuthRecoveryRequired(requiresReauth(requestError));
       setError(formatError(requestError));
     } finally {
       setPending(false);
@@ -140,7 +147,7 @@ function App() {
   }
 
   async function login() {
-    await keycloak.login();
+    await keycloak.login(authRecoveryRequired ? { prompt: "login" } : undefined);
   }
 
   async function logout() {
@@ -212,7 +219,14 @@ function App() {
         </header>
         {error ? (
           <Alert variant="destructive" data-testid="admin-error">
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="flex flex-wrap items-center gap-3">
+              <span>{error}</span>
+              {authRecoveryRequired ? (
+                <Button size="sm" variant="secondary" onClick={login}>
+                  再ログイン
+                </Button>
+              ) : null}
+            </AlertDescription>
           </Alert>
         ) : null}
         {pending ? (
@@ -220,7 +234,15 @@ function App() {
             <AlertDescription>更新中</AlertDescription>
           </Alert>
         ) : null}
-        <AdminBody section={section} state={state} token={token} setState={setState} setError={setError} refreshAll={refreshAll} />
+        <AdminBody
+          section={section}
+          state={state}
+          token={token}
+          setState={setState}
+          setError={setError}
+          setAuthRecoveryRequired={setAuthRecoveryRequired}
+          refreshAll={refreshAll}
+        />
       </section>
     </main>
   );
@@ -232,6 +254,7 @@ function AdminBody({
   token,
   setState,
   setError,
+  setAuthRecoveryRequired,
   refreshAll,
 }: {
   section: AdminSection;
@@ -239,6 +262,7 @@ function AdminBody({
   token: string;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
   setError: (message: string) => void;
+  setAuthRecoveryRequired: (required: boolean) => void;
   refreshAll: () => Promise<void>;
 }) {
   if (section === "packs") {
@@ -263,7 +287,15 @@ function AdminBody({
     return <SPPage state={state} token={token} setError={setError} refreshAll={refreshAll} />;
   }
   if (section === "release") {
-    return <ReleasePage state={state} token={token} setError={setError} refreshAll={refreshAll} />;
+    return (
+      <ReleasePage
+        state={state}
+        token={token}
+        setError={setError}
+        setAuthRecoveryRequired={setAuthRecoveryRequired}
+        refreshAll={refreshAll}
+      />
+    );
   }
   return <Dashboard state={state} />;
 }
@@ -599,22 +631,55 @@ function SPPage({ state, token, setError, refreshAll }: PageProps) {
   );
 }
 
-function ReleasePage({ state, token, setError, refreshAll }: PageProps) {
+function ReleasePage({ state, token, setError, setAuthRecoveryRequired, refreshAll }: PageProps) {
+  const [checklistPending, setChecklistPending] = useState(false);
+  const [progress, setProgress] = useState<ReleaseProgress | null>(null);
+
+  async function refreshProgress() {
+    const payload = await apiFetch<ReleaseProgress>("/admin/release/checklists/progress", token);
+    setProgress(payload);
+    return payload;
+  }
+
   async function runChecklist() {
+    let interval: number | null = null;
     try {
+      setChecklistPending(true);
+      setError("");
+      setAuthRecoveryRequired?.(false);
+      await refreshProgress().catch(() => undefined);
+      interval = window.setInterval(() => {
+        void refreshProgress().catch(() => undefined);
+      }, 2000);
       await apiFetch("/admin/release/checklists/run", token, { method: "POST", body: JSON.stringify({ trigger_type: "manual" }) });
+      await refreshProgress().catch(() => undefined);
       await refreshAll();
     } catch (requestError) {
+      setAuthRecoveryRequired?.(requiresReauth(requestError));
       setError(formatError(requestError));
+    } finally {
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+      setChecklistPending(false);
     }
   }
+  const visibleProgress = progress;
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-release">
       <Metric label="Verdict" value={state.release?.verdict ?? "unknown"} detail={state.release?.canary_promote_status ?? "unknown"} />
       <Panel title="Release Checklist">
         <p className="text-sm leading-5 text-muted-foreground">Created: {state.release?.created_at ?? "not run"}</p>
         <p className="text-sm leading-5 text-muted-foreground">Blocked: {(state.release?.blocked_reasons ?? []).join(", ") || "none"}</p>
-        <Button onClick={() => void runChecklist()}>Run checklist</Button>
+        <p className="text-sm leading-5 text-muted-foreground" data-testid="admin-release-progress">
+          Progress: {visibleProgress?.status ?? (checklistPending ? "running" : "idle")}
+          {visibleProgress?.current_check ? ` / ${visibleProgress.current_check}` : ""}
+          {visibleProgress ? ` / ${Math.floor(visibleProgress.elapsed_seconds)}s` : ""}
+        </p>
+        {visibleProgress?.error ? <p className="text-sm leading-5 text-destructive">Error: {visibleProgress.error}</p> : null}
+        <Button onClick={() => void runChecklist()} disabled={checklistPending}>
+          {checklistPending ? "Running checklist" : "Run checklist"}
+        </Button>
       </Panel>
     </div>
   );
@@ -624,6 +689,7 @@ type PageProps = {
   state: AppState;
   token: string;
   setError: (message: string) => void;
+  setAuthRecoveryRequired?: (required: boolean) => void;
   refreshAll: () => Promise<void>;
 };
 

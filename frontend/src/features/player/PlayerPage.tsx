@@ -442,7 +442,20 @@ function TurnComposer({ runtime }: PlayerPageProps) {
     suggestedChoices,
     turnInputMode,
     turnPending,
+    turnProgressElapsedSeconds,
+    turnProgressPhase,
   } = runtime;
+  const phaseLabel =
+    turnProgressPhase === "submitting"
+      ? "送信中"
+      : turnProgressPhase === "resolving"
+        ? "解決中"
+        : turnProgressPhase === "refreshing"
+          ? "反映中"
+          : "選択待ち";
+  const progressStatus = turnPending
+    ? `進行中 / ${phaseLabel} / ${turnProgressElapsedSeconds}s`
+    : "選択待ち";
 
   return (
     <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label="次">
@@ -487,8 +500,13 @@ function TurnComposer({ runtime }: PlayerPageProps) {
       )}
 
       <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-progress-status">
-        {turnPending ? "進行中" : "選択待ち"}
+        {progressStatus}
       </p>
+      {turnPending && turnProgressElapsedSeconds >= 45 ? (
+        <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-retry-guidance">
+          応答待ちが続いています。結果反映までこのまま待ち、同じ操作を再送信しないでください。
+        </p>
+      ) : null}
     </Card>
   );
 }

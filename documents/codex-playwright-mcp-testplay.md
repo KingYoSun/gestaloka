@@ -14,6 +14,9 @@
 docker compose up --build
 ```
 
+`frontend-e2e` は default compose profile から外しているため、この手動 stack 起動では実行されない。
+自動 smoke は `make frontend-e2e` が `e2e` profile を有効化して実行する。
+
 - 確認対象 URL:
   - Player UI: `http://localhost:5173`
   - Admin UI: `http://localhost:5174`
