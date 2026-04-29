@@ -32,9 +32,9 @@
   --brand-navy: #0b2034;
   --brand-gold: #c6922e;
   --brand-sage: #65785f;
-  --brand-cream: #f2eadf;
+  --brand-white: #ffffff;
   --brand-aqua: #7bcfd0;
-  --background: #f2eadf;
+  --background: #ffffff;
   --foreground: #0b2034;
   --card: #fffaf1;
   --card-foreground: #0b2034;
@@ -84,7 +84,7 @@
 
 .theme-light {
   color-scheme: light;
-  --background: #f2eadf;
+  --background: #ffffff;
   --foreground: #0b2034;
   --card: #fffaf1;
   --card-foreground: #0b2034;
@@ -138,7 +138,7 @@
     min-height: 100vh;
     overflow-x: hidden;
     background:
-      linear-gradient(rgba(242, 234, 223, 0.9), rgba(242, 234, 223, 0.9)),
+      linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.9)),
       url("/brand/texture.png"),
       var(--background);
     background-size: auto, 520px 520px, auto;
@@ -161,7 +161,7 @@
   html.theme-light body,
   body.theme-light {
     background:
-      linear-gradient(rgba(242, 234, 223, 0.9), rgba(242, 234, 223, 0.9)),
+      linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.9)),
       url("/brand/texture.png"),
       var(--background);
     background-size: auto, 520px 520px, auto;
