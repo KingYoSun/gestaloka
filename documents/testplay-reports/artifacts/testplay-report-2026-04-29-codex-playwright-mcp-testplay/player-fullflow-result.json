@@ -1,0 +1,55 @@
+{
+  "checkpoints": [],
+  "screenshots": [
+    "player-fullflow-start.png",
+    "player-fullflow-progress-1.png",
+    "player-fullflow-progress-2.png",
+    "player-fullflow-progress-3.png",
+    "player-fullflow-error.png"
+  ],
+  "observations": {
+    "spBefore": "SP balance: 8 / Choice cost: 1 / Free text cost: 3",
+    "player-fullflow-progress-1": {
+      "before": {
+        "place": "Nexus Gate",
+        "quest": "0/2",
+        "choice": "Help the person in need and create the next opening\nTake the clearest forward action for the current request."
+      },
+      "after": {
+        "place": "Nexus Gate",
+        "quest": "1/2",
+        "choice": "Take the clearest available step toward the current request.\nTake the clearest available step toward the current request."
+      }
+    },
+    "player-fullflow-progress-2": {
+      "before": {
+        "place": "Nexus Gate",
+        "quest": "1/2",
+        "choice": "Take the clearest available step toward the current request.\nTake the clearest available step toward the current request."
+      },
+      "after": {
+        "place": "Nexus Gate",
+        "quest": "2/2",
+        "choice": "Make your way toward the Lift Tower Concourse to take up the stabilizer request with the appropriate authority.\nHead directly to the concourse to advance the request."
+      }
+    },
+    "player-fullflow-progress-3": {
+      "before": {
+        "place": "Nexus Gate",
+        "quest": "2/2",
+        "choice": "Make your way toward the Lift Tower Concourse to take up the stabilizer request with the appropriate authority.\nHead directly to the concourse to advance the request."
+      },
+      "after": {
+        "place": "Nexus Gate",
+        "quest": "0/1",
+        "choice": "Head toward the opened Oblivion Breach\nMove to the follow-up quest location."
+      }
+    }
+  },
+  "issues": [
+    {
+      "area": "player-fullflow",
+      "message": "expect(locator).toContainText(expected) failed\n\nLocator: getByTestId('quest-progress')\nExpected substring: \"2/2\"\nReceived string:    \"0/1\"\nTimeout: 45000ms\n\nCall log:\n  - Expect \"to.have.text\" with timeout 45000ms\n  - waiting for getByTestId('quest-progress')\n    49 × locator resolved to <p data-testid=\"quest-progress\" class=\"text-sm leading-5 text-muted-foreground\">0/1</p>\n       - unexpected value \"0/1\"\n"
+    }
+  ]
+}

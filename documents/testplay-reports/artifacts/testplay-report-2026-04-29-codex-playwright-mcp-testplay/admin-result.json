@@ -1,0 +1,59 @@
+{
+  "checkpoints": [
+    "admin dashboard visible",
+    "admin nav and mobile checked"
+  ],
+  "screenshots": [
+    "admin-initial.png",
+    "admin-dashboard.png",
+    "admin-packs.png",
+    "admin-world-templates.png",
+    "admin-users.png",
+    "admin-llm-settings.png",
+    "admin-llm-usage.png",
+    "admin-model-lanes.png",
+    "admin-prompts.png",
+    "admin-sp.png",
+    "admin-release-before-dry-run.png",
+    "admin-llm-usage-30d.png",
+    "admin-mobile-375.png"
+  ],
+  "observations": {
+    "locale": {
+      "initialLang": "en",
+      "afterEn": "en",
+      "persistedAfterReload": "ja",
+      "localStorage": "ja",
+      "enDashboardSample": "Pack status\nunknown\n0 packs\nTemplates\n0\n0 failures\nGraph runtime\nunknown\n0 pending\nRelease\nunknown\nunknown\nOperations\n\nAdmin handles pack, user permission, LLM setting, prompt, SP,"
+    },
+    "uniqueCounts": {
+      "admin-packs": 1,
+      "admin-world-templates": 1,
+      "admin-users": 1,
+      "admin-llm-settings": 1,
+      "admin-llm-usage": 1,
+      "admin-model-lanes": 1,
+      "admin-prompts": 1,
+      "admin-sp": 1,
+      "admin-release": 1
+    },
+    "admin-packs": "パックカタログ\nGESTALOKA Reference\ngestaloka_reference / 1.0.0\npublic / playable\nDraft\nパック作成\nPack ID\n表示名\nTemplate ID\nテンプレート名\n概要\n作成\nアーカイブインポート\nアーカイブパス\nインポート",
+    "admin-world-templates": "Nexus Foundation\nGESTALOKA Reference / nexus_foundation\npublic / playable\nDraft",
+    "admin-users": "ユーザー\ndemo-player-sub\ndemo-player-sub\nadmin / active\n権限付与\nUser sub\nロール\noperator\nadmin\nviewer\n保存",
+    "admin-llm-settings": "プロバイダー\nBase URL secret ref\nAPI key secret ref\nEmbedding provider\nDiagnostics を有効化\n保存",
+    "admin-llm-usage": "総 token\n158,935\nprompt 136,564 / completion 22,371\nCache hit rate\n7.8%\nhit 10,624 / miss 125,940\nRuns\n46\nhour bucket\nUsage missing\n4\n24h range\nLLM 使用量\n24h\n30d\n4/28/2026, 9:00:00 PM - 4/29/2026, 9:00:00 PM\nToken volume\n91,251\n0\n45,626\n91,251\ndeepseek-v4-flash\ndeepseek-v4-flash\nchoice_short_circuit\nCache hit rate\n100%\n0%\n50%\n100%\ndeepseek-v4-flash\ndeepseek-v4-flash\nchoice_short_circuit\nModel\tProvider\t総 token\tPrompt\tCompletion\tCache hit rate\tRuns\tUsage missing\ndeepseek-v4-flashlite_lane\topenai_compatible\t82,955\t71,708\t11,247\t9.6%\t20\t0\ndeepseek-v4-flashmain_lane\topenai_compatible\t75,980\t64,856\t11,124\t5.7%\t22\t0\nchoice_short_circuitchoice_short_circuit\tinternal\t0\t0\t0\tn/a\t4\t4",
+    "admin-model-lanes": "lite_lane\nmain_lane\npro_lane\n保存",
+    "admin-prompts": "プロンプトレジストリ\nambient.memory_manager\nlite_lane / ambient_memory_manager_v1\nambient.npc_manager\nlite_lane / ambient_npc_manager_v1\nambient.safety_guard\nmain_lane / ambient_safety_guard_v1\ncouncil.intent_interpreter\nlite_lane / council_intent_interpreter_v1\ncouncil.memory_manager\nlite_lane / council_memory_manager_v1\ncouncil.narrative\nmain_lane / council_narrative_v1\ncouncil.npc_manager\nlite_lane / council_npc_manager_v1\ncouncil.rules_arbiter\nmain_lane / council_rules_arbiter_v1\ncouncil.safety_guard\nmain_lane / council_safety_guard_v1\ncouncil.world_progress\nmain_lane / council_world_progress_v2\nidle.memory_manager\nlite_lane / ambient_memory_manager_v1\nidle.npc_manager\nlite_lane / ambient_npc_manager_v1\nidle.safety_guard\nmain_lane / ambient_safety_guard_v1\nsession.turn_resolution\nmain_lane / council_turn_resolution_v1\nプロンプト override\n\nPrompt を選択",
+    "admin-sp": "アカウント\n1\n7 件の ledger entry\nSP 調整\nUser sub\nDelta\n理由\nWorld ID\nメモ\n適用",
+    "admin-release": "判定\nblocked\nblocked\nリリースチェックリスト\n\nCreated: 未実行\n\nBlocked reasons\n\nrelease_checklist: missing / 0s\nNo release checklist report exists\n\nProgress: 待機中\n\nチェックリストを実行",
+    "usageSwitch": {
+      "before": "総 token\n158,935\nprompt 136,564 / completion 22,371\nCache hit rate\n7.8%\nhit 10,624 / miss 125,940\nRuns\n46\nhour bucket\nUsage missing\n4\n24h range\nLLM 使用量\n24h\n30d\n4/28/2026, 9:00:00 PM - 4/29/2026, 9:00:00 PM\nToken volume\n91,251\n0\n45,626\n91,251\ndeepseek-v4-flash\ndeepseek-v4-flash\nchoice_short_circuit\nCa",
+      "after": "総 token\n158,935\nprompt 136,564 / completion 22,371\nCache hit rate\n7.8%\nhit 10,624 / miss 125,940\nRuns\n46\nday bucket\nUsage missing\n4\n30d range\nLLM 使用量\n24h\n30d\n3/31/2026, 9:00:00 AM - 4/30/2026, 9:00:00 AM\nToken volume\n91,251\n0\n45,626\n91,251\ndeepseek-v4-flash\ndeepseek-v4-flash\nchoice_short_circuit\nCac"
+    },
+    "mobileOverflow": {
+      "width": 375,
+      "scrollWidth": 375
+    }
+  },
+  "issues": []
+}

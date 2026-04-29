@@ -1,0 +1,53 @@
+{
+  "checkpoints": [
+    "player initial render visible",
+    "player locale switch persisted",
+    "player authenticated",
+    "start-session disabled before profile selection",
+    "session start nexus gate",
+    "choice-progress 1 completed",
+    "choice-progress 2 completed"
+  ],
+  "screenshots": [
+    "player-initial.png",
+    "player-authenticated.png",
+    "player-session-start.png",
+    "player-choice-progress-1.png",
+    "player-choice-progress-2.png",
+    "player-error.png"
+  ],
+  "observations": {
+    "playerInitialJa": "Sign in to continue",
+    "initialHtmlLang": "en",
+    "enSignIn": "Sign in to continue",
+    "enHtmlLang": "en",
+    "enLocalStorage": "en",
+    "reloadSignIn": "Sign in to continue",
+    "jaHtmlLangAfterReturn": "ja",
+    "jaLocalStorageAfterReturn": "ja",
+    "authStatus": "authenticated",
+    "apiHealth": "ok / DB: ok",
+    "spBalance": "SP balance: 10 / Choice cost: 1 / Free text cost: 3",
+    "spBudgetNote": "SP is execution budget only.",
+    "worldCatalog": "World catalog: ready",
+    "profileName": "Codex Testplay 202604291130",
+    "profileSelect": "Codex Testplay 202604291130",
+    "sessionPack": "GESTALOKA Reference (gestaloka_reference) / Nexus Foundation",
+    "socketStatus": "open",
+    "currentPlaceStart": "Nexus Gate",
+    "currentChapterStart": "The opening chapter of GESTALOKA: Nexus Foundation is still gathering momentum around the opening request.",
+    "questStart": "クエスト\n\nFirst Stabilizer Request\n\n0/2\n\nHelp a local and return with what you learned around Lift Tower Concourse.",
+    "questProgressStart": "0/2",
+    "localFiguresStart": "Gate Steward Rikka\nGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+    "nearbyRoutesStart": "Lift Tower Concourse\nThe tower concourse opens above the gate, where public testimony and route ledgers meet.\nOblivion Breach\nThe breach route stays sealed until Nexus recognizes the writ.",
+    "factionStandingStart": "Returner Cell -0.10 neutralRelic Salvagers 0.00 neutralKronos Exchange 0.00 neutralMemory Church 0.00 neutralNexus Custodians 0.00 neutral",
+    "opsStreamStart": "session.connectedGESTALOKA Reference / Nexus Foundationsession_id: 7557cba7-c3c4-40a9-a895-b023e0736322",
+    "opsHasRawJson": false
+  },
+  "issues": [
+    {
+      "area": "player",
+      "message": "expect(locator).toContainText(expected) failed\n\nLocator: getByTestId('quest-progress')\nExpected substring: \"2/2\"\nReceived string:    \"1/2\"\nTimeout: 45000ms\n\nCall log:\n  - Expect \"to.have.text\" with timeout 45000ms\n  - waiting for getByTestId('quest-progress')\n    49 × locator resolved to <p data-testid=\"quest-progress\" class=\"text-sm leading-5 text-muted-foreground\">1/2</p>\n       - unexpected value \"1/2\"\n"
+    }
+  ]
+}
