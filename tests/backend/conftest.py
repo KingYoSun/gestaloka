@@ -157,6 +157,8 @@ def test_settings(tmp_path: Path) -> Settings:
         database_url=sqlite_url,
         alembic_database_url=sqlite_url,
         oidc_dev_mode=True,
+        sp_default_balance=30,
+        sp_initial_bonus_balance=30,
         graph_projection_backend="recording",
         model_provider="stub",
         embedding_provider="stub",

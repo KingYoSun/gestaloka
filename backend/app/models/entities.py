@@ -681,16 +681,28 @@ class Item(Base, TimestampMixin):
 
 class SPAccount(Base, TimestampMixin):
     __tablename__ = "sp_accounts"
-    __table_args__ = (CheckConstraint("balance >= 0", name="ck_sp_accounts_balance_nonnegative"),)
+    __table_args__ = (
+        CheckConstraint("balance >= 0", name="ck_sp_accounts_balance_nonnegative"),
+        CheckConstraint("paid_balance >= 0", name="ck_sp_accounts_paid_balance_nonnegative"),
+        CheckConstraint("bonus_balance >= 0", name="ck_sp_accounts_bonus_balance_nonnegative"),
+    )
 
     user_sub: Mapped[str] = mapped_column(String(128), primary_key=True)
     balance: Mapped[int] = mapped_column(Integer, default=0)
+    paid_balance: Mapped[int] = mapped_column(Integer, default=0)
+    bonus_balance: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class SPLedgerEntry(Base, TimestampMixin):
     __tablename__ = "sp_ledger"
     __table_args__ = (
         CheckConstraint("delta != 0", name="ck_sp_ledger_nonzero_delta"),
+        CheckConstraint("paid_delta + bonus_delta = delta", name="ck_sp_ledger_bucket_delta_sum"),
+        CheckConstraint(
+            "paid_balance_after + bonus_balance_after = balance_after",
+            name="ck_sp_ledger_bucket_balance_sum",
+        ),
+        CheckConstraint("paid_delta != 0 OR bonus_delta != 0", name="ck_sp_ledger_bucket_nonzero_delta"),
         CheckConstraint("actor_id IS NULL OR world_id IS NOT NULL", name="ck_sp_ledger_actor_requires_world"),
         ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="SET NULL"),
         ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
@@ -705,6 +717,10 @@ class SPLedgerEntry(Base, TimestampMixin):
     reference_type: Mapped[str] = mapped_column(String(64))
     reference_id: Mapped[str] = mapped_column(String(96))
     balance_after: Mapped[int] = mapped_column(Integer)
+    paid_delta: Mapped[int] = mapped_column(Integer, default=0)
+    bonus_delta: Mapped[int] = mapped_column(Integer, default=0)
+    paid_balance_after: Mapped[int] = mapped_column(Integer, default=0)
+    bonus_balance_after: Mapped[int] = mapped_column(Integer, default=0)
     created_by_sub: Mapped[str | None] = mapped_column(String(128), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -215,6 +215,7 @@ export function useGestalokaRuntime() {
   const [adjustUserSub, setAdjustUserSub] = useState("");
   const [adjustDelta, setAdjustDelta] = useState("-1");
   const [adjustReason, setAdjustReason] = useState("admin_adjustment");
+  const [adjustBucket, setAdjustBucket] = useState<"paid" | "bonus">("bonus");
   const [adjustWorldId, setAdjustWorldId] = useState("");
   const [adjustNote, setAdjustNote] = useState("Phase E admin adjustment");
   const [error, setError] = useState("");
@@ -1000,6 +1001,8 @@ export function useGestalokaRuntime() {
           ? {
               ...current,
               balance: response.sp_balance,
+              paid_sp: response.paid_sp,
+              bonus_sp: response.bonus_sp,
             }
           : current,
       );
@@ -1199,6 +1202,7 @@ export function useGestalokaRuntime() {
           user_sub: adjustUserSub,
           delta: Number(adjustDelta),
           reason_code: adjustReason,
+          sp_bucket: adjustBucket,
           world_id: adjustWorldId || null,
           actor_id: null,
           note: adjustNote || null,
@@ -1220,6 +1224,31 @@ export function useGestalokaRuntime() {
       showRequestError(requestError);
     } finally {
       setAdjustPending(false);
+    }
+  }
+
+  async function handleMockSpPurchase(amount: number) {
+    if (!token) {
+      setError(t("errors.signInBeforePurchase"));
+      return null;
+    }
+    try {
+      setError("");
+      const currentToken = await ensureFreshToken(token);
+      const response = await apiFetch<{
+        status: "completed";
+        amount: number;
+        ledger_entry_id: string;
+        wallet: SPWallet;
+      }>("/economy/sp/mock-purchases", currentToken, {
+        method: "POST",
+        body: JSON.stringify({ amount }),
+      });
+      setWallet(response.wallet);
+      return response;
+    } catch (requestError) {
+      showRequestError(requestError);
+      return null;
     }
   }
 
@@ -1360,6 +1389,8 @@ export function useGestalokaRuntime() {
     setAdjustDelta,
     adjustReason,
     setAdjustReason,
+    adjustBucket,
+    setAdjustBucket,
     adjustWorldId,
     setAdjustWorldId,
     adjustNote,
@@ -1414,6 +1445,7 @@ export function useGestalokaRuntime() {
     handleMemoryReindex,
     handleLedgerRefresh,
     handleAdjustmentSubmit,
+    handleMockSpPurchase,
     handleEvalRun,
     handleReleaseChecklistRun,
     refreshAdminData,

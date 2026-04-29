@@ -83,6 +83,7 @@ class SPAdjustmentRequest(BaseModel):
     user_sub: str = Field(min_length=1, max_length=128)
     delta: int
     reason_code: str = Field(min_length=1, max_length=64)
+    sp_bucket: Literal["paid", "bonus"]
     world_id: str | None = Field(default=None, max_length=64)
     actor_id: str | None = Field(default=None, max_length=36)
     note: str | None = Field(default=None, max_length=500)
@@ -693,6 +694,7 @@ def post_admin_sp_adjustment(
             user_sub=payload.user_sub,
             delta=payload.delta,
             reason_code=payload.reason_code,
+            sp_bucket=payload.sp_bucket,
             world_id=payload.world_id,
             actor_id=payload.actor_id,
             created_by_sub=user.sub,
@@ -707,7 +709,11 @@ def post_admin_sp_adjustment(
         "ledger_entry_id": result.ledger_entry.id,
         "user_sub": payload.user_sub,
         "delta": result.delta,
+        "paid_delta": result.paid_delta,
+        "bonus_delta": result.bonus_delta,
         "balance": result.balance_after,
+        "paid_sp": result.paid_balance_after,
+        "bonus_sp": result.bonus_balance_after,
     }
 
 

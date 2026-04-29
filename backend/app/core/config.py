@@ -29,7 +29,8 @@ class Settings(BaseSettings):
     nebula_user: str = "root"
     nebula_password: str = "nebula"
     ops_admin_subs: str = ""
-    sp_default_balance: int = 10
+    sp_default_balance: int = 30
+    sp_initial_bonus_balance: int = 30
     turn_sp_cost: int = 1
     choice_turn_sp_cost: int = 1
     free_text_turn_sp_cost: int = 3

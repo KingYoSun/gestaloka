@@ -26,6 +26,7 @@ export type HealthPayload = {
   };
   sp: {
     default_balance: number;
+    initial_bonus_sp: number;
     turn_cost: number;
     choice_turn_cost: number;
     free_text_turn_cost: number;
@@ -415,6 +416,8 @@ export type TurnResponse = {
   npc_reaction: string;
   sp_delta: number;
   sp_balance: number;
+  paid_sp: number;
+  bonus_sp: number;
   sp_ledger_id: string;
   interpreted_intent: Record<string, unknown>;
   next_choices: NarrativeChoice[];
@@ -495,10 +498,14 @@ export type SPLedgerItem = {
   world_id: string | null;
   actor_id: string | null;
   delta: number;
+  paid_delta: number;
+  bonus_delta: number;
   reason_code: string;
   reference_type: string;
   reference_id: string;
   balance_after: number;
+  paid_balance_after: number;
+  bonus_balance_after: number;
   created_by_sub: string | null;
   note: string | null;
   created_at: string;
@@ -508,6 +515,9 @@ export type SPLedgerItem = {
 export type SPWallet = {
   user_sub: string;
   balance: number;
+  paid_sp: number;
+  bonus_sp: number;
+  initial_bonus_sp: number;
   turn_cost: number;
   choice_turn_cost: number;
   free_text_turn_cost: number;
@@ -757,9 +767,12 @@ export type RebuildSummary = {
 
 export type SPOverview = {
   default_balance: number;
+  initial_bonus_sp: number;
   turn_cost: number;
   choice_turn_cost: number;
   free_text_turn_cost: number;
+  total_paid_sp: number;
+  total_bonus_sp: number;
   total_accounts: number;
   total_ledger_entries: number;
   recent_adjustments: SPLedgerItem[];
@@ -769,7 +782,11 @@ export type SPAdjustmentResponse = {
   ledger_entry_id: string;
   user_sub: string;
   delta: number;
+  paid_delta: number;
+  bonus_delta: number;
   balance: number;
+  paid_sp: number;
+  bonus_sp: number;
 };
 
 export type EvalRunVariantSummary = {

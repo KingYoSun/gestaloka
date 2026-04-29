@@ -5,7 +5,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 
 def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
@@ -76,6 +76,8 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     memory_columns = {column["name"] for column in inspector.get_columns("memories")}
     world_tick_columns = {column["name"] for column in inspector.get_columns("world_ticks")}
     world_columns = {column["name"] for column in inspector.get_columns("worlds")}
+    sp_account_columns = {column["name"] for column in inspector.get_columns("sp_accounts")}
+    sp_ledger_columns = {column["name"] for column in inspector.get_columns("sp_ledger")}
     world_axis_columns = {column["name"] for column in inspector.get_columns("world_axis_states")}
     shared_history_columns = {column["name"] for column in inspector.get_columns("shared_history_records")}
     title_progress_columns = {column["name"] for column in inspector.get_columns("actor_title_progress")}
@@ -84,6 +86,8 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     broadcast_event_columns = {column["name"] for column in inspector.get_columns("world_broadcast_events")}
     broadcast_delivery_columns = {column["name"] for column in inspector.get_columns("world_broadcast_deliveries")}
     assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
+    assert {"paid_balance", "bonus_balance"} <= sp_account_columns
+    assert {"paid_delta", "bonus_delta", "paid_balance_after", "bonus_balance_after"} <= sp_ledger_columns
     assert {"narrative_preferences", "preferences", "locked_at", "profile_setup_event_id"} <= player_profile_columns
     assert "resolution_mode" in turn_columns
     assert "action_type" in turn_columns
@@ -154,3 +158,87 @@ def test_alembic_revision_ids_fit_default_version_table():
         if script.revision is not None and len(script.revision) > 32
     ]
     assert overlong_revisions == []
+
+
+def test_paid_bonus_sp_migration_backfills_existing_balance(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "sp-backfill.db"
+    sqlite_url = f"sqlite:///{db_path}"
+    repo_root = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists() and (parent / "backend").is_dir())
+    alembic_path = repo_root / "backend" / "alembic.ini"
+
+    monkeypatch.setenv("ALEMBIC_DATABASE_URL", sqlite_url)
+    monkeypatch.setenv("DATABASE_URL", sqlite_url)
+
+    config = Config(str(alembic_path))
+    config.set_main_option("script_location", str(repo_root / "backend" / "alembic"))
+    engine = create_engine(sqlite_url)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+        conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0025_llm_usage_tokens')"))
+        conn.execute(
+            text(
+                "CREATE TABLE sp_accounts ("
+                "user_sub VARCHAR(128) NOT NULL PRIMARY KEY, "
+                "balance INTEGER NOT NULL DEFAULT 0, "
+                "created_at DATETIME NOT NULL, "
+                "updated_at DATETIME NOT NULL, "
+                "CONSTRAINT ck_sp_accounts_balance_nonnegative CHECK (balance >= 0)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE sp_ledger ("
+                "id VARCHAR(36) NOT NULL PRIMARY KEY, "
+                "user_sub VARCHAR(128) NOT NULL, "
+                "world_id VARCHAR(64), "
+                "actor_id VARCHAR(36), "
+                "delta INTEGER NOT NULL, "
+                "reason_code VARCHAR(64) NOT NULL, "
+                "reference_type VARCHAR(64) NOT NULL, "
+                "reference_id VARCHAR(96) NOT NULL, "
+                "balance_after INTEGER NOT NULL, "
+                "created_by_sub VARCHAR(128), "
+                "note TEXT, "
+                "created_at DATETIME NOT NULL, "
+                "updated_at DATETIME NOT NULL, "
+                "CONSTRAINT ck_sp_ledger_nonzero_delta CHECK (delta != 0), "
+                "CONSTRAINT ck_sp_ledger_actor_requires_world CHECK (actor_id IS NULL OR world_id IS NOT NULL)"
+                ")"
+            )
+        )
+        conn.execute(text("CREATE INDEX ix_sp_ledger_user_sub ON sp_ledger (user_sub)"))
+        conn.execute(text("CREATE INDEX ix_sp_ledger_world_id ON sp_ledger (world_id)"))
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO sp_accounts (user_sub, balance, created_at, updated_at) "
+                "VALUES ('legacy-user', 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO sp_ledger "
+                "(id, user_sub, world_id, actor_id, delta, reason_code, reference_type, reference_id, "
+                "balance_after, created_by_sub, note, created_at, updated_at) "
+                "VALUES ('legacy-ledger', 'legacy-user', NULL, NULL, 10, 'wallet_seed', 'wallet_seed', "
+                "'legacy-user', 10, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as conn:
+        account = conn.execute(
+            text("SELECT paid_balance, bonus_balance, balance FROM sp_accounts WHERE user_sub = 'legacy-user'")
+        ).one()
+        ledger = conn.execute(
+            text(
+                "SELECT paid_delta, bonus_delta, paid_balance_after, bonus_balance_after, delta, balance_after "
+                "FROM sp_ledger WHERE id = 'legacy-ledger'"
+            )
+        ).one()
+
+    assert account == (0, 10, 10)
+    assert ledger == (0, 10, 0, 10, 10, 10)

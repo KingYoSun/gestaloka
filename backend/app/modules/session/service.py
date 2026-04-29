@@ -79,6 +79,8 @@ class TurnResolutionResult:
     graph_context_status: str
     sp_delta: int
     sp_balance: int
+    paid_sp: int
+    bonus_sp: int
     sp_ledger_id: str
     quest_updates: list[dict]
     faction_updates: list[dict]
@@ -1403,6 +1405,8 @@ def _resolve_narrative_turn_for_session(
         graph_context_status=graph_context.status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
+        paid_sp=prepared.debit.paid_balance_after,
+        bonus_sp=prepared.debit.bonus_balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
         quest_updates=state_updates["quest_updates"],
         faction_updates=combined_faction_updates,
@@ -1793,6 +1797,8 @@ def _resolve_reward_item_turn_for_session(
         graph_context_status=graph_context_status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
+        paid_sp=prepared.debit.paid_balance_after,
+        bonus_sp=prepared.debit.bonus_balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
         quest_updates=outcome.quest_updates,
         faction_updates=combined_faction_updates,
@@ -2094,6 +2100,8 @@ def _resolve_travel_turn_for_session(
             graph_context_status=graph_context_status,
             sp_delta=prepared.debit.delta,
             sp_balance=prepared.debit.balance_after,
+            paid_sp=prepared.debit.paid_balance_after,
+            bonus_sp=prepared.debit.bonus_balance_after,
             sp_ledger_id=prepared.debit.ledger_entry.id,
             quest_updates=[],
             faction_updates=[],
@@ -2300,6 +2308,8 @@ def _resolve_travel_turn_for_session(
             graph_context_status=graph_context_status,
             sp_delta=prepared.debit.delta,
             sp_balance=prepared.debit.balance_after,
+            paid_sp=prepared.debit.paid_balance_after,
+            bonus_sp=prepared.debit.bonus_balance_after,
             sp_ledger_id=prepared.debit.ledger_entry.id,
             quest_updates=[],
             faction_updates=[],
@@ -2457,6 +2467,8 @@ def _build_failed_turn_result(
         graph_context_status=graph_context_status,
         sp_delta=0,
         sp_balance=refund.balance_after,
+        paid_sp=refund.paid_balance_after,
+        bonus_sp=refund.bonus_balance_after,
         sp_ledger_id=prepared.debit.ledger_entry.id,
         quest_updates=[],
         faction_updates=[],
@@ -2539,6 +2551,8 @@ def prepare_turn_for_session(
             detail={
                 "detail": exc.detail,
                 "balance": exc.balance,
+                "paid_sp": exc.paid_sp,
+                "bonus_sp": exc.bonus_sp,
                 "required": exc.required,
                 "turn_cost": turn_cost,
                 "choice_turn_cost": container.settings.choice_turn_sp_cost,

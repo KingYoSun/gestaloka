@@ -50,7 +50,8 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["projection"]["backend"] == "recording"
     assert payload["projection"]["pending_outbox"] == 0
     assert payload["projection_runtime"]["graph_runtime_status"] == "recording"
-    assert payload["sp"]["default_balance"] == 10
+    assert payload["sp"]["default_balance"] == 30
+    assert payload["sp"]["initial_bonus_sp"] == 30
     assert payload["sp"]["turn_cost"] == 1
     assert payload["sp"]["choice_turn_cost"] == 1
     assert payload["sp"]["free_text_turn_cost"] == 3
@@ -499,7 +500,9 @@ def test_ops_routes_require_admin_when_dev_mode_disabled(client, container):
 def test_session_and_turn_contract_and_websocket_event_order(client, auth_headers):
     wallet_response = client.get("/economy/sp/me", headers=auth_headers)
     assert wallet_response.status_code == 200
-    assert wallet_response.json()["balance"] == 10
+    assert wallet_response.json()["balance"] == 30
+    assert wallet_response.json()["paid_sp"] == 0
+    assert wallet_response.json()["bonus_sp"] == 30
 
     session_response = client.post(
         "/sessions",
@@ -598,6 +601,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "npc_reaction",
             "sp_delta",
             "sp_balance",
+            "paid_sp",
+            "bonus_sp",
             "sp_ledger_id",
             "interpreted_intent",
             "next_choices",
@@ -633,7 +638,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"
         assert turn_payload["sp_delta"] == -1
-        assert turn_payload["sp_balance"] == 9
+        assert turn_payload["sp_balance"] == 29
+        assert turn_payload["paid_sp"] == 0
+        assert turn_payload["bonus_sp"] == 29
         assert turn_payload["quest_updates"][0]["progress"] == 1
         assert turn_payload["inventory_updates"] == []
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"

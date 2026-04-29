@@ -1,5 +1,6 @@
-import { LogIn, UserPlus } from "lucide-react";
+import { Info, LogIn, ShoppingCart, UserPlus, X } from "lucide-react";
 import type { FormEvent } from "react";
+import { useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
@@ -189,7 +190,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
             {selectedWorld?.display_name ?? t("player.world.select")}
           </p>
           {catalogStateLabel ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{catalogStateLabel}</p> : null}
-          {wallet ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">SP {wallet.balance}</p> : null}
+          {wallet ? <SPBalanceDisplay wallet={wallet} /> : null}
         </div>
         <div className="grid min-w-0 gap-3">
           {playerProfiles.length ? (
@@ -567,6 +568,7 @@ function buildStoryItems(runtime: GestalokaRuntime, t: TFunction): TextItem[] {
 
 function TurnComposer({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
   const {
     freeTextInput,
     handleChoiceSubmit,
@@ -621,10 +623,22 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         >
           {t("player.turn.freeText")}
         </Button>
+        {wallet ? <SPBalanceDisplay className="min-h-11 px-3" wallet={wallet} /> : null}
+        <Button
+          variant="secondary"
+          type="button"
+          data-testid="sp-purchase-button"
+          onClick={() => setPurchaseOpen(true)}
+          disabled={!session || turnPending}
+        >
+          <ShoppingCart aria-hidden="true" />
+          {t("player.sp.purchase")}
+        </Button>
       </div>
 
-      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-cost-note">
+      <p className="inline-flex min-w-0 items-center gap-1 text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-cost-note">
         {activeCostNote}
+        <TooltipIcon label={t("player.sp.plannedCostTooltip")} />
       </p>
 
       {turnInputMode === "choice" ? (
@@ -640,9 +654,6 @@ function TurnComposer({ runtime }: PlayerPageProps) {
               disabled={turnPending}
             />
           </Field>
-          <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="free-text-budget-note">
-            {t("player.turn.budgetOnly")}
-          </p>
           <Button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
             {turnPending ? t("player.story.inProgress") : t("common.submit")}
           </Button>
@@ -657,7 +668,114 @@ function TurnComposer({ runtime }: PlayerPageProps) {
           {t("player.turn.retryGuidance")}
         </p>
       ) : null}
+      {purchaseOpen ? <SPPurchaseDialog runtime={runtime} onClose={() => setPurchaseOpen(false)} /> : null}
     </Card>
+  );
+}
+
+function TooltipIcon({ label }: { label: string }) {
+  return (
+    <span
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+      title={label}
+      aria-label={label}
+      tabIndex={0}
+    >
+      <Info aria-hidden="true" className="size-4" />
+    </span>
+  );
+}
+
+function SPBalanceDisplay({ className = "", wallet }: { className?: string; wallet: NonNullable<GestalokaRuntime["wallet"]> }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className={`inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-card text-xs font-semibold leading-[18px] text-muted-foreground ${className}`}
+      data-testid="sp-bucket-balance"
+    >
+      <span className="inline-flex items-center gap-1">
+        <span>{t("player.sp.paid")}</span>
+        <span className="text-foreground" data-testid="paid-sp-balance">{wallet.paid_sp}</span>
+        <TooltipIcon label={t("player.sp.paidTooltip")} />
+      </span>
+      <span aria-hidden="true">/</span>
+      <span className="inline-flex items-center gap-1">
+        <span>{t("player.sp.bonus")}</span>
+        <span className="text-foreground" data-testid="bonus-sp-balance">{wallet.bonus_sp}</span>
+        <TooltipIcon label={t("player.sp.bonusTooltip")} />
+      </span>
+    </div>
+  );
+}
+
+function SPPurchaseDialog({ onClose, runtime }: { onClose: () => void; runtime: GestalokaRuntime }) {
+  const { t } = useTranslation();
+  const purchaseOptions = [5, 15, 30, 60, 120];
+  const [selectedAmount, setSelectedAmount] = useState(purchaseOptions[0]);
+  const [pending, setPending] = useState(false);
+  const [completedAmount, setCompletedAmount] = useState<number | null>(null);
+
+  async function handlePurchase() {
+    setPending(true);
+    const response = await runtime.handleMockSpPurchase(selectedAmount);
+    setPending(false);
+    if (response) {
+      setCompletedAmount(response.amount);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-background/70 p-4" role="presentation">
+      <section
+        aria-modal="true"
+        role="dialog"
+        aria-label={t("player.sp.purchaseDialog")}
+        className="grid w-full max-w-md min-w-0 gap-4 rounded-lg border border-border bg-card p-5 shadow-lg"
+        data-testid="sp-purchase-dialog"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="grid min-w-0 gap-2">
+            <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.sp.purchaseDialog")}</h2>
+            {runtime.wallet ? <SPBalanceDisplay wallet={runtime.wallet} /> : null}
+          </div>
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")}>
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="grid grid-cols-5 gap-2 max-[420px]:grid-cols-2" role="radiogroup" aria-label={t("player.sp.purchaseAmount")}>
+          {purchaseOptions.map((amount) => (
+            <Button
+              key={amount}
+              type="button"
+              variant={selectedAmount === amount ? "default" : "secondary"}
+              onClick={() => setSelectedAmount(amount)}
+              aria-pressed={selectedAmount === amount}
+              data-testid={`sp-purchase-option-${amount}`}
+            >
+              {amount}
+            </Button>
+          ))}
+        </div>
+        {completedAmount !== null ? (
+          <p className="rounded-md border border-success/30 bg-success/10 p-3 text-sm font-semibold leading-5 text-success" data-testid="sp-purchase-complete">
+            {t("player.sp.purchaseComplete", {
+              amount: completedAmount,
+              paid: runtime.wallet?.paid_sp ?? 0,
+              bonus: runtime.wallet?.bonus_sp ?? 0,
+            })}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap justify-end gap-2 max-[420px]:grid max-[420px]:grid-cols-1">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="button" onClick={() => void handlePurchase()} disabled={pending}>
+            <ShoppingCart aria-hidden="true" />
+            {pending ? t("common.loading") : t("player.sp.purchase")}
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -826,7 +944,7 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
       </p>
       <p data-testid="socket-status">{socketState}</p>
       <p data-testid="sp-balance">
-        SP balance: {wallet?.balance ?? "unknown"} / Choice cost: {choiceCost} / Free text cost: {freeTextCost}
+        SP balance: {wallet?.balance ?? "unknown"} / Paid: {wallet?.paid_sp ?? "unknown"} / Bonus: {wallet?.bonus_sp ?? "unknown"} / Choice cost: {choiceCost} / Free text cost: {freeTextCost}
       </p>
       <p data-testid="world-catalog-status">World catalog: {worldCatalogStatus}</p>
       <p data-testid="sp-budget-note">SP is execution budget only.</p>

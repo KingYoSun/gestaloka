@@ -50,7 +50,9 @@ Player UI:
 - `auth-status`: `authenticated` を確認する。
 - `api-health`: backend health の UI 表示を確認する。
 - `socket-status`: session 開始後に `open` を確認する。
-- `sp-balance`: SP balance を確認する。
+- `sp-balance`: hidden test surface で SP 合算、有償SP、無償SP、turn cost を確認する。
+- `sp-bucket-balance`, `paid-sp-balance`, `bonus-sp-balance`: 所持SPの主表示が有償SP / 無償SPに分かれていることを確認する。
+- `sp-purchase-button`, `sp-purchase-dialog`, `sp-purchase-option-5`, `sp-purchase-complete`: SP購入導線と購入完了表示を確認する。
 - `sp-budget-note`: SP が execution budget として説明されていることを確認する。
 - `world-select`: playable world を選択する。
 - `player-profile-select`: 作成済み player profile を選択する。
@@ -105,9 +107,13 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 3. 既存 profile がある場合は `player-profile-select` で選択し、表示されるプレイ言語を確認する。ない場合は `profile-display-name` に名前を入れ、必要なら性別・背景・自由記述・文体・`profile-play-language` を設定し、`create-player-profile` を実行する。
 4. `start-session` を実行する。
 5. `socket-status=open`、`session-pack`、`session.connected`、`Nexus Gate`、`First Stabilizer Request`、`0/2`、`Gate Steward Rikka`、`Lift Tower Concourse`、faction standing を確認する。
-6. `quest-progress` が `2/2` になるまで `choice-progress` を最大 4 回実行し、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
-7. `Breach Restoration` または `breach_restoration` が表示されるまで、到達済み choice を最大 3 回選び、used 表示と `Oblivion Breach` route を確認する。
-8. `Oblivion Breach` への travel history または current location 更新が観測できるまで、移動 affordance のある choice を最大 3 回実行し、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。公式 smoke 判定は引き続き stub E2E を正とし、live provider の手動観測は到達状態と揺れを併記する。
+6. 行動入力欄で `sp-bucket-balance` が有償SP / 無償SPの主表示になっていること、`turn-cost-note` が選択肢の消費予定SPを表示することを確認する。情報アイコンは `title` / accessible name で補足を持ち、インライン長文になっていないことを確認する。
+7. `sp-purchase-button` を押し、`sp-purchase-dialog` に現在の有償SP / 無償SP、5段階の購入SP選択肢、購入ボタン、キャンセル、右上の閉じるボタンがあることを確認する。
+8. `sp-purchase-option-5` を選び購入ボタンを押す。mock購入完了後、`sp-purchase-complete` が表示され、`paid-sp-balance` が購入前より 5 増え、`bonus-sp-balance` は変わらないことを確認する。Dialog を閉じた後も行動入力欄の `sp-bucket-balance` が更新後の値を表示することを確認する。
+9. `toggle-free-text` を押し、`turn-cost-note` が自由入力の消費予定SPに切り替わること、補足が tooltip に留まることを確認する。その後 `toggle-choice-mode` で choice mode に戻す。
+10. `quest-progress` が `2/2` になるまで `choice-progress` を最大 4 回実行し、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
+11. `Breach Restoration` または `breach_restoration` が表示されるまで、到達済み choice を最大 3 回選び、used 表示と `Oblivion Breach` route を確認する。
+12. `Oblivion Breach` への travel history または current location 更新が観測できるまで、移動 affordance のある choice を最大 3 回実行し、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。公式 smoke 判定は引き続き stub E2E を正とし、live provider の手動観測は到達状態と揺れを併記する。
 
 プレイ言語確認を主目的にする場合:
 
@@ -165,6 +171,8 @@ make canary-down
 - Play language: 表示言語と別の概念として理解できるか。preset / custom の保存、profile 表示、player-facing 生成文への反映、内部 ID や enum が翻訳されないことを確認できるか。
 - Turn execution: choice 実行中に二重送信しにくく、完了後に次の操作が明確か。
 - Choice / free text: mode 切替、入力欄、submit の関係が分かりやすいか。
+- SP display / purchase: 所持SPの主表示が有償SP / 無償SPに分かれ、合算だけの表示になっていないか。SP購入Dialogで現在SP、5段階選択、購入、キャンセル、閉じる、購入完了表示が迷わず使えるか。購入完了後に有償SPだけが増え、既存プレイを阻害しないか。
+- SP cost tooltip: 消費予定SP、無償SP優先消費、execution budget の補足が tooltip で確認でき、入力欄周辺に長文説明として残っていないか。
 - SP recovery: SP 不足時に Admin UI `admin-sp` で補充すべきことが追えるか。SP が世界内報酬に見えないか。
 - Streams: ops、history、beats、relationship、inventory が長くなっても読めるか。
 - Admin navigation: 左サイドバーから Dashboard、Packs、World Templates、Users & Permissions、LLM Settings、LLM Usage、Model Lanes、Prompts、SP、Release へ迷わず移動できるか。

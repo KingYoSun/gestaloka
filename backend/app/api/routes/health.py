@@ -47,6 +47,7 @@ def health(
         },
         "sp": {
             "default_balance": container.settings.sp_default_balance,
+            "initial_bonus_sp": container.settings.sp_initial_bonus_balance,
             "turn_cost": container.settings.choice_turn_sp_cost,
             "choice_turn_cost": container.settings.choice_turn_sp_cost,
             "free_text_turn_cost": container.settings.free_text_turn_sp_cost,

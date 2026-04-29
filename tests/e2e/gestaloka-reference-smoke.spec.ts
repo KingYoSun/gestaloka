@@ -19,6 +19,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("auth-status")).toContainText("authenticated");
   await expect(page.getByTestId("error-banner").filter({ hasText: "A 'Keycloak' instance can only be initialized once." })).toHaveCount(0);
   await expect(page.getByTestId("sp-balance")).toContainText(/SP balance:\s*-?\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-balance")).toContainText(/Paid:\s*-?\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("sp-balance")).toContainText(/Bonus:\s*-?\d+/, { timeout: slowTimeout });
   await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
 
   await page.getByTestId("world-select").selectOption(worldId);
@@ -47,8 +49,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち");
   await expect(page.getByTestId("turn-cost-note")).toContainText(/消費SP|Choice cost|SP/);
   await page.getByTestId("toggle-free-text").click();
-  await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input cost|SP/);
-  await expect(page.getByTestId("free-text-budget-note")).toContainText(/実行予算|execution budget/);
+  await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input|SP/);
   await page.getByTestId("toggle-choice-mode").click();
   await expect(page.getByTestId("choice-progress")).toContainText("Help the person in need and create the next opening");
   await expect(page.getByTestId("choice-explore")).toContainText("Go to Lift Tower Concourse and check the old records");
