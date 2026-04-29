@@ -789,6 +789,7 @@ services:
     network_mode: host
     environment:
       PLAYWRIGHT_BASE_URL: http://localhost:5173
+      ADMIN_PLAYWRIGHT_BASE_URL: http://localhost:5174
       E2E_SPEC: ${E2E_SPEC:-}
       CI: "1"
     volumes:
@@ -796,6 +797,8 @@ services:
       - ./tests:/workspace/tests
     depends_on:
       player-frontend:
+        condition: service_healthy
+      admin-frontend:
         condition: service_healthy
       backend:
         condition: service_healthy
@@ -818,6 +821,7 @@ services:
           }
           wait_for http://127.0.0.1:8000/health backend
           wait_for http://127.0.0.1:5173 player-frontend
+          wait_for http://127.0.0.1:5174 admin-frontend
           wait_for http://127.0.0.1:8080/realms/gestaloka/.well-known/openid-configuration keycloak
           if [ -n "$${E2E_SPEC:-}" ]; then
             npx playwright test "$$E2E_SPEC" --reporter=line

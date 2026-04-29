@@ -1666,6 +1666,25 @@ class ModelRouter:
             "council.narrative",
             "ambient.safety_guard",
         }
+        eval_control_early_prompts = {
+            "council.intent_interpreter",
+            "council.memory_manager",
+            "council.npc_manager",
+            "council.world_progress",
+        }
+        has_eval_control_marker = "__force_invalid_main__" in input_text or "__force_safety_reject__" in input_text
+        if has_eval_control_marker and prompt_id in eval_control_early_prompts:
+            return ProviderResponse(
+                raw_output=StubModelProvider()._generate_stub_output(prompt_id, lane=lane, input_payload=input_payload),
+                provider_name="eval_control",
+                provider_response_id=None,
+            )
+        if "__force_safety_reject__" in input_text and prompt_id == "council.rules_arbiter":
+            return ProviderResponse(
+                raw_output=StubModelProvider()._generate_stub_output(prompt_id, lane=lane, input_payload=input_payload),
+                provider_name="eval_control",
+                provider_response_id=None,
+            )
         if "__force_invalid_all__" in input_text:
             return ProviderResponse(raw_output={"status": "invalid"}, provider_name="eval_control", provider_response_id=None)
         if lane == "main_lane" and "__force_invalid_main__" in input_text and prompt_id in force_invalid_prompts:

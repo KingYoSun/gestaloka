@@ -179,19 +179,24 @@ function App() {
   if (!authenticated) {
     return (
       <main className="grid min-h-screen place-items-center bg-background p-6">
-        <Card className="grid w-full max-w-[360px] gap-4 p-5">
-          <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA Admin</p>
-          <h1 className="text-2xl font-bold leading-8 text-foreground">{t("auth.heading")}</h1>
-          <Button data-testid="admin-sign-in" onClick={login}>
-            <KeyRound aria-hidden="true" />
-            {t("auth.signIn")}
-          </Button>
-          {error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-        </Card>
+        <div className="grid w-full max-w-[360px] gap-4">
+          <div className="justify-self-end">
+            <LanguageSwitcher />
+          </div>
+          <Card className="grid min-w-0 gap-4 p-5">
+            <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA Admin</p>
+            <h1 className="text-2xl font-bold leading-8 text-foreground">{t("auth.heading")}</h1>
+            <Button data-testid="admin-sign-in" onClick={login}>
+              <KeyRound aria-hidden="true" />
+              {t("auth.signIn")}
+            </Button>
+            {error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+          </Card>
+        </div>
       </main>
     );
   }
@@ -908,42 +913,59 @@ function ReleasePage({ state, token, setError, setAuthRecoveryRequired, refreshA
     }
   }
   const visibleProgress = progress;
-  const releaseChecks = state.release?.checks ?? [];
+  const releaseChecks = state.release?.check_summaries ?? [];
   const blockedReasons = state.release?.blocked_reasons ?? [];
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-release">
       <Metric label={t("release.verdict")} value={state.release?.verdict ?? t("common.unknown")} detail={state.release?.canary_promote_status ?? t("common.unknown")} />
       <Panel title={t("release.checklist")}>
         <p className="text-sm leading-5 text-muted-foreground">{t("release.created", { value: state.release?.created_at ?? t("release.notRun") })}</p>
-        <div className="grid gap-2" data-testid="admin-release-blocked-reasons">
-          <p className="text-sm font-semibold leading-5 text-muted-foreground">{t("release.blocked")}</p>
-          {releaseChecks.length ? (
+        <div className="grid min-w-0 gap-2" data-testid="admin-release-blocked-reasons">
+          <div className="grid min-w-0 gap-2" data-testid="admin-release-blocked-summary">
+            <p className="text-sm font-semibold leading-5 text-muted-foreground">{t("release.blocked")}</p>
+            {blockedReasons.length ? (
+              <ul className="grid min-w-0 gap-2">
+                {blockedReasons.map((reason) => (
+                  <li className="min-w-0 rounded-md border border-border bg-background p-3 text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]" key={reason}>
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm leading-5 text-muted-foreground">{t("release.none")}</p>
+            )}
+          </div>
+          <div className="grid min-w-0 gap-2" data-testid="admin-release-check-details">
+            <p className="text-sm font-semibold leading-5 text-muted-foreground">{t("release.checkDetails")}</p>
+            {releaseChecks.length ? (
             <ul className="grid gap-2">
               {releaseChecks.map((check) => (
-                <li className="rounded-md border border-border bg-background p-3 text-sm leading-5 text-muted-foreground" key={check.check_id}>
-                  <strong className="block break-words text-foreground">
+                <li className="min-w-0 rounded-md border border-border bg-background p-3 text-sm leading-5 text-muted-foreground" key={check.check_id}>
+                  <strong className="block min-w-0 text-foreground [overflow-wrap:anywhere]">
                     {t("release.checkStatus", {
                       label: check.label || check.check_id,
                       status: check.status,
                       elapsed: Math.floor(check.elapsed_seconds),
                     })}
                   </strong>
-                  {check.reason ? <span className="block break-words">{check.reason}</span> : null}
-                  {check.run_id ? <span className="block break-words">run: {check.run_id}</span> : null}
+                  {check.reason ? <span className="block min-w-0 [overflow-wrap:anywhere]">{check.reason}</span> : null}
+                  {(check.execution_mode || check.case_count != null || check.timeout_seconds != null) ? (
+                    <span className="block min-w-0 [overflow-wrap:anywhere]">
+                      {t("release.checkMeta", {
+                        mode: check.execution_mode ?? t("common.unknown"),
+                        cases: check.case_count ?? t("common.unknown"),
+                        timeout: check.timeout_seconds ?? t("common.unknown"),
+                      })}
+                    </span>
+                  ) : null}
+                  {check.run_id ? <span className="block min-w-0 [overflow-wrap:anywhere]">run: {check.run_id}</span> : null}
                 </li>
               ))}
             </ul>
-          ) : blockedReasons.length ? (
-            <ul className="grid gap-2">
-              {blockedReasons.map((reason) => (
-                <li className="break-words rounded-md border border-border bg-background p-3 text-sm leading-5 text-muted-foreground" key={reason}>
-                  {reason}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm leading-5 text-muted-foreground">{t("release.none")}</p>
-          )}
+            ) : (
+              <p className="text-sm leading-5 text-muted-foreground">{t("release.none")}</p>
+            )}
+          </div>
         </div>
         <p className="text-sm leading-5 text-muted-foreground" data-testid="admin-release-progress">
           {t("release.progress", {
@@ -953,7 +975,7 @@ function ReleasePage({ state, token, setError, setAuthRecoveryRequired, refreshA
           })}
         </p>
         {visibleProgress?.error ? <p className="text-sm leading-5 text-destructive">{t("release.error", { message: visibleProgress.error })}</p> : null}
-        <Button onClick={() => void runChecklist()} disabled={checklistPending}>
+        <Button className="max-w-full whitespace-normal text-left max-[480px]:w-full" onClick={() => void runChecklist()} disabled={checklistPending}>
           {checklistPending ? t("release.runningChecklist") : t("release.run")}
         </Button>
       </Panel>

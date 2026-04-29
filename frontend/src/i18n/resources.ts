@@ -103,6 +103,9 @@ const resources = {
           refreshing: "反映中",
           waiting: "選択待ち",
           progress: "進行中 / {{phase}} / {{seconds}}s",
+          choiceCost: "選択肢の消費SP: {{cost}}。SPは外部実行予算です。",
+          freeTextCost: "自由入力の消費SP: {{cost}}。SPは外部実行予算です。",
+          budgetOnly: "SPは世界内報酬やクエスト進行力ではなく、実行予算です。",
           retryGuidance: "応答待ちが続いています。結果反映までこのまま待ち、同じ操作を再送信しないでください。",
         },
         side: {
@@ -238,6 +241,9 @@ const resources = {
           refreshing: "Refreshing",
           waiting: "Waiting for choice",
           progress: "In progress / {{phase}} / {{seconds}}s",
+          choiceCost: "Choice cost: {{cost}} SP. SP is execution budget.",
+          freeTextCost: "Free input cost: {{cost}} SP. SP is execution budget.",
+          budgetOnly: "SP is execution budget, not an in-world reward or quest progress power.",
           retryGuidance: "The response is still pending. Wait for the result to appear and do not submit the same action again.",
         },
         side: {

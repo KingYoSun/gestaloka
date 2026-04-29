@@ -142,6 +142,9 @@ class ReleaseChecklistCheckResult:
     check_name: str = ""
     label: str = ""
     blocked_reason: str | None = None
+    execution_mode: str | None = None
+    case_count: int | None = None
+    timeout_seconds: float | None = None
 
 
 class ReleaseCheckTimeout(BaseException):
@@ -652,6 +655,8 @@ class EvalHarnessService:
                 check_name=check_name,
                 label=label,
                 blocked_reason=skip_reason,
+                case_count=0,
+                timeout_seconds=timeout_seconds,
             )
         try:
             payload = self._run_with_release_timeout(runner, timeout_seconds=timeout_seconds)
@@ -677,6 +682,8 @@ class EvalHarnessService:
                 check_name=check_name,
                 label=label,
                 blocked_reason=reason,
+                case_count=0,
+                timeout_seconds=timeout_seconds,
             )
         except Exception as exc:
             elapsed = time.monotonic() - started
@@ -700,6 +707,8 @@ class EvalHarnessService:
                 check_name=check_name,
                 label=label,
                 blocked_reason=reason,
+                case_count=0,
+                timeout_seconds=timeout_seconds,
             )
 
         elapsed = time.monotonic() - started
@@ -724,6 +733,8 @@ class EvalHarnessService:
                 check_name=check_name,
                 label=label,
                 blocked_reason=reason,
+                case_count=0,
+                timeout_seconds=timeout_seconds,
             )
 
         summary = payload.get("summary") if isinstance(payload, dict) else {}
@@ -735,6 +746,8 @@ class EvalHarnessService:
         current = current if isinstance(current, dict) else {}
         candidate = candidate if isinstance(candidate, dict) else {}
         passed = bool(current.get("gate_passed")) and bool(candidate.get("gate_passed"))
+        case_count = summary.get("case_count")
+        execution_mode = summary.get("execution_mode")
         emit("pass" if passed else "fail", check_name, elapsed_seconds=elapsed, run_id=payload.get("id"))
         return ReleaseChecklistCheckResult(
             payload=payload,
@@ -743,6 +756,9 @@ class EvalHarnessService:
             check_name=check_name,
             label=label,
             blocked_reason=None if passed else self._eval_run_failure_reason(payload),
+            execution_mode=execution_mode if isinstance(execution_mode, str) else None,
+            case_count=int(case_count) if isinstance(case_count, int) else None,
+            timeout_seconds=timeout_seconds,
         )
 
     @staticmethod
@@ -790,16 +806,21 @@ class EvalHarnessService:
             summary = payload.get("summary")
             summary = summary if isinstance(summary, dict) else {}
             reason = result.blocked_reason or summary.get("failure_reason")
-            summaries.append(
-                {
-                    "check_id": result.check_name,
-                    "label": result.label or result.check_name,
-                    "status": result.status,
-                    "run_id": payload.get("id"),
-                    "elapsed_seconds": round(float(result.elapsed_seconds), 3),
-                    "reason": reason if isinstance(reason, str) and reason else None,
-                }
-            )
+            item: dict[str, object] = {
+                "check_id": result.check_name,
+                "label": result.label or result.check_name,
+                "status": result.status,
+                "run_id": payload.get("id"),
+                "elapsed_seconds": round(float(result.elapsed_seconds), 3),
+                "reason": reason if isinstance(reason, str) and reason else None,
+            }
+            if result.execution_mode is not None:
+                item["execution_mode"] = result.execution_mode
+            if result.case_count is not None:
+                item["case_count"] = result.case_count
+            if result.timeout_seconds is not None:
+                item["timeout_seconds"] = round(float(result.timeout_seconds), 3)
+            summaries.append(item)
         return summaries
 
     def _synthetic_eval_run(
@@ -854,6 +875,7 @@ class EvalHarnessService:
             "source_type": source_type,
             "dataset_name": dataset_name,
             "case_count": 0,
+            "execution_mode": "synthetic",
             "pack_scope": pack_scope,
             "variants": {
                 "current": dict(variant),
@@ -1263,34 +1285,45 @@ class EvalHarnessService:
                     pack_scope=pack_scope,
                 )
 
-            routers = {
-                "current": GMCouncilService(
+            current_service = GMCouncilService(
+                self.settings,
+                ModelRouter(
                     self.settings,
-                    ModelRouter(
-                        self.settings,
-                        self.prompt_registry,
-                        pack_registry=self.pack_registry,
-                        session_factory=self.session_factory,
-                        route_overrides=current_config.routes,
-                        config_name=current_config.name,
-                        observability_service=self.observability_service,
-                    ),
+                    self.prompt_registry,
+                    pack_registry=self.pack_registry,
+                    session_factory=self.session_factory,
+                    route_overrides=current_config.routes,
+                    config_name=current_config.name,
+                    observability_service=self.observability_service,
                 ),
-                "candidate": GMCouncilService(
+            )
+            candidate_service = GMCouncilService(
+                self.settings,
+                ModelRouter(
                     self.settings,
-                    ModelRouter(
-                        self.settings,
-                        self.prompt_registry,
-                        pack_registry=self.pack_registry,
-                        session_factory=self.session_factory,
-                        route_overrides=candidate_config.routes,
-                        config_name=candidate_config.name,
-                        observability_service=self.observability_service,
-                    ),
+                    self.prompt_registry,
+                    pack_registry=self.pack_registry,
+                    session_factory=self.session_factory,
+                    route_overrides=candidate_config.routes,
+                    config_name=candidate_config.name,
+                    observability_service=self.observability_service,
                 ),
-            }
+            )
+            configs_identical = (
+                current_config.content_hash == candidate_config.content_hash
+                or current_config.routes == candidate_config.routes
+            )
+            execution_mode = "single_config_reused" if configs_identical else "dual_config"
 
             case_payloads: list[dict[str, object]] = []
+            routers = (
+                {"current": current_service}
+                if configs_identical
+                else {
+                    "current": current_service,
+                    "candidate": candidate_service,
+                }
+            )
             for variant, council_service in routers.items():
                 for case in cases:
                     retrieved_memories, retrieval_trace = self._resolve_case_retrieval(case)
@@ -1330,8 +1363,26 @@ class EvalHarnessService:
                         retrieval_trace=retrieval_trace,
                     )
                     case_payloads.append(payload)
+                    if configs_identical and variant == "current":
+                        duplicated_payload = self._persist_case_result(
+                            db,
+                            run_id=run.id,
+                            variant="candidate",
+                            case=case,
+                            outcome=outcome,
+                            retrieved_memories=retrieved_memories,
+                            retrieval_trace=retrieval_trace,
+                            variant_source="current",
+                        )
+                        case_payloads.append(duplicated_payload)
 
-            run.summary = self._build_run_summary(source_type, dataset_name, cases, case_payloads)
+            run.summary = self._build_run_summary(
+                source_type,
+                dataset_name,
+                cases,
+                case_payloads,
+                execution_mode=execution_mode,
+            )
             run.status = "completed"
             run.completed_at = run.updated_at
             observation = getattr(trace_link, "observation", None)
@@ -1364,6 +1415,7 @@ class EvalHarnessService:
         outcome: TurnResolutionOutcome,
         retrieved_memories: list[str],
         retrieval_trace: MemoryRetrievalTrace,
+        variant_source: str | None = None,
     ) -> dict[str, object]:
         final_attempt = outcome.attempts[-1]
         final_payload = outcome.final_payload.model_dump() if outcome.final_payload is not None else None
@@ -1448,6 +1500,8 @@ class EvalHarnessService:
             "failure_reason": outcome.failure_reason,
             "domain_evaluation": domain_evaluation,
         }
+        if variant_source is not None:
+            raw_output["variant_source"] = variant_source
         result = EvalCaseResult(
             eval_run_id=run_id,
             variant=variant,
@@ -1594,11 +1648,14 @@ class EvalHarnessService:
         dataset_name: str | None,
         cases: list[EvalCaseInput],
         results: list[dict[str, object]],
+        *,
+        execution_mode: str,
     ) -> dict[str, object]:
         summary: dict[str, object] = {
             "source_type": source_type,
             "dataset_name": dataset_name,
             "case_count": len(cases),
+            "execution_mode": execution_mode,
             "pack_scope": self._pack_scope_for_cases(cases),
             "variants": {},
             "comparison": {},

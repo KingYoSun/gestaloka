@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:5174";
+
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
   test.setTimeout(360_000);
   const worldId = "gestaloka_reference";
@@ -43,6 +45,11 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Lift Tower Concourse/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus Custodians/i, { timeout: 20_000 });
   await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち");
+  await expect(page.getByTestId("turn-cost-note")).toContainText(/消費SP|Choice cost|SP/);
+  await page.getByTestId("toggle-free-text").click();
+  await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input cost|SP/);
+  await expect(page.getByTestId("free-text-budget-note")).toContainText(/実行予算|execution budget/);
+  await page.getByTestId("toggle-choice-mode").click();
   await expect(page.getByTestId("choice-progress")).toContainText("Help the person in need and create the next opening");
   await expect(page.getByTestId("choice-explore")).toContainText("Go to Lift Tower Concourse and check the old records");
 
@@ -102,4 +109,38 @@ test("player language switcher changes fixed UI labels and persists", async ({ p
 
   await page.getByRole("button", { name: /JA/ }).click();
   await expect(page.getByTestId("sign-in")).toContainText("ログインして続ける");
+});
+
+test("admin unauthenticated language switcher changes labels and persists", async ({ page }) => {
+  await page.goto(adminBaseURL);
+
+  await expect(page.getByTestId("admin-sign-in")).toContainText("ログイン");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+
+  await page.getByRole("button", { name: /EN/ }).click();
+  await expect(page.getByTestId("admin-sign-in")).toContainText("Sign in");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.reload();
+  await expect(page.getByTestId("admin-sign-in")).toContainText("Sign in");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+});
+
+test("admin release page does not overflow at 375px", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(adminBaseURL);
+  await page.getByTestId("admin-sign-in").click();
+
+  await page.locator("#username").fill("demo");
+  await page.locator("#password").fill("demo-password");
+  await page.getByRole("button", { name: /sign in/i }).click();
+
+  await expect(page.getByTestId("admin-nav-release")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("admin-nav-release").click();
+  await expect(page.getByTestId("admin-release")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("admin-release-blocked-reasons")).toBeVisible();
+
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(hasHorizontalOverflow).toBe(false);
 });

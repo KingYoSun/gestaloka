@@ -571,6 +571,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
     freeTextInput,
     handleChoiceSubmit,
     handleTurnSubmit,
+    health,
     session,
     setFreeTextInput,
     setTurnInputMode,
@@ -579,7 +580,14 @@ function TurnComposer({ runtime }: PlayerPageProps) {
     turnPending,
     turnProgressElapsedSeconds,
     turnProgressPhase,
+    wallet,
   } = runtime;
+  const choiceCost = wallet?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp?.turn_cost ?? "?";
+  const freeTextCost = wallet?.free_text_turn_cost ?? health?.sp?.free_text_turn_cost ?? "?";
+  const activeCostNote =
+    turnInputMode === "choice"
+      ? t("player.turn.choiceCost", { cost: choiceCost })
+      : t("player.turn.freeTextCost", { cost: freeTextCost });
   const phaseLabel =
     turnProgressPhase === "submitting"
       ? t("player.turn.submitting")
@@ -615,6 +623,10 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         </Button>
       </div>
 
+      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-cost-note">
+        {activeCostNote}
+      </p>
+
       {turnInputMode === "choice" ? (
         <ChoiceList choices={suggestedChoices} onChoose={handleChoiceSubmit} disabled={!session || turnPending} />
       ) : (
@@ -628,6 +640,9 @@ function TurnComposer({ runtime }: PlayerPageProps) {
               disabled={turnPending}
             />
           </Field>
+          <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="free-text-budget-note">
+            {t("player.turn.budgetOnly")}
+          </p>
           <Button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
             {turnPending ? t("player.story.inProgress") : t("common.submit")}
           </Button>
@@ -638,7 +653,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         {progressStatus}
       </p>
       {turnPending && turnProgressElapsedSeconds >= 45 ? (
-        <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-retry-guidance">
+        <p className="rounded-md border border-border bg-muted p-3 text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-retry-guidance">
           {t("player.turn.retryGuidance")}
         </p>
       ) : null}

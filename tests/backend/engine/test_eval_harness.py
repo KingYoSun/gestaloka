@@ -10,11 +10,23 @@ from sqlalchemy import delete, func, select
 
 from app.core.config import Settings
 from app.core.prompts import PromptRegistry
-from app.models.entities import EvalCaseResult, EvalRun, Event, Memory, OutboxEvent, ReleaseGateReport, SPLedgerEntry, Turn, WorldAxisState
-from app.modules.eval_harness.service import EvalHarnessService
+from app.models.entities import (
+    EvalCaseResult,
+    EvalRun,
+    Event,
+    Memory,
+    OutboxEvent,
+    ReleaseGateReport,
+    SPLedgerEntry,
+    Turn,
+    WorldAxisState,
+)
 from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
+from app.modules.eval_harness.service import EvalHarnessService, ReleaseConfig
+from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
+from app.modules.llm_harness.service import PromptRouteOverride
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackCatalogFailure, PackRegistry
 from app.modules.world_memory.service import MemoryService
@@ -109,6 +121,93 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     )
     assert eval_trace["attributes"]["eval.pack_ids"] == "gestaloka_reference"
     assert eval_trace["attributes"]["eval.world_template_ids"] == "nexus_foundation"
+
+
+def test_eval_runner_reuses_identical_current_candidate_config(container, monkeypatch: pytest.MonkeyPatch):
+    calls = 0
+    original_resolve_turn = GMCouncilService.resolve_turn
+
+    def counted_resolve_turn(self: GMCouncilService, request):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return original_resolve_turn(self, request)
+
+    monkeypatch.setattr(GMCouncilService, "resolve_turn", counted_resolve_turn)
+
+    with container.session_factory() as db:
+        payload = container.eval_service.run_dataset(db, "turn_resolution_smoke")
+        db.commit()
+
+    assert payload["summary"]["execution_mode"] == "single_config_reused"
+    assert calls == payload["summary"]["case_count"]
+    assert len(payload["results"]) == payload["summary"]["case_count"] * 2
+    candidate_results = [item for item in payload["results"] if item["variant"] == "candidate"]
+    assert candidate_results
+    assert all(item["raw_output"]["variant_source"] == "current" for item in candidate_results)
+
+
+def test_eval_runner_executes_both_variants_when_configs_differ(container, monkeypatch: pytest.MonkeyPatch):
+    original_load_config = container.eval_service.load_release_config
+    calls = 0
+    original_resolve_turn = GMCouncilService.resolve_turn
+
+    def different_candidate_hash(config_name: str) -> ReleaseConfig:
+        config = original_load_config(config_name)
+        if config_name != "candidate":
+            return config
+        routes = dict(config.routes)
+        first_route_id = next(iter(routes))
+        first_route = routes[first_route_id]
+        routes[first_route_id] = PromptRouteOverride(
+            prompt_id=first_route.prompt_id,
+            default_lane="pro_lane" if first_route.default_lane != "pro_lane" else "main_lane",
+            model_ids=first_route.model_ids,
+        )
+        return ReleaseConfig(
+            name=config.name,
+            source_path=config.source_path,
+            content_hash=f"{config.content_hash}-changed",
+            routes=routes,
+        )
+
+    def counted_resolve_turn(self: GMCouncilService, request):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return original_resolve_turn(self, request)
+
+    monkeypatch.setattr(container.eval_service, "load_release_config", different_candidate_hash)
+    monkeypatch.setattr(GMCouncilService, "resolve_turn", counted_resolve_turn)
+
+    with container.session_factory() as db:
+        payload = container.eval_service.run_dataset(db, "turn_resolution_smoke")
+        db.commit()
+
+    assert payload["summary"]["execution_mode"] == "dual_config"
+    assert calls == payload["summary"]["case_count"] * 2
+    assert len(payload["results"]) == payload["summary"]["case_count"] * 2
+
+
+def test_failure_injection_control_cases_do_not_call_live_provider(container):
+    with container.session_factory() as db:
+        payload = container.eval_service.run_dataset(db, "turn_resolution_failure_injection")
+        db.commit()
+
+    marker_results = [
+        item
+        for item in payload["results"]
+        if "__force_invalid_main__" in str(item["raw_output"]["input_text"])
+        or "__force_safety_reject__" in str(item["raw_output"]["input_text"])
+    ]
+    assert marker_results
+    assert all(item["passed"] for item in marker_results)
+    for item in marker_results:
+        attempts = [
+            attempt
+            for role_run in item["raw_output"]["role_runs"]
+            for attempt in role_run["attempts"]
+        ]
+        assert attempts
+        assert {attempt["provider_name"] for attempt in attempts} == {"eval_control"}
 
 
 def test_gestaloka_pack_regression_dataset_runs(container):
@@ -370,6 +469,10 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert gate["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     assert gate["langfuse_status"] == "ok"
     assert gate["diff_summary"] == []
+    check_map = {item["check_id"]: item for item in gate["check_summaries"]}
+    assert check_map["turn_resolution_smoke"]["execution_mode"] == "single_config_reused"
+    assert check_map["turn_resolution_smoke"]["case_count"] == 2
+    assert check_map["turn_resolution_smoke"]["timeout_seconds"] >= 0
     assert report_count == 1
     progress = container.eval_service.release_checklist_progress()
     assert progress["status"] == "completed"

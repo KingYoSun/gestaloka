@@ -131,6 +131,18 @@ export type SPOverview = {
   recent_adjustments: Array<{ id: string; user_sub: string; delta: number; reason_code: string; balance_after: number }>;
 };
 
+export type ReleaseCheckSummary = {
+  check_id: string;
+  label: string;
+  status: string;
+  run_id: string | null;
+  elapsed_seconds: number;
+  reason: string | null;
+  execution_mode?: string | null;
+  case_count?: number | null;
+  timeout_seconds?: number | null;
+};
+
 export type ReleaseSummary = {
   report_id: string | null;
   verdict: string;
@@ -138,14 +150,8 @@ export type ReleaseSummary = {
   trigger_type: string;
   canary_promote_status: string;
   created_at: string | null;
-  checks: Array<{
-    check_id: string;
-    label: string;
-    status: string;
-    run_id: string | null;
-    elapsed_seconds: number;
-    reason: string | null;
-  }>;
+  checks: Record<string, unknown>;
+  check_summaries: ReleaseCheckSummary[];
   cutover_status?: { promote_ready: boolean; missing_or_failed_checks: string[] };
 };
 

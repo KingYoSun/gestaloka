@@ -35,7 +35,11 @@ docker compose up --build
 - 主要 checkpoint、表示崩れ、迷いが生じる操作、エラー表示は screenshot を残す。
 - reload は、stack 再起動や frontend build 後など、状態を明示的に取り直す必要がある時だけ行う。
 - 失敗時は URL、world pack、session id が見える場合は session id、直前の操作、期待、実際、screenshot を控える。
-- `Browser is already in use` や MCP transport closed が出た場合は、MCP tool call を続けず `make playwright-mcp-clean` を実行してから新しい MCP session で再開する。
+- `Browser is already in use` や MCP transport closed が出た場合は、MCP tool call を続けず次の順で復旧する。
+  1. `make playwright-mcp-clean` で残存 process と stale lock を掃除する。
+  2. 再発する場合は `scripts/cleanup_playwright_mcp.sh --reset-profile` で `mcp-chrome-*` profile directory も削除する。
+  3. 新しい MCP session を開始し、同じ URL から再開する。
+  4. それでも transport が閉じる場合は、repo の Playwright API / `make frontend-e2e` に切り替えて観測結果を記録する。
 
 ## 3. 安定した観測点
 
@@ -88,7 +92,7 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 ### Preflight
 
 1. Terminal で `make verify-v2` が green であることを確認する。
-2. Terminal で `make playwright-mcp-clean` を実行する。実行内容だけ確認したい場合は `scripts/cleanup_playwright_mcp.sh --dry-run` を使う。
+2. Terminal で `make playwright-mcp-clean` を実行する。実行内容だけ確認したい場合は `scripts/cleanup_playwright_mcp.sh --dry-run` を使う。MCP transport closed が繰り返す場合は `scripts/cleanup_playwright_mcp.sh --reset-profile` を実行してから新しい MCP session を開始する。
 3. Playwright MCP で `http://localhost:8000/health` を開き、`status`、database、projection、world pack health が返ることを確認する。
 4. `http://localhost:5173` を開き、画面が描画されることを screenshot で残す。
 5. Player UI の表示言語 switcher で `JA` / `EN` を切り替え、`sign-in` の固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
@@ -101,9 +105,9 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 3. 既存 profile がある場合は `player-profile-select` で選択し、表示されるプレイ言語を確認する。ない場合は `profile-display-name` に名前を入れ、必要なら性別・背景・自由記述・文体・`profile-play-language` を設定し、`create-player-profile` を実行する。
 4. `start-session` を実行する。
 5. `socket-status=open`、`session-pack`、`session.connected`、`Nexus Gate`、`First Stabilizer Request`、`0/2`、`Gate Steward Rikka`、`Lift Tower Concourse`、faction standing を確認する。
-6. `choice-progress` を 2 回実行し、`2/2`、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。
-7. `choice-progress` を実行し、`Breach Restoration`、`breach_restoration`、used 表示、`Oblivion Breach` route を確認する。
-8. さらに `choice-progress` を実行し、`Oblivion Breach`、travel history、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。
+6. `quest-progress` が `2/2` になるまで `choice-progress` を最大 4 回実行し、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
+7. `Breach Restoration` または `breach_restoration` が表示されるまで、到達済み choice を最大 3 回選び、used 表示と `Oblivion Breach` route を確認する。
+8. `Oblivion Breach` への travel history または current location 更新が観測できるまで、移動 affordance のある choice を最大 3 回実行し、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。公式 smoke 判定は引き続き stub E2E を正とし、live provider の手動観測は到達状態と揺れを併記する。
 
 プレイ言語確認を主目的にする場合:
 
