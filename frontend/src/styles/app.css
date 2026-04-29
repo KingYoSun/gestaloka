@@ -82,6 +82,26 @@
   }
 }
 
+.theme-light {
+  color-scheme: light;
+  --background: #f2eadf;
+  --foreground: #0b2034;
+  --card: #fffaf1;
+  --card-foreground: #0b2034;
+  --popover: #fffaf1;
+  --popover-foreground: #0b2034;
+  --primary: #c6922e;
+  --primary-foreground: #0b2034;
+  --secondary: #f8f2e8;
+  --secondary-foreground: #0b2034;
+  --muted: #f8f2e8;
+  --muted-foreground: #65785f;
+  --accent: #7bcfd0;
+  --accent-foreground: #0b2034;
+  --border: rgba(11, 32, 52, 0.16);
+  --input: rgba(11, 32, 52, 0.22);
+}
+
 .theme-dark {
   color-scheme: dark;
   --background: #0b2034;
@@ -138,9 +158,36 @@
     }
   }
 
+  html.theme-light body,
+  body.theme-light {
+    background:
+      linear-gradient(rgba(242, 234, 223, 0.9), rgba(242, 234, 223, 0.9)),
+      url("/brand/texture.png"),
+      var(--background);
+    background-size: auto, 520px 520px, auto;
+  }
+
   html.theme-dark body,
   body.theme-dark {
     background: var(--background);
+  }
+
+  .brand-mark {
+    filter: drop-shadow(0 2px 5px rgba(11, 32, 52, 0.24));
+  }
+
+  .theme-dark .brand-mark {
+    filter:
+      brightness(0)
+      saturate(100%)
+      invert(92%)
+      sepia(18%)
+      saturate(320%)
+      hue-rotate(350deg)
+      brightness(105%)
+      contrast(94%)
+      drop-shadow(0 0 14px rgba(198, 146, 46, 0.16));
+    opacity: 0.94;
   }
 
   button,

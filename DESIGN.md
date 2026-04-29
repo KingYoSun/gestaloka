@@ -344,7 +344,11 @@ font-feature-settings: normal;
 
 ### Dark Mode
 
-- `prefers-color-scheme: dark` および `.theme-dark` クラスで対応する。
+- 初回表示は `prefers-color-scheme: dark` を読み、`light | dark` の 2 択へ正規化する。
+- ユーザー操作後は localStorage key `gestaloka.theme` を正とし、`theme-light` または `theme-dark` を `<html>` に付与する。
+- 切替 UI は言語切替の横に置くアイコンボタンとし、`Sun` / `Moon` を使う。表示テキストは出さず、`aria-label` と `sr-only` で意味を提供する。
+- `theme-dark` は REVERSE LOCKUP として扱い、navy `#0b2034` 背景、cream 系文字、gold / aqua accent を維持する。
+- `theme-light` は OS が dark の場合でも通常モードの cream + texture 背景を明示的に上書きする。
 - すべてのセマンティックカラーを CSS Custom Properties で切り替える。
 - ライト / ダークのどちらでも、本文の可読性とフォーカスリングの視認性を維持する。
 

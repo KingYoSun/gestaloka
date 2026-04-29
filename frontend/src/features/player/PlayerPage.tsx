@@ -106,7 +106,7 @@ function FirstView({ runtime }: PlayerPageProps) {
     <section className="grid min-h-[calc(100vh-5rem)] place-items-center py-8" aria-label={t("player.labels.start")}>
       <div className="grid w-full min-w-0 justify-items-center gap-5 text-center">
         <img
-          className="size-36 object-contain drop-shadow-sm max-[480px]:size-28"
+          className="brand-mark size-36 object-contain max-[480px]:size-28"
           src="/brand/logo.png"
           alt=""
           aria-hidden="true"

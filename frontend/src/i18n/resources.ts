@@ -19,6 +19,10 @@ const resources = {
         ja: "日本語",
         en: "English",
       },
+      theme: {
+        toggleToDark: "ダークモードに切り替え",
+        toggleToLight: "ライトモードに切り替え",
+      },
       auth: {
         signIn: "ログインして続ける",
         register: "アカウントを作成して始める",
@@ -149,6 +153,10 @@ const resources = {
         label: "Display language",
         ja: "Japanese",
         en: "English",
+      },
+      theme: {
+        toggleToDark: "Switch to dark mode",
+        toggleToLight: "Switch to light mode",
       },
       auth: {
         signIn: "Sign in to continue",

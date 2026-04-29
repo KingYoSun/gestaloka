@@ -4,6 +4,7 @@ import { AppShell } from "./components/ui/AppShell";
 import { PlayerPage } from "./features/player/PlayerPage";
 import { useGestalokaRuntime } from "./hooks/useGestalokaRuntime";
 import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
+import { ThemeToggle } from "./theme/ThemeToggle";
 
 function App() {
   const { t } = useTranslation();
@@ -17,8 +18,9 @@ function App() {
   return (
     <AppShell
       header={
-        <header className="flex items-center justify-end pt-3">
+        <header className="flex items-center justify-end gap-2 pt-3">
           <LanguageSwitcher />
+          <ThemeToggle />
         </header>
       }
       error={
