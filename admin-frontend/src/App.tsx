@@ -202,8 +202,8 @@ function App() {
   }
 
   return (
-    <main className="grid min-h-screen grid-cols-[260px_minmax(0,1fr)] bg-muted max-[900px]:grid-cols-1">
-      <aside className="sticky top-0 grid h-screen grid-rows-[auto_1fr] gap-4 border-r border-border bg-card p-3 max-[900px]:static max-[900px]:h-auto">
+    <main className="grid min-h-screen grid-cols-[260px_minmax(0,1fr)] bg-background max-[900px]:grid-cols-1">
+      <aside className="sticky top-0 grid h-screen grid-rows-[auto_1fr] gap-4 border-r border-border bg-background p-3 max-[900px]:static max-[900px]:h-auto">
         <div className="grid gap-0.5 px-2 pb-3">
           <span className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA</span>
           <strong className="text-lg leading-6 text-foreground">Admin</strong>
@@ -548,7 +548,7 @@ function LLMPage({ state, token, setError, refreshAll }: PageProps) {
   );
 }
 
-const chartColors = ["#1e7b65", "#916626", "#292d9e", "#b22323", "#5ac8b8", "#08131a"];
+const chartColors = ["#65785f", "#c6922e", "#7bcfd0", "#b22323", "#d13e5c", "#0b2034"];
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value);

@@ -1,0 +1,373 @@
+{
+  "startedAt": "2026-04-29T16:16:59.444Z",
+  "runner": "playwright-api-fallback-after-mcp-transport-closed",
+  "player": {
+    "initial": {
+      "url": "http://localhost:5173/",
+      "htmlLang": "ja",
+      "signIn": "ログインして続ける"
+    },
+    "langEn": {
+      "htmlLang": "en",
+      "signIn": "Sign in to continue",
+      "storage": "en"
+    },
+    "langEnAfterReload": {
+      "htmlLang": "en",
+      "signIn": "Sign in to continue",
+      "storage": "en"
+    },
+    "langJaRestored": {
+      "htmlLang": "ja",
+      "signIn": "ログインして続ける",
+      "storage": "ja"
+    },
+    "afterLogin": {
+      "url": "http://localhost:5173/",
+      "authStatus": "authenticated",
+      "apiHealth": "ok / DB: ok",
+      "spBalance": "SP balance: 30 / Paid: 0 / Bonus: 30 / Choice cost: 1 / Free text cost: 3",
+      "spBudgetNote": "SP is execution budget only.",
+      "errorBanner": null
+    },
+    "profile": {
+      "profileName": "Codex Test 1777479427950",
+      "playerProfileSelect": "Codex Test 1777479427950",
+      "startSessionDisabled": false,
+      "errorBanner": null
+    },
+    "sessionInitial": {
+      "socketStatus": "open",
+      "sessionPack": "GESTALOKA Reference (gestaloka_reference) / Nexus Foundation",
+      "currentPlace": "Nexus Gate",
+      "currentChapter": "The opening chapter of GESTALOKA: Nexus Foundation is still gathering momentum around the opening request.",
+      "currentScene": "Nexus Gate is still establishing who can be trusted with the current request. The scene has room to breathe, but it still remembers what was just set in motion.",
+      "activeQuest": "クエスト First Stabilizer Request 0/2 Help a local and return with what you learned around Lift Tower Concourse.",
+      "questProgress": "0/2",
+      "questStage": "starter_nexus",
+      "figures": "Gate Steward Rikka Gate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+      "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The breach route stays sealed until Nexus recognizes the writ.",
+      "factionStanding": "Returner Cell -0.10 neutralRelic Salvagers 0.00 neutralKronos Exchange 0.00 neutralMemory Church 0.00 neutralNexus Custodians 0.00 neutral",
+      "ops": "session.connectedGESTALOKA Reference / Nexus Foundationsession_id: 2748ed6b-1587-4c8c-9cfe-a3f055ad5454",
+      "spBucket": "有償SP 0 / 無償SP 30",
+      "paidSp": "0",
+      "bonusSp": "30",
+      "turnCostNote": "消費予定SP（選択肢）: 1",
+      "choiceList": "Watch Nexus Gate without disturbing the flow Read the room and avoid disrupting the scene. Help the person in need and create the next opening Take the clearest forward action for the current request. Go to Lift Tower Concourse and check the old records Change places and widen the investigation.",
+      "errorBanner": null
+    },
+    "purchaseDialog": {
+      "dialog": "SP購入 有償SP 0 / 無償SP 30 5 15 30 60 120 取消 SP購入",
+      "beforePaid": "0",
+      "beforeBonus": "30"
+    },
+    "purchaseAfter": {
+      "complete": "5 SPの購入が完了しました。有償SP 5 / 無償SP 30",
+      "paid": "5",
+      "bonus": "30",
+      "spBucket": "有償SP 5 / 無償SP 30",
+      "errorBanner": null
+    },
+    "error": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('toggle-free-text').first()\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" data-testid=\"toggle-free-text\" class=\"inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border text-base font-semibold leading-6 transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-[18px] [&_svg]:shrink-0 border-border bg-card text-foreground hover:bg-muted px-4 py-2.5\">自由入力</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"presentation\" class=\"fixed inset-0 z-40 grid place-items-center bg-background/70 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"presentation\" class=\"fixed inset-0 z-40 grid place-items-center bg-background/70 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    19 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div role=\"presentation\" class=\"fixed inset-0 z-40 grid place-items-center bg-background/70 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at safeClick (/home/kingyosun/gestaloka/[eval1]:12:161)\n    at async file:///home/kingyosun/gestaloka/[eval1]:67:5"
+  },
+  "admin": {
+    "initial": {
+      "htmlLang": "ja",
+      "signIn": "ログイン"
+    },
+    "langEn": {
+      "htmlLang": "en",
+      "signIn": "Sign in",
+      "storage": "en"
+    },
+    "langEnAfterReload": {
+      "htmlLang": "en",
+      "signIn": "Sign in",
+      "storage": "en"
+    },
+    "dashboard": {
+      "text": "パック状態 不明 0 パック テンプレート 0 0 件の失敗 グラフ runtime 不明 0 件 pending リリース 不明 不明 運用 Admin は pack、ユーザー権限、LLM 設定、prompt、SP、release 操作を扱います。",
+      "error": null
+    },
+    "sections": {
+      "admin-packs": {
+        "visible": true,
+        "text": "パックカタログ GESTALOKA Reference gestaloka_reference / 1.0.0 public / playable Draft パック作成 Pack ID 表示名 Template ID テンプレート名 概要 作成 アーカイブインポート アーカイブパス インポート",
+        "error": null
+      },
+      "admin-world-templates": {
+        "visible": true,
+        "text": "Nexus Foundation GESTALOKA Reference / nexus_foundation public / playable Draft",
+        "error": null
+      },
+      "admin-users": {
+        "visible": true,
+        "text": "ユーザー demo-player-sub demo-player-sub admin / active 権限付与 User sub ロール operator admin viewer 保存",
+        "error": null
+      },
+      "admin-llm-settings": {
+        "visible": true,
+        "text": "プロバイダー Base URL secret ref API key secret ref Embedding provider Diagnostics を有効化 保存",
+        "error": null
+      },
+      "admin-llm-usage": {
+        "visible": true,
+        "text": "総 token 0 prompt 0 / completion 0 Cache hit rate n/a hit 0 / miss 0 Runs 0 hour bucket Usage missing 0 24h range LLM 使用量 24h 30d 2026/4/29 2:00:00 - 2026/4/30 2:00:00 Token volume 2 0 1 2 Cache hit rate 100% 0% 50% 100% Model Provider 総 token Prompt Completion Cache hit rate Runs Usage missing",
+        "error": null
+      },
+      "admin-model-lanes": {
+        "visible": true,
+        "text": "lite_lane main_lane pro_lane 保存",
+        "error": null
+      },
+      "admin-prompts": {
+        "visible": true,
+        "text": "プロンプトレジストリ ambient.memory_manager lite_lane / ambient_memory_manager_v1 ambient.npc_manager lite_lane / ambient_npc_manager_v1 ambient.safety_guard main_lane / ambient_safety_guard_v1 council.intent_interpreter lite_lane / council_intent_interpreter_v1 council.memory_manager lite_lane / council_memory_manager_v1 council.narrative main_lane / council_narrative_v1 council.npc_manager lite_lane / council_npc_manager_v1 council.rules_arbiter main_lane / council_rules_arbiter_v1 council.safety_guard main_lane / council_safety_guard_v1 council.world_progress main_lane / council_world_progress_v2 idle.memory_manager lite_lane / ambient_memory_manager_v1 idle.npc_manager lite_lane / ambient_npc_manager_v1 idle.safety_guard main_lane / ambient_safety_guard_v1 session.turn_resolution main_lane / council_turn_resolution_v1 プロンプト override Prompt を選択",
+        "error": null
+      },
+      "admin-sp": {
+        "visible": true,
+        "text": "アカウント 1 2 件の ledger entry SP 調整 User sub Delta 理由 World ID メモ 適用",
+        "error": null
+      },
+      "admin-release": {
+        "visible": true,
+        "text": "判定 blocked blocked リリースチェックリスト Created: 未実行 Blocked reasons No release checklist report exists チェック詳細 なし Progress: 待機中 チェックリストを実行",
+        "error": null
+      }
+    },
+    "usageRange": "24h 30d",
+    "usage30d": "総 token 0 prompt 0 / completion 0 Cache hit rate n/a hit 0 / miss 0 Runs 0 day bucket Usage missing 0 30d range LLM 使用量 24h 30d 2026/3/31 9:00:00 - 2026/4/30 9:00:00 Token volume 2 0 1 2 Cache hit rate 100% 0% 50% 100% Model Provider 総 token Prompt Completion Cache hit rate Runs Usage missing",
+    "mobile": {
+      "releaseVisible": true,
+      "hasHorizontalOverflow": false,
+      "scrollWidth": 375,
+      "innerWidth": 375
+    }
+  },
+  "screenshots": [
+    "player-01-initial.png",
+    "player-02-after-login.png",
+    "player-03-profile-created.png",
+    "player-04-session-initial.png",
+    "player-05-sp-purchase-dialog.png",
+    "player-06-sp-purchase-after.png",
+    "player-error.png",
+    "admin-01-initial.png",
+    "admin-02-dashboard.png",
+    "admin-03-admin-packs.png",
+    "admin-03-admin-world-templates.png",
+    "admin-03-admin-users.png",
+    "admin-03-admin-llm-settings.png",
+    "admin-03-admin-llm-usage.png",
+    "admin-04-llm-usage-30d.png",
+    "admin-03-admin-model-lanes.png",
+    "admin-03-admin-prompts.png",
+    "admin-03-admin-sp.png",
+    "admin-03-admin-release.png",
+    "admin-05-mobile-release-375.png"
+  ],
+  "console": [
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "player",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "player",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "player",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "player",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "player",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "Autofocus processing was blocked because a document already has a focused element."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "page": "admin",
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "page": "admin",
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    }
+  ],
+  "failedResponses": []
+}

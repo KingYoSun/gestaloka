@@ -1,0 +1,158 @@
+{
+  "startedAt": "2026-04-29T16:21:07.206Z",
+  "playerTurns": {
+    "initial": {
+      "label": "initial",
+      "turnProgressStatus": "選択待ち",
+      "spBucket": "有償SP 5 / 無償SP 29",
+      "paid": "5",
+      "bonus": "29",
+      "currentPlace": "Nexus Gate",
+      "currentChapter": "The opening chapter of GESTALOKA: Nexus Foundation is still gathering momentum around the opening request.",
+      "currentScene": "Nexus Gate is still establishing who can be trusted with the current request. The scene has room to breathe, but it still remembers what was just set in motion.",
+      "activeQuest": "クエスト First Stabilizer Request 0/2 Help a local and return with what you learned around Lift Tower Concourse.",
+      "questProgress": "0/2",
+      "questStage": "starter_nexus",
+      "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The breach route stays sealed until Nexus recognizes the writ.",
+      "inventory": "なし",
+      "travel": "",
+      "relationship": "Gate Steward Rikka Gate Steward Rikka keeps you within the circle of ordinary trust. neutral",
+      "beats": "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.",
+      "ops": "session.connectedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339",
+      "choices": "Watch Nexus Gate without disturbing the flow Read the room and avoid disrupting the scene. Help the person in need and create the next opening Take the clearest forward action for the current request. Go to Lift Tower Concourse and check the old records Change places and widen the investigation.",
+      "errorBanner": null
+    },
+    "steps": [
+      {
+        "label": "turn-1",
+        "turnProgressStatus": "選択待ち",
+        "spBucket": "有償SP 5 / 無償SP 28",
+        "paid": "5",
+        "bonus": "28",
+        "currentPlace": "Nexus Gate",
+        "currentChapter": "The opening chapter of GESTALOKA: Nexus Foundation is still gathering momentum around First Stabilizer Request.",
+        "currentScene": "Archive Bazaar is still establishing who can be trusted with First Stabilizer Request. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "activeQuest": "クエスト First Stabilizer Request 1/2 First Stabilizer Request: 1/2 (active) [aid_local]",
+        "questProgress": "1/2",
+        "questStage": "starter_nexus",
+        "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The breach route stays sealed until Nexus recognizes the writ.",
+        "inventory": "なし",
+        "travel": "",
+        "relationship": "Gate Steward Rikka Gate Steward Rikka keeps you within the circle of ordinary trust. neutral",
+        "beats": "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.",
+        "ops": "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339session.connectedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339",
+        "choices": "Observe the lingering mood at Nexus Gate Stay and watch the flow of arrivals without further involvement. Follow Rikka's lead to the Lift Tower Concourse Head to the concourse to find the next task for restoration. Ask a grounded question about the current place or relationship. Ask a grounded question about the current place or relationship.",
+        "errorBanner": null
+      },
+      {
+        "label": "turn-2",
+        "turnProgressStatus": "選択待ち",
+        "spBucket": "有償SP 5 / 無償SP 27",
+        "paid": "5",
+        "bonus": "27",
+        "currentPlace": "Nexus Gate",
+        "currentChapter": "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether First Stabilizer Request will be carried through.",
+        "currentScene": "Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "activeQuest": "クエスト First Stabilizer Request 2/2 First Stabilizer Request: 2/2 (completed) [promise_followup]",
+        "questProgress": "2/2",
+        "questStage": "starter_nexus",
+        "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The breach route stays sealed until Nexus recognizes the writ.",
+        "inventory": "Nexus Writ active",
+        "travel": "",
+        "relationship": "Gate Steward Rikka Gate Steward Rikka has begun to lean toward you with visible trust. warm",
+        "beats": "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.",
+        "ops": "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent received",
+        "choices": "Observe the concourse traffic Stand near the route boards and watch how testimony and ledgers move through the hall. Ask a route clerk about active restoration tasks Approach a nearby clerk to inquire about recovery work needing witnesses or hands. Approach a Memory Church witness near the testimony station A figure in quiet robes is reviewing a record sheet; they might share news from the frontier or the breach.",
+        "errorBanner": null
+      },
+      {
+        "label": "turn-3",
+        "turnProgressStatus": "選択待ち",
+        "spBucket": "有償SP 5 / 無償SP 26",
+        "paid": "5",
+        "bonus": "26",
+        "currentPlace": "Nexus Gate",
+        "currentChapter": "The next chapter follows Oblivion Breach, the route Nexus Writ opened beyond Nexus Gate.",
+        "currentScene": "The newly opened route toward Oblivion Breach is asking to be read carefully. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "activeQuest": "クエスト Breach Restoration 0/1 Nexus Writ unlocked the route toward the Oblivion Breach.",
+        "questProgress": "0/1",
+        "questStage": "breach_restoration",
+        "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The recognized writ opens the restoration route toward Oblivion Breach.",
+        "inventory": "Nexus Writ used",
+        "travel": "",
+        "relationship": "Gate Steward Rikka Gate Steward Rikka has begun to lean toward you with visible trust. warm",
+        "beats": "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.",
+        "ops": "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent received",
+        "choices": "Hold the newly opened route steady Keep the scene stable before moving on. Head toward the opened Oblivion Breach Move to the follow-up quest location. Go to Lift Tower Concourse and check the old records Change places and widen the investigation.",
+        "errorBanner": null
+      },
+      {
+        "label": "turn-4",
+        "turnProgressStatus": "選択待ち",
+        "spBucket": "有償SP 5 / 無償SP 25",
+        "paid": "5",
+        "bonus": "25",
+        "currentPlace": "Oblivion Breach",
+        "currentChapter": "The next chapter follows Oblivion Breach, the route Nexus Writ opened beyond Nexus Gate.",
+        "currentScene": "The newly opened route toward Oblivion Breach is asking to be read carefully. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "activeQuest": "クエスト Breach Restoration 0/1 Nexus Writ unlocked the route toward the Oblivion Breach.",
+        "questProgress": "0/1",
+        "questStage": "breach_restoration",
+        "routes": "Nexus Gate The restoration route bends back to Nexus Gate under the recognized writ.",
+        "inventory": "Nexus Writ used",
+        "travel": "The recognized writ opens the restoration route toward Oblivion Breach.",
+        "relationship": "Gate Steward Rikka Gate Steward Rikka has begun to lean toward you with visible trust. warm",
+        "beats": "Choir Warden Anse keeps Oblivion Breach in view as the warden, watching how the air settles after the player's move.",
+        "ops": "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedlocation.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:oblivion_breachturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 84edd3eb-d31e-4db8-a52a-7afe13e49339turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent received",
+        "choices": "Return to Nexus Gate Return to the starting place and reassess the scene. Read the disturbance inside Oblivion Breach Advance the follow-up quest inside the breach site. Gather traces and local memories in Oblivion Breach Explore the site and look for relationship leads.",
+        "errorBanner": null
+      }
+    ]
+  },
+  "screenshots": [
+    "player-turns-01-initial.png",
+    "player-turns-02-step-1.png",
+    "player-turns-02-step-2.png",
+    "player-turns-02-step-3.png",
+    "player-turns-02-step-4.png"
+  ],
+  "failedResponses": [],
+  "console": [
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    }
+  ]
+}

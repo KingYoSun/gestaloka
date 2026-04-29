@@ -1,0 +1,130 @@
+{
+  "startedAt": "2026-04-29T16:18:57.422Z",
+  "playerProgress": {
+    "afterLogin": {
+      "label": "afterLogin",
+      "turnProgressStatus": null,
+      "socketStatus": "idle",
+      "spBucket": "有償SP 5 / 無償SP 30",
+      "paid": "5",
+      "bonus": "30",
+      "turnCostNote": null,
+      "sessionPack": "",
+      "currentPlace": null,
+      "currentChapter": null,
+      "currentScene": null,
+      "activeQuest": null,
+      "questProgress": null,
+      "questStage": null,
+      "figures": null,
+      "routes": null,
+      "inventory": null,
+      "travel": null,
+      "relationship": null,
+      "beats": "No wider district beat has risen yet.",
+      "ops": "No realtime events.",
+      "choices": null,
+      "errorBanner": null
+    },
+    "sessionInitial": {
+      "label": "sessionInitial",
+      "turnProgressStatus": "選択待ち",
+      "socketStatus": "open",
+      "spBucket": "有償SP 5 / 無償SP 30",
+      "paid": "5",
+      "bonus": "30",
+      "turnCostNote": "消費予定SP（選択肢）: 1",
+      "sessionPack": "GESTALOKA Reference (gestaloka_reference) / Nexus Foundation",
+      "currentPlace": "Nexus Gate",
+      "currentChapter": "The opening chapter of GESTALOKA: Nexus Foundation is still gathering momentum around the opening request.",
+      "currentScene": "Nexus Gate is still establishing who can be trusted with the current request. The scene has room to breathe, but it still remembers what was just set in motion.",
+      "activeQuest": "クエスト First Stabilizer Request 0/2 Help a local and return with what you learned around Lift Tower Concourse.",
+      "questProgress": "0/2",
+      "questStage": "starter_nexus",
+      "figures": "Gate Steward Rikka Gate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+      "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The breach route stays sealed until Nexus recognizes the writ.",
+      "inventory": "なし",
+      "travel": "",
+      "relationship": "Gate Steward Rikka Gate Steward Rikka keeps you within the circle of ordinary trust. neutral",
+      "beats": "No wider district beat has risen yet.",
+      "ops": "session.connectedGESTALOKA Reference / Nexus Foundationsession_id: fbb13fc4-861f-4457-aedd-8526a485d181",
+      "choices": "Watch Nexus Gate without disturbing the flow Read the room and avoid disrupting the scene. Help the person in need and create the next opening Take the clearest forward action for the current request. Go to Lift Tower Concourse and check the old records Change places and widen the investigation.",
+      "errorBanner": null
+    },
+    "freeText": {
+      "turnCostNote": "消費予定SP（自由入力）: 3",
+      "inputVisible": true
+    },
+    "steps": [
+      {
+        "label": "progress-1",
+        "turnProgressStatus": "進行中 / 解決中 / 4s",
+        "socketStatus": "open",
+        "spBucket": "有償SP 5 / 無償SP 30",
+        "paid": "5",
+        "bonus": "30",
+        "turnCostNote": "消費予定SP（選択肢）: 1",
+        "sessionPack": "GESTALOKA Reference (gestaloka_reference) / Nexus Foundation",
+        "currentPlace": "Nexus Gate",
+        "currentChapter": "The opening chapter of GESTALOKA: Nexus Foundation is still gathering momentum around the opening request.",
+        "currentScene": "Nexus Gate is still establishing who can be trusted with the current request. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "activeQuest": "クエスト First Stabilizer Request 0/2 Help a local and return with what you learned around Lift Tower Concourse.",
+        "questProgress": "0/2",
+        "questStage": "starter_nexus",
+        "figures": "Gate Steward Rikka Gate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "routes": "Lift Tower Concourse The tower concourse opens above the gate, where public testimony and route ledgers meet. Oblivion Breach The breach route stays sealed until Nexus recognizes the writ.",
+        "inventory": "なし",
+        "travel": "",
+        "relationship": "Gate Steward Rikka Gate Steward Rikka keeps you within the circle of ordinary trust. neutral",
+        "beats": "No wider district beat has risen yet.",
+        "ops": "session.connectedGESTALOKA Reference / Nexus Foundationsession_id: fbb13fc4-861f-4457-aedd-8526a485d181",
+        "choices": "Watch Nexus Gate without disturbing the flow Read the room and avoid disrupting the scene. Help the person in need and create the next opening Take the clearest forward action for the current request. Go to Lift Tower Concourse and check the old records Change places and widen the investigation.",
+        "errorBanner": null
+      }
+    ]
+  },
+  "screenshots": [
+    "player-progress-01-session-initial.png",
+    "player-progress-02-free-text.png",
+    "player-progress-03-step-1.png"
+  ],
+  "failedResponses": [],
+  "console": [
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connecting..."
+    },
+    {
+      "type": "debug",
+      "text": "[vite] connected."
+    },
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold"
+    }
+  ]
+}

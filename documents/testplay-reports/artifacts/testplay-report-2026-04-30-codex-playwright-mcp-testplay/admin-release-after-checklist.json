@@ -1,0 +1,10 @@
+{
+  "startedAt": "2026-04-29T16:34:33.086Z",
+  "failedResponses": [],
+  "console": [],
+  "release": {
+    "text": "判定 blocked blocked リリースチェックリスト Created: 2026-04-29T16:33:40.994468+00:00 Blocked reasons shadow replay gate failed pack regression turn_resolution_gestaloka_regression failed release check shadow_replay timed out after 180s failed cases: gestaloka-nexus-starter-progress チェック詳細 なし Progress: 待機中 チェックリストを実行",
+    "blockedReasons": "Blocked reasons shadow replay gate failed pack regression turn_resolution_gestaloka_regression failed release check shadow_replay timed out after 180s failed cases: gestaloka-nexus-starter-progress チェック詳細 なし",
+    "error": null
+  }
+}
