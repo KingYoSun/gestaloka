@@ -27,6 +27,7 @@ docker compose up --build
 
 ## 2. Playwright MCP 方針
 
+- Playwright MCP 開始前に `make playwright-mcp-clean` を実行し、前回 session の残存 process と stale Chrome profile lock を掃除する。
 - Player 確認では Playwright MCP で `http://localhost:5173` を開く。
 - Admin 確認では別ページまたは別 context で `http://localhost:5174` を開く。Admin は Player route ではなく独立 frontend container として扱う。
 - 操作前に accessibility / DOM snapshot で対象の存在と一意性を確認する。
@@ -34,6 +35,7 @@ docker compose up --build
 - 主要 checkpoint、表示崩れ、迷いが生じる操作、エラー表示は screenshot を残す。
 - reload は、stack 再起動や frontend build 後など、状態を明示的に取り直す必要がある時だけ行う。
 - 失敗時は URL、world pack、session id が見える場合は session id、直前の操作、期待、実際、screenshot を控える。
+- `Browser is already in use` や MCP transport closed が出た場合は、MCP tool call を続けず `make playwright-mcp-clean` を実行してから新しい MCP session で再開する。
 
 ## 3. 安定した観測点
 
@@ -85,10 +87,11 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 ### Preflight
 
 1. Terminal で `make verify-v2` が green であることを確認する。
-2. Playwright MCP で `http://localhost:8000/health` を開き、`status`、database、projection、world pack health が返ることを確認する。
-3. `http://localhost:5173` を開き、画面が描画されることを screenshot で残す。
-4. Player UI の表示言語 switcher で `JA` / `EN` を切り替え、`sign-in` の固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
-5. `Sign in` から `demo / demo-password` で login し、`auth-status` と `sp-balance` を確認する。
+2. Terminal で `make playwright-mcp-clean` を実行する。実行内容だけ確認したい場合は `scripts/cleanup_playwright_mcp.sh --dry-run` を使う。
+3. Playwright MCP で `http://localhost:8000/health` を開き、`status`、database、projection、world pack health が返ることを確認する。
+4. `http://localhost:5173` を開き、画面が描画されることを screenshot で残す。
+5. Player UI の表示言語 switcher で `JA` / `EN` を切り替え、`sign-in` の固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
+6. `Sign in` から `demo / demo-password` で login し、`auth-status` と `sp-balance` を確認する。
 
 ### GESTALOKA Reference
 

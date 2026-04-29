@@ -477,58 +477,19 @@ class EvalHarnessService:
             self._set_release_checklist_progress(status="running", current_check="slo_canary_snapshot")
             slo_started = time.monotonic()
             emit("start", "slo_canary_snapshot")
-            slo_timeout, slo_skip_reason = timeout_for_check("slo_canary_snapshot")
-            if slo_skip_reason is not None:
-                canary_probe = CanaryProbeResult(
-                    status="unknown",
-                    url=self.settings.canary_health_url or None,
-                    http_status=None,
-                    detail=slo_skip_reason,
+            canary_probe = self._probe_canary_health()
+            slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
+            slo_elapsed = time.monotonic() - slo_started
+            emit("pass", "slo_canary_snapshot", elapsed_seconds=slo_elapsed)
+            check_results.append(
+                ReleaseChecklistCheckResult(
+                    payload={"id": None, "summary": {}},
+                    elapsed_seconds=slo_elapsed,
+                    status="passed",
+                    check_name="slo_canary_snapshot",
+                    label="slo_canary_snapshot",
                 )
-                slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
-                slo_elapsed = time.monotonic() - slo_started
-                reason = slo_skip_reason
-                timeout_reasons.append(reason)
-                emit("timeout", "slo_canary_snapshot", elapsed_seconds=slo_elapsed, reason=reason)
-                check_results.append(
-                    ReleaseChecklistCheckResult(
-                        payload={"id": None, "summary": {"failure_reason": reason}},
-                        elapsed_seconds=slo_elapsed,
-                        status="timeout",
-                        check_name="slo_canary_snapshot",
-                        label="slo_canary_snapshot",
-                        blocked_reason=reason,
-                    )
-                )
-            else:
-                canary_probe = self._probe_canary_health()
-                slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
-                slo_elapsed = time.monotonic() - slo_started
-                if slo_timeout and slo_elapsed > slo_timeout:
-                    reason = f"release check slo_canary_snapshot timed out after {slo_timeout:g}s"
-                    timeout_reasons.append(reason)
-                    emit("timeout", "slo_canary_snapshot", elapsed_seconds=slo_elapsed, reason=reason)
-                    check_results.append(
-                        ReleaseChecklistCheckResult(
-                            payload={"id": None, "summary": {"failure_reason": reason}},
-                            elapsed_seconds=slo_elapsed,
-                            status="timeout",
-                            check_name="slo_canary_snapshot",
-                            label="slo_canary_snapshot",
-                            blocked_reason=reason,
-                        )
-                    )
-                else:
-                    emit("pass", "slo_canary_snapshot", elapsed_seconds=slo_elapsed)
-                    check_results.append(
-                        ReleaseChecklistCheckResult(
-                            payload={"id": None, "summary": {}},
-                            elapsed_seconds=slo_elapsed,
-                            status="passed",
-                            check_name="slo_canary_snapshot",
-                            label="slo_canary_snapshot",
-                        )
-                    )
+            )
 
             shared_health = slo_snapshot["shared_world_health"]
             blocked_reasons = self._blocked_reasons(

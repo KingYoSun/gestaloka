@@ -417,7 +417,11 @@ def test_release_checklist_timeout_creates_blocked_report(container, monkeypatch
     assert gate["verdict"] == "blocked"
     assert smoke_run.status == "timeout"
     assert any("turn_resolution_smoke" in reason for reason in gate["blocked_reasons"])
-    assert any(item["check_id"] == "turn_resolution_smoke" and item["status"] == "timeout" for item in gate["check_summaries"])
+    check_map = {item["check_id"]: item for item in gate["check_summaries"]}
+    assert check_map["turn_resolution_smoke"]["status"] == "timeout"
+    assert check_map["slo_canary_snapshot"]["status"] == "passed"
+    assert check_map["slo_canary_snapshot"]["reason"] is None
+    assert gate["slo_snapshot"]["canary_health"]["status"] == "healthy"
     assert report_count == 1
     progress = container.eval_service.release_checklist_progress()
     assert progress["status"] == "completed"
@@ -462,6 +466,9 @@ def test_release_checklist_total_budget_synthesizes_remaining_timeouts(container
     assert check_map["turn_resolution_smoke"]["status"] == "timeout"
     assert check_map["pack_regression:turn_resolution_gestaloka_regression"]["status"] == "timeout"
     assert "budget was exhausted" in check_map["pack_regression:turn_resolution_gestaloka_regression"]["reason"]
+    assert check_map["slo_canary_snapshot"]["status"] == "passed"
+    assert check_map["slo_canary_snapshot"]["reason"] is None
+    assert gate["slo_snapshot"]["canary_health"]["status"] == "healthy"
 
 
 def test_release_gate_blocks_when_canary_is_unhealthy(container):

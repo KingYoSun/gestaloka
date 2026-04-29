@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe playwright-mcp-clean observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -133,6 +133,9 @@ canary-down:
 
 canary-probe:
 	$(COMPOSE) exec -T -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness canary-probe
+
+playwright-mcp-clean:
+	scripts/cleanup_playwright_mcp.sh
 
 observability-up:
 	$(COMPOSE) up -d otel-collector prometheus grafana
