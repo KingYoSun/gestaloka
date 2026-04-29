@@ -37,12 +37,35 @@ class NarrativePreferencesPayload(BaseModel):
     dialogue_style: Literal["dialogue_forward", "literary"] = "literary"
 
 
+class PlayLanguagePayload(BaseModel):
+    mode: Literal["preset", "custom"] = "preset"
+    preset: Literal[
+        "ja",
+        "en",
+        "zh-Hans",
+        "zh-Hant",
+        "ko",
+        "es",
+        "fr",
+        "de",
+        "pt-BR",
+        "it",
+        "id",
+        "th",
+        "vi",
+        "ar",
+        "hi",
+    ] | None = "ja"
+    custom: str = Field(default="", max_length=80)
+
+
 class CreatePlayerProfileRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=40)
     gender: Literal["male", "female", "unspecified", "other"] = "unspecified"
     background: str = Field(default="", max_length=1200)
     free_text: str = Field(default="", max_length=2000)
     narrative_preferences: NarrativePreferencesPayload = Field(default_factory=NarrativePreferencesPayload)
+    play_language: PlayLanguagePayload | None = None
 
 
 class UpdatePlayerProfileRequest(BaseModel):
@@ -51,6 +74,7 @@ class UpdatePlayerProfileRequest(BaseModel):
     background: str | None = Field(default=None, max_length=1200)
     free_text: str | None = Field(default=None, max_length=2000)
     narrative_preferences: NarrativePreferencesPayload | None = None
+    play_language: PlayLanguagePayload | None = None
 
 
 def _ensure_membership(db: Session, world_id: str, user: UserIdentity) -> None:
@@ -134,6 +158,7 @@ def create_player_profile(
         background=payload.background,
         free_text=payload.free_text,
         narrative_preferences=payload.narrative_preferences.model_dump(),
+        play_language=payload.play_language.model_dump() if payload.play_language else None,
     )
     db.commit()
     return player_profile_to_dict(actor, profile)
@@ -166,6 +191,7 @@ def update_player_profile(
         background=payload.background,
         free_text=payload.free_text,
         narrative_preferences=payload.narrative_preferences.model_dump() if payload.narrative_preferences else None,
+        play_language=payload.play_language.model_dump() if payload.play_language else None,
     )
     assert updated is not None
     db.commit()

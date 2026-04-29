@@ -34,6 +34,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "quest_assignments",
         "items",
         "sessions",
+        "player_profiles",
         "events",
         "memories",
         "relationships",
@@ -64,6 +65,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     } <= tables
 
     event_columns = {column["name"] for column in inspector.get_columns("events")}
+    player_profile_columns = {column["name"] for column in inspector.get_columns("player_profiles")}
     turn_columns = {column["name"] for column in inspector.get_columns("turns")}
     quest_template_columns = {column["name"] for column in inspector.get_columns("quest_templates")}
     item_columns = {column["name"] for column in inspector.get_columns("items")}
@@ -82,6 +84,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     broadcast_event_columns = {column["name"] for column in inspector.get_columns("world_broadcast_events")}
     broadcast_delivery_columns = {column["name"] for column in inspector.get_columns("world_broadcast_deliveries")}
     assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
+    assert {"narrative_preferences", "preferences", "locked_at", "profile_setup_event_id"} <= player_profile_columns
     assert "resolution_mode" in turn_columns
     assert "action_type" in turn_columns
     assert {"langfuse_trace_id", "langfuse_trace_url", "langfuse_status"} <= turn_columns

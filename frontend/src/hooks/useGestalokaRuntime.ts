@@ -40,6 +40,8 @@ import type {
   OpsWorldPackCatalog,
   PlayableWorldCatalog,
   PlayableWorldItem,
+  PlayLanguage,
+  PlayLanguagePreset,
   PlayerProfile,
   ProjectionStatus,
   RebuildSummary,
@@ -59,7 +61,79 @@ import type {
   WorldTickItem,
 } from "../types";
 
-const defaultProfileDraft = {
+const playLanguagePromptNames: Record<PlayLanguagePreset, string> = {
+  ja: "Japanese",
+  en: "English",
+  "zh-Hans": "Simplified Chinese",
+  "zh-Hant": "Traditional Chinese",
+  ko: "Korean",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  "pt-BR": "Brazilian Portuguese",
+  it: "Italian",
+  id: "Indonesian",
+  th: "Thai",
+  vi: "Vietnamese",
+  ar: "Arabic",
+  hi: "Hindi",
+};
+
+const playLanguagePresets = Object.keys(playLanguagePromptNames) as PlayLanguagePreset[];
+
+function normalizeBrowserPreset(language: string): PlayLanguagePreset | null {
+  const normalized = language.toLowerCase();
+  if (normalized.startsWith("pt-br")) {
+    return "pt-BR";
+  }
+  if (normalized.startsWith("zh-hant") || normalized.includes("-tw") || normalized.includes("-hk")) {
+    return "zh-Hant";
+  }
+  if (normalized.startsWith("zh")) {
+    return "zh-Hans";
+  }
+  const base = normalized.split("-", 1)[0] as PlayLanguagePreset;
+  return playLanguagePresets.includes(base) ? base : null;
+}
+
+function browserLanguageName(language: string): string {
+  const fallback = language.trim() || "Japanese";
+  try {
+    const DisplayNames = (Intl as unknown as {
+      DisplayNames?: new (locales: string[], options: { type: "language" }) => { of(language: string): string | undefined };
+    }).DisplayNames;
+    if (!DisplayNames) {
+      return fallback;
+    }
+    const displayNames = new DisplayNames([language, "en"], { type: "language" });
+    return displayNames.of(language) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function playLanguageFromBrowser(): PlayLanguage {
+  const browserLanguage = window.navigator.languages?.[0] ?? window.navigator.language ?? "";
+  const preset = normalizeBrowserPreset(browserLanguage);
+  if (preset) {
+    return {
+      mode: "preset",
+      preset,
+      custom: "",
+      prompt_name: playLanguagePromptNames[preset],
+    };
+  }
+  const custom = browserLanguageName(browserLanguage).replace(/\s+/g, " ").trim().slice(0, 80);
+  return {
+    mode: "custom",
+    preset: null,
+    custom: custom || "Japanese",
+    prompt_name: custom || "Japanese",
+  };
+}
+
+function createDefaultProfileDraft() {
+  return {
   display_name: "",
   gender: "unspecified" as PlayerProfile["gender"],
   background: "",
@@ -70,7 +144,9 @@ const defaultProfileDraft = {
     density: "concise",
     dialogue_style: "literary",
   } as PlayerProfile["narrative_preferences"],
-};
+    play_language: playLanguageFromBrowser(),
+  };
+}
 
 export function useGestalokaRuntime() {
   const { t } = useTranslation();
@@ -88,7 +164,7 @@ export function useGestalokaRuntime() {
   const [playerProfiles, setPlayerProfiles] = useState<PlayerProfile[]>([]);
   const [selectedPlayerActorId, setSelectedPlayerActorId] = useState("");
   const [editingPlayerActorId, setEditingPlayerActorId] = useState("");
-  const [profileDraft, setProfileDraft] = useState(defaultProfileDraft);
+  const [profileDraft, setProfileDraft] = useState(() => createDefaultProfileDraft());
   const [profilePending, setProfilePending] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
@@ -161,6 +237,8 @@ export function useGestalokaRuntime() {
   const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
   const selectedWorld = playableWorlds.find((item) => item.world_id === worldId) ?? null;
   const selectedPlayerProfile = playerProfiles.find((item) => item.actor_id === selectedPlayerActorId) ?? null;
+  const editingPlayerProfile = playerProfiles.find((item) => item.actor_id === editingPlayerActorId) ?? null;
+  const editingProfileLocked = editingPlayerProfile?.locked ?? false;
   const worldCatalogUnavailable = worldCatalogStatus === "error";
   const visibleOpsWorlds = opsWorlds.filter((item) => {
     const context = item.world_context;
@@ -273,7 +351,7 @@ export function useGestalokaRuntime() {
       setPlayerProfiles([]);
       setSelectedPlayerActorId("");
       setEditingPlayerActorId("");
-      setProfileDraft(defaultProfileDraft);
+      setProfileDraft(createDefaultProfileDraft());
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -754,14 +832,20 @@ export function useGestalokaRuntime() {
       const path = editingPlayerActorId
         ? `/worlds/${worldId}/player-profiles/${editingPlayerActorId}`
         : `/worlds/${worldId}/player-profiles`;
+      const requestBody = editingProfileLocked
+        ? {
+            narrative_preferences: profileDraft.narrative_preferences,
+            play_language: profileDraft.play_language,
+          }
+        : {
+            ...profileDraft,
+            display_name: profileDraft.display_name.trim(),
+            background: profileDraft.background.trim(),
+            free_text: profileDraft.free_text.trim(),
+          };
       const saved = await apiFetch<PlayerProfile>(path, token, {
         method: editingPlayerActorId ? "PATCH" : "POST",
-        body: JSON.stringify({
-          ...profileDraft,
-          display_name: profileDraft.display_name.trim(),
-          background: profileDraft.background.trim(),
-          free_text: profileDraft.free_text.trim(),
-        }),
+        body: JSON.stringify(requestBody),
       });
       setPlayerProfiles((current) =>
         editingPlayerActorId
@@ -769,7 +853,7 @@ export function useGestalokaRuntime() {
           : [...current, saved],
       );
       setSelectedPlayerActorId(saved.actor_id);
-      setProfileDraft(defaultProfileDraft);
+      setProfileDraft(createDefaultProfileDraft());
       setEditingPlayerActorId("");
     } catch (requestError) {
       setError(formatError(requestError));
@@ -779,9 +863,6 @@ export function useGestalokaRuntime() {
   }
 
   function beginProfileEdit(profile: PlayerProfile) {
-    if (profile.locked) {
-      return;
-    }
     setEditingPlayerActorId(profile.actor_id);
     setProfileDraft({
       display_name: profile.display_name,
@@ -789,12 +870,13 @@ export function useGestalokaRuntime() {
       background: profile.background,
       free_text: profile.free_text,
       narrative_preferences: profile.narrative_preferences,
+      play_language: profile.play_language,
     });
   }
 
   function cancelProfileEdit() {
     setEditingPlayerActorId("");
-    setProfileDraft(defaultProfileDraft);
+    setProfileDraft(createDefaultProfileDraft());
   }
 
   async function handleStartSession(event: FormEvent<HTMLFormElement>) {
@@ -1178,6 +1260,7 @@ export function useGestalokaRuntime() {
     selectedPlayerProfile,
     setSelectedPlayerActorId,
     editingPlayerActorId,
+    editingProfileLocked,
     profileDraft,
     setProfileDraft,
     profilePending,

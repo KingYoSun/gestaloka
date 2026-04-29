@@ -11,7 +11,7 @@ import { StreamList } from "../../components/ui/StreamList";
 import { Textarea } from "../../components/ui/textarea";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
-import type { NarrativeChoice, PlayerProfile, WorldContext } from "../../types";
+import type { NarrativeChoice, PlayLanguagePreset, PlayerProfile, WorldContext } from "../../types";
 
 type PlayerPageProps = {
   runtime: GestalokaRuntime;
@@ -22,6 +22,42 @@ type TextItem = {
   title?: string;
   body: string;
   meta?: string;
+};
+
+const playLanguageOptions: Array<{ value: PlayLanguagePreset; label: string }> = [
+  { value: "ja", label: "日本語" },
+  { value: "en", label: "English" },
+  { value: "zh-Hans", label: "简体中文" },
+  { value: "zh-Hant", label: "繁體中文" },
+  { value: "ko", label: "한국어" },
+  { value: "es", label: "Español" },
+  { value: "fr", label: "Français" },
+  { value: "de", label: "Deutsch" },
+  { value: "pt-BR", label: "Português do Brasil" },
+  { value: "it", label: "Italiano" },
+  { value: "id", label: "Bahasa Indonesia" },
+  { value: "th", label: "ไทย" },
+  { value: "vi", label: "Tiếng Việt" },
+  { value: "ar", label: "العربية" },
+  { value: "hi", label: "हिन्दी" },
+];
+
+const playLanguagePromptNames: Record<PlayLanguagePreset, string> = {
+  ja: "Japanese",
+  en: "English",
+  "zh-Hans": "Simplified Chinese",
+  "zh-Hant": "Traditional Chinese",
+  ko: "Korean",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  "pt-BR": "Brazilian Portuguese",
+  it: "Italian",
+  id: "Indonesian",
+  th: "Thai",
+  vi: "Vietnamese",
+  ar: "Arabic",
+  hi: "Hindi",
 };
 
 function formatOpsEventSummary(data: Record<string, unknown>): string {
@@ -89,6 +125,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
     beginProfileEdit,
     cancelProfileEdit,
     editingPlayerActorId,
+    editingProfileLocked,
     handleCreatePlayerProfile,
     playableWorlds,
     playerProfiles,
@@ -157,6 +194,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
           {selectedPlayerProfile ? <ProfileSummary onEdit={beginProfileEdit} profile={selectedPlayerProfile} /> : null}
           <ProfileForm
             editingPlayerActorId={editingPlayerActorId}
+            editingProfileLocked={editingProfileLocked}
             onCancelEdit={cancelProfileEdit}
             profileDraft={profileDraft}
             profilePending={profilePending}
@@ -191,16 +229,18 @@ function ProfileSummary({ onEdit, profile }: { onEdit: (profile: PlayerProfile) 
     profile.narrative_preferences.density === "concise" ? t("player.profile.density.concise") : t("player.profile.density.ornate"),
     profile.narrative_preferences.dialogue_style === "dialogue_forward" ? t("player.profile.dialogueStyle.dialogueForward") : t("player.profile.dialogueStyle.literary"),
   ].join(" / ");
+  const playLanguageLabel = profile.play_language.mode === "custom"
+    ? profile.play_language.custom
+    : (playLanguageOptions.find((item) => item.value === profile.play_language.preset)?.label ?? profile.play_language.prompt_name);
   return (
     <Card>
       <CardContent className="grid gap-1 p-3">
         <p className="text-base font-bold leading-6 text-foreground">{profile.display_name}</p>
         <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{styleLabel}</p>
-        {!profile.locked ? (
-          <Button className="mt-1 w-fit" variant="secondary" type="button" onClick={() => onEdit(profile)}>
-            {t("common.edit")}
-          </Button>
-        ) : null}
+        <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{t("player.labels.playLanguage")}: {playLanguageLabel}</p>
+        <Button className="mt-1 w-fit" variant="secondary" type="button" onClick={() => onEdit(profile)}>
+          {t("common.edit")}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -209,6 +249,7 @@ function ProfileSummary({ onEdit, profile }: { onEdit: (profile: PlayerProfile) 
 function ProfileForm({
   onSubmit,
   editingPlayerActorId,
+  editingProfileLocked,
   onCancelEdit,
   profileDraft,
   profilePending,
@@ -216,12 +257,14 @@ function ProfileForm({
 }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   editingPlayerActorId: string;
+  editingProfileLocked: boolean;
   onCancelEdit: () => void;
   profileDraft: GestalokaRuntime["profileDraft"];
   profilePending: boolean;
   setProfileDraft: GestalokaRuntime["setProfileDraft"];
 }) {
   const { t } = useTranslation();
+  const playLanguageSelectValue = profileDraft.play_language.mode === "custom" ? "custom" : (profileDraft.play_language.preset ?? "ja");
   return (
     <form className="grid min-w-0 gap-3" onSubmit={onSubmit}>
       <Field label={t("player.labels.name")}>
@@ -229,12 +272,14 @@ function ProfileForm({
           data-testid="profile-display-name"
           value={profileDraft.display_name}
           maxLength={40}
+          disabled={editingProfileLocked}
           onChange={(event) => setProfileDraft((current) => ({ ...current, display_name: event.target.value }))}
         />
       </Field>
       <Field label={t("player.labels.gender")}>
         <NativeSelect
           value={profileDraft.gender}
+          disabled={editingProfileLocked}
           onChange={(event) =>
             setProfileDraft((current) => ({ ...current, gender: event.target.value as PlayerProfile["gender"] }))
           }
@@ -250,6 +295,7 @@ function ProfileForm({
           rows={3}
           value={profileDraft.background}
           maxLength={1200}
+          disabled={editingProfileLocked}
           onChange={(event) => setProfileDraft((current) => ({ ...current, background: event.target.value }))}
         />
       </Field>
@@ -258,9 +304,71 @@ function ProfileForm({
           rows={3}
           value={profileDraft.free_text}
           maxLength={2000}
+          disabled={editingProfileLocked}
           onChange={(event) => setProfileDraft((current) => ({ ...current, free_text: event.target.value }))}
         />
       </Field>
+      <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] gap-3 max-[640px]:grid-cols-1">
+        <Field label={t("player.labels.playLanguage")}>
+          <NativeSelect
+            data-testid="profile-play-language"
+            value={playLanguageSelectValue}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value === "custom") {
+                setProfileDraft((current) => ({
+                  ...current,
+                  play_language: {
+                    mode: "custom",
+                    preset: null,
+                    custom: current.play_language.custom || current.play_language.prompt_name,
+                    prompt_name: current.play_language.custom || current.play_language.prompt_name,
+                  },
+                }));
+                return;
+              }
+              const preset = value as PlayLanguagePreset;
+              setProfileDraft((current) => ({
+                ...current,
+                play_language: {
+                  mode: "preset",
+                  preset,
+                  custom: "",
+                  prompt_name: playLanguagePromptNames[preset],
+                },
+              }));
+            }}
+          >
+            {playLanguageOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+            <option value="custom">{t("player.profile.playLanguage.custom")}</option>
+          </NativeSelect>
+        </Field>
+        {profileDraft.play_language.mode === "custom" ? (
+          <Field label={t("player.profile.playLanguage.custom")}>
+            <Input
+              data-testid="profile-play-language-custom"
+              value={profileDraft.play_language.custom}
+              maxLength={80}
+              onChange={(event) => {
+                const custom = event.target.value;
+                setProfileDraft((current) => ({
+                  ...current,
+                  play_language: {
+                    mode: "custom",
+                    preset: null,
+                    custom,
+                    prompt_name: custom,
+                  },
+                }));
+              }}
+            />
+          </Field>
+        ) : null}
+      </div>
       <div className="grid grid-cols-2 gap-3 max-[480px]:grid-cols-1">
         <Field label={t("player.labels.perspective")}>
           <NativeSelect

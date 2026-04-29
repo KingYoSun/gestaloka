@@ -69,6 +69,25 @@ def _joined_state_summary(parts: list[tuple[str, Any]]) -> str:
     return "; ".join(summary_parts) or "The current same-world state has no additional visible facts."
 
 
+def _play_language_context(player_profile: Any) -> dict[str, Any]:
+    default = {"mode": "preset", "preset": "ja", "custom": "", "prompt_name": "Japanese"}
+    if not isinstance(player_profile, dict):
+        return default
+    play_language = player_profile.get("play_language")
+    if not isinstance(play_language, dict):
+        return default
+    prompt_name = _compact_text(play_language.get("prompt_name"))
+    mode = _compact_text(play_language.get("mode"))
+    if not prompt_name or mode not in {"preset", "custom"}:
+        return default
+    return {
+        "mode": mode,
+        "preset": play_language.get("preset") if play_language.get("preset") else None,
+        "custom": _compact_text(play_language.get("custom")),
+        "prompt_name": prompt_name,
+    }
+
+
 def _normalize_live_consequence_tokens(raw_tags: Any) -> list[str]:
     tokens = _memory_list(raw_tags)
     mapped: list[str] = []
@@ -605,6 +624,7 @@ class GMCouncilService:
         narrative_preferences = (
             player_profile.get("narrative_preferences") if isinstance(player_profile, dict) else {}
         ) or {}
+        play_language = _play_language_context(player_profile)
         return {
             "world_id": request.world_id,
             "input_mode": request.input_mode,
@@ -612,6 +632,7 @@ class GMCouncilService:
             "player_name": request.player_name,
             "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
+            "play_language": play_language,
             "npc_name": request.npc_name,
             "selected_choice": request.selected_choice or {},
             "world_pack": request.session_state.get("world_pack") or {},
@@ -847,6 +868,7 @@ class GMCouncilService:
         narrative_preferences = (
             player_profile.get("narrative_preferences") if isinstance(player_profile, dict) else {}
         ) or {}
+        play_language = _play_language_context(player_profile)
 
         intent_input = self._intent_input_payload(request)
         if request.prepared_intent_payload is not None and request.prepared_intent_role_run is not None:
@@ -923,6 +945,7 @@ class GMCouncilService:
             "player_name": request.player_name,
             "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
+            "play_language": play_language,
             "npc_name": request.npc_name,
             "relevant_memories": request.relevant_memories,
             "relation_context": request.relation_context,
@@ -984,6 +1007,7 @@ class GMCouncilService:
             "player_name": request.player_name,
             "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
+            "play_language": play_language,
             "npc_name": request.npc_name,
             "memory_summary": memory_payload.memory_summary,
             "focus_memories": memory_payload.focus_memories,
@@ -1044,6 +1068,7 @@ class GMCouncilService:
             "player_name": request.player_name,
             "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
+            "play_language": play_language,
             "npc_name": request.npc_name,
             "memory_summary": memory_payload.memory_summary,
             "relation_summary": memory_payload.relation_summary,
@@ -1139,6 +1164,7 @@ class GMCouncilService:
             "factions": request.session_state.get("factions") or [],
             "inventory": inventory,
             "input_mode": request.input_mode,
+            "play_language": play_language,
             "consequence_flags": intent_payload.consequence_flags,
             "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
@@ -1204,6 +1230,7 @@ class GMCouncilService:
             "world_tags": rules_payload.normalized_world_tags,
             "risk_level": rules_payload.risk_level,
             "input_mode": request.input_mode,
+            "play_language": play_language,
             "recognized_titles": recognized_titles,
             "shared_world_context": shared_world_context,
             "resource_constraints": request.session_state.get("resource_constraints") or [],
@@ -1251,6 +1278,7 @@ class GMCouncilService:
             "player_name": request.player_name,
             "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
+            "play_language": play_language,
             "npc_name": request.npc_name,
             "memory_summary": memory_payload.memory_summary,
             "reaction_outline": npc_payload.reaction_outline,

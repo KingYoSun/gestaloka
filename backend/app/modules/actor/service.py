@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Mapping
 
 from sqlalchemy import Select, select
@@ -22,6 +23,34 @@ DEFAULT_NARRATIVE_PREFERENCES = {
     "density": "concise",
     "dialogue_style": "literary",
 }
+PLAY_LANGUAGE_PRESETS = {
+    "ja": "Japanese",
+    "en": "English",
+    "zh-Hans": "Simplified Chinese",
+    "zh-Hant": "Traditional Chinese",
+    "ko": "Korean",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt-BR": "Brazilian Portuguese",
+    "it": "Italian",
+    "id": "Indonesian",
+    "th": "Thai",
+    "vi": "Vietnamese",
+    "ar": "Arabic",
+    "hi": "Hindi",
+}
+DEFAULT_PLAY_LANGUAGE = {
+    "mode": "preset",
+    "preset": "ja",
+    "custom": "",
+    "prompt_name": PLAY_LANGUAGE_PRESETS["ja"],
+}
+
+
+def _clean_play_language_custom(value: object) -> str:
+    text = "".join(" " if ord(character) < 32 or ord(character) == 127 else character for character in str(value or ""))
+    return re.sub(r"\s+", " ", text).strip()[:80]
 
 
 def normalize_narrative_preferences(value: Mapping[str, object] | None) -> dict[str, str]:
@@ -31,6 +60,31 @@ def normalize_narrative_preferences(value: Mapping[str, object] | None) -> dict[
         if candidate in allowed_values:
             preferences[key] = candidate
     return preferences
+
+
+def normalize_play_language(value: Mapping[str, object] | str | None) -> dict[str, str | None]:
+    if isinstance(value, str):
+        value = {"mode": "custom", "custom": value}
+    raw = dict(value or {})
+    mode = str(raw.get("mode") or "preset").strip()
+    preset = str(raw.get("preset") or "").strip()
+    custom = _clean_play_language_custom(raw.get("custom"))
+
+    if mode == "custom" and custom:
+        return {
+            "mode": "custom",
+            "preset": None,
+            "custom": custom,
+            "prompt_name": custom,
+        }
+    if preset in PLAY_LANGUAGE_PRESETS:
+        return {
+            "mode": "preset",
+            "preset": preset,
+            "custom": "",
+            "prompt_name": PLAY_LANGUAGE_PRESETS[preset],
+        }
+    return dict(DEFAULT_PLAY_LANGUAGE)
 
 
 def normalize_gender(value: str | None) -> str:
@@ -90,6 +144,7 @@ def create_player_profile_for_user(
     background: str = "",
     free_text: str = "",
     narrative_preferences: Mapping[str, object] | None = None,
+    play_language: Mapping[str, object] | str | None = None,
 ) -> tuple[Actor, PlayerProfile]:
     actor = Actor(
         world_id=world_id,
@@ -107,7 +162,7 @@ def create_player_profile_for_user(
         background=background.strip(),
         free_text=free_text.strip(),
         narrative_preferences=normalize_narrative_preferences(narrative_preferences),
-        preferences={},
+        preferences={"play_language": normalize_play_language(play_language)},
     )
     db.add(profile)
     db.flush()
@@ -125,12 +180,21 @@ def update_player_profile_for_user(
     background: str | None = None,
     free_text: str | None = None,
     narrative_preferences: Mapping[str, object] | None = None,
+    play_language: Mapping[str, object] | str | None = None,
 ) -> tuple[Actor, PlayerProfile] | None:
     row = get_player_profile_for_user(db, world_id, user_sub, actor_id)
     if row is None:
         return None
     actor, profile = row
     profile.narrative_preferences = normalize_narrative_preferences(narrative_preferences or profile.narrative_preferences)
+    preferences = dict(profile.preferences or {})
+    if play_language is not None:
+        preferences["play_language"] = normalize_play_language(play_language)
+    elif "play_language" in preferences:
+        preferences["play_language"] = normalize_play_language(preferences.get("play_language"))  # type: ignore[arg-type]
+    else:
+        preferences["play_language"] = normalize_play_language(None)
+    profile.preferences = preferences
     if profile.locked_at is None:
         if display_name is not None:
             actor.display_name = display_name.strip()
@@ -176,7 +240,7 @@ def ensure_player_actor(
             background="",
             free_text="",
             narrative_preferences=dict(DEFAULT_NARRATIVE_PREFERENCES),
-            preferences={},
+            preferences={"play_language": normalize_play_language(None)},
         )
     )
     db.flush()
@@ -189,6 +253,8 @@ def lock_player_profile(profile: PlayerProfile) -> None:
 
 
 def player_profile_to_dict(actor: Actor, profile: PlayerProfile) -> dict[str, object]:
+    preferences = dict(profile.preferences or {})
+    play_language = normalize_play_language(preferences.get("play_language"))  # type: ignore[arg-type]
     return {
         "actor_id": actor.id,
         "world_id": actor.world_id,
@@ -197,6 +263,7 @@ def player_profile_to_dict(actor: Actor, profile: PlayerProfile) -> dict[str, ob
         "background": profile.background,
         "free_text": profile.free_text,
         "narrative_preferences": normalize_narrative_preferences(profile.narrative_preferences),
+        "play_language": play_language,
         "locked": profile.locked_at is not None,
         "locked_at": profile.locked_at.isoformat() if profile.locked_at is not None else None,
         "profile_setup_event_id": profile.profile_setup_event_id,

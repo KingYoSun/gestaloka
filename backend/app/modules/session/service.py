@@ -2687,21 +2687,21 @@ def _canonicalize_next_choices(
         if fallback_action_kind == "travel":
             action_kind = "travel"
         label = str(
-            fallback.get("label")
-            or current.get("label")
+            current.get("label")
+            or fallback.get("label")
             or fallback.get("canonical_input_text")
             or posture
         ).strip()
         canonical_input_text = str(
-            fallback.get("canonical_input_text")
-            or current.get("canonical_input_text")
+            current.get("canonical_input_text")
             or current.get("intent_summary")
+            or fallback.get("canonical_input_text")
             or label
         ).strip()
         summary = str(
-            fallback.get("summary")
-            or current.get("summary")
+            current.get("summary")
             or current.get("intent_summary")
+            or fallback.get("summary")
             or label
         ).strip()
         normalized.append(

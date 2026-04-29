@@ -106,6 +106,30 @@ export type NarrativePreferences = {
   dialogue_style: "dialogue_forward" | "literary";
 };
 
+export type PlayLanguagePreset =
+  | "ja"
+  | "en"
+  | "zh-Hans"
+  | "zh-Hant"
+  | "ko"
+  | "es"
+  | "fr"
+  | "de"
+  | "pt-BR"
+  | "it"
+  | "id"
+  | "th"
+  | "vi"
+  | "ar"
+  | "hi";
+
+export type PlayLanguage = {
+  mode: "preset" | "custom";
+  preset: PlayLanguagePreset | null;
+  custom: string;
+  prompt_name: string;
+};
+
 export type PlayerProfile = {
   actor_id: string;
   world_id: string;
@@ -114,6 +138,7 @@ export type PlayerProfile = {
   background: string;
   free_text: string;
   narrative_preferences: NarrativePreferences;
+  play_language: PlayLanguage;
   locked: boolean;
   locked_at: string | null;
   profile_setup_event_id: string | null;

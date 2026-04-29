@@ -36,6 +36,7 @@ const resources = {
           gender: "性別",
           background: "背景",
           freeTextProfile: "自由記述",
+          playLanguage: "プレイ言語設定",
           perspective: "視点",
           tone: "調子",
           density: "密度",
@@ -76,6 +77,9 @@ const resources = {
           dialogueStyle: {
             literary: "文語的",
             dialogueForward: "セリフ中心",
+          },
+          playLanguage: {
+            custom: "自由入力",
           },
         },
         story: {
@@ -159,6 +163,7 @@ const resources = {
           gender: "Gender",
           background: "Background",
           freeTextProfile: "Free text",
+          playLanguage: "Play language",
           perspective: "Perspective",
           tone: "Tone",
           density: "Density",
@@ -199,6 +204,9 @@ const resources = {
           dialogueStyle: {
             literary: "Literary",
             dialogueForward: "Dialogue-forward",
+          },
+          playLanguage: {
+            custom: "Custom",
           },
         },
         story: {

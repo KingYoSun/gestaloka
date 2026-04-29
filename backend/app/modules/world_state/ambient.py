@@ -25,7 +25,7 @@ from app.models.entities import (
     Turn,
     WorldTick,
 )
-from app.modules.actor.service import adjust_relationship_strength
+from app.modules.actor.service import adjust_relationship_strength, normalize_play_language
 from app.modules.llm_harness.service import CouncilRoleRun, ModelRouter, PromptExecutionOutcome
 from app.modules.world_memory.service import MemoryService, build_retrieval_query_text
 from app.modules.world_state.consequence import relationship_band, relationship_summary, thread_summary, thread_title
@@ -904,6 +904,8 @@ class AmbientWorldPassService:
         session_state: dict[str, Any],
     ) -> AmbientPassResult:
         current_scene = session_state.get("current_scene") or {}
+        player_profile = session_state.get("player_profile") if isinstance(session_state.get("player_profile"), dict) else {}
+        play_language = normalize_play_language((player_profile or {}).get("play_language"))
         focus_actor = current_scene.get("focus_actor") or {}
         focus_actor_id = focus_actor.get("actor_id") if isinstance(focus_actor, dict) else None
         participants = _select_participants(
@@ -957,6 +959,7 @@ class AmbientWorldPassService:
                 input_payload={
                     "world_id": world_id,
                     "player_name": player_name,
+                    "play_language": play_language,
                     "npc_name": participant.actor.display_name,
                     "routine_state": routine_state,
                     "relevant_memories": relevant_memories,
@@ -994,6 +997,7 @@ class AmbientWorldPassService:
                 input_payload={
                     "world_id": world_id,
                     "player_name": player_name,
+                    "play_language": play_language,
                     "npc_name": participant.actor.display_name,
                     "routine_state": routine_state,
                     "memory_summary": memory_payload.memory_summary,
@@ -1034,6 +1038,7 @@ class AmbientWorldPassService:
                 response_model=AmbientSafetyGuardPayload,
                 input_payload={
                     "world_id": world_id,
+                    "play_language": play_language,
                     "npc_name": participant.actor.display_name,
                     "beat_kind": beat_payload.beat_kind,
                     "summary": beat_payload.summary,
@@ -1163,6 +1168,8 @@ class AmbientWorldPassService:
         seed_turn_id: str,
         session_state: dict[str, Any],
     ) -> IdleWorldPassResult:
+        player_profile = session_state.get("player_profile") if isinstance(session_state.get("player_profile"), dict) else {}
+        play_language = normalize_play_language((player_profile or {}).get("play_language"))
         participants = _select_idle_participants(db, world_id=world_id, location_id=location_id)
         if not participants:
             return IdleWorldPassResult(
@@ -1210,6 +1217,7 @@ class AmbientWorldPassService:
                 response_model=AmbientMemoryManagerPayload,
                 input_payload={
                     "world_id": world_id,
+                    "play_language": play_language,
                     "npc_name": participant.actor.display_name,
                     "routine_state": routine_state,
                     "relevant_memories": [item.text for item in retrieval.memories],
@@ -1234,6 +1242,7 @@ class AmbientWorldPassService:
                 response_model=IdleNPCManagerPayload,
                 input_payload={
                     "world_id": world_id,
+                    "play_language": play_language,
                     "npc_name": participant.actor.display_name,
                     "routine_state": routine_state,
                     "memory_summary": memory_payload.memory_summary,
@@ -1275,6 +1284,7 @@ class AmbientWorldPassService:
                 response_model=AmbientSafetyGuardPayload,
                 input_payload={
                     "world_id": world_id,
+                    "play_language": play_language,
                     "npc_name": participant.actor.display_name,
                     "beat_kind": beat_payload.beat_kind,
                     "summary": beat_payload.summary,

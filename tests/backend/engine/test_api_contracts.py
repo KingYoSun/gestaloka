@@ -211,6 +211,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
                 "density": "ornate",
                 "dialogue_style": "dialogue_forward",
             },
+            "play_language": {"mode": "custom", "custom": "  Pirate\nCant  "},
         },
         headers=auth_headers,
     )
@@ -222,6 +223,9 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
 
     assert first.status_code == 200
     assert second.status_code == 200
+    assert first.json()["play_language"]["mode"] == "custom"
+    assert first.json()["play_language"]["prompt_name"] == "Pirate Cant"
+    assert second.json()["play_language"]["preset"] == "ja"
     profile_list = client.get("/worlds/gestaloka_reference/player-profiles", headers=auth_headers)
     assert [item["display_name"] for item in profile_list.json()["items"]] == ["Akari", "Ren"]
 
@@ -237,6 +241,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert first_session.json()["player_profile"]["locked"] is True
     state = client.get(f"/sessions/{first_session.json()['session_id']}/state", headers=auth_headers)
     assert state.json()["player_profile"]["narrative_preferences"]["perspective"] == "first_person"
+    assert state.json()["player_profile"]["play_language"]["prompt_name"] == "Pirate Cant"
 
     identity_patch = client.patch(
         f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
@@ -245,12 +250,36 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     )
     style_patch = client.patch(
         f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
-        json={"narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"}},
+        json={
+            "narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"},
+            "play_language": {"mode": "preset", "preset": "en"},
+        },
         headers=auth_headers,
     )
     assert identity_patch.status_code == 409
     assert style_patch.status_code == 200
     assert style_patch.json()["narrative_preferences"]["perspective"] == "third_person"
+    assert style_patch.json()["play_language"]["prompt_name"] == "English"
+
+    turn_response = client.post(
+        "/turns",
+        json={"session_id": first_session.json()["session_id"], "input_mode": "choice", "choice_id": "safe"},
+        headers=auth_headers,
+    )
+    assert turn_response.status_code == 200
+    langfuse_records = container.observability_service._langfuse_client.records
+    world_progress_inputs = [
+        item["input"]
+        for item in langfuse_records
+        if item.get("event") == "enter" and item.get("name") == "council.world_progress"
+    ]
+    narrative_inputs = [
+        item["input"]
+        for item in langfuse_records
+        if item.get("event") == "enter" and item.get("name") == "council.narrative"
+    ]
+    assert world_progress_inputs[-1]["play_language"]["prompt_name"] == "English"
+    assert narrative_inputs[-1]["play_language"]["prompt_name"] == "English"
 
     with container.session_factory() as db:
         profile = db.get(PlayerProfile, {"actor_id": first.json()["actor_id"], "world_id": "gestaloka_reference"})
