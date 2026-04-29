@@ -103,17 +103,33 @@ export function PlayerPage({ runtime }: PlayerPageProps) {
 function FirstView({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
   return (
-    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label={t("player.labels.start")}>
-      <p className="text-sm font-bold leading-[21px] text-foreground">{t("common.brand")}</p>
-      <div className="grid w-full max-w-80 min-w-0 self-center gap-4 max-[480px]:max-w-none">
-        <Button data-testid="sign-in" onClick={runtime.handleLogin} disabled={!runtime.ready}>
-          <LogIn aria-hidden="true" />
-          {t("auth.signIn")}
-        </Button>
-        <Button variant="secondary" onClick={runtime.handleRegister} disabled={!runtime.ready}>
-          <UserPlus aria-hidden="true" />
-          {t("auth.register")}
-        </Button>
+    <section className="grid min-h-[calc(100vh-5rem)] place-items-center py-8" aria-label={t("player.labels.start")}>
+      <div className="grid w-full min-w-0 justify-items-center gap-5 text-center">
+        <img
+          className="size-36 object-contain drop-shadow-sm max-[480px]:size-28"
+          src="/brand/logo.png"
+          alt=""
+          aria-hidden="true"
+        />
+        <div className="grid min-w-0 justify-items-center gap-3">
+          <h1 className="max-w-full text-[4.5rem] font-normal leading-none tracking-normal text-foreground max-[480px]:text-[3rem] max-[360px]:text-[2.5rem]">
+            {t("common.brandWordmark")}
+          </h1>
+          <div className="h-0.5 w-10 rounded-full bg-primary" aria-hidden="true" />
+          <p className="text-sm font-semibold uppercase leading-5 tracking-[0.32em] text-muted-foreground max-[480px]:text-xs max-[480px]:tracking-[0.22em]">
+            {t("common.tagline")}
+          </p>
+        </div>
+        <div className="mt-3 grid w-full max-w-sm min-w-0 gap-3 max-[480px]:max-w-none">
+          <Button data-testid="sign-in" onClick={runtime.handleLogin} disabled={!runtime.ready}>
+            <LogIn aria-hidden="true" />
+            {t("auth.signIn")}
+          </Button>
+          <Button variant="secondary" onClick={runtime.handleRegister} disabled={!runtime.ready}>
+            <UserPlus aria-hidden="true" />
+            {t("auth.register")}
+          </Button>
+        </div>
       </div>
     </section>
   );
@@ -149,7 +165,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
 
   return (
     <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label={t("player.labels.worldStart")}>
-      <p className="text-sm font-bold leading-[21px] text-foreground">{t("common.brand")}</p>
+      <p className="text-sm font-bold lowercase leading-[21px] tracking-[0.16em] text-foreground">{t("common.brandWordmark")}</p>
       <div className="grid min-w-0 grid-cols-[minmax(0,320px)_minmax(0,620px)] items-start gap-4 self-center max-[940px]:grid-cols-1">
         <div className="grid min-w-0 gap-3">
           <Field label={t("player.labels.world")}>
@@ -482,7 +498,7 @@ function SceneHeader({ runtime }: PlayerPageProps) {
 
   return (
     <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label={t("player.labels.scene")}>
-      <p className="text-sm font-bold leading-[21px] text-foreground">{t("common.brand")}</p>
+      <p className="text-sm font-bold lowercase leading-[21px] tracking-[0.16em] text-foreground">{t("common.brandWordmark")}</p>
       <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="session-location">
         {location?.name ?? session?.world_name ?? t("player.world.startLocation")}
       </p>

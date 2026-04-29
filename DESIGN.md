@@ -7,72 +7,75 @@
 
 ## 1. Visual Theme & Atmosphere
 
-- **デザイン方針**: 読みやすさを最優先にした、落ち着いたテキスト体験。物語、選択肢、ログ、履歴、管理情報が主役になるよう、装飾は控えめにする。
+- **デザイン方針**: `designs/design.png` の Living World Spiral を基準にした、生成りの紙面に物語が浮かぶブランド体験。物語、選択肢、ログ、履歴、管理情報が主役になるよう、装飾はロゴ・線・質感に限定する。
 - **密度**: 物語本文はゆったり、管理画面や ops 表示は密度を上げすぎず、スキャンしやすい余白を保つ。
-- **キーワード**: 読みやすい、温かい、ミニマル、コンテンツファースト、落ち着き、長時間読んでも疲れにくい。
-- **特徴**: 純粋な黒（`#000000`）ではなく、ほぼ黒の `#08131a` を使用し、柔らかい読書体験を提供する。ダークモードは CSS Custom Properties で切り替える。
+- **キーワード**: 読みやすい、温かい、紙質感、共有世界、記憶、成長、長時間読んでも疲れにくい。
+- **特徴**: 通常モードは cream / warm off-white を面背景に使う。navy は本文、ロゴ、細線、アイコンなどの前景用途に限定し、通常モードのページ、section、card、hero、button fill など大面積背景には使わない。ダークモードでは navy を背景色の基準にする。
 
 ---
 
 ## 2. Color Palette & Roles
 
-### Primary（アクセントカラー）
+### Brand（Living World Spiral）
 
-- **Reference Green** (`#5ac8b8`): note 由来のアクセント色。GESTALOKA ではロゴ的表現、差し色、軽いアクセントに限定して使う。広い本文色や主要 CTA 文字色には使わない。
+- **Navy** (`#0b2034`): ロゴ、本文、細線、アイコン。通常モードでは面背景に使わない。ダークモード背景の基準色。
+- **Gold** (`#c6922e`): primary CTA、短い下線、重要なアクセント、選択中状態。
+- **Sage** (`#65785f`): セカンダリテキスト、補助見出し、穏やかな状態表示。
+- **Cream** (`#f2eadf`): 通常モードのページ背景、first view 背景、紙質感の基準。
+- **Aqua** (`#7bcfd0`): story-seed の差し色、フォーカス補助、軽い強調。広い背景や本文色には使わない。
 
 ### Semantic（意味的な色）
 
-- **Success** — surface: `#1e7b65`, text: `#1e7b65`, subdued: `#e6f6f2`
+- **Success** — surface: `#65785f`, text: `#51654d`, subdued: `#eef3e9`
 - **Danger** — surface: `#b22323`, text: `#b22323`, subdued: `#fdf3f3`
-- **Caution** — surface: `#916626`, text: `#916626`, subdued: `#fefbea`
+- **Caution** — surface: `#c6922e`, text: `#8d641d`, subdued: `#fbf0d7`
 - **Like / Positive Reaction** — surface: `#d13e5c`, text: `#d13e5c`
 - **Offer / Highlight Reaction** — surface: `#d13e5c`, text: `#d13e5c`
 - **Badge** (`#d53c21`): 通知バッジ、未処理件数など
-- **Point** — text: `#8b7f2c`
+- **Point** — text: `#c6922e`
 
 ### Neutral — Gray Scale
 
-- **Gray 900** (`#08131a`): 本文テキスト（ほぼ黒）
-- **Gray 800** (`#202a30`): 濃いテキスト
-- **Gray 700** (`#363f42`): 強調テキスト
-- **Gray 600** (`#5a656b`): セカンダリテキスト
-- **Gray 500** (`#7e888f`): 薄いテキスト
-- **Gray 400** (`#9ca7ad`): プレースホルダー
-- **Gray 300** (`#aeb7bd`): 無効状態
-- **Gray 200** (`#c5ccd1`): 薄いボーダー
-- **Gray 100** (`#dce0e3`): ボーダー
-- **Gray 50** (`#f5f8fa`): セカンダリ背景
+- **Navy 900** (`#0b2034`): 本文テキスト、ロゴ、強い線
+- **Navy 800** (`#12304a`): ダークモードカード、濃い補助面
+- **Sage 700** (`#65785f`): セカンダリテキスト、補助線
+- **Sage 500** (`#8b9a84`): 薄いテキスト、プレースホルダー
+- **Cream 100** (`#f8f2e8`): カード、フォーム面
+- **Cream 200** (`#f2eadf`): ページ背景
+- **Cream 300** (`#e6d8c5`): ボーダー、区切り
 
 ### Text（テキスト色）
 
-- **Text Primary** (`#08131a`): 本文テキスト。ダーク: `hsla(0,0%,100%,0.90)`
-- **Text Secondary** (`rgba(8,19,26,0.66)`): 補足テキスト。ダーク: `hsla(0,0%,100%,0.66)`
-- **Text Clickable Icon** (`rgba(8,19,26,0.50)`): クリック可能アイコン
-- **Text Disabled** (`rgba(8,19,26,0.50)`): 無効テキスト
+- **Text Primary** (`#0b2034`): 本文テキスト。ダーク: `hsla(38,62%,93%,0.92)`
+- **Text Secondary** (`#65785f`): 補足テキスト。ダーク: `hsla(38,62%,93%,0.70)`
+- **Text Clickable Icon** (`rgba(11,32,52,0.62)`): クリック可能アイコン
+- **Text Disabled** (`rgba(11,32,52,0.44)`): 無効テキスト
 - **Text Invert** (`#ffffff`): 反転テキスト（暗い背景上）
-- **Text Placeholder** (`#888`): プレースホルダー
+- **Text Placeholder** (`#8b9a84`): プレースホルダー
 
 ### Surface & Borders
 
-- **Background Primary** (`#fff`): ページ背景
-- **Background Secondary** (`#f5f8fa`): セクション背景
-- **Surface Normal** (`#fff`): カード等の面
-- **Surface Primary** (`#08131a`): プライマリ面（CTA等）。reaction: `#202a30`
-- **Surface Secondary** (`#43709d`): セカンダリ面
-- **Surface Tertiary** (`#5a656b`): 第三階層面
-- **Surface Quaternary** (`#f5f8fa`): 第四階層面
-- **Surface Invert** (`#000`): 反転面。本文色としての多用は避ける。
+- **Background Primary** (`#f2eadf`): 通常モードのページ背景
+- **Background Secondary** (`#f8f2e8`): セクション背景、フォーム背景
+- **Background Texture** (`/brand/texture.png`): 通常モードの紙質感。低濃度で重ね、文字の可読性を優先する。
+- **Dark Background** (`#0b2034`): ダークモード背景
+- **Surface Normal** (`#fffaf1`): カード等の面
+- **Surface Primary** (`#c6922e`): プライマリ CTA。通常モードで navy の塗り CTA は使わない。
+- **Surface Secondary** (`#f8f2e8`): セカンダリ面
+- **Surface Tertiary** (`#e6d8c5`): 第三階層面
+- **Surface Quaternary** (`#f2eadf`): 第四階層面
+- **Surface Invert** (`#0b2034`): ダークモードまたは reverse lockup 専用
 - **Surface Clear** (`hsla(0,0%,100%,0)`): 透明面
-- **Border Default** (`rgba(8,19,26,0.14)`): 標準ボーダー
-- **Border Strong** (`rgba(8,19,26,0.22)`): 強いボーダー
-- **Border Weak** (`#f5f8fa`): 弱いボーダー
-- **Border Primary** (`#08131a`): プライマリボーダー
-- **Border Focus** (`#292d9e`): フォーカスリング（darkblue-600）
+- **Border Default** (`rgba(11,32,52,0.16)`): 標準ボーダー
+- **Border Strong** (`rgba(11,32,52,0.26)`): 強いボーダー
+- **Border Weak** (`rgba(198,146,46,0.24)`): 弱い装飾線
+- **Border Primary** (`#c6922e`): プライマリボーダー
+- **Border Focus** (`#7bcfd0`): フォーカスリング
 - **Border Invert** (`#fff`): 反転ボーダー
 
 ### Accent / Action
 
-- **Custom Accent** (`#08131a`): CTA（ライトモード）。reaction: `#202a30`
+- **Custom Accent** (`#c6922e`): CTA（ライトモード）
 - **Disabled** (`rgba(0,0,0,0.14)`): 無効状態の面
 
 ---
@@ -222,11 +225,12 @@ font-feature-settings: normal;
 ### Buttons
 
 **Primary（CTA）**
-- Background: `#08131a`（ライトモード）
-- Text: `#ffffff`
+- Background: `#c6922e`（ライトモード）
+- Text: `#0b2034`
 - Border Radius: 適度な角丸
 - Font Size: 1rem (16px)
 - Font Weight: 700
+- 通常モードでは navy 塗りの CTA を使わない。navy はテキスト、ロゴ、細線、アイコンに限定する。
 
 **Reaction / Positive Button**
 - Active Color: `#d13e5c`
@@ -234,8 +238,8 @@ font-feature-settings: normal;
 
 ### Cards / Panels
 
-- Background: `#fff`
-- Border: `rgba(8,19,26,0.14)`
+- Background: `#fffaf1`
+- Border: `rgba(11,32,52,0.16)`
 - Border Radius: 12px
 - Shadow: `--elevation-1`（下記参照）
 - 物語本文を入れるカードは幅を広げすぎず、本文の可読幅を優先する。
@@ -243,10 +247,17 @@ font-feature-settings: normal;
 
 ### Navigation
 
-- Background: `#fff`
-- Border Bottom: `rgba(8,19,26,0.14)`
+- Background: `#f2eadf`
+- Border Bottom: `rgba(11,32,52,0.16)`
 - Height: 64px（デスクトップ）/ 48px（モバイル）
 - グローバルな導線は短いラベルと安定した配置を優先し、物語本文の読書を妨げない。
+
+### First View / Brand Lockup
+
+- 背景は cream / warm off-white と `texture.png` の紙質感を使い、navy の大面積背景は禁止する。
+- 中央に `logo.png`、lowercase の `gestaloka`、`SHARED WORLD. LIVED STORIES` を縦積みにする。
+- CTA はロゴ下に配置し、primary は gold、secondary は生成り/透明系にする。
+- ロゴは通常モードでは `logo.png` をそのまま使い、ダークモードでは同じロゴを reverse lockup の前景として扱う。
 
 ---
 
@@ -291,20 +302,22 @@ font-feature-settings: normal;
 
 ### Do（推奨）
 
-- テキスト色は `#08131a`（ほぼ黒）を使い、純粋な `#000000` を避ける。
-- セカンダリテキストは同じ色相の opacity 違い（`rgba(8,19,26,0.66)`）で表現する。
+- テキスト色は `#0b2034`（navy）を使い、純粋な `#000000` を避ける。
+- 通常モードの背景は cream / warm off-white 系を使い、紙質感を薄く重ねる。
+- セカンダリテキストは `#65785f` を基準に表現する。
 - 物語本文は `font-size: 18px` + `line-height: 2.0` で組む。
 - 物語本文、選択肢、ログ、履歴などの読ませる領域は 620px 前後の可読幅を優先する。
 - `letter-spacing: 0.04em` と `palt` は**見出し (h1, h2, app h3) にのみ**適用する。
 - 明朝体オプションを提供する場合は、完全な明朝体フォールバックチェーンを使う。
-- ダークモードでは全色を CSS Custom Properties で切り替える。
+- ダークモードでは navy `#0b2034` を背景色の基準にし、全色を CSS Custom Properties で切り替える。
 - 管理画面や ops 表示でも同じ色トークン、ボーダー、余白ルールを使う。
 
 ### Don't（禁止）
 
 - 純粋な `#000000` を通常本文に使わない。
+- 通常モードで navy `#0b2034` をページ、section、card、hero、button fill などの面背景に使わない。
 - 物語本文の可読幅を不用意に 620px 以上へ広げない。
-- アクセントカラー `#5ac8b8` を広い本文や低コントラストなテキストに使わない。
+- aqua `#7bcfd0` を広い本文や低コントラストなテキストに使わない。
 - ゴシック体と明朝体を同じ文章内で混ぜない。
 - `letter-spacing: 0.04em` や `palt` を本文 (p) に適用しない。
 - 色値をコンポーネント内へ散らさず、CSS Custom Properties への集約を優先する。
@@ -342,17 +355,22 @@ font-feature-settings: normal;
 ### クイックリファレンス
 
 ```text
-Accent Color: #5ac8b8（ロゴ・アクセント用）
-CTA Background: #08131a（ライトモード）
-Text Primary: #08131a
-Text Secondary: rgba(8,19,26,0.66)
-Background: #ffffff
-Background Secondary: #f5f8fa
-Border: rgba(8,19,26,0.14)
+Brand Navy: #0b2034（通常モードは前景用、ダークモード背景用）
+Brand Gold: #c6922e（CTA・アクセント用）
+Brand Sage: #65785f（補助テキスト・状態用）
+Brand Cream: #f2eadf（通常モード背景用）
+Brand Aqua: #7bcfd0（focus・軽い差し色用）
+CTA Background: #c6922e（ライトモード）
+Text Primary: #0b2034
+Text Secondary: #65785f
+Background: #f2eadf
+Background Secondary: #f8f2e8
+Card: #fffaf1
+Border: rgba(11,32,52,0.16)
 Reaction Color: #d13e5c
 Danger: #b22323
-Success: #1e7b65
-Focus Ring: #292d9e
+Success: #65785f
+Focus Ring: #7bcfd0
 
 Sans-Serif Font: "Helvetica Neue", "Hiragino Sans",
   "Hiragino Kaku Gothic ProN", Arial, "Noto Sans JP", Meiryo, sans-serif
@@ -371,12 +389,13 @@ Reading Width: 620px
 GESTALOKA v2 の DESIGN.md に従って、物語本文と選択肢の UI を調整してください。
 - フォント: "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
     Arial, "Noto Sans JP", Meiryo, sans-serif
-- テキスト色: #08131a（通常本文に純粋な黒は使わない）
-- セカンダリテキスト: rgba(8,19,26,0.66)
-- 背景: #ffffff、セクション背景: #f5f8fa
-- ボーダー: rgba(8,19,26,0.14)
+- テキスト色: #0b2034（通常本文に純粋な黒は使わない）
+- セカンダリテキスト: #65785f
+- 背景: #f2eadf、セクション背景: #f8f2e8、カード: #fffaf1
+- ボーダー: rgba(11,32,52,0.16)
+- 通常モードでは navy #0b2034 を面背景に使わない
 - 読ませる領域: 620px 前後
 - 物語本文: 18px, line-height: 2.0, letter-spacing: normal
 - 見出し: letter-spacing: 0.04em, font-feature-settings: "palt"
-- ダークモード対応: CSS Custom Properties で色を切り替え
+- ダークモード対応: navy #0b2034 を背景基準に CSS Custom Properties で色を切り替え
 ```

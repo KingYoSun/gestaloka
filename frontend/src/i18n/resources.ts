@@ -4,6 +4,8 @@ const resources = {
       common: {
         appTitle: "GESTALOKA v2",
         brand: "GESTALOKA",
+        brandWordmark: "gestaloka",
+        tagline: "SHARED WORLD. LIVED STORIES",
         cancel: "取消",
         create: "作成",
         edit: "編集",
@@ -133,6 +135,8 @@ const resources = {
       common: {
         appTitle: "GESTALOKA v2",
         brand: "GESTALOKA",
+        brandWordmark: "gestaloka",
+        tagline: "SHARED WORLD. LIVED STORIES",
         cancel: "Cancel",
         create: "Create",
         edit: "Edit",

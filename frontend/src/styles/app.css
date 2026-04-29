@@ -29,26 +29,31 @@
 
 :root {
   color-scheme: light;
-  --background: #ffffff;
-  --foreground: #08131a;
-  --card: #ffffff;
-  --card-foreground: #08131a;
-  --popover: #ffffff;
-  --popover-foreground: #08131a;
-  --primary: #08131a;
-  --primary-foreground: #ffffff;
-  --secondary: #f5f8fa;
-  --secondary-foreground: #08131a;
-  --muted: #f5f8fa;
-  --muted-foreground: rgba(8, 19, 26, 0.66);
-  --accent: #5ac8b8;
-  --accent-foreground: #08131a;
+  --brand-navy: #0b2034;
+  --brand-gold: #c6922e;
+  --brand-sage: #65785f;
+  --brand-cream: #f2eadf;
+  --brand-aqua: #7bcfd0;
+  --background: #f2eadf;
+  --foreground: #0b2034;
+  --card: #fffaf1;
+  --card-foreground: #0b2034;
+  --popover: #fffaf1;
+  --popover-foreground: #0b2034;
+  --primary: #c6922e;
+  --primary-foreground: #0b2034;
+  --secondary: #f8f2e8;
+  --secondary-foreground: #0b2034;
+  --muted: #f8f2e8;
+  --muted-foreground: #65785f;
+  --accent: #7bcfd0;
+  --accent-foreground: #0b2034;
   --destructive: #b22323;
-  --border: rgba(8, 19, 26, 0.14);
-  --input: rgba(8, 19, 26, 0.14);
-  --ring: #292d9e;
-  --caution: #916626;
-  --success: #1e7b65;
+  --border: rgba(11, 32, 52, 0.16);
+  --input: rgba(11, 32, 52, 0.22);
+  --ring: #7bcfd0;
+  --caution: #8d641d;
+  --success: #51654d;
   --radius: 8px;
   --font-sans: "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Arial, "Noto Sans JP", Meiryo, sans-serif;
   --font-serif: "Hiragino Mincho ProN", "Hiragino Mincho Pro", HGSMinchoE, "Yu Mincho", YuMincho, "MS PMincho", serif;
@@ -58,43 +63,43 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --background: #08131a;
-    --foreground: hsla(0, 0%, 100%, 0.9);
-    --card: #101a21;
-    --card-foreground: hsla(0, 0%, 100%, 0.9);
-    --popover: #101a21;
-    --popover-foreground: hsla(0, 0%, 100%, 0.9);
-    --primary: #f5f8fa;
-    --primary-foreground: #08131a;
-    --secondary: #101a21;
-    --secondary-foreground: hsla(0, 0%, 100%, 0.9);
-    --muted: #101a21;
-    --muted-foreground: hsla(0, 0%, 100%, 0.66);
-    --accent: #5ac8b8;
-    --accent-foreground: #08131a;
-    --border: hsla(0, 0%, 100%, 0.16);
-    --input: hsla(0, 0%, 100%, 0.16);
+    --background: #0b2034;
+    --foreground: hsla(38, 62%, 93%, 0.92);
+    --card: #12304a;
+    --card-foreground: hsla(38, 62%, 93%, 0.92);
+    --popover: #12304a;
+    --popover-foreground: hsla(38, 62%, 93%, 0.92);
+    --primary: #c6922e;
+    --primary-foreground: #0b2034;
+    --secondary: #18384f;
+    --secondary-foreground: hsla(38, 62%, 93%, 0.92);
+    --muted: #18384f;
+    --muted-foreground: hsla(38, 62%, 93%, 0.7);
+    --accent: #7bcfd0;
+    --accent-foreground: #0b2034;
+    --border: hsla(38, 62%, 93%, 0.18);
+    --input: hsla(38, 62%, 93%, 0.24);
   }
 }
 
 .theme-dark {
   color-scheme: dark;
-  --background: #08131a;
-  --foreground: hsla(0, 0%, 100%, 0.9);
-  --card: #101a21;
-  --card-foreground: hsla(0, 0%, 100%, 0.9);
-  --popover: #101a21;
-  --popover-foreground: hsla(0, 0%, 100%, 0.9);
-  --primary: #f5f8fa;
-  --primary-foreground: #08131a;
-  --secondary: #101a21;
-  --secondary-foreground: hsla(0, 0%, 100%, 0.9);
-  --muted: #101a21;
-  --muted-foreground: hsla(0, 0%, 100%, 0.66);
-  --accent: #5ac8b8;
-  --accent-foreground: #08131a;
-  --border: hsla(0, 0%, 100%, 0.16);
-  --input: hsla(0, 0%, 100%, 0.16);
+  --background: #0b2034;
+  --foreground: hsla(38, 62%, 93%, 0.92);
+  --card: #12304a;
+  --card-foreground: hsla(38, 62%, 93%, 0.92);
+  --popover: #12304a;
+  --popover-foreground: hsla(38, 62%, 93%, 0.92);
+  --primary: #c6922e;
+  --primary-foreground: #0b2034;
+  --secondary: #18384f;
+  --secondary-foreground: hsla(38, 62%, 93%, 0.92);
+  --muted: #18384f;
+  --muted-foreground: hsla(38, 62%, 93%, 0.7);
+  --accent: #7bcfd0;
+  --accent-foreground: #0b2034;
+  --border: hsla(38, 62%, 93%, 0.18);
+  --input: hsla(38, 62%, 93%, 0.24);
 }
 
 @layer base {
@@ -112,7 +117,11 @@
     margin: 0;
     min-height: 100vh;
     overflow-x: hidden;
-    background: var(--background);
+    background:
+      linear-gradient(rgba(242, 234, 223, 0.9), rgba(242, 234, 223, 0.9)),
+      url("/brand/texture.png"),
+      var(--background);
+    background-size: auto, 520px 520px, auto;
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 16px;
@@ -121,6 +130,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-kerning: auto;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      background: var(--background);
+    }
+  }
+
+  html.theme-dark body,
+  body.theme-dark {
+    background: var(--background);
   }
 
   button,
