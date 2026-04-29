@@ -40,6 +40,7 @@ docker compose up --build
 Player UI:
 
 - `sign-in`: Keycloak login へ進む。
+- 表示言語 switcher: `JA` / `EN` button で固定 UI 文言の locale を切り替える。`html[lang]` と `localStorage["gestaloka.locale"]` も確認する。
 - `auth-status`: `authenticated` を確認する。
 - `api-health`: backend health の UI 表示を確認する。
 - `socket-status`: session 開始後に `open` を確認する。
@@ -48,6 +49,8 @@ Player UI:
 - `world-select`: playable world を選択する。
 - `player-profile-select`: 作成済み player profile を選択する。
 - `profile-display-name`: 新規 player profile の名前を入力する。
+- `profile-play-language`: player-facing 生成文のプレイ言語を選択する。
+- `profile-play-language-custom`: custom プレイ言語の prompt 名を入力する。
 - `create-player-profile`: player profile を作成または保存する。
 - `start-session`: player profile 選択後に session を開始する。
 - `session-pack`: 選択した pack 名を確認する。
@@ -62,6 +65,7 @@ Player UI:
 Admin UI:
 
 - `admin-sign-in`: Admin frontend から Keycloak login へ進む。
+- 表示言語 switcher: `JA` / `EN` button で Admin 固定 UI 文言の locale を切り替える。Player UI と同じ `gestaloka.locale` を使う。
 - `admin-nav-dashboard`, `admin-dashboard`: 集約 KPI、pack / projection / release summary。
 - `admin-nav-packs`, `admin-packs`: pack 一覧、scaffold 作成、archive import、publish status 更新。
 - `admin-nav-templates`, `admin-world-templates`: world template 一覧と playable / draft 更新。
@@ -83,31 +87,41 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 1. Terminal で `make verify-v2` が green であることを確認する。
 2. Playwright MCP で `http://localhost:8000/health` を開き、`status`、database、projection、world pack health が返ることを確認する。
 3. `http://localhost:5173` を開き、画面が描画されることを screenshot で残す。
-4. `Sign in` から `demo / demo-password` で login し、`auth-status` と `sp-balance` を確認する。
+4. Player UI の表示言語 switcher で `JA` / `EN` を切り替え、`sign-in` の固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
+5. `Sign in` から `demo / demo-password` で login し、`auth-status` と `sp-balance` を確認する。
 
 ### GESTALOKA Reference
 
 1. 必要なら page refresh し、Player UI で新しい session を開始できる状態にする。
 2. `world-select` で `GESTALOKA Reference` を選ぶ。
-3. 既存 profile がある場合は `player-profile-select` で選択する。ない場合は `profile-display-name` に名前を入れ、必要なら性別・背景・自由記述・文体を設定し、`create-player-profile` を実行する。
+3. 既存 profile がある場合は `player-profile-select` で選択し、表示されるプレイ言語を確認する。ない場合は `profile-display-name` に名前を入れ、必要なら性別・背景・自由記述・文体・`profile-play-language` を設定し、`create-player-profile` を実行する。
 4. `start-session` を実行する。
 5. `socket-status=open`、`session-pack`、`session.connected`、`Nexus Gate`、`First Stabilizer Request`、`0/2`、`Gate Steward Rikka`、`Lift Tower Concourse`、faction standing を確認する。
 6. `choice-progress` を 2 回実行し、`2/2`、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。
 7. `choice-progress` を実行し、`Breach Restoration`、`breach_restoration`、used 表示、`Oblivion Breach` route を確認する。
 8. さらに `choice-progress` を実行し、`Oblivion Breach`、travel history、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。
 
+プレイ言語確認を主目的にする場合:
+
+- `profile-play-language` を `English` または `custom` に変更して profile を保存し、session state の profile 表示に反映されることを確認する。
+- `custom` の場合は `profile-play-language-custom` に 80 文字以内の言語・文体名を入れる。
+- narrative、npc reaction、choice label / summary、resolution summary などの player-facing 生成文が選択したプレイ言語に寄ることを確認する。
+- schema enum、id、tag、内部 key、world_id / session_id などの機械可読値は翻訳されないことを確認する。
+- 表示言語 switcher は固定 UI 文言だけを切り替えるものとして扱い、プレイ言語の期待結果と混同しない。
+
 ### Admin
 
 1. `http://localhost:5174` を開き、必要なら `admin-sign-in` から `demo / demo-password` で login する。
-2. `admin-dashboard` で pack status、template 数、projection pending、release summary が管理向け KPI として読めることを確認する。
-3. 左サイドバーで `admin-nav-packs`、`admin-nav-templates`、`admin-nav-users`、`admin-nav-llm`、`admin-nav-lanes`、`admin-nav-prompts`、`admin-nav-sp`、`admin-nav-release` を順に開き、各画面の `data-testid` が一意に存在することを確認する。
-4. `admin-packs` で `GESTALOKA Reference` が表示され、pack 数 1、template 数 1、failure 0 相当の状態が読めることを確認する。
-5. `admin-world-templates` で template の publish 状態が読めることを確認する。
-6. `admin-users` で app-level permission 管理画面が表示され、Keycloak Admin API 作成画面になっていないことを確認する。
-7. `admin-llm-settings` で secret 本体ではなく secret/env 参照名だけを扱っていることを確認する。
-8. `admin-model-lanes` と `admin-prompts` で lane model id と prompt override を編集できる形になっていることを確認する。
-9. `admin-sp` で SP が execution budget の調整として扱われ、世界内報酬や quest 進行力に見えないことを確認する。
-10. 通常画面に raw JSON dump、raw trace 垂れ流し、projection internals の dump が表示されていないことを確認する。
+2. Admin UI の表示言語 switcher で `JA` / `EN` を切り替え、固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
+3. `admin-dashboard` で pack status、template 数、projection pending、release summary が管理向け KPI として読めることを確認する。
+4. 左サイドバーで `admin-nav-packs`、`admin-nav-templates`、`admin-nav-users`、`admin-nav-llm`、`admin-nav-lanes`、`admin-nav-prompts`、`admin-nav-sp`、`admin-nav-release` を順に開き、各画面の `data-testid` が一意に存在することを確認する。
+5. `admin-packs` で `GESTALOKA Reference` が表示され、pack 数 1、template 数 1、failure 0 相当の状態が読めることを確認する。
+6. `admin-world-templates` で template の publish 状態が読めることを確認する。
+7. `admin-users` で app-level permission 管理画面が表示され、Keycloak Admin API 作成画面になっていないことを確認する。
+8. `admin-llm-settings` で secret 本体ではなく secret/env 参照名だけを扱っていることを確認する。
+9. `admin-model-lanes` と `admin-prompts` で lane model id と prompt override を編集できる形になっていることを確認する。
+10. `admin-sp` で SP が execution budget の調整として扱われ、世界内報酬や quest 進行力に見えないことを確認する。
+11. 通常画面に raw JSON dump、raw trace 垂れ流し、projection internals の dump が表示されていないことを確認する。
 
 ### Release Dry-run
 
@@ -135,8 +149,10 @@ make canary-down
 ## 5. UX 評価観点
 
 - Login: `Sign in` から認証完了まで、待ち状態や失敗時の戻り方が分かるか。
+- Display language: Player / Admin の `JA` / `EN` 切替で固定 UI 文言、`html[lang]`、reload 後の永続化が一貫するか。Player と Admin で同じ保存済み locale が使われることが自然に見えるか。
 - World select: playable pack の選択肢、無効状態、catalog unavailable 表示が理解できるか。
-- Player profile: 作成、既存選択、開始前編集、文体指定が迷わずでき、`start-session` が profile 未選択時に無効化されるか。
+- Player profile: 作成、既存選択、開始前編集、文体指定、プレイ言語設定が迷わずでき、`start-session` が profile 未選択時に無効化されるか。
+- Play language: 表示言語と別の概念として理解できるか。preset / custom の保存、profile 表示、player-facing 生成文への反映、内部 ID や enum が翻訳されないことを確認できるか。
 - Turn execution: choice 実行中に二重送信しにくく、完了後に次の操作が明確か。
 - Choice / free text: mode 切替、入力欄、submit の関係が分かりやすいか。
 - SP recovery: SP 不足時に Admin UI `admin-sp` で補充すべきことが追えるか。SP が世界内報酬に見えないか。
