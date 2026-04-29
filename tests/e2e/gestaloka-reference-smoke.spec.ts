@@ -43,6 +43,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Lift Tower Concourse/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus Custodians/i, { timeout: 20_000 });
   await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち");
+  await expect(page.getByTestId("choice-progress")).toContainText("Help the person in need and create the next opening");
+  await expect(page.getByTestId("choice-explore")).toContainText("Go to Lift Tower Concourse and check the old records");
 
   for (let step = 0; step < 2; step += 1) {
     await page.getByTestId("choice-progress").click();

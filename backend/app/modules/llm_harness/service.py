@@ -273,6 +273,7 @@ class TurnResolutionOutcome:
     final_payload: TurnResolutionPayload | None
     failure_reason: str | None = None
     rejection_role: str | None = None
+    deterministic_fallback_used: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -287,7 +288,7 @@ class TurnResolutionOutcome:
 
     @property
     def used_fallback(self) -> bool:
-        return any(len(role_run.attempts) > 1 for role_run in self.role_runs)
+        return self.deterministic_fallback_used or any(len(role_run.attempts) > 1 for role_run in self.role_runs)
 
 
 class BaseModelProvider:

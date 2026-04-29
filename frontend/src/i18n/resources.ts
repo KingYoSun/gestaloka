@@ -20,6 +20,8 @@ const resources = {
       auth: {
         signIn: "ログインして続ける",
         register: "アカウントを作成して始める",
+        relogin: "再ログイン",
+        recovery: "{{message}}。セッションまたは backend の再起動で現在の認証が無効になった可能性があります。再ログインしてください。",
       },
       player: {
         defaults: {
@@ -147,6 +149,8 @@ const resources = {
       auth: {
         signIn: "Sign in to continue",
         register: "Create an account to start",
+        relogin: "Sign in again",
+        recovery: "{{message}}. Backend restart or token audience drift can invalidate the current session. Sign in again.",
       },
       player: {
         defaults: {

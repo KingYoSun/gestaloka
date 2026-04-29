@@ -462,6 +462,14 @@ export type TurnResponse = {
     summary: string;
     moved?: boolean;
   }>;
+  failure?: {
+    reason: string | null;
+    rejection_role: string | null;
+    final_lane: string | null;
+    used_fallback: boolean;
+    council_trace: Array<Record<string, unknown>>;
+    retryable_choice_id: "safe" | "progress" | "explore" | null;
+  };
 };
 
 export type EventItem = {
@@ -1046,4 +1054,5 @@ export type ActivityMessage = {
 export type APIError = Error & {
   status?: number;
   body?: unknown;
+  requiresReauth?: boolean;
 };

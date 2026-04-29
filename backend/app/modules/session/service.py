@@ -104,6 +104,7 @@ class TurnResolutionResult:
     recent_offstage_beats: list[str]
     idle_updates: list[dict[str, Any]]
     progress_phases: list[str]
+    failure: dict[str, Any] | None = None
     error_detail: str | None = None
     status_code: int = 200
 
@@ -2353,12 +2354,28 @@ def _build_failed_turn_result(
     game_session = prepared.session
     player_actor = prepared.player_actor
 
+    failure = {
+        "reason": failure_reason,
+        "rejection_role": (failure_payload or {}).get("rejection_role"),
+        "final_lane": model_lane,
+        "used_fallback": bool((failure_payload or {}).get("used_fallback", False)),
+        "council_trace": (failure_payload or {}).get("council_trace", []),
+        "retryable_choice_id": next(
+            (
+                str(item.get("choice_id"))
+                for item in next_choices
+                if isinstance(item, dict) and item.get("choice_id")
+            ),
+            None,
+        ),
+    }
     turn.model_lane = model_lane
     turn.resolved_output = {
         "status": "failed",
         "action_type": action_type,
         "resolution_mode": resolution_mode,
         "error_detail": failure_reason,
+        "failure": failure,
         "graph_context_status": graph_context_status,
         "input_mode": input_mode,
         "interpreted_intent": interpreted_intent,
@@ -2469,6 +2486,7 @@ def _build_failed_turn_result(
         or [],
         idle_updates=[],
         progress_phases=progress_phases,
+        failure=failure,
         error_detail=failure_reason,
         status_code=status_code,
     )

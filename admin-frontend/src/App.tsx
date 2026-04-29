@@ -682,12 +682,43 @@ function ReleasePage({ state, token, setError, setAuthRecoveryRequired, refreshA
     }
   }
   const visibleProgress = progress;
+  const releaseChecks = state.release?.checks ?? [];
+  const blockedReasons = state.release?.blocked_reasons ?? [];
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-release">
       <Metric label={t("release.verdict")} value={state.release?.verdict ?? t("common.unknown")} detail={state.release?.canary_promote_status ?? t("common.unknown")} />
       <Panel title={t("release.checklist")}>
         <p className="text-sm leading-5 text-muted-foreground">{t("release.created", { value: state.release?.created_at ?? t("release.notRun") })}</p>
-        <p className="text-sm leading-5 text-muted-foreground">{t("release.blocked", { value: (state.release?.blocked_reasons ?? []).join(", ") || t("release.none") })}</p>
+        <div className="grid gap-2" data-testid="admin-release-blocked-reasons">
+          <p className="text-sm font-semibold leading-5 text-muted-foreground">{t("release.blocked")}</p>
+          {releaseChecks.length ? (
+            <ul className="grid gap-2">
+              {releaseChecks.map((check) => (
+                <li className="rounded-md border border-border bg-background p-3 text-sm leading-5 text-muted-foreground" key={check.check_id}>
+                  <strong className="block break-words text-foreground">
+                    {t("release.checkStatus", {
+                      label: check.label || check.check_id,
+                      status: check.status,
+                      elapsed: Math.floor(check.elapsed_seconds),
+                    })}
+                  </strong>
+                  {check.reason ? <span className="block break-words">{check.reason}</span> : null}
+                  {check.run_id ? <span className="block break-words">run: {check.run_id}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : blockedReasons.length ? (
+            <ul className="grid gap-2">
+              {blockedReasons.map((reason) => (
+                <li className="break-words rounded-md border border-border bg-background p-3 text-sm leading-5 text-muted-foreground" key={reason}>
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm leading-5 text-muted-foreground">{t("release.none")}</p>
+          )}
+        </div>
         <p className="text-sm leading-5 text-muted-foreground" data-testid="admin-release-progress">
           {t("release.progress", {
             status: visibleProgress?.status ?? (checklistPending ? t("release.running") : t("release.idle")),

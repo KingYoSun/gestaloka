@@ -248,10 +248,29 @@ async def resolve_turn(
 
     if not result.succeeded:
         shared_response = _shared_consequence_response(result.turn.resolved_output or {})
+        resolved_output = result.turn.resolved_output or {}
+        failure = result.failure if isinstance(result.failure, dict) else resolved_output.get("failure")
+        if not isinstance(failure, dict):
+            failure = {
+                "reason": result.error_detail,
+                "rejection_role": resolved_output.get("rejection_role"),
+                "final_lane": result.turn.model_lane,
+                "used_fallback": bool(resolved_output.get("used_fallback", False)),
+                "council_trace": resolved_output.get("council_trace", []),
+                "retryable_choice_id": next(
+                    (
+                        str(item.get("choice_id"))
+                        for item in result.next_choices
+                        if isinstance(item, dict) and item.get("choice_id")
+                    ),
+                    None,
+                ),
+            }
         return JSONResponse(
             status_code=result.status_code,
             content={
                 "detail": result.error_detail,
+                "failure": failure,
                 "turn_id": result.turn.id,
                 "event_id": result.event.id,
                 "memory_ids": [],

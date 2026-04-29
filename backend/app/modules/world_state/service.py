@@ -1643,6 +1643,13 @@ def important_inventory_affordances(inventory: list[dict[str, Any]], *, followup
 
 def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     world_pack = session_state.get("world_pack") or {}
+    player_profile = session_state.get("player_profile") or {}
+    play_language = player_profile.get("play_language") if isinstance(player_profile, dict) else {}
+    play_language = play_language if isinstance(play_language, dict) else {}
+    english_play_language = (
+        str(play_language.get("preset") or "").strip() == "en"
+        or str(play_language.get("prompt_name") or "").strip().lower() == "english"
+    )
     starter_location_key = str(world_pack.get("starter_location_key") or "starter")
     lore_location_key = str(world_pack.get("lore_location_key") or "lore")
     followup_location_key = str(world_pack.get("followup_location_key") or "followup")
@@ -1989,6 +1996,80 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             "action_kind": "travel",
             "travel_target_key": starter_location_key,
         }
+
+    if english_play_language:
+        for choice in (safe_choice, progress_choice, explore_choice):
+            posture = str(choice.get("posture") or choice.get("choice_id") or "")
+            action_kind = str(choice.get("action_kind") or "narrative")
+            travel_target_key = str(choice.get("travel_target_key") or "")
+            if action_kind == "use_reward_item":
+                choice["label"] = f"Raise {reward_name} and formally open the next road"
+                choice["summary"] = "Use the key item to unlock the next story stage."
+                choice["canonical_input_text"] = f"Raise {reward_name} and open the road toward {followup_location_name}"
+            elif action_kind == "travel" and travel_target_key == followup_location_key:
+                choice["label"] = f"Head toward the opened {followup_location_name}"
+                choice["summary"] = "Move to the follow-up quest location."
+                choice["canonical_input_text"] = f"Travel to {followup_location_name} opened by {reward_name}"
+            elif action_kind == "travel" and travel_target_key == starter_location_key:
+                choice["label"] = f"Return to {starter_location_name}"
+                choice["summary"] = "Return to the starting place and reassess the scene."
+                choice["canonical_input_text"] = f"Return to {starter_location_name}"
+            elif action_kind == "travel" and travel_target_key == lore_location_key:
+                choice["label"] = f"Go to {lore_location_name} and check the old records"
+                choice["summary"] = "Change places and widen the investigation."
+                choice["canonical_input_text"] = f"Travel to {lore_location_name}"
+            elif stage_key == followup_stage_key and current_location_key == followup_location_key:
+                if posture == "safe":
+                    choice["label"] = f"Steady the air around {followup_location_name}"
+                    choice["summary"] = "Keep danger contained and stabilize the scene."
+                    choice["canonical_input_text"] = f"Steady the air around {followup_location_name}"
+                elif posture == "progress":
+                    choice["label"] = f"Read the disturbance inside {followup_location_name}"
+                    choice["summary"] = "Advance the follow-up quest inside the breach site."
+                    choice["canonical_input_text"] = f"Observe what changed inside {followup_location_name}"
+                else:
+                    choice["label"] = f"Gather traces and local memories in {followup_location_name}"
+                    choice["summary"] = "Explore the site and look for relationship leads."
+                    choice["canonical_input_text"] = f"Gather traces and local memories in {followup_location_name}"
+            elif stage_key == followup_stage_key:
+                if posture == "safe":
+                    choice["label"] = "Hold the newly opened route steady"
+                    choice["summary"] = "Keep the scene stable before moving on."
+                    choice["canonical_input_text"] = f"Hold the route toward {followup_location_name} steady"
+                elif posture == "progress":
+                    choice["label"] = f"Follow the opened path toward {followup_location_name}"
+                    choice["summary"] = "Move the follow-up quest forward."
+                    choice["canonical_input_text"] = f"Follow the path opened by {reward_name}"
+                else:
+                    choice["label"] = "Look for traces around the opened route"
+                    choice["summary"] = "Explore what the opened route has changed."
+                    choice["canonical_input_text"] = f"Look for traces around the route to {followup_location_name}"
+            elif stage_key == starter_stage_key and progress >= 1:
+                if posture == "safe":
+                    choice["label"] = "Keep the scene calm and check that everyone is steady"
+                    choice["summary"] = "Avoid rushing and preserve the scene's balance."
+                    choice["canonical_input_text"] = f"Keep {current_location_name} calm and check that everyone is steady"
+                elif posture == "progress":
+                    choice["label"] = "Report what you learned and take the next patrol step"
+                    choice["summary"] = f"Close the request and earn further trust from {faction_name}."
+                    choice["canonical_input_text"] = f"Report what you learned in {current_location_name} and accept the next step"
+                else:
+                    choice["label"] = "Trace the nearby rumors and pick up the next lead"
+                    choice["summary"] = "Explore the looks and rumors left in the scene."
+                    choice["canonical_input_text"] = f"Trace the rumors and looks left in {current_location_name}"
+            else:
+                if posture == "safe":
+                    choice["label"] = f"Watch {current_location_name} without disturbing the flow"
+                    choice["summary"] = "Read the room and avoid disrupting the scene."
+                    choice["canonical_input_text"] = f"Watch the mood and sightlines around {current_location_name}"
+                elif posture == "progress":
+                    choice["label"] = "Help the person in need and create the next opening"
+                    choice["summary"] = "Take the clearest forward action for the current request."
+                    choice["canonical_input_text"] = f"Help at {starter_location_name} and create the next opening"
+                else:
+                    choice["label"] = "Follow the rumors and sightlines beneath the scene"
+                    choice["summary"] = "Explore the situation and widen your understanding."
+                    choice["canonical_input_text"] = f"Explore the mood and local concerns around {current_location_name}"
 
     for choice in (safe_choice, progress_choice, explore_choice):
         summary = " ".join(str(choice.get("summary") or "").split()).strip()

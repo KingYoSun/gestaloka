@@ -100,6 +100,14 @@ export type ReleaseSummary = {
   trigger_type: string;
   canary_promote_status: string;
   created_at: string | null;
+  checks: Array<{
+    check_id: string;
+    label: string;
+    status: string;
+    run_id: string | null;
+    elapsed_seconds: number;
+    reason: string | null;
+  }>;
   cutover_status?: { promote_ready: boolean; missing_or_failed_checks: string[] };
 };
 

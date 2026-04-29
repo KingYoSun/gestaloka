@@ -7,6 +7,8 @@ type ApiFetchOptions = {
   timeoutMs?: number;
 };
 
+const AUTH_RECOVERY_MESSAGES = new Set(["Token validation failed", "Unexpected token audience"]);
+
 async function apiFetch<T>(path: string, token?: string, init?: RequestInit, options?: ApiFetchOptions): Promise<T> {
   const headers = new Headers(init?.headers ?? undefined);
   if (!headers.has("Content-Type") && init?.body) {
@@ -53,6 +55,7 @@ async function apiFetch<T>(path: string, token?: string, init?: RequestInit, opt
     const error = new Error(message) as APIError;
     error.status = response.status;
     error.body = body;
+    error.requiresReauth = response.status === 401 && AUTH_RECOVERY_MESSAGES.has(message);
     throw error;
   }
 
@@ -61,6 +64,9 @@ async function apiFetch<T>(path: string, token?: string, init?: RequestInit, opt
 
 function formatError(error: unknown): string {
   const typed = error as APIError;
+  if (typed.requiresReauth) {
+    return i18n.t("auth.recovery", { message: typed.message });
+  }
   if (typed.name === "AbortError") {
     return i18n.t("errors.timeout");
   }
@@ -81,4 +87,8 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
-export { apiFetch, formatError };
+function requiresReauth(error: unknown): boolean {
+  return Boolean((error as APIError).requiresReauth);
+}
+
+export { apiFetch, formatError, requiresReauth };

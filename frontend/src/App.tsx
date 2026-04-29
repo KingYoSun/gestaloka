@@ -8,7 +8,7 @@ import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
 function App() {
   const { t } = useTranslation();
   const runtime = useGestalokaRuntime();
-  const { error } = runtime;
+  const { authRecoveryRequired, error } = runtime;
 
   useEffect(() => {
     document.title = t("common.appTitle");
@@ -27,7 +27,16 @@ function App() {
             className="sticky bottom-4 z-10 mt-5 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm leading-5 text-destructive shadow-sm"
             data-testid="error-banner"
           >
-            {error}
+            <span>{error}</span>
+            {authRecoveryRequired ? (
+              <button
+                className="ml-3 rounded-md border border-destructive/30 bg-background px-3 py-1 text-xs font-bold text-foreground"
+                type="button"
+                onClick={runtime.handleLogin}
+              >
+                {t("auth.relogin")}
+              </button>
+            ) : null}
           </aside>
         ) : null
       }

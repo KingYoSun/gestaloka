@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.models.entities import ActorTitleProgress, Event, Location, SPLedgerEntry, SharedHistoryRecord, Turn, World
+from app.modules.llm_harness.service import PromptExecutionOutcome
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 
 
@@ -124,6 +125,64 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
         "The breach route stays sealed until Nexus recognizes the writ." in item
         for item in post_travel_state.json()["recent_travel_history"]
     )
+
+
+def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_fails(
+    client,
+    container,
+    auth_headers,
+    monkeypatch,
+):
+    original_execute = container.model_router.execute_structured_prompt
+    world_progress_calls = 0
+
+    def execute_with_world_progress_schema_failure(*args, **kwargs):
+        nonlocal world_progress_calls
+        prompt_id = kwargs.get("prompt_id") or (args[0] if args else "")
+        if prompt_id == "council.world_progress":
+            world_progress_calls += 1
+            if world_progress_calls == 2:
+                return PromptExecutionOutcome(
+                    attempts=[],
+                    final_lane="lite",
+                    final_payload=None,
+                    failure_reason="lite_lane output failed schema validation",
+                )
+        return original_execute(*args, **kwargs)
+
+    monkeypatch.setattr(container.model_router, "execute_structured_prompt", execute_with_world_progress_schema_failure)
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    first_turn = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert first_turn.status_code == 200
+
+    second_turn = client.post(
+        "/turns",
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        headers=auth_headers,
+    )
+    assert second_turn.status_code == 200
+    second_payload = second_turn.json()
+    assert second_payload["inventory_updates"][0]["template_key"] == "nexus_writs"
+
+    post_reward_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert post_reward_state.status_code == 200
+    assert post_reward_state.json()["quests"][0]["progress"] == 2
+    assert any(item["name"] == "Nexus Writ" for item in post_reward_state.json()["inventory"])
+
+    with container.session_factory() as db:
+        fallback_turn = db.get(Turn, second_payload["turn_id"])
+        assert fallback_turn.resolved_output["used_fallback"] is True
+        assert any(
+            item["role"] == "world_progress" and item["approval_status"] == "failed"
+            for item in fallback_turn.resolved_output["council_trace"]
+        )
 
 
 def test_gestaloka_reference_restore_canonizes_history_and_recognizes_title_without_sp_side_effects(

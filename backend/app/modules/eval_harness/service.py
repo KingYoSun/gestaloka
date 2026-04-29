@@ -139,6 +139,8 @@ class ReleaseChecklistCheckResult:
     payload: dict[str, object]
     elapsed_seconds: float
     status: str
+    check_name: str = ""
+    label: str = ""
     blocked_reason: str | None = None
 
 
@@ -334,8 +336,11 @@ class EvalHarnessService:
         progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         resolved_runtime_role = runtime_role or self.settings.app_runtime_role
-        timeout_seconds = max(float(self.settings.release_check_timeout_seconds), 0.0)
+        per_check_timeout_seconds = max(float(self.settings.release_check_timeout_seconds), 0.0)
+        total_budget_seconds = max(float(self.settings.release_check_total_budget_seconds), 0.0)
+        checklist_started = time.monotonic()
         timeout_reasons: list[str] = []
+        check_results: list[ReleaseChecklistCheckResult] = []
         self._set_release_checklist_progress(status="running", current_check="starting")
 
         def emit(event: str, check_name: str, **payload: object) -> None:
@@ -352,16 +357,29 @@ class EvalHarnessService:
         candidate_config = self.load_release_config("candidate")
 
         try:
+            def timeout_for_check(check_name: str) -> tuple[float, str | None]:
+                if total_budget_seconds <= 0:
+                    return per_check_timeout_seconds, None
+                remaining = total_budget_seconds - (time.monotonic() - checklist_started)
+                if remaining <= 0:
+                    return 0.0, f"release check {check_name} skipped because release checklist budget was exhausted"
+                if per_check_timeout_seconds <= 0:
+                    return remaining, None
+                return min(per_check_timeout_seconds, remaining), None
+
+            smoke_timeout, smoke_skip_reason = timeout_for_check("turn_resolution_smoke")
             smoke_result = self._run_release_eval_check(
                 db,
                 check_name="turn_resolution_smoke",
+                label="turn_resolution_smoke",
                 source_type="dataset",
                 dataset_name="turn_resolution_smoke",
                 trigger_type=trigger_type,
                 runtime_role=resolved_runtime_role,
                 current_config=current_config,
                 candidate_config=candidate_config,
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=smoke_timeout,
+                skip_reason=smoke_skip_reason,
                 runner=lambda: self.run_dataset(
                     db,
                     "turn_resolution_smoke",
@@ -370,20 +388,24 @@ class EvalHarnessService:
                 ),
                 emit=emit,
             )
+            check_results.append(smoke_result)
             if smoke_result.blocked_reason:
                 timeout_reasons.append(smoke_result.blocked_reason)
             smoke = smoke_result.payload
 
+            failure_timeout, failure_skip_reason = timeout_for_check("turn_resolution_failure_injection")
             failure_result = self._run_release_eval_check(
                 db,
                 check_name="turn_resolution_failure_injection",
+                label="turn_resolution_failure_injection",
                 source_type="dataset",
                 dataset_name="turn_resolution_failure_injection",
                 trigger_type=trigger_type,
                 runtime_role=resolved_runtime_role,
                 current_config=current_config,
                 candidate_config=candidate_config,
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=failure_timeout,
+                skip_reason=failure_skip_reason,
                 runner=lambda: self.run_dataset(
                     db,
                     "turn_resolution_failure_injection",
@@ -392,20 +414,24 @@ class EvalHarnessService:
                 ),
                 emit=emit,
             )
+            check_results.append(failure_result)
             if failure_result.blocked_reason:
                 timeout_reasons.append(failure_result.blocked_reason)
             failure = failure_result.payload
 
+            shadow_timeout, shadow_skip_reason = timeout_for_check("shadow_replay")
             shadow_result = self._run_release_eval_check(
                 db,
                 check_name="shadow_replay",
+                label="shadow_replay",
                 source_type="shadow_replay",
                 dataset_name=None,
                 trigger_type=trigger_type,
                 runtime_role=resolved_runtime_role,
                 current_config=current_config,
                 candidate_config=candidate_config,
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=shadow_timeout,
+                skip_reason=shadow_skip_reason,
                 runner=lambda: self.run_shadow_replay(
                     db,
                     limit=shadow_limit or self.settings.release_shadow_limit,
@@ -414,22 +440,27 @@ class EvalHarnessService:
                 ),
                 emit=emit,
             )
+            check_results.append(shadow_result)
             if shadow_result.blocked_reason:
                 timeout_reasons.append(shadow_result.blocked_reason)
             shadow = shadow_result.payload
 
             pack_regressions: dict[str, dict[str, object]] = {}
             for dataset_name in PACK_REGRESSION_DATASETS:
+                check_name = f"pack_regression:{dataset_name}"
+                pack_timeout, pack_skip_reason = timeout_for_check(check_name)
                 result = self._run_release_eval_check(
                     db,
-                    check_name=f"pack_regression:{dataset_name}",
+                    check_name=check_name,
+                    label=dataset_name,
                     source_type="dataset",
                     dataset_name=dataset_name,
                     trigger_type=trigger_type,
                     runtime_role=resolved_runtime_role,
                     current_config=current_config,
                     candidate_config=candidate_config,
-                    timeout_seconds=timeout_seconds,
+                    timeout_seconds=pack_timeout,
+                    skip_reason=pack_skip_reason,
                     runner=lambda dataset_name=dataset_name: self.run_dataset(
                         db,
                         dataset_name,
@@ -438,6 +469,7 @@ class EvalHarnessService:
                     ),
                     emit=emit,
                 )
+                check_results.append(result)
                 if result.blocked_reason:
                     timeout_reasons.append(result.blocked_reason)
                 pack_regressions[dataset_name] = result.payload
@@ -445,15 +477,58 @@ class EvalHarnessService:
             self._set_release_checklist_progress(status="running", current_check="slo_canary_snapshot")
             slo_started = time.monotonic()
             emit("start", "slo_canary_snapshot")
-            canary_probe = self._probe_canary_health()
-            slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
-            slo_elapsed = time.monotonic() - slo_started
-            if timeout_seconds and slo_elapsed > timeout_seconds:
-                reason = f"release check slo_canary_snapshot timed out after {timeout_seconds:g}s"
+            slo_timeout, slo_skip_reason = timeout_for_check("slo_canary_snapshot")
+            if slo_skip_reason is not None:
+                canary_probe = CanaryProbeResult(
+                    status="unknown",
+                    url=self.settings.canary_health_url or None,
+                    http_status=None,
+                    detail=slo_skip_reason,
+                )
+                slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
+                slo_elapsed = time.monotonic() - slo_started
+                reason = slo_skip_reason
                 timeout_reasons.append(reason)
                 emit("timeout", "slo_canary_snapshot", elapsed_seconds=slo_elapsed, reason=reason)
+                check_results.append(
+                    ReleaseChecklistCheckResult(
+                        payload={"id": None, "summary": {"failure_reason": reason}},
+                        elapsed_seconds=slo_elapsed,
+                        status="timeout",
+                        check_name="slo_canary_snapshot",
+                        label="slo_canary_snapshot",
+                        blocked_reason=reason,
+                    )
+                )
             else:
-                emit("pass", "slo_canary_snapshot", elapsed_seconds=slo_elapsed)
+                canary_probe = self._probe_canary_health()
+                slo_snapshot = self._build_slo_snapshot(db, runtime_role=resolved_runtime_role, canary_probe=canary_probe)
+                slo_elapsed = time.monotonic() - slo_started
+                if slo_timeout and slo_elapsed > slo_timeout:
+                    reason = f"release check slo_canary_snapshot timed out after {slo_timeout:g}s"
+                    timeout_reasons.append(reason)
+                    emit("timeout", "slo_canary_snapshot", elapsed_seconds=slo_elapsed, reason=reason)
+                    check_results.append(
+                        ReleaseChecklistCheckResult(
+                            payload={"id": None, "summary": {"failure_reason": reason}},
+                            elapsed_seconds=slo_elapsed,
+                            status="timeout",
+                            check_name="slo_canary_snapshot",
+                            label="slo_canary_snapshot",
+                            blocked_reason=reason,
+                        )
+                    )
+                else:
+                    emit("pass", "slo_canary_snapshot", elapsed_seconds=slo_elapsed)
+                    check_results.append(
+                        ReleaseChecklistCheckResult(
+                            payload={"id": None, "summary": {}},
+                            elapsed_seconds=slo_elapsed,
+                            status="passed",
+                            check_name="slo_canary_snapshot",
+                            label="slo_canary_snapshot",
+                        )
+                    )
 
             shared_health = slo_snapshot["shared_world_health"]
             blocked_reasons = self._blocked_reasons(
@@ -482,6 +557,11 @@ class EvalHarnessService:
                 slo_snapshot=slo_snapshot,
                 trigger_type=trigger_type,
             )
+            report.slo_snapshot = {
+                **report.slo_snapshot,
+                "check_summaries": self._release_check_summaries(check_results),
+                "release_total_budget_seconds": total_budget_seconds,
+            }
             db.add(report)
             db.flush()
 
@@ -576,6 +656,7 @@ class EvalHarnessService:
         db: Session,
         *,
         check_name: str,
+        label: str,
         source_type: Literal["dataset", "shadow_replay"],
         dataset_name: str | None,
         trigger_type: Literal["manual", "nightly", "pre_promote"],
@@ -583,12 +664,34 @@ class EvalHarnessService:
         current_config: ReleaseConfig,
         candidate_config: ReleaseConfig,
         timeout_seconds: float,
+        skip_reason: str | None,
         runner: Callable[[], dict[str, object]],
         emit: Callable[..., None],
     ) -> ReleaseChecklistCheckResult:
         self._set_release_checklist_progress(status="running", current_check=check_name)
         started = time.monotonic()
         emit("start", check_name)
+        if skip_reason is not None:
+            timeout_payload = self._synthetic_eval_run(
+                db,
+                source_type=source_type,
+                dataset_name=dataset_name,
+                trigger_type=trigger_type,
+                runtime_role=runtime_role,
+                current_config=current_config,
+                candidate_config=candidate_config,
+                status="timeout",
+                reason=skip_reason,
+            )
+            emit("timeout", check_name, elapsed_seconds=0.0, run_id=timeout_payload["id"], reason=skip_reason)
+            return ReleaseChecklistCheckResult(
+                payload=timeout_payload,
+                elapsed_seconds=0.0,
+                status="timeout",
+                check_name=check_name,
+                label=label,
+                blocked_reason=skip_reason,
+            )
         try:
             payload = self._run_with_release_timeout(runner, timeout_seconds=timeout_seconds)
         except ReleaseCheckTimeout:
@@ -610,6 +713,8 @@ class EvalHarnessService:
                 payload=timeout_payload,
                 elapsed_seconds=elapsed,
                 status="timeout",
+                check_name=check_name,
+                label=label,
                 blocked_reason=reason,
             )
         except Exception as exc:
@@ -631,6 +736,8 @@ class EvalHarnessService:
                 payload=failed_payload,
                 elapsed_seconds=elapsed,
                 status="failed",
+                check_name=check_name,
+                label=label,
                 blocked_reason=reason,
             )
 
@@ -653,6 +760,8 @@ class EvalHarnessService:
                 payload=timeout_payload,
                 elapsed_seconds=elapsed,
                 status="timeout",
+                check_name=check_name,
+                label=label,
                 blocked_reason=reason,
             )
 
@@ -670,6 +779,9 @@ class EvalHarnessService:
             payload=payload,
             elapsed_seconds=elapsed,
             status="passed" if passed else "failed",
+            check_name=check_name,
+            label=label,
+            blocked_reason=None if passed else self._eval_run_failure_reason(payload),
         )
 
     @staticmethod
@@ -694,6 +806,40 @@ class EvalHarnessService:
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous_handler)
+
+    @staticmethod
+    def _eval_run_failure_reason(payload: dict[str, object]) -> str:
+        summary = payload.get("summary") if isinstance(payload, dict) else {}
+        summary = summary if isinstance(summary, dict) else {}
+        reason = summary.get("failure_reason")
+        if isinstance(reason, str) and reason:
+            return reason
+        comparison = summary.get("comparison")
+        comparison = comparison if isinstance(comparison, dict) else {}
+        failed_ids = comparison.get("candidate_failed_case_ids") or comparison.get("current_failed_case_ids") or []
+        if failed_ids:
+            return f"failed cases: {', '.join(str(item) for item in failed_ids)}"
+        return "release check did not pass"
+
+    @staticmethod
+    def _release_check_summaries(results: list[ReleaseChecklistCheckResult]) -> list[dict[str, object]]:
+        summaries: list[dict[str, object]] = []
+        for result in results:
+            payload = result.payload if isinstance(result.payload, dict) else {}
+            summary = payload.get("summary")
+            summary = summary if isinstance(summary, dict) else {}
+            reason = result.blocked_reason or summary.get("failure_reason")
+            summaries.append(
+                {
+                    "check_id": result.check_name,
+                    "label": result.label or result.check_name,
+                    "status": result.status,
+                    "run_id": payload.get("id"),
+                    "elapsed_seconds": round(float(result.elapsed_seconds), 3),
+                    "reason": reason if isinstance(reason, str) and reason else None,
+                }
+            )
+        return summaries
 
     def _synthetic_eval_run(
         self,
@@ -906,6 +1052,16 @@ class EvalHarnessService:
                 "blocked_reasons": ["No release checklist report exists"],
                 "trigger_type": "manual",
                 "checks": filtered_checks,
+                "check_summaries": [
+                    {
+                        "check_id": "release_checklist",
+                        "label": "release_checklist",
+                        "status": "missing",
+                        "run_id": None,
+                        "elapsed_seconds": 0.0,
+                        "reason": "No release checklist report exists",
+                    }
+                ],
                 "runs": {
                     "smoke": None,
                     "failure_injection": None,
@@ -1044,12 +1200,15 @@ class EvalHarnessService:
             if _pack_context_matches(item["pack_context"], pack_id, world_template_id)
         ]
         canary_promote_status = "ready" if report.verdict == "passed" else "blocked"
+        check_summaries = report.slo_snapshot.get("check_summaries") if isinstance(report.slo_snapshot, dict) else []
+        check_summaries = check_summaries if isinstance(check_summaries, list) else []
         return {
             "report_id": report.id,
             "verdict": report.verdict,
             "blocked_reasons": report.blocked_reasons,
             "trigger_type": report.trigger_type,
             "checks": checks,
+            "check_summaries": check_summaries,
             "runs": {
                 "smoke": smoke.id,
                 "failure_injection": failure.id,

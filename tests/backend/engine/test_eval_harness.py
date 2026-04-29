@@ -385,6 +385,7 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
 
 def test_release_checklist_timeout_creates_blocked_report(container, monkeypatch: pytest.MonkeyPatch):
     container.settings.release_check_timeout_seconds = 0.001
+    container.settings.release_check_total_budget_seconds = 0.001
     container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
         status="healthy",
         url="http://backend-canary:8000/health",
@@ -415,11 +416,52 @@ def test_release_checklist_timeout_creates_blocked_report(container, monkeypatch
 
     assert gate["verdict"] == "blocked"
     assert smoke_run.status == "timeout"
-    assert any("turn_resolution_smoke timed out" in reason for reason in gate["blocked_reasons"])
+    assert any("turn_resolution_smoke" in reason for reason in gate["blocked_reasons"])
+    assert any(item["check_id"] == "turn_resolution_smoke" and item["status"] == "timeout" for item in gate["check_summaries"])
     assert report_count == 1
     progress = container.eval_service.release_checklist_progress()
     assert progress["status"] == "completed"
     assert progress["completed_report_id"] == gate["report_id"]
+
+
+def test_release_checklist_total_budget_synthesizes_remaining_timeouts(container, monkeypatch: pytest.MonkeyPatch):
+    container.settings.release_check_timeout_seconds = 180.0
+    container.settings.release_check_total_budget_seconds = 0.001
+    container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
+        status="healthy",
+        url="http://backend-canary:8000/health",
+        http_status=200,
+        detail="ok",
+        graph_runtime_status="ready",
+        release_gate_verdict="passed",
+        projection_lag_seconds=0.0,
+        outbox_pending_count=0,
+        outbox_failed_count=0,
+        llm_schema_valid_rate=1.0,
+        llm_fallback_rate=0.0,
+    )
+    original_run_dataset = container.eval_service.run_dataset
+
+    def slow_smoke(db, dataset_name: str, **kwargs):
+        if dataset_name == "turn_resolution_smoke":
+            time.sleep(0.01)
+        return original_run_dataset(db, dataset_name, **kwargs)
+
+    monkeypatch.setattr(container.eval_service, "run_dataset", slow_smoke)
+
+    with container.session_factory() as db:
+        gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=1)
+        db.commit()
+        pack_run_id = gate["runs"]["pack_regressions"]["turn_resolution_gestaloka_regression"]
+        pack_run = db.execute(select(EvalRun).where(EvalRun.id == pack_run_id)).scalar_one()
+
+    assert gate["verdict"] == "blocked"
+    assert pack_run.status == "timeout"
+    assert any("budget was exhausted" in reason for reason in gate["blocked_reasons"])
+    check_map = {item["check_id"]: item for item in gate["check_summaries"]}
+    assert check_map["turn_resolution_smoke"]["status"] == "timeout"
+    assert check_map["pack_regression:turn_resolution_gestaloka_regression"]["status"] == "timeout"
+    assert "budget was exhausted" in check_map["pack_regression:turn_resolution_gestaloka_regression"]["reason"]
 
 
 def test_release_gate_blocks_when_canary_is_unhealthy(container):

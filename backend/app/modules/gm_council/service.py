@@ -775,6 +775,98 @@ class GMCouncilService:
             canonical.append("earned_trust")
         return normalize_consequence_tags(canonical)
 
+    def _world_progress_fallback_payload(
+        self,
+        *,
+        request: CouncilRequest,
+        intent_payload: CouncilIntentInterpreterPayload,
+        world_progress_input: dict[str, Any],
+        failure_reason: str | None,
+    ) -> CouncilWorldProgressPayload | None:
+        selected_choice = request.selected_choice or {}
+        posture = str(selected_choice.get("posture") or "")
+        if request.input_mode != "choice" or posture not in {"safe", "progress", "explore"}:
+            return None
+        if "__force_council_reject__" in request.input_text:
+            return None
+
+        player_name = request.player_name or "The player"
+        npc_name = request.npc_name or "the guide"
+        intent_summary = _first_text(intent_payload.intent_summary, request.input_text, "the selected action")
+        consequence_summary = _first_text(
+            intent_payload.consequence_summary,
+            f"{player_name} follows the selected {posture} line and keeps the scene moving.",
+        )
+        fallback_reason = _first_text(failure_reason, "world_progress schema fallback")
+        default_choice_templates = world_progress_input.get("default_choice_templates") or []
+        choice_payloads = _choice_drafts(default_choice_templates)
+        active_quest = self._active_quest(request.session_state)
+        world_tags = self._choice_world_tags(
+            session_state=request.session_state,
+            selected_choice=selected_choice,
+            action_kind=intent_payload.canonical_action_kind,
+            raw_world_tags=normalize_world_tags(infer_world_tags(intent_summary)),
+        )
+        consequence_tags = self._canonical_intent_consequence_tags(
+            input_mode=request.input_mode,
+            input_text=request.input_text,
+            selected_choice=selected_choice,
+            action_kind=intent_payload.canonical_action_kind,
+            raw_tags=list(intent_payload.consequence_tags),
+        )
+        outcome_band = self._outcome_band_from_tags(list(consequence_tags))
+        scene_move = self._scene_move_for_context(
+            session_state=request.session_state,
+            selected_choice=selected_choice,
+            action_kind=intent_payload.canonical_action_kind,
+            consequence_tags=list(consequence_tags),
+            raw_scene_move="hold",
+        )
+        risk_level = self._risk_level_for_context(
+            input_text=request.input_text,
+            consequence_tags=list(consequence_tags),
+            raw_risk_level="medium",
+        )
+        current_scene = request.session_state.get("current_scene") or {}
+        current_chapter = request.session_state.get("chapter") or {}
+        return CouncilWorldProgressPayload(
+            event_type="player.turn.resolved",
+            event_payload={
+                "world_id": request.world_id,
+                "action": intent_summary,
+                "world_tags": world_tags,
+                "npc_anchor": f"{npc_name} stays with the player's selected line.",
+                "scene_summary": str(current_scene.get("summary") or ""),
+                "chapter_summary": str(current_chapter.get("summary") or ""),
+                "deterministic_fallback": {
+                    "role": "world_progress",
+                    "reason": fallback_reason,
+                    "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
+                    "requested_choice_posture": posture,
+                },
+            },
+            memories=[
+                MemoryDraft(
+                    scope="world",
+                    text=f"{player_name} chose to {intent_summary}.",
+                    salience=0.72,
+                )
+            ],
+            world_tags=world_tags,
+            consequence_tags=consequence_tags,
+            branch_signals=[],
+            outcome_band=outcome_band,
+            resolution_summary=consequence_summary,
+            risk_level=risk_level,
+            next_choices=[NarrativeChoiceDraft(**item) for item in choice_payloads],
+            scene_move=scene_move,
+            scene_pressure="medium",
+            broadcast_draft={
+                "summary": f"{player_name}'s selected action carries through the current scene.",
+                "constraint_text": "Canonical choice fallback preserved same-world progression after schema failure.",
+            },
+        )
+
     def _choice_intent_outcome(
         self,
         *,
@@ -1119,17 +1211,28 @@ class GMCouncilService:
                 result=world_progress_result,
             )
         )
+        deterministic_fallback_used = False
         if not world_progress_result.succeeded:
-            return TurnResolutionOutcome(
-                role_runs=role_runs,
-                final_lane=world_progress_result.final_lane,
-                final_payload=None,
+            fallback_payload = self._world_progress_fallback_payload(
+                request=request,
+                intent_payload=intent_payload,
+                world_progress_input=world_progress_input,
                 failure_reason=world_progress_result.failure_reason,
-                rejection_role="world_progress",
             )
+            if fallback_payload is None:
+                return TurnResolutionOutcome(
+                    role_runs=role_runs,
+                    final_lane=world_progress_result.final_lane,
+                    final_payload=None,
+                    failure_reason=world_progress_result.failure_reason,
+                    rejection_role="world_progress",
+                )
+            world_progress_payload = fallback_payload
+            deterministic_fallback_used = True
+        else:
+            world_progress_payload = world_progress_result.final_payload
+            assert world_progress_payload is not None
 
-        world_progress_payload = world_progress_result.final_payload
-        assert world_progress_payload is not None
         world_progress_payload.consequence_tags = normalize_consequence_tags(list(world_progress_payload.consequence_tags))
         world_progress_payload.branch_signals = normalize_branch_signals(list(world_progress_payload.branch_signals))
         world_progress_payload.world_tags = self._choice_world_tags(
@@ -1349,6 +1452,7 @@ class GMCouncilService:
             role_runs=role_runs,
             final_lane=narrative_result.final_lane,
             final_payload=final_payload,
+            deterministic_fallback_used=deterministic_fallback_used,
         )
 
     @staticmethod

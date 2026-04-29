@@ -11,6 +11,7 @@ import app.modules.identity.oidc as oidc_module
 from app.core.config import Settings
 from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, ProjectionRecord, World
 from app.modules.identity.oidc import KeycloakOIDCAdapter, UserIdentity
+from app.modules.llm_harness.service import CouncilRoleRun, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
 
@@ -302,6 +303,82 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         )
     assert len(profile_events) == 1
     assert {item.scope for item in profile_memories} == {"actor", "world"}
+
+
+def test_english_player_profile_initial_choices_are_english(client, auth_headers):
+    profile = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={
+            "display_name": "English Tester",
+            "play_language": {"mode": "preset", "preset": "en"},
+        },
+        headers=auth_headers,
+    )
+    assert profile.status_code == 200
+    session = client.post(
+        "/sessions",
+        json={
+            "world_id": "gestaloka_reference",
+            "player_actor_id": profile.json()["actor_id"],
+            "world_name": "GESTALOKA: Nexus Foundation",
+        },
+        headers=auth_headers,
+    )
+    assert session.status_code == 200
+
+    state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
+    assert state.status_code == 200
+    choices = state.json()["next_choices"]
+    assert [item["choice_id"] for item in choices] == ["safe", "progress", "explore"]
+    assert choices[0]["label"] == "Watch Nexus Gate without disturbing the flow"
+    assert choices[1]["label"] == "Help the person in need and create the next opening"
+    assert choices[2]["summary"] == "Change places and widen the investigation."
+
+
+def test_failed_turn_response_exposes_structured_failure(client, container, auth_headers, monkeypatch):
+    def reject_turn(request):
+        del request
+        return TurnResolutionOutcome(
+            role_runs=[
+                CouncilRoleRun(
+                    council_role="rules_arbiter",
+                    stage_index=5,
+                    prompt_id="council.rules_arbiter",
+                    approval_status="rejected",
+                    attempts=[],
+                    final_lane="lite",
+                    final_payload=None,
+                    failure_reason="Rule arbiter rejected the turn.",
+                )
+            ],
+            final_lane="lite",
+            final_payload=None,
+            failure_reason="Rule arbiter rejected the turn.",
+            rejection_role="rules_arbiter",
+        )
+
+    monkeypatch.setattr(container.council_service, "resolve_turn", reject_turn)
+    session = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session.status_code == 200
+
+    response = client.post(
+        "/turns",
+        json={
+            "session_id": session.json()["session_id"],
+            "input_mode": "free_text",
+            "input_text": "force a rejected turn",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["detail"] == "council_rejected"
+    assert payload["failure"]["reason"] == "council_rejected"
+    assert payload["failure"]["rejection_role"] == "rules_arbiter"
+    assert payload["failure"]["final_lane"]
+    assert payload["failure"]["retryable_choice_id"] in {"safe", "progress", "explore"}
+    assert payload["failure"]["council_trace"]
 
 
 def test_player_profile_ownership_is_enforced(client, container, auth_headers):

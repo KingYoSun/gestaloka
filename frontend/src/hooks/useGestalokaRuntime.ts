@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import keycloak, { initKeycloak, isKeycloakConfigured } from "../lib/keycloak";
-import { apiFetch, formatError } from "../api/client";
+import { apiFetch, formatError, requiresReauth } from "../api/client";
 import {
   buildQuery,
   mergeTurnResponseIntoSessionState,
@@ -218,6 +218,7 @@ export function useGestalokaRuntime() {
   const [adjustWorldId, setAdjustWorldId] = useState("");
   const [adjustNote, setAdjustNote] = useState("Phase E admin adjustment");
   const [error, setError] = useState("");
+  const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false);
   const [turnPending, setTurnPending] = useState(false);
   const [turnProgressPhase, setTurnProgressPhase] = useState<"idle" | "submitting" | "resolving" | "refreshing">("idle");
   const [turnProgressElapsedSeconds, setTurnProgressElapsedSeconds] = useState(0);
@@ -386,11 +387,11 @@ export function useGestalokaRuntime() {
       return;
     }
 
-    void Promise.all([
-      apiFetch<AuthMe>("/auth/me", token),
-      apiFetch<SPWallet>("/economy/sp/me", token),
-      apiFetch<PlayableWorldCatalog>("/worlds/playable", token),
-    ])
+    void ensureFreshToken(token).then((currentToken) => Promise.all([
+      apiFetch<AuthMe>("/auth/me", currentToken),
+      apiFetch<SPWallet>("/economy/sp/me", currentToken),
+      apiFetch<PlayableWorldCatalog>("/worlds/playable", currentToken),
+    ]))
       .then(([mePayload, walletPayload, worldPayload]) => {
         setMe(mePayload);
         setWallet(walletPayload);
@@ -406,7 +407,7 @@ export function useGestalokaRuntime() {
         setLedgerUserFilter((current) => current || walletPayload.user_sub);
         setAdjustUserSub((current) => current || walletPayload.user_sub);
       })
-      .catch((requestError: unknown) => setError(formatError(requestError)));
+      .catch((requestError: unknown) => showRequestError(requestError));
   }, [authenticated, token]);
 
   useEffect(() => {
@@ -524,13 +525,38 @@ export function useGestalokaRuntime() {
     }
   }
 
+  async function ensureFreshToken(currentToken = token) {
+    if (!currentToken || !isKeycloakConfigured()) {
+      return currentToken;
+    }
+    try {
+      await keycloak.updateToken(30);
+      const freshToken = keycloak.token ?? currentToken;
+      if (freshToken !== token) {
+        setToken(freshToken);
+      }
+      setAuthRecoveryRequired(false);
+      return freshToken;
+    } catch (refreshError) {
+      setAuthRecoveryRequired(true);
+      throw refreshError;
+    }
+  }
+
+  function showRequestError(requestError: unknown) {
+    setAuthRecoveryRequired(requiresReauth(requestError));
+    setError(formatError(requestError));
+  }
+
   async function refreshWallet(currentToken: string) {
+    currentToken = await ensureFreshToken(currentToken);
     const payload = await apiFetch<SPWallet>("/economy/sp/me", currentToken);
     setWallet(payload);
     return payload;
   }
 
   async function refreshPlayerProfiles(currentWorldId: string, currentToken: string) {
+    currentToken = await ensureFreshToken(currentToken);
     const payload = await apiFetch<{ items: PlayerProfile[] }>(
       `/worlds/${currentWorldId}/player-profiles`,
       currentToken,
@@ -543,6 +569,7 @@ export function useGestalokaRuntime() {
   }
 
   async function refreshWorldState(currentSession: SessionInfo, currentToken: string) {
+    currentToken = await ensureFreshToken(currentToken);
     const [eventsResponse, memoriesResponse, stateResponse] = await Promise.all([
       apiFetch<{ items: EventItem[] }>(`/worlds/${currentSession.world_id}/events`, currentToken),
       apiFetch<{ items: MemoryItem[] }>(`/worlds/${currentSession.world_id}/memories`, currentToken),
@@ -581,6 +608,7 @@ export function useGestalokaRuntime() {
       setOpsState("idle");
       return;
     }
+    currentToken = await ensureFreshToken(currentToken);
 
     try {
       const scopeQuery = {
@@ -829,6 +857,7 @@ export function useGestalokaRuntime() {
     try {
       setProfilePending(true);
       setError("");
+      const currentToken = await ensureFreshToken(token);
       const path = editingPlayerActorId
         ? `/worlds/${worldId}/player-profiles/${editingPlayerActorId}`
         : `/worlds/${worldId}/player-profiles`;
@@ -843,7 +872,7 @@ export function useGestalokaRuntime() {
             background: profileDraft.background.trim(),
             free_text: profileDraft.free_text.trim(),
           };
-      const saved = await apiFetch<PlayerProfile>(path, token, {
+      const saved = await apiFetch<PlayerProfile>(path, currentToken, {
         method: editingPlayerActorId ? "PATCH" : "POST",
         body: JSON.stringify(requestBody),
       });
@@ -856,7 +885,7 @@ export function useGestalokaRuntime() {
       setProfileDraft(createDefaultProfileDraft());
       setEditingPlayerActorId("");
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setProfilePending(false);
     }
@@ -905,7 +934,8 @@ export function useGestalokaRuntime() {
       setLatestReaction("");
       setLatestConsequenceSummary("");
       setLastRebuild(null);
-      const created = await apiFetch<SessionInfo>("/sessions", token, {
+      const currentToken = await ensureFreshToken(token);
+      const created = await apiFetch<SessionInfo>("/sessions", currentToken, {
         method: "POST",
         body: JSON.stringify({
           world_id: worldId,
@@ -920,13 +950,13 @@ export function useGestalokaRuntime() {
       setLedgerWorldFilter(created.world_id);
       setAdjustWorldId(created.world_id);
       await Promise.all([
-        refreshWorldState(created, token),
-        refreshWallet(token),
-        refreshAdminData(token, created.world_id, ledgerUserFilter || me?.sub, created.world_id, created.session_id),
+        refreshWorldState(created, currentToken),
+        refreshWallet(currentToken),
+        refreshAdminData(currentToken, created.world_id, ledgerUserFilter || me?.sub, created.world_id, created.session_id),
         refreshHealth(),
       ]);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     }
   }
 
@@ -951,8 +981,9 @@ export function useGestalokaRuntime() {
       setTurnProgressElapsedSeconds(0);
       setTurnProgressPhase("submitting");
       setError("");
+      const currentToken = await ensureFreshToken(token);
       setTurnPhase("resolving");
-      const response = await apiFetch<TurnResponse>("/turns", token, {
+      const response = await apiFetch<TurnResponse>("/turns", currentToken, {
         method: "POST",
         body: JSON.stringify({
           session_id: session.session_id,
@@ -973,11 +1004,11 @@ export function useGestalokaRuntime() {
           : current,
       );
       setTurnPhase("refreshing");
-      await refreshWorldState(session, token);
+      await refreshWorldState(session, currentToken);
       const backgroundRefresh = Promise.all([
-        refreshWallet(token),
+        refreshWallet(currentToken),
         refreshAdminData(
-          token,
+          currentToken,
           session.world_id,
           ledgerUserFilter || me?.sub,
           ledgerWorldFilter || session.world_id,
@@ -985,12 +1016,12 @@ export function useGestalokaRuntime() {
         ),
         refreshHealth(),
       ]).catch((requestError: unknown) => {
-        setError(formatError(requestError));
+        showRequestError(requestError);
       });
       void backgroundRefresh;
       return;
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
       await Promise.all([
         refreshWallet(token),
         refreshAdminData(
@@ -1028,7 +1059,8 @@ export function useGestalokaRuntime() {
     try {
       setRebuildPending(true);
       setError("");
-      const rebuilt = await apiFetch<RebuildSummary>("/ops/projection/rebuild", token, {
+      const currentToken = await ensureFreshToken(token);
+      const rebuilt = await apiFetch<RebuildSummary>("/ops/projection/rebuild", currentToken, {
         method: "POST",
         body: JSON.stringify({ world_id: activeWorldId }),
       });
@@ -1038,11 +1070,11 @@ export function useGestalokaRuntime() {
         ...current,
       ].slice(0, 40));
       await Promise.all([
-        refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
+        refreshAdminData(currentToken, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
         refreshHealth(),
       ]);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setRebuildPending(false);
     }
@@ -1057,6 +1089,7 @@ export function useGestalokaRuntime() {
     try {
       setIdlePassPending(true);
       setError("");
+      const currentToken = await ensureFreshToken(token);
       const response = await apiFetch<{
         world_id: string;
         tick: {
@@ -1068,23 +1101,24 @@ export function useGestalokaRuntime() {
         };
         idle_updates: Array<Record<string, unknown>>;
         world_context: WorldContext;
-      }>(`/ops/worlds/${activeWorldId}/idle-pass`, token, { method: "POST" });
+      }>(`/ops/worlds/${activeWorldId}/idle-pass`, currentToken, { method: "POST" });
       setActivity((current) => [
         { event: "ops.idle-pass", data: response },
         ...current,
       ].slice(0, 40));
       await Promise.all([
-        session ? refreshWorldState(session, token) : Promise.resolve(),
-        refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
+        session ? refreshWorldState(session, currentToken) : Promise.resolve(),
+        refreshAdminData(currentToken, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
       ]);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setIdlePassPending(false);
     }
   }
 
   async function runMemorySearch(currentToken: string, currentWorldId: string) {
+    currentToken = await ensureFreshToken(currentToken);
     const response = await apiFetch<MemorySearchResponse>(
       `/ops/worlds/${currentWorldId}/memory-search?query=${encodeURIComponent(memorySearchQuery)}&limit=6`,
       currentToken,
@@ -1104,7 +1138,7 @@ export function useGestalokaRuntime() {
       setError("");
       await runMemorySearch(token, activeWorldId);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setMemorySearchPending(false);
     }
@@ -1119,16 +1153,17 @@ export function useGestalokaRuntime() {
     try {
       setMemoryReindexPending(true);
       setError("");
-      const response = await apiFetch<MemoryReindexResult>("/ops/memories/reindex", token, {
+      const currentToken = await ensureFreshToken(token);
+      const response = await apiFetch<MemoryReindexResult>("/ops/memories/reindex", currentToken, {
         method: "POST",
         body: JSON.stringify({ world_id: activeWorldId, limit: 100 }),
       });
       setLastMemoryReindex(response);
-      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
-      await runMemorySearch(token, activeWorldId);
+      await refreshAdminData(currentToken, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
+      await runMemorySearch(currentToken, activeWorldId);
       await refreshHealth();
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setMemoryReindexPending(false);
     }
@@ -1143,7 +1178,7 @@ export function useGestalokaRuntime() {
       setError("");
       await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter, session?.session_id);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     }
   }
 
@@ -1157,7 +1192,8 @@ export function useGestalokaRuntime() {
     try {
       setAdjustPending(true);
       setError("");
-      const response = await apiFetch<SPAdjustmentResponse>("/ops/sp/adjustments", token, {
+      const currentToken = await ensureFreshToken(token);
+      const response = await apiFetch<SPAdjustmentResponse>("/ops/sp/adjustments", currentToken, {
         method: "POST",
         body: JSON.stringify({
           user_sub: adjustUserSub,
@@ -1170,9 +1206,9 @@ export function useGestalokaRuntime() {
       });
       setLastAdjustment(response);
       await Promise.all([
-        refreshWallet(token),
+        refreshWallet(currentToken),
         refreshAdminData(
-          token,
+          currentToken,
           activeWorldId,
           ledgerUserFilter || adjustUserSub,
           ledgerWorldFilter || adjustWorldId,
@@ -1181,7 +1217,7 @@ export function useGestalokaRuntime() {
         refreshHealth(),
       ]);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setAdjustPending(false);
     }
@@ -1196,7 +1232,8 @@ export function useGestalokaRuntime() {
     try {
       setEvalPending(true);
       setError("");
-      const run = await apiFetch<EvalRunItem & { results?: unknown[] }>("/ops/evals/run", token, {
+      const currentToken = await ensureFreshToken(token);
+      const run = await apiFetch<EvalRunItem & { results?: unknown[] }>("/ops/evals/run", currentToken, {
         method: "POST",
         body: JSON.stringify(
           source === "dataset"
@@ -1208,12 +1245,12 @@ export function useGestalokaRuntime() {
       setEvalRunDetail(
         await apiFetch<EvalRunDetail>(
           `/ops/evals/runs/${run.id}${buildQuery({ pack_id: opsPackFilter, world_template_id: opsTemplateFilter })}`,
-          token,
+          currentToken,
         ),
       );
-      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
+      await refreshAdminData(currentToken, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setEvalPending(false);
     }
@@ -1228,14 +1265,15 @@ export function useGestalokaRuntime() {
     try {
       setChecklistPending(true);
       setError("");
-      await apiFetch<ReleaseGateReport>("/ops/release/checklists/run", token, {
+      const currentToken = await ensureFreshToken(token);
+      await apiFetch<ReleaseGateReport>("/ops/release/checklists/run", currentToken, {
         method: "POST",
         body: JSON.stringify({ trigger_type: "manual" }),
       });
-      await refreshAdminData(token, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
+      await refreshAdminData(currentToken, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id);
       await refreshHealth();
     } catch (requestError) {
-      setError(formatError(requestError));
+      showRequestError(requestError);
     } finally {
       setChecklistPending(false);
     }
@@ -1327,6 +1365,7 @@ export function useGestalokaRuntime() {
     adjustNote,
     setAdjustNote,
     error,
+    authRecoveryRequired,
     turnPending,
     turnProgressPhase,
     turnProgressElapsedSeconds,

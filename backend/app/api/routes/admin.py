@@ -717,6 +717,7 @@ def get_admin_release(
         "canary_promote_status": report.get("canary_promote_status"),
         "created_at": report.get("created_at"),
         "cutover_status": report.get("cutover_status"),
+        "checks": report.get("check_summaries", []),
     }
 
 
