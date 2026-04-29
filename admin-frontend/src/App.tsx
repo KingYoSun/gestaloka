@@ -12,6 +12,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { apiFetch, formatError, requiresReauth } from "./api";
 import { Alert, AlertDescription } from "./components/ui/alert";
 import { Badge } from "./components/ui/badge";
@@ -22,6 +23,7 @@ import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { NativeSelect } from "./components/ui/native-select";
 import { Textarea } from "./components/ui/textarea";
+import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
 import keycloak, { initKeycloak } from "./lib/keycloak";
 import type {
   AdminUser,
@@ -65,19 +67,20 @@ const emptyState: AppState = {
   release: null,
 };
 
-const navItems: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
-  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard /> },
-  { id: "packs", label: "Packs", icon: <Boxes /> },
-  { id: "templates", label: "World Templates", icon: <ListChecks /> },
-  { id: "users", label: "Users & Permissions", icon: <Users /> },
-  { id: "llm", label: "LLM Settings", icon: <Settings /> },
-  { id: "lanes", label: "Model Lanes", icon: <Gauge /> },
-  { id: "prompts", label: "Prompts", icon: <MessageSquareText /> },
-  { id: "sp", label: "SP", icon: <WalletCards /> },
-  { id: "release", label: "Release", icon: <Rocket /> },
+const navItems: Array<{ id: AdminSection; labelKey: string; icon: ReactNode }> = [
+  { id: "dashboard", labelKey: "nav.dashboard", icon: <LayoutDashboard /> },
+  { id: "packs", labelKey: "nav.packs", icon: <Boxes /> },
+  { id: "templates", labelKey: "nav.templates", icon: <ListChecks /> },
+  { id: "users", labelKey: "nav.users", icon: <Users /> },
+  { id: "llm", labelKey: "nav.llm", icon: <Settings /> },
+  { id: "lanes", labelKey: "nav.lanes", icon: <Gauge /> },
+  { id: "prompts", labelKey: "nav.prompts", icon: <MessageSquareText /> },
+  { id: "sp", labelKey: "nav.sp", icon: <WalletCards /> },
+  { id: "release", labelKey: "nav.release", icon: <Rocket /> },
 ];
 
 function App() {
+  const { t } = useTranslation();
   const [section, setSection] = useState<AdminSection>("dashboard");
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -86,6 +89,10 @@ function App() {
   const [error, setError] = useState("");
   const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false);
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    document.title = t("common.adminTitle");
+  }, [t]);
 
   useEffect(() => {
     initKeycloak()
@@ -154,10 +161,10 @@ function App() {
     await keycloak.logout();
   }
 
-  const title = navItems.find((item) => item.id === section)?.label ?? "Dashboard";
+  const title = t(navItems.find((item) => item.id === section)?.labelKey ?? "nav.dashboard");
 
   if (!ready) {
-    return <div className="grid min-h-screen place-items-center p-6 text-sm text-muted-foreground">Loading admin session</div>;
+    return <div className="grid min-h-screen place-items-center p-6 text-sm text-muted-foreground">{t("common.loadingAdminSession")}</div>;
   }
 
   if (!authenticated) {
@@ -165,10 +172,10 @@ function App() {
       <main className="grid min-h-screen place-items-center bg-background p-6">
         <Card className="grid w-full max-w-[360px] gap-4 p-5">
           <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA Admin</p>
-          <h1 className="text-2xl font-bold leading-8 text-foreground">運用管理</h1>
+          <h1 className="text-2xl font-bold leading-8 text-foreground">{t("auth.heading")}</h1>
           <Button data-testid="admin-sign-in" onClick={login}>
             <KeyRound aria-hidden="true" />
-            ログイン
+            {t("auth.signIn")}
           </Button>
           {error ? (
             <Alert variant="destructive">
@@ -187,7 +194,7 @@ function App() {
           <span className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">GESTALOKA</span>
           <strong className="text-lg leading-6 text-foreground">Admin</strong>
         </div>
-        <nav className="grid content-start gap-1 max-[900px]:grid-cols-2" aria-label="Admin sections">
+        <nav className="grid content-start gap-1 max-[900px]:grid-cols-2" aria-label={t("nav.label")}>
           {navItems.map((item) => (
             <Button
               key={item.id}
@@ -197,7 +204,7 @@ function App() {
               onClick={() => setSection(item.id)}
             >
               {item.icon}
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
             </Button>
           ))}
         </nav>
@@ -205,15 +212,16 @@ function App() {
       <section className="grid min-w-0 content-start gap-4 p-6 max-[640px]:p-4">
         <header className="flex items-center justify-between gap-4 max-[640px]:items-start">
           <div>
-            <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">運用管理</p>
+            <p className="text-xs font-bold uppercase leading-[18px] text-muted-foreground">{t("admin.subtitle")}</p>
             <h1 className="text-2xl font-bold leading-8 text-foreground">{title}</h1>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button size="icon" variant="secondary" aria-label="Refresh" data-testid="admin-refresh" onClick={() => void refreshAll()}>
+            <LanguageSwitcher />
+            <Button size="icon" variant="secondary" aria-label={t("common.refresh")} data-testid="admin-refresh" onClick={() => void refreshAll()}>
               <RefreshCcw aria-hidden="true" />
             </Button>
             <Button variant="secondary" onClick={logout}>
-              ログアウト
+              {t("common.logout")}
             </Button>
           </div>
         </header>
@@ -223,7 +231,7 @@ function App() {
               <span>{error}</span>
               {authRecoveryRequired ? (
                 <Button size="sm" variant="secondary" onClick={login}>
-                  再ログイン
+                  {t("common.relogin")}
                 </Button>
               ) : null}
             </AlertDescription>
@@ -231,7 +239,7 @@ function App() {
         ) : null}
         {pending ? (
           <Alert>
-            <AlertDescription>更新中</AlertDescription>
+            <AlertDescription>{t("admin.pending")}</AlertDescription>
           </Alert>
         ) : null}
         <AdminBody
@@ -301,21 +309,23 @@ function AdminBody({
 }
 
 function Dashboard({ state }: { state: AppState }) {
+  const { t } = useTranslation();
   const overview = state.overview;
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-dashboard">
-      <Metric label="Pack status" value={overview?.packs.status ?? "unknown"} detail={`${overview?.packs.pack_count ?? 0} packs`} />
-      <Metric label="Templates" value={String(overview?.packs.template_count ?? 0)} detail={`${overview?.packs.failure_count ?? 0} failures`} />
-      <Metric label="Graph runtime" value={overview?.projection.graph_runtime_status ?? "unknown"} detail={`${overview?.projection.pending ?? 0} pending`} />
-      <Metric label="Release" value={overview?.release.verdict ?? "unknown"} detail={overview?.release.canary_promote_status ?? "unknown"} />
-      <Panel title="Operations">
-        <p className="text-sm leading-5 text-muted-foreground">Admin は pack、ユーザー権限、LLM 設定、prompt、SP、release 操作を扱います。</p>
+      <Metric label={t("admin.packStatus")} value={overview?.packs.status ?? t("common.unknown")} detail={t("admin.packCount", { count: overview?.packs.pack_count ?? 0 })} />
+      <Metric label={t("admin.templates")} value={String(overview?.packs.template_count ?? 0)} detail={t("admin.failures", { count: overview?.packs.failure_count ?? 0 })} />
+      <Metric label={t("admin.graphRuntime")} value={overview?.projection.graph_runtime_status ?? t("common.unknown")} detail={t("admin.pendingCount", { count: overview?.projection.pending ?? 0 })} />
+      <Metric label={t("admin.release")} value={overview?.release.verdict ?? t("common.unknown")} detail={overview?.release.canary_promote_status ?? t("common.unknown")} />
+      <Panel title={t("admin.operations")}>
+        <p className="text-sm leading-5 text-muted-foreground">{t("admin.operationsDescription")}</p>
       </Panel>
     </div>
   );
 }
 
 function PacksPage({ state, token, setError, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState({ pack_id: "", display_name: "", template_id: "default", template_display_name: "Default World", summary: "" });
   const [archivePath, setArchivePath] = useState("");
 
@@ -355,7 +365,7 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
 
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-packs">
-      <Panel title="Pack Catalog">
+      <Panel title={t("packs.catalog")}>
         <div className="grid gap-2">
           {(state.packs?.items ?? []).map((pack) => (
             <article key={pack.pack_id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
@@ -371,20 +381,20 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
           ))}
         </div>
       </Panel>
-      <Panel title="Create Pack">
+      <Panel title={t("packs.create")}>
         <form className="grid gap-2.5" onSubmit={createPack}>
-          <Field label="Pack ID"><Input value={draft.pack_id} onChange={(event) => setDraft({ ...draft, pack_id: event.target.value })} /></Field>
-          <Field label="Display Name"><Input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></Field>
-          <Field label="Template ID"><Input value={draft.template_id} onChange={(event) => setDraft({ ...draft, template_id: event.target.value })} /></Field>
-          <Field label="Template Name"><Input value={draft.template_display_name} onChange={(event) => setDraft({ ...draft, template_display_name: event.target.value })} /></Field>
-          <Field label="Summary"><Textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></Field>
-          <Button type="submit">作成</Button>
+          <Field label={t("packs.packId")}><Input value={draft.pack_id} onChange={(event) => setDraft({ ...draft, pack_id: event.target.value })} /></Field>
+          <Field label={t("packs.displayName")}><Input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></Field>
+          <Field label={t("packs.templateId")}><Input value={draft.template_id} onChange={(event) => setDraft({ ...draft, template_id: event.target.value })} /></Field>
+          <Field label={t("packs.templateName")}><Input value={draft.template_display_name} onChange={(event) => setDraft({ ...draft, template_display_name: event.target.value })} /></Field>
+          <Field label={t("packs.summary")}><Textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></Field>
+          <Button type="submit">{t("common.create")}</Button>
         </form>
       </Panel>
-      <Panel title="Import Archive">
+      <Panel title={t("packs.importArchive")}>
         <form className="grid gap-2.5" onSubmit={importPack}>
-          <Field label="Archive Path"><Input value={archivePath} onChange={(event) => setArchivePath(event.target.value)} /></Field>
-          <Button type="submit">Import</Button>
+          <Field label={t("packs.archivePath")}><Input value={archivePath} onChange={(event) => setArchivePath(event.target.value)} /></Field>
+          <Button type="submit">{t("common.import")}</Button>
         </form>
       </Panel>
     </div>
@@ -392,6 +402,7 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
 }
 
 function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   async function patchTemplate(template: TemplateItem, publishStatus: string) {
     try {
       await apiFetch(`/admin/world-templates/${template.pack_id}/${template.template_id}`, token, {
@@ -404,7 +415,7 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
     }
   }
   return (
-    <Panel title="World Templates">
+    <Panel title={t("nav.templates")}>
       <div className="grid gap-2" data-testid="admin-world-templates">
         {state.templates.map((template) => (
           <article key={`${template.pack_id}-${template.template_id}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
@@ -424,6 +435,7 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
 }
 
 function UsersPage({ state, token, setError, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   const [userSub, setUserSub] = useState("");
   const [role, setRole] = useState<AdminUser["role"]>("operator");
   async function submit(event: FormEvent) {
@@ -441,7 +453,7 @@ function UsersPage({ state, token, setError, refreshAll }: PageProps) {
   }
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-users">
-      <Panel title="Users">
+      <Panel title={t("users.users")}>
         <div className="grid gap-2">
           {state.users.map((user) => (
             <article key={user.user_sub} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
@@ -454,17 +466,17 @@ function UsersPage({ state, token, setError, refreshAll }: PageProps) {
           ))}
         </div>
       </Panel>
-      <Panel title="Grant Permission">
+      <Panel title={t("users.grantPermission")}>
         <form className="grid gap-2.5" onSubmit={submit}>
-          <Field label="User sub"><Input value={userSub} onChange={(event) => setUserSub(event.target.value)} /></Field>
-          <Field label="Role">
+          <Field label={t("users.userSub")}><Input value={userSub} onChange={(event) => setUserSub(event.target.value)} /></Field>
+          <Field label={t("users.role")}>
             <NativeSelect value={role} onChange={(event) => setRole(event.target.value as AdminUser["role"])}>
               <option value="operator">operator</option>
               <option value="admin">admin</option>
               <option value="viewer">viewer</option>
             </NativeSelect>
           </Field>
-          <Button type="submit">保存</Button>
+          <Button type="submit">{t("common.save")}</Button>
         </form>
       </Panel>
     </div>
@@ -472,10 +484,11 @@ function UsersPage({ state, token, setError, refreshAll }: PageProps) {
 }
 
 function LLMPage({ state, token, setError, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<LLMSettings | null>(null);
   useEffect(() => setDraft(state.llm), [state.llm]);
   if (!draft) {
-    return <Panel title="LLM Settings"><p>設定を読み込み中</p></Panel>;
+    return <Panel title={t("llm.settings")}><p>{t("llm.loading")}</p></Panel>;
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -487,23 +500,24 @@ function LLMPage({ state, token, setError, refreshAll }: PageProps) {
     }
   }
   return (
-    <Panel title="LLM Provider Settings">
+    <Panel title={t("llm.providerSettings")}>
       <form className="grid gap-2.5" data-testid="admin-llm-settings" onSubmit={submit}>
-        <Field label="Provider"><Input value={draft.provider} onChange={(event) => setDraft({ ...draft, provider: event.target.value })} /></Field>
-        <Field label="Base URL secret ref"><Input value={draft.base_url_secret_ref} onChange={(event) => setDraft({ ...draft, base_url_secret_ref: event.target.value })} /></Field>
-        <Field label="API key secret ref"><Input value={draft.api_key_secret_ref} onChange={(event) => setDraft({ ...draft, api_key_secret_ref: event.target.value })} /></Field>
-        <Field label="Embedding provider"><Input value={draft.embedding_provider} onChange={(event) => setDraft({ ...draft, embedding_provider: event.target.value })} /></Field>
+        <Field label={t("llm.provider")}><Input value={draft.provider} onChange={(event) => setDraft({ ...draft, provider: event.target.value })} /></Field>
+        <Field label={t("llm.baseUrlSecretRef")}><Input value={draft.base_url_secret_ref} onChange={(event) => setDraft({ ...draft, base_url_secret_ref: event.target.value })} /></Field>
+        <Field label={t("llm.apiKeySecretRef")}><Input value={draft.api_key_secret_ref} onChange={(event) => setDraft({ ...draft, api_key_secret_ref: event.target.value })} /></Field>
+        <Field label={t("llm.embeddingProvider")}><Input value={draft.embedding_provider} onChange={(event) => setDraft({ ...draft, embedding_provider: event.target.value })} /></Field>
         <label className="flex items-center gap-2 text-sm leading-5 text-foreground">
           <Checkbox checked={draft.admin_debug_enabled} onCheckedChange={(checked) => setDraft({ ...draft, admin_debug_enabled: checked === true })} />
-          Diagnostics を有効化
+          {t("llm.diagnostics")}
         </label>
-        <Button type="submit">保存</Button>
+        <Button type="submit">{t("common.save")}</Button>
       </form>
     </Panel>
   );
 }
 
 function LanesPage({ state, token, setError, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   const [modelIds, setModelIds] = useState<Record<string, string>>({});
   useEffect(() => setModelIds(state.lanes?.model_ids ?? {}), [state.lanes]);
   async function submit(event: FormEvent) {
@@ -516,20 +530,21 @@ function LanesPage({ state, token, setError, refreshAll }: PageProps) {
     }
   }
   return (
-    <Panel title="Model Lanes">
+    <Panel title={t("lanes.title")}>
       <form className="grid gap-2.5" data-testid="admin-model-lanes" onSubmit={submit}>
         {(state.lanes?.supported_lanes ?? ["lite_lane", "main_lane", "pro_lane"]).map((lane) => (
           <Field key={lane} label={lane}>
             <Input value={modelIds[lane] ?? ""} onChange={(event) => setModelIds({ ...modelIds, [lane]: event.target.value })} />
           </Field>
         ))}
-        <Button type="submit">保存</Button>
+        <Button type="submit">{t("common.save")}</Button>
       </form>
     </Panel>
   );
 }
 
 function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps & { setState: React.Dispatch<React.SetStateAction<AppState>> }) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState("");
   const [overrideText, setOverrideText] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -566,7 +581,7 @@ function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps
 
   return (
     <div className="grid grid-cols-[minmax(260px,360px)_minmax(0,1fr)] gap-3 max-[900px]:grid-cols-1" data-testid="admin-prompts">
-      <Panel title="Prompt Registry">
+      <Panel title={t("prompts.registry")}>
         <div className="grid gap-2">
           {state.prompts.map((prompt) => (
             <Button
@@ -581,19 +596,19 @@ function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps
           ))}
         </div>
       </Panel>
-      <Panel title={selectedPrompt?.prompt_id ?? "Prompt Override"}>
+      <Panel title={selectedPrompt?.prompt_id ?? t("prompts.override")}>
         {state.promptDetail ? (
           <form className="grid gap-2.5" onSubmit={submit}>
             <p className="text-sm leading-5 text-muted-foreground">{state.promptDetail.owner_module} / {state.promptDetail.eval_dataset_ref}</p>
             <label className="flex items-center gap-2 text-sm leading-5 text-foreground">
               <Checkbox checked={enabled} onCheckedChange={(checked) => setEnabled(checked === true)} />
-              Override enabled
+              {t("prompts.overrideEnabled")}
             </label>
-            <Field label="Override instructions"><Textarea rows={10} value={overrideText} onChange={(event) => setOverrideText(event.target.value)} /></Field>
-            <Button type="submit">保存</Button>
+            <Field label={t("prompts.instructions")}><Textarea rows={10} value={overrideText} onChange={(event) => setOverrideText(event.target.value)} /></Field>
+            <Button type="submit">{t("common.save")}</Button>
           </form>
         ) : (
-          <p className="text-sm leading-5 text-muted-foreground">Prompt を選択</p>
+          <p className="text-sm leading-5 text-muted-foreground">{t("prompts.select")}</p>
         )}
       </Panel>
     </div>
@@ -601,6 +616,7 @@ function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps
 }
 
 function SPPage({ state, token, setError, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState({ user_sub: "", delta: "0", reason_code: "admin_adjustment", world_id: "", note: "" });
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -616,15 +632,15 @@ function SPPage({ state, token, setError, refreshAll }: PageProps) {
   }
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-sp">
-      <Metric label="Accounts" value={String(state.sp?.total_accounts ?? 0)} detail={`${state.sp?.total_ledger_entries ?? 0} ledger entries`} />
-      <Panel title="SP Adjustment">
+      <Metric label={t("sp.accounts")} value={String(state.sp?.total_accounts ?? 0)} detail={t("sp.ledgerEntries", { count: state.sp?.total_ledger_entries ?? 0 })} />
+      <Panel title={t("sp.adjustment")}>
         <form className="grid gap-2.5" onSubmit={submit}>
-          <Field label="User sub"><Input value={draft.user_sub} onChange={(event) => setDraft({ ...draft, user_sub: event.target.value })} /></Field>
-          <Field label="Delta"><Input value={draft.delta} onChange={(event) => setDraft({ ...draft, delta: event.target.value })} /></Field>
-          <Field label="Reason"><Input value={draft.reason_code} onChange={(event) => setDraft({ ...draft, reason_code: event.target.value })} /></Field>
-          <Field label="World ID"><Input value={draft.world_id} onChange={(event) => setDraft({ ...draft, world_id: event.target.value })} /></Field>
-          <Field label="Note"><Textarea value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></Field>
-          <Button type="submit">適用</Button>
+          <Field label={t("sp.userSub")}><Input value={draft.user_sub} onChange={(event) => setDraft({ ...draft, user_sub: event.target.value })} /></Field>
+          <Field label={t("sp.delta")}><Input value={draft.delta} onChange={(event) => setDraft({ ...draft, delta: event.target.value })} /></Field>
+          <Field label={t("sp.reason")}><Input value={draft.reason_code} onChange={(event) => setDraft({ ...draft, reason_code: event.target.value })} /></Field>
+          <Field label={t("sp.worldId")}><Input value={draft.world_id} onChange={(event) => setDraft({ ...draft, world_id: event.target.value })} /></Field>
+          <Field label={t("sp.note")}><Textarea value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></Field>
+          <Button type="submit">{t("common.apply")}</Button>
         </form>
       </Panel>
     </div>
@@ -632,6 +648,7 @@ function SPPage({ state, token, setError, refreshAll }: PageProps) {
 }
 
 function ReleasePage({ state, token, setError, setAuthRecoveryRequired, refreshAll }: PageProps) {
+  const { t } = useTranslation();
   const [checklistPending, setChecklistPending] = useState(false);
   const [progress, setProgress] = useState<ReleaseProgress | null>(null);
 
@@ -667,18 +684,20 @@ function ReleasePage({ state, token, setError, setAuthRecoveryRequired, refreshA
   const visibleProgress = progress;
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-release">
-      <Metric label="Verdict" value={state.release?.verdict ?? "unknown"} detail={state.release?.canary_promote_status ?? "unknown"} />
-      <Panel title="Release Checklist">
-        <p className="text-sm leading-5 text-muted-foreground">Created: {state.release?.created_at ?? "not run"}</p>
-        <p className="text-sm leading-5 text-muted-foreground">Blocked: {(state.release?.blocked_reasons ?? []).join(", ") || "none"}</p>
+      <Metric label={t("release.verdict")} value={state.release?.verdict ?? t("common.unknown")} detail={state.release?.canary_promote_status ?? t("common.unknown")} />
+      <Panel title={t("release.checklist")}>
+        <p className="text-sm leading-5 text-muted-foreground">{t("release.created", { value: state.release?.created_at ?? t("release.notRun") })}</p>
+        <p className="text-sm leading-5 text-muted-foreground">{t("release.blocked", { value: (state.release?.blocked_reasons ?? []).join(", ") || t("release.none") })}</p>
         <p className="text-sm leading-5 text-muted-foreground" data-testid="admin-release-progress">
-          Progress: {visibleProgress?.status ?? (checklistPending ? "running" : "idle")}
-          {visibleProgress?.current_check ? ` / ${visibleProgress.current_check}` : ""}
-          {visibleProgress ? ` / ${Math.floor(visibleProgress.elapsed_seconds)}s` : ""}
+          {t("release.progress", {
+            status: visibleProgress?.status ?? (checklistPending ? t("release.running") : t("release.idle")),
+            currentCheck: visibleProgress?.current_check ? ` / ${visibleProgress.current_check}` : "",
+            elapsed: visibleProgress ? ` / ${Math.floor(visibleProgress.elapsed_seconds)}s` : "",
+          })}
         </p>
-        {visibleProgress?.error ? <p className="text-sm leading-5 text-destructive">Error: {visibleProgress.error}</p> : null}
+        {visibleProgress?.error ? <p className="text-sm leading-5 text-destructive">{t("release.error", { message: visibleProgress.error })}</p> : null}
         <Button onClick={() => void runChecklist()} disabled={checklistPending}>
-          {checklistPending ? "Running checklist" : "Run checklist"}
+          {checklistPending ? t("release.runningChecklist") : t("release.run")}
         </Button>
       </Panel>
     </div>

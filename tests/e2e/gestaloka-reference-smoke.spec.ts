@@ -82,3 +82,21 @@ test("mobile player shell does not overflow at 375px", async ({ page }) => {
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(hasHorizontalOverflow).toBe(false);
 });
+
+test("player language switcher changes fixed UI labels and persists", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByTestId("sign-in")).toContainText("ログインして続ける");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+
+  await page.getByRole("button", { name: /EN/ }).click();
+  await expect(page.getByTestId("sign-in")).toContainText("Sign in to continue");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.reload();
+  await expect(page.getByTestId("sign-in")).toContainText("Sign in to continue");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.getByRole("button", { name: /JA/ }).click();
+  await expect(page.getByTestId("sign-in")).toContainText("ログインして続ける");
+});

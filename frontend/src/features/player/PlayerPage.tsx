@@ -1,5 +1,7 @@
 import { LogIn, UserPlus } from "lucide-react";
 import type { FormEvent } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import { Field } from "../../components/ui/Field";
@@ -51,8 +53,9 @@ function formatRoutineState(state: Record<string, unknown>): string {
 }
 
 export function PlayerPage({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   return (
-    <section className="grid min-h-[calc(100vh-2.5rem)]" aria-label="物語">
+    <section className="grid min-h-[calc(100vh-2.5rem)]" aria-label={t("player.labels.story")}>
       {!runtime.authenticated ? <FirstView runtime={runtime} /> : null}
       {runtime.authenticated && !runtime.session ? <WorldStartView runtime={runtime} /> : null}
       {runtime.session ? <PlayingView runtime={runtime} /> : null}
@@ -62,17 +65,18 @@ export function PlayerPage({ runtime }: PlayerPageProps) {
 }
 
 function FirstView({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   return (
-    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label="開始">
-      <p className="text-sm font-bold leading-[21px] text-foreground">GESTALOKA</p>
+    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label={t("player.labels.start")}>
+      <p className="text-sm font-bold leading-[21px] text-foreground">{t("common.brand")}</p>
       <div className="grid w-full max-w-80 min-w-0 self-center gap-4 max-[480px]:max-w-none">
         <Button data-testid="sign-in" onClick={runtime.handleLogin} disabled={!runtime.ready}>
           <LogIn aria-hidden="true" />
-          ログインして続ける
+          {t("auth.signIn")}
         </Button>
         <Button variant="secondary" onClick={runtime.handleRegister} disabled={!runtime.ready}>
           <UserPlus aria-hidden="true" />
-          アカウントを作成して始める
+          {t("auth.register")}
         </Button>
       </div>
     </section>
@@ -80,6 +84,7 @@ function FirstView({ runtime }: PlayerPageProps) {
 }
 
 function WorldStartView({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   const {
     beginProfileEdit,
     cancelProfileEdit,
@@ -102,15 +107,15 @@ function WorldStartView({ runtime }: PlayerPageProps) {
     handleStartSession,
   } = runtime;
   const catalogStateLabel = worldCatalogUnavailable
-    ? "世界を読み込めません"
-    : (!playableWorlds.length && worldCatalogStatus !== "ready" ? "読込中" : "");
+    ? t("player.world.unavailable")
+    : (!playableWorlds.length && worldCatalogStatus !== "ready" ? t("common.loading") : "");
 
   return (
-    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label="世界開始">
-      <p className="text-sm font-bold leading-[21px] text-foreground">GESTALOKA</p>
+    <section className="grid min-h-[calc(100vh-2.5rem)] grid-rows-[auto_1fr] py-5" aria-label={t("player.labels.worldStart")}>
+      <p className="text-sm font-bold leading-[21px] text-foreground">{t("common.brand")}</p>
       <div className="grid min-w-0 grid-cols-[minmax(0,320px)_minmax(0,620px)] items-start gap-4 self-center max-[940px]:grid-cols-1">
         <div className="grid min-w-0 gap-3">
-          <Field label="世界">
+          <Field label={t("player.labels.world")}>
             <NativeSelect
               data-testid="world-select"
               value={worldId}
@@ -118,7 +123,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
               disabled={worldCatalogUnavailable || !playableWorlds.length}
             >
               <option value="" disabled>
-                世界を選択
+                {t("player.world.select")}
               </option>
               {playableWorlds.map((item) => (
                 <option key={item.world_id} value={item.world_id} disabled={item.status !== "playable"}>
@@ -128,14 +133,14 @@ function WorldStartView({ runtime }: PlayerPageProps) {
             </NativeSelect>
           </Field>
           <p className="text-[28px] font-bold leading-9 tracking-[1.12px] text-foreground max-[480px]:text-2xl max-[480px]:leading-8">
-            {selectedWorld?.display_name ?? "世界を選択"}
+            {selectedWorld?.display_name ?? t("player.world.select")}
           </p>
           {catalogStateLabel ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{catalogStateLabel}</p> : null}
           {wallet ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">SP {wallet.balance}</p> : null}
         </div>
         <div className="grid min-w-0 gap-3">
           {playerProfiles.length ? (
-            <Field label="プレイヤー">
+            <Field label={t("player.labels.player")}>
               <NativeSelect
                 data-testid="player-profile-select"
                 value={selectedPlayerActorId}
@@ -169,7 +174,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
                 !selectedPlayerProfile
               }
             >
-              始める
+              {t("player.world.start")}
             </Button>
           </form>
         </div>
@@ -179,11 +184,12 @@ function WorldStartView({ runtime }: PlayerPageProps) {
 }
 
 function ProfileSummary({ onEdit, profile }: { onEdit: (profile: PlayerProfile) => void; profile: PlayerProfile }) {
+  const { t } = useTranslation();
   const styleLabel = [
-    profile.narrative_preferences.perspective === "first_person" ? "一人称" : "三人称",
-    profile.narrative_preferences.tone === "lyrical" ? "叙情的" : "論理的",
-    profile.narrative_preferences.density === "concise" ? "簡素" : "重厚",
-    profile.narrative_preferences.dialogue_style === "dialogue_forward" ? "セリフ中心" : "文語的",
+    profile.narrative_preferences.perspective === "first_person" ? t("player.profile.perspective.firstPerson") : t("player.profile.perspective.thirdPerson"),
+    profile.narrative_preferences.tone === "lyrical" ? t("player.profile.tone.lyrical") : t("player.profile.tone.logical"),
+    profile.narrative_preferences.density === "concise" ? t("player.profile.density.concise") : t("player.profile.density.ornate"),
+    profile.narrative_preferences.dialogue_style === "dialogue_forward" ? t("player.profile.dialogueStyle.dialogueForward") : t("player.profile.dialogueStyle.literary"),
   ].join(" / ");
   return (
     <Card>
@@ -192,7 +198,7 @@ function ProfileSummary({ onEdit, profile }: { onEdit: (profile: PlayerProfile) 
         <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{styleLabel}</p>
         {!profile.locked ? (
           <Button className="mt-1 w-fit" variant="secondary" type="button" onClick={() => onEdit(profile)}>
-            編集
+            {t("common.edit")}
           </Button>
         ) : null}
       </CardContent>
@@ -215,9 +221,10 @@ function ProfileForm({
   profilePending: boolean;
   setProfileDraft: GestalokaRuntime["setProfileDraft"];
 }) {
+  const { t } = useTranslation();
   return (
     <form className="grid min-w-0 gap-3" onSubmit={onSubmit}>
-      <Field label="名前">
+      <Field label={t("player.labels.name")}>
         <Input
           data-testid="profile-display-name"
           value={profileDraft.display_name}
@@ -225,20 +232,20 @@ function ProfileForm({
           onChange={(event) => setProfileDraft((current) => ({ ...current, display_name: event.target.value }))}
         />
       </Field>
-      <Field label="性別">
+      <Field label={t("player.labels.gender")}>
         <NativeSelect
           value={profileDraft.gender}
           onChange={(event) =>
             setProfileDraft((current) => ({ ...current, gender: event.target.value as PlayerProfile["gender"] }))
           }
         >
-          <option value="unspecified">未指定</option>
-          <option value="male">男</option>
-          <option value="female">女</option>
-          <option value="other">その他</option>
+          <option value="unspecified">{t("player.profile.gender.unspecified")}</option>
+          <option value="male">{t("player.profile.gender.male")}</option>
+          <option value="female">{t("player.profile.gender.female")}</option>
+          <option value="other">{t("player.profile.gender.other")}</option>
         </NativeSelect>
       </Field>
-      <Field label="背景">
+      <Field label={t("player.labels.background")}>
         <Textarea
           rows={3}
           value={profileDraft.background}
@@ -246,7 +253,7 @@ function ProfileForm({
           onChange={(event) => setProfileDraft((current) => ({ ...current, background: event.target.value }))}
         />
       </Field>
-      <Field label="自由記述">
+      <Field label={t("player.labels.freeTextProfile")}>
         <Textarea
           rows={3}
           value={profileDraft.free_text}
@@ -255,7 +262,7 @@ function ProfileForm({
         />
       </Field>
       <div className="grid grid-cols-2 gap-3 max-[480px]:grid-cols-1">
-        <Field label="視点">
+        <Field label={t("player.labels.perspective")}>
           <NativeSelect
             value={profileDraft.narrative_preferences.perspective}
             onChange={(event) =>
@@ -268,11 +275,11 @@ function ProfileForm({
               }))
             }
           >
-            <option value="third_person">三人称</option>
-            <option value="first_person">一人称</option>
+            <option value="third_person">{t("player.profile.perspective.thirdPerson")}</option>
+            <option value="first_person">{t("player.profile.perspective.firstPerson")}</option>
           </NativeSelect>
         </Field>
-        <Field label="調子">
+        <Field label={t("player.labels.tone")}>
           <NativeSelect
             value={profileDraft.narrative_preferences.tone}
             onChange={(event) =>
@@ -285,11 +292,11 @@ function ProfileForm({
               }))
             }
           >
-            <option value="lyrical">叙情的</option>
-            <option value="logical">論理的</option>
+            <option value="lyrical">{t("player.profile.tone.lyrical")}</option>
+            <option value="logical">{t("player.profile.tone.logical")}</option>
           </NativeSelect>
         </Field>
-        <Field label="密度">
+        <Field label={t("player.labels.density")}>
           <NativeSelect
             value={profileDraft.narrative_preferences.density}
             onChange={(event) =>
@@ -302,11 +309,11 @@ function ProfileForm({
               }))
             }
           >
-            <option value="concise">簡素</option>
-            <option value="ornate">重厚</option>
+            <option value="concise">{t("player.profile.density.concise")}</option>
+            <option value="ornate">{t("player.profile.density.ornate")}</option>
           </NativeSelect>
         </Field>
-        <Field label="文">
+        <Field label={t("player.labels.sentence")}>
           <NativeSelect
             value={profileDraft.narrative_preferences.dialogue_style}
             onChange={(event) =>
@@ -319,18 +326,18 @@ function ProfileForm({
               }))
             }
           >
-            <option value="literary">文語的</option>
-            <option value="dialogue_forward">セリフ中心</option>
+            <option value="literary">{t("player.profile.dialogueStyle.literary")}</option>
+            <option value="dialogue_forward">{t("player.profile.dialogueStyle.dialogueForward")}</option>
           </NativeSelect>
         </Field>
       </div>
       <div className="flex flex-wrap gap-3 max-[480px]:grid max-[480px]:grid-cols-1">
         <Button data-testid="create-player-profile" type="submit" disabled={profilePending || !profileDraft.display_name.trim()}>
-          {editingPlayerActorId ? "保存" : "作成"}
+          {editingPlayerActorId ? t("common.save") : t("common.create")}
         </Button>
         {editingPlayerActorId ? (
           <Button variant="secondary" type="button" onClick={onCancelEdit} disabled={profilePending}>
-            取消
+            {t("common.cancel")}
           </Button>
         ) : null}
       </div>
@@ -339,17 +346,18 @@ function ProfileForm({
 }
 
 function PlayingView({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   return (
     <section
       className="grid grid-cols-[minmax(0,620px)_minmax(240px,280px)] items-start gap-6 py-5 pb-10 max-[940px]:grid-cols-1"
-      aria-label="プレイ中"
+      aria-label={t("player.labels.playing")}
     >
       <main className="grid max-w-[620px] min-w-0 gap-4 max-[940px]:max-w-none">
         <SceneHeader runtime={runtime} />
         <LatestStory runtime={runtime} />
         <TurnComposer runtime={runtime} />
       </main>
-      <aside className="grid min-w-0 gap-4" aria-label="状況">
+      <aside className="grid min-w-0 gap-4" aria-label={t("player.labels.status")}>
         <QuestBlock runtime={runtime} />
         <SideLists runtime={runtime} />
       </aside>
@@ -358,19 +366,20 @@ function PlayingView({ runtime }: PlayerPageProps) {
 }
 
 function SceneHeader({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   const { session, sessionState } = runtime;
   const location = sessionState?.current_location ?? sessionState?.location ?? null;
   const chapter = sessionState?.chapter;
   const scene = sessionState?.current_scene;
 
   return (
-    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label="場面">
-      <p className="text-sm font-bold leading-[21px] text-foreground">GESTALOKA</p>
+    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label={t("player.labels.scene")}>
+      <p className="text-sm font-bold leading-[21px] text-foreground">{t("common.brand")}</p>
       <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="session-location">
-        {location?.name ?? session?.world_name ?? "開始地点"}
+        {location?.name ?? session?.world_name ?? t("player.world.startLocation")}
       </p>
       <h1 className="text-[32px] font-bold leading-[48px] tracking-[1.28px] text-foreground max-[480px]:text-[28px] max-[480px]:leading-9" data-testid="current-place-summary">
-        {location?.name ?? "開始地点"}
+        {location?.name ?? t("player.world.startLocation")}
       </h1>
       {chapter?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
       {scene?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
@@ -379,10 +388,11 @@ function SceneHeader({ runtime }: PlayerPageProps) {
 }
 
 function LatestStory({ runtime }: PlayerPageProps) {
-  const storyItems = buildStoryItems(runtime);
+  const { t } = useTranslation();
+  const storyItems = buildStoryItems(runtime, t);
 
   return (
-    <Card className="min-w-0 p-6 max-[480px]:p-4" aria-label="本文">
+    <Card className="min-w-0 p-6 max-[480px]:p-4" aria-label={t("player.labels.body")}>
       <div className="grid gap-4">
         {storyItems.map((item) => (
           <article className="grid gap-3" key={item.key}>
@@ -406,7 +416,7 @@ function LatestStory({ runtime }: PlayerPageProps) {
   );
 }
 
-function buildStoryItems(runtime: GestalokaRuntime): TextItem[] {
+function buildStoryItems(runtime: GestalokaRuntime, t: TFunction): TextItem[] {
   const { latestConsequenceSummary, latestNarrative, latestReaction, sessionState } = runtime;
   const scene = sessionState?.current_scene;
   const location = sessionState?.current_location ?? sessionState?.location ?? null;
@@ -417,21 +427,22 @@ function buildStoryItems(runtime: GestalokaRuntime): TextItem[] {
   } else {
     items.push({
       key: "latest-narrative",
-      body: scene?.summary ?? location?.description ?? "進行中",
+      body: scene?.summary ?? location?.description ?? t("player.story.inProgress"),
     });
   }
 
   if (latestReaction) {
-    items.push({ key: "latest-reaction-visible", title: "反応", body: latestReaction });
+    items.push({ key: "latest-reaction-visible", title: t("player.story.reaction"), body: latestReaction });
   }
   if (latestConsequenceSummary) {
-    items.push({ key: "latest-consequence-visible", title: "変化", body: latestConsequenceSummary });
+    items.push({ key: "latest-consequence-visible", title: t("player.story.consequence"), body: latestConsequenceSummary });
   }
 
   return items;
 }
 
 function TurnComposer({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   const {
     freeTextInput,
     handleChoiceSubmit,
@@ -447,19 +458,19 @@ function TurnComposer({ runtime }: PlayerPageProps) {
   } = runtime;
   const phaseLabel =
     turnProgressPhase === "submitting"
-      ? "送信中"
+      ? t("player.turn.submitting")
       : turnProgressPhase === "resolving"
-        ? "解決中"
+        ? t("player.turn.resolving")
         : turnProgressPhase === "refreshing"
-          ? "反映中"
-          : "選択待ち";
+          ? t("player.turn.refreshing")
+          : t("player.turn.waiting");
   const progressStatus = turnPending
-    ? `進行中 / ${phaseLabel} / ${turnProgressElapsedSeconds}s`
-    : "選択待ち";
+    ? t("player.turn.progress", { phase: phaseLabel, seconds: turnProgressElapsedSeconds })
+    : t("player.turn.waiting");
 
   return (
-    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label="次">
-      <div className="flex flex-wrap gap-2 max-[480px]:grid max-[480px]:grid-cols-1" role="group" aria-label="入力">
+    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label={t("player.labels.next")}>
+      <div className="flex flex-wrap gap-2 max-[480px]:grid max-[480px]:grid-cols-1" role="group" aria-label={t("player.labels.input")}>
         <Button
           variant={turnInputMode === "choice" ? "default" : "secondary"}
           type="button"
@@ -467,7 +478,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
           onClick={() => setTurnInputMode("choice")}
           disabled={!session || turnPending}
         >
-          選択肢
+          {t("player.turn.choice")}
         </Button>
         <Button
           variant={turnInputMode === "free_text" ? "default" : "secondary"}
@@ -476,7 +487,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
           onClick={() => setTurnInputMode("free_text")}
           disabled={!session || turnPending}
         >
-          自由入力
+          {t("player.turn.freeText")}
         </Button>
       </div>
 
@@ -484,7 +495,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         <ChoiceList choices={suggestedChoices} onChoose={handleChoiceSubmit} disabled={!session || turnPending} />
       ) : (
         <form onSubmit={handleTurnSubmit} className="grid gap-4">
-          <Field label="自由入力">
+          <Field label={t("player.labels.freeText")}>
             <Textarea
               data-testid="turn-input"
               rows={4}
@@ -494,7 +505,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
             />
           </Field>
           <Button data-testid="submit-turn" type="submit" disabled={!session || turnPending}>
-            {turnPending ? "進行中" : "送信"}
+            {turnPending ? t("player.story.inProgress") : t("common.submit")}
           </Button>
         </form>
       )}
@@ -504,7 +515,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
       </p>
       {turnPending && turnProgressElapsedSeconds >= 45 ? (
         <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-retry-guidance">
-          応答待ちが続いています。結果反映までこのまま待ち、同じ操作を再送信しないでください。
+          {t("player.turn.retryGuidance")}
         </p>
       ) : null}
     </Card>
@@ -520,6 +531,7 @@ function ChoiceList({
   disabled: boolean;
   onChoose: (choiceId: NarrativeChoice["choice_id"]) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   return (
     <ul className="grid gap-3" data-testid="choice-list">
       {choices.length ? (
@@ -538,18 +550,19 @@ function ChoiceList({
           </li>
         ))
       ) : (
-        <li className="text-muted-foreground">進行中</li>
+        <li className="text-muted-foreground">{t("player.story.inProgress")}</li>
       )}
     </ul>
   );
 }
 
 function QuestBlock({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   const { activeQuest } = runtime;
 
   return (
     <Card className="grid min-w-0 gap-3 p-4" data-testid="active-quest">
-      <h2 className="text-base font-semibold leading-6 text-foreground">クエスト</h2>
+      <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.quest")}</h2>
       {activeQuest ? (
         <>
           <p className="font-bold leading-6 text-foreground">{activeQuest.title}</p>
@@ -565,23 +578,24 @@ function QuestBlock({ runtime }: PlayerPageProps) {
           </p>
         </>
       ) : (
-        <p className="text-sm leading-5 text-muted-foreground">進行中</p>
+        <p className="text-sm leading-5 text-muted-foreground">{t("player.story.inProgress")}</p>
       )}
     </Card>
   );
 }
 
 function SideLists({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
   const { sessionState } = runtime;
 
   return (
     <>
       <Card className="grid min-w-0 gap-3 p-4">
-        <h2 className="text-base font-semibold leading-6 text-foreground">人物</h2>
+        <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.figures")}</h2>
         <StreamList
           testId="local-figures-stream"
           items={sessionState?.local_figures ?? []}
-          empty="進行中"
+          empty={t("player.story.inProgress")}
           getKey={(item) => item.actor_id}
           renderItem={(item) => (
             <>
@@ -600,11 +614,11 @@ function SideLists({ runtime }: PlayerPageProps) {
       </Card>
 
       <Card className="grid min-w-0 gap-3 p-4">
-        <h2 className="text-base font-semibold leading-6 text-foreground">移動先</h2>
+        <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.routes")}</h2>
         <StreamList
           testId="nearby-routes-stream"
           items={sessionState?.nearby_routes ?? []}
-          empty="進行中"
+          empty={t("player.story.inProgress")}
           getKey={(item) => item.route_key}
           renderItem={(item) => (
             <>
@@ -616,11 +630,11 @@ function SideLists({ runtime }: PlayerPageProps) {
       </Card>
 
       <Card className="grid min-w-0 gap-3 p-4">
-        <h2 className="text-base font-semibold leading-6 text-foreground">所持品</h2>
+        <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.inventory")}</h2>
         <StreamList
           testId="inventory-stream"
           items={sessionState?.inventory ?? []}
-          empty="なし"
+          empty={t("common.none")}
           getKey={(item) => item.id}
           renderItem={(item) => (
             <>

@@ -1,3 +1,5 @@
+import i18n from "./i18n";
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 export type APIError = Error & {
@@ -45,7 +47,7 @@ export async function apiFetch<T>(path: string, token?: string, init?: RequestIn
 export function formatError(error: unknown) {
   const typed = error as APIError;
   if (typed.requiresReauth) {
-    return `${typed.message}. Backend restart or token audience drift can invalidate the current admin session. 再ログインしてください。`;
+    return i18n.t("auth.recovery", { message: typed.message });
   }
   return typed.message || String(error);
 }

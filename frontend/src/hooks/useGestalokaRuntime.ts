@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import keycloak, { initKeycloak, isKeycloakConfigured } from "../lib/keycloak";
 import { apiFetch, formatError } from "../api/client";
 import {
@@ -72,6 +73,7 @@ const defaultProfileDraft = {
 };
 
 export function useGestalokaRuntime() {
+  const { t } = useTranslation();
   const [route, setRoute] = useState<AppRoute>(() => resolveRoute());
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -91,7 +93,7 @@ export function useGestalokaRuntime() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
-  const [freeTextInput, setFreeTextInput] = useState("広場で旅人を助け、周囲の様子を確かめる");
+  const [freeTextInput, setFreeTextInput] = useState(() => t("player.defaults.freeTextInput"));
   const [latestNarrative, setLatestNarrative] = useState("");
   const [latestReaction, setLatestReaction] = useState("");
   const [latestConsequenceSummary, setLatestConsequenceSummary] = useState("");
@@ -130,7 +132,7 @@ export function useGestalokaRuntime() {
   const [lastRebuild, setLastRebuild] = useState<RebuildSummary | null>(null);
   const [lastMemoryReindex, setLastMemoryReindex] = useState<MemoryReindexResult | null>(null);
   const [lastAdjustment, setLastAdjustment] = useState<SPAdjustmentResponse | null>(null);
-  const [memorySearchQuery, setMemorySearchQuery] = useState("旅人を助けた");
+  const [memorySearchQuery, setMemorySearchQuery] = useState(() => t("player.defaults.memorySearchQuery"));
   const [memorySearchResult, setMemorySearchResult] = useState<MemorySearchResponse | null>(null);
   const [ledgerUserFilter, setLedgerUserFilter] = useState("");
   const [ledgerWorldFilter, setLedgerWorldFilter] = useState("");
@@ -317,7 +319,7 @@ export function useGestalokaRuntime() {
         setPlayableWorlds(worldPayload.items);
         setWorldCatalogStatus(worldPayload.status);
         if (worldPayload.status === "error") {
-          setError("Playable world catalog unavailable");
+          setError(t("errors.worldCatalogUnavailable"));
         }
         const firstPlayableWorld = worldPayload.items.find((item) => item.status === "playable") ?? worldPayload.items[0];
         setWorldId((current) =>
@@ -422,7 +424,7 @@ export function useGestalokaRuntime() {
     };
     socket.onerror = () => {
       setSocketState("error");
-      setError("WebSocket connection failed");
+      setError(t("errors.websocketFailed"));
     };
     socket.onclose = () => {
       setSocketState("closed");
@@ -714,7 +716,7 @@ export function useGestalokaRuntime() {
 
   async function handleLogin() {
     if (!isKeycloakConfigured()) {
-      setError("Authentication is not configured");
+      setError(t("errors.authNotConfigured"));
       return;
     }
     await keycloak.login();
@@ -722,7 +724,7 @@ export function useGestalokaRuntime() {
 
   async function handleRegister() {
     if (!isKeycloakConfigured()) {
-      setError("Authentication is not configured");
+      setError(t("errors.authNotConfigured"));
       return;
     }
     await keycloak.register();
@@ -739,11 +741,11 @@ export function useGestalokaRuntime() {
   async function handleCreatePlayerProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !worldId) {
-      setError("Sign in before creating a player profile");
+      setError(t("errors.signInBeforeProfile"));
       return;
     }
     if (!profileDraft.display_name.trim()) {
-      setError("名前を入力してください");
+      setError(t("errors.nameRequired"));
       return;
     }
     try {
@@ -798,19 +800,19 @@ export function useGestalokaRuntime() {
   async function handleStartSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
-      setError("Sign in before starting a world session");
+      setError(t("errors.signInBeforeSession"));
       return;
     }
     if (worldCatalogUnavailable) {
-      setError("Playable world catalog is unavailable");
+      setError(t("errors.playableWorldCatalogUnavailable"));
       return;
     }
     if (!selectedWorld || selectedWorld.status !== "playable") {
-      setError("Choose a playable world before starting a session");
+      setError(t("errors.chooseWorldBeforeSession"));
       return;
     }
     if (!selectedPlayerProfile) {
-      setError("プレイヤープロフィールを選択してください");
+      setError(t("errors.profileRequired"));
       return;
     }
 
@@ -852,7 +854,7 @@ export function useGestalokaRuntime() {
       | { input_mode: "free_text"; input_text: string },
   ) {
     if (!token || !session) {
-      setError("Start a session first");
+      setError(t("errors.startSessionFirst"));
       return;
     }
 
@@ -937,7 +939,7 @@ export function useGestalokaRuntime() {
 
   async function handleRebuildGraph() {
     if (!token || !activeWorldId) {
-      setError("Choose a world before rebuilding the graph");
+      setError(t("errors.chooseWorldBeforeGraph"));
       return;
     }
 
@@ -966,7 +968,7 @@ export function useGestalokaRuntime() {
 
   async function handleIdlePass() {
     if (!token || !activeWorldId) {
-      setError("Choose a world before triggering an idle pass");
+      setError(t("errors.chooseWorldBeforeIdlePass"));
       return;
     }
 
@@ -1011,7 +1013,7 @@ export function useGestalokaRuntime() {
   async function handleMemorySearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !activeWorldId) {
-      setError("Choose a world before running memory search");
+      setError(t("errors.chooseWorldBeforeMemorySearch"));
       return;
     }
 
@@ -1028,7 +1030,7 @@ export function useGestalokaRuntime() {
 
   async function handleMemoryReindex() {
     if (!token || !activeWorldId) {
-      setError("Choose a world before reindexing memories");
+      setError(t("errors.chooseWorldBeforeReindex"));
       return;
     }
 
@@ -1066,7 +1068,7 @@ export function useGestalokaRuntime() {
   async function handleAdjustmentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
-      setError("Sign in before applying adjustments");
+      setError(t("errors.signInBeforeAdjustments"));
       return;
     }
 
@@ -1105,7 +1107,7 @@ export function useGestalokaRuntime() {
 
   async function handleEvalRun(source: "dataset" | "shadow_replay", datasetName?: string) {
     if (!token) {
-      setError("Sign in before running evals");
+      setError(t("errors.signInBeforeEvals"));
       return;
     }
 
@@ -1137,7 +1139,7 @@ export function useGestalokaRuntime() {
 
   async function handleReleaseChecklistRun() {
     if (!token) {
-      setError("Sign in before running release checklists");
+      setError(t("errors.signInBeforeRelease"));
       return;
     }
 

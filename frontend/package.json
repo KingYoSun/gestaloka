@@ -15,10 +15,12 @@
     "@tailwindcss/vite": "^4.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "i18next": "^26.0.8",
     "keycloak-js": "^26.2.0",
     "lucide-react": "^1.11.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-i18next": "^17.0.6",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.4"
   },

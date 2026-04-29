@@ -1,4 +1,5 @@
 import type { APIError } from "../types";
+import i18n from "../i18n";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
@@ -61,7 +62,7 @@ async function apiFetch<T>(path: string, token?: string, init?: RequestInit, opt
 function formatError(error: unknown): string {
   const typed = error as APIError;
   if (typed.name === "AbortError") {
-    return "応答がありません";
+    return i18n.t("errors.timeout");
   }
   if (typed.status === 409 && typed.body && typeof typed.body === "object") {
     const body = typed.body as {
