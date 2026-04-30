@@ -5,13 +5,14 @@
 ## 1. 前提
 
 - 対象 world は `GESTALOKA Reference / Nexus Foundation`。
-- stack は起動済みにする。
+- 既存 stack が起動している場合も含め、必ず一度終了してから再ビルド・再起動する。稼働中 container を再利用すると、修正済みコードが backend / frontend process に反映されない可能性があります。
 
 ```bash
+docker compose down -v --remove-orphans
 docker compose up --build -d
 ```
 
-- Keycloak realm には `swarm-a`, `swarm-b`, `swarm-c`, `swarm-ops` が必要です。既存 volume が古い realm を保持している場合は、テスト用環境で `docker compose down -v --remove-orphans` 後に起動し直してください。
+- Keycloak realm には `swarm-a`, `swarm-b`, `swarm-c`, `swarm-ops` が必要です。上記の `docker compose down -v --remove-orphans` で古い realm volume を残さず初期化してください。
 - `swarm-test` は live provider の揺れを評価対象に含めるため、`make verify-v2` の代替ではありません。
 
 ## 2. 実行
