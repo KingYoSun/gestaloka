@@ -1,0 +1,263 @@
+{
+  "run_id": "2026-04-30T06-30-33Z",
+  "created_at": "2026-04-30T06:38:13.044Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "ai-researcher",
+      "label": "AI 研究者",
+      "archetype": "engineer",
+      "gender": "female",
+      "age": 45,
+      "occupation": "AI researcher",
+      "hobbies": [
+        "agent systems",
+        "procedural narrative",
+        "paper reading"
+      ],
+      "personality": [
+        "probing",
+        "theory-minded",
+        "skeptical"
+      ],
+      "gameMotivation": "Wants emergent narrative to remain attributable and robust.",
+      "playStyle": "Tests whether generated explanations match stored state.",
+      "narrativePreference": "Transparent cause-effect with minimal hallucination.",
+      "frictionSensitivity": "Low tolerance for ungrounded claims.",
+      "evaluationLens": "Does generation respect canonical state?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "speedrunner",
+      "label": "効率走者",
+      "archetype": "optimizer",
+      "gender": "unspecified",
+      "age": 22,
+      "occupation": "part-time worker",
+      "hobbies": [
+        "speedrunning",
+        "route notes",
+        "timer comparisons"
+      ],
+      "personality": [
+        "impatient",
+        "experimental",
+        "optimization-heavy"
+      ],
+      "gameMotivation": "Wants efficient paths to remain legible even in a dynamic world.",
+      "playStyle": "Repeats progress actions and checks where time or resources are lost.",
+      "narrativePreference": "Short feedback with actionable state changes.",
+      "frictionSensitivity": "Very low tolerance for slow or opaque resolution.",
+      "evaluationLens": "Does dynamic narrative preserve actionable progress?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "ai-researcher",
+      "displayName": "Sena Engineer",
+      "gender": "female",
+      "background": "A quiet field auditor who compares public signs, local testimony, and the order of events before acting.",
+      "freeText": "They look for whether a visible change has a traceable cause, then ask precise questions that test continuity in the shared place.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "speedrunner",
+      "displayName": "Kaito Optimizer",
+      "gender": "unspecified",
+      "background": "A route-minded operative who tracks objectives, bottlenecks, and which local figures can move the situation forward.",
+      "freeText": "They try to advance the current objective quickly, but expect the world to explain contention around a busy route, place, or guide.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito Mmo",
+      "gender": "male",
+      "background": "A route-minded operative who tracks objectives, bottlenecks, and which local figures can move the situation forward.",
+      "freeText": "They try to advance the current objective quickly, but expect the world to explain contention around a busy route, place, or guide.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    }
+  ],
+  "persona_decision_log": [
+    {
+      "personaId": "ai-researcher",
+      "scenario": "shared-impact",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 values actions that can become shared memory through this lens: Does generation respect canonical state?",
+      "expectedWorldImpact": "A local act of support should surface later as rumor, relationship, or world beat."
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 pressure-tests progress paths and shared-resource contention through this play style: Tests whether generated explanations match stored state.",
+      "expectedWorldImpact": "Concurrent progress should resolve fairly and record any resource constraint without blocking play."
+    },
+    {
+      "personaId": "speedrunner",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "効率走者 pressure-tests progress paths and shared-resource contention through this play style: Repeats progress actions and checks where time or resources are lost.",
+      "expectedWorldImpact": "Concurrent progress should resolve fairly and record any resource constraint without blocking play."
+    },
+    {
+      "personaId": "raid-planner",
+      "scenario": "world-event",
+      "inputMode": "free_text",
+      "inputText": "I compare the current gate reports with what travelers are saying and ask which recent action changed the local situation.",
+      "reason": "MMO レイド攻略者 joins late and probes whether public world events have a traceable cause.",
+      "expectedWorldImpact": "The response should expose shared-world continuity through broadcast, memory, or recent history."
+    }
+  ],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "rating": "good",
+      "observedImpact": "The helping action is present in shared-world context.",
+      "evidence": [
+        "559dc3b4-9860-41bb-be2b-f02604872869",
+        "2055f49d-2e0e-43bf-b30d-622aeefa8401",
+        "session state / ops history / memory scan"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "rating": "good",
+      "observedImpact": "Concurrent pressure produced a recorded resource constraint.",
+      "evidence": [
+        "5a8e0271-9597-42a8-8e46-40e5abf97d41",
+        "event payload resource_constraints scan"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "good",
+      "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint.",
+      "evidence": [
+        "993d2144-f10d-42f3-b84c-74945656e5bf",
+        "session state broadcast constraint scan"
+      ]
+    }
+  ],
+  "hard_checks": {
+    "persona_profile_separation": true,
+    "runtime_privacy_leak_free": true,
+    "all_turns_return_event_ids": true,
+    "all_turn_events_same_world": true,
+    "canonical_sequence_unique": true,
+    "shared_impact_visible": true,
+    "resource_conflict_recorded": true,
+    "world_broadcast_or_constraint_visible": true
+  },
+  "runtime": [
+    {
+      "personaId": "ai-researcher",
+      "actorId": "e91ddc81-c1bf-4d2a-8c13-ebc5d1832fe4",
+      "sessionId": "ac15f91e-857d-44c2-ad0b-c3b8e4f24729",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "559dc3b4-9860-41bb-be2b-f02604872869",
+        "2055f49d-2e0e-43bf-b30d-622aeefa8401"
+      ],
+      "turnIds": [
+        "a135de10-ecb9-4fb8-b653-1cfc665ad0d0",
+        "ccbdc814-27b4-4d54-b242-99caad5cdd1e"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "actorId": "d76fad35-f2cb-460b-a6ab-dc92f7d6891f",
+      "sessionId": "20cf8c3d-43b6-4bc1-9454-8bf328a46724",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "5a8e0271-9597-42a8-8e46-40e5abf97d41"
+      ],
+      "turnIds": [
+        "15dd062e-f8af-48da-99c6-3df6f83a7ab8"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "7df7d946-ab39-46f3-9ac9-6ac06b43efd4",
+      "sessionId": "37c42b73-465f-4667-a30d-e8a3f20f6f87",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "993d2144-f10d-42f3-b84c-74945656e5bf"
+      ],
+      "turnIds": [
+        "92af5d1b-becd-4331-95ec-1ae64b45296f"
+      ]
+    }
+  ],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-f359efc0508f/swarm-test-2026-04-30T06-30-33Z/attempt-1-ai-researcher-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-f359efc0508f/swarm-test-2026-04-30T06-30-33Z/attempt-1-raid-planner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-f359efc0508f/swarm-test-2026-04-30T06-30-33Z/attempt-1-speedrunner-authenticated.png"
+  ]
+}
