@@ -102,6 +102,8 @@ const resources = {
       },
       prompts: {
         registry: "プロンプトレジストリ",
+        filter: "Prompt ID / owner / lane で検索",
+        noMatches: "一致する prompt はありません",
         override: "プロンプト override",
         overrideEnabled: "Override enabled",
         instructions: "Override instructions",
@@ -239,6 +241,8 @@ const resources = {
       },
       prompts: {
         registry: "Prompt Registry",
+        filter: "Search prompt ID / owner / lane",
+        noMatches: "No matching prompts",
         override: "Prompt Override",
         overrideEnabled: "Override enabled",
         instructions: "Override instructions",

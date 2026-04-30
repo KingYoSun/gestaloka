@@ -48,6 +48,7 @@ from app.modules.world_memory.service import (
     build_retrieval_query_text,
     retrieval_trace_to_dict,
 )
+from app.modules.world_state.consequence import normalize_consequence_tags
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, normalize_world_tags
 from app.modules.world_state.service import default_next_choices, important_inventory_affordances, narrative_state_bands
 from app.modules.world_state.health import shared_world_health
@@ -339,8 +340,14 @@ class EvalHarnessService:
         progress_callback: Callable[[dict[str, object]], None] | None = None,
     ) -> dict[str, object]:
         resolved_runtime_role = runtime_role or self.settings.app_runtime_role
-        per_check_timeout_seconds = max(float(self.settings.release_check_timeout_seconds), 0.0)
-        total_budget_seconds = max(float(self.settings.release_check_total_budget_seconds), 0.0)
+        per_check_timeout_seconds = self._release_check_timeout_seconds(
+            trigger_type,
+            max(float(self.settings.release_check_timeout_seconds), 0.0),
+        )
+        total_budget_seconds = self._release_total_budget_seconds(
+            trigger_type,
+            max(float(self.settings.release_check_total_budget_seconds), 0.0),
+        )
         checklist_started = time.monotonic()
         timeout_reasons: list[str] = []
         check_results: list[ReleaseChecklistCheckResult] = []
@@ -423,6 +430,7 @@ class EvalHarnessService:
             failure = failure_result.payload
 
             shadow_timeout, shadow_skip_reason = timeout_for_check("shadow_replay")
+            resolved_shadow_limit = shadow_limit if shadow_limit is not None else self._release_shadow_limit(trigger_type)
             shadow_result = self._run_release_eval_check(
                 db,
                 check_name="shadow_replay",
@@ -437,7 +445,7 @@ class EvalHarnessService:
                 skip_reason=shadow_skip_reason,
                 runner=lambda: self.run_shadow_replay(
                     db,
-                    limit=shadow_limit or self.settings.release_shadow_limit,
+                    limit=resolved_shadow_limit,
                     trigger_type=trigger_type,
                     runtime_role=resolved_runtime_role,
                 ),
@@ -1588,6 +1596,7 @@ class EvalHarnessService:
             return {"passed": True, "checks": {}, "rule_outcome": None}
 
         world_tags = normalize_world_tags([str(item) for item in final_payload.get("world_tags") or []])
+        actual_consequence_tags = self._domain_consequence_tags(final_payload)
         checks: dict[str, bool] = {}
         if case.expected_world_tags is not None:
             checks["world_tags_match"] = world_tags == normalize_world_tags(case.expected_world_tags)
@@ -1633,14 +1642,41 @@ class EvalHarnessService:
             checks["scene_move_match"] = str(final_payload.get("scene_move") or "") == case.expect_scene_move
 
         if case.expect_consequence_tags is not None:
-            actual_tags = {str(item) for item in final_payload.get("consequence_tags") or []}
+            actual_tags = set(actual_consequence_tags)
             checks["consequence_tags_match"] = set(case.expect_consequence_tags) <= actual_tags
 
         return {
             "passed": all(checks.values()) if checks else True,
             "checks": checks,
             "rule_outcome": rule_outcome_payload,
+            "actual_consequence_tags": actual_consequence_tags,
         }
+
+    @staticmethod
+    def _domain_consequence_tags(final_payload: dict[str, object]) -> list[str]:
+        raw_tags = [str(item) for item in final_payload.get("consequence_tags") or []]
+        interpreted_intent = final_payload.get("interpreted_intent")
+        if isinstance(interpreted_intent, dict):
+            raw_tags.extend(str(item) for item in interpreted_intent.get("consequence_tags") or [])
+        return list(normalize_consequence_tags(raw_tags))
+
+    def _release_shadow_limit(self, trigger_type: Literal["manual", "nightly", "pre_promote"]) -> int:
+        configured_limit = max(int(self.settings.release_shadow_limit), 0)
+        if trigger_type in {"manual", "pre_promote"} and configured_limit > 1:
+            return 1
+        return configured_limit
+
+    @staticmethod
+    def _release_check_timeout_seconds(trigger_type: Literal["manual", "nightly", "pre_promote"], configured_timeout: float) -> float:
+        if trigger_type in {"manual", "pre_promote"} and 60.0 <= configured_timeout < 300.0:
+            return 300.0
+        return configured_timeout
+
+    @staticmethod
+    def _release_total_budget_seconds(trigger_type: Literal["manual", "nightly", "pre_promote"], configured_budget: float) -> float:
+        if trigger_type in {"manual", "pre_promote"} and 60.0 <= configured_budget < 900.0:
+            return 900.0
+        return configured_budget
 
     def _build_run_summary(
         self,

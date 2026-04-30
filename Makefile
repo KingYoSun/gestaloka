@@ -106,7 +106,7 @@ nightly-eval:
 	PYTHONPATH=backend python -m app.modules.eval_harness nightly
 
 release-checklist:
-	$(COMPOSE) exec -T -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness gate
+	$(COMPOSE) exec -T -e RELEASE_CHECK_TIMEOUT_SECONDS=300 -e RELEASE_CHECK_TOTAL_BUDGET_SECONDS=900 -e OTEL_EXPORTER_OTLP_ENDPOINT= -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness gate
 
 canary-up:
 	$(COMPOSE) up --build -d backend-canary
@@ -132,7 +132,7 @@ canary-down:
 	$(COMPOSE) rm -sf backend-canary
 
 canary-probe:
-	$(COMPOSE) exec -T -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness canary-probe
+	$(COMPOSE) exec -T -e OTEL_EXPORTER_OTLP_ENDPOINT= -e OTEL_METRICS_PORT=0 backend python -m app.modules.eval_harness canary-probe
 
 playwright-mcp-clean:
 	scripts/cleanup_playwright_mcp.sh

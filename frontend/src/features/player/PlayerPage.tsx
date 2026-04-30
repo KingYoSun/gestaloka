@@ -191,6 +191,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
           </p>
           {catalogStateLabel ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{catalogStateLabel}</p> : null}
           {wallet ? <SPBalanceDisplay wallet={wallet} /> : null}
+          <WalletError runtime={runtime} />
         </div>
         <div className="grid min-w-0 gap-3">
           {playerProfiles.length ? (
@@ -364,6 +365,9 @@ function ProfileForm({
             <option value="custom">{t("player.profile.playLanguage.custom")}</option>
           </NativeSelect>
         </Field>
+        <p className="self-end text-xs font-semibold leading-[18px] text-muted-foreground">
+          {t("player.profile.playLanguage.helper")}
+        </p>
         {profileDraft.play_language.mode === "custom" ? (
           <Field label={t("player.profile.playLanguage.custom")}>
             <Input
@@ -624,6 +628,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
           {t("player.turn.freeText")}
         </Button>
         {wallet ? <SPBalanceDisplay className="min-h-11 px-3" wallet={wallet} /> : null}
+        <WalletError runtime={runtime} />
         <Button
           variant="secondary"
           type="button"
@@ -660,10 +665,10 @@ function TurnComposer({ runtime }: PlayerPageProps) {
         </form>
       )}
 
-      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-progress-status">
+      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-progress-status" role="status" aria-live="polite">
         {progressStatus}
       </p>
-      {turnPending && turnProgressElapsedSeconds >= 45 ? (
+      {turnPending && turnProgressElapsedSeconds >= 30 ? (
         <p className="rounded-md border border-border bg-muted p-3 text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-retry-guidance">
           {t("player.turn.retryGuidance")}
         </p>
@@ -704,6 +709,21 @@ function SPBalanceDisplay({ className = "", wallet }: { className?: string; wall
         <span className="text-foreground" data-testid="bonus-sp-balance">{wallet.bonus_sp}</span>
         <TooltipIcon label={t("player.sp.bonusTooltip")} />
       </span>
+    </div>
+  );
+}
+
+function WalletError({ runtime }: PlayerPageProps) {
+  const { t } = useTranslation();
+  if (!runtime.walletError) {
+    return null;
+  }
+  return (
+    <div className="grid min-w-0 gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs font-semibold leading-[18px] text-destructive" data-testid="sp-wallet-error">
+      <p>{runtime.walletError}</p>
+      <Button className="w-fit" type="button" variant="secondary" onClick={() => void runtime.handleWalletRetry()}>
+        {t("player.sp.retryWallet")}
+      </Button>
     </div>
   );
 }
@@ -749,6 +769,7 @@ function SPPurchaseDialog({ onClose, runtime }: { onClose: () => void; runtime: 
               type="button"
               variant={selectedAmount === amount ? "default" : "secondary"}
               onClick={() => setSelectedAmount(amount)}
+              disabled={pending || completedAmount !== null}
               aria-pressed={selectedAmount === amount}
               data-testid={`sp-purchase-option-${amount}`}
             >
@@ -766,13 +787,21 @@ function SPPurchaseDialog({ onClose, runtime }: { onClose: () => void; runtime: 
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2 max-[420px]:grid max-[420px]:grid-cols-1">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="button" onClick={() => void handlePurchase()} disabled={pending}>
-            <ShoppingCart aria-hidden="true" />
-            {pending ? t("common.loading") : t("player.sp.purchase")}
-          </Button>
+          {completedAmount !== null ? (
+            <Button type="button" onClick={onClose}>
+              {t("common.close")}
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="button" onClick={() => void handlePurchase()} disabled={pending}>
+                <ShoppingCart aria-hidden="true" />
+                {pending ? t("common.loading") : t("player.sp.purchase")}
+              </Button>
+            </>
+          )}
         </div>
       </section>
     </div>

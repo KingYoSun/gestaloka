@@ -23,7 +23,7 @@ from app.models.entities import (
 )
 from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
-from app.modules.eval_harness.service import EvalHarnessService, ReleaseConfig
+from app.modules.eval_harness.service import EvalCaseInput, EvalHarnessService, ReleaseConfig
 from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import PromptRouteOverride
@@ -529,6 +529,52 @@ def test_release_checklist_timeout_creates_blocked_report(container, monkeypatch
     progress = container.eval_service.release_checklist_progress()
     assert progress["status"] == "completed"
     assert progress["completed_report_id"] == gate["report_id"]
+
+
+def test_domain_eval_reads_consequence_tags_from_interpreted_intent(container):
+    case = EvalCaseInput(
+        case_id="interpreted-intent-consequence-tags",
+        prompt_id="session.turn_resolution",
+        world_id="gestaloka_reference",
+        pack_id="gestaloka_reference",
+        world_template_id="nexus_foundation",
+        player_name="Demo Player",
+        npc_name="Gate Steward Rikka",
+        input_text="help the traveler",
+        relevant_memories=[],
+        relation_context=[],
+        graph_context_status="ready",
+        expect_success=True,
+        expect_final_lane="main",
+        expect_fallback=False,
+        expect_failure_reason=None,
+        expect_consequence_tags=["earned_trust"],
+    )
+
+    result = container.eval_service._evaluate_domain_case(
+        case,
+        {
+            "consequence_tags": ["invalid_tag"],
+            "interpreted_intent": {
+                "consequence_tags": ["earned_trust", "invalid_tag"],
+            },
+        },
+    )
+
+    assert result["passed"] is True
+    assert result["checks"]["consequence_tags_match"] is True
+    assert result["actual_consequence_tags"] == ["earned_trust"]
+
+
+def test_manual_release_uses_bounded_live_defaults(container):
+    container.settings.release_check_timeout_seconds = 180.0
+    container.settings.release_check_total_budget_seconds = 540.0
+    container.settings.release_shadow_limit = 5
+
+    assert container.eval_service._release_check_timeout_seconds("manual", container.settings.release_check_timeout_seconds) == 300.0
+    assert container.eval_service._release_total_budget_seconds("manual", container.settings.release_check_total_budget_seconds) == 900.0
+    assert container.eval_service._release_shadow_limit("manual") == 1
+    assert container.eval_service._release_shadow_limit("nightly") == 5
 
 
 def test_release_checklist_total_budget_synthesizes_remaining_timeouts(container, monkeypatch: pytest.MonkeyPatch):

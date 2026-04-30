@@ -157,6 +157,7 @@ export function useGestalokaRuntime() {
   const [me, setMe] = useState<AuthMe | null>(null);
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [wallet, setWallet] = useState<SPWallet | null>(null);
+  const [walletError, setWalletError] = useState("");
   const [worldId, setWorldId] = useState("");
   const [opsWorldId, setOpsWorldId] = useState("");
   const [playableWorlds, setPlayableWorlds] = useState<PlayableWorldItem[]>([]);
@@ -348,6 +349,7 @@ export function useGestalokaRuntime() {
     if (!authenticated || !token) {
       setMe(null);
       setWallet(null);
+      setWalletError("");
       setPlayableWorlds([]);
       setWorldCatalogStatus("unknown");
       setPlayerProfiles([]);
@@ -390,12 +392,11 @@ export function useGestalokaRuntime() {
 
     void ensureFreshToken(token).then((currentToken) => Promise.all([
       apiFetch<AuthMe>("/auth/me", currentToken),
-      apiFetch<SPWallet>("/economy/sp/me", currentToken),
+      refreshWallet(currentToken).catch(() => null),
       apiFetch<PlayableWorldCatalog>("/worlds/playable", currentToken),
     ]))
       .then(([mePayload, walletPayload, worldPayload]) => {
         setMe(mePayload);
-        setWallet(walletPayload);
         setPlayableWorlds(worldPayload.items);
         setWorldCatalogStatus(worldPayload.status);
         if (worldPayload.status === "error") {
@@ -405,8 +406,10 @@ export function useGestalokaRuntime() {
         setWorldId((current) =>
           worldPayload.items.some((item) => item.world_id === current) ? current : (firstPlayableWorld?.world_id ?? ""),
         );
-        setLedgerUserFilter((current) => current || walletPayload.user_sub);
-        setAdjustUserSub((current) => current || walletPayload.user_sub);
+        if (walletPayload) {
+          setLedgerUserFilter((current) => current || walletPayload.user_sub);
+          setAdjustUserSub((current) => current || walletPayload.user_sub);
+        }
       })
       .catch((requestError: unknown) => showRequestError(requestError));
   }, [authenticated, token]);
@@ -551,9 +554,30 @@ export function useGestalokaRuntime() {
 
   async function refreshWallet(currentToken: string) {
     currentToken = await ensureFreshToken(currentToken);
-    const payload = await apiFetch<SPWallet>("/economy/sp/me", currentToken);
-    setWallet(payload);
-    return payload;
+    try {
+      const payload = await apiFetch<SPWallet>("/economy/sp/me", currentToken);
+      setWallet(payload);
+      setWalletError("");
+      setLedgerUserFilter((current) => current || payload.user_sub);
+      setAdjustUserSub((current) => current || payload.user_sub);
+      return payload;
+    } catch (requestError) {
+      setWallet(null);
+      setWalletError(t("errors.walletUnavailable"));
+      throw requestError;
+    }
+  }
+
+  async function handleWalletRetry() {
+    if (!token) {
+      return;
+    }
+    try {
+      setError("");
+      await refreshWallet(token);
+    } catch (requestError) {
+      showRequestError(requestError);
+    }
   }
 
   async function refreshPlayerProfiles(currentWorldId: string, currentToken: string) {
@@ -1316,6 +1340,7 @@ export function useGestalokaRuntime() {
     me,
     health,
     wallet,
+    walletError,
     worldId,
     setWorldId,
     opsWorldId,
@@ -1446,6 +1471,7 @@ export function useGestalokaRuntime() {
     handleLedgerRefresh,
     handleAdjustmentSubmit,
     handleMockSpPurchase,
+    handleWalletRetry,
     handleEvalRun,
     handleReleaseChecklistRun,
     refreshAdminData,

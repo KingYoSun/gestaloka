@@ -38,6 +38,46 @@ def test_sp_wallet_lazy_seed_only_once(client, container, auth_headers):
     assert seed_count == 1
 
 
+def test_sp_wallet_lazy_seed_survives_insert_race(container, monkeypatch):
+    user_sub = "raced-player"
+
+    with container.session_factory() as db:
+        original_flush = db.flush
+        raced = {"done": False}
+
+        def racing_flush(*args, **kwargs):
+            creating_raced_account = any(
+                isinstance(item, SPAccount) and item.user_sub == user_sub
+                for item in db.new
+            )
+            if creating_raced_account and not raced["done"]:
+                raced["done"] = True
+                with container.session_factory() as other_db:
+                    container.economy_service.get_wallet(other_db, user_sub=user_sub)
+                    other_db.commit()
+            return original_flush(*args, **kwargs)
+
+        monkeypatch.setattr(db, "flush", racing_flush)
+        wallet = container.economy_service.get_wallet(db, user_sub=user_sub)
+        db.commit()
+
+    assert wallet["balance"] == 30
+    assert wallet["paid_sp"] == 0
+    assert wallet["bonus_sp"] == 30
+
+    with container.session_factory() as db:
+        account_count = db.execute(select(func.count(SPAccount.user_sub)).where(SPAccount.user_sub == user_sub)).scalar_one()
+        seed_count = db.execute(
+            select(func.count(SPLedgerEntry.id)).where(
+                SPLedgerEntry.user_sub == user_sub,
+                SPLedgerEntry.reason_code == "bonus_grant_signup",
+            )
+        ).scalar_one()
+
+    assert account_count == 1
+    assert seed_count == 1
+
+
 def test_failed_turn_refunds_sp_and_records_ledger(client, container, auth_headers):
     session_response = client.post(
         "/sessions",

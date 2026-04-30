@@ -89,6 +89,7 @@ const resources = {
           },
           playLanguage: {
             custom: "自由入力",
+            helper: "物語生成に使う言語設定です。画面表示の言語は別に切り替えます。",
           },
         },
         story: {
@@ -119,6 +120,7 @@ const resources = {
           bonusTooltip: "登録時配布や運営付与の無償SPです。",
           plannedCostTooltip: "行動実行時は無償SPから優先消費します。SPは外部実行予算です。",
           purchaseComplete: "{{amount}} SPの購入が完了しました。有償SP {{paid}} / 無償SP {{bonus}}",
+          retryWallet: "SP残高を再取得",
         },
         side: {
           quest: "クエスト",
@@ -146,6 +148,7 @@ const resources = {
         signInBeforePurchase: "SPを購入する前にログインしてください",
         signInBeforeEvals: "eval を実行する前にログインしてください",
         signInBeforeRelease: "release checklist を実行する前にログインしてください",
+        walletUnavailable: "SP残高を取得できませんでした",
         websocketFailed: "WebSocket 接続に失敗しました",
       },
     },
@@ -240,6 +243,7 @@ const resources = {
           },
           playLanguage: {
             custom: "Custom",
+            helper: "Controls narrative generation language. Display language is switched separately.",
           },
         },
         story: {
@@ -270,6 +274,7 @@ const resources = {
           bonusTooltip: "Free SP granted at signup or by operations.",
           plannedCostTooltip: "Actions consume bonus SP before paid SP. SP is external execution budget.",
           purchaseComplete: "{{amount}} SP purchase completed. Paid SP {{paid}} / Bonus SP {{bonus}}",
+          retryWallet: "Retry SP wallet",
         },
         side: {
           quest: "Quest",
@@ -297,6 +302,7 @@ const resources = {
         signInBeforePurchase: "Sign in before buying SP",
         signInBeforeEvals: "Sign in before running evals",
         signInBeforeRelease: "Sign in before running release checklists",
+        walletUnavailable: "SP wallet could not be loaded",
         websocketFailed: "WebSocket connection failed",
       },
     },

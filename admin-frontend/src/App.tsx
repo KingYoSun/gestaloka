@@ -343,10 +343,20 @@ function AdminBody({
 function Dashboard({ state }: { state: AppState }) {
   const { t } = useTranslation();
   const overview = state.overview;
+  const packSummary = overview?.packs ?? (
+    state.packs
+      ? {
+          status: state.packs.status,
+          pack_count: state.packs.pack_count,
+          template_count: state.packs.template_count,
+          failure_count: state.packs.failure_count,
+        }
+      : null
+  );
   return (
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-dashboard">
-      <Metric label={t("admin.packStatus")} value={overview?.packs.status ?? t("common.unknown")} detail={t("admin.packCount", { count: overview?.packs.pack_count ?? 0 })} />
-      <Metric label={t("admin.templates")} value={String(overview?.packs.template_count ?? 0)} detail={t("admin.failures", { count: overview?.packs.failure_count ?? 0 })} />
+      <Metric label={t("admin.packStatus")} value={packSummary?.status ?? t("common.unknown")} detail={t("admin.packCount", { count: packSummary?.pack_count ?? 0 })} />
+      <Metric label={t("admin.templates")} value={String(packSummary?.template_count ?? 0)} detail={t("admin.failures", { count: packSummary?.failure_count ?? 0 })} />
       <Metric label={t("admin.graphRuntime")} value={overview?.projection.graph_runtime_status ?? t("common.unknown")} detail={t("admin.pendingCount", { count: overview?.projection.pending ?? 0 })} />
       <Metric label={t("admin.release")} value={overview?.release.verdict ?? t("common.unknown")} detail={overview?.release.canary_promote_status ?? t("common.unknown")} />
       <Panel title={t("admin.operations")}>
@@ -777,9 +787,25 @@ function LanesPage({ state, token, setError, refreshAll }: PageProps) {
 function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps & { setState: React.Dispatch<React.SetStateAction<AppState>> }) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState("");
+  const [filter, setFilter] = useState("");
   const [overrideText, setOverrideText] = useState("");
   const [enabled, setEnabled] = useState(true);
   const selectedPrompt = useMemo(() => state.prompts.find((item) => item.prompt_id === selected), [selected, state.prompts]);
+  const visiblePrompts = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) {
+      return state.prompts;
+    }
+    return state.prompts.filter((prompt) =>
+      [
+        prompt.prompt_id,
+        prompt.owner_module,
+        prompt.model_lane,
+        prompt.expected_output_schema,
+        prompt.override_enabled ? "override enabled" : "override disabled",
+      ].some((value) => value.toLowerCase().includes(query)),
+    );
+  }, [filter, state.prompts]);
 
   async function loadPrompt(promptId: string) {
     setSelected(promptId);
@@ -814,7 +840,13 @@ function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps
     <div className="grid grid-cols-[minmax(260px,360px)_minmax(0,1fr)] gap-3 max-[900px]:grid-cols-1" data-testid="admin-prompts">
       <Panel title={t("prompts.registry")}>
         <div className="grid gap-2">
-          {state.prompts.map((prompt) => (
+          <Input
+            data-testid="admin-prompts-filter"
+            value={filter}
+            placeholder={t("prompts.filter")}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+          {visiblePrompts.map((prompt) => (
             <Button
               key={prompt.prompt_id}
               className="grid h-auto min-h-0 w-full justify-stretch gap-0.5 px-3 py-2 text-left"
@@ -825,6 +857,7 @@ function PromptsPage({ state, token, setState, setError, refreshAll }: PageProps
               <span className="truncate text-xs font-normal leading-5 opacity-80">{prompt.model_lane} / {prompt.expected_output_schema}</span>
             </Button>
           ))}
+          {!visiblePrompts.length ? <p className="text-sm leading-5 text-muted-foreground">{t("prompts.noMatches")}</p> : null}
         </div>
       </Panel>
       <Panel title={selectedPrompt?.prompt_id ?? t("prompts.override")}>

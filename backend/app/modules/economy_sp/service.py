@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -249,8 +250,17 @@ class EconomyService:
 
         initial_bonus = self.settings.sp_initial_bonus_balance
         account = SPAccount(user_sub=user_sub, balance=initial_bonus, paid_balance=0, bonus_balance=initial_bonus)
-        db.add(account)
-        db.flush()
+        try:
+            with db.begin_nested():
+                db.add(account)
+                db.flush()
+        except IntegrityError:
+            account = db.execute(select(SPAccount).where(SPAccount.user_sub == user_sub)).scalar_one_or_none()
+            if account is None:
+                raise
+            self._normalize_account_balance(account)
+            return account
+
         if initial_bonus != 0:
             db.add(
                 SPLedgerEntry(
