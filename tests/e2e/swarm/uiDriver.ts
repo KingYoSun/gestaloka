@@ -21,6 +21,8 @@ export type SwarmUiTurnObservation = {
   eventId: string;
   turnId: string;
   waitStatusSamples: string[];
+  lastWaitStatus: string;
+  maxWaitElapsedSeconds: number;
   latestNarrative: string;
   latestReaction: string;
   latestConsequence: string;
@@ -165,6 +167,7 @@ export async function executeTurnViaUi(
     const screenshotPath = `${artifactDir}/${attemptLabel}-${persona.id}-${decision.scenario}-after-turn.png`;
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const completed = Date.now();
+    const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
     return {
       personaId: persona.id,
       scenario: decision.scenario,
@@ -175,7 +178,9 @@ export async function executeTurnViaUi(
       durationMs: completed - started,
       eventId: stringValue(payload.event_id),
       turnId: stringValue(payload.turn_id),
-      waitStatusSamples: uniqueNonEmpty(waitStatusSamples).slice(0, 8),
+      waitStatusSamples: nonEmptyWaitStatusSamples.slice(0, 16),
+      lastWaitStatus: nonEmptyWaitStatusSamples[nonEmptyWaitStatusSamples.length - 1] ?? "",
+      maxWaitElapsedSeconds: Math.max(Math.floor((completed - started) / 1000), 0),
       latestNarrative: await textContent(page, "latest-narrative"),
       latestReaction: await textContent(page, "latest-reaction"),
       latestConsequence: await textContent(page, "last-consequence-summary"),

@@ -91,6 +91,18 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function formatTurnProgressLabel(phase: string, status: string): string {
+  const phaseLabel = phase
+    .replace(/^council[._-]/, "")
+    .replace(/_/g, " ")
+    .replace(/\./g, " ")
+    .trim();
+  if (!status || status === "completed") {
+    return phaseLabel;
+  }
+  return `${phaseLabel} ${status}`;
+}
+
 function normalizeBrowserPreset(language: string): PlayLanguagePreset | null {
   const normalized = language.toLowerCase();
   if (normalized.startsWith("pt-br")) {
@@ -233,8 +245,10 @@ export function useGestalokaRuntime() {
   const [authRecoveryRequired, setAuthRecoveryRequired] = useState(false);
   const [turnPending, setTurnPending] = useState(false);
   const [turnProgressPhase, setTurnProgressPhase] = useState<"idle" | "submitting" | "resolving" | "refreshing">("idle");
+  const [turnProgressLiveLabel, setTurnProgressLiveLabel] = useState("");
   const [turnProgressElapsedSeconds, setTurnProgressElapsedSeconds] = useState(0);
   const [turnProgressStartedAt, setTurnProgressStartedAt] = useState<number | null>(null);
+  const [turnProvisionalMessage, setTurnProvisionalMessage] = useState("");
   const [rebuildPending, setRebuildPending] = useState(false);
   const [memorySearchPending, setMemorySearchPending] = useState(false);
   const [memoryReindexPending, setMemoryReindexPending] = useState(false);
@@ -491,6 +505,21 @@ export function useGestalokaRuntime() {
         }
         if (data.scene_summary && !latestConsequenceSummary) {
           setLatestConsequenceSummary(data.scene_summary);
+        }
+      }
+      if (parsed.event === "turn.progress") {
+        const phase = typeof parsed.data.phase === "string" ? parsed.data.phase : "";
+        const status = typeof parsed.data.status === "string" ? parsed.data.status : "";
+        if (phase) {
+          setTurnProgressPhase("resolving");
+          setTurnProgressStartedAt((current) => current ?? Date.now());
+          setTurnProgressLiveLabel(formatTurnProgressLabel(phase, status));
+        }
+      }
+      if (parsed.event === "turn.provisional") {
+        const messageText = typeof parsed.data.message === "string" ? parsed.data.message : "";
+        if (messageText) {
+          setTurnProvisionalMessage(messageText);
         }
       }
       if (parsed.event === "graph.projection.updated") {
@@ -1015,6 +1044,8 @@ export function useGestalokaRuntime() {
       setTurnProgressStartedAt(Date.now());
       setTurnProgressElapsedSeconds(0);
       setTurnProgressPhase("submitting");
+      setTurnProgressLiveLabel("");
+      setTurnProvisionalMessage("");
       setError("");
       const currentToken = await ensureFreshToken(token);
       setTurnPhase("resolving");
@@ -1075,6 +1106,7 @@ export function useGestalokaRuntime() {
       setTurnPending(false);
       setTurnProgressPhase("idle");
       setTurnProgressStartedAt(null);
+      setTurnProgressLiveLabel("");
     }
   }
 
@@ -1434,7 +1466,9 @@ export function useGestalokaRuntime() {
     authRecoveryRequired,
     turnPending,
     turnProgressPhase,
+    turnProgressLiveLabel,
     turnProgressElapsedSeconds,
+    turnProvisionalMessage,
     rebuildPending,
     memorySearchPending,
     memoryReindexPending,

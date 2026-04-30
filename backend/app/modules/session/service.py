@@ -803,6 +803,14 @@ def _resolve_narrative_turn_for_session(
         actor_id=player_actor.id,
         location_id=prepared.location_id,
     )
+    if input_mode == "free_text" and _is_read_world_state_query(input_text):
+        return _resolve_read_world_state_query_turn(
+            db,
+            prepared,
+            turn=turn,
+            input_text=input_text,
+            session_state=session_state,
+        )
     intent_phase = container.council_service.resolve_intent(
         CouncilRequest(
             world_id=game_session.world_id,
@@ -1432,6 +1440,214 @@ def _resolve_narrative_turn_for_session(
         recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
         idle_updates=[],
         progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "ambient_world_pass", "choice_generation"],
+    )
+
+
+def _is_read_world_state_query(input_text: str) -> bool:
+    normalized = input_text.lower()
+    read_markers = (
+        "どの直近行動",
+        "直近行動",
+        "地域状況",
+        "現在の門",
+        "門の報告",
+        "旅人たちの発言",
+        "照合",
+        "原因",
+        "変えた",
+        "broadcast",
+        "recent history",
+    )
+    mutation_markers = ("攻撃", "脅す", "盗む", "壊す", "移動", "向かう", "選ぶ", "コミット")
+    return any(marker in normalized for marker in read_markers) and not any(
+        marker in normalized for marker in mutation_markers
+    )
+
+
+def _resolve_read_world_state_query_turn(
+    db: Session,
+    prepared: PreparedTurnContext,
+    *,
+    turn: Turn,
+    input_text: str,
+    session_state: dict[str, Any],
+) -> TurnResolutionResult:
+    game_session = prepared.session
+    player_actor = prepared.player_actor
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    location_name = str(current_location.get("name") or current_location.get("key") or prepared.location_id)
+    broadcast_constraints = session_state.get("world_broadcast_constraints") or []
+    shared_context = session_state.get("shared_world_context") or {}
+    recent_consequence_history = session_state.get("recent_consequence_history") or []
+    recent_scene_history = session_state.get("recent_scene_history") or []
+    recent_world_beats = session_state.get("recent_world_beats") or []
+    next_choices = _canonicalize_next_choices(session_state.get("next_choices") or [], session_state.get("next_choices") or [])
+    observed_constraint = ""
+    if broadcast_constraints:
+        first_constraint = broadcast_constraints[0]
+        if isinstance(first_constraint, dict):
+            observed_constraint = str(
+                first_constraint.get("constraint_text")
+                or first_constraint.get("semantic_key")
+                or first_constraint.get("status")
+                or ""
+            )
+    if not observed_constraint and recent_consequence_history:
+        observed_constraint = str(recent_consequence_history[0])
+    if not observed_constraint:
+        observed_constraint = "直近の行動記録と共有世界の報告に、現在地へ残った変化の痕跡があります。"
+
+    narrative = (
+        f"{player_actor.display_name}は{location_name}で、門の報告と旅人たちの発言を照合する。"
+        "これは新しい行動ではなく、共有世界に残っている記録の確認として扱われる。"
+    )
+    npc_reaction = (
+        "記録を確認すると、直近の変化は共有された出来事として残っています。"
+        f"観測できる手がかりは「{observed_constraint}」です。"
+        "必要なら、この痕跡を踏まえて次の行動を選べます。"
+    )
+    consequence_summary = "The player reads the shared-world record without changing canonical state."
+    scene_summary = str((session_state.get("current_scene") or {}).get("summary") or consequence_summary)
+    event_payload = {
+        "action_type": "read_world_state_query",
+        "input_mode": "free_text",
+        "location_id": prepared.location_id,
+        "query_text": input_text,
+        "world_tags": ["investigate"],
+        "consequence_tags": ["careful_observation"],
+        "outcome_band": "steady",
+        "scene_tone": scene_tone_for_band("steady"),
+        "consequence_summary": consequence_summary,
+        "scene_summary": scene_summary,
+        "recent_scene_history": recent_scene_history[:3],
+        "recent_consequence_history": recent_consequence_history[:3],
+        "recent_world_beats": recent_world_beats[:3],
+        "world_broadcast_constraints": broadcast_constraints,
+        "shared_world_context": shared_context,
+        "shared_action_tag": "none",
+        "shared_consequence_updates": {
+            "shared_action_tag": "none",
+            "applied_rule_ids": [],
+            "axis_updates": [],
+            "faction_updates": [],
+            "location_updates": [],
+            "relationship_updates": [],
+            "history_records": [],
+            "title_progress": [],
+            "memory_ids": [],
+        },
+    }
+    event = Event(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        turn_id=turn.id,
+        event_type="player.turn.resolved",
+        source_actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        payload=event_payload,
+        narrative=narrative,
+    )
+    db.add(event)
+    db.flush()
+    _finalize_event_timeline_and_broadcast(
+        db,
+        event=event,
+        shared_action_tag="none",
+        relevance_tags=["careful_observation"],
+    )
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={
+                "turn_id": turn.id,
+                "outcome": "read_only",
+                "location_id": prepared.location_id,
+                "graph_context_status": "read_world_state_query",
+            },
+        )
+    )
+    turn.model_lane = "read_world_state_query"
+    turn.resolution_mode = "read_world_state_query"
+    turn.resolved_output = {
+        "status": "resolved",
+        "action_type": "narrative",
+        "resolution_mode": "read_world_state_query",
+        "input_mode": "free_text",
+        "narrative": narrative,
+        "npc_reaction": npc_reaction,
+        "graph_context_status": "read_world_state_query",
+        "world_tags": ["investigate"],
+        "interpreted_intent": {
+            "input_mode": "free_text",
+            "canonical_action_kind": "read_world_state_query",
+            "intent_summary": input_text,
+            "requested_choice_posture": "none",
+            "fail_forward": False,
+            "consequence_flags": [],
+            "consequence_tags": ["careful_observation"],
+            "consequence_summary": consequence_summary,
+        },
+        "consequence_tags": ["careful_observation"],
+        "outcome_band": "steady",
+        "scene_tone": scene_tone_for_band("steady"),
+        "consequence_summary": consequence_summary,
+        "scene_summary": scene_summary,
+        "scene_updates": [],
+        "chapter_updates": [],
+        "branch_updates": [],
+        "crossroads_summary": "",
+        "ambient_updates": [],
+        "recent_world_beats": recent_world_beats,
+        "next_choices": next_choices,
+        "quest_updates": [],
+        "faction_updates": [],
+        "inventory_updates": [],
+        "relationship_updates": [],
+        "consequence_updates": [],
+        "resource_constraints": [],
+        "skipped_shared_resources": [],
+        "shared_action_tag": "none",
+        "shared_consequence_updates": event_payload["shared_consequence_updates"],
+    }
+    db.flush()
+    return TurnResolutionResult(
+        turn=turn,
+        event=event,
+        memory_ids=[],
+        event_payload=_event_payload(event),
+        memories_payload=[],
+        graph_context_status="read_world_state_query",
+        sp_delta=prepared.debit.delta,
+        sp_balance=prepared.debit.balance_after,
+        paid_sp=prepared.debit.paid_balance_after,
+        bonus_sp=prepared.debit.bonus_balance_after,
+        sp_ledger_id=prepared.debit.ledger_entry.id,
+        quest_updates=[],
+        faction_updates=[],
+        inventory_updates=[],
+        relationship_updates=[],
+        consequence_updates=[],
+        scene_updates=[],
+        chapter_updates=[],
+        branch_updates=[],
+        ambient_updates=[],
+        location_updates=[],
+        action_type="narrative",
+        input_mode="free_text",
+        interpreted_intent=turn.resolved_output["interpreted_intent"],
+        next_choices=next_choices,
+        consequence_summary=consequence_summary,
+        scene_tone=scene_tone_for_band("steady"),
+        scene_summary=scene_summary,
+        crossroads_summary="",
+        current_location=session_state.get("current_location"),
+        travel_summary=None,
+        recent_world_beats=recent_world_beats,
+        recent_offstage_beats=session_state.get("recent_offstage_beats") or [],
+        idle_updates=[],
+        progress_phases=["read_world_state_query"],
     )
 
 

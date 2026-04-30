@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Generic, Literal, TypeVar
@@ -16,6 +17,7 @@ from app.core.config import Settings
 from app.core.prompts import PromptDefinition, PromptRegistry
 from app.models.entities import AdminPromptOverride, AdminRuntimeConfig, World
 from app.modules.observability.service import ObservabilityService
+from app.modules.session.progress import elapsed_ms_since, emit_turn_progress, phase_for_prompt
 from app.modules.world_pack.service import PackRegistry, world_pack_metadata
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
@@ -1401,6 +1403,16 @@ class ModelRouter:
                     else _null_trace_link()
                 )
                 with langfuse_context as langfuse_link:
+                    phase, stage_index = phase_for_prompt(prompt.prompt_id)
+                    lane_started_at = time.perf_counter()
+                    if stage_index is not None:
+                        emit_turn_progress(
+                            phase=phase,
+                            status="started",
+                            stage_index=stage_index,
+                            elapsed_ms=0,
+                            detail=lane,
+                        )
                     try:
                         provider_input_payload = self._provider_input_payload(input_payload)
                         provider_response = self._forced_eval_response(
@@ -1416,6 +1428,15 @@ class ModelRouter:
                             temperature=self._temperature_for_lane(lane),
                         )
                     except Exception as exc:
+                        elapsed_ms = elapsed_ms_since(lane_started_at)
+                        if stage_index is not None:
+                            emit_turn_progress(
+                                phase=phase,
+                                status="completed",
+                                stage_index=stage_index,
+                                elapsed_ms=elapsed_ms,
+                                detail="provider_error",
+                            )
                         failure_reason = f"{lane} provider execution failed: {exc}"
                         _update_langfuse_observation(
                             langfuse_link,
@@ -1468,6 +1489,15 @@ class ModelRouter:
                     try:
                         payload = response_model.model_validate(raw_output, context={"input_payload": input_payload})
                     except ValidationError as exc:
+                        elapsed_ms = elapsed_ms_since(lane_started_at)
+                        if stage_index is not None:
+                            emit_turn_progress(
+                                phase=phase,
+                                status="completed",
+                                stage_index=stage_index,
+                                elapsed_ms=elapsed_ms,
+                                detail="schema_invalid",
+                            )
                         failure_reason = f"{lane} output failed schema validation"
                         _update_langfuse_observation(
                             langfuse_link,
@@ -1534,6 +1564,15 @@ class ModelRouter:
                             )
                         continue
 
+                    elapsed_ms = elapsed_ms_since(lane_started_at)
+                    if stage_index is not None:
+                        emit_turn_progress(
+                            phase=phase,
+                            status="completed",
+                            stage_index=stage_index,
+                            elapsed_ms=elapsed_ms,
+                            detail="resolved",
+                        )
                     _update_langfuse_observation(
                         langfuse_link,
                         output={"status": "resolved", "raw_output": payload.model_dump()},

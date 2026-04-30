@@ -1827,6 +1827,8 @@ class EvalHarnessService:
             if oldest_pending.tzinfo is None:
                 oldest_pending = oldest_pending.replace(tzinfo=self._now().tzinfo)
             projection_lag_seconds = max((self._now() - oldest_pending).total_seconds(), 0.0)
+        if canary_probe.projection_lag_seconds is not None:
+            projection_lag_seconds = float(canary_probe.projection_lag_seconds)
 
         llm_total = int(db.execute(select(func.count(LLMRun.id))).scalar_one())
         llm_valid = int(db.execute(select(func.count(LLMRun.id)).where(LLMRun.output_schema_status == "valid")).scalar_one())

@@ -646,22 +646,13 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = [websocket.receive_json() for _ in range(24)]
+        messages = _receive_until_turn_resolved(websocket)
 
-    assert [message["event"] for message in messages] == [
+    assert [message["event"] for message in messages[:2]] == [
         "session.connected",
         "turn.accepted",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
+    ]
+    assert [message["event"] for message in messages[-11:]] == [
         "turn.narrative.delta",
         "world.event.created",
         "world.broadcast.available",
@@ -674,11 +665,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "ambient.updated",
         "turn.resolved",
     ]
-    assert messages[0]["data"] == {
-        "session_id": session_payload["session_id"],
-        "world_context": session_payload["world_context"],
-    }
-    assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == [
+    progress_messages = [message for message in messages if message["event"] == "turn.progress"]
+    assert [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"] == [
         "intent_interpretation",
         "memory_council",
         "npc_council",
@@ -691,6 +679,12 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "ambient_world_pass",
         "choice_generation",
     ]
+    assert {message["data"].get("status") for message in progress_messages[:14]} <= {"started", "completed"}
+    assert all("elapsed_ms" in message["data"] for message in progress_messages)
+    assert messages[0]["data"] == {
+        "session_id": session_payload["session_id"],
+        "world_context": session_payload["world_context"],
+    }
     assert messages[-1]["data"] == turn_payload
     broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
     assert broadcast_message["data"]["semantic_key"]
@@ -699,6 +693,46 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
         assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
+
+
+def _receive_until_turn_resolved(websocket, *, limit: int = 64):
+    messages = []
+    for _ in range(limit):
+        message = websocket.receive_json()
+        messages.append(message)
+        if message.get("event") == "turn.resolved":
+            return messages
+    raise AssertionError("turn.resolved was not received")
+
+
+def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    session_payload = session_response.json()
+
+    response = client.post(
+        "/turns",
+        json={
+            "session_id": session_payload["session_id"],
+            "input_mode": "free_text",
+            "input_text": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["input_mode"] == "free_text"
+    assert payload["action_type"] == "narrative"
+    assert payload["interpreted_intent"]["canonical_action_kind"] == "read_world_state_query"
+    assert payload["quest_updates"] == []
+    assert payload["faction_updates"] == []
+    assert payload["inventory_updates"] == []
+    assert payload["relationship_updates"] == []
+    assert payload["shared_action_tag"] == "none"
 
 
 def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
@@ -759,16 +793,13 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
 
-        messages = [websocket.receive_json() for _ in range(19)]
+        messages = _receive_until_turn_resolved(websocket)
 
-    assert [message["event"] for message in messages] == [
+    assert [message["event"] for message in messages[:2]] == [
         "session.connected",
         "turn.accepted",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
-        "turn.progress",
+    ]
+    assert [message["event"] for message in messages[-12:]] == [
         "turn.narrative.delta",
         "world.event.created",
         "world.broadcast.available",
@@ -782,13 +813,16 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         "ambient.updated",
         "turn.resolved",
     ]
-    assert [message["data"]["phase"] for message in messages if message["event"] == "turn.progress"] == [
+    progress_messages = [message for message in messages if message["event"] == "turn.progress"]
+    assert [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"] == [
+        "intent_interpretation",
         "item_use",
         "consequence_resolution",
         "scene_framing",
         "ambient_world_pass",
         "choice_generation",
     ]
+    assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[-1]["data"] == payload
     broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
     assert broadcast_message["data"]["semantic_key"]
@@ -798,6 +832,7 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
         assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
     assert payload["scene_updates"]
+
     assert payload["chapter_updates"]
 
 

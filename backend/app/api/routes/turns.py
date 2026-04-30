@@ -7,14 +7,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub, with_world_context
 from app.models.entities import Session as GameSession
 from app.modules.identity.oidc import UserIdentity
-from app.modules.session.service import prepare_turn_for_session, resolve_turn_for_session
+from app.modules.session.service import prepare_turn_for_session
+from app.modules.session.turn_manager import TurnResolutionManager
 from app.modules.world_pack.service import WorldAvailabilityError, world_context_for_world, world_health
 
 router = APIRouter(tags=["turns"])
@@ -110,39 +110,6 @@ async def _emit_broadcast_available(result, world_context: dict[str, object]) ->
         await realtime_hub.emit_with_world_context(session_id, "world.broadcast.available", notification, world_context)
 
 
-def _resolve_turn_work(
-    db: Session,
-    container: AppContainer,
-    prepared,
-    payload: ResolveTurnRequest,
-    prepared_input_mode: str,
-    world_context: dict[str, object],
-):
-    started_at = container.observability_service.timer()
-    result = resolve_turn_for_session(
-        db,
-        container,
-        prepared,
-        action_type=payload.action_type,
-        input_mode=prepared_input_mode,
-        choice_id=payload.choice_id,
-        input_text=payload.input_text,
-        item_id=payload.item_id,
-    )
-    container.observability_service.record_turn_resolution(
-        duration_seconds=container.observability_service.elapsed(started_at),
-        world_id=result.turn.world_id,
-        pack_id=str(world_context["pack_id"]),
-        world_template_id=str(world_context["world_template_id"]),
-        session_id=result.turn.session_id,
-        turn_id=result.turn.id,
-        final_lane=result.turn.model_lane,
-        graph_context_status=result.graph_context_status,
-    )
-    db.commit()
-    return result
-
-
 @router.post("/turns")
 async def resolve_turn(
     payload: ResolveTurnRequest,
@@ -175,17 +142,27 @@ async def resolve_turn(
         world_context,
     )
 
-    result = await run_in_threadpool(
-        _resolve_turn_work,
-        db,
-        container,
-        prepared,
-        payload,
-        prepared_input_mode,
-        world_context,
-    )
+    managed = await TurnResolutionManager(
+        db=db,
+        container=container,
+        prepared=prepared,
+        action_type=payload.action_type,
+        input_mode=prepared_input_mode,
+        choice_id=payload.choice_id,
+        input_text=payload.input_text,
+        item_id=payload.item_id,
+        world_context=world_context,
+    ).resolve()
+    result = managed.result
     for phase in result.progress_phases:
-        await realtime_hub.emit_with_world_context(payload.session_id, "turn.progress", {"phase": phase}, world_context)
+        if phase in managed.emitted_phases:
+            continue
+        await realtime_hub.emit_with_world_context(
+            payload.session_id,
+            "turn.progress",
+            {"phase": phase, "status": "completed", "elapsed_ms": 0},
+            world_context,
+        )
 
     if result.succeeded:
         await realtime_hub.emit_with_world_context(

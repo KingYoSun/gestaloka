@@ -585,7 +585,9 @@ function TurnComposer({ runtime }: PlayerPageProps) {
     turnInputMode,
     turnPending,
     turnProgressElapsedSeconds,
+    turnProgressLiveLabel,
     turnProgressPhase,
+    turnProvisionalMessage,
     wallet,
   } = runtime;
   const choiceCost = wallet?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp?.turn_cost ?? "?";
@@ -603,7 +605,7 @@ function TurnComposer({ runtime }: PlayerPageProps) {
           ? t("player.turn.refreshing")
           : t("player.turn.waiting");
   const progressStatus = turnPending
-    ? t("player.turn.progress", { phase: phaseLabel, seconds: turnProgressElapsedSeconds })
+    ? t("player.turn.progress", { phase: turnProgressLiveLabel || phaseLabel, seconds: turnProgressElapsedSeconds })
     : t("player.turn.waiting");
 
   return (
@@ -668,6 +670,11 @@ function TurnComposer({ runtime }: PlayerPageProps) {
       <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-progress-status" role="status" aria-live="polite">
         {progressStatus}
       </p>
+      {turnPending && turnProvisionalMessage ? (
+        <p className="rounded-md border border-border bg-muted p-3 text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-provisional-status">
+          {turnProvisionalMessage}
+        </p>
+      ) : null}
       {turnPending && turnProgressElapsedSeconds >= 30 ? (
         <p className="rounded-md border border-border bg-muted p-3 text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="turn-retry-guidance">
           {t("player.turn.retryGuidance")}

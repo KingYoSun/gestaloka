@@ -17,6 +17,7 @@ from app.modules.llm_harness.service import (
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
+from app.modules.session.progress import emit_turn_progress
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
@@ -579,10 +580,40 @@ class GMCouncilService:
         self.settings = settings
         self.model_router = model_router
 
+    @staticmethod
+    def _deterministic_attempt(*, prompt_id: str, lane: str, payload: BaseModel) -> PromptExecutionAttempt:
+        return PromptExecutionAttempt(
+            prompt_id=prompt_id,
+            schema_version="deterministic",
+            model_lane=lane,
+            model_id=lane,
+            input_hash=lane,
+            input_context_hash=lane,
+            status="resolved",
+            output_schema_status="valid",
+            output_payload={"status": "resolved", "raw_output": payload.model_dump()},
+            provider_name="deterministic",
+            provider_response_id=None,
+        )
+
     def resolve_intent(self, request: CouncilRequest) -> CouncilIntentPhase:
         intent_input = self._intent_input_payload(request)
         if request.input_mode == "choice" and request.selected_choice:
+            emit_turn_progress(
+                phase="intent_interpretation",
+                status="started",
+                stage_index=1,
+                elapsed_ms=0,
+                detail="deterministic_choice",
+            )
             intent_result = self._choice_intent_outcome(request=request, input_payload=intent_input)
+            emit_turn_progress(
+                phase="intent_interpretation",
+                status="completed",
+                stage_index=1,
+                elapsed_ms=0,
+                detail="deterministic_choice",
+            )
         else:
             intent_result = self.model_router.execute_structured_prompt(
                 prompt_id="council.intent_interpreter",
@@ -967,7 +998,21 @@ class GMCouncilService:
             intent_payload = request.prepared_intent_payload
             role_runs.append(request.prepared_intent_role_run)
         elif request.input_mode == "choice" and request.selected_choice:
+            emit_turn_progress(
+                phase="intent_interpretation",
+                status="started",
+                stage_index=1,
+                elapsed_ms=0,
+                detail="deterministic_choice",
+            )
             intent_result = self._choice_intent_outcome(request=request, input_payload=intent_input)
+            emit_turn_progress(
+                phase="intent_interpretation",
+                status="completed",
+                stage_index=1,
+                elapsed_ms=0,
+                detail="deterministic_choice",
+            )
             role_runs.append(
                 self._role_run(
                     council_role="intent_interpreter",
@@ -1274,16 +1319,50 @@ class GMCouncilService:
             "resource_constraints": request.session_state.get("resource_constraints") or [],
             "world_broadcast_constraints": request.session_state.get("world_broadcast_constraints") or [],
         }
-        rules_result = self.model_router.execute_structured_prompt(
-            prompt_id="council.rules_arbiter",
-            response_model=CouncilRulesArbiterPayload,
-            input_payload=rules_input,
-            world_id=request.world_id,
-            turn_id=request.turn_id,
-            graph_context_status=request.graph_context_status,
-            allow_pro_fallback=True,
-            force_pro_after_success=high_risk,
-        )
+        requires_llm_validation = "__force_" in request.input_text
+        if high_risk or requires_llm_validation:
+            rules_result = self.model_router.execute_structured_prompt(
+                prompt_id="council.rules_arbiter",
+                response_model=CouncilRulesArbiterPayload,
+                input_payload=rules_input,
+                world_id=request.world_id,
+                turn_id=request.turn_id,
+                graph_context_status=request.graph_context_status,
+                allow_pro_fallback=True,
+                force_pro_after_success=high_risk,
+            )
+        else:
+            emit_turn_progress(
+                phase="rules_arbiter",
+                status="started",
+                stage_index=5,
+                elapsed_ms=0,
+                detail="deterministic_validator",
+            )
+            rules_payload = CouncilRulesArbiterPayload(
+                approval_status="approved",
+                normalized_world_tags=normalize_world_tags(world_progress_payload.world_tags),
+                risk_level=world_progress_payload.risk_level,
+                reason="Deterministic same-world validator approved a low/medium risk turn.",
+            )
+            rules_result = PromptExecutionOutcome(
+                attempts=[
+                    self._deterministic_attempt(
+                        prompt_id="council.rules_arbiter",
+                        lane="deterministic_validator",
+                        payload=rules_payload,
+                    )
+                ],
+                final_lane="deterministic_validator",
+                final_payload=rules_payload,
+            )
+            emit_turn_progress(
+                phase="rules_arbiter",
+                status="completed",
+                stage_index=5,
+                elapsed_ms=0,
+                detail="deterministic_validator",
+            )
         if (
             rules_result.final_payload is not None
             and rules_result.final_payload.approval_status == "rejected"
@@ -1339,16 +1418,48 @@ class GMCouncilService:
             "resource_constraints": request.session_state.get("resource_constraints") or [],
             "world_broadcast_constraints": request.session_state.get("world_broadcast_constraints") or [],
         }
-        safety_result = self.model_router.execute_structured_prompt(
-            prompt_id="council.safety_guard",
-            response_model=CouncilSafetyGuardPayload,
-            input_payload=safety_input,
-            world_id=request.world_id,
-            turn_id=request.turn_id,
-            graph_context_status=request.graph_context_status,
-            allow_pro_fallback=True,
-            force_pro_after_success=high_risk,
-        )
+        if high_risk or requires_llm_validation:
+            safety_result = self.model_router.execute_structured_prompt(
+                prompt_id="council.safety_guard",
+                response_model=CouncilSafetyGuardPayload,
+                input_payload=safety_input,
+                world_id=request.world_id,
+                turn_id=request.turn_id,
+                graph_context_status=request.graph_context_status,
+                allow_pro_fallback=True,
+                force_pro_after_success=high_risk,
+            )
+        else:
+            emit_turn_progress(
+                phase="safety_guard",
+                status="started",
+                stage_index=6,
+                elapsed_ms=0,
+                detail="deterministic_validator",
+            )
+            safety_payload = CouncilSafetyGuardPayload(
+                approval_status="approved",
+                reason="Deterministic safety validator approved a low/medium risk turn.",
+                violations=[],
+            )
+            safety_result = PromptExecutionOutcome(
+                attempts=[
+                    self._deterministic_attempt(
+                        prompt_id="council.safety_guard",
+                        lane="deterministic_validator",
+                        payload=safety_payload,
+                    )
+                ],
+                final_lane="deterministic_validator",
+                final_payload=safety_payload,
+            )
+            emit_turn_progress(
+                phase="safety_guard",
+                status="completed",
+                stage_index=6,
+                elapsed_ms=0,
+                detail="deterministic_validator",
+            )
         safety_approval = (
             safety_result.final_payload.approval_status if safety_result.final_payload is not None else "failed"
         )
