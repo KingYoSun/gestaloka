@@ -25,7 +25,9 @@ make swarm-test
 - `SWARM_API_BASE_URL`: default `http://localhost:8000`
 - `SWARM_KEYCLOAK_TOKEN_URL`: default `http://localhost:8080/realms/gestaloka/protocol/openid-connect/token`
 - `SWARM_RUN_ID`: default は `make swarm-test` 実行開始時の UTC timestamp。
-- `SWARM_ARTIFACT_DIR`: default `documents/testplay-reports/artifacts/swarm-test-<SWARM_RUN_ID>`
+- `SWARM_RUN_GROUP_ID`: default は `git rev-parse --short=12 HEAD`。
+- `SWARM_RUN_GROUP_DIR`: default `documents/testplay-reports/artifacts/swarm-test-commit-<SWARM_RUN_GROUP_ID>`
+- `SWARM_ARTIFACT_DIR`: default `<SWARM_RUN_GROUP_DIR>/swarm-test-<SWARM_RUN_ID>`
 
 ## 3. ユーザーペルソナとプレイヤープロフィール
 
@@ -65,16 +67,35 @@ make swarm-test
 
 ## 6. 成果物
 
-`swarm-test` は以下を出力します。
+`swarm-test` は commit hash ごとの run group directory を作り、その配下に run ごとの folder を出力します。
+
+```text
+documents/testplay-reports/artifacts/
+└── swarm-test-commit-<commit-hash>/
+    ├── swarm-test-aggregate-report.md
+    ├── swarm-test-aggregate-result.json
+    └── swarm-test-<SWARM_RUN_ID>/
+        ├── swarm-test-report-attempt-N.md
+        ├── swarm-test-result-attempt-N.json
+        ├── swarm-test-report.md
+        └── swarm-test-result.json
+```
+
+run folder には以下を出力します。
 
 - `swarm-test-result-attempt-N.json`
 - `swarm-test-report-attempt-N.md`
 - `swarm-test-result.json`: 最新 attempt の JSON コピー
 - `swarm-test-report.md`: 最新 attempt の日本語 Markdown コピー
-- `swarm-test-aggregate-result.json`: 同一 `SWARM_RUN_ID` 内の attempt を統合した JSON
-- `swarm-test-aggregate-report.md`: 同一 `SWARM_RUN_ID` 内の個別レポートを総合した日本語 Markdown
+- `swarm-test-attempt-summary-result.json`: 同一 `SWARM_RUN_ID` 内の attempt を要約した JSON
+- `swarm-test-attempt-summary-report.md`: 同一 `SWARM_RUN_ID` 内の attempt 要約 Markdown
 - 各 persona の login 後 screenshot
 
-同一 `make swarm-test` 実行内で Playwright retry が発生しても、同じ `SWARM_RUN_ID` の artifact directory に attempt 番号付きで集約します。総合レポートは、同じ folder 内の `swarm-test-result-attempt-N.json` を読み直して生成します。
+run group folder には以下を出力します。
+
+- `swarm-test-aggregate-result.json`: 同一 commit hash の複数 swarm run を統合した JSON
+- `swarm-test-aggregate-report.md`: 現時点の実装コミットに対する日本語の総合評価レポート
+
+同一 `make swarm-test` 実行内で Playwright retry が発生しても、同じ `SWARM_RUN_ID` の run folder に attempt 番号付きで集約します。複数回の `make swarm-test` 実行結果は、同じ `SWARM_RUN_GROUP_ID` の run group folder 直下の総合レポートに集約します。
 
 不具合化する場合は、run id、persona id、session id、turn id、event id、hard check 名を記録してください。

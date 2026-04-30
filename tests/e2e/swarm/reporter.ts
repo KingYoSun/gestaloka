@@ -42,10 +42,13 @@ export function buildRunId(): string {
 }
 
 export function defaultArtifactDir(runId: string): string {
-  return (
-    process.env.SWARM_ARTIFACT_DIR ??
-    path.resolve(process.cwd(), "../documents/testplay-reports/artifacts", `swarm-test-${runId}`)
-  );
+  if (process.env.SWARM_ARTIFACT_DIR?.trim()) {
+    return process.env.SWARM_ARTIFACT_DIR.trim();
+  }
+  if (process.env.SWARM_RUN_GROUP_DIR?.trim()) {
+    return path.join(process.env.SWARM_RUN_GROUP_DIR.trim(), `swarm-test-${runId}`);
+  }
+  return path.resolve(process.cwd(), "../documents/testplay-reports/artifacts", "swarm-test-local", `swarm-test-${runId}`);
 }
 
 export async function writeSwarmReport(testInfo: TestInfo, artifactDir: string, report: SwarmReport): Promise<void> {
@@ -55,15 +58,19 @@ export async function writeSwarmReport(testInfo: TestInfo, artifactDir: string, 
   const markdownPath = path.join(artifactDir, `swarm-test-report-${attemptLabel}.md`);
   const latestJsonPath = path.join(artifactDir, "swarm-test-result.json");
   const latestMarkdownPath = path.join(artifactDir, "swarm-test-report.md");
-  const aggregateJsonPath = path.join(artifactDir, "swarm-test-aggregate-result.json");
-  const aggregateMarkdownPath = path.join(artifactDir, "swarm-test-aggregate-report.md");
+  const attemptSummaryJsonPath = path.join(artifactDir, "swarm-test-attempt-summary-result.json");
+  const attemptSummaryMarkdownPath = path.join(artifactDir, "swarm-test-attempt-summary-report.md");
   await fs.writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   await fs.writeFile(markdownPath, markdownReport(report, attemptLabel), "utf8");
   await fs.copyFile(jsonPath, latestJsonPath);
   await fs.copyFile(markdownPath, latestMarkdownPath);
-  const aggregate = await buildAggregateReport(artifactDir);
-  await fs.writeFile(aggregateJsonPath, `${JSON.stringify(aggregate, null, 2)}\n`, "utf8");
-  await fs.writeFile(aggregateMarkdownPath, aggregateMarkdownReport(aggregate), "utf8");
+  const attemptSummary = await buildAttemptSummaryReport(artifactDir);
+  await fs.writeFile(attemptSummaryJsonPath, `${JSON.stringify(attemptSummary, null, 2)}\n`, "utf8");
+  await fs.writeFile(attemptSummaryMarkdownPath, attemptSummaryMarkdownReport(attemptSummary), "utf8");
+  const runGroupDir = process.env.SWARM_RUN_GROUP_DIR?.trim();
+  if (runGroupDir) {
+    await writeRunGroupAggregateReport(runGroupDir, process.env.SWARM_RUN_GROUP_ID?.trim() ?? path.basename(runGroupDir));
+  }
   await testInfo.attach("swarm-test-result", {
     path: jsonPath,
     contentType: "application/json",
@@ -72,13 +79,295 @@ export async function writeSwarmReport(testInfo: TestInfo, artifactDir: string, 
     path: markdownPath,
     contentType: "text/markdown",
   });
-  await testInfo.attach("swarm-test-aggregate-report", {
-    path: aggregateMarkdownPath,
+  await testInfo.attach("swarm-test-attempt-summary-report", {
+    path: attemptSummaryMarkdownPath,
     contentType: "text/markdown",
   });
+  if (runGroupDir) {
+    await testInfo.attach("swarm-test-run-group-aggregate-report", {
+      path: path.join(runGroupDir, "swarm-test-aggregate-report.md"),
+      contentType: "text/markdown",
+    });
+  }
 }
 
-type AggregateAttempt = {
+export async function writeRunGroupAggregateReport(runGroupDir: string, runGroupId: string): Promise<void> {
+  await fs.mkdir(runGroupDir, { recursive: true });
+  const report = await buildRunGroupAggregateReport(runGroupDir, runGroupId);
+  await fs.writeFile(
+    path.join(runGroupDir, "swarm-test-aggregate-result.json"),
+    `${JSON.stringify(report, null, 2)}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(runGroupDir, "swarm-test-aggregate-report.md"),
+    runGroupAggregateMarkdownReport(report),
+    "utf8",
+  );
+}
+
+type RunGroupRun = {
+  run_id: string;
+  run_dir: string;
+  created_at: string | null;
+  world_id: string | null;
+  status: "pass" | "fail" | "blocked";
+  result_file: string | null;
+  report_file: string | null;
+  hard_checks: Record<string, boolean>;
+  persona_ratings: Record<string, PersonaEvaluation["rating"]>;
+  persona_observed_impacts: Record<string, string>;
+};
+
+type RunGroupAggregateReport = {
+  run_group_id: string;
+  generated_at: string;
+  run_group_dir: string;
+  run_count: number;
+  completed_run_count: number;
+  passed_run_count: number;
+  failed_run_count: number;
+  blocked_run_count: number;
+  latest_completed_run_id: string | null;
+  latest_completed_result: "pass" | "fail" | null;
+  runs: RunGroupRun[];
+  hard_check_summary: Record<
+    string,
+    {
+      latest: boolean | null;
+      passed_runs: number;
+      completed_runs: number;
+    }
+  >;
+  persona_experience_summary: Array<{
+    personaId: string;
+    latestRating: PersonaEvaluation["rating"] | null;
+    latestObservedImpact: string | null;
+    ratings: Record<PersonaEvaluation["rating"], number>;
+    runs: Array<{
+      run_id: string;
+      rating: PersonaEvaluation["rating"];
+      observedImpact: string;
+    }>;
+  }>;
+};
+
+async function buildRunGroupAggregateReport(
+  runGroupDir: string,
+  runGroupId: string,
+): Promise<RunGroupAggregateReport> {
+  const entries = await fs.readdir(runGroupDir, { withFileTypes: true });
+  const runDirs = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("swarm-test-"))
+    .map((entry) => entry.name)
+    .sort();
+  const runs = await Promise.all(runDirs.map((runDir) => readRunGroupRun(runGroupDir, runDir)));
+  const completedRuns = runs.filter((run) => run.status !== "blocked");
+  const latestCompletedRun = completedRuns[completedRuns.length - 1] ?? null;
+  const hardCheckKeys = Array.from(new Set(completedRuns.flatMap((run) => Object.keys(run.hard_checks))));
+  const personaIds = Array.from(new Set(completedRuns.flatMap((run) => Object.keys(run.persona_ratings))));
+
+  return {
+    run_group_id: runGroupId,
+    generated_at: new Date().toISOString(),
+    run_group_dir: runGroupDir,
+    run_count: runs.length,
+    completed_run_count: completedRuns.length,
+    passed_run_count: runs.filter((run) => run.status === "pass").length,
+    failed_run_count: runs.filter((run) => run.status === "fail").length,
+    blocked_run_count: runs.filter((run) => run.status === "blocked").length,
+    latest_completed_run_id: latestCompletedRun?.run_id ?? null,
+    latest_completed_result:
+      latestCompletedRun?.status === "pass" || latestCompletedRun?.status === "fail" ? latestCompletedRun.status : null,
+    runs,
+    hard_check_summary: Object.fromEntries(
+      hardCheckKeys.map((key) => [
+        key,
+        {
+          latest: latestCompletedRun ? latestCompletedRun.hard_checks[key] === true : null,
+          passed_runs: completedRuns.filter((run) => run.hard_checks[key] === true).length,
+          completed_runs: completedRuns.length,
+        },
+      ]),
+    ),
+    persona_experience_summary: personaIds.map((personaId) => {
+      const personaRuns = completedRuns
+        .filter((run) => run.persona_ratings[personaId])
+        .map((run) => ({
+          run_id: run.run_id,
+          rating: run.persona_ratings[personaId],
+          observedImpact: run.persona_observed_impacts[personaId],
+        }));
+      const latest = personaRuns[personaRuns.length - 1] ?? null;
+      return {
+        personaId,
+        latestRating: latest?.rating ?? null,
+        latestObservedImpact: latest?.observedImpact ?? null,
+        ratings: {
+          good: personaRuns.filter((run) => run.rating === "good").length,
+          acceptable: personaRuns.filter((run) => run.rating === "acceptable").length,
+          "needs work": personaRuns.filter((run) => run.rating === "needs work").length,
+          blocked: personaRuns.filter((run) => run.rating === "blocked").length,
+        },
+        runs: personaRuns,
+      };
+    }),
+  };
+}
+
+async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<RunGroupRun> {
+  const runPath = path.join(runGroupDir, runDir);
+  const resultFile = await findLatestRunResultFile(runPath);
+  if (!resultFile) {
+    return {
+      run_id: runDir.replace(/^swarm-test-/, ""),
+      run_dir: runDir,
+      created_at: null,
+      world_id: null,
+      status: "blocked",
+      result_file: null,
+      report_file: null,
+      hard_checks: {},
+      persona_ratings: {},
+      persona_observed_impacts: {},
+    };
+  }
+  const raw = await fs.readFile(path.join(runPath, resultFile), "utf8");
+  const report = JSON.parse(raw) as SwarmReport;
+  const passed = Object.values(report.hard_checks).every(Boolean);
+  return {
+    run_id: report.run_id,
+    run_dir: runDir,
+    created_at: report.created_at,
+    world_id: report.world_id,
+    status: passed ? "pass" : "fail",
+    result_file: path.join(runDir, resultFile),
+    report_file: path.join(runDir, reportFileForResultFile(resultFile)),
+    hard_checks: report.hard_checks,
+    persona_ratings: Object.fromEntries(
+      report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation.rating]),
+    ),
+    persona_observed_impacts: Object.fromEntries(
+      report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation.observedImpact]),
+    ),
+  };
+}
+
+async function findLatestRunResultFile(runPath: string): Promise<string | null> {
+  const entries = await fs.readdir(runPath);
+  if (entries.includes("swarm-test-result.json")) {
+    return "swarm-test-result.json";
+  }
+  const attempts = entries
+    .map((entry) => {
+      const match = /^swarm-test-result-attempt-(\d+)\.json$/.exec(entry);
+      return match ? { file: entry, attempt: Number(match[1]) } : null;
+    })
+    .filter((entry): entry is { file: string; attempt: number } => entry !== null)
+    .sort((left, right) => left.attempt - right.attempt);
+  return attempts[attempts.length - 1]?.file ?? null;
+}
+
+function reportFileForResultFile(resultFile: string): string {
+  if (resultFile === "swarm-test-result.json") {
+    return "swarm-test-report.md";
+  }
+  return resultFile.replace(/^swarm-test-result-/, "swarm-test-report-").replace(/\.json$/, ".md");
+}
+
+function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): string {
+  const lines = [
+    `# swarm-test 実装評価レポート ${report.run_group_id}`,
+    "",
+    `- 生成日時: ${report.generated_at}`,
+    `- 実装コミット: ${report.run_group_id}`,
+    `- run group dir: ${report.run_group_dir}`,
+    `- run 数: ${report.run_count}`,
+    `- 完了 run: ${report.completed_run_count}`,
+    `- 合格 run: ${report.passed_run_count}`,
+    `- 失敗 run: ${report.failed_run_count}`,
+    `- レポート未生成 run: ${report.blocked_run_count}`,
+    `- 最新完了 run: ${report.latest_completed_run_id ?? "なし"}`,
+    `- 最新完了結果: ${report.latest_completed_result ? jaStatus(report.latest_completed_result) : "なし"}`,
+    "",
+    "## Run 一覧",
+    "",
+    "| run_id | 状態 | 作成日時 | world_id | report |",
+    "| --- | --- | --- | --- | --- |",
+    ...report.runs.map(
+      (run) =>
+        `| ${run.run_id} | ${jaStatus(run.status)} | ${run.created_at ?? "-"} | ${run.world_id ?? "-"} | ${
+          run.report_file ?? "未生成"
+        } |`,
+    ),
+    "",
+    "## ハードチェック横断",
+    "",
+    "| 項目 | 最新完了 run | 通過 run |",
+    "| --- | --- | --- |",
+    ...Object.entries(report.hard_check_summary).map(
+      ([key, summary]) =>
+        `| ${ja(key)} | ${summary.latest === null ? "なし" : summary.latest ? "合格" : "失敗"} | ${
+          summary.passed_runs
+        }/${summary.completed_runs} |`,
+    ),
+    "",
+    "## ペルソナ別横断評価",
+    "",
+    ...report.persona_experience_summary.flatMap((summary) => [
+      `### ${ja(summary.personaId)}`,
+      "",
+      `- 最新評価: ${summary.latestRating ? ja(summary.latestRating) : "なし"}`,
+      `- 最新観測: ${summary.latestObservedImpact ? ja(summary.latestObservedImpact) : "なし"}`,
+      `- 評価分布: 良好=${summary.ratings.good}, 許容=${summary.ratings.acceptable}, 要改善=${summary.ratings["needs work"]}, ブロック=${summary.ratings.blocked}`,
+      ...summary.runs.map((run) => `- ${run.run_id}: 評価=${ja(run.rating)}; 観測=${ja(run.observedImpact)}`),
+      "",
+    ]),
+    "## 現時点の評価",
+    "",
+    implementationAssessment(report),
+    "",
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+function implementationAssessment(report: RunGroupAggregateReport): string {
+  if (report.run_count === 0) {
+    return "- 評価対象の swarm run がありません。";
+  }
+  const notes = [];
+  if (report.passed_run_count > 0) {
+    notes.push(
+      `- 少なくとも ${report.passed_run_count} run では、shared impact / resource conflict / world event / privacy separation の hard check が通過しています。`,
+    );
+  }
+  if (report.failed_run_count > 0) {
+    notes.push(`- ${report.failed_run_count} run で hard check failure があり、該当項目の再確認が必要です。`);
+  }
+  if (report.blocked_run_count > 0) {
+    notes.push(
+      `- ${report.blocked_run_count} run は完了レポート未生成です。live run の安定性または backend concurrency failure を別途確認してください。`,
+    );
+  }
+  if (report.completed_run_count > 0 && report.passed_run_count === report.completed_run_count && report.blocked_run_count === 0) {
+    notes.push("- 現時点の完了 run 群では、実装評価は合格です。");
+  } else if (report.passed_run_count > 0) {
+    notes.push("- 現時点では体験要件を満たす run はありますが、失敗または未完了 run が残るため安定性評価は保留です。");
+  }
+  return notes.join("\n");
+}
+
+function jaStatus(status: "pass" | "fail" | "blocked"): string {
+  if (status === "pass") {
+    return "合格";
+  }
+  if (status === "fail") {
+    return "失敗";
+  }
+  return "未完了";
+}
+
+type AttemptSummaryAttempt = {
   attempt_label: string;
   result_file: string;
   report_file: string;
@@ -88,14 +377,14 @@ type AggregateAttempt = {
   persona_ratings: Record<string, PersonaEvaluation["rating"]>;
 };
 
-type SwarmAggregateReport = {
+type SwarmAttemptSummaryReport = {
   run_id: string;
   generated_at: string;
   world_id: string;
   attempt_count: number;
   latest_attempt: string;
   latest_result: "pass" | "fail";
-  attempts: AggregateAttempt[];
+  attempts: AttemptSummaryAttempt[];
   hard_check_summary: Record<
     string,
     {
@@ -122,7 +411,7 @@ type SwarmAggregateReport = {
   }>;
 };
 
-async function buildAggregateReport(artifactDir: string): Promise<SwarmAggregateReport> {
+async function buildAttemptSummaryReport(artifactDir: string): Promise<SwarmAttemptSummaryReport> {
   const attempts = await readAttemptReports(artifactDir);
   if (attempts.length === 0) {
     throw new Error(`No swarm attempt reports found in ${artifactDir}`);
@@ -220,9 +509,9 @@ async function readAttemptReports(
   );
 }
 
-function aggregateMarkdownReport(report: SwarmAggregateReport): string {
+function attemptSummaryMarkdownReport(report: SwarmAttemptSummaryReport): string {
   const lines = [
-    `# swarm-test 総合レポート ${report.run_id}`,
+    `# swarm-test attempt summary ${report.run_id}`,
     "",
     `- 生成日時: ${report.generated_at}`,
     `- world_id: ${report.world_id}`,

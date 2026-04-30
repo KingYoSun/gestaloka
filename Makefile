@@ -71,10 +71,14 @@ frontend-e2e:
 swarm-test:
 	@set -eu; \
 	run_id="$${SWARM_RUN_ID:-$$(date -u +%Y-%m-%dT%H-%M-%SZ)}"; \
-	artifact_dir="$${SWARM_ARTIFACT_DIR:-/workspace/documents/testplay-reports/artifacts/swarm-test-$$run_id}"; \
+	run_group_id="$${SWARM_RUN_GROUP_ID:-$$(git rev-parse --short=12 HEAD)}"; \
+	run_group_dir="$${SWARM_RUN_GROUP_DIR:-/workspace/documents/testplay-reports/artifacts/swarm-test-commit-$$run_group_id}"; \
+	artifact_dir="$${SWARM_ARTIFACT_DIR:-$$run_group_dir/swarm-test-$$run_id}"; \
 	echo "SWARM_RUN_ID=$$run_id"; \
+	echo "SWARM_RUN_GROUP_ID=$$run_group_id"; \
+	echo "SWARM_RUN_GROUP_DIR=$$run_group_dir"; \
 	echo "SWARM_ARTIFACT_DIR=$$artifact_dir"; \
-	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_ARTIFACT_DIR="$$artifact_dir" $(COMPOSE) run --rm frontend-e2e
+	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_RUN_GROUP_ID="$$run_group_id" SWARM_RUN_GROUP_DIR="$$run_group_dir" SWARM_ARTIFACT_DIR="$$artifact_dir" $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:
 	$(MAKE) backend-test
