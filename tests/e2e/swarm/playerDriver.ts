@@ -1,0 +1,159 @@
+import { expect, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
+
+import { profilePayloadForApi, type DerivedPlayerProfile } from "./playerProfiles";
+import type { SwarmDecision } from "./playbook";
+import type { SwarmUserPersona } from "./userPersonas";
+
+export const worldId = "gestaloka_reference";
+export const apiBaseURL = process.env.SWARM_API_BASE_URL ?? "http://localhost:8000";
+export const keycloakTokenURL =
+  process.env.SWARM_KEYCLOAK_TOKEN_URL ??
+  "http://localhost:8080/realms/gestaloka/protocol/openid-connect/token";
+
+export type PlayerRuntime = {
+  persona: SwarmUserPersona;
+  profile: DerivedPlayerProfile;
+  accessToken: string;
+  actorId: string;
+  sessionId: string;
+  locationId: string;
+};
+
+type ProfileResponse = {
+  actor_id: string;
+  display_name: string;
+};
+
+type SessionResponse = {
+  session_id: string;
+  player_actor_id: string;
+  location_id: string;
+};
+
+export async function authenticatePage(page: Page, baseURL: string, persona: SwarmUserPersona): Promise<void> {
+  await page.goto(baseURL);
+  await page.getByTestId("sign-in").click();
+  await page.locator("#username").fill(persona.user.username);
+  await page.locator("#password").fill(persona.user.password);
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await expect(page.getByTestId("auth-status")).toContainText("authenticated", { timeout: 30_000 });
+  await expect(page.getByTestId("error-banner").filter({ hasText: "Keycloak" })).toHaveCount(0);
+}
+
+export async function getAccessToken(
+  request: APIRequestContext,
+  user: SwarmUserPersona["user"],
+  clientId = "gestaloka-frontend",
+): Promise<string> {
+  const body = new URLSearchParams({
+    grant_type: "password",
+    client_id: clientId,
+    username: user.username,
+    password: user.password,
+  });
+  const response = await request.post(keycloakTokenURL, {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    data: body.toString(),
+  });
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to get Keycloak token for ${user.username}: ${response.status()} ${await response.text()}`,
+    );
+  }
+  const payload = (await response.json()) as { access_token?: string };
+  if (!payload.access_token) {
+    throw new Error(`Keycloak token response for ${user.username} did not include access_token`);
+  }
+  return payload.access_token;
+}
+
+export async function ensurePlayerProfile(
+  request: APIRequestContext,
+  token: string,
+  profile: DerivedPlayerProfile,
+): Promise<ProfileResponse> {
+  const existing = await apiGet<{ items: ProfileResponse[] }>(request, token, `/worlds/${worldId}/player-profiles`);
+  const match = existing.items.find((item) => item.display_name === profile.displayName);
+  if (match) {
+    return match;
+  }
+  return apiPost<ProfileResponse>(request, token, `/worlds/${worldId}/player-profiles`, profilePayloadForApi(profile));
+}
+
+export async function createPlayerSession(
+  request: APIRequestContext,
+  token: string,
+  actorId: string,
+): Promise<SessionResponse> {
+  return apiPost<SessionResponse>(request, token, "/sessions", {
+    world_id: worldId,
+    player_actor_id: actorId,
+  });
+}
+
+export async function resolveTurn(
+  request: APIRequestContext,
+  token: string,
+  sessionId: string,
+  decision: SwarmDecision,
+): Promise<Record<string, unknown>> {
+  const payload =
+    decision.inputMode === "choice"
+      ? { session_id: sessionId, input_mode: "choice", choice_id: decision.choiceId }
+      : { session_id: sessionId, input_mode: "free_text", input_text: decision.inputText };
+  return apiPost<Record<string, unknown>>(request, token, "/turns", payload, 180_000);
+}
+
+export async function getSessionState(
+  request: APIRequestContext,
+  token: string,
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(request, token, `/sessions/${sessionId}/state`);
+}
+
+export async function getWorldEvents(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(request, token, `/worlds/${worldId}/events`);
+}
+
+export async function getWorldMemories(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(request, token, `/worlds/${worldId}/memories`);
+}
+
+export async function getOpsSharedWorld(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(request, token, `/ops/worlds/${worldId}/shared-world`);
+}
+
+export async function getOpsHistory(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(request, token, `/ops/worlds/${worldId}/history?limit=100`);
+}
+
+async function apiGet<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
+  const response = await request.get(`${apiBaseURL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 60_000,
+  });
+  return checkedJson<T>(response, path);
+}
+
+async function apiPost<T>(
+  request: APIRequestContext,
+  token: string,
+  path: string,
+  data: Record<string, unknown>,
+  timeout = 60_000,
+): Promise<T> {
+  const response = await request.post(`${apiBaseURL}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data,
+    timeout,
+  });
+  return checkedJson<T>(response, path);
+}
+
+async function checkedJson<T>(response: APIResponse, label: string): Promise<T> {
+  if (!response.ok()) {
+    throw new Error(`${label} failed: ${response.status()} ${await response.text()}`);
+  }
+  return (await response.json()) as T;
+}

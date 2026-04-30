@@ -12,7 +12,7 @@
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "redirectUris": [
         "http://localhost:5173/*"
       ],
@@ -29,7 +29,7 @@
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "redirectUris": [
         "http://localhost:5174/*"
       ],
@@ -54,6 +54,70 @@
         {
           "type": "password",
           "value": "demo-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "swarm-a-sub",
+      "username": "swarm-a",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Swarm",
+      "lastName": "A",
+      "email": "swarm-a@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "swarm-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "swarm-b-sub",
+      "username": "swarm-b",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Swarm",
+      "lastName": "B",
+      "email": "swarm-b@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "swarm-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "swarm-c-sub",
+      "username": "swarm-c",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Swarm",
+      "lastName": "C",
+      "email": "swarm-c@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "swarm-password",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "swarm-ops-sub",
+      "username": "swarm-ops",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Swarm",
+      "lastName": "Ops",
+      "email": "swarm-ops@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "swarm-password",
           "temporary": false
         }
       ]

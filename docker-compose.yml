@@ -364,7 +364,7 @@ services:
       NEBULA_SPACE: gestaloka_v2
       NEBULA_USER: root
       NEBULA_PASSWORD: nebula
-      OPS_ADMIN_SUBS: demo-player-sub
+      OPS_ADMIN_SUBS: demo-player-sub,swarm-ops-sub
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
@@ -593,7 +593,7 @@ services:
       NEBULA_SPACE: gestaloka_v2
       NEBULA_USER: root
       NEBULA_PASSWORD: nebula
-      OPS_ADMIN_SUBS: demo-player-sub
+      OPS_ADMIN_SUBS: demo-player-sub,swarm-ops-sub
     volumes:
       - ./backend:/app
       - ./prompts:/workspace/prompts
@@ -795,6 +795,7 @@ services:
     volumes:
       - ./frontend:/workspace/frontend
       - ./tests:/workspace/tests
+      - ./documents:/workspace/documents
     depends_on:
       player-frontend:
         condition: service_healthy

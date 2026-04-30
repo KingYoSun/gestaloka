@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe playwright-mcp-clean observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e swarm-test verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe playwright-mcp-clean observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -67,6 +67,9 @@ frontend-e2e:
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build player-frontend; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build admin-frontend; \
 	$(VERIFY_COMPOSE_ENV) COMPOSE_PROFILES=e2e E2E_SPEC="$(E2E_SPEC)" $(COMPOSE) run --rm frontend-e2e
+
+swarm-test:
+	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:
 	$(MAKE) backend-test
