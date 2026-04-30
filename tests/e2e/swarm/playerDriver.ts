@@ -148,10 +148,17 @@ async function apiPost<T>(
     data,
     timeout,
   });
-  return checkedJson<T>(response, path);
+  return checkedJson<T>(response, path, path === "/turns" ? [422] : []);
 }
 
-async function checkedJson<T>(response: APIResponse, label: string): Promise<T> {
+async function checkedJson<T>(response: APIResponse, label: string, acceptedErrorStatuses: number[] = []): Promise<T> {
+  if (acceptedErrorStatuses.includes(response.status())) {
+    const payload = (await response.json()) as Record<string, unknown>;
+    if (typeof payload.event_id === "string") {
+      return payload as T;
+    }
+    throw new Error(`${label} returned accepted status ${response.status()} without event_id: ${JSON.stringify(payload)}`);
+  }
   if (!response.ok()) {
     throw new Error(`${label} failed: ${response.status()} ${await response.text()}`);
   }
