@@ -96,6 +96,8 @@ run group folder には以下を出力します。
 - `swarm-test-aggregate-result.json`: 同一 commit hash の複数 swarm run を統合した JSON
 - `swarm-test-aggregate-report.md`: 現時点の実装コミットに対する日本語の総合評価レポート
 
+総合レポートには hard check と persona 評価に加え、複数 run を通したストーリー展開、世界への影響、発生 event / turn の観測状況を記録します。
+
 同一 `make swarm-test` 実行内で Playwright retry が発生しても、同じ `SWARM_RUN_ID` の run folder に attempt 番号付きで集約します。複数回の `make swarm-test` 実行結果は、同じ `SWARM_RUN_GROUP_ID` の run group folder 直下の総合レポートに集約します。
 
 不具合化する場合は、run id、persona id、session id、turn id、event id、hard check 名を記録してください。

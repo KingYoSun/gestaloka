@@ -117,6 +117,19 @@ type RunGroupRun = {
   hard_checks: Record<string, boolean>;
   persona_ratings: Record<string, PersonaEvaluation["rating"]>;
   persona_observed_impacts: Record<string, string>;
+  story_observations: RunStoryObservation[];
+};
+
+type RunStoryObservation = {
+  personaId: string;
+  scenario: SwarmDecision["scenario"];
+  action: string;
+  expectedWorldImpact: string;
+  observedImpact: string | null;
+  rating: PersonaEvaluation["rating"] | null;
+  locationId: string | null;
+  eventIds: string[];
+  turnIds: string[];
 };
 
 type RunGroupAggregateReport = {
@@ -150,6 +163,20 @@ type RunGroupAggregateReport = {
       observedImpact: string;
     }>;
   }>;
+  scenario_story_summary: Array<{
+    scenario: SwarmDecision["scenario"];
+    completed_runs: number;
+    observed_runs: number;
+    event_count: number;
+    latestObservedImpact: string | null;
+    runs: Array<{
+      run_id: string;
+      observed: boolean;
+      story: string;
+      worldImpact: string;
+      eventIds: string[];
+    }>;
+  }>;
 };
 
 async function buildRunGroupAggregateReport(
@@ -166,6 +193,11 @@ async function buildRunGroupAggregateReport(
   const latestCompletedRun = completedRuns[completedRuns.length - 1] ?? null;
   const hardCheckKeys = Array.from(new Set(completedRuns.flatMap((run) => Object.keys(run.hard_checks))));
   const personaIds = Array.from(new Set(completedRuns.flatMap((run) => Object.keys(run.persona_ratings))));
+  const scenarios = Array.from(
+    new Set(
+      completedRuns.flatMap((run) => run.story_observations.map((observation) => observation.scenario)),
+    ),
+  );
 
   return {
     run_group_id: runGroupId,
@@ -212,6 +244,36 @@ async function buildRunGroupAggregateReport(
         runs: personaRuns,
       };
     }),
+    scenario_story_summary: scenarios.map((scenario) => {
+      const scenarioRuns = completedRuns.map((run) => {
+        const observations = run.story_observations.filter((observation) => observation.scenario === scenario);
+        const observed = run.hard_checks[hardCheckForScenario(scenario)] === true;
+        return {
+          run_id: run.run_id,
+          observed,
+          story: observations.map((observation) => storyObservationText(observation)).join(" / "),
+          worldImpact: Array.from(
+            new Set(
+              observations
+                .map((observation) => observation.observedImpact)
+                .filter((impact): impact is string => Boolean(impact))
+                .map((impact) => ja(impact)),
+            ),
+          ).join(" / "),
+          eventIds: observations.flatMap((observation) => observation.eventIds),
+        };
+      });
+      const observedScenarioRuns = scenarioRuns.filter((run) => run.worldImpact);
+      const latestObservedRun = observedScenarioRuns[observedScenarioRuns.length - 1] ?? null;
+      return {
+        scenario,
+        completed_runs: completedRuns.length,
+        observed_runs: scenarioRuns.filter((run) => run.observed).length,
+        event_count: scenarioRuns.reduce((total, run) => total + run.eventIds.length, 0),
+        latestObservedImpact: latestObservedRun?.worldImpact ?? null,
+        runs: scenarioRuns,
+      };
+    }),
   };
 }
 
@@ -230,6 +292,7 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
       hard_checks: {},
       persona_ratings: {},
       persona_observed_impacts: {},
+      story_observations: [],
     };
   }
   const raw = await fs.readFile(path.join(runPath, resultFile), "utf8");
@@ -250,7 +313,60 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
     persona_observed_impacts: Object.fromEntries(
       report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation.observedImpact]),
     ),
+    story_observations: buildStoryObservations(report),
   };
+}
+
+function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
+  const runtimeByPersona = new Map(report.runtime.map((runtime) => [runtime.personaId, runtime]));
+  const evaluationByPersona = new Map(
+    report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation]),
+  );
+  const evaluationByScenario = new Map(
+    report.persona_experience_evaluation.map((evaluation) => [scenarioForEvaluationPersona(evaluation.personaId), evaluation]),
+  );
+  const personaDecisionCounts = new Map<string, number>();
+  return report.persona_decision_log.map((decision) => {
+    const decisionIndex = personaDecisionCounts.get(decision.personaId) ?? 0;
+    personaDecisionCounts.set(decision.personaId, decisionIndex + 1);
+    const runtime = runtimeByPersona.get(decision.personaId);
+    const evaluation = evaluationByScenario.get(decision.scenario) ?? evaluationByPersona.get(decision.personaId);
+    return {
+      personaId: decision.personaId,
+      scenario: decision.scenario,
+      action: decision.choiceId ?? decision.inputText ?? decision.inputMode,
+      expectedWorldImpact: decision.expectedWorldImpact,
+      observedImpact: evaluation?.observedImpact ?? null,
+      rating: evaluation?.rating ?? null,
+      locationId: runtime?.locationId ?? null,
+      eventIds: runtime?.eventIds[decisionIndex] ? [runtime.eventIds[decisionIndex]] : [],
+      turnIds: runtime?.turnIds[decisionIndex] ? [runtime.turnIds[decisionIndex]] : [],
+    };
+  });
+}
+
+function scenarioForEvaluationPersona(personaId: string): SwarmDecision["scenario"] {
+  if (personaId === "mmo-gamer") {
+    return "resource-conflict";
+  }
+  if (personaId === "it-engineer") {
+    return "world-event";
+  }
+  return "shared-impact";
+}
+
+function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
+  if (scenario === "shared-impact") {
+    return "shared_impact_visible";
+  }
+  if (scenario === "resource-conflict") {
+    return "resource_conflict_recorded";
+  }
+  return "world_broadcast_or_constraint_visible";
+}
+
+function storyObservationText(observation: RunStoryObservation): string {
+  return `${ja(observation.personaId)}: ${ja(observation.scenario)}で${ja(observation.action)}を実行`;
 }
 
 async function findLatestRunResultFile(runPath: string): Promise<string | null> {
@@ -301,6 +417,32 @@ function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): strin
         } |`,
     ),
     "",
+    "## ストーリー展開・世界影響・イベント発生",
+    "",
+    "| run_id | ストーリー展開 | 世界への影響 | 発生イベント |",
+    "| --- | --- | --- | --- |",
+    ...report.runs.map(
+      (run) =>
+        `| ${run.run_id} | ${runStorySummary(run)} | ${runWorldImpactSummary(run)} | ${runEventSummary(run)} |`,
+    ),
+    "",
+    "## シナリオ別の展開",
+    "",
+    ...report.scenario_story_summary.flatMap((summary) => [
+      `### ${ja(summary.scenario)}`,
+      "",
+      `- 観測 run: ${summary.observed_runs}/${summary.completed_runs}`,
+      `- 発生 event 数: ${summary.event_count}`,
+      `- 最新観測: ${summary.latestObservedImpact ?? "なし"}`,
+      ...summary.runs.map(
+        (run) =>
+          `- ${run.run_id}: ${run.observed ? "観測あり" : "観測なし"}; 展開=${run.story || "なし"}; 影響=${
+            run.worldImpact || "なし"
+          }; event_ids=${run.eventIds.join(", ") || "なし"}`,
+      ),
+      "",
+    ]),
+    "",
     "## ハードチェック横断",
     "",
     "| 項目 | 最新完了 run | 通過 run |",
@@ -329,6 +471,41 @@ function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): strin
     "",
   ];
   return `${lines.join("\n")}\n`;
+}
+
+function runStorySummary(run: RunGroupRun): string {
+  if (run.status === "blocked") {
+    return "未生成";
+  }
+  return run.story_observations.map((observation) => storyObservationText(observation)).join("<br>") || "なし";
+}
+
+function runWorldImpactSummary(run: RunGroupRun): string {
+  if (run.status === "blocked") {
+    return "未生成";
+  }
+  const impacts = Array.from(
+    new Set(
+      run.story_observations
+        .map((observation) => observation.observedImpact)
+        .filter((impact): impact is string => Boolean(impact))
+        .map((impact) => ja(impact)),
+    ),
+  );
+  return impacts.join("<br>") || "なし";
+}
+
+function runEventSummary(run: RunGroupRun): string {
+  if (run.status === "blocked") {
+    return "未生成";
+  }
+  const eventRows = run.story_observations
+    .filter((observation) => observation.eventIds.length > 0 || observation.turnIds.length > 0)
+    .map(
+      (observation) =>
+        `${ja(observation.personaId)} ${ja(observation.scenario)}: ${observation.eventIds.join(", ") || "eventなし"}`,
+    );
+  return eventRows.join("<br>") || "なし";
 }
 
 function implementationAssessment(report: RunGroupAggregateReport): string {
