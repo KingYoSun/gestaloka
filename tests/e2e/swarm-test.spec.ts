@@ -70,21 +70,19 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   const opsToken = createTokenProvider(request, { username: "swarm-ops", password: "swarm-password" });
 
   lastStage = "profile_setup";
-  await Promise.all(
-    activePersonas.map(async (persona) => {
-      const profile = derivePlayerProfile(persona);
-      const token = requiredToken(accessTokens, persona.id);
-      const persistedProfile = await ensurePlayerProfile(request, token, profile);
-      runtimeByPersona.set(persona.id, {
-        persona,
-        profile,
-        accessToken: token,
-        actorId: persistedProfile.actor_id,
-        sessionId: "",
-        locationId: "",
-      });
-    }),
-  );
+  for (const persona of activePersonas) {
+    const profile = derivePlayerProfile(persona);
+    const token = requiredToken(accessTokens, persona.id);
+    const persistedProfile = await ensurePlayerProfile(request, token, profile);
+    runtimeByPersona.set(persona.id, {
+      persona,
+      profile,
+      accessToken: token,
+      actorId: persistedProfile.actor_id,
+      sessionId: "",
+      locationId: "",
+    });
+  }
 
   const pageEntries = await Promise.all(
     activePersonas.map(async (persona) => {
@@ -107,10 +105,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const a = requiredRuntime(runtimeByPersona, sharedImpactPersona.id);
     const b = requiredRuntime(runtimeByPersona, resourceConflictPersona.id);
     lastStage = "ui_session_setup";
-    await Promise.all([
-      startRuntimeSessionViaUi(pageByPersona, a),
-      startRuntimeSessionViaUi(pageByPersona, b),
-    ]);
+    await startRuntimeSessionViaUi(pageByPersona, a);
+    await startRuntimeSessionViaUi(pageByPersona, b);
     const aSharedImpactDecision = decisionForPersona(a.persona, "shared-impact");
     lastStage = "shared_impact_turn";
     const aSharedImpactTurn = await executeTurnViaUi(

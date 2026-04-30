@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from app.models.entities import (
@@ -144,6 +145,16 @@ class ConsequenceApplicationOutcome:
 
 def _world_row(db: Session, world_id: str) -> World | None:
     return db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+
+
+def _lock_world_seed(db: Session, world_id: str) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:namespace), hashtext(:world_id))"),
+        {"namespace": "world-seed", "world_id": world_id},
+    )
 
 
 def _seed_section(db: Session, world_id: str, name: str) -> dict[str, Any]:
@@ -364,26 +375,24 @@ def ensure_world(
     template = registry.get_template(pack_id, world_template_id)
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is not None:
-        state = dict(world.state or {})
-        existing_pack_id = str(state.get("pack_id") or "").strip()
-        existing_template_id = str(state.get("world_template_id") or "").strip()
-        if not existing_pack_id or not existing_template_id:
-            raise WorldPackError(
-                f"World {world_id!r} is missing immutable pack metadata",
-                code="world_pack_metadata_missing",
-                pack_id=pack_id,
-            )
-        if existing_pack_id != pack_id or existing_template_id != world_template_id:
-            raise WorldPackError(
-                f"World {world_id!r} is already bound to pack/template "
-                f"{existing_pack_id!r}/{existing_template_id!r}",
-                code="world_pack_immutable",
-                pack_id=existing_pack_id,
-            )
-        locations = ensure_seeded_locations(db, world_id)
-        ensure_location_routes(db, world_id, locations_by_key=locations)
-        db.flush()
-        return world
+        return _ensure_world_seeded_structure(
+            db,
+            world,
+            world_id=world_id,
+            pack_id=pack_id,
+            world_template_id=world_template_id,
+        )
+
+    _lock_world_seed(db, world_id)
+    world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
+    if world is not None:
+        return _ensure_world_seeded_structure(
+            db,
+            world,
+            world_id=world_id,
+            pack_id=pack_id,
+            world_template_id=world_template_id,
+        )
 
     fallback_name = str((template.world or {}).get("default_name") or template.display_name)
     world = World(
@@ -399,6 +408,36 @@ def ensure_world(
     db.flush()
     locations = ensure_seeded_locations(db, world_id)
     ensure_location_routes(db, world_id, locations_by_key=locations)
+    return world
+
+
+def _ensure_world_seeded_structure(
+    db: Session,
+    world: World,
+    *,
+    world_id: str,
+    pack_id: str,
+    world_template_id: str,
+) -> World:
+    state = dict(world.state or {})
+    existing_pack_id = str(state.get("pack_id") or "").strip()
+    existing_template_id = str(state.get("world_template_id") or "").strip()
+    if not existing_pack_id or not existing_template_id:
+        raise WorldPackError(
+            f"World {world_id!r} is missing immutable pack metadata",
+            code="world_pack_metadata_missing",
+            pack_id=pack_id,
+        )
+    if existing_pack_id != pack_id or existing_template_id != world_template_id:
+        raise WorldPackError(
+            f"World {world_id!r} is already bound to pack/template "
+            f"{existing_pack_id!r}/{existing_template_id!r}",
+            code="world_pack_immutable",
+            pack_id=existing_pack_id,
+        )
+    locations = ensure_seeded_locations(db, world_id)
+    ensure_location_routes(db, world_id, locations_by_key=locations)
+    db.flush()
     return world
 
 
@@ -434,12 +473,13 @@ def ensure_starter_faction(db: Session, world_id: str) -> Faction:
     shared_seed = next((item for item in template.factions if item.id == faction_base_id), None)
     faction_id = pack_scoped_entity_id(world_id, faction_base_id)
     candidates = [faction_id, _world_scoped_seed_id(world_id, faction_base_id), faction_base_id]
-    faction = db.execute(
+    stmt = (
         select(Faction).where(
             Faction.world_id == world_id,
             Faction.id.in_(candidates),
         )
-    ).scalars().first()
+    )
+    faction = db.execute(stmt).scalars().first()
     if faction is not None:
         return faction
 
@@ -454,9 +494,16 @@ def ensure_starter_faction(db: Session, world_id: str) -> Faction:
             "policy": str(shared_seed.policy if shared_seed is not None else (faction_seed.get("state") or {}).get("doctrine") or ""),
         },
     )
-    db.add(faction)
-    db.flush()
-    return faction
+    try:
+        with db.begin_nested():
+            db.add(faction)
+            db.flush()
+        return faction
+    except IntegrityError:
+        existing = db.execute(stmt).scalars().first()
+        if existing is None:
+            raise
+        return existing
 
 
 def ensure_faction_standing(
@@ -723,12 +770,92 @@ def ensure_membership_relationship(
     return relationship
 
 
+def _existing_world_slice_seed(db: Session, *, world_id: str, player_actor_id: str) -> WorldSliceSeed | None:
+    faction_seed = _seed_section(db, world_id, "faction")
+    faction_base_id = str(faction_seed.get("id") or "starter_faction")
+    faction_id = pack_scoped_entity_id(world_id, faction_base_id)
+    faction_candidates = [faction_id, _world_scoped_seed_id(world_id, faction_base_id), faction_base_id]
+    faction = db.execute(
+        select(Faction).where(
+            Faction.world_id == world_id,
+            Faction.id.in_(faction_candidates),
+        )
+    ).scalars().first()
+    if faction is None:
+        return None
+
+    quest_seed = _seed_section(db, world_id, "quest")
+    quest_base_id = str(quest_seed.get("id") or "starter_quest_request")
+    _, quest_candidates = _resolve_seeded_entity_id(world_id, quest_base_id)
+    quest_template = db.execute(
+        select(QuestTemplate).where(
+            QuestTemplate.world_id == world_id,
+            QuestTemplate.id.in_(quest_candidates),
+        )
+    ).scalars().first()
+    if quest_template is None:
+        return None
+
+    followup_seed = _seed_section(db, world_id, "followup_quest")
+    followup_base_id = str(followup_seed.get("id") or "followup_route")
+    _, followup_candidates = _resolve_seeded_entity_id(world_id, followup_base_id)
+    followup_quest_template = db.execute(
+        select(QuestTemplate).where(
+            QuestTemplate.world_id == world_id,
+            QuestTemplate.id.in_(followup_candidates),
+        )
+    ).scalars().first()
+    if followup_quest_template is None:
+        return None
+
+    character_sheet = db.execute(
+        select(CharacterSheet).where(
+            CharacterSheet.world_id == world_id,
+            CharacterSheet.actor_id == player_actor_id,
+        )
+    ).scalar_one_or_none()
+    standing = db.execute(
+        select(FactionStanding).where(
+            FactionStanding.world_id == world_id,
+            FactionStanding.actor_id == player_actor_id,
+            FactionStanding.faction_id == faction.id,
+        )
+    ).scalar_one_or_none()
+    quest_assignment = db.execute(
+        select(QuestAssignment).where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == player_actor_id,
+            QuestAssignment.quest_template_id == quest_template.id,
+        )
+    ).scalar_one_or_none()
+    if character_sheet is None or standing is None or quest_assignment is None:
+        return None
+
+    return WorldSliceSeed(
+        faction=faction,
+        standing=standing,
+        quest_template=quest_template,
+        quest_assignment=quest_assignment,
+        followup_quest_template=followup_quest_template,
+        character_sheet=character_sheet,
+    )
+
+
 def ensure_world_slice_seed(
     db: Session,
     *,
     world_id: str,
     player_actor_id: str,
 ) -> WorldSliceSeed:
+    existing_seed = _existing_world_slice_seed(db, world_id=world_id, player_actor_id=player_actor_id)
+    if existing_seed is not None:
+        return existing_seed
+
+    _lock_world_seed(db, world_id)
+    existing_seed = _existing_world_slice_seed(db, world_id=world_id, player_actor_id=player_actor_id)
+    if existing_seed is not None:
+        return existing_seed
+
     locations_by_key = ensure_seeded_locations(db, world_id)
     ensure_location_routes(db, world_id, locations_by_key=locations_by_key)
     ensure_pack_npcs(

@@ -53,13 +53,17 @@ export async function startPlayerSessionViaUi(
   persona: AssignedSwarmUserPersona,
 ): Promise<SwarmUiSessionObservation> {
   const startedAt = new Date().toISOString();
-  const [response] = await Promise.all([
-    page.waitForResponse(
-      (candidate) => candidate.request().method() === "POST" && new URL(candidate.url()).pathname === "/sessions",
-      { timeout: 120_000 },
-    ),
-    page.getByTestId("start-session").click(),
-  ]);
+  let response: Response;
+  try {
+    [response] = await Promise.all([
+      waitForSessionResponseOrNetworkFailure(page, persona.id, 120_000),
+      page.getByTestId("start-session").click(),
+    ]);
+  } catch (error) {
+    throw new Error(
+      `UI session start did not observe /sessions for ${persona.id}: ${errorMessage(error)}; ${await sessionStartDiagnostics(page)}`,
+    );
+  }
   if (!response.ok()) {
     throw new Error(`UI session start failed for ${persona.id}: ${response.status()} ${await response.text()}`);
   }
@@ -71,6 +75,53 @@ export async function startPlayerSessionViaUi(
     locationId: stringValue(payload.location_id),
     startedAt,
   };
+}
+
+async function waitForSessionResponseOrNetworkFailure(
+  page: Page,
+  personaId: string,
+  timeout: number,
+): Promise<Response> {
+  const isSessionPost = (url: string, method: string): boolean => {
+    try {
+      return method === "POST" && new URL(url).pathname === "/sessions";
+    } catch {
+      return false;
+    }
+  };
+  const responsePromise = page.waitForResponse(
+    (candidate) => isSessionPost(candidate.url(), candidate.request().method()),
+    { timeout },
+  );
+  const requestFailurePromise = page
+    .waitForEvent("requestfailed", {
+      predicate: (request) => isSessionPost(request.url(), request.method()),
+      timeout,
+    })
+    .then((request): never => {
+      const failure = request.failure();
+      throw new Error(
+        `UI session request failed for ${personaId}: ${failure?.errorText ?? "unknown network failure"}`,
+      );
+    });
+  return Promise.race([responsePromise, requestFailurePromise]);
+}
+
+async function sessionStartDiagnostics(page: Page): Promise<string> {
+  const [errorBanner, startEnabled, worldValue, worldLabel, profileValue, profileLabel] = await Promise.all([
+    textContent(page, "error-banner"),
+    locatorEnabled(page, "start-session"),
+    inputValue(page, "world-select"),
+    selectedOptionText(page, "world-select"),
+    inputValue(page, "player-profile-select"),
+    selectedOptionText(page, "player-profile-select"),
+  ]);
+  return [
+    `start-session enabled=${startEnabled}`,
+    `world=${worldValue || "(empty)"} ${worldLabel ? `(${worldLabel})` : ""}`,
+    `profile=${profileValue || "(empty)"} ${profileLabel ? `(${profileLabel})` : ""}`,
+    `error-banner=${errorBanner || "(empty)"}`,
+  ].join("; ");
 }
 
 export async function executeTurnViaUi(
@@ -93,10 +144,17 @@ export async function executeTurnViaUi(
 
   try {
     const turnTimeoutMs = envInt("SWARM_TURN_TIMEOUT_MS", 600_000);
-    const [response] = await Promise.all([
-      waitForTurnResponseOrNetworkFailure(page, persona.id, turnTimeoutMs),
-      submitDecision(page, decision),
-    ]);
+    let response: Response;
+    try {
+      [response] = await Promise.all([
+        waitForTurnResponseOrNetworkFailure(page, persona.id, turnTimeoutMs),
+        submitDecision(page, decision),
+      ]);
+    } catch (error) {
+      throw new Error(
+        `UI turn did not observe /turns for ${persona.id}/${decision.scenario}: ${errorMessage(error)}; ${await turnSubmissionDiagnostics(page, decision)}`,
+      );
+    }
     const responseText = await response.text();
     const payload = parseJsonObject(responseText);
     if (!response.ok() && !(response.status() === 422 && typeof payload.event_id === "string")) {
@@ -165,12 +223,46 @@ async function waitForTurnResponseOrNetworkFailure(
 
 async function submitDecision(page: Page, decision: SwarmDecision): Promise<void> {
   if (decision.inputMode === "choice") {
-    await page.getByTestId(`choice-${decision.choiceId}`).click();
+    const choice = page.getByTestId(`choice-${decision.choiceId}`);
+    await expect(choice).toBeVisible({ timeout: 60_000 });
+    await expect(choice).toBeEnabled({ timeout: 60_000 });
+    await choice.click();
     return;
   }
-  await page.getByTestId("toggle-free-text").click();
-  await page.getByTestId("turn-input").fill(decision.inputText ?? "");
-  await page.getByTestId("submit-turn").click();
+  const toggle = page.getByTestId("toggle-free-text");
+  await expect(toggle).toBeEnabled({ timeout: 60_000 });
+  await toggle.click();
+  const input = page.getByTestId("turn-input");
+  await expect(input).toBeVisible({ timeout: 60_000 });
+  await expect(input).toBeEnabled({ timeout: 60_000 });
+  await input.fill(decision.inputText ?? "");
+  const submit = page.getByTestId("submit-turn");
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  await submit.click();
+}
+
+async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): Promise<string> {
+  const choiceTestId = decision.choiceId ? `choice-${decision.choiceId}` : "";
+  const [errorBanner, progressStatus, choiceEnabled, toggleEnabled, submitEnabled, inputValueText, choiceLabels] =
+    await Promise.all([
+      textContent(page, "error-banner"),
+      textContent(page, "turn-progress-status"),
+      choiceTestId ? locatorEnabled(page, choiceTestId) : Promise.resolve("n/a"),
+      locatorEnabled(page, "toggle-free-text"),
+      locatorEnabled(page, "submit-turn"),
+      inputValue(page, "turn-input"),
+      listText(page, "choice-list"),
+    ]);
+  return [
+    `mode=${decision.inputMode}`,
+    `choice=${decision.choiceId ?? "(none)"} enabled=${choiceEnabled}`,
+    `toggle-free-text enabled=${toggleEnabled}`,
+    `submit-turn enabled=${submitEnabled}`,
+    `turn-input=${inputValueText || "(empty)"}`,
+    `turn-progress-status=${progressStatus || "(empty)"}`,
+    `choices=${choiceLabels.join(" | ") || "(empty)"}`,
+    `error-banner=${errorBanner || "(empty)"}`,
+  ].join("; ");
 }
 
 async function waitForTurnIdle(page: Page): Promise<void> {
@@ -205,6 +297,30 @@ async function listText(page: Page, testId: string): Promise<string[]> {
   }
 }
 
+async function locatorEnabled(page: Page, testId: string): Promise<string> {
+  try {
+    return String(await page.getByTestId(testId).isEnabled({ timeout: 1_000 }));
+  } catch {
+    return "unavailable";
+  }
+}
+
+async function inputValue(page: Page, testId: string): Promise<string> {
+  try {
+    return await page.getByTestId(testId).inputValue({ timeout: 1_000 });
+  } catch {
+    return "";
+  }
+}
+
+async function selectedOptionText(page: Page, testId: string): Promise<string> {
+  try {
+    return ((await page.getByTestId(testId).locator("option:checked").textContent({ timeout: 1_000 })) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function uniqueNonEmpty(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
@@ -220,6 +336,10 @@ function parseJsonObject(value: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function envInt(name: string, fallback: number): number {

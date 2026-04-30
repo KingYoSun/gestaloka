@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.entities import (
@@ -107,9 +108,8 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
 
     axis_count = 0
     for axis in template.world_axes:
-        state = db.execute(
-            select(WorldAxisState).where(WorldAxisState.world_id == world_id, WorldAxisState.axis_id == axis.id)
-        ).scalar_one_or_none()
+        stmt = select(WorldAxisState).where(WorldAxisState.world_id == world_id, WorldAxisState.axis_id == axis.id)
+        state = db.execute(stmt).scalar_one_or_none()
         thresholds = [threshold.model_dump() for threshold in axis.thresholds]
         if state is None:
             state = WorldAxisState(
@@ -123,7 +123,21 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
                 expose_to_session_context=axis.expose_to_session_context,
                 thresholds=thresholds,
             )
-            db.add(state)
+            try:
+                with db.begin_nested():
+                    db.add(state)
+                    db.flush()
+            except IntegrityError:
+                state = db.execute(stmt).scalar_one_or_none()
+                if state is None:
+                    raise
+                state.display_name = axis.display_name
+                state.description = axis.description
+                state.min_value = axis.min_value
+                state.max_value = axis.max_value
+                state.current_value = _clamp(state.current_value, axis.min_value, axis.max_value)
+                state.expose_to_session_context = axis.expose_to_session_context
+                state.thresholds = thresholds
         else:
             state.display_name = axis.display_name
             state.description = axis.description
@@ -163,9 +177,8 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
     faction_count = 0
     for faction_seed in template.factions:
         faction_id = pack_scoped_entity_id(world_id, faction_seed.id)
-        faction = db.execute(
-            select(Faction).where(Faction.world_id == world_id, Faction.id == faction_id)
-        ).scalar_one_or_none()
+        stmt = select(Faction).where(Faction.world_id == world_id, Faction.id == faction_id)
+        faction = db.execute(stmt).scalar_one_or_none()
         state_payload = {
             **dict(faction_seed.state or {}),
             "pack_faction_id": faction_seed.id,
@@ -187,7 +200,20 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
                 description=faction_seed.description,
                 state=state_payload,
             )
-            db.add(faction)
+            try:
+                with db.begin_nested():
+                    db.add(faction)
+                    db.flush()
+            except IntegrityError:
+                faction = db.execute(stmt).scalar_one_or_none()
+                if faction is None:
+                    raise
+                faction.name = faction_seed.name
+                faction.description = faction_seed.description
+                faction.state = {
+                    **state_payload,
+                    "influence": float((faction.state or {}).get("influence") or 0.0),
+                }
         else:
             faction.name = faction_seed.name
             faction.description = faction_seed.description

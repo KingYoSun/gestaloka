@@ -1,0 +1,597 @@
+{
+  "run_id": "2026-04-30T13-29-26Z-fastseed-r03",
+  "created_at": "2026-04-30T13:34:20.905Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "ai-researcher",
+      "label": "AI 研究者",
+      "archetype": "engineer",
+      "gender": "female",
+      "age": 45,
+      "occupation": "AI researcher",
+      "hobbies": [
+        "agent systems",
+        "procedural narrative",
+        "paper reading"
+      ],
+      "personality": [
+        "probing",
+        "theory-minded",
+        "skeptical"
+      ],
+      "gameMotivation": "Wants emergent narrative to remain attributable and robust.",
+      "playStyle": "Tests whether generated explanations match stored state.",
+      "narrativePreference": "Transparent cause-effect with minimal hallucination.",
+      "frictionSensitivity": "Low tolerance for ungrounded claims.",
+      "evaluationLens": "Does generation respect canonical state?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "speedrunner",
+      "label": "効率走者",
+      "archetype": "optimizer",
+      "gender": "unspecified",
+      "age": 22,
+      "occupation": "part-time worker",
+      "hobbies": [
+        "speedrunning",
+        "route notes",
+        "timer comparisons"
+      ],
+      "personality": [
+        "impatient",
+        "experimental",
+        "optimization-heavy"
+      ],
+      "gameMotivation": "Wants efficient paths to remain legible even in a dynamic world.",
+      "playStyle": "Repeats progress actions and checks where time or resources are lost.",
+      "narrativePreference": "Short feedback with actionable state changes.",
+      "frictionSensitivity": "Very low tolerance for slow or opaque resolution.",
+      "evaluationLens": "Does dynamic narrative preserve actionable progress?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "ai-researcher",
+      "displayName": "Sena JP Engineer",
+      "gender": "female",
+      "background": "行動する前に、公開された徴候、現地の証言、出来事の順序を照合する静かな現地監査者。",
+      "freeText": "目に見える変化に追跡可能な原因があるかを探し、共有された場所の連続性を試すために精密な質問を投げる。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "speedrunner",
+      "displayName": "Kaito JP Optimizer",
+      "gender": "unspecified",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito JP Mmo",
+      "gender": "male",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    }
+  ],
+  "persona_decision_log": [
+    {
+      "personaId": "ai-researcher",
+      "scenario": "shared-impact",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 は「Does generation respect canonical state?」という観点から、共有記憶になり得る行動を重視する。",
+      "expectedWorldImpact": "局所的な支援行動が、後続の噂、関係性、world beat として現れることを期待する。"
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 は「Tests whether generated explanations match stored state.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+      "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+    },
+    {
+      "personaId": "speedrunner",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "効率走者 は「Repeats progress actions and checks where time or resources are lost.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+      "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+    },
+    {
+      "personaId": "raid-planner",
+      "scenario": "world-event",
+      "inputMode": "free_text",
+      "inputText": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+      "reason": "MMO レイド攻略者 は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
+      "expectedWorldImpact": "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。"
+    }
+  ],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "rating": "good",
+      "observedImpact": "The helping action is present in shared-world context.",
+      "evidence": [
+        "59eeccc2-0332-400a-84d4-4b21a79776ca",
+        "3baf6d99-d4de-428a-a1d9-f311a0a52515",
+        "session state / ops history / memory scan"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "rating": "good",
+      "observedImpact": "Concurrent pressure produced a recorded resource constraint.",
+      "evidence": [
+        "0c21fd92-7e99-4cea-b420-445eea5d4636",
+        "event payload resource_constraints scan"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "good",
+      "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint.",
+      "evidence": [
+        "98a76adc-3f01-4027-b67a-efcfbf59d64a",
+        "session state broadcast constraint scan"
+      ]
+    }
+  ],
+  "experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "ux_clarity": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "待機中ステータスが15秒までしか表示されず、実際の87秒ターンではその後フィードバックがなく混乱の可能性。ただし、操作開始や選択肢は明確。"
+      },
+      "gameplay_fun": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "因果関係が追跡可能で、行動が世界状態に反映されている。しかし、資源競合ターンの待機時間が87秒と長く、待機中フィードバックが不十分なため没入感が損なわれる可能性。"
+      },
+      "story_progression": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "自身の行動の因果は追跡可能だが、他のプレイヤーの痕跡が明示的に確認できない。world beatは同一NPCで変化に乏しい。"
+      },
+      "overall": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "生成が正準状態を尊重している兆候は確認できる。しかし、待機時間の長さとフィードバックの不足、他プレイヤー痕跡の見えにくさが全体的な体験をやや損なっている。"
+      },
+      "suggestions": [
+        "待機中ステータスを15秒以降も継続更新し、概算残り時間を表示することを検討。",
+        "他のプレイヤーの行動が世界に与えた影響を、sceneやworld beatでより明示的に表示する。"
+      ],
+      "warnings": [
+        "資源競合ターンの解決に87秒を要し、その間のユーザーフィードバックが途絶えている。長時間処理の最適化または進捗表示の改善が必要。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "deepseek-v4-flash",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "desktop",
+          "width": 1280,
+          "height": 900
+        },
+        "decisions": [
+          {
+            "personaId": "ai-researcher",
+            "scenario": "shared-impact",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "AI 研究者 は「Does generation respect canonical state?」という観点から、共有記憶になり得る行動を重視する。",
+            "expectedWorldImpact": "局所的な支援行動が、後続の噂、関係性、world beat として現れることを期待する。"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "AI 研究者 は「Tests whether generated explanations match stored state.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+            "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "ai-researcher",
+            "scenario": "shared-impact",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-04-30T13:29:49.468Z",
+            "completedAt": "2026-04-30T13:30:11.459Z",
+            "durationMs": 21991,
+            "eventId": "59eeccc2-0332-400a-84d4-4b21a79776ca",
+            "turnId": "2c2b1360-10bd-45b3-9b47-a7c5b2701e09",
+            "waitStatusSamples": [
+              "進行中 / 解決中 / 1s",
+              "進行中 / 解決中 / 3s",
+              "進行中 / 解決中 / 5s",
+              "進行中 / 解決中 / 7s",
+              "進行中 / 解決中 / 9s",
+              "進行中 / 解決中 / 11s",
+              "進行中 / 解決中 / 13s",
+              "進行中 / 解決中 / 15s"
+            ],
+            "latestNarrative": "Sena JP EngineerはNexus Gateを離れ、Oblivion Breachへ歩みを進めた。",
+            "latestReaction": "Choir Warden Anse reads your arrival and answers from the place you have just entered.",
+            "latestConsequence": "The recognized writ opens the restoration route toward Oblivion Breach.",
+            "recentSceneHistory": [
+              "The newly opened route toward Oblivion Breach is asking to be read carefully. The scene has room to breathe, but it still remembers what was just set in motion.Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The recognized writ opens the restoration route toward Oblivion Breach.The Nexus Custodians wait to see how the new visitor affects the gate.The recognized writ opens the restoration route toward Oblivion Breach."
+            ],
+            "recentWorldBeats": [
+              "Choir Warden Anse keeps Oblivion Breach in view as the warden, watching how the air settles after the player's move.Choir Warden Anse keeps Oblivion Breach in view as the warden, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedlocation.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:oblivion_breachturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 6ae81274-8907-4955-bce5-0cf730dd014csession.connectedGESTALOKA Reference / Nexus Foundationsession_id: 6ae81274-8907-4955-bce5-0cf730dd014c"
+            ],
+            "choiceLabels": [
+              "Oblivion Breachの緊張を抱えたまま、いったん起点へ戻る新しい場所の余韻を持ち帰る。開いたOblivion Breachを辿り、そこで見つかる異変を確かめるfollow-up quest を前へ進める選択。Oblivion Breachの痕跡や現地の記憶を集め、関係の糸口を探る探索と関係変化に寄せた選択。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-ai-researcher-shared-impact-after-turn.png"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-04-30T13:30:11.476Z",
+            "completedAt": "2026-04-30T13:31:39.141Z",
+            "durationMs": 87665,
+            "eventId": "3baf6d99-d4de-428a-a1d9-f311a0a52515",
+            "turnId": "aa13b2f4-15a0-408c-b1fb-0b5c883207f7",
+            "waitStatusSamples": [
+              "進行中 / 解決中 / 1s",
+              "進行中 / 解決中 / 3s",
+              "進行中 / 解決中 / 5s",
+              "進行中 / 解決中 / 7s",
+              "進行中 / 解決中 / 9s",
+              "進行中 / 解決中 / 11s",
+              "進行中 / 解決中 / 13s",
+              "進行中 / 解決中 / 15s"
+            ],
+            "latestNarrative": "Sena JP EngineerはOblivion Breachの境界に立ち、Nexus Writが開いた痕跡を観察する。空気はまだ閉じられていた記憶を帯び、境界の灯りが不安定に揺らめく。彼女はその揺らぎのパターンを追いながら、場の重みを静かに計っている。",
+            "latestReaction": "Anseは少し離れた場所に立ち、腕を組んでいる。彼女の視線は、Senaが立つ境界の灯りがちらつく方を追う。彼女は軽く頭を傾け、言う。「感じられるでしょう——ここの空気はまだ閉じられていたことを覚えている。Writはそれを消すのではなく、失われたものの形を見せているだけです。」そして、彼女は観察が落ち着くのを待つ。",
+            "latestConsequence": "The turn lands as an answer rather than another loose edge.",
+            "recentSceneHistory": [
+              "The newly opened route toward Oblivion Breach is settling after Nexus Writ's passage. The scene has room to breathe, but it still remembers what was just set in motion.The newly opened route toward Oblivion Breach is asking to be read carefully. The scene has room to breathe, but it still remembers what was just set in motion.Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The turn lands as an answer rather than another loose edge.The recognized writ opens the restoration route toward Oblivion Breach.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Choir Warden Anse keeps Oblivion Breach in view as the warden, watching how the air settles after the player's move.Choir Warden Anse keeps Oblivion Breach in view as the warden, watching how the air settles after the player's move.Choir Warden Anse keeps Oblivion Breach in view as the warden, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedbranch.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:oblivion_breachturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 6ae81274-8907-4955-bce5-0cf730dd014cturn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedlocation.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:oblivion_breachturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 6ae81274-8907-4955-bce5-0cf730dd014csession.connectedGESTALOKA Reference / Nexus Foundationsession_id: 6ae81274-8907-4955-bce5-0cf730dd014c"
+            ],
+            "choiceLabels": [
+              "Nexus Gateへ戻り、得た観察を整理する新しい情報を携えて起点へ戻り、次の行動を考える。境界の損傷を詳しく調べ、失われた名前の痕跡を探るOblivion Breachの構造的な手がかりを探し、復興作業を前進させる。Anseに話しかけ、Memory Churchやこの場所の歴史について尋ねる現地の守護者から関係の糸口を引き出し、周辺の情報を得る。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-ai-researcher-resource-conflict-after-turn.png"
+          }
+        ]
+      }
+    },
+    {
+      "personaId": "speedrunner",
+      "ux_clarity": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "ターン処理が17.6秒と迅速で、待機状況も15秒まで表示された。操作は明確で、進行を妨げる要素はない。"
+      },
+      "gameplay_fun": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "迅速な解決と明確な結果（経路開放）が得られ、行動が効率的に反映された。待機時間も短く、ストレスは少ない。"
+      },
+      "story_progression": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "自身の行動の因果は明確だが、他のプレイヤーの痕跡や世界への影響がこの視点からは確認できない。"
+      },
+      "overall": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "効率的な進行が維持され、動的なナラティブも行動可能な形で提示された。ただし、マルチプレイヤー体験としての相互作用は限定的。"
+      },
+      "suggestions": [
+        "他プレイヤーの進行状況や選択が現在のシーンに与える影響を、より見える形で表示する（例：サイドバーやworld beatの変化）。"
+      ],
+      "warnings": [
+        "エビデンスからは、他のプレイヤーとの干渉や競合がこのペルソナの体験に明確に現れていない。マルチプレイヤー機能の検証を強化すべき。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "deepseek-v4-flash",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "desktop",
+          "width": 1280,
+          "height": 900
+        },
+        "decisions": [
+          {
+            "personaId": "speedrunner",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "効率走者 は「Repeats progress actions and checks where time or resources are lost.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+            "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "speedrunner",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-04-30T13:30:11.479Z",
+            "completedAt": "2026-04-30T13:30:29.113Z",
+            "durationMs": 17634,
+            "eventId": "0c21fd92-7e99-4cea-b420-445eea5d4636",
+            "turnId": "ba56bba4-3ef3-4605-95d4-a0f429183232",
+            "waitStatusSamples": [
+              "進行中 / 解決中 / 1s",
+              "進行中 / 解決中 / 3s",
+              "進行中 / 解決中 / 5s",
+              "進行中 / 解決中 / 7s",
+              "進行中 / 解決中 / 9s",
+              "進行中 / 解決中 / 11s",
+              "進行中 / 解決中 / 13s",
+              "進行中 / 解決中 / 15s"
+            ],
+            "latestNarrative": "Kaito JP Optimizer raised Nexus Writ at Nexus Gate, and Nexus Custodians opened the restoration route.",
+            "latestReaction": "Gate Steward RikkaはNexus Writを確かめ、Oblivion Breachへの道が正式に開いたと告げた。",
+            "latestConsequence": "The reward item is taken seriously, and the scene answers with a steadier kind of trust.",
+            "recentSceneHistory": [
+              "The newly opened route toward Oblivion Breach is asking to be read carefully. The scene has room to breathe, but it still remembers what was just set in motion.Middle Edge is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The reward item is taken seriously, and the scene answers with a steadier kind of trust.The Nexus Custodians wait to see how the new visitor affects the gate.The scene leaves behind a little more trust than it had before."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: d612b948-1c7d-451d-95ae-d019c07bc669world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activesession.connectedGESTALOKA Reference / Nexus Foundationsession_id: d612b948-1c7d-451d-95ae-d019c07bc669"
+            ],
+            "choiceLabels": [
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。開いたOblivion Breachへ足を向けるfollow-up quest の舞台へ実際に移る。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-speedrunner-resource-conflict-after-turn.png"
+          }
+        ]
+      }
+    },
+    {
+      "personaId": "raid-planner",
+      "ux_clarity": {
+        "score": 2,
+        "rating": "needs work",
+        "rationale": "自由テキスト入力後にシステムが「選択待ち」状態になり、クエリに対する応答が得られなかった。進行状態の表示が不適切で、UXとして混乱を招く。"
+      },
+      "gameplay_fun": {
+        "score": 1,
+        "rating": "needs work",
+        "rationale": "自由テキストによる質問がシステムに適切に処理されず、結果が得られなかった。72秒の待機後に得たのは「シーンは次の行を待っている」というのみで、意味のある進行や競合解決は確認できない。"
+      },
+      "story_progression": {
+        "score": 1,
+        "rating": "needs work",
+        "rationale": "自由テキスト入力がストーリーに影響を与えた形跡がなく、因果関係が全く追跡できない。シーンも変化していない。"
+      },
+      "overall": {
+        "score": 1,
+        "rating": "needs work",
+        "rationale": "ペルソナの評価レンズである「競合の公平な解決」を検証する前に、基本的な自由テキスト応答が機能していない。全体的に体験が成立しておらず、大きな改善が必要。"
+      },
+      "suggestions": [
+        "自由テキスト入力に対する応答生成を実装する。入力後は適切なナラティブとリアクションを返すこと。",
+        "待機中ステータスの表示を、入力モードに応じて適切に変化させる（「処理中」→「応答準備中」など）。",
+        "マルチプレイヤー環境での競合解決をテストするには、まず基本的なクエリ応答が正常に動作することを確認する。"
+      ],
+      "warnings": [
+        "自由テキスト入力がシステムによって無視されたか、未処理のまま終了している。重大な機能欠落の可能性。",
+        "複数プレイヤー間の競合を検証するための前提条件（イベント追跡、クエリ応答）が満たされていない。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "deepseek-v4-flash",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "mobile",
+          "width": 375,
+          "height": 812
+        },
+        "decisions": [
+          {
+            "personaId": "raid-planner",
+            "scenario": "world-event",
+            "inputMode": "free_text",
+            "inputText": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+            "reason": "MMO レイド攻略者 は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
+            "expectedWorldImpact": "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "raid-planner",
+            "scenario": "world-event",
+            "inputMode": "free_text",
+            "action": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+            "startedAt": "2026-04-30T13:31:51.321Z",
+            "completedAt": "2026-04-30T13:33:03.491Z",
+            "durationMs": 72170,
+            "eventId": "98a76adc-3f01-4027-b67a-efcfbf59d64a",
+            "turnId": "59acb98c-fd3a-4118-bd85-5fb1e5ad23ed",
+            "waitStatusSamples": [
+              "進行中 / 解決中 / 1s",
+              "進行中 / 解決中 / 3s",
+              "進行中 / 解決中 / 5s",
+              "進行中 / 解決中 / 7s",
+              "進行中 / 解決中 / 9s",
+              "進行中 / 解決中 / 11s",
+              "選択待ち"
+            ],
+            "latestNarrative": "Archive Bazaar is still establishing who can be trusted with First Stabilizer Request. The scene has room to breathe, but it still remembers what was just set in motion.",
+            "latestReaction": "",
+            "latestConsequence": "The scene is waiting for your next line.",
+            "recentSceneHistory": [
+              "Archive Bazaar is still establishing who can be trusted with First Stabilizer Request. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The Nexus Custodians wait to see how the new visitor affects the gate.The turn lands as an answer rather than another loose edge.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "world.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.progressGESTALOKA Reference / Nexus Foundationevent receivedturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 92a64fd6-b061-408e-9f3c-0545ef3aa769session.connectedGESTALOKA Reference / Nexus Foundationsession_id: 92a64fd6-b061-408e-9f3c-0545ef3aa769"
+            ],
+            "choiceLabels": [],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-raid-planner-world-event-after-turn.png"
+          }
+        ]
+      }
+    }
+  ],
+  "hard_checks": {
+    "persona_profile_separation": true,
+    "runtime_privacy_leak_free": true,
+    "all_turns_return_event_ids": true,
+    "all_turn_events_same_world": true,
+    "canonical_sequence_unique": true,
+    "shared_impact_visible": true,
+    "resource_conflict_recorded": true,
+    "world_broadcast_or_constraint_visible": true
+  },
+  "runtime": [
+    {
+      "personaId": "ai-researcher",
+      "actorId": "8ccdf73b-6f41-4944-8230-a059b3e48d18",
+      "sessionId": "6ae81274-8907-4955-bce5-0cf730dd014c",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "59eeccc2-0332-400a-84d4-4b21a79776ca",
+        "3baf6d99-d4de-428a-a1d9-f311a0a52515"
+      ],
+      "turnIds": [
+        "2c2b1360-10bd-45b3-9b47-a7c5b2701e09",
+        "aa13b2f4-15a0-408c-b1fb-0b5c883207f7"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "actorId": "4dc746aa-7ced-405c-b951-93c946bc05c0",
+      "sessionId": "d612b948-1c7d-451d-95ae-d019c07bc669",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "0c21fd92-7e99-4cea-b420-445eea5d4636"
+      ],
+      "turnIds": [
+        "ba56bba4-3ef3-4605-95d4-a0f429183232"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "e8fb384e-7e03-4367-b931-76c8dd8600ed",
+      "sessionId": "92a64fd6-b061-408e-9f3c-0545ef3aa769",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "98a76adc-3f01-4027-b67a-efcfbf59d64a"
+      ],
+      "turnIds": [
+        "59acb98c-fd3a-4118-bd85-5fb1e5ad23ed"
+      ]
+    }
+  ],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-raid-planner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-speedrunner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-ai-researcher-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-ai-researcher-shared-impact-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-ai-researcher-resource-conflict-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-speedrunner-resource-conflict-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-683018baa02d-worktree-fastseed/swarm-test-2026-04-30T13-29-26Z-fastseed-r03/attempt-1-raid-planner-world-event-after-turn.png"
+  ]
+}

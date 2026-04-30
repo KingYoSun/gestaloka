@@ -26,6 +26,7 @@ from app.modules.identity.oidc import UserIdentity
 from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput, ConsequenceThreadSnapshot
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
+from app.modules.world_state.service import ensure_starter_faction, ensure_world
 
 
 def engine_session_payload() -> dict[str, str]:
@@ -106,6 +107,50 @@ def test_session_seed_is_idempotent_for_character_faction_and_quest(client, cont
             if location.state["key"] == "nexus_gate"
         )
         assert gate.state["public_state"]["civic_trust"] == 1
+
+
+def test_starter_faction_seed_survives_insert_race(container, monkeypatch):
+    world_id = "gestaloka_reference"
+    faction_id = "gestaloka_reference:nexus_custodians"
+    with container.session_factory() as db:
+        ensure_world(
+            db,
+            world_id,
+            pack_id="gestaloka_reference",
+            world_template_id="nexus_foundation",
+            world_name="GESTALOKA: Nexus Foundation",
+        )
+        db.commit()
+
+    with container.session_factory() as db:
+        original_execute = db.execute
+        original_flush = db.flush
+        raced = {"done": False}
+
+        def racing_execute(statement, *args, **kwargs):
+            result = original_execute(statement, *args, **kwargs)
+            if not raced["done"] and "FROM factions" in str(statement):
+                raced["done"] = True
+                db.add(
+                    Faction(
+                        id=faction_id,
+                        world_id=world_id,
+                        name="Raced Custodians",
+                        description="Inserted by a concurrent seed transaction.",
+                        state={"pack_faction_id": "nexus_custodians", "policy": "race"},
+                    )
+                )
+                original_flush()
+            return result
+
+        monkeypatch.setattr(db, "execute", racing_execute)
+        faction = ensure_starter_faction(db, world_id)
+        resolved_faction_id = faction.id
+        db.commit()
+
+    assert resolved_faction_id == faction_id
+    with container.session_factory() as db:
+        assert db.execute(select(func.count(Faction.id)).where(Faction.id == faction_id)).scalar_one() == 1
 
 
 def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempotent(client, container, auth_headers):
