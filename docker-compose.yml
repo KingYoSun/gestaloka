@@ -480,6 +480,7 @@ services:
       VITE_KEYCLOAK_URL: http://localhost:8080
       VITE_KEYCLOAK_REALM: gestaloka
       VITE_KEYCLOAK_CLIENT_ID: gestaloka-frontend
+      VITE_TURN_REQUEST_TIMEOUT_MS: ${VITE_TURN_REQUEST_TIMEOUT_MS:-600000}
     ports:
       - "5173:5173"
     volumes:
@@ -800,11 +801,21 @@ services:
       SWARM_TURN_TIMEOUT_MS: ${SWARM_TURN_TIMEOUT_MS:-600000}
       SWARM_TEST_TIMEOUT_MS: ${SWARM_TEST_TIMEOUT_MS:-1800000}
       SWARM_POLL_TIMEOUT_MS: ${SWARM_POLL_TIMEOUT_MS:-120000}
+      SWARM_JUDGE_ENABLED: ${SWARM_JUDGE_ENABLED:-true}
+      SWARM_JUDGE_MODEL_ID: ${SWARM_JUDGE_MODEL_ID:-}
+      SWARM_JUDGE_TIMEOUT_MS: ${SWARM_JUDGE_TIMEOUT_MS:-120000}
+      SWARM_EXPERIENCE_WARNING_THRESHOLD: ${SWARM_EXPERIENCE_WARNING_THRESHOLD:-3}
+      OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
+      MODEL_LITE_ID: ${MODEL_LITE_ID:-}
+      MODEL_MAIN_ID: ${MODEL_MAIN_ID:-}
+      PROMPT_DIR: /workspace/prompts
       CI: "1"
     volumes:
       - ./frontend:/workspace/frontend
       - ./tests:/workspace/tests
       - ./documents:/workspace/documents
+      - ./prompts:/workspace/prompts
     depends_on:
       player-frontend:
         condition: service_healthy

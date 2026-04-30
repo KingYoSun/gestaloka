@@ -5,6 +5,7 @@ import type { TestInfo } from "@playwright/test";
 
 import type { DerivedPlayerProfile } from "./playerProfiles";
 import type { SwarmDecision } from "./playbook";
+import type { SwarmExperienceEvaluation, ExperienceDimension } from "./experienceJudge";
 import type { SwarmUserPersona } from "./userPersonas";
 
 export type PersonaEvaluation = {
@@ -22,6 +23,7 @@ export type SwarmReport = {
   derived_player_profiles: DerivedPlayerProfile[];
   persona_decision_log: Array<SwarmDecision & { personaId: string }>;
   persona_experience_evaluation: PersonaEvaluation[];
+  experience_evaluation: SwarmExperienceEvaluation[];
   hard_checks: Record<string, boolean>;
   runtime: Array<{
     personaId: string;
@@ -122,6 +124,10 @@ type RunGroupRun = {
   hard_checks: Record<string, boolean>;
   persona_ratings: Record<string, PersonaEvaluation["rating"]>;
   persona_observed_impacts: Record<string, string>;
+  experience_warning_count: number;
+  experience_warnings: string[];
+  experience_overall_ratings: Record<string, SwarmExperienceEvaluation["overall"]["rating"]>;
+  experience_evaluations: SwarmExperienceEvaluation[];
   story_observations: RunStoryObservation[];
 };
 
@@ -183,6 +189,23 @@ type RunGroupAggregateReport = {
       eventIds: string[];
     }>;
   }>;
+  experience_summary: {
+    warning_count: number;
+    warning_runs: number;
+    dimensions: Record<
+      ExperienceDimension,
+      {
+        average_score: number | null;
+        ratings: Record<SwarmExperienceEvaluation["overall"]["rating"], number>;
+      }
+    >;
+    personas: Array<{
+      personaId: string;
+      latestOverallRating: SwarmExperienceEvaluation["overall"]["rating"] | null;
+      latestOverallScore: number | null;
+      warnings: string[];
+    }>;
+  };
 };
 
 async function buildRunGroupAggregateReport(
@@ -280,6 +303,7 @@ async function buildRunGroupAggregateReport(
         runs: scenarioRuns,
       };
     }),
+    experience_summary: buildExperienceSummary(completedRuns),
   };
 }
 
@@ -298,11 +322,16 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
       hard_checks: {},
       persona_ratings: {},
       persona_observed_impacts: {},
+      experience_warning_count: 0,
+      experience_warnings: [],
+      experience_overall_ratings: {},
+      experience_evaluations: [],
       story_observations: [],
     };
   }
   const raw = await fs.readFile(path.join(runPath, resultFile), "utf8");
   const report = JSON.parse(raw) as SwarmReport;
+  const experienceEvaluation = report.experience_evaluation ?? [];
   const passed = Object.values(report.hard_checks).every(Boolean);
   return {
     run_id: report.run_id,
@@ -319,8 +348,79 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
     persona_observed_impacts: Object.fromEntries(
       report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation.observedImpact]),
     ),
+    experience_warning_count: experienceWarningCount(experienceEvaluation),
+    experience_warnings: experienceWarnings(experienceEvaluation),
+    experience_overall_ratings: Object.fromEntries(
+      experienceEvaluation.map((evaluation) => [evaluation.personaId, evaluation.overall.rating]),
+    ),
+    experience_evaluations: experienceEvaluation,
     story_observations: buildStoryObservations(report),
   };
+}
+
+function buildExperienceSummary(runs: RunGroupRun[]): RunGroupAggregateReport["experience_summary"] {
+  const evaluations = runs.flatMap((run) => run.experience_evaluations);
+  const personaIds = Array.from(new Set(evaluations.map((evaluation) => evaluation.personaId)));
+  return {
+    warning_count: runs.reduce((total, run) => total + run.experience_warning_count, 0),
+    warning_runs: runs.filter((run) => run.experience_warning_count > 0).length,
+    dimensions: Object.fromEntries(
+      experienceDimensions.map((dimension) => {
+        const scores = evaluations
+          .map((evaluation) => evaluation[dimension].score)
+          .filter((score): score is number => typeof score === "number");
+        return [
+          dimension,
+          {
+            average_score: scores.length ? roundScore(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
+            ratings: {
+              good: evaluations.filter((evaluation) => evaluation[dimension].rating === "good").length,
+              acceptable: evaluations.filter((evaluation) => evaluation[dimension].rating === "acceptable").length,
+              "needs work": evaluations.filter((evaluation) => evaluation[dimension].rating === "needs work").length,
+              blocked: evaluations.filter((evaluation) => evaluation[dimension].rating === "blocked").length,
+            },
+          },
+        ];
+      }),
+    ) as RunGroupAggregateReport["experience_summary"]["dimensions"],
+    personas: personaIds.map((personaId) => {
+      const personaEvaluations = evaluations.filter((evaluation) => evaluation.personaId === personaId);
+      const latest = personaEvaluations[personaEvaluations.length - 1] ?? null;
+      return {
+        personaId,
+        latestOverallRating: latest?.overall.rating ?? null,
+        latestOverallScore: latest?.overall.score ?? null,
+        warnings: Array.from(new Set(personaEvaluations.flatMap((evaluation) => evaluation.warnings))).slice(0, 8),
+      };
+    }),
+  };
+}
+
+export function experienceWarningCount(evaluations: SwarmExperienceEvaluation[]): number {
+  return evaluations.filter((evaluation) => experienceEvaluationHasWarning(evaluation)).length;
+}
+
+export function experienceWarnings(evaluations: SwarmExperienceEvaluation[]): string[] {
+  return evaluations.flatMap((evaluation) => [
+    ...evaluation.warnings.map((warning) => `${evaluation.personaId}: ${warning}`),
+    ...experienceDimensions
+      .filter((dimension) => {
+        const score = evaluation[dimension].score;
+        return typeof score !== "number" || score < experienceWarningThreshold() || evaluation[dimension].rating === "needs work";
+      })
+      .map((dimension) => `${evaluation.personaId}: ${dimension}=${scoreLabel(evaluation[dimension].score)} (${evaluation[dimension].rating})`),
+  ]);
+}
+
+function experienceEvaluationHasWarning(evaluation: SwarmExperienceEvaluation): boolean {
+  return (
+    evaluation.judge.status === "blocked" ||
+    evaluation.warnings.length > 0 ||
+    experienceDimensions.some((dimension) => {
+      const score = evaluation[dimension].score;
+      return typeof score !== "number" || score < experienceWarningThreshold() || evaluation[dimension].rating === "needs work";
+    })
+  );
 }
 
 function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
@@ -396,6 +496,25 @@ function reportFileForResultFile(resultFile: string): string {
   return resultFile.replace(/^swarm-test-result-/, "swarm-test-report-").replace(/\.json$/, ".md");
 }
 
+function experienceWarningThreshold(): number {
+  const raw = process.env.SWARM_EXPERIENCE_WARNING_THRESHOLD?.trim();
+  if (!raw) {
+    return 3;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+}
+
+function scoreLabel(score: number | null): string {
+  return typeof score === "number" ? String(score) : "未採点";
+}
+
+function roundScore(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+const experienceDimensions: ExperienceDimension[] = ["ux_clarity", "gameplay_fun", "story_progression", "overall"];
+
 function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): string {
   const lines = [
     `# swarm-test 実装評価レポート ${report.run_group_id}`,
@@ -447,6 +566,26 @@ function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): strin
       ),
       "",
     ]),
+    "",
+    "## UX・ゲームプレイ・ストーリー評価",
+    "",
+    `- warning 件数: ${report.experience_summary.warning_count}`,
+    `- warning run: ${report.experience_summary.warning_runs}/${report.completed_run_count}`,
+    "",
+    "| 評価軸 | 平均 score | 良好 | 許容 | 要改善 | ブロック |",
+    "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ...experienceDimensions.map((dimension) => {
+      const summary = report.experience_summary.dimensions[dimension];
+      return `| ${ja(dimension)} | ${summary.average_score ?? "-"} | ${summary.ratings.good} | ${summary.ratings.acceptable} | ${summary.ratings["needs work"]} | ${summary.ratings.blocked} |`;
+    }),
+    "",
+    "## LLM judge warnings",
+    "",
+    ...(report.runs.some((run) => run.experience_warnings.length)
+      ? report.runs.flatMap((run) =>
+          run.experience_warnings.map((warning) => `- ${run.run_id}: ${ja(warning)}`),
+        )
+      : ["- なし"]),
     "",
     "## ハードチェック横断",
     "",
@@ -557,6 +696,7 @@ type AttemptSummaryAttempt = {
   world_id: string;
   hard_checks: Record<string, boolean>;
   persona_ratings: Record<string, PersonaEvaluation["rating"]>;
+  experience_warning_count: number;
 };
 
 type SwarmAttemptSummaryReport = {
@@ -655,6 +795,7 @@ async function buildAttemptSummaryReport(artifactDir: string): Promise<SwarmAtte
       persona_ratings: Object.fromEntries(
         attempt.report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation.rating]),
       ),
+      experience_warning_count: experienceWarningCount(attempt.report.experience_evaluation ?? []),
     })),
     hard_check_summary: hardCheckSummary,
     persona_experience_summary: personaExperienceSummary,
@@ -703,14 +844,14 @@ function attemptSummaryMarkdownReport(report: SwarmAttemptSummaryReport): string
     "",
     "## Attempt 一覧",
     "",
-    "| attempt | 作成日時 | 結果 | persona 評価 | report |",
-    "| --- | --- | --- | --- | --- |",
+    "| attempt | 作成日時 | 結果 | persona 評価 | judge warnings | report |",
+    "| --- | --- | --- | --- | ---: | --- |",
     ...report.attempts.map((attempt) => {
       const result = Object.values(attempt.hard_checks).every(Boolean) ? "合格" : "失敗";
       const ratings = Object.entries(attempt.persona_ratings)
         .map(([personaId, rating]) => `${ja(personaId)}=${ja(rating)}`)
         .join("<br>");
-      return `| ${attempt.attempt_label} | ${attempt.created_at} | ${result} | ${ratings} | ${attempt.report_file} |`;
+      return `| ${attempt.attempt_label} | ${attempt.created_at} | ${result} | ${ratings} | ${attempt.experience_warning_count} | ${attempt.report_file} |`;
     }),
     "",
     "## ハードチェック総合",
@@ -811,6 +952,22 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
         )}`,
     ),
     "",
+    "## UX・ゲームプレイ・ストーリー評価",
+    "",
+    ...report.experience_evaluation.flatMap((evaluation) => [
+      `### ${ja(evaluation.personaId)}`,
+      "",
+      `- judge: ${evaluation.judge.status}${evaluation.judge.modelId ? ` (${evaluation.judge.modelId})` : ""}`,
+      `- UX 評価: score=${scoreLabel(evaluation.ux_clarity.score)}; 評価=${ja(evaluation.ux_clarity.rating)}; 理由=${ja(evaluation.ux_clarity.rationale)}`,
+      `- ゲームプレイの面白さ: score=${scoreLabel(evaluation.gameplay_fun.score)}; 評価=${ja(evaluation.gameplay_fun.rating)}; 理由=${ja(evaluation.gameplay_fun.rationale)}`,
+      `- ストーリー展開評価: score=${scoreLabel(evaluation.story_progression.score)}; 評価=${ja(evaluation.story_progression.rating)}; 理由=${ja(evaluation.story_progression.rationale)}`,
+      `- overall: score=${scoreLabel(evaluation.overall.score)}; 評価=${ja(evaluation.overall.rating)}; 理由=${ja(evaluation.overall.rationale)}`,
+      `- warnings: ${evaluation.warnings.length ? evaluation.warnings.map(ja).join(" | ") : "なし"}`,
+      `- suggestions: ${evaluation.suggestions.length ? evaluation.suggestions.map(ja).join(" | ") : "なし"}`,
+      `- viewport: ${evaluation.evidence.viewport.kind} ${evaluation.evidence.viewport.width}x${evaluation.evidence.viewport.height}`,
+      `- screenshots: ${evaluation.evidence.turns.map((turn) => turn.screenshotPath).filter(Boolean).join(" | ") || "なし"}`,
+      "",
+    ]),
     "## 実行時 ID",
     "",
     ...report.runtime.map(
@@ -878,6 +1035,10 @@ const japaneseLabels: Record<string, string> = {
   "shared-impact": "共有影響",
   "resource-conflict": "リソース競合",
   "world-event": "世界イベント",
+  ux_clarity: "UX 評価",
+  gameplay_fun: "ゲームプレイの面白さ",
+  story_progression: "ストーリー展開評価",
+  overall: "総合体験",
   choice: "選択肢",
   free_text: "自由入力",
   progress: "進行",

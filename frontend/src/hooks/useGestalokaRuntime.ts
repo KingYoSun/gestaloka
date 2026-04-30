@@ -80,6 +80,16 @@ const playLanguagePromptNames: Record<PlayLanguagePreset, string> = {
 };
 
 const playLanguagePresets = Object.keys(playLanguagePromptNames) as PlayLanguagePreset[];
+const turnRequestTimeoutMs = envInt("VITE_TURN_REQUEST_TIMEOUT_MS", 600_000);
+
+function envInt(name: string, fallback: number): number {
+  const raw = import.meta.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
 
 function normalizeBrowserPreset(language: string): PlayLanguagePreset | null {
   const normalized = language.toLowerCase();
@@ -1014,7 +1024,7 @@ export function useGestalokaRuntime() {
           session_id: session.session_id,
           ...payload,
         }),
-      }, { timeoutMs: 120_000 });
+      }, { timeoutMs: turnRequestTimeoutMs });
       setLatestNarrative(response.narrative);
       setLatestReaction(response.npc_reaction);
       setLatestConsequenceSummary(response.consequence_summary);

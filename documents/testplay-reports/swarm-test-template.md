@@ -59,7 +59,17 @@
 
 評価値: `good`, `acceptable`, `needs work`, `blocked`
 
-## 7. Issues
+## 7. UX / Gameplay / Story Evaluation
+
+| persona | UX 評価 | ゲームプレイの面白さ | ストーリー展開評価 | overall | warnings |
+| --- | --- | --- | --- | --- | --- |
+| novel-lover |  |  |  |  |  |
+| mmo-gamer |  |  |  |  |  |
+| it-engineer |  |  |  |  |  |
+
+score: `1` - `5`。主観評価は warning として扱い、hard check の pass/fail とは分ける。
+
+## 8. Issues
 
 ### Issue 1
 
@@ -74,12 +84,12 @@
 - 再現手順:
 - 推奨修正:
 
-## 8. Summary
+## 9. Summary
 
 - 総合結果:
 - 共有世界体験:
 - リソース競合:
 - 世界イベント:
 - privacy / separation:
+- UX / gameplay / story warnings:
 - follow-up:
-

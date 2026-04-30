@@ -1,24 +1,30 @@
 import fs from "node:fs/promises";
 
-import { expect, test, type APIRequestContext, type TestInfo } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 
 import { derivePlayerProfile, profilePayloadForApi } from "./swarm/playerProfiles";
 import { decisionForPersona } from "./swarm/playbook";
 import {
   authenticatePage,
   createTokenProvider,
-  createPlayerSession,
   getOpsHistory,
   getOpsSharedWorld,
   getSessionState,
   getWorldEvents,
   getWorldMemories,
-  resolveTurn,
   worldId,
   ensurePlayerProfile,
   type PlayerRuntime,
 } from "./swarm/playerDriver";
+import { evaluateSwarmExperience } from "./swarm/experienceJudge";
 import { buildRunId, defaultArtifactDir, writeSwarmReport, type PersonaEvaluation } from "./swarm/reporter";
+import {
+  executeTurnViaUi,
+  preparePlayerUiForSession,
+  startPlayerSessionViaUi,
+  type SwarmUiTurnObservation,
+  type SwarmViewportProfile,
+} from "./swarm/uiDriver";
 import { selectRandomPersonas, type AssignedSwarmUserPersona } from "./swarm/userPersonas";
 
 type EventItem = {
@@ -44,85 +50,101 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
 
   const activePersonas = selectRandomPersonas(runId);
   const profiles = activePersonas.map(derivePlayerProfile);
+  const viewportByPersona = new Map<string, SwarmViewportProfile>(
+    activePersonas.map((persona, index) => [
+      persona.id,
+      index === 2
+        ? { kind: "mobile", width: 375, height: 812 }
+        : { kind: "desktop", width: 1280, height: 900 },
+    ]),
+  );
   const runtimeByPersona = new Map<string, PlayerRuntime>();
+  const turnObservationsByPersona = new Map<string, SwarmUiTurnObservation[]>();
   let lastStage = "authenticate";
+
+  lastStage = "token_provider";
+  const accessTokens = new Map<string, ReturnType<typeof createTokenProvider>>();
+  for (const persona of activePersonas) {
+    accessTokens.set(persona.id, createTokenProvider(request, persona.user));
+  }
+  const opsToken = createTokenProvider(request, { username: "swarm-ops", password: "swarm-password" });
+
+  lastStage = "profile_setup";
+  await Promise.all(
+    activePersonas.map(async (persona) => {
+      const profile = derivePlayerProfile(persona);
+      const token = requiredToken(accessTokens, persona.id);
+      const persistedProfile = await ensurePlayerProfile(request, token, profile);
+      runtimeByPersona.set(persona.id, {
+        persona,
+        profile,
+        accessToken: token,
+        actorId: persistedProfile.actor_id,
+        sessionId: "",
+        locationId: "",
+      });
+    }),
+  );
 
   const pageEntries = await Promise.all(
     activePersonas.map(async (persona) => {
-      const context = await browser.newContext({ locale: "ja-JP" });
+      const viewport = requiredViewport(viewportByPersona, persona.id);
+      const context = await browser.newContext({ locale: "ja-JP", viewport });
       const page = await context.newPage();
       await authenticatePage(page, baseURL, persona);
+      await preparePlayerUiForSession(page, derivePlayerProfile(persona));
       const screenshotPath = `${artifactDir}/${attemptLabel}-${persona.id}-authenticated.png`;
       await page.screenshot({ path: screenshotPath, fullPage: true });
       artifacts.push(screenshotPath);
-      return { persona, context, page };
+      return { persona, context, page, viewport };
     }),
   );
 
   try {
-    lastStage = "token_provider";
-    const accessTokens = new Map<string, ReturnType<typeof createTokenProvider>>();
-    for (const persona of activePersonas) {
-      accessTokens.set(persona.id, createTokenProvider(request, persona.user));
-    }
-    const opsToken = createTokenProvider(request, { username: "swarm-ops", password: "swarm-password" });
-
     const [sharedImpactPersona, resourceConflictPersona, worldEventPersona] = activePersonas;
-    lastStage = "profile_and_session_setup";
-    for (const persona of activePersonas) {
-      const profile = derivePlayerProfile(persona);
-      const token = requiredToken(accessTokens, persona.id);
-      const persistedProfile = await ensurePlayerProfile(request, token, profile);
-      if (persona.id !== worldEventPersona.id) {
-        const session = await createPlayerSession(request, token, persistedProfile.actor_id);
-        runtimeByPersona.set(persona.id, {
-          persona,
-          profile,
-          accessToken: token,
-          actorId: persistedProfile.actor_id,
-          sessionId: session.session_id,
-          locationId: session.location_id,
-        });
-      } else {
-        runtimeByPersona.set(persona.id, {
-          persona,
-          profile,
-          accessToken: token,
-          actorId: persistedProfile.actor_id,
-          sessionId: "",
-          locationId: "",
-        });
-      }
-    }
+    const pageByPersona = new Map(pageEntries.map((entry) => [entry.persona.id, entry.page]));
 
     const a = requiredRuntime(runtimeByPersona, sharedImpactPersona.id);
     const b = requiredRuntime(runtimeByPersona, resourceConflictPersona.id);
+    lastStage = "ui_session_setup";
+    await Promise.all([
+      startRuntimeSessionViaUi(pageByPersona, a),
+      startRuntimeSessionViaUi(pageByPersona, b),
+    ]);
     const aSharedImpactDecision = decisionForPersona(a.persona, "shared-impact");
     lastStage = "shared_impact_turn";
-    const aSharedImpactTurn = await resolveTurn(request, a.accessToken, a.sessionId, aSharedImpactDecision);
+    const aSharedImpactTurn = await executeTurnViaUi(
+      requiredPage(pageByPersona, a.persona.id),
+      a.persona,
+      aSharedImpactDecision,
+      artifactDir,
+      attemptLabel,
+    );
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aSharedImpactTurn);
+    artifacts.push(aSharedImpactTurn.screenshotPath ?? "");
     const aConflictDecision = decisionForPersona(a.persona, "resource-conflict");
     const bConflictDecision = decisionForPersona(b.persona, "resource-conflict");
 
     lastStage = "resource_conflict_turns";
     const [aConflictTurn, bConflictTurn] = await Promise.all([
-      resolveTurn(request, a.accessToken, a.sessionId, aConflictDecision),
-      resolveTurn(request, b.accessToken, b.sessionId, bConflictDecision),
+      executeTurnViaUi(requiredPage(pageByPersona, a.persona.id), a.persona, aConflictDecision, artifactDir, attemptLabel),
+      executeTurnViaUi(requiredPage(pageByPersona, b.persona.id), b.persona, bConflictDecision, artifactDir, attemptLabel),
     ]);
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aConflictTurn);
+    recordTurnObservation(turnObservationsByPersona, b.persona.id, bConflictTurn);
+    artifacts.push(aConflictTurn.screenshotPath ?? "", bConflictTurn.screenshotPath ?? "");
 
     const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_session_setup";
-    const cSession = await createPlayerSession(request, cBase.accessToken, cBase.actorId);
-    const c: PlayerRuntime = {
-      ...cBase,
-      sessionId: cSession.session_id,
-      locationId: cSession.location_id,
-    };
-    runtimeByPersona.set(worldEventPersona.id, c);
+    await startRuntimeSessionViaUi(pageByPersona, cBase);
+    const c = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_pre_state";
     const cStateBeforeTurn = await getSessionState(request, c.accessToken, c.sessionId);
     const cDecision = decisionForPersona(c.persona, "world-event");
     lastStage = "world_event_turn";
-    const cTurn = await resolveTurn(request, c.accessToken, c.sessionId, cDecision);
+    const cTurn = await executeTurnViaUi(requiredPage(pageByPersona, c.persona.id), c.persona, cDecision, artifactDir, attemptLabel);
+    recordTurnObservation(turnObservationsByPersona, c.persona.id, cTurn);
+    artifacts.push(cTurn.screenshotPath ?? "");
     const turnEventIds = [eventId(aSharedImpactTurn), eventId(aConflictTurn), eventId(bConflictTurn), eventId(cTurn)].filter(Boolean);
     const novelLoverEventIds = [eventId(aSharedImpactTurn), eventId(aConflictTurn)].filter(Boolean);
     const conflictEventIds = [eventId(aConflictTurn), eventId(bConflictTurn)].filter(Boolean);
@@ -180,6 +202,20 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       },
     ];
 
+    lastStage = "experience_judge";
+    const experienceEvaluations = await evaluateSwarmExperience({
+      runId,
+      personas: activePersonas,
+      decisions: [
+        { personaId: a.persona.id, ...aSharedImpactDecision },
+        { personaId: a.persona.id, ...aConflictDecision },
+        { personaId: b.persona.id, ...bConflictDecision },
+        { personaId: c.persona.id, ...cDecision },
+      ],
+      observationsByPersona: turnObservationsByPersona,
+      viewportByPersona,
+    });
+
     lastStage = "write_report";
     await writeSwarmReport(testInfo, artifactDir, {
       run_id: runId,
@@ -194,6 +230,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         { personaId: c.persona.id, ...cDecision },
       ],
       persona_experience_evaluation: evaluations,
+      experience_evaluation: experienceEvaluations,
       hard_checks: hardChecks,
       runtime: [a, b, c].map((runtime) => ({
         personaId: runtime.persona.id,
@@ -213,7 +250,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
               ? [turnId(bConflictTurn)].filter(Boolean)
               : [turnId(cTurn)].filter(Boolean),
       })),
-      artifacts,
+      artifacts: artifacts.filter(Boolean),
     });
 
     for (const [name, passed] of Object.entries(hardChecks)) {
@@ -227,7 +264,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       activePersonas,
       profiles,
       runtimeByPersona,
-      artifacts,
+      artifacts: artifacts.filter(Boolean),
       lastStage,
       error,
     });
@@ -291,6 +328,7 @@ async function writeFailureReport({
         observedImpact: `swarm-test stopped before hard checks at ${lastStage}.`,
         evidence: [errorMessage(error)],
       })),
+      experience_evaluation: [],
       hard_checks: hardChecks,
       runtime: Array.from(runtimeByPersona.values()).map((runtime) => ({
         personaId: runtime.persona.id,
@@ -422,6 +460,36 @@ function requiredRuntime(
   return runtime;
 }
 
+function requiredPage(pages: Map<string, Page>, personaId: string): Page {
+  const page = pages.get(personaId);
+  if (!page) {
+    throw new Error(`Missing page for ${personaId}`);
+  }
+  return page;
+}
+
+function requiredViewport(viewports: Map<string, SwarmViewportProfile>, personaId: string): SwarmViewportProfile {
+  const viewport = viewports.get(personaId);
+  if (!viewport) {
+    throw new Error(`Missing viewport for ${personaId}`);
+  }
+  return viewport;
+}
+
+async function startRuntimeSessionViaUi(pages: Map<string, Page>, runtime: PlayerRuntime): Promise<void> {
+  const session = await startPlayerSessionViaUi(requiredPage(pages, runtime.persona.id), runtime.persona);
+  runtime.sessionId = session.sessionId;
+  runtime.locationId = session.locationId;
+}
+
+function recordTurnObservation(
+  observationsByPersona: Map<string, SwarmUiTurnObservation[]>,
+  personaId: string,
+  observation: SwarmUiTurnObservation,
+): void {
+  observationsByPersona.set(personaId, [...(observationsByPersona.get(personaId) ?? []), observation]);
+}
+
 function eventList(payload: Record<string, unknown>): EventItem[] {
   const items = Array.isArray(payload.items) ? payload.items : [];
   return items.filter((item): item is EventItem => {
@@ -433,12 +501,22 @@ function eventList(payload: Record<string, unknown>): EventItem[] {
   });
 }
 
-function eventId(payload: Record<string, unknown>): string {
+function eventId(payload: Record<string, unknown> | SwarmUiTurnObservation): string {
+  if (isTurnObservation(payload)) {
+    return payload.eventId;
+  }
   return typeof payload.event_id === "string" ? payload.event_id : "";
 }
 
-function turnId(payload: Record<string, unknown>): string {
+function turnId(payload: Record<string, unknown> | SwarmUiTurnObservation): string {
+  if (isTurnObservation(payload)) {
+    return payload.turnId;
+  }
   return typeof payload.turn_id === "string" ? payload.turn_id : "";
+}
+
+function isTurnObservation(payload: Record<string, unknown> | SwarmUiTurnObservation): payload is SwarmUiTurnObservation {
+  return typeof (payload as SwarmUiTurnObservation).eventId === "string";
 }
 
 function visibleInSharedContext(payload: unknown, sourceEventId: string): boolean {

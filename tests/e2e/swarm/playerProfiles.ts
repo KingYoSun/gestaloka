@@ -8,7 +8,7 @@ export type DerivedPlayerProfile = {
   freeText: string;
   playLanguage: {
     mode: "preset";
-    preset: "en";
+    preset: "ja";
     custom: "";
   };
   narrativePreferences: {
@@ -23,11 +23,11 @@ export function derivePlayerProfile(persona: SwarmUserPersona): DerivedPlayerPro
   const template = profileTemplate(persona);
   return {
     sourcePersonaId: persona.id,
-    displayName: `${template.namePrefix} ${stableNamePart(persona.archetype)}`,
+    displayName: `${template.namePrefix} JP ${stableNamePart(persona.archetype)}`,
     gender: persona.gender,
     background: template.background,
     freeText: template.freeText,
-    playLanguage: { mode: "preset", preset: "en", custom: "" },
+    playLanguage: { mode: "preset", preset: "ja", custom: "" },
     narrativePreferences: template.narrativePreferences,
   };
 }
@@ -39,9 +39,9 @@ function profileTemplate(persona: SwarmUserPersona): Omit<DerivedPlayerProfile, 
     return {
       namePrefix: "Mio",
       background:
-        "A careful steward of gate records who notices emotional shifts between travelers, stewards, and local rumors.",
+        "門の記録を丁寧に見守り、旅人、門番、地域の噂のあいだに生まれる感情の変化を読み取る記録係。",
       freeText:
-        "They prefer actions that leave visible traces: a remembered kindness, a restored relationship, or a clue another traveler can later recognize.",
+        "記憶に残る親切、修復された関係、後から別の旅人が気づける手がかりなど、目に見える痕跡を残す行動を好む。",
       narrativePreferences: {
         perspective: "third_person",
         tone: "lyrical",
@@ -55,9 +55,9 @@ function profileTemplate(persona: SwarmUserPersona): Omit<DerivedPlayerProfile, 
     return {
       namePrefix: "Kaito",
       background:
-        "A route-minded operative who tracks objectives, bottlenecks, and which local figures can move the situation forward.",
+        "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
       freeText:
-        "They try to advance the current objective quickly, but expect the world to explain contention around a busy route, place, or guide.",
+        "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
       narrativePreferences: {
         perspective: "third_person",
         tone: "logical",
@@ -70,9 +70,9 @@ function profileTemplate(persona: SwarmUserPersona): Omit<DerivedPlayerProfile, 
   return {
     namePrefix: persona.archetype === "explorer" ? "Rin" : "Sena",
     background:
-      "A quiet field auditor who compares public signs, local testimony, and the order of events before acting.",
+      "行動する前に、公開された徴候、現地の証言、出来事の順序を照合する静かな現地監査者。",
     freeText:
-      "They look for whether a visible change has a traceable cause, then ask precise questions that test continuity in the shared place.",
+      "目に見える変化に追跡可能な原因があるかを探し、共有された場所の連続性を試すために精密な質問を投げる。",
     narrativePreferences: {
       perspective: "third_person",
       tone: "logical",
