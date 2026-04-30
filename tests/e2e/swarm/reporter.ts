@@ -55,10 +55,15 @@ export async function writeSwarmReport(testInfo: TestInfo, artifactDir: string, 
   const markdownPath = path.join(artifactDir, `swarm-test-report-${attemptLabel}.md`);
   const latestJsonPath = path.join(artifactDir, "swarm-test-result.json");
   const latestMarkdownPath = path.join(artifactDir, "swarm-test-report.md");
+  const aggregateJsonPath = path.join(artifactDir, "swarm-test-aggregate-result.json");
+  const aggregateMarkdownPath = path.join(artifactDir, "swarm-test-aggregate-report.md");
   await fs.writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   await fs.writeFile(markdownPath, markdownReport(report, attemptLabel), "utf8");
   await fs.copyFile(jsonPath, latestJsonPath);
   await fs.copyFile(markdownPath, latestMarkdownPath);
+  const aggregate = await buildAggregateReport(artifactDir);
+  await fs.writeFile(aggregateJsonPath, `${JSON.stringify(aggregate, null, 2)}\n`, "utf8");
+  await fs.writeFile(aggregateMarkdownPath, aggregateMarkdownReport(aggregate), "utf8");
   await testInfo.attach("swarm-test-result", {
     path: jsonPath,
     contentType: "application/json",
@@ -67,6 +72,208 @@ export async function writeSwarmReport(testInfo: TestInfo, artifactDir: string, 
     path: markdownPath,
     contentType: "text/markdown",
   });
+  await testInfo.attach("swarm-test-aggregate-report", {
+    path: aggregateMarkdownPath,
+    contentType: "text/markdown",
+  });
+}
+
+type AggregateAttempt = {
+  attempt_label: string;
+  result_file: string;
+  report_file: string;
+  created_at: string;
+  world_id: string;
+  hard_checks: Record<string, boolean>;
+  persona_ratings: Record<string, PersonaEvaluation["rating"]>;
+};
+
+type SwarmAggregateReport = {
+  run_id: string;
+  generated_at: string;
+  world_id: string;
+  attempt_count: number;
+  latest_attempt: string;
+  latest_result: "pass" | "fail";
+  attempts: AggregateAttempt[];
+  hard_check_summary: Record<
+    string,
+    {
+      latest: boolean;
+      passed_attempts: number;
+      total_attempts: number;
+    }
+  >;
+  persona_experience_summary: Array<{
+    personaId: string;
+    latestRating: PersonaEvaluation["rating"];
+    latestObservedImpact: string;
+    attempts: Array<{
+      attempt_label: string;
+      rating: PersonaEvaluation["rating"];
+      observedImpact: string;
+      evidence: string[];
+    }>;
+  }>;
+  reports: Array<{
+    attempt_label: string;
+    result_file: string;
+    report_file: string;
+  }>;
+};
+
+async function buildAggregateReport(artifactDir: string): Promise<SwarmAggregateReport> {
+  const attempts = await readAttemptReports(artifactDir);
+  if (attempts.length === 0) {
+    throw new Error(`No swarm attempt reports found in ${artifactDir}`);
+  }
+
+  const latest = attempts[attempts.length - 1];
+  const hardCheckKeys = Array.from(new Set(attempts.flatMap((attempt) => Object.keys(attempt.report.hard_checks))));
+  const hardCheckSummary = Object.fromEntries(
+    hardCheckKeys.map((key) => [
+      key,
+      {
+        latest: latest.report.hard_checks[key] === true,
+        passed_attempts: attempts.filter((attempt) => attempt.report.hard_checks[key] === true).length,
+        total_attempts: attempts.length,
+      },
+    ]),
+  );
+  const personaIds = Array.from(
+    new Set(
+      attempts.flatMap((attempt) =>
+        attempt.report.persona_experience_evaluation.map((evaluation) => evaluation.personaId),
+      ),
+    ),
+  );
+  const personaExperienceSummary = personaIds.map((personaId) => {
+    const personaAttempts = attempts.flatMap((attempt) =>
+      attempt.report.persona_experience_evaluation
+        .filter((evaluation) => evaluation.personaId === personaId)
+        .map((evaluation) => ({
+          attempt_label: attempt.attemptLabel,
+          rating: evaluation.rating,
+          observedImpact: evaluation.observedImpact,
+          evidence: evaluation.evidence,
+        })),
+    );
+    const latestEvaluation = personaAttempts[personaAttempts.length - 1];
+    return {
+      personaId,
+      latestRating: latestEvaluation.rating,
+      latestObservedImpact: latestEvaluation.observedImpact,
+      attempts: personaAttempts,
+    };
+  });
+
+  return {
+    run_id: latest.report.run_id,
+    generated_at: new Date().toISOString(),
+    world_id: latest.report.world_id,
+    attempt_count: attempts.length,
+    latest_attempt: latest.attemptLabel,
+    latest_result: Object.values(latest.report.hard_checks).every(Boolean) ? "pass" : "fail",
+    attempts: attempts.map((attempt) => ({
+      attempt_label: attempt.attemptLabel,
+      result_file: attempt.resultFile,
+      report_file: attempt.reportFile,
+      created_at: attempt.report.created_at,
+      world_id: attempt.report.world_id,
+      hard_checks: attempt.report.hard_checks,
+      persona_ratings: Object.fromEntries(
+        attempt.report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation.rating]),
+      ),
+    })),
+    hard_check_summary: hardCheckSummary,
+    persona_experience_summary: personaExperienceSummary,
+    reports: attempts.map((attempt) => ({
+      attempt_label: attempt.attemptLabel,
+      result_file: attempt.resultFile,
+      report_file: attempt.reportFile,
+    })),
+  };
+}
+
+async function readAttemptReports(
+  artifactDir: string,
+): Promise<Array<{ attemptLabel: string; resultFile: string; reportFile: string; report: SwarmReport }>> {
+  const entries = await fs.readdir(artifactDir);
+  const resultFiles = entries
+    .map((entry) => {
+      const match = /^swarm-test-result-(attempt-(\d+))\.json$/.exec(entry);
+      return match ? { attemptLabel: match[1], attemptNumber: Number(match[2]), resultFile: entry } : null;
+    })
+    .filter((entry): entry is { attemptLabel: string; attemptNumber: number; resultFile: string } => entry !== null)
+    .sort((left, right) => left.attemptNumber - right.attemptNumber);
+
+  return Promise.all(
+    resultFiles.map(async ({ attemptLabel, resultFile }) => {
+      const raw = await fs.readFile(path.join(artifactDir, resultFile), "utf8");
+      return {
+        attemptLabel,
+        resultFile,
+        reportFile: `swarm-test-report-${attemptLabel}.md`,
+        report: JSON.parse(raw) as SwarmReport,
+      };
+    }),
+  );
+}
+
+function aggregateMarkdownReport(report: SwarmAggregateReport): string {
+  const lines = [
+    `# swarm-test 総合レポート ${report.run_id}`,
+    "",
+    `- 生成日時: ${report.generated_at}`,
+    `- world_id: ${report.world_id}`,
+    `- attempt 数: ${report.attempt_count}`,
+    `- 最新 attempt: ${report.latest_attempt}`,
+    `- 最新結果: ${report.latest_result === "pass" ? "合格" : "失敗"}`,
+    "",
+    "## Attempt 一覧",
+    "",
+    "| attempt | 作成日時 | 結果 | persona 評価 | report |",
+    "| --- | --- | --- | --- | --- |",
+    ...report.attempts.map((attempt) => {
+      const result = Object.values(attempt.hard_checks).every(Boolean) ? "合格" : "失敗";
+      const ratings = Object.entries(attempt.persona_ratings)
+        .map(([personaId, rating]) => `${ja(personaId)}=${ja(rating)}`)
+        .join("<br>");
+      return `| ${attempt.attempt_label} | ${attempt.created_at} | ${result} | ${ratings} | ${attempt.report_file} |`;
+    }),
+    "",
+    "## ハードチェック総合",
+    "",
+    "| 項目 | 最新 | 通過 attempt |",
+    "| --- | --- | --- |",
+    ...Object.entries(report.hard_check_summary).map(
+      ([key, summary]) =>
+        `| ${ja(key)} | ${summary.latest ? "合格" : "失敗"} | ${summary.passed_attempts}/${summary.total_attempts} |`,
+    ),
+    "",
+    "## ペルソナ別総合評価",
+    "",
+    ...report.persona_experience_summary.flatMap((summary) => [
+      `### ${ja(summary.personaId)}`,
+      "",
+      `- 最新評価: ${ja(summary.latestRating)}`,
+      `- 最新観測: ${ja(summary.latestObservedImpact)}`,
+      ...summary.attempts.map(
+        (attempt) =>
+          `- ${attempt.attempt_label}: 評価=${ja(attempt.rating)}; 観測=${ja(
+            attempt.observedImpact,
+          )}; 証跡=${attempt.evidence.join(" | ")}`,
+      ),
+      "",
+    ]),
+    "## 個別レポート",
+    "",
+    ...report.reports.map(
+      (attempt) => `- ${attempt.attempt_label}: ${attempt.report_file}, ${attempt.result_file}`,
+    ),
+    "",
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 function markdownReport(report: SwarmReport, attemptLabel: string): string {

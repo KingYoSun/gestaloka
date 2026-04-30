@@ -71,8 +71,10 @@ make swarm-test
 - `swarm-test-report-attempt-N.md`
 - `swarm-test-result.json`: 最新 attempt の JSON コピー
 - `swarm-test-report.md`: 最新 attempt の日本語 Markdown コピー
+- `swarm-test-aggregate-result.json`: 同一 `SWARM_RUN_ID` 内の attempt を統合した JSON
+- `swarm-test-aggregate-report.md`: 同一 `SWARM_RUN_ID` 内の個別レポートを総合した日本語 Markdown
 - 各 persona の login 後 screenshot
 
-同一 `make swarm-test` 実行内で Playwright retry が発生しても、同じ artifact directory に attempt 番号付きで集約します。
+同一 `make swarm-test` 実行内で Playwright retry が発生しても、同じ `SWARM_RUN_ID` の artifact directory に attempt 番号付きで集約します。総合レポートは、同じ folder 内の `swarm-test-result-attempt-N.json` を読み直して生成します。
 
 不具合化する場合は、run id、persona id、session id、turn id、event id、hard check 名を記録してください。
