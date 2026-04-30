@@ -38,6 +38,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   const artifactDir = defaultArtifactDir(runId);
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
   const artifacts: string[] = [];
+  const attemptLabel = `attempt-${testInfo.retry + 1}`;
   await fs.mkdir(artifactDir, { recursive: true });
 
   const novelLover = personaById("novel-lover");
@@ -51,7 +52,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       const context = await browser.newContext({ locale: "ja-JP" });
       const page = await context.newPage();
       await authenticatePage(page, baseURL, persona);
-      const screenshotPath = `${artifactDir}/${persona.id}-authenticated.png`;
+      const screenshotPath = `${artifactDir}/${attemptLabel}-${persona.id}-authenticated.png`;
       await page.screenshot({ path: screenshotPath, fullPage: true });
       artifacts.push(screenshotPath);
       return { persona, context, page };

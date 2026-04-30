@@ -69,7 +69,12 @@ frontend-e2e:
 	$(VERIFY_COMPOSE_ENV) COMPOSE_PROFILES=e2e E2E_SPEC="$(E2E_SPEC)" $(COMPOSE) run --rm frontend-e2e
 
 swarm-test:
-	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" $(COMPOSE) run --rm frontend-e2e
+	@set -eu; \
+	run_id="$${SWARM_RUN_ID:-$$(date -u +%Y-%m-%dT%H-%M-%SZ)}"; \
+	artifact_dir="$${SWARM_ARTIFACT_DIR:-/workspace/documents/testplay-reports/artifacts/swarm-test-$$run_id}"; \
+	echo "SWARM_RUN_ID=$$run_id"; \
+	echo "SWARM_ARTIFACT_DIR=$$artifact_dir"; \
+	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_ARTIFACT_DIR="$$artifact_dir" $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:
 	$(MAKE) backend-test

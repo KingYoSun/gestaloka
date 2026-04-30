@@ -791,6 +791,8 @@ services:
       PLAYWRIGHT_BASE_URL: http://localhost:5173
       ADMIN_PLAYWRIGHT_BASE_URL: http://localhost:5174
       E2E_SPEC: ${E2E_SPEC:-}
+      SWARM_RUN_ID: ${SWARM_RUN_ID:-}
+      SWARM_ARTIFACT_DIR: ${SWARM_ARTIFACT_DIR:-}
       CI: "1"
     volumes:
       - ./frontend:/workspace/frontend

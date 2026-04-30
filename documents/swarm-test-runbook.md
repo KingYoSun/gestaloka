@@ -24,7 +24,8 @@ make swarm-test
 
 - `SWARM_API_BASE_URL`: default `http://localhost:8000`
 - `SWARM_KEYCLOAK_TOKEN_URL`: default `http://localhost:8080/realms/gestaloka/protocol/openid-connect/token`
-- `SWARM_ARTIFACT_DIR`: default `documents/testplay-reports/artifacts/swarm-test-<run-id>`
+- `SWARM_RUN_ID`: default は `make swarm-test` 実行開始時の UTC timestamp。
+- `SWARM_ARTIFACT_DIR`: default `documents/testplay-reports/artifacts/swarm-test-<SWARM_RUN_ID>`
 
 ## 3. ユーザーペルソナとプレイヤープロフィール
 
@@ -66,9 +67,12 @@ make swarm-test
 
 `swarm-test` は以下を出力します。
 
-- `swarm-test-result.json`
-- `swarm-test-report.md`
+- `swarm-test-result-attempt-N.json`
+- `swarm-test-report-attempt-N.md`
+- `swarm-test-result.json`: 最新 attempt の JSON コピー
+- `swarm-test-report.md`: 最新 attempt の日本語 Markdown コピー
 - 各 persona の login 後 screenshot
 
-不具合化する場合は、run id、persona id、session id、turn id、event id、hard check 名を記録してください。
+同一 `make swarm-test` 実行内で Playwright retry が発生しても、同じ artifact directory に attempt 番号付きで集約します。
 
+不具合化する場合は、run id、persona id、session id、turn id、event id、hard check 名を記録してください。
