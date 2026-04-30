@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.backend.turn_async_helpers import post_turn_and_wait
+
 
 def engine_session_payload() -> dict[str, str]:
     return {
@@ -20,13 +22,12 @@ def test_turn_execution_updates_observability_traces_and_metrics(client, contain
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token"):
         pass
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
-        headers=auth_headers,
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_text": "広場で灯をともす"},
     )
-    assert turn_response.status_code == 200
-    turn_payload = turn_response.json()
 
     summary_response = client.get("/ops/observability/summary", headers=auth_headers)
     assert summary_response.status_code == 200

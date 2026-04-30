@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from app.models.entities import ActorTitleProgress, Event, Location, SPLedgerEntry, SharedHistoryRecord, Turn, World
 from app.modules.llm_harness.service import PromptExecutionOutcome
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
+from tests.backend.turn_async_helpers import post_turn_and_wait
 
 
 def gestaloka_session_payload() -> dict[str, str]:
@@ -52,21 +53,20 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    first_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, first_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert first_turn.status_code == 200
-    assert first_turn.json()["action_type"] == "narrative"
+    assert first_payload["action_type"] == "narrative"
 
-    second_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, second_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert second_turn.status_code == 200
-    second_payload = second_turn.json()
     assert second_payload["inventory_updates"][0]["template_key"] == "nexus_writs"
     assert second_payload["inventory_updates"][0]["effect_kind"] == "unlock_oblivion_breach_route"
 
@@ -75,13 +75,12 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
     assert any(item["action_kind"] == "use_reward_item" for item in post_reward_state.json()["next_choices"])
     assert all(len(item["summary"]) <= 80 for item in post_reward_state.json()["next_choices"])
 
-    use_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, use_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert use_turn.status_code == 200
-    use_payload = use_turn.json()
     assert use_payload["action_type"] == "use_reward_item"
     assert use_payload["quest_updates"][0]["stage_key"] == "breach_restoration"
     assert use_payload["chapter_updates"][-1]["key"] == "breach_restoration_followup"
@@ -104,13 +103,12 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
     assert all(len(item["summary"]) <= 80 for item in post_use_state.json()["next_choices"])
     assert not any("arrival_clarity" in item["summary"] for item in post_use_state.json()["next_choices"])
 
-    travel_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, travel_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert travel_turn.status_code == 200
-    travel_payload = travel_turn.json()
     assert travel_payload["action_type"] == "travel"
     assert travel_payload["current_location"]["key"] == "oblivion_breach"
     assert "The breach route stays sealed until Nexus recognizes the writ." not in travel_payload["travel_summary"]
@@ -155,20 +153,19 @@ def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_f
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    first_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert first_turn.status_code == 200
 
-    second_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, second_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert second_turn.status_code == 200
-    second_payload = second_turn.json()
     assert second_payload["inventory_updates"][0]["template_key"] == "nexus_writs"
 
     post_reward_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)

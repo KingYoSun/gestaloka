@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from app.api.deps import get_current_ops_user
 from app.models.entities import AdminAppUser, AdminPromptOverride, AdminRuntimeConfig, LLMRun, Turn
 from app.modules.identity.oidc import UserIdentity
+from tests.backend.turn_async_helpers import post_turn_and_wait
 
 
 def test_admin_overview_is_management_shaped(client, auth_headers):
@@ -114,12 +115,12 @@ def test_admin_llm_usage_returns_model_timeline(client, container, auth_headers)
         headers=auth_headers,
     )
     assert session_response.status_code == 200
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_response.json()["session_id"], "input_mode": "choice", "choice_id": "safe"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_response.json()["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "safe"},
     )
-    assert turn_response.status_code == 200
 
     now = datetime.now(timezone.utc)
     with container.session_factory() as db:

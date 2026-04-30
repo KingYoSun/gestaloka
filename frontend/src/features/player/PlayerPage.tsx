@@ -63,9 +63,13 @@ const playLanguagePromptNames: Record<PlayLanguagePreset, string> = {
 
 function formatOpsEventSummary(data: Record<string, unknown>): string {
   const keys = [
+    "id",
+    "event_id",
+    "turn_id",
     "world_id",
     "session_id",
     "location_id",
+    "phase",
     "status",
     "graph_runtime_status",
     "release_gate_verdict",

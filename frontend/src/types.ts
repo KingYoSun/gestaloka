@@ -475,6 +475,13 @@ export type TurnResponse = {
   };
 };
 
+export type TurnAcceptedResponse = {
+  status: "accepted";
+  turn_id: string;
+  session_id: string;
+  world_context?: WorldContext;
+};
+
 export type EventItem = {
   id: string;
   narrative: string;

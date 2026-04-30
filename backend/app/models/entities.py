@@ -220,6 +220,26 @@ class Turn(Base, TimestampMixin):
     langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")
 
 
+class TurnResolutionJob(Base, TimestampMixin):
+    __tablename__ = "turn_resolution_jobs"
+    __table_args__ = (
+        UniqueConstraint("turn_id", "world_id", name="uq_turn_resolution_jobs_turn_world"),
+        ForeignKeyConstraint(["session_id", "world_id"], ["sessions.id", "sessions.world_id"]),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    turn_id: Mapped[str] = mapped_column(String(36), index=True)
+    session_id: Mapped[str] = mapped_column(String(36))
+    world_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_sub: Mapped[str] = mapped_column(String(128), index=True)
+    request_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="accepted", index=True)
+    result_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Event(Base, TimestampMixin):
     __tablename__ = "events"
     __table_args__ = (

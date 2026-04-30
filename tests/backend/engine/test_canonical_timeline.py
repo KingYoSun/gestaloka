@@ -25,6 +25,7 @@ from app.modules.world_state.timeline import (
     pending_broadcast_constraints,
     sync_active_broadcast_deliveries,
 )
+from tests.backend.turn_async_helpers import post_turn_and_wait
 
 
 def _seed_actor_session_turn(db, *, world_id: str, actor_name: str, location_id: str | None = None):
@@ -132,13 +133,12 @@ def test_resource_lock_conflict_continues_turn_and_records_constraints(client, c
         )
         db.commit()
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
-    turn_payload = turn_response.json()
     assert turn_payload["shared_action_tag"] == "none"
 
     with container.session_factory() as db:

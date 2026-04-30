@@ -263,12 +263,12 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert style_patch.json()["narrative_preferences"]["perspective"] == "third_person"
     assert style_patch.json()["play_language"]["prompt_name"] == "English"
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": first_session.json()["session_id"], "input_mode": "choice", "choice_id": "safe"},
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        first_session.json()["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "safe"},
     )
-    assert turn_response.status_code == 200
     langfuse_records = container.observability_service._langfuse_client.records
     world_progress_inputs = [
         item["input"]
@@ -362,18 +362,20 @@ def test_failed_turn_response_exposes_structured_failure(client, container, auth
     session = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
     assert session.status_code == 200
 
-    response = client.post(
-        "/turns",
-        json={
-            "session_id": session.json()["session_id"],
-            "input_mode": "free_text",
-            "input_text": "force a rejected turn",
-        },
-        headers=auth_headers,
-    )
+    with client.websocket_connect(f"/ws/sessions/{session.json()['session_id']}?token=dev-local-token") as websocket:
+        response = client.post(
+            "/turns",
+            json={
+                "session_id": session.json()["session_id"],
+                "input_mode": "free_text",
+                "input_text": "force a rejected turn",
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 202
+        messages = _receive_until_turn_failed(websocket)
 
-    assert response.status_code == 422
-    payload = response.json()
+    payload = messages[-1]["data"]
     assert payload["detail"] == "council_rejected"
     assert payload["failure"]["reason"] == "council_rejected"
     assert payload["failure"]["rejection_role"] == "rules_arbiter"
@@ -589,8 +591,16 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             },
             headers=auth_headers,
         )
-        assert turn_response.status_code == 200
-        turn_payload = turn_response.json()
+        assert turn_response.status_code == 202
+        accepted_payload = turn_response.json()
+        assert accepted_payload == {
+            "status": "accepted",
+            "turn_id": accepted_payload["turn_id"],
+            "session_id": session_payload["session_id"],
+            "world_context": session_payload["world_context"],
+        }
+        messages = _receive_until_turn_resolved(websocket)
+        turn_payload = messages[-1]["data"]
         assert set(turn_payload) == {
             "turn_id",
             "action_type",
@@ -646,8 +656,6 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
 
-        messages = _receive_until_turn_resolved(websocket)
-
     assert [message["event"] for message in messages[:2]] == [
         "session.connected",
         "turn.accepted",
@@ -685,6 +693,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "session_id": session_payload["session_id"],
         "world_context": session_payload["world_context"],
     }
+    assert messages[1]["data"]["turn_id"] == accepted_payload["turn_id"]
+    assert messages[1]["data"]["session_id"] == session_payload["session_id"]
     assert messages[-1]["data"] == turn_payload
     broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
     assert broadcast_message["data"]["semantic_key"]
@@ -705,6 +715,28 @@ def _receive_until_turn_resolved(websocket, *, limit: int = 64):
     raise AssertionError("turn.resolved was not received")
 
 
+def _receive_until_turn_failed(websocket, *, limit: int = 64):
+    messages = []
+    for _ in range(limit):
+        message = websocket.receive_json()
+        messages.append(message)
+        if message.get("event") == "turn.failed":
+            return messages
+    raise AssertionError("turn.failed was not received")
+
+
+def _post_turn_and_wait_for_resolution(client, session_id: str, auth_headers: dict, payload: dict):
+    with client.websocket_connect(f"/ws/sessions/{session_id}?token=dev-local-token") as websocket:
+        response = client.post(
+            "/turns",
+            json={"session_id": session_id, **payload},
+            headers=auth_headers,
+        )
+        assert response.status_code == 202
+        messages = _receive_until_turn_resolved(websocket)
+    return response.json(), messages[-1]["data"], messages
+
+
 def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_headers):
     session_response = client.post(
         "/sessions",
@@ -713,18 +745,15 @@ def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_heade
     )
     session_payload = session_response.json()
 
-    response = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
+    _, payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {
             "input_mode": "free_text",
             "input_text": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
         },
-        headers=auth_headers,
     )
-
-    assert response.status_code == 200
-    payload = response.json()
     assert payload["input_mode"] == "free_text"
     assert payload["action_type"] == "narrative"
     assert payload["interpreted_intent"]["canonical_action_kind"] == "read_world_state_query"
@@ -743,26 +772,18 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
     )
     session_payload = session_response.json()
 
-    first_turn = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
-            "input_mode": "choice",
-            "choice_id": "progress",
-        },
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert first_turn.status_code == 200
-    second_turn = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
-            "input_mode": "choice",
-            "choice_id": "progress",
-        },
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert second_turn.status_code == 200
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.json()["inventory"][0]["id"]
@@ -779,8 +800,11 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
             },
             headers=auth_headers,
         )
-        assert use_response.status_code == 200
-        payload = use_response.json()
+        assert use_response.status_code == 202
+        accepted_payload = use_response.json()
+        messages = _receive_until_turn_resolved(websocket)
+        payload = messages[-1]["data"]
+        assert accepted_payload["turn_id"] == payload["turn_id"]
         assert payload["world_context"]["pack_id"] == "gestaloka_reference"
         assert payload["action_type"] == "use_reward_item"
         assert payload["input_mode"] == "choice"
@@ -792,8 +816,6 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
         assert payload["current_location"]["key"] == world_pack["starter_location_key"]
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"]
-
-        messages = _receive_until_turn_resolved(websocket)
 
     assert [message["event"] for message in messages[:2]] == [
         "session.connected",
@@ -881,12 +903,12 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
     status_response = client.get("/ops/projection/status", headers=auth_headers)
     assert status_response.status_code == 200
     status_payload = status_response.json()
@@ -1008,12 +1030,12 @@ def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(cli
         raise RuntimeError("forced projection failure")
 
     monkeypatch.setattr(container.projection_service.repository, "project_bundle", fail_projection)
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
 
     with container.session_factory() as db:
         pending_before = list(db.execute(select(OutboxEvent).where(OutboxEvent.status == "pending")).scalars())
@@ -1057,12 +1079,12 @@ def test_ops_relationship_chapter_scene_and_memory_contracts(client, auth_header
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
 
     relationships_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/relationships",
@@ -1183,23 +1205,18 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    first_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert first_turn.status_code == 200
-
-    second_turn = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
-            "input_mode": "choice",
-            "choice_id": "progress",
-        },
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert second_turn.status_code == 200
 
     status_response = client.get("/ops/memories/status", headers=auth_headers)
     assert status_response.status_code == 200
@@ -1235,12 +1252,12 @@ def test_ops_eval_contracts(client, container, auth_headers):
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
 
     container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
         status="healthy",

@@ -28,6 +28,7 @@ from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import PromptRouteOverride
 from app.modules.observability.service import CanaryProbeResult
+from tests.backend.turn_async_helpers import post_turn_and_wait
 from app.modules.world_pack.service import PackCatalogFailure, PackRegistry
 from app.modules.world_memory.service import MemoryService
 
@@ -310,12 +311,12 @@ def test_shadow_replay_does_not_mutate_canonical_world_tables(client, container,
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    first_turn = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_text": "広場で灯をともす"},
     )
-    assert first_turn.status_code == 200
 
     with container.session_factory() as db:
         before = {
@@ -367,28 +368,28 @@ def test_shadow_replay_filters_deterministic_turns_and_uses_source_event_locatio
     session_payload = session_response.json()
 
     for _ in range(2):
-        response = client.post(
-            "/turns",
-            json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-            headers=auth_headers,
+        post_turn_and_wait(
+            client,
+            session_id=session_payload["session_id"],
+            auth_headers=auth_headers,
+            payload={"input_mode": "choice", "choice_id": "progress"},
         )
-        assert response.status_code == 200
 
-    use_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, use_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert use_response.status_code == 200
-    assert use_response.json()["action_type"] == "use_reward_item"
+    assert use_payload["action_type"] == "use_reward_item"
 
-    travel_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, travel_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert travel_response.status_code == 200
-    assert travel_response.json()["action_type"] == "travel"
+    assert travel_payload["action_type"] == "travel"
 
     with container.session_factory() as db:
         cases = container.eval_service._shadow_replay_cases(db, limit=10)
@@ -410,12 +411,12 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_text": "広場で灯をともす"},
     )
-    assert turn_response.status_code == 200
 
     container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
         status="healthy",
@@ -683,12 +684,12 @@ def test_release_gate_blocks_on_shared_world_axis_drift(client, container, auth_
     session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
 
     with container.session_factory() as db:
         axis = db.execute(
@@ -718,13 +719,13 @@ def test_release_gate_blocks_on_shared_world_memory_gap(client, container, auth_
     session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
-    event_id = turn_response.json()["event_id"]
+    event_id = turn_payload["event_id"]
 
     with container.session_factory() as db:
         db.execute(delete(Memory).where(Memory.world_id == "gestaloka_reference", Memory.source_event_id == event_id))
@@ -747,17 +748,17 @@ def test_release_gate_blocks_on_cross_world_shared_event_link(client, container,
     reference_session = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
     assert reference_session.status_code == 200
     reference_payload = reference_session.json()
-    reference_turn = client.post(
-        "/turns",
-        json={"session_id": reference_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, reference_turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=reference_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert reference_turn.status_code == 200
     with container.session_factory() as db:
         memory = db.execute(
             select(Memory).where(
                 Memory.world_id == "gestaloka_reference",
-                Memory.source_event_id == reference_turn.json()["event_id"],
+                Memory.source_event_id == reference_turn_payload["event_id"],
             )
         ).scalars().first()
         assert memory is not None
@@ -791,7 +792,7 @@ def test_release_gate_blocks_on_cross_world_shared_event_link(client, container,
                 alt_event_id,
                 "alternate_reference_world",
                 reference_payload["session_id"],
-                reference_turn.json()["turn_id"],
+                reference_turn_payload["turn_id"],
                 "player.turn.resolved",
                 reference_payload["player_actor_id"],
                 None,
@@ -822,12 +823,12 @@ def test_scheduler_helpers_only_persist_eval_and_release_tables(client, containe
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_text": "広場で灯をともす"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_text": "広場で灯をともす"},
     )
-    assert turn_response.status_code == 200
 
     container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]
         status="healthy",
@@ -877,13 +878,12 @@ def test_langfuse_flush_failure_degrades_but_does_not_fail_turn(client, containe
     )
     session_payload = session_response.json()
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-
-    assert turn_response.status_code == 200
 
     council_turns = client.get(
         f"/ops/council/turns?session_id={session_payload['session_id']}",

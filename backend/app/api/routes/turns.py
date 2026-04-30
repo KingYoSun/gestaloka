@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub, with_world_context
-from app.models.entities import Session as GameSession
+from app.models.entities import Session as GameSession, TurnResolutionJob
 from app.modules.identity.oidc import UserIdentity
 from app.modules.session.service import prepare_turn_for_session
 from app.modules.session.turn_manager import TurnResolutionManager
@@ -110,201 +111,68 @@ async def _emit_broadcast_available(result, world_context: dict[str, object]) ->
         await realtime_hub.emit_with_world_context(session_id, "world.broadcast.available", notification, world_context)
 
 
-@router.post("/turns")
-async def resolve_turn(
-    payload: ResolveTurnRequest,
-    db: Session = Depends(get_db),
-    container: AppContainer = Depends(get_container),
-    user: UserIdentity = Depends(get_current_user),
-) -> dict:
-    ensure_primary_runtime(container)
-    prepared_input_mode = "choice" if payload.action_type == "use_reward_item" else payload.input_mode
-    game_session = db.execute(select(GameSession).where(GameSession.id == payload.session_id)).scalar_one_or_none()
-    if game_session is not None:
-        try:
-            world_health(db, container.pack_registry, game_session.world_id)
-        except WorldAvailabilityError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.diagnostic()) from exc
-    try:
-        prepared = prepare_turn_for_session(db, container, user, payload.session_id, input_mode=prepared_input_mode)
-    except HTTPException as exc:
-        if exc.status_code == 409 and isinstance(exc.detail, dict):
-            world_context = _world_context_for_session_id(db, payload.session_id)
-            detail = exc.detail if world_context is None else with_world_context(exc.detail, world_context)
-            return JSONResponse(status_code=409, content=detail)
-        raise
-    world_context = world_context_for_world(db, prepared.session.world_id)
-
-    await realtime_hub.emit_with_world_context(
-        payload.session_id,
-        "turn.accepted",
-        {"session_id": payload.session_id},
-        world_context,
-    )
-
-    managed = await TurnResolutionManager(
-        db=db,
-        container=container,
-        prepared=prepared,
-        action_type=payload.action_type,
-        input_mode=prepared_input_mode,
-        choice_id=payload.choice_id,
-        input_text=payload.input_text,
-        item_id=payload.item_id,
-        world_context=world_context,
-    ).resolve()
-    result = managed.result
-    for phase in result.progress_phases:
-        if phase in managed.emitted_phases:
-            continue
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "turn.progress",
-            {"phase": phase, "status": "completed", "elapsed_ms": 0},
-            world_context,
-        )
-
-    if result.succeeded:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "turn.narrative.delta",
-            {"delta": result.turn.resolved_output.get("narrative", ""), "final": True},
-            world_context,
-        )
-
-    await realtime_hub.emit_with_world_context(payload.session_id, "world.event.created", result.event_payload, world_context)
-    await _emit_broadcast_available(result, world_context)
-    if result.memories_payload:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "memory.materialized",
-            {"memories": result.memories_payload},
-            world_context,
-        )
-    if result.quest_updates:
-        await realtime_hub.emit_with_world_context(payload.session_id, "quest.updated", {"items": result.quest_updates}, world_context)
-    if result.faction_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "faction.standing.updated",
-            {"items": result.faction_updates},
-            world_context,
-        )
-    if result.inventory_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "inventory.changed",
-            {"items": result.inventory_updates},
-            world_context,
-        )
-    if result.location_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "location.updated",
-            {"items": result.location_updates},
-            world_context,
-        )
-    if result.relationship_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "relationship.updated",
-            {"items": result.relationship_updates},
-            world_context,
-        )
-    if result.consequence_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "consequence.updated",
-            {"items": result.consequence_updates},
-            world_context,
-        )
-    if result.scene_updates:
-        await realtime_hub.emit_with_world_context(payload.session_id, "scene.updated", {"items": result.scene_updates}, world_context)
-    if result.chapter_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "chapter.updated",
-            {"items": result.chapter_updates},
-            world_context,
-        )
-    if result.branch_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "branch.updated",
-            {"items": result.branch_updates},
-            world_context,
-        )
-    if result.ambient_updates:
-        await realtime_hub.emit_with_world_context(
-            payload.session_id,
-            "ambient.updated",
-            {"items": result.ambient_updates, "recent_world_beats": result.recent_world_beats},
-            world_context,
-        )
-
-    if not result.succeeded:
-        shared_response = _shared_consequence_response(result.turn.resolved_output or {})
-        resolved_output = result.turn.resolved_output or {}
-        failure = result.failure if isinstance(result.failure, dict) else resolved_output.get("failure")
-        if not isinstance(failure, dict):
-            failure = {
-                "reason": result.error_detail,
-                "rejection_role": resolved_output.get("rejection_role"),
-                "final_lane": result.turn.model_lane,
-                "used_fallback": bool(resolved_output.get("used_fallback", False)),
-                "council_trace": resolved_output.get("council_trace", []),
-                "retryable_choice_id": next(
-                    (
-                        str(item.get("choice_id"))
-                        for item in result.next_choices
-                        if isinstance(item, dict) and item.get("choice_id")
-                    ),
-                    None,
-                ),
-            }
-        return JSONResponse(
-            status_code=result.status_code,
-            content={
-                "detail": result.error_detail,
-                "failure": failure,
-                "turn_id": result.turn.id,
-                "event_id": result.event.id,
-                "memory_ids": [],
-                "sp_delta": result.sp_delta,
-                "sp_balance": result.sp_balance,
-                "paid_sp": result.paid_sp,
-                "bonus_sp": result.bonus_sp,
-                "sp_ledger_id": result.sp_ledger_id,
-                "quest_updates": [],
-                "faction_updates": [],
-                "inventory_updates": [],
-                "location_updates": [],
-                "relationship_updates": [],
-                "consequence_updates": [],
-                "scene_updates": [],
-                "chapter_updates": [],
-                "branch_updates": [],
-                "ambient_updates": [],
-                "action_type": result.action_type,
-                "input_mode": result.input_mode,
-                "interpreted_intent": result.interpreted_intent,
-                "next_choices": result.next_choices,
-                "consequence_summary": result.consequence_summary,
-                "scene_tone": result.scene_tone,
-                "scene_summary": result.scene_summary,
-                "crossroads_summary": result.crossroads_summary,
-                "current_location": result.current_location,
-                "travel_summary": result.travel_summary,
-                "recent_world_beats": result.recent_world_beats,
-                "recent_offstage_beats": result.recent_offstage_beats,
-                "idle_updates": result.idle_updates,
-                "world_context": world_context,
-                **shared_response,
-            },
-        )
-
+def _failure_response_content(result, world_context: dict[str, object]) -> dict[str, object]:
     shared_response = _shared_consequence_response(result.turn.resolved_output or {})
-    response = {
+    resolved_output = result.turn.resolved_output or {}
+    failure = result.failure if isinstance(result.failure, dict) else resolved_output.get("failure")
+    if not isinstance(failure, dict):
+        failure = {
+            "reason": result.error_detail,
+            "rejection_role": resolved_output.get("rejection_role"),
+            "final_lane": result.turn.model_lane,
+            "used_fallback": bool(resolved_output.get("used_fallback", False)),
+            "council_trace": resolved_output.get("council_trace", []),
+            "retryable_choice_id": next(
+                (
+                    str(item.get("choice_id"))
+                    for item in result.next_choices
+                    if isinstance(item, dict) and item.get("choice_id")
+                ),
+                None,
+            ),
+        }
+    return {
+        "detail": result.error_detail,
+        "failure": failure,
+        "turn_id": result.turn.id,
+        "event_id": result.event.id,
+        "memory_ids": [],
+        "sp_delta": result.sp_delta,
+        "sp_balance": result.sp_balance,
+        "paid_sp": result.paid_sp,
+        "bonus_sp": result.bonus_sp,
+        "sp_ledger_id": result.sp_ledger_id,
+        "quest_updates": [],
+        "faction_updates": [],
+        "inventory_updates": [],
+        "location_updates": [],
+        "relationship_updates": [],
+        "consequence_updates": [],
+        "scene_updates": [],
+        "chapter_updates": [],
+        "branch_updates": [],
+        "ambient_updates": [],
+        "action_type": result.action_type,
+        "input_mode": result.input_mode,
+        "interpreted_intent": result.interpreted_intent,
+        "next_choices": result.next_choices,
+        "consequence_summary": result.consequence_summary,
+        "scene_tone": result.scene_tone,
+        "scene_summary": result.scene_summary,
+        "crossroads_summary": result.crossroads_summary,
+        "current_location": result.current_location,
+        "travel_summary": result.travel_summary,
+        "recent_world_beats": result.recent_world_beats,
+        "recent_offstage_beats": result.recent_offstage_beats,
+        "idle_updates": result.idle_updates,
+        "world_context": world_context,
+        **shared_response,
+    }
+
+
+def _success_response_content(result, world_context: dict[str, object]) -> dict[str, object]:
+    shared_response = _shared_consequence_response(result.turn.resolved_output or {})
+    return {
         "turn_id": result.turn.id,
         "action_type": result.action_type,
         "input_mode": result.input_mode,
@@ -341,6 +209,237 @@ async def resolve_turn(
         "world_context": world_context,
         **shared_response,
     }
-    await realtime_hub.emit_with_world_context(payload.session_id, "turn.resolved", response, world_context)
 
-    return response
+
+async def _emit_turn_result_events(result, world_context: dict[str, object]) -> None:
+    if result.succeeded:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "turn.narrative.delta",
+            {"turn_id": result.turn.id, "delta": result.turn.resolved_output.get("narrative", ""), "final": True},
+            world_context,
+        )
+
+    await realtime_hub.emit_with_world_context(result.turn.session_id, "world.event.created", result.event_payload, world_context)
+    await _emit_broadcast_available(result, world_context)
+    if result.memories_payload:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "memory.materialized",
+            {"turn_id": result.turn.id, "memories": result.memories_payload},
+            world_context,
+        )
+    if result.quest_updates:
+        await realtime_hub.emit_with_world_context(result.turn.session_id, "quest.updated", {"items": result.quest_updates}, world_context)
+    if result.faction_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "faction.standing.updated",
+            {"items": result.faction_updates},
+            world_context,
+        )
+    if result.inventory_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "inventory.changed",
+            {"items": result.inventory_updates},
+            world_context,
+        )
+    if result.location_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "location.updated",
+            {"items": result.location_updates},
+            world_context,
+        )
+    if result.relationship_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "relationship.updated",
+            {"items": result.relationship_updates},
+            world_context,
+        )
+    if result.consequence_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "consequence.updated",
+            {"items": result.consequence_updates},
+            world_context,
+        )
+    if result.scene_updates:
+        await realtime_hub.emit_with_world_context(result.turn.session_id, "scene.updated", {"items": result.scene_updates}, world_context)
+    if result.chapter_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "chapter.updated",
+            {"items": result.chapter_updates},
+            world_context,
+        )
+    if result.branch_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "branch.updated",
+            {"items": result.branch_updates},
+            world_context,
+        )
+    if result.ambient_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "ambient.updated",
+            {"items": result.ambient_updates, "recent_world_beats": result.recent_world_beats},
+            world_context,
+        )
+
+
+async def _resolve_turn_background(
+    *,
+    container: AppContainer,
+    turn_id: str,
+    session_id: str,
+    world_id: str,
+    user_sub: str,
+    action_type: str | None,
+    input_mode: str,
+    choice_id: str | None,
+    input_text: str | None,
+    item_id: str | None,
+    world_context: dict[str, object],
+) -> None:
+    managed = await TurnResolutionManager(
+        container=container,
+        turn_id=turn_id,
+        session_id=session_id,
+        world_id=world_id,
+        user_sub=user_sub,
+        action_type=action_type,
+        input_mode=input_mode,
+        choice_id=choice_id,
+        input_text=input_text,
+        item_id=item_id,
+        world_context=world_context,
+    ).resolve()
+    if managed.error is not None:
+        await realtime_hub.emit_with_world_context(
+            session_id,
+            "turn.failed",
+            {"turn_id": turn_id, "detail": managed.error.get("detail"), "failure": managed.error, "retryable": True},
+            world_context,
+        )
+        return
+    result = managed.result
+    if result is None:
+        await realtime_hub.emit_with_world_context(
+            session_id,
+            "turn.failed",
+            {"turn_id": turn_id, "detail": "Turn resolution did not return a result", "failure": {}, "retryable": True},
+            world_context,
+        )
+        return
+
+    for phase in result.progress_phases:
+        if phase in managed.emitted_phases:
+            continue
+        await realtime_hub.emit_with_world_context(
+            session_id,
+            "turn.progress",
+            {"turn_id": turn_id, "phase": phase, "status": "completed", "elapsed_ms": 0},
+            world_context,
+        )
+
+    await _emit_turn_result_events(result, world_context)
+    if not result.succeeded:
+        failure_payload = _failure_response_content(result, world_context)
+        await realtime_hub.emit_with_world_context(
+            session_id,
+            "turn.failed",
+            {
+                "turn_id": turn_id,
+                "detail": result.error_detail,
+                "failure": failure_payload.get("failure", {}),
+                "retryable": True,
+            },
+            world_context,
+        )
+        return
+
+    await realtime_hub.emit_with_world_context(session_id, "turn.resolved", _success_response_content(result, world_context), world_context)
+
+
+@router.post("/turns")
+async def resolve_turn(
+    payload: ResolveTurnRequest,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_user),
+) -> dict:
+    ensure_primary_runtime(container)
+    prepared_input_mode = "choice" if payload.action_type == "use_reward_item" else payload.input_mode
+    game_session = db.execute(select(GameSession).where(GameSession.id == payload.session_id)).scalar_one_or_none()
+    if game_session is not None:
+        try:
+            world_health(db, container.pack_registry, game_session.world_id)
+        except WorldAvailabilityError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.diagnostic()) from exc
+    try:
+        prepared = prepare_turn_for_session(db, container, user, payload.session_id, input_mode=prepared_input_mode)
+    except HTTPException as exc:
+        if exc.status_code == 409 and isinstance(exc.detail, dict):
+            world_context = _world_context_for_session_id(db, payload.session_id)
+            detail = exc.detail if world_context is None else with_world_context(exc.detail, world_context)
+            return JSONResponse(status_code=409, content=detail)
+        raise
+    world_context = world_context_for_world(db, prepared.session.world_id)
+
+    db.add(
+        TurnResolutionJob(
+            id=prepared.turn_id,
+            turn_id=prepared.turn_id,
+            session_id=prepared.session.id,
+            world_id=prepared.session.world_id,
+            user_sub=user.sub,
+            request_payload={
+                "action_type": payload.action_type,
+                "input_mode": prepared_input_mode,
+                "choice_id": payload.choice_id,
+                "input_text": payload.input_text,
+                "item_id": payload.item_id,
+            },
+            status="accepted",
+            result_payload={},
+            error_payload={},
+        )
+    )
+    db.commit()
+
+    await realtime_hub.emit_with_world_context(
+        payload.session_id,
+        "turn.accepted",
+        {"turn_id": prepared.turn_id, "session_id": payload.session_id},
+        world_context,
+    )
+
+    asyncio.create_task(
+        _resolve_turn_background(
+            container=container,
+            turn_id=prepared.turn_id,
+            session_id=prepared.session.id,
+            world_id=prepared.session.world_id,
+            user_sub=user.sub,
+            action_type=payload.action_type,
+            input_mode=prepared_input_mode,
+            choice_id=payload.choice_id,
+            input_text=payload.input_text,
+            item_id=payload.item_id,
+            world_context=world_context,
+        )
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "turn_id": prepared.turn_id,
+            "session_id": prepared.session.id,
+            "world_context": world_context,
+        },
+    )

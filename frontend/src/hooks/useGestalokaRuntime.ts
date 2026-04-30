@@ -56,6 +56,7 @@ import type {
   SPOverview,
   SPWallet,
   TravelLogItem,
+  TurnAcceptedResponse,
   TurnResponse,
   WorldContext,
   WorldTickItem,
@@ -101,6 +102,10 @@ function formatTurnProgressLabel(phase: string, status: string): string {
     return phaseLabel;
   }
   return `${phaseLabel} ${status}`;
+}
+
+function isTurnAcceptedResponse(response: TurnAcceptedResponse | TurnResponse): response is TurnAcceptedResponse {
+  return "status" in response && response.status === "accepted";
 }
 
 function normalizeBrowserPreset(language: string): PlayLanguagePreset | null {
@@ -473,6 +478,48 @@ export function useGestalokaRuntime() {
     }
   }, [opsWorldId, opsPackFilter, opsTemplateFilter, opsWorlds, session?.world_id]);
 
+  function applyResolvedTurnResponse(response: TurnResponse) {
+    setLatestNarrative(response.narrative);
+    setLatestReaction(response.npc_reaction);
+    setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
+    setTurnInputMode("choice");
+    setSessionState((current) => mergeTurnResponseIntoSessionState(current, response));
+    setWallet((current) =>
+      current
+        ? {
+            ...current,
+            balance: response.sp_balance,
+            paid_sp: response.paid_sp,
+            bonus_sp: response.bonus_sp,
+          }
+        : current,
+    );
+    setTurnPending(false);
+    setTurnProgressPhase("idle");
+    setTurnProgressStartedAt(null);
+    setTurnProgressLiveLabel("");
+    setTurnProvisionalMessage("");
+
+    if (!token || !session) {
+      return;
+    }
+    const backgroundRefresh = Promise.all([
+      refreshWorldState(session, token),
+      refreshWallet(token),
+      refreshAdminData(
+        token,
+        session.world_id,
+        ledgerUserFilter || me?.sub,
+        ledgerWorldFilter || session.world_id,
+        session.session_id,
+      ),
+      refreshHealth(),
+    ]).catch((requestError: unknown) => {
+      showRequestError(requestError);
+    });
+    void backgroundRefresh;
+  }
+
   useEffect(() => {
     if (!session || !token) {
       if (socketRef.current) {
@@ -493,19 +540,7 @@ export function useGestalokaRuntime() {
       const parsed = JSON.parse(message.data) as ActivityMessage;
       setActivity((current) => [parsed, ...current].slice(0, 40));
       if (parsed.event === "turn.resolved") {
-        const data = parsed.data as Partial<TurnResponse>;
-        if (data.narrative) {
-          setLatestNarrative(data.narrative);
-        }
-        if (data.npc_reaction) {
-          setLatestReaction(data.npc_reaction);
-        }
-        if (data.consequence_summary) {
-          setLatestConsequenceSummary(data.consequence_summary);
-        }
-        if (data.scene_summary && !latestConsequenceSummary) {
-          setLatestConsequenceSummary(data.scene_summary);
-        }
+        applyResolvedTurnResponse(parsed.data as TurnResponse);
       }
       if (parsed.event === "turn.progress") {
         const phase = typeof parsed.data.phase === "string" ? parsed.data.phase : "";
@@ -521,6 +556,14 @@ export function useGestalokaRuntime() {
         if (messageText) {
           setTurnProvisionalMessage(messageText);
         }
+      }
+      if (parsed.event === "turn.failed") {
+        const detail = typeof parsed.data.detail === "string" ? parsed.data.detail : t("errors.turnFailed");
+        setError(detail);
+        setTurnPending(false);
+        setTurnProgressPhase("idle");
+        setTurnProgressStartedAt(null);
+        setTurnProgressLiveLabel("");
       }
       if (parsed.event === "graph.projection.updated") {
         void refreshAdminData(
@@ -1039,6 +1082,7 @@ export function useGestalokaRuntime() {
       setTurnProgressStartedAt((current) => current ?? Date.now());
     };
 
+    let awaitingWebSocketFinal = false;
     try {
       setTurnPending(true);
       setTurnProgressStartedAt(Date.now());
@@ -1049,44 +1093,19 @@ export function useGestalokaRuntime() {
       setError("");
       const currentToken = await ensureFreshToken(token);
       setTurnPhase("resolving");
-      const response = await apiFetch<TurnResponse>("/turns", currentToken, {
+      const response = await apiFetch<TurnAcceptedResponse | TurnResponse>("/turns", currentToken, {
         method: "POST",
         body: JSON.stringify({
           session_id: session.session_id,
           ...payload,
         }),
       }, { timeoutMs: turnRequestTimeoutMs });
-      setLatestNarrative(response.narrative);
-      setLatestReaction(response.npc_reaction);
-      setLatestConsequenceSummary(response.consequence_summary);
-      setTurnInputMode("choice");
-      setSessionState((current) => mergeTurnResponseIntoSessionState(current, response));
-      setWallet((current) =>
-        current
-          ? {
-              ...current,
-              balance: response.sp_balance,
-              paid_sp: response.paid_sp,
-              bonus_sp: response.bonus_sp,
-            }
-          : current,
-      );
-      setTurnPhase("refreshing");
-      await refreshWorldState(session, currentToken);
-      const backgroundRefresh = Promise.all([
-        refreshWallet(currentToken),
-        refreshAdminData(
-          currentToken,
-          session.world_id,
-          ledgerUserFilter || me?.sub,
-          ledgerWorldFilter || session.world_id,
-          session.session_id,
-        ),
-        refreshHealth(),
-      ]).catch((requestError: unknown) => {
-        showRequestError(requestError);
-      });
-      void backgroundRefresh;
+      if (isTurnAcceptedResponse(response)) {
+        awaitingWebSocketFinal = true;
+        setTurnProgressPhase("resolving");
+        return;
+      }
+      applyResolvedTurnResponse(response);
       return;
     } catch (requestError) {
       showRequestError(requestError);
@@ -1103,10 +1122,12 @@ export function useGestalokaRuntime() {
       ]).catch(() => undefined);
       return;
     } finally {
-      setTurnPending(false);
-      setTurnProgressPhase("idle");
-      setTurnProgressStartedAt(null);
-      setTurnProgressLiveLabel("");
+      if (!awaitingWebSocketFinal) {
+        setTurnPending(false);
+        setTurnProgressPhase("idle");
+        setTurnProgressStartedAt(null);
+        setTurnProgressLiveLabel("");
+      }
     }
   }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.models.entities import Event, Memory, SPAccount, SPLedgerEntry, Turn
+from tests.backend.turn_async_helpers import post_turn_and_wait
 
 
 def engine_session_payload() -> dict[str, str]:
@@ -86,21 +87,16 @@ def test_failed_turn_refunds_sp_and_records_ledger(client, container, auth_heade
     )
     session_payload = session_response.json()
 
-    turn_response = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
+    _, payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={
             "input_mode": "free_text",
             "input_text": "__force_invalid_all__ 広場で灯をともす",
         },
-        headers=auth_headers,
+        terminal_event="turn.failed",
     )
-    assert turn_response.status_code == 422
-    payload = turn_response.json()
-    assert payload["sp_delta"] == 0
-    assert payload["sp_balance"] == 30
-    assert payload["paid_sp"] == 0
-    assert payload["bonus_sp"] == 30
 
     with container.session_factory() as db:
         ledger_entries = list(db.execute(select(SPLedgerEntry).order_by(SPLedgerEntry.created_at.asc())).scalars())
@@ -131,17 +127,15 @@ def test_turn_cost_consumes_bonus_before_paid_sp(client, container, auth_headers
     )
     session_payload = session_response.json()
 
-    turn_response = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
+    _, payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={
             "input_mode": "free_text",
             "input_text": "広場で灯をともす",
         },
-        headers=auth_headers,
     )
-    assert turn_response.status_code == 200
-    payload = turn_response.json()
     assert payload["sp_balance"] == 9
     assert payload["paid_sp"] == 9
     assert payload["bonus_sp"] == 0

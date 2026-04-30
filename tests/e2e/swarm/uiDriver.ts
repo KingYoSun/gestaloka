@@ -18,9 +18,12 @@ export type SwarmUiTurnObservation = {
   startedAt: string;
   completedAt: string;
   durationMs: number;
+  httpDurationMs: number;
+  finalResolutionDurationMs: number;
   eventId: string;
   turnId: string;
   waitStatusSamples: string[];
+  waitStatusTimeline: Array<{ elapsedSeconds: number; status: string }>;
   lastWaitStatus: string;
   maxWaitElapsedSeconds: number;
   latestNarrative: string;
@@ -136,9 +139,17 @@ export async function executeTurnViaUi(
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
   const waitStatusSamples: string[] = [];
+  const waitStatusTimeline: Array<{ elapsedSeconds: number; status: string }> = [];
   const sampleTimer = setInterval(async () => {
     try {
-      waitStatusSamples.push(await page.getByTestId("turn-progress-status").innerText({ timeout: 500 }));
+      const status = await page.getByTestId("turn-progress-status").innerText({ timeout: 500 });
+      waitStatusSamples.push(status);
+      if (status.trim()) {
+        waitStatusTimeline.push({
+          elapsedSeconds: Math.max(Math.floor((Date.now() - started) / 1000), 0),
+          status,
+        });
+      }
     } catch {
       // Sampling should never change test outcome.
     }
@@ -162,12 +173,14 @@ export async function executeTurnViaUi(
     if (!response.ok() && !(response.status() === 422 && typeof payload.event_id === "string")) {
       throw new Error(`UI turn failed for ${persona.id}: ${response.status()} ${responseText}`);
     }
+    const httpCompleted = Date.now();
     await expect(page.getByTestId("turn-progress-status")).toBeVisible({ timeout: 30_000 });
     await waitForTurnIdle(page);
     const screenshotPath = `${artifactDir}/${attemptLabel}-${persona.id}-${decision.scenario}-after-turn.png`;
     await page.screenshot({ path: screenshotPath, fullPage: true });
     const completed = Date.now();
     const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
+    const opsStream = await listText(page, "ops-stream");
     return {
       personaId: persona.id,
       scenario: decision.scenario,
@@ -176,9 +189,12 @@ export async function executeTurnViaUi(
       startedAt,
       completedAt: new Date(completed).toISOString(),
       durationMs: completed - started,
-      eventId: stringValue(payload.event_id),
+      httpDurationMs: httpCompleted - started,
+      finalResolutionDurationMs: completed - started,
+      eventId: stringValue(payload.event_id) || eventIdFromOpsStream(opsStream),
       turnId: stringValue(payload.turn_id),
       waitStatusSamples: nonEmptyWaitStatusSamples.slice(0, 16),
+      waitStatusTimeline,
       lastWaitStatus: nonEmptyWaitStatusSamples[nonEmptyWaitStatusSamples.length - 1] ?? "",
       maxWaitElapsedSeconds: Math.max(Math.floor((completed - started) / 1000), 0),
       latestNarrative: await textContent(page, "latest-narrative"),
@@ -187,13 +203,23 @@ export async function executeTurnViaUi(
       recentSceneHistory: await listText(page, "recent-scene-history"),
       recentConsequenceHistory: await listText(page, "recent-consequence-history"),
       recentWorldBeats: await listText(page, "recent-world-beats"),
-      opsStream: await listText(page, "ops-stream"),
+      opsStream,
       choiceLabels: await listText(page, "choice-list"),
       screenshotPath,
     };
   } finally {
     clearInterval(sampleTimer);
   }
+}
+
+function eventIdFromOpsStream(items: string[]): string {
+  for (const item of items) {
+    const match = item.match(/\b(?:event_id|id): ([0-9a-f-]{36})\b/i);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return "";
 }
 
 async function waitForTurnResponseOrNetworkFailure(

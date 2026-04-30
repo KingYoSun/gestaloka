@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
-from app.models.entities import Actor, Event, LLMRun, OutboxEvent, PlayerProfile, Session as GameSession, Turn, new_id
+from app.models.entities import Actor, Event, LLMRun, OutboxEvent, PlayerProfile, Session as GameSession, SPLedgerEntry, Turn, new_id
 from app.modules.world_pack.service import resolve_world_pack
 from app.modules.actor.service import (
     ensure_relationship,
@@ -2782,6 +2782,64 @@ def prepare_turn_for_session(
         guide_npc=guide_npc,
         location_id=player_actor.current_location_id or current_location.id,
         turn_id=planned_turn_id,
+        debit=debit,
+        input_mode=input_mode,
+    )
+
+
+def load_prepared_turn_context_for_job(
+    db: Session,
+    container: AppContainer,
+    *,
+    session_id: str,
+    user_sub: str,
+    turn_id: str,
+    input_mode: str,
+) -> PreparedTurnContext:
+    game_session = db.execute(select(GameSession).where(GameSession.id == session_id)).scalar_one_or_none()
+    if game_session is None:
+        raise LookupError(f"Session not found for turn job: {session_id}")
+
+    player_row = get_player_profile_for_user(db, game_session.world_id, user_sub, game_session.player_actor_id)
+    if player_row is None:
+        raise LookupError(f"Session does not belong to turn job user: {session_id}")
+    player_actor, _ = player_row
+
+    current_location = ensure_starter_location(db, game_session.world_id)
+    if player_actor.current_location_id is None:
+        player_actor.current_location_id = current_location.id
+        db.flush()
+    ensure_world_slice_seed(
+        db,
+        world_id=game_session.world_id,
+        player_actor_id=player_actor.id,
+    )
+    guide_npc = get_or_create_guide_npc(db, game_session.world_id, location_id=player_actor.current_location_id)
+    ledger_entry = db.execute(
+        select(SPLedgerEntry).where(
+            SPLedgerEntry.user_sub == user_sub,
+            SPLedgerEntry.reference_type == "turn",
+            SPLedgerEntry.reference_id == turn_id,
+            SPLedgerEntry.reason_code == "turn_cost",
+        )
+    ).scalar_one_or_none()
+    if ledger_entry is None:
+        raise LookupError(f"Turn job is missing committed SP debit: {turn_id}")
+    debit = SPMutationResult(
+        ledger_entry=ledger_entry,
+        balance_after=ledger_entry.balance_after,
+        paid_balance_after=ledger_entry.paid_balance_after,
+        bonus_balance_after=ledger_entry.bonus_balance_after,
+        delta=ledger_entry.delta,
+        paid_delta=ledger_entry.paid_delta,
+        bonus_delta=ledger_entry.bonus_delta,
+    )
+    return PreparedTurnContext(
+        session=game_session,
+        player_actor=player_actor,
+        guide_npc=guide_npc,
+        location_id=player_actor.current_location_id or current_location.id,
+        turn_id=turn_id,
         debit=debit,
         input_mode=input_mode,
     )

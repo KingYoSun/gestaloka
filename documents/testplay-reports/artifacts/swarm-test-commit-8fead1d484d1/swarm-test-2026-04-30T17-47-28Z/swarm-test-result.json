@@ -1,0 +1,618 @@
+{
+  "run_id": "2026-04-30T17-47-28Z",
+  "created_at": "2026-04-30T17:51:53.140Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "ai-researcher",
+      "label": "AI 研究者",
+      "archetype": "engineer",
+      "gender": "female",
+      "age": 45,
+      "occupation": "AI researcher",
+      "hobbies": [
+        "agent systems",
+        "procedural narrative",
+        "paper reading"
+      ],
+      "personality": [
+        "probing",
+        "theory-minded",
+        "skeptical"
+      ],
+      "gameMotivation": "Wants emergent narrative to remain attributable and robust.",
+      "playStyle": "Tests whether generated explanations match stored state.",
+      "narrativePreference": "Transparent cause-effect with minimal hallucination.",
+      "frictionSensitivity": "Low tolerance for ungrounded claims.",
+      "evaluationLens": "Does generation respect canonical state?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "speedrunner",
+      "label": "効率走者",
+      "archetype": "optimizer",
+      "gender": "unspecified",
+      "age": 22,
+      "occupation": "part-time worker",
+      "hobbies": [
+        "speedrunning",
+        "route notes",
+        "timer comparisons"
+      ],
+      "personality": [
+        "impatient",
+        "experimental",
+        "optimization-heavy"
+      ],
+      "gameMotivation": "Wants efficient paths to remain legible even in a dynamic world.",
+      "playStyle": "Repeats progress actions and checks where time or resources are lost.",
+      "narrativePreference": "Short feedback with actionable state changes.",
+      "frictionSensitivity": "Very low tolerance for slow or opaque resolution.",
+      "evaluationLens": "Does dynamic narrative preserve actionable progress?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "ai-researcher",
+      "displayName": "Sena JP Engineer",
+      "gender": "female",
+      "background": "行動する前に、公開された徴候、現地の証言、出来事の順序を照合する静かな現地監査者。",
+      "freeText": "目に見える変化に追跡可能な原因があるかを探し、共有された場所の連続性を試すために精密な質問を投げる。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "speedrunner",
+      "displayName": "Kaito JP Optimizer",
+      "gender": "unspecified",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito JP Mmo",
+      "gender": "male",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    }
+  ],
+  "persona_decision_log": [
+    {
+      "personaId": "ai-researcher",
+      "scenario": "shared-impact",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 は「Does generation respect canonical state?」という観点から、共有記憶になり得る行動を重視する。",
+      "expectedWorldImpact": "局所的な支援行動が、後続の噂、関係性、world beat として現れることを期待する。"
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 は「Tests whether generated explanations match stored state.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+      "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+    },
+    {
+      "personaId": "speedrunner",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "効率走者 は「Repeats progress actions and checks where time or resources are lost.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+      "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+    },
+    {
+      "personaId": "raid-planner",
+      "scenario": "world-event",
+      "inputMode": "free_text",
+      "inputText": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+      "reason": "MMO レイド攻略者 は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
+      "expectedWorldImpact": "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。"
+    }
+  ],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "rating": "good",
+      "observedImpact": "The helping action is present in shared-world context.",
+      "evidence": [
+        "8465f5df-7c02-4d6d-a2c4-85ad7331b90c",
+        "ae3e3a81-2270-47cc-acfd-fee3b207d6ff",
+        "session state / ops history / memory scan"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "rating": "good",
+      "observedImpact": "Concurrent pressure produced a recorded resource constraint.",
+      "evidence": [
+        "e5c36ab0-697d-475b-ad77-0acadf4c0296",
+        "event payload resource_constraints scan"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "good",
+      "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint.",
+      "evidence": [
+        "eebfd661-42e3-4ea0-b673-e428f131804a",
+        "session state broadcast constraint scan"
+      ]
+    }
+  ],
+  "experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "ux_clarity": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "待機状態の表示が詳細で経過が追いやすいが、69秒・103秒の待機はやや長い。操作開始や選択肢の理解には支障なし。"
+      },
+      "gameplay_fun": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "動機に沿った行動で信頼・登録修正という意味のある結果が得られ、進行感がある。"
+      },
+      "story_progression": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "行動の因果が明瞭で、sceneやconsequenceの連続性が保たれている。他プレイヤーの痕跡は間接的だが矛盾なし。"
+      },
+      "overall": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "全体として堅実な体験。待機時間の短縮があればより良い。"
+      },
+      "suggestions": [
+        "待機時間を短縮するか、より細かい段階表示を追加する。"
+      ],
+      "warnings": [],
+      "judge": {
+        "status": "ok",
+        "modelId": "deepseek-v4-flash",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "desktop",
+          "width": 1280,
+          "height": 900
+        },
+        "decisions": [
+          {
+            "personaId": "ai-researcher",
+            "scenario": "shared-impact",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "AI 研究者 は「Does generation respect canonical state?」という観点から、共有記憶になり得る行動を重視する。",
+            "expectedWorldImpact": "局所的な支援行動が、後続の噂、関係性、world beat として現れることを期待する。"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "AI 研究者 は「Tests whether generated explanations match stored state.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+            "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "ai-researcher",
+            "scenario": "shared-impact",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-04-30T17:47:56.394Z",
+            "completedAt": "2026-04-30T17:49:06.083Z",
+            "durationMs": 69689,
+            "eventId": "8465f5df-7c02-4d6d-a2c4-85ad7331b90c",
+            "turnId": "46aa9473-2494-4e55-a24a-e0eacca4cb1d",
+            "waitStatusSamples": [
+              "進行中 / memory council started / 1s",
+              "進行中 / memory council started / 3s",
+              "進行中 / memory council heartbeat / 5s",
+              "進行中 / memory council heartbeat / 7s",
+              "進行中 / npc council started / 9s",
+              "進行中 / npc council started / 11s",
+              "進行中 / npc council heartbeat / 13s",
+              "進行中 / npc council heartbeat / 15s",
+              "進行中 / world progress started / 17s",
+              "進行中 / world progress started / 19s",
+              "進行中 / world progress heartbeat / 21s",
+              "進行中 / world progress heartbeat / 23s",
+              "進行中 / world progress heartbeat / 25s",
+              "進行中 / world progress heartbeat / 27s",
+              "進行中 / world progress heartbeat / 29s",
+              "進行中 / world progress heartbeat / 31s"
+            ],
+            "lastWaitStatus": "進行中 / narrative heartbeat / 66s",
+            "maxWaitElapsedSeconds": 69,
+            "latestNarrative": "門のコンコースで、一人の旅人が登録証の表示を指でなぞっていた。彼女の到着日付が実際の記録と一日ずれている——おそらく時差申告の際の単純な誤記だ。セナはその違いを指摘し、旅人が修正申請を门衛に提出するのを手伝った。職員は素早く確認し、レジストリを更新した。",
+            "latestReaction": "門衛リッカは、自分の記録台の陰からそのやりとりを見ていた。彼女は一歩前に出て、軽くうなずいた。「レジストリの修正は小さなことですが、公共の信頼にとっては正確さが重要です。あなたがその違いに気づいたのは良い観察眼です。第一安定化要請の最初のステップとしては十分でしょう。」彼女は微笑みを浮かべ、東の昇降塔通路を指さした。「そちらへ進む準備ができたら、道は開いています。何を最初に検証したいのか、教えていただけますか？」",
+            "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+            "recentSceneHistory": [
+              "Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.provisionalGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: started"
+            ],
+            "choiceLabels": [
+              "Gate Steward Rikkaとの対話を続け、門の慣行をさらに尋ねる場を保ち、門の規則や記録の扱いについて詳しく尋ねる。最初の安定化リクエストをさらに進めるため、もう一人の旅人を支援する二つ目の証言や記録の確認を行い、リクエストを完了に近づける。Lift Tower Concourseへ向かい、記録と視線の重なりを確かめる場を変えながら競合する証言や回廊の記録を探索する。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-ai-researcher-shared-impact-after-turn.png"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-04-30T17:49:06.106Z",
+            "completedAt": "2026-04-30T17:50:49.231Z",
+            "durationMs": 103125,
+            "eventId": "ae3e3a81-2270-47cc-acfd-fee3b207d6ff",
+            "turnId": "13d0193e-4868-40a6-ad9e-804189fc697a",
+            "waitStatusSamples": [
+              "進行中 / memory council started / 1s",
+              "進行中 / memory council started / 3s",
+              "進行中 / memory council heartbeat / 5s",
+              "進行中 / memory council heartbeat / 7s",
+              "進行中 / npc council started / 9s",
+              "進行中 / npc council started / 11s",
+              "進行中 / npc council heartbeat / 13s",
+              "進行中 / npc council heartbeat / 15s",
+              "進行中 / world progress started / 17s",
+              "進行中 / world progress started / 19s",
+              "進行中 / world progress heartbeat / 21s",
+              "進行中 / world progress heartbeat / 23s",
+              "進行中 / world progress heartbeat / 25s",
+              "進行中 / world progress heartbeat / 27s",
+              "進行中 / world progress heartbeat / 29s",
+              "進行中 / world progress heartbeat / 31s"
+            ],
+            "lastWaitStatus": "進行中 / narrative heartbeat / 100s",
+            "maxWaitElapsedSeconds": 103,
+            "latestNarrative": "リッカは門柱に手を当てたまま、あなたの言葉にうなずいた。「登録の修正、確かに覚えている。あなたの対応は、門にとって有益だった。」\n\n彼女は視線をリフトタワーの方へ向ける。「二つ目の証言を求めるなら、あそこへ行くといい。コンコースには公的な経路の記録と証言台帳が保管されている。最新のものなら、確かな裏付けになるはずだ。」\n\n少し間を置いて、彼女は付け加えた。「ただし、記録が認定済みであることを確認してほしい。形式が整っていなければ、管理者はそれを認めない。…だが、あなたならその辺りは理解しているだろう。」\n\n門の方を振り返り、最後に一言。「何かあれば、ここにいる。」",
+            "latestReaction": "リッカは警戒を緩めず、但し既に見せた信頼を維持している。第二の確認を求める意図を認め、リフトタワーコンコースの公的台帳を具体的に示した。記録の正当性について注意を促すが、それは不信ではなく、手続き上の助言である。最後の言葉は、あなたの自主的な判断を尊重しつつ、支援の用意があることを伝えている。",
+            "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+            "recentSceneHistory": [
+              "Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The scene leaves behind a little more trust than it had before.The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedinventory.changedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.provisionalGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeat"
+            ],
+            "choiceLabels": [
+              "門の管理者リッカとの対話を続け、門の慣行や記録の認定手続きをさらに尋ねるリッカとの会話を続け、門の規則や記録の扱いについて詳しく尋ねる。リフトタワーコンコースへ向かい、公的な証言台帳で二つ目の記録を確認するリフトタワーコンコースへ移動し、安定化リクエストを完了させるための証言を探す。新たな到着者の記録を確認し、門の風聞を探る最近の到着者や門の記録修正に関する噂を調査し、追加の文脈を得る。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-ai-researcher-resource-conflict-after-turn.png"
+          }
+        ]
+      }
+    },
+    {
+      "personaId": "speedrunner",
+      "ux_clarity": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "待機表示はあるが、126秒という長時間は効率重視のペルソナには不満。操作自体は明確。"
+      },
+      "gameplay_fun": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "安定化申請完了という進捗は得られたが、待機時間が長くストレスが蓄積する。"
+      },
+      "story_progression": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "行動がクエスト完了に直結し、結果も明確。世界の変化が追跡可能。"
+      },
+      "overall": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "目標達成はできたが、待機時間が楽しさを損ねている。効率化が必要。"
+      },
+      "suggestions": [
+        "同時進行の競合解決を非同期化し、プレイヤーをブロックしない仕組みを検討する。"
+      ],
+      "warnings": [
+        "126秒の待機は効率走者の許容範囲を超える可能性が高い。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "deepseek-v4-flash",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "desktop",
+          "width": 1280,
+          "height": 900
+        },
+        "decisions": [
+          {
+            "personaId": "speedrunner",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "効率走者 は「Repeats progress actions and checks where time or resources are lost.」というプレイスタイルで、進行経路と共有リソース競合を検証する。",
+            "expectedWorldImpact": "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "speedrunner",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-04-30T17:49:06.108Z",
+            "completedAt": "2026-04-30T17:51:12.830Z",
+            "durationMs": 126722,
+            "eventId": "e5c36ab0-697d-475b-ad77-0acadf4c0296",
+            "turnId": "f0f598e7-c91d-4345-90e7-fa7b657308f4",
+            "waitStatusSamples": [
+              "進行中 / memory council started / 1s",
+              "進行中 / memory council started / 3s",
+              "進行中 / memory council heartbeat / 5s",
+              "進行中 / memory council heartbeat / 7s",
+              "進行中 / memory council heartbeat / 9s",
+              "進行中 / memory council heartbeat / 11s",
+              "進行中 / memory council heartbeat / 13s",
+              "進行中 / npc council started / 15s",
+              "進行中 / npc council started / 17s",
+              "進行中 / npc council started / 19s",
+              "進行中 / npc council heartbeat / 21s",
+              "進行中 / npc council heartbeat / 23s",
+              "進行中 / npc council heartbeat / 25s",
+              "進行中 / world progress started / 27s",
+              "進行中 / world progress started / 29s",
+              "進行中 / world progress started / 31s"
+            ],
+            "lastWaitStatus": "進行中 / narrative heartbeat / 124s",
+            "maxWaitElapsedSeconds": 126,
+            "latestNarrative": "Nexus Gateに到着したばかりの旅人が、入域記録の確認方法がわからず困っている。あなたが手順を説明し、書き類を整えるのを手伝う。その様子を見ていたゲート・スチュワード・リッカが近づき、うなずく。「二回目の支援だな。安定化申請はこれで完了する。レジストリに記録を残してくれ。」彼女はコンソールを指し示す。記録を入力すると、システムが承認の応答を返す。Nexus Gateの空気がわずかに和らぐ。",
+            "latestReaction": "「これで二回目の支援記録が確定した。安定化申請は受理された。Nexus Gateの信頼は少し前進した。よくやった。」",
+            "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+            "recentSceneHistory": [
+              "Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationevent receivedworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: startedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeat"
+            ],
+            "choiceLabels": [
+              "登録端末の前で一呼吸置き、周囲の様子を見守る急がず、ゲートの空気を読む。次の行動への準備を整える。登録記録を証人として正式に提出し、安定化申請を進めるリッカが示した手続きを完了させる。安定化申請の次の段階へ移行する。Lift Tower Concourseへ移動し、古い記録と視線の重なりを確かめるゲートからタワーコンコースへ向かい、別の手がかりを探す。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-speedrunner-resource-conflict-after-turn.png"
+          }
+        ]
+      }
+    },
+    {
+      "personaId": "raid-planner",
+      "ux_clarity": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "自由テキスト入力が即座に反映され、待機も短い。行動が「確認」として扱われる点は初見では分かりにくい。"
+      },
+      "gameplay_fun": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "世界状態の確認は動機に合うが、能動的な進行がなく退屈に感じる可能性がある。"
+      },
+      "story_progression": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "他プレイヤーの痕跡を読めたが、行動自体が状態変更を伴わないため連続性が弱い。"
+      },
+      "overall": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "情報収集としては機能したが、より豊かな応答や進展が期待される。"
+      },
+      "suggestions": [
+        "確認行動に対して、より詳細な共有世界の要約や差分を表示する。"
+      ],
+      "warnings": [],
+      "judge": {
+        "status": "ok",
+        "modelId": "deepseek-v4-flash",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "mobile",
+          "width": 375,
+          "height": 812
+        },
+        "decisions": [
+          {
+            "personaId": "raid-planner",
+            "scenario": "world-event",
+            "inputMode": "free_text",
+            "inputText": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+            "reason": "MMO レイド攻略者 は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
+            "expectedWorldImpact": "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "raid-planner",
+            "scenario": "world-event",
+            "inputMode": "free_text",
+            "action": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+            "startedAt": "2026-04-30T17:51:26.915Z",
+            "completedAt": "2026-04-30T17:51:32.396Z",
+            "durationMs": 5481,
+            "eventId": "eebfd661-42e3-4ea0-b673-e428f131804a",
+            "turnId": "32da0520-7a20-4859-9da8-6487cfa5f490",
+            "waitStatusSamples": [
+              "進行中 / 解決中 / 1s",
+              "進行中 / 解決中 / 3s"
+            ],
+            "lastWaitStatus": "進行中 / 解決中 / 3s",
+            "maxWaitElapsedSeconds": 5,
+            "latestNarrative": "Kaito JP MmoはNexus Gateで、門の報告と旅人たちの発言を照合する。これは新しい行動ではなく、共有世界に残っている記録の確認として扱われる。",
+            "latestReaction": "記録を確認すると、直近の変化は共有された出来事として残っています。観測できる手がかりは「The scene leaves behind a little more trust than it had before.」です。必要なら、この痕跡を踏まえて次の行動を選べます。",
+            "latestConsequence": "The player reads the shared-world record without changing canonical state.",
+            "recentSceneHistory": [
+              "Nexus Gate is still establishing who can be trusted with the current request. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The player reads the shared-world record without changing canonical state.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent receivedworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationworld_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationevent receivedturn.progressGESTALOKA Reference / Nexus Foundationstatus: completedturn.progressGESTALOKA Reference / Nexus Foundationstatus: heartbeatturn.acceptedGESTALOKA Reference / Nexus Foundationsession_id: 3a5e24e3-dab6-4b71-92fb-622cff3522dasession.connectedGESTALOKA Reference / Nexus Foundationsession_id: 3a5e24e3-dab6-4b71-92fb-622cff3522da"
+            ],
+            "choiceLabels": [
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-raid-planner-world-event-after-turn.png"
+          }
+        ]
+      }
+    }
+  ],
+  "hard_checks": {
+    "persona_profile_separation": true,
+    "runtime_privacy_leak_free": true,
+    "all_turns_return_event_ids": true,
+    "all_turn_events_same_world": true,
+    "canonical_sequence_unique": true,
+    "shared_impact_visible": true,
+    "resource_conflict_recorded": true,
+    "world_broadcast_or_constraint_visible": true
+  },
+  "runtime": [
+    {
+      "personaId": "ai-researcher",
+      "actorId": "d6d8d99e-ef7a-4a2d-a83f-52baa7b83b56",
+      "sessionId": "a76f369b-64d5-47dc-8192-020555b6352b",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "8465f5df-7c02-4d6d-a2c4-85ad7331b90c",
+        "ae3e3a81-2270-47cc-acfd-fee3b207d6ff"
+      ],
+      "turnIds": [
+        "46aa9473-2494-4e55-a24a-e0eacca4cb1d",
+        "13d0193e-4868-40a6-ad9e-804189fc697a"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "actorId": "6102da0e-3214-44a8-8b23-2260dee70399",
+      "sessionId": "c38bb258-04b4-47be-bfc9-ca9f9468c023",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "e5c36ab0-697d-475b-ad77-0acadf4c0296"
+      ],
+      "turnIds": [
+        "f0f598e7-c91d-4345-90e7-fa7b657308f4"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "1f3ea048-ddf7-4d80-a351-f68c7a321c43",
+      "sessionId": "3a5e24e3-dab6-4b71-92fb-622cff3522da",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "eebfd661-42e3-4ea0-b673-e428f131804a"
+      ],
+      "turnIds": [
+        "32da0520-7a20-4859-9da8-6487cfa5f490"
+      ]
+    }
+  ],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-speedrunner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-raid-planner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-ai-researcher-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-ai-researcher-shared-impact-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-ai-researcher-resource-conflict-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-speedrunner-resource-conflict-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-8fead1d484d1/swarm-test-2026-04-30T17-47-28Z/attempt-1-raid-planner-world-event-after-turn.png"
+  ]
+}

@@ -26,6 +26,7 @@ from app.modules.identity.oidc import UserIdentity
 from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput, ConsequenceThreadSnapshot
 from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
+from tests.backend.turn_async_helpers import post_turn_and_wait
 from app.modules.world_state.service import ensure_starter_faction, ensure_world
 
 
@@ -162,13 +163,12 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
-    turn_payload = turn_response.json()
 
     with container.session_factory() as db:
         axis = db.execute(
@@ -294,13 +294,12 @@ def test_shared_consequence_projection_does_not_cross_worlds(client, container, 
             select(func.count(ProjectionRecord.id)).where(ProjectionRecord.world_id == "alternate_reference_world")
         ).scalar_one()
 
-    turn_response = client.post(
-        "/turns",
-        json={"session_id": reference_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=auth_headers,
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=reference_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert turn_response.status_code == 200
-    turn_payload = turn_response.json()
     assert turn_payload["shared_action_tag"] == "help"
 
     with container.session_factory() as db:
@@ -358,13 +357,13 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
     assert player_a_session.status_code == 200
     player_a_payload = player_a_session.json()
 
-    player_a_turn = client.post(
-        "/turns",
-        json={"session_id": player_a_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
-        headers=headers_a,
+    _, player_a_turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=player_a_payload["session_id"],
+        auth_headers=headers_a,
+        token="player-a",
+        payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert player_a_turn.status_code == 200
-    player_a_turn_payload = player_a_turn.json()
     assert player_a_turn_payload["shared_action_tag"] == "help"
 
     player_b_session = client.post(
@@ -391,19 +390,19 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
     assert shared_context["location_public_state"]["public_state"]["civic_trust"] == 2
     assert "user_sub" not in str(shared_context)
 
-    player_b_turn = client.post(
-        "/turns",
-        json={
-            "session_id": player_b_payload["session_id"],
+    _, player_b_turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=player_b_payload["session_id"],
+        auth_headers=headers_b,
+        token="player-b",
+        payload={
             "input_mode": "free_text",
             "input_text": "Gate stewards repeat who helped clarify the arrival registry.",
         },
-        headers=headers_b,
     )
-    assert player_b_turn.status_code == 200
 
     with container.session_factory() as db:
-        resolved_turn = db.execute(select(Turn).where(Turn.id == player_b_turn.json()["turn_id"])).scalar_one()
+        resolved_turn = db.execute(select(Turn).where(Turn.id == player_b_turn_payload["turn_id"])).scalar_one()
         retrieval_trace = resolved_turn.resolved_output["retrieval_trace"]
         assert retrieval_trace["status"] == "ready"
         retrieved_memories = [
@@ -538,16 +537,15 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
             )
         ).scalar_one() == sp_count_before
 
-    prompt_turn = client.post(
-        "/turns",
-        json={
-            "session_id": session_payload["session_id"],
+    post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={
             "input_mode": "free_text",
             "input_text": "Nexus StabilizerとしてNexus Gateの記録を確かめる",
         },
-        headers=auth_headers,
     )
-    assert prompt_turn.status_code == 200
     generation_inputs = [
         record.get("input") or {}
         for record in container.observability_service._langfuse_client.records
