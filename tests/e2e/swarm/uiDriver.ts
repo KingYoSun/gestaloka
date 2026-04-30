@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Response } from "@playwright/test";
 
 import type { DerivedPlayerProfile } from "./playerProfiles";
 import type { SwarmDecision } from "./playbook";
@@ -92,11 +92,9 @@ export async function executeTurnViaUi(
   }, 2_000);
 
   try {
+    const turnTimeoutMs = envInt("SWARM_TURN_TIMEOUT_MS", 600_000);
     const [response] = await Promise.all([
-      page.waitForResponse(
-        (candidate) => candidate.request().method() === "POST" && new URL(candidate.url()).pathname === "/turns",
-        { timeout: envInt("SWARM_TURN_TIMEOUT_MS", 600_000) },
-      ),
+      waitForTurnResponseOrNetworkFailure(page, persona.id, turnTimeoutMs),
       submitDecision(page, decision),
     ]);
     const responseText = await response.text();
@@ -133,6 +131,36 @@ export async function executeTurnViaUi(
   } finally {
     clearInterval(sampleTimer);
   }
+}
+
+async function waitForTurnResponseOrNetworkFailure(
+  page: Page,
+  personaId: string,
+  timeout: number,
+): Promise<Response> {
+  const isTurnPost = (url: string, method: string): boolean => {
+    try {
+      return method === "POST" && new URL(url).pathname === "/turns";
+    } catch {
+      return false;
+    }
+  };
+  const responsePromise = page.waitForResponse(
+    (candidate) => isTurnPost(candidate.url(), candidate.request().method()),
+    { timeout },
+  );
+  const requestFailurePromise = page
+    .waitForEvent("requestfailed", {
+      predicate: (request) => isTurnPost(request.url(), request.method()),
+      timeout,
+    })
+    .then((request): never => {
+      const failure = request.failure();
+      throw new Error(
+        `UI turn request failed for ${personaId}: ${failure?.errorText ?? "unknown network failure"}`,
+      );
+    });
+  return Promise.race([responsePromise, requestFailurePromise]);
 }
 
 async function submitDecision(page: Page, decision: SwarmDecision): Promise<void> {

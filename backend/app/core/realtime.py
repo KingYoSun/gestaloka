@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
+import logging
 from typing import Any, Mapping
 
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
+
+
+logger = logging.getLogger(__name__)
 
 
 REQUIRED_WORLD_CONTEXT_KEYS = {
@@ -39,10 +44,31 @@ class RealtimeHub:
         if not connections and session_id in self._connections:
             del self._connections[session_id]
 
-    async def emit(self, session_id: str, event: str, data: dict[str, Any]) -> None:
+    async def emit(self, session_id: str, event: str, data: dict[str, Any]) -> "RealtimeEmitResult":
         payload = {"event": event, "data": data}
+        attempted = 0
+        delivered = 0
+        dropped = 0
         for websocket in list(self._connections.get(session_id, [])):
-            await websocket.send_json(payload)
+            attempted += 1
+            try:
+                await websocket.send_json(payload)
+                delivered += 1
+            except Exception as exc:
+                if not is_stale_websocket_error(exc):
+                    raise
+                dropped += 1
+                self.disconnect(session_id, websocket)
+                logger.warning(
+                    "realtime stale websocket dropped",
+                    extra={
+                        "session_id": session_id,
+                        "event": event,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
+        return RealtimeEmitResult(attempted=attempted, delivered=delivered, dropped=dropped)
 
     async def emit_with_world_context(
         self,
@@ -50,8 +76,31 @@ class RealtimeHub:
         event: str,
         data: Mapping[str, Any],
         world_context: Mapping[str, Any],
-    ) -> None:
-        await self.emit(session_id, event, with_world_context(data, world_context))
+    ) -> "RealtimeEmitResult":
+        return await self.emit(session_id, event, with_world_context(data, world_context))
+
+    def connection_count(self, session_id: str) -> int:
+        return len(self._connections.get(session_id, []))
+
+
+@dataclass(frozen=True)
+class RealtimeEmitResult:
+    attempted: int
+    delivered: int
+    dropped: int
+
+
+def is_stale_websocket_error(exc: Exception) -> bool:
+    if isinstance(exc, WebSocketDisconnect):
+        return True
+    if type(exc).__name__ == "ClientDisconnected":
+        return True
+    if not isinstance(exc, RuntimeError):
+        return False
+    message = str(exc)
+    return "websocket.send" in message and (
+        "websocket.close" in message or "response already completed" in message
+    )
 
 
 realtime_hub = RealtimeHub()
