@@ -32,6 +32,11 @@ export type SwarmReport = {
     turnIds: string[];
   }>;
   artifacts: string[];
+  failure_diagnostics?: {
+    stage: string;
+    message: string;
+    stack?: string;
+  };
 };
 
 export function buildRunId(): string {
@@ -754,6 +759,16 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
     "",
     ...Object.entries(report.hard_checks).map(([key, value]) => `- ${ja(key)}: ${value ? "合格" : "失敗"}`),
     "",
+    ...(report.failure_diagnostics
+      ? [
+          "## 失敗診断",
+          "",
+          `- stage: ${report.failure_diagnostics.stage}`,
+          `- message: ${report.failure_diagnostics.message}`,
+          ...(report.failure_diagnostics.stack ? [`- stack: ${report.failure_diagnostics.stack.split("\n")[0]}`] : []),
+          "",
+        ]
+      : []),
     "## ユーザーペルソナ",
     "",
     ...report.user_personas.map(

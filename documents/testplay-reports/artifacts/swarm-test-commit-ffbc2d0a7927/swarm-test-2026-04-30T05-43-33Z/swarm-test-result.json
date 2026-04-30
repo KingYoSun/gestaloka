@@ -1,0 +1,217 @@
+{
+  "run_id": "2026-04-30T05-43-33Z",
+  "created_at": "2026-04-30T05:49:56.372Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "novel-editor",
+      "label": "小説愛好家の編集者",
+      "archetype": "story",
+      "gender": "female",
+      "age": 34,
+      "occupation": "editor",
+      "hobbies": [
+        "novels",
+        "tabletop RPGs",
+        "character analysis"
+      ],
+      "personality": [
+        "empathetic",
+        "observant",
+        "values foreshadowing and afterglow"
+      ],
+      "gameMotivation": "Wants actions to become rumor, memory, and relationship texture for other players.",
+      "playStyle": "Helps local figures and chooses emotionally legible stabilizing actions.",
+      "narrativePreference": "Lyrical, relationship-aware prose with clear echoes of prior acts.",
+      "frictionSensitivity": "Accepts slower play if the story remembers why it happened.",
+      "evaluationLens": "Can I feel that my action became part of someone else's story?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "causality-engineer",
+      "label": "因果検証エンジニア",
+      "archetype": "engineer",
+      "gender": "unspecified",
+      "age": 41,
+      "occupation": "software engineer",
+      "hobbies": [
+        "technical verification",
+        "simulation games",
+        "log analysis"
+      ],
+      "personality": [
+        "analytical",
+        "careful",
+        "causality-focused"
+      ],
+      "gameMotivation": "Wants to inspect whether world events and memories are causally consistent.",
+      "playStyle": "Observes first, then asks targeted follow-up questions about public consequences.",
+      "narrativePreference": "Clear cause and effect, visible continuity, and minimal contradiction.",
+      "frictionSensitivity": "High tolerance for complex systems, low tolerance for inconsistent records.",
+      "evaluationLens": "Do broadcasts, memories, timeline sequence, and constraints line up?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "novel-editor",
+      "displayName": "Mio NovelEditor",
+      "gender": "female",
+      "background": "A careful steward of gate records who notices emotional shifts between travelers, stewards, and local rumors.",
+      "freeText": "They prefer actions that leave visible traces: a remembered kindness, a restored relationship, or a clue another traveler can later recognize.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "lyrical",
+        "density": "ornate",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito RaidPlanner",
+      "gender": "male",
+      "background": "A route-minded operative who tracks objectives, bottlenecks, and which local figures can move the situation forward.",
+      "freeText": "They try to advance the current objective quickly, but expect the world to explain contention around a busy route, place, or guide.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "causality-engineer",
+      "displayName": "Sena CausalityEngineer",
+      "gender": "unspecified",
+      "background": "A quiet field auditor who compares public signs, local testimony, and the order of events before acting.",
+      "freeText": "They look for whether a visible change has a traceable cause, then ask precise questions that test continuity in the shared place.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    }
+  ],
+  "persona_decision_log": [],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "novel-editor",
+      "rating": "blocked",
+      "observedImpact": "swarm-test stopped before hard checks at observation_poll.",
+      "evidence": [
+        "shared-world observation hard checks should become visible\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\nCall Log:\n- Timeout 120000ms exceeded while waiting on the predicate"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "blocked",
+      "observedImpact": "swarm-test stopped before hard checks at observation_poll.",
+      "evidence": [
+        "shared-world observation hard checks should become visible\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\nCall Log:\n- Timeout 120000ms exceeded while waiting on the predicate"
+      ]
+    },
+    {
+      "personaId": "causality-engineer",
+      "rating": "blocked",
+      "observedImpact": "swarm-test stopped before hard checks at observation_poll.",
+      "evidence": [
+        "shared-world observation hard checks should become visible\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\nCall Log:\n- Timeout 120000ms exceeded while waiting on the predicate"
+      ]
+    }
+  ],
+  "hard_checks": {
+    "persona_profile_separation": false,
+    "runtime_privacy_leak_free": false,
+    "all_turns_return_event_ids": false,
+    "all_turn_events_same_world": false,
+    "canonical_sequence_unique": false,
+    "shared_impact_visible": false,
+    "resource_conflict_recorded": false,
+    "world_broadcast_or_constraint_visible": false
+  },
+  "runtime": [
+    {
+      "personaId": "novel-editor",
+      "actorId": "12870496-dfd4-4b81-898c-e3efa4cb123a",
+      "sessionId": "af87848a-d941-42c6-a6eb-2969dd4322d0",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [],
+      "turnIds": []
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "bebb0949-dc4d-42b8-ba8d-36945304e90b",
+      "sessionId": "b6d01bb9-db89-44e6-8170-29e993e58b23",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [],
+      "turnIds": []
+    },
+    {
+      "personaId": "causality-engineer",
+      "actorId": "cb0496ce-f44a-402f-bb3d-5a8406de0824",
+      "sessionId": "44d489bb-095a-471e-ad59-3d46ba05ff87",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [],
+      "turnIds": []
+    }
+  ],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-ffbc2d0a7927/swarm-test-2026-04-30T05-43-33Z/attempt-1-novel-editor-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-ffbc2d0a7927/swarm-test-2026-04-30T05-43-33Z/attempt-1-causality-engineer-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-ffbc2d0a7927/swarm-test-2026-04-30T05-43-33Z/attempt-1-raid-planner-authenticated.png"
+  ],
+  "failure_diagnostics": {
+    "stage": "observation_poll",
+    "message": "shared-world observation hard checks should become visible\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\nCall Log:\n- Timeout 120000ms exceeded while waiting on the predicate",
+    "stack": "Error: shared-world observation hard checks should become visible\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\nCall Log:\n- Timeout 120000ms exceeded while waiting on the predicate\n    at pollMatcher (/workspace/frontend/node_modules/playwright/lib/matchers/expect.js:293:11)\n    at waitForObservationSnapshot (/workspace/tests/e2e/swarm-test.spec.ts:333:3)\n    at /workspace/tests/e2e/swarm-test.spec.ts:132:25\n    at /workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:326:9\n    at /workspace/frontend/node_modules/playwright/lib/worker/testInfo.js:320:11\n    at TimeoutManager.withRunnable (/workspace/frontend/node_modules/playwright/lib/worker/timeoutManager.js:75:14)\n    at TestInfoImpl._runWithTimeout (/workspace/frontend/node_modules/playwright/lib/worker/testInfo.js:318:7)\n    at /workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:324:7\n    at WorkerMain._runTest (/workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:297:5)\n    at WorkerMain.runTestGroup (/workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:203:9)\n    at process.<anonymous> (/workspace/frontend/node_modules/playwright/lib/common/process.js:73:22)"
+  }
+}

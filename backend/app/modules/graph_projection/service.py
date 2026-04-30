@@ -139,9 +139,19 @@ class ProjectionService:
             )
             return GraphContextResolution(status="degraded", context=fallback)
 
-    def process_pending(self, db: Session) -> list[dict]:
+    def process_pending(
+        self,
+        db: Session,
+        *,
+        limit: int | None = None,
+        world_id: str | None = None,
+    ) -> list[dict]:
         started_at = self.observability_service.timer() if self.observability_service is not None else None
         stmt = select(OutboxEvent).where(OutboxEvent.status == "pending").order_by(OutboxEvent.created_at.asc())
+        if world_id is not None:
+            stmt = stmt.where(OutboxEvent.world_id == world_id)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         pending = list(db.execute(stmt).scalars())
         return self._process_outbox_events(db, pending, started_at=started_at)
 

@@ -9,11 +9,16 @@ export const apiBaseURL = process.env.SWARM_API_BASE_URL ?? "http://localhost:80
 export const keycloakTokenURL =
   process.env.SWARM_KEYCLOAK_TOKEN_URL ??
   "http://localhost:8080/realms/gestaloka/protocol/openid-connect/token";
+const turnTimeoutMs = envInt("SWARM_TURN_TIMEOUT_MS", 600_000);
+const apiTimeoutMs = envInt("SWARM_POLL_TIMEOUT_MS", 120_000);
+
+export type TokenProvider = () => Promise<string>;
+type TokenSource = string | TokenProvider;
 
 export type PlayerRuntime = {
   persona: AssignedSwarmUserPersona;
   profile: DerivedPlayerProfile;
-  accessToken: string;
+  accessToken: TokenSource;
   actorId: string;
   sessionId: string;
   locationId: string;
@@ -67,9 +72,13 @@ export async function getAccessToken(
   return payload.access_token;
 }
 
+export function createTokenProvider(request: APIRequestContext, user: SwarmAuthUser): TokenProvider {
+  return () => getAccessToken(request, user);
+}
+
 export async function ensurePlayerProfile(
   request: APIRequestContext,
-  token: string,
+  token: TokenSource,
   profile: DerivedPlayerProfile,
 ): Promise<ProfileResponse> {
   const existing = await apiGet<{ items: ProfileResponse[] }>(request, token, `/worlds/${worldId}/player-profiles`);
@@ -82,7 +91,7 @@ export async function ensurePlayerProfile(
 
 export async function createPlayerSession(
   request: APIRequestContext,
-  token: string,
+  token: TokenSource,
   actorId: string,
 ): Promise<SessionResponse> {
   return apiPost<SessionResponse>(request, token, "/sessions", {
@@ -93,7 +102,7 @@ export async function createPlayerSession(
 
 export async function resolveTurn(
   request: APIRequestContext,
-  token: string,
+  token: TokenSource,
   sessionId: string,
   decision: SwarmDecision,
 ): Promise<Record<string, unknown>> {
@@ -101,54 +110,69 @@ export async function resolveTurn(
     decision.inputMode === "choice"
       ? { session_id: sessionId, input_mode: "choice", choice_id: decision.choiceId }
       : { session_id: sessionId, input_mode: "free_text", input_text: decision.inputText };
-  return apiPost<Record<string, unknown>>(request, token, "/turns", payload, 180_000);
+  return apiPost<Record<string, unknown>>(request, token, "/turns", payload, turnTimeoutMs);
 }
 
 export async function getSessionState(
   request: APIRequestContext,
-  token: string,
+  token: TokenSource,
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   return apiGet<Record<string, unknown>>(request, token, `/sessions/${sessionId}/state`);
 }
 
-export async function getWorldEvents(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+export async function getWorldEvents(request: APIRequestContext, token: TokenSource): Promise<Record<string, unknown>> {
   return apiGet<Record<string, unknown>>(request, token, `/worlds/${worldId}/events`);
 }
 
-export async function getWorldMemories(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+export async function getWorldMemories(request: APIRequestContext, token: TokenSource): Promise<Record<string, unknown>> {
   return apiGet<Record<string, unknown>>(request, token, `/worlds/${worldId}/memories`);
 }
 
-export async function getOpsSharedWorld(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+export async function getOpsSharedWorld(request: APIRequestContext, token: TokenSource): Promise<Record<string, unknown>> {
   return apiGet<Record<string, unknown>>(request, token, `/ops/worlds/${worldId}/shared-world`);
 }
 
-export async function getOpsHistory(request: APIRequestContext, token: string): Promise<Record<string, unknown>> {
+export async function getOpsHistory(request: APIRequestContext, token: TokenSource): Promise<Record<string, unknown>> {
   return apiGet<Record<string, unknown>>(request, token, `/ops/worlds/${worldId}/history?limit=100`);
 }
 
-async function apiGet<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
+async function apiGet<T>(request: APIRequestContext, token: TokenSource, path: string): Promise<T> {
+  const resolvedToken = await resolveToken(token);
   const response = await request.get(`${apiBaseURL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    timeout: 60_000,
+    headers: { Authorization: `Bearer ${resolvedToken}` },
+    timeout: apiTimeoutMs,
   });
   return checkedJson<T>(response, path);
 }
 
 async function apiPost<T>(
   request: APIRequestContext,
-  token: string,
+  token: TokenSource,
   path: string,
   data: Record<string, unknown>,
-  timeout = 60_000,
+  timeout = apiTimeoutMs,
 ): Promise<T> {
+  const resolvedToken = await resolveToken(token);
   const response = await request.post(`${apiBaseURL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${resolvedToken}` },
     data,
     timeout,
   });
   return checkedJson<T>(response, path, path === "/turns" ? [422] : []);
+}
+
+async function resolveToken(token: TokenSource): Promise<string> {
+  return typeof token === "function" ? token() : token;
+}
+
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 async function checkedJson<T>(response: APIResponse, label: string, acceptedErrorStatuses: number[] = []): Promise<T> {

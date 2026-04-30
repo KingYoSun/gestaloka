@@ -172,6 +172,18 @@ def reserve_resources(
     held: list[WorldResourceLock] = []
     constraints: list[dict[str, Any]] = []
     for resource in resources:
+        if not _try_resource_advisory_lock(db, world_id=world_id, resource=resource):
+            constraints.append(
+                {
+                    "resource_type": resource.resource_type,
+                    "resource_id": resource.resource_id,
+                    "holder_turn_id": None,
+                    "holder_session_id": None,
+                    "constraint_summary": resource.summary,
+                    "expires_at": expires_at.isoformat(),
+                }
+            )
+            continue
         existing = _active_lock(db, world_id=world_id, resource=resource, now=now)
         if existing is not None and existing.holder_turn_id != turn_id:
             constraints.append(
@@ -203,6 +215,18 @@ def reserve_resources(
         db.flush()
         held.append(lock)
     return ResourceReservationResult(held=held, constraints=constraints)
+
+
+def _try_resource_advisory_lock(db: Session, *, world_id: str, resource: ResourceRef) -> bool:
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return True
+    lock_key = _resource_advisory_lock_key(world_id, resource)
+    return bool(db.execute(select(func.pg_try_advisory_xact_lock(lock_key))).scalar_one())
+
+
+def _resource_advisory_lock_key(world_id: str, resource: ResourceRef) -> int:
+    raw = f"{world_id}:{resource.resource_type}:{resource.resource_id}"
+    return int.from_bytes(hashlib.sha256(raw.encode("utf-8")).digest()[:8], "big", signed=True)
 
 
 def release_resources(db: Session, locks: list[WorldResourceLock]) -> None:

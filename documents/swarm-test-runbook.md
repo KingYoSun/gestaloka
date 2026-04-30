@@ -28,6 +28,9 @@ make swarm-test
 - `SWARM_RUN_GROUP_ID`: default は `git rev-parse --short=12 HEAD`。
 - `SWARM_RUN_GROUP_DIR`: default `documents/testplay-reports/artifacts/swarm-test-commit-<SWARM_RUN_GROUP_ID>`
 - `SWARM_ARTIFACT_DIR`: default `<SWARM_RUN_GROUP_DIR>/swarm-test-<SWARM_RUN_ID>`
+- `SWARM_TURN_TIMEOUT_MS`: default `600000`
+- `SWARM_TEST_TIMEOUT_MS`: default `1800000`
+- `SWARM_POLL_TIMEOUT_MS`: default `120000`
 
 ## 3. ユーザーペルソナとプレイヤープロフィール
 

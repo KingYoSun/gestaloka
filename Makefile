@@ -78,7 +78,7 @@ swarm-test:
 	echo "SWARM_RUN_GROUP_ID=$$run_group_id"; \
 	echo "SWARM_RUN_GROUP_DIR=$$run_group_dir"; \
 	echo "SWARM_ARTIFACT_DIR=$$artifact_dir"; \
-	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_RUN_GROUP_ID="$$run_group_id" SWARM_RUN_GROUP_DIR="$$run_group_dir" SWARM_ARTIFACT_DIR="$$artifact_dir" $(COMPOSE) run --rm frontend-e2e
+	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_RUN_GROUP_ID="$$run_group_id" SWARM_RUN_GROUP_DIR="$$run_group_dir" SWARM_ARTIFACT_DIR="$$artifact_dir" SWARM_PERSONA_IDS="$${SWARM_PERSONA_IDS:-}" SWARM_PERSONA_SEED="$${SWARM_PERSONA_SEED:-}" SWARM_TURN_TIMEOUT_MS="$${SWARM_TURN_TIMEOUT_MS:-600000}" SWARM_TEST_TIMEOUT_MS="$${SWARM_TEST_TIMEOUT_MS:-1800000}" SWARM_POLL_TIMEOUT_MS="$${SWARM_POLL_TIMEOUT_MS:-120000}" $(COMPOSE) run --rm frontend-e2e
 
 verify-v2:
 	$(MAKE) backend-test

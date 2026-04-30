@@ -482,7 +482,33 @@ def _select_participants(
         )
     )
     selected.extend(remaining[: max(0, 2 - len(selected))])
-    return selected[:2]
+    return _lock_participant_profiles(db, world_id=world_id, participants=selected[:2])
+
+
+def _lock_participant_profiles(
+    db: Session,
+    *,
+    world_id: str,
+    participants: list[_NPCParticipant],
+) -> list[_NPCParticipant]:
+    if not participants:
+        return []
+    actor_ids = sorted({participant.actor.id for participant in participants})
+    stmt = (
+        select(NPCProfile)
+        .where(NPCProfile.world_id == world_id, NPCProfile.actor_id.in_(actor_ids))
+        .order_by(NPCProfile.actor_id.asc())
+    )
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
+    locked_profiles = {profile.actor_id: profile for profile in db.execute(stmt).scalars()}
+    return [
+        _NPCParticipant(
+            actor=participant.actor,
+            profile=locked_profiles.get(participant.actor.id, participant.profile),
+        )
+        for participant in participants
+    ]
 
 
 def _fallback_memory_payload(
@@ -644,7 +670,7 @@ def _select_idle_participants(
             item.actor.id,
         )
     )
-    return rows[:2]
+    return _lock_participant_profiles(db, world_id=world_id, participants=rows[:2])
 
 
 def _select_idle_location_id(db: Session, *, world_id: str) -> str | None:

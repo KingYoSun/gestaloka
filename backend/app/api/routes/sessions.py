@@ -90,7 +90,7 @@ def create_session(
             world_name=requested_world_name,
             player_actor_id=player_actor_id,
         )
-        container.projection_service.process_pending(db)
+        container.projection_service.process_pending(db, limit=8, world_id=result.world.id)
         world_context = world_context_for_world(db, result.world.id)
     except WorldAvailabilityError as exc:
         db.rollback()

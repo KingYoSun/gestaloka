@@ -23,7 +23,7 @@ export function derivePlayerProfile(persona: SwarmUserPersona): DerivedPlayerPro
   const template = profileTemplate(persona);
   return {
     sourcePersonaId: persona.id,
-    displayName: `${template.namePrefix} ${stableNamePart(persona.id)}`,
+    displayName: `${template.namePrefix} ${stableNamePart(persona.archetype)}`,
     gender: persona.gender,
     background: template.background,
     freeText: template.freeText,

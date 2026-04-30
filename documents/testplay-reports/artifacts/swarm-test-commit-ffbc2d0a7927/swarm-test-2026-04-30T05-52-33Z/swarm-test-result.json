@@ -1,0 +1,263 @@
+{
+  "run_id": "2026-04-30T05-52-33Z",
+  "created_at": "2026-04-30T06:01:28.568Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "novel-editor",
+      "label": "小説愛好家の編集者",
+      "archetype": "story",
+      "gender": "female",
+      "age": 34,
+      "occupation": "editor",
+      "hobbies": [
+        "novels",
+        "tabletop RPGs",
+        "character analysis"
+      ],
+      "personality": [
+        "empathetic",
+        "observant",
+        "values foreshadowing and afterglow"
+      ],
+      "gameMotivation": "Wants actions to become rumor, memory, and relationship texture for other players.",
+      "playStyle": "Helps local figures and chooses emotionally legible stabilizing actions.",
+      "narrativePreference": "Lyrical, relationship-aware prose with clear echoes of prior acts.",
+      "frictionSensitivity": "Accepts slower play if the story remembers why it happened.",
+      "evaluationLens": "Can I feel that my action became part of someone else's story?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "causality-engineer",
+      "label": "因果検証エンジニア",
+      "archetype": "engineer",
+      "gender": "unspecified",
+      "age": 41,
+      "occupation": "software engineer",
+      "hobbies": [
+        "technical verification",
+        "simulation games",
+        "log analysis"
+      ],
+      "personality": [
+        "analytical",
+        "careful",
+        "causality-focused"
+      ],
+      "gameMotivation": "Wants to inspect whether world events and memories are causally consistent.",
+      "playStyle": "Observes first, then asks targeted follow-up questions about public consequences.",
+      "narrativePreference": "Clear cause and effect, visible continuity, and minimal contradiction.",
+      "frictionSensitivity": "High tolerance for complex systems, low tolerance for inconsistent records.",
+      "evaluationLens": "Do broadcasts, memories, timeline sequence, and constraints line up?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "novel-editor",
+      "displayName": "Mio Story",
+      "gender": "female",
+      "background": "A careful steward of gate records who notices emotional shifts between travelers, stewards, and local rumors.",
+      "freeText": "They prefer actions that leave visible traces: a remembered kindness, a restored relationship, or a clue another traveler can later recognize.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "lyrical",
+        "density": "ornate",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito Mmo",
+      "gender": "male",
+      "background": "A route-minded operative who tracks objectives, bottlenecks, and which local figures can move the situation forward.",
+      "freeText": "They try to advance the current objective quickly, but expect the world to explain contention around a busy route, place, or guide.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "causality-engineer",
+      "displayName": "Sena Engineer",
+      "gender": "unspecified",
+      "background": "A quiet field auditor who compares public signs, local testimony, and the order of events before acting.",
+      "freeText": "They look for whether a visible change has a traceable cause, then ask precise questions that test continuity in the shared place.",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "en",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    }
+  ],
+  "persona_decision_log": [
+    {
+      "personaId": "novel-editor",
+      "scenario": "shared-impact",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "小説愛好家の編集者 values actions that can become shared memory through this lens: Can I feel that my action became part of someone else's story?",
+      "expectedWorldImpact": "A local act of support should surface later as rumor, relationship, or world beat."
+    },
+    {
+      "personaId": "novel-editor",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "小説愛好家の編集者 pressure-tests progress paths and shared-resource contention through this play style: Helps local figures and chooses emotionally legible stabilizing actions.",
+      "expectedWorldImpact": "Concurrent progress should resolve fairly and record any resource constraint without blocking play."
+    },
+    {
+      "personaId": "raid-planner",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "MMO レイド攻略者 pressure-tests progress paths and shared-resource contention through this play style: Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "expectedWorldImpact": "Concurrent progress should resolve fairly and record any resource constraint without blocking play."
+    },
+    {
+      "personaId": "causality-engineer",
+      "scenario": "world-event",
+      "inputMode": "free_text",
+      "inputText": "I compare the current gate reports with what travelers are saying and ask which recent action changed the local situation.",
+      "reason": "因果検証エンジニア joins late and probes whether public world events have a traceable cause.",
+      "expectedWorldImpact": "The response should expose shared-world continuity through broadcast, memory, or recent history."
+    }
+  ],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "novel-editor",
+      "rating": "good",
+      "observedImpact": "The helping action is present in shared-world context.",
+      "evidence": [
+        "6fc6aa4f-0ca4-437e-8472-b456aace6234",
+        "f32b7fa4-09cd-4731-844c-4a9efef987c1",
+        "session state / ops history / memory scan"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "good",
+      "observedImpact": "Concurrent pressure produced a recorded resource constraint.",
+      "evidence": [
+        "1080a5a4-f67b-4474-b98f-6f7c52b7b9e5",
+        "event payload resource_constraints scan"
+      ]
+    },
+    {
+      "personaId": "causality-engineer",
+      "rating": "good",
+      "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint.",
+      "evidence": [
+        "78e3c0ce-1e2e-4735-892a-216aeb61599c",
+        "session state broadcast constraint scan"
+      ]
+    }
+  ],
+  "hard_checks": {
+    "persona_profile_separation": true,
+    "runtime_privacy_leak_free": true,
+    "all_turns_return_event_ids": true,
+    "all_turn_events_same_world": true,
+    "canonical_sequence_unique": true,
+    "shared_impact_visible": true,
+    "resource_conflict_recorded": true,
+    "world_broadcast_or_constraint_visible": true
+  },
+  "runtime": [
+    {
+      "personaId": "novel-editor",
+      "actorId": "3e93e1e3-8cd9-4118-8d4e-91a21fe432ea",
+      "sessionId": "8def3061-bec3-40af-be59-e78120dc2955",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "6fc6aa4f-0ca4-437e-8472-b456aace6234",
+        "f32b7fa4-09cd-4731-844c-4a9efef987c1"
+      ],
+      "turnIds": [
+        "b23b4297-f605-4834-93f6-c113ecf2c67d",
+        "d1b1e29f-f29b-4d88-be92-27240b6bd464"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "13e038be-3d7e-49f9-8e79-e21f5b71da55",
+      "sessionId": "7c414fc2-04e8-4377-ae20-c8467955a901",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "1080a5a4-f67b-4474-b98f-6f7c52b7b9e5"
+      ],
+      "turnIds": [
+        "d8ba77f8-ca9a-48bc-a78a-fd1cfb060d98"
+      ]
+    },
+    {
+      "personaId": "causality-engineer",
+      "actorId": "41210d29-975d-41fa-bd4a-54b3ff6025a9",
+      "sessionId": "86f40d38-54bd-4a36-b933-c63c13947209",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "78e3c0ce-1e2e-4735-892a-216aeb61599c"
+      ],
+      "turnIds": [
+        "9073aacb-b248-4f02-91de-66570edd9a8b"
+      ]
+    }
+  ],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-ffbc2d0a7927/swarm-test-2026-04-30T05-52-33Z/attempt-1-novel-editor-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-ffbc2d0a7927/swarm-test-2026-04-30T05-52-33Z/attempt-1-causality-engineer-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-ffbc2d0a7927/swarm-test-2026-04-30T05-52-33Z/attempt-1-raid-planner-authenticated.png"
+  ]
+}
