@@ -1,10 +1,21 @@
+import fs from "node:fs";
+import path from "node:path";
+
+export type SwarmPersonaArchetype = "story" | "mmo" | "engineer" | "explorer" | "social" | "optimizer";
+
+export type SwarmAuthUser = {
+  username: string;
+  password: string;
+};
+
+export type AssignedSwarmUserPersona = SwarmUserPersona & {
+  user: SwarmAuthUser;
+};
+
 export type SwarmUserPersona = {
-  id: "novel-lover" | "mmo-gamer" | "it-engineer";
+  id: string;
   label: string;
-  user: {
-    username: string;
-    password: string;
-  };
+  archetype: SwarmPersonaArchetype;
   gender: "female" | "male" | "other" | "unspecified";
   age: number;
   occupation: string;
@@ -17,55 +28,15 @@ export type SwarmUserPersona = {
   evaluationLens: string;
 };
 
-export const swarmUserPersonas: SwarmUserPersona[] = [
-  {
-    id: "novel-lover",
-    label: "Persona A: novel lover",
-    user: { username: "swarm-a", password: "swarm-password" },
-    gender: "female",
-    age: 34,
-    occupation: "editor",
-    hobbies: ["novels", "tabletop RPGs", "character analysis"],
-    personality: ["empathetic", "observant", "values foreshadowing and afterglow"],
-    gameMotivation: "Wants actions to become rumor, memory, and relationship texture for other players.",
-    playStyle: "Helps local figures and chooses emotionally legible stabilizing actions.",
-    narrativePreference: "Lyrical, relationship-aware prose with clear echoes of prior acts.",
-    frictionSensitivity: "Accepts slower play if the story remembers why it happened.",
-    evaluationLens: "Can I feel that my action became part of someone else's story?",
-  },
-  {
-    id: "mmo-gamer",
-    label: "Persona B: MMO gamer",
-    user: { username: "swarm-b", password: "swarm-password" },
-    gender: "male",
-    age: 29,
-    occupation: "sales",
-    hobbies: ["MMOs", "raid progression", "build optimization"],
-    personality: ["goal-oriented", "efficiency-minded", "enjoys competition"],
-    gameMotivation: "Wants visible progress, fair contention, and readable consequences under pressure.",
-    playStyle: "Pushes progress quickly, accepts conflict, and probes shared resources.",
-    narrativePreference: "Concise, actionable feedback that still explains world-state changes.",
-    frictionSensitivity: "Low tolerance for unexplained blocking or hidden state changes.",
-    evaluationLens: "Did contention around the same goal resolve fairly and keep play moving?",
-  },
-  {
-    id: "it-engineer",
-    label: "Persona C: IT engineer",
-    user: { username: "swarm-c", password: "swarm-password" },
-    gender: "unspecified",
-    age: 41,
-    occupation: "software engineer",
-    hobbies: ["technical verification", "simulation games", "log analysis"],
-    personality: ["analytical", "careful", "causality-focused"],
-    gameMotivation: "Wants to inspect whether world events and memories are causally consistent.",
-    playStyle: "Observes first, then asks targeted follow-up questions about public consequences.",
-    narrativePreference: "Clear cause and effect, visible continuity, and minimal contradiction.",
-    frictionSensitivity: "High tolerance for complex systems, low tolerance for inconsistent records.",
-    evaluationLens: "Do broadcasts, memories, timeline sequence, and constraints line up?",
-  },
+const authSlots: SwarmAuthUser[] = [
+  { username: "swarm-a", password: "swarm-password" },
+  { username: "swarm-b", password: "swarm-password" },
+  { username: "swarm-c", password: "swarm-password" },
 ];
 
-export function personaById(id: SwarmUserPersona["id"]): SwarmUserPersona {
+export const swarmUserPersonas: SwarmUserPersona[] = loadSwarmUserPersonas();
+
+export function personaById(id: string): SwarmUserPersona {
   const persona = swarmUserPersonas.find((item) => item.id === id);
   if (!persona) {
     throw new Error(`Unknown swarm persona: ${id}`);
@@ -73,3 +44,107 @@ export function personaById(id: SwarmUserPersona["id"]): SwarmUserPersona {
   return persona;
 }
 
+export function selectRandomPersonas(runId: string, count = 3): AssignedSwarmUserPersona[] {
+  const explicitIds = process.env.SWARM_PERSONA_IDS?.split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const selected = explicitIds?.length
+    ? explicitIds.map(personaById)
+    : seededShuffle(swarmUserPersonas, process.env.SWARM_PERSONA_SEED ?? runId).slice(0, count);
+
+  if (selected.length !== count) {
+    throw new Error(`swarm-test requires exactly ${count} personas, got ${selected.length}`);
+  }
+
+  return selected.map((persona, index) => ({ ...persona, user: authSlots[index] }));
+}
+
+function loadSwarmUserPersonas(): SwarmUserPersona[] {
+  const xmlPath = resolvePersonaXmlPath();
+  const xml = fs.readFileSync(xmlPath, "utf8");
+  const personas = [...xml.matchAll(/<persona\b([^>]*)>([\s\S]*?)<\/persona>/g)].map((match) =>
+    parsePersona(match[1], match[2]),
+  );
+  if (personas.length !== 30) {
+    throw new Error(`Expected 30 swarm personas in ${xmlPath}, got ${personas.length}`);
+  }
+  return personas;
+}
+
+function resolvePersonaXmlPath(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "../tests/e2e/swarm/userPersonas.xml"),
+    path.resolve(process.cwd(), "tests/e2e/swarm/userPersonas.xml"),
+  ];
+  const xmlPath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!xmlPath) {
+    throw new Error(`Unable to locate userPersonas.xml from cwd ${process.cwd()}`);
+  }
+  return xmlPath;
+}
+
+function parsePersona(attributeText: string, body: string): SwarmUserPersona {
+  const id = requiredAttribute(attributeText, "id");
+  return {
+    id,
+    label: requiredAttribute(attributeText, "label"),
+    archetype: requiredAttribute(attributeText, "archetype") as SwarmPersonaArchetype,
+    gender: requiredText(body, "gender") as SwarmUserPersona["gender"],
+    age: Number(requiredText(body, "age")),
+    occupation: requiredText(body, "occupation"),
+    hobbies: listText(body, "hobbies", "hobby"),
+    personality: listText(body, "personality", "trait"),
+    gameMotivation: requiredText(body, "gameMotivation"),
+    playStyle: requiredText(body, "playStyle"),
+    narrativePreference: requiredText(body, "narrativePreference"),
+    frictionSensitivity: requiredText(body, "frictionSensitivity"),
+    evaluationLens: requiredText(body, "evaluationLens"),
+  };
+}
+
+function requiredAttribute(attributeText: string, name: string): string {
+  const match = new RegExp(`${name}="([^"]+)"`).exec(attributeText);
+  if (!match) {
+    throw new Error(`Missing persona attribute: ${name}`);
+  }
+  return decodeXml(match[1]);
+}
+
+function requiredText(body: string, tag: string): string {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(body);
+  if (!match) {
+    throw new Error(`Missing persona field: ${tag}`);
+  }
+  return decodeXml(match[1].trim());
+}
+
+function listText(body: string, parentTag: string, itemTag: string): string[] {
+  const parent = requiredText(body, parentTag);
+  return [...parent.matchAll(new RegExp(`<${itemTag}>([\\s\\S]*?)</${itemTag}>`, "g"))].map((match) =>
+    decodeXml(match[1].trim()),
+  );
+}
+
+function seededShuffle<T>(items: T[], seed: string): T[] {
+  const result = [...items];
+  let state = hashSeed(seed);
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function hashSeed(seed: string): number {
+  return [...seed].reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) >>> 0, 0x811c9dc5);
+}
+
+function decodeXml(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}

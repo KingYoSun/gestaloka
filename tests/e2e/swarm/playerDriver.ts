@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type APIResponse, type Page } from "@pl
 
 import { profilePayloadForApi, type DerivedPlayerProfile } from "./playerProfiles";
 import type { SwarmDecision } from "./playbook";
-import type { SwarmUserPersona } from "./userPersonas";
+import type { AssignedSwarmUserPersona, SwarmAuthUser } from "./userPersonas";
 
 export const worldId = "gestaloka_reference";
 export const apiBaseURL = process.env.SWARM_API_BASE_URL ?? "http://localhost:8000";
@@ -11,7 +11,7 @@ export const keycloakTokenURL =
   "http://localhost:8080/realms/gestaloka/protocol/openid-connect/token";
 
 export type PlayerRuntime = {
-  persona: SwarmUserPersona;
+  persona: AssignedSwarmUserPersona;
   profile: DerivedPlayerProfile;
   accessToken: string;
   actorId: string;
@@ -30,7 +30,7 @@ type SessionResponse = {
   location_id: string;
 };
 
-export async function authenticatePage(page: Page, baseURL: string, persona: SwarmUserPersona): Promise<void> {
+export async function authenticatePage(page: Page, baseURL: string, persona: AssignedSwarmUserPersona): Promise<void> {
   await page.goto(baseURL);
   await page.getByTestId("sign-in").click();
   await page.locator("#username").fill(persona.user.username);
@@ -42,7 +42,7 @@ export async function authenticatePage(page: Page, baseURL: string, persona: Swa
 
 export async function getAccessToken(
   request: APIRequestContext,
-  user: SwarmUserPersona["user"],
+  user: SwarmAuthUser,
   clientId = "gestaloka-frontend",
 ): Promise<string> {
   const body = new URLSearchParams({

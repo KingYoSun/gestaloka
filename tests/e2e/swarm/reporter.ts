@@ -122,6 +122,7 @@ type RunGroupRun = {
 
 type RunStoryObservation = {
   personaId: string;
+  personaLabel: string;
   scenario: SwarmDecision["scenario"];
   action: string;
   expectedWorldImpact: string;
@@ -319,12 +320,20 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
 
 function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
   const runtimeByPersona = new Map(report.runtime.map((runtime) => [runtime.personaId, runtime]));
+  const personaById = new Map(report.user_personas.map((persona) => [persona.id, persona]));
   const evaluationByPersona = new Map(
     report.persona_experience_evaluation.map((evaluation) => [evaluation.personaId, evaluation]),
   );
-  const evaluationByScenario = new Map(
-    report.persona_experience_evaluation.map((evaluation) => [scenarioForEvaluationPersona(evaluation.personaId), evaluation]),
-  );
+  const evaluationByScenario = new Map<SwarmDecision["scenario"], PersonaEvaluation>();
+  for (const [scenario, evaluation] of [
+    ["shared-impact", report.persona_experience_evaluation[0]],
+    ["resource-conflict", report.persona_experience_evaluation[1]],
+    ["world-event", report.persona_experience_evaluation[2]],
+  ] as Array<[SwarmDecision["scenario"], PersonaEvaluation | undefined]>) {
+    if (evaluation) {
+      evaluationByScenario.set(scenario, evaluation);
+    }
+  }
   const personaDecisionCounts = new Map<string, number>();
   return report.persona_decision_log.map((decision) => {
     const decisionIndex = personaDecisionCounts.get(decision.personaId) ?? 0;
@@ -333,6 +342,7 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
     const evaluation = evaluationByScenario.get(decision.scenario) ?? evaluationByPersona.get(decision.personaId);
     return {
       personaId: decision.personaId,
+      personaLabel: personaById.get(decision.personaId)?.label ?? ja(decision.personaId),
       scenario: decision.scenario,
       action: decision.choiceId ?? decision.inputText ?? decision.inputMode,
       expectedWorldImpact: decision.expectedWorldImpact,
@@ -343,16 +353,6 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
       turnIds: runtime?.turnIds[decisionIndex] ? [runtime.turnIds[decisionIndex]] : [],
     };
   });
-}
-
-function scenarioForEvaluationPersona(personaId: string): SwarmDecision["scenario"] {
-  if (personaId === "mmo-gamer") {
-    return "resource-conflict";
-  }
-  if (personaId === "it-engineer") {
-    return "world-event";
-  }
-  return "shared-impact";
 }
 
 function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
@@ -366,7 +366,7 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
 }
 
 function storyObservationText(observation: RunStoryObservation): string {
-  return `${ja(observation.personaId)}: ${ja(observation.scenario)}で${ja(observation.action)}を実行`;
+  return `${observation.personaLabel}: ${ja(observation.scenario)}で${ja(observation.action)}を実行`;
 }
 
 async function findLatestRunResultFile(runPath: string): Promise<string | null> {
@@ -503,7 +503,7 @@ function runEventSummary(run: RunGroupRun): string {
     .filter((observation) => observation.eventIds.length > 0 || observation.turnIds.length > 0)
     .map(
       (observation) =>
-        `${ja(observation.personaId)} ${ja(observation.scenario)}: ${observation.eventIds.join(", ") || "eventなし"}`,
+        `${observation.personaLabel} ${ja(observation.scenario)}: ${observation.eventIds.join(", ") || "eventなし"}`,
     );
   return eventRows.join("<br>") || "なし";
 }
@@ -758,7 +758,7 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
     "",
     ...report.user_personas.map(
       (persona) =>
-        `- ${ja(persona.id)}: 性別=${ja(persona.gender)}, 年齢=${persona.age}, 職業=${ja(
+        `- ${persona.label}: 性別=${ja(persona.gender)}, 年齢=${persona.age}, 職業=${ja(
           persona.occupation,
         )}, 趣味=${jaList(persona.hobbies)}, 性格=${jaList(persona.personality)}, 評価観点=${ja(
           persona.evaluationLens,
@@ -769,7 +769,7 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
     "",
     ...report.derived_player_profiles.map(
       (profile) =>
-        `- ${ja(profile.sourcePersonaId)}: ${profile.displayName}; 性別=${ja(profile.gender)}; プレイ言語=${
+        `- ${profile.sourcePersonaId}: ${profile.displayName}; 性別=${ja(profile.gender)}; プレイ言語=${
           profile.playLanguage.preset
         }`,
     ),

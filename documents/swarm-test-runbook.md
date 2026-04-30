@@ -36,7 +36,13 @@ make swarm-test
 - user persona: 性別、年齢、職業、趣味、性格、動機、評価観点。
 - derived player profile: user persona を元に作ったゲーム内プロフィール。
 
-テスト runner は user persona を artifact に保存しますが、backend には derived player profile だけを送ります。
+user persona は `tests/e2e/swarm/userPersonas.xml` で管理します。現在は 30 persona を定義し、`swarm-test` 実行時に 3 persona を選びます。
+
+- default: `SWARM_RUN_ID` を seed にして 30 persona から 3 persona を deterministic random selection。
+- `SWARM_PERSONA_SEED`: selection seed を明示する。
+- `SWARM_PERSONA_IDS`: comma-separated persona ids を指定し、ランダム選出を上書きする。
+
+テスト runner は user persona を artifact に保存しますが、backend には derived player profile だけを送ります。選ばれた 3 persona は実行時に `swarm-a`, `swarm-b`, `swarm-c` のテスト用 Keycloak ユーザーへ割り当てます。
 
 ## 4. 評価軸
 

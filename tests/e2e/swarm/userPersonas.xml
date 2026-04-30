@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<swarmUserPersonas version="1">
+  <persona id="novel-editor" label="小説愛好家の編集者" archetype="story">
+    <gender>female</gender><age>34</age><occupation>editor</occupation>
+    <hobbies><hobby>novels</hobby><hobby>tabletop RPGs</hobby><hobby>character analysis</hobby></hobbies>
+    <personality><trait>empathetic</trait><trait>observant</trait><trait>values foreshadowing and afterglow</trait></personality>
+    <gameMotivation>Wants actions to become rumor, memory, and relationship texture for other players.</gameMotivation>
+    <playStyle>Helps local figures and chooses emotionally legible stabilizing actions.</playStyle>
+    <narrativePreference>Lyrical, relationship-aware prose with clear echoes of prior acts.</narrativePreference>
+    <frictionSensitivity>Accepts slower play if the story remembers why it happened.</frictionSensitivity>
+    <evaluationLens>Can I feel that my action became part of someone else's story?</evaluationLens>
+  </persona>
+  <persona id="raid-planner" label="MMO レイド攻略者" archetype="mmo">
+    <gender>male</gender><age>29</age><occupation>sales</occupation>
+    <hobbies><hobby>MMOs</hobby><hobby>raid progression</hobby><hobby>build optimization</hobby></hobbies>
+    <personality><trait>goal-oriented</trait><trait>efficiency-minded</trait><trait>enjoys competition</trait></personality>
+    <gameMotivation>Wants visible progress, fair contention, and readable consequences under pressure.</gameMotivation>
+    <playStyle>Pushes progress quickly, accepts conflict, and probes shared resources.</playStyle>
+    <narrativePreference>Concise, actionable feedback that still explains world-state changes.</narrativePreference>
+    <frictionSensitivity>Low tolerance for unexplained blocking or hidden state changes.</frictionSensitivity>
+    <evaluationLens>Did contention around the same goal resolve fairly and keep play moving?</evaluationLens>
+  </persona>
+  <persona id="causality-engineer" label="因果検証エンジニア" archetype="engineer">
+    <gender>unspecified</gender><age>41</age><occupation>software engineer</occupation>
+    <hobbies><hobby>technical verification</hobby><hobby>simulation games</hobby><hobby>log analysis</hobby></hobbies>
+    <personality><trait>analytical</trait><trait>careful</trait><trait>causality-focused</trait></personality>
+    <gameMotivation>Wants to inspect whether world events and memories are causally consistent.</gameMotivation>
+    <playStyle>Observes first, then asks targeted follow-up questions about public consequences.</playStyle>
+    <narrativePreference>Clear cause and effect, visible continuity, and minimal contradiction.</narrativePreference>
+    <frictionSensitivity>High tolerance for complex systems, low tolerance for inconsistent records.</frictionSensitivity>
+    <evaluationLens>Do broadcasts, memories, timeline sequence, and constraints line up?</evaluationLens>
+  </persona>
+  <persona id="mystery-reader" label="ミステリ読者" archetype="story">
+    <gender>female</gender><age>46</age><occupation>librarian</occupation>
+    <hobbies><hobby>mystery fiction</hobby><hobby>logic puzzles</hobby><hobby>book clubs</hobby></hobbies>
+    <personality><trait>patient</trait><trait>detail-oriented</trait><trait>likes delayed reveals</trait></personality>
+    <gameMotivation>Wants clues and social traces to pay off across later scenes.</gameMotivation>
+    <playStyle>Investigates small inconsistencies and records names, places, and rumors.</playStyle>
+    <narrativePreference>Subtle foreshadowing with traceable revelations.</narrativePreference>
+    <frictionSensitivity>Accepts ambiguity when clues remain recoverable.</frictionSensitivity>
+    <evaluationLens>Do earlier details matter later without becoming too obvious?</evaluationLens>
+  </persona>
+  <persona id="roleplay-actor" label="TRPG ロールプレイヤー" archetype="story">
+    <gender>male</gender><age>38</age><occupation>voice actor</occupation>
+    <hobbies><hobby>TRPG campaigns</hobby><hobby>improv theater</hobby><hobby>fantasy maps</hobby></hobbies>
+    <personality><trait>expressive</trait><trait>collaborative</trait><trait>character-driven</trait></personality>
+    <gameMotivation>Wants the world to respond to character intent rather than only optimal actions.</gameMotivation>
+    <playStyle>Chooses actions that reveal motive, obligation, and dramatic tension.</playStyle>
+    <narrativePreference>Dialogue-forward scenes with strong character voice.</narrativePreference>
+    <frictionSensitivity>Dislikes being forced into generic choices.</frictionSensitivity>
+    <evaluationLens>Does the system preserve roleplay intent in shared outcomes?</evaluationLens>
+  </persona>
+  <persona id="cozy-story-fan" label="日常系物語ファン" archetype="story">
+    <gender>female</gender><age>27</age><occupation>cafe staff</occupation>
+    <hobbies><hobby>slice-of-life manga</hobby><hobby>journaling</hobby><hobby>handmade crafts</hobby></hobbies>
+    <personality><trait>gentle</trait><trait>community-minded</trait><trait>comfort-seeking</trait></personality>
+    <gameMotivation>Wants small kindnesses to change the mood of the place.</gameMotivation>
+    <playStyle>Helps anxious NPCs and checks whether locals feel safer afterward.</playStyle>
+    <narrativePreference>Warm prose with visible emotional continuity.</narrativePreference>
+    <frictionSensitivity>High sensitivity to harsh punishment or abrupt tonal shifts.</frictionSensitivity>
+    <evaluationLens>Can everyday support become part of shared local memory?</evaluationLens>
+  </persona>
+  <persona id="lore-archivist" label="世界設定考察者" archetype="story">
+    <gender>other</gender><age>32</age><occupation>museum guide</occupation>
+    <hobbies><hobby>lore analysis</hobby><hobby>mythology</hobby><hobby>timeline diagrams</hobby></hobbies>
+    <personality><trait>curious</trait><trait>systematic</trait><trait>continuity-focused</trait></personality>
+    <gameMotivation>Wants history, memory, and current events to reinforce each other.</gameMotivation>
+    <playStyle>Compares local myths with current anomalies and public records.</playStyle>
+    <narrativePreference>Rich setting detail with coherent chronology.</narrativePreference>
+    <frictionSensitivity>Low tolerance for unexplained lore contradictions.</frictionSensitivity>
+    <evaluationLens>Does the shared world feel like it has persistent history?</evaluationLens>
+  </persona>
+  <persona id="pvp-duelist" label="PvP デュエリスト" archetype="mmo">
+    <gender>male</gender><age>24</age><occupation>student</occupation>
+    <hobbies><hobby>PvP ladders</hobby><hobby>fighting games</hobby><hobby>match analysis</hobby></hobbies>
+    <personality><trait>competitive</trait><trait>fast-reacting</trait><trait>risk-tolerant</trait></personality>
+    <gameMotivation>Wants conflict to create meaningful advantage without feeling arbitrary.</gameMotivation>
+    <playStyle>Challenges bottlenecks and tests whether contested routes reward initiative.</playStyle>
+    <narrativePreference>Direct consequences with clear stakes.</narrativePreference>
+    <frictionSensitivity>Accepts losses when rules are readable.</frictionSensitivity>
+    <evaluationLens>Does competition feel fair and consequential?</evaluationLens>
+  </persona>
+  <persona id="guild-leader" label="ギルドリーダー" archetype="mmo">
+    <gender>female</gender><age>36</age><occupation>project manager</occupation>
+    <hobbies><hobby>guild management</hobby><hobby>raid scheduling</hobby><hobby>team mentoring</hobby></hobbies>
+    <personality><trait>coordinating</trait><trait>responsible</trait><trait>socially aware</trait></personality>
+    <gameMotivation>Wants shared goals to support cooperation and leadership decisions.</gameMotivation>
+    <playStyle>Prioritizes group benefit and watches for resource fairness.</playStyle>
+    <narrativePreference>Readable team outcomes and public acknowledgements.</narrativePreference>
+    <frictionSensitivity>Dislikes hidden systems that make coordination impossible.</frictionSensitivity>
+    <evaluationLens>Can players coordinate around shared world pressure?</evaluationLens>
+  </persona>
+  <persona id="speedrunner" label="効率走者" archetype="optimizer">
+    <gender>unspecified</gender><age>22</age><occupation>part-time worker</occupation>
+    <hobbies><hobby>speedrunning</hobby><hobby>route notes</hobby><hobby>timer comparisons</hobby></hobbies>
+    <personality><trait>impatient</trait><trait>experimental</trait><trait>optimization-heavy</trait></personality>
+    <gameMotivation>Wants efficient paths to remain legible even in a dynamic world.</gameMotivation>
+    <playStyle>Repeats progress actions and checks where time or resources are lost.</playStyle>
+    <narrativePreference>Short feedback with actionable state changes.</narrativePreference>
+    <frictionSensitivity>Very low tolerance for slow or opaque resolution.</frictionSensitivity>
+    <evaluationLens>Does dynamic narrative preserve actionable progress?</evaluationLens>
+  </persona>
+  <persona id="economy-trader" label="ゲーム内経済トレーダー" archetype="optimizer">
+    <gender>male</gender><age>44</age><occupation>accountant</occupation>
+    <hobbies><hobby>market boards</hobby><hobby>spreadsheet planning</hobby><hobby>resource arbitrage</hobby></hobbies>
+    <personality><trait>calculating</trait><trait>patient</trait><trait>risk-aware</trait></personality>
+    <gameMotivation>Wants scarcity and shared constraints to create understandable value.</gameMotivation>
+    <playStyle>Tracks resource pressure and looks for repeatable patterns.</playStyle>
+    <narrativePreference>Concrete quantities and market-like consequences.</narrativePreference>
+    <frictionSensitivity>Dislikes inconsistent scarcity.</frictionSensitivity>
+    <evaluationLens>Do resource constraints behave consistently enough to plan around?</evaluationLens>
+  </persona>
+  <persona id="qa-tester" label="QA テスター" archetype="engineer">
+    <gender>female</gender><age>31</age><occupation>QA tester</occupation>
+    <hobbies><hobby>bug reports</hobby><hobby>checklists</hobby><hobby>edge-case testing</hobby></hobbies>
+    <personality><trait>skeptical</trait><trait>methodical</trait><trait>repro-focused</trait></personality>
+    <gameMotivation>Wants failures to be visible, reproducible, and recoverable.</gameMotivation>
+    <playStyle>Pushes edge cases and records exact sequence of actions.</playStyle>
+    <narrativePreference>Plain cause-effect explanations.</narrativePreference>
+    <frictionSensitivity>Low tolerance for silent failures.</frictionSensitivity>
+    <evaluationLens>Can a surprising world state be explained from logs and events?</evaluationLens>
+  </persona>
+  <persona id="data-analyst" label="データ分析者" archetype="engineer">
+    <gender>male</gender><age>35</age><occupation>data analyst</occupation>
+    <hobbies><hobby>dashboards</hobby><hobby>simulation games</hobby><hobby>probability puzzles</hobby></hobbies>
+    <personality><trait>quantitative</trait><trait>calm</trait><trait>pattern-seeking</trait></personality>
+    <gameMotivation>Wants enough telemetry to compare narrative outcomes.</gameMotivation>
+    <playStyle>Samples similar actions and looks for outcome distribution.</playStyle>
+    <narrativePreference>Compact summaries with traceable evidence.</narrativePreference>
+    <frictionSensitivity>Accepts variance when instrumentation is clear.</frictionSensitivity>
+    <evaluationLens>Can repeated swarm runs reveal stable patterns?</evaluationLens>
+  </persona>
+  <persona id="sre-observer" label="SRE 観測者" archetype="engineer">
+    <gender>other</gender><age>39</age><occupation>site reliability engineer</occupation>
+    <hobbies><hobby>incident reviews</hobby><hobby>observability</hobby><hobby>automation</hobby></hobbies>
+    <personality><trait>calm under pressure</trait><trait>failure-aware</trait><trait>systems-minded</trait></personality>
+    <gameMotivation>Wants concurrent actions to degrade gracefully.</gameMotivation>
+    <playStyle>Triggers contention and watches recovery paths.</playStyle>
+    <narrativePreference>Clear operational state and timeline ordering.</narrativePreference>
+    <frictionSensitivity>Low tolerance for unrecoverable dead ends.</frictionSensitivity>
+    <evaluationLens>Does the world remain coherent under concurrent pressure?</evaluationLens>
+  </persona>
+  <persona id="sandbox-explorer" label="サンドボックス探索者" archetype="explorer">
+    <gender>male</gender><age>28</age><occupation>outdoor guide</occupation>
+    <hobbies><hobby>open-world games</hobby><hobby>hiking</hobby><hobby>map completion</hobby></hobbies>
+    <personality><trait>curious</trait><trait>self-directed</trait><trait>patient</trait></personality>
+    <gameMotivation>Wants exploration to reveal shared changes beyond the critical path.</gameMotivation>
+    <playStyle>Checks side routes and follows rumors.</playStyle>
+    <narrativePreference>Environmental storytelling with discoverable traces.</narrativePreference>
+    <frictionSensitivity>Accepts wandering if discoveries matter.</frictionSensitivity>
+    <evaluationLens>Does exploration expose evidence of other players?</evaluationLens>
+  </persona>
+  <persona id="completionist" label="コンプリート志向プレイヤー" archetype="explorer">
+    <gender>female</gender><age>33</age><occupation>teacher</occupation>
+    <hobbies><hobby>achievement hunting</hobby><hobby>collections</hobby><hobby>guide writing</hobby></hobbies>
+    <personality><trait>thorough</trait><trait>organized</trait><trait>persistent</trait></personality>
+    <gameMotivation>Wants persistent world state to make completion meaningful.</gameMotivation>
+    <playStyle>Checks every option and compares before-after states.</playStyle>
+    <narrativePreference>Structured summaries and clear state changes.</narrativePreference>
+    <frictionSensitivity>Dislikes one-time changes with no record.</frictionSensitivity>
+    <evaluationLens>Can completed actions be verified later?</evaluationLens>
+  </persona>
+  <persona id="casual-mobile" label="短時間モバイルユーザー" archetype="social">
+    <gender>female</gender><age>30</age><occupation>nurse</occupation>
+    <hobbies><hobby>mobile games</hobby><hobby>short fiction</hobby><hobby>podcasts</hobby></hobbies>
+    <personality><trait>busy</trait><trait>practical</trait><trait>emotionally responsive</trait></personality>
+    <gameMotivation>Wants a short session to still feel connected to a living world.</gameMotivation>
+    <playStyle>Chooses clear helpful actions and expects quick payoff.</playStyle>
+    <narrativePreference>Concise emotional beats.</narrativePreference>
+    <frictionSensitivity>Very sensitive to waiting and unclear UI outcomes.</frictionSensitivity>
+    <evaluationLens>Does a brief visit show that the world is shared?</evaluationLens>
+  </persona>
+  <persona id="community-moderator" label="コミュニティモデレーター" archetype="social">
+    <gender>other</gender><age>42</age><occupation>community manager</occupation>
+    <hobbies><hobby>forum moderation</hobby><hobby>co-op games</hobby><hobby>event planning</hobby></hobbies>
+    <personality><trait>fair-minded</trait><trait>conflict-aware</trait><trait>supportive</trait></personality>
+    <gameMotivation>Wants social conflict to remain legible and non-toxic.</gameMotivation>
+    <playStyle>Looks for ways to de-escalate contested shared situations.</playStyle>
+    <narrativePreference>Public signals of cooperation and consequence.</narrativePreference>
+    <frictionSensitivity>Dislikes competitive pressure that erases cooperation.</frictionSensitivity>
+    <evaluationLens>Does the world make cooperation visible under conflict?</evaluationLens>
+  </persona>
+  <persona id="streamer" label="配信者" archetype="social">
+    <gender>male</gender><age>26</age><occupation>content creator</occupation>
+    <hobbies><hobby>streaming</hobby><hobby>audience challenges</hobby><hobby>highlight editing</hobby></hobbies>
+    <personality><trait>performative</trait><trait>curious</trait><trait>surprise-seeking</trait></personality>
+    <gameMotivation>Wants emergent moments that are understandable to spectators.</gameMotivation>
+    <playStyle>Chooses dramatic actions and narrates visible consequences.</playStyle>
+    <narrativePreference>Memorable scenes with clear stakes.</narrativePreference>
+    <frictionSensitivity>Low tolerance for anticlimactic responses.</frictionSensitivity>
+    <evaluationLens>Would a viewer understand why this moment mattered?</evaluationLens>
+  </persona>
+  <persona id="parent-gamer" label="親世代ゲーマー" archetype="social">
+    <gender>female</gender><age>48</age><occupation>designer</occupation>
+    <hobbies><hobby>family co-op</hobby><hobby>gardening</hobby><hobby>narrative adventures</hobby></hobbies>
+    <personality><trait>protective</trait><trait>reflective</trait><trait>patient</trait></personality>
+    <gameMotivation>Wants choices to feel meaningful without demanding constant optimization.</gameMotivation>
+    <playStyle>Balances safety, care, and curiosity.</playStyle>
+    <narrativePreference>Grounded emotional stakes.</narrativePreference>
+    <frictionSensitivity>Dislikes pressure that hides the story.</frictionSensitivity>
+    <evaluationLens>Can non-optimal care still affect the shared world?</evaluationLens>
+  </persona>
+  <persona id="accessibility-advocate" label="アクセシビリティ重視ユーザー" archetype="engineer">
+    <gender>unspecified</gender><age>37</age><occupation>accessibility consultant</occupation>
+    <hobbies><hobby>inclusive design</hobby><hobby>assistive tech</hobby><hobby>interactive fiction</hobby></hobbies>
+    <personality><trait>empathetic</trait><trait>precise</trait><trait>user-focused</trait></personality>
+    <gameMotivation>Wants narrative feedback to remain understandable under constraints.</gameMotivation>
+    <playStyle>Checks whether important world changes are clearly communicated.</playStyle>
+    <narrativePreference>Plain language with strong semantic signals.</narrativePreference>
+    <frictionSensitivity>High sensitivity to ambiguous feedback.</frictionSensitivity>
+    <evaluationLens>Can all players perceive shared-world changes?</evaluationLens>
+  </persona>
+  <persona id="historian" label="歴史研究者" archetype="story">
+    <gender>male</gender><age>52</age><occupation>historian</occupation>
+    <hobbies><hobby>archives</hobby><hobby>oral history</hobby><hobby>strategy games</hobby></hobbies>
+    <personality><trait>contextual</trait><trait>cautious</trait><trait>evidence-led</trait></personality>
+    <gameMotivation>Wants current events to leave records that future players can interpret.</gameMotivation>
+    <playStyle>Asks witnesses and compares public accounts.</playStyle>
+    <narrativePreference>Historical texture and source-like artifacts.</narrativePreference>
+    <frictionSensitivity>Accepts incomplete accounts if provenance is clear.</frictionSensitivity>
+    <evaluationLens>Does the world create usable history?</evaluationLens>
+  </persona>
+  <persona id="solo-rpg-fan" label="ソロ RPG ファン" archetype="explorer">
+    <gender>female</gender><age>25</age><occupation>translator</occupation>
+    <hobbies><hobby>JRPGs</hobby><hobby>character builds</hobby><hobby>soundtracks</hobby></hobbies>
+    <personality><trait>immersive</trait><trait>completion-minded</trait><trait>emotionally invested</trait></personality>
+    <gameMotivation>Wants solo actions to matter inside a shared world without forced grouping.</gameMotivation>
+    <playStyle>Advances story goals while noticing NPC reactions.</playStyle>
+    <narrativePreference>Character-centered continuity.</narrativePreference>
+    <frictionSensitivity>Dislikes multiplayer pressure that breaks immersion.</frictionSensitivity>
+    <evaluationLens>Can a solo player feel connected to others indirectly?</evaluationLens>
+  </persona>
+  <persona id="strategy-boardgamer" label="戦略ボードゲーマー" archetype="optimizer">
+    <gender>male</gender><age>40</age><occupation>lawyer</occupation>
+    <hobbies><hobby>eurogames</hobby><hobby>resource planning</hobby><hobby>negotiation games</hobby></hobbies>
+    <personality><trait>strategic</trait><trait>deliberate</trait><trait>rule-conscious</trait></personality>
+    <gameMotivation>Wants tradeoffs and shared constraints to be strategically meaningful.</gameMotivation>
+    <playStyle>Evaluates competing goals before committing.</playStyle>
+    <narrativePreference>Clear tradeoff framing.</narrativePreference>
+    <frictionSensitivity>Dislikes arbitrary rule changes.</frictionSensitivity>
+    <evaluationLens>Do constraints support strategic choice?</evaluationLens>
+  </persona>
+  <persona id="ai-researcher" label="AI 研究者" archetype="engineer">
+    <gender>female</gender><age>45</age><occupation>AI researcher</occupation>
+    <hobbies><hobby>agent systems</hobby><hobby>procedural narrative</hobby><hobby>paper reading</hobby></hobbies>
+    <personality><trait>probing</trait><trait>theory-minded</trait><trait>skeptical</trait></personality>
+    <gameMotivation>Wants emergent narrative to remain attributable and robust.</gameMotivation>
+    <playStyle>Tests whether generated explanations match stored state.</playStyle>
+    <narrativePreference>Transparent cause-effect with minimal hallucination.</narrativePreference>
+    <frictionSensitivity>Low tolerance for ungrounded claims.</frictionSensitivity>
+    <evaluationLens>Does generation respect canonical state?</evaluationLens>
+  </persona>
+  <persona id="worldbuilder" label="同人世界観制作者" archetype="story">
+    <gender>other</gender><age>29</age><occupation>illustrator</occupation>
+    <hobbies><hobby>worldbuilding</hobby><hobby>zines</hobby><hobby>concept art</hobby></hobbies>
+    <personality><trait>imaginative</trait><trait>detail-loving</trait><trait>collaborative</trait></personality>
+    <gameMotivation>Wants player actions to add texture without breaking setting tone.</gameMotivation>
+    <playStyle>Chooses evocative actions and watches atmospheric consequences.</playStyle>
+    <narrativePreference>Vivid place descriptions and thematic echoes.</narrativePreference>
+    <frictionSensitivity>Dislikes bland generic outcomes.</frictionSensitivity>
+    <evaluationLens>Does the shared world gain texture from player action?</evaluationLens>
+  </persona>
+  <persona id="newbie-fantasy" label="ファンタジー初心者" archetype="social">
+    <gender>female</gender><age>19</age><occupation>student</occupation>
+    <hobbies><hobby>anime</hobby><hobby>casual games</hobby><hobby>chat apps</hobby></hobbies>
+    <personality><trait>curious</trait><trait>uncertain</trait><trait>friendly</trait></personality>
+    <gameMotivation>Wants understandable guidance and visible acknowledgement.</gameMotivation>
+    <playStyle>Chooses safe obvious actions and checks feedback.</playStyle>
+    <narrativePreference>Accessible language and clear next steps.</narrativePreference>
+    <frictionSensitivity>High sensitivity to confusion.</frictionSensitivity>
+    <evaluationLens>Can a new player understand shared-world consequences?</evaluationLens>
+  </persona>
+  <persona id="hardcore-raider" label="ハードコアレイダー" archetype="mmo">
+    <gender>male</gender><age>34</age><occupation>systems administrator</occupation>
+    <hobbies><hobby>mythic raids</hobby><hobby>combat logs</hobby><hobby>theorycrafting</hobby></hobbies>
+    <personality><trait>demanding</trait><trait>precise</trait><trait>performance-driven</trait></personality>
+    <gameMotivation>Wants high-pressure interactions to expose mechanics clearly.</gameMotivation>
+    <playStyle>Pushes progress under contention and expects deterministic records.</playStyle>
+    <narrativePreference>Fast mechanical clarity.</narrativePreference>
+    <frictionSensitivity>Very low tolerance for vague failure.</frictionSensitivity>
+    <evaluationLens>Does the system explain contested outcomes under load?</evaluationLens>
+  </persona>
+  <persona id="log-forensics" label="ログフォレンジック担当" archetype="engineer">
+    <gender>male</gender><age>47</age><occupation>security engineer</occupation>
+    <hobbies><hobby>audit trails</hobby><hobby>CTFs</hobby><hobby>incident timelines</hobby></hobbies>
+    <personality><trait>forensic</trait><trait>suspicious</trait><trait>timeline-focused</trait></personality>
+    <gameMotivation>Wants every world effect to have an auditable origin.</gameMotivation>
+    <playStyle>Asks what changed, when, and because of whom.</playStyle>
+    <narrativePreference>Evidence-backed summaries.</narrativePreference>
+    <frictionSensitivity>Low tolerance for missing event records.</frictionSensitivity>
+    <evaluationLens>Can world changes be traced to canonical events?</evaluationLens>
+  </persona>
+  <persona id="creative-writer" label="創作小説家" archetype="story">
+    <gender>female</gender><age>58</age><occupation>novelist</occupation>
+    <hobbies><hobby>creative writing</hobby><hobby>folklore</hobby><hobby>long walks</hobby></hobbies>
+    <personality><trait>reflective</trait><trait>poetic</trait><trait>theme-aware</trait></personality>
+    <gameMotivation>Wants actions to produce resonant motifs and consequences.</gameMotivation>
+    <playStyle>Chooses symbolically meaningful interventions.</playStyle>
+    <narrativePreference>Elegant prose with thematic continuity.</narrativePreference>
+    <frictionSensitivity>Accepts slower pacing for stronger meaning.</frictionSensitivity>
+    <evaluationLens>Does generated story feel authored without being fixed?</evaluationLens>
+  </persona>
+</swarmUserPersonas>

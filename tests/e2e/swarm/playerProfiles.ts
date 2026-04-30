@@ -1,7 +1,7 @@
 import type { SwarmUserPersona } from "./userPersonas";
 
 export type DerivedPlayerProfile = {
-  sourcePersonaId: SwarmUserPersona["id"];
+  sourcePersonaId: string;
   displayName: string;
   gender: "female" | "male" | "other" | "unspecified";
   background: string;
@@ -20,16 +20,28 @@ export type DerivedPlayerProfile = {
 };
 
 export function derivePlayerProfile(persona: SwarmUserPersona): DerivedPlayerProfile {
-  if (persona.id === "novel-lover") {
+  const template = profileTemplate(persona);
+  return {
+    sourcePersonaId: persona.id,
+    displayName: `${template.namePrefix} ${stableNamePart(persona.id)}`,
+    gender: persona.gender,
+    background: template.background,
+    freeText: template.freeText,
+    playLanguage: { mode: "preset", preset: "en", custom: "" },
+    narrativePreferences: template.narrativePreferences,
+  };
+}
+
+function profileTemplate(persona: SwarmUserPersona): Omit<DerivedPlayerProfile, "sourcePersonaId" | "displayName" | "gender" | "playLanguage"> & {
+  namePrefix: string;
+} {
+  if (persona.archetype === "story" || persona.archetype === "social") {
     return {
-      sourcePersonaId: persona.id,
-      displayName: "Mio Archive Steward",
-      gender: "female",
+      namePrefix: "Mio",
       background:
-        "A careful steward of gate records who notices small emotional shifts between travelers, stewards, and local rumors.",
+        "A careful steward of gate records who notices emotional shifts between travelers, stewards, and local rumors.",
       freeText:
-        "She prefers to help people in ways that leave visible traces: a remembered kindness, a restored relationship, or a clue another traveler can later recognize.",
-      playLanguage: { mode: "preset", preset: "en", custom: "" },
+        "They prefer actions that leave visible traces: a remembered kindness, a restored relationship, or a clue another traveler can later recognize.",
       narrativePreferences: {
         perspective: "third_person",
         tone: "lyrical",
@@ -39,16 +51,13 @@ export function derivePlayerProfile(persona: SwarmUserPersona): DerivedPlayerPro
     };
   }
 
-  if (persona.id === "mmo-gamer") {
+  if (persona.archetype === "mmo" || persona.archetype === "optimizer") {
     return {
-      sourcePersonaId: persona.id,
-      displayName: "Kaito Route Expediter",
-      gender: "male",
+      namePrefix: "Kaito",
       background:
-        "A route-minded operative who keeps track of objectives, bottlenecks, and which local figures can move the situation forward.",
+        "A route-minded operative who tracks objectives, bottlenecks, and which local figures can move the situation forward.",
       freeText:
-        "He tries to advance the current objective quickly, but he expects the world to explain contention around a busy route, place, or guide.",
-      playLanguage: { mode: "preset", preset: "en", custom: "" },
+        "They try to advance the current objective quickly, but expect the world to explain contention around a busy route, place, or guide.",
       narrativePreferences: {
         perspective: "third_person",
         tone: "logical",
@@ -59,14 +68,11 @@ export function derivePlayerProfile(persona: SwarmUserPersona): DerivedPlayerPro
   }
 
   return {
-    sourcePersonaId: persona.id,
-    displayName: "Sena Causality Auditor",
-    gender: "unspecified",
+    namePrefix: persona.archetype === "explorer" ? "Rin" : "Sena",
     background:
       "A quiet field auditor who compares public signs, local testimony, and the order of events before acting.",
     freeText:
-      "They look for whether a visible change has a traceable cause, then ask precise questions that test the continuity of the shared place.",
-    playLanguage: { mode: "preset", preset: "en", custom: "" },
+      "They look for whether a visible change has a traceable cause, then ask precise questions that test continuity in the shared place.",
     narrativePreferences: {
       perspective: "third_person",
       tone: "logical",
@@ -74,6 +80,13 @@ export function derivePlayerProfile(persona: SwarmUserPersona): DerivedPlayerPro
       dialogue_style: "literary",
     },
   };
+}
+
+function stableNamePart(id: string): string {
+  return id
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
 }
 
 export function profilePayloadForApi(profile: DerivedPlayerProfile): Record<string, unknown> {
@@ -86,4 +99,3 @@ export function profilePayloadForApi(profile: DerivedPlayerProfile): Record<stri
     play_language: profile.playLanguage,
   };
 }
-

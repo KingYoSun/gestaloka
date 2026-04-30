@@ -19,7 +19,7 @@ import {
   type PlayerRuntime,
 } from "./swarm/playerDriver";
 import { buildRunId, defaultArtifactDir, writeSwarmReport, type PersonaEvaluation } from "./swarm/reporter";
-import { personaById, type SwarmUserPersona } from "./swarm/userPersonas";
+import { selectRandomPersonas, type AssignedSwarmUserPersona } from "./swarm/userPersonas";
 
 type EventItem = {
   id: string;
@@ -41,10 +41,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   const attemptLabel = `attempt-${testInfo.retry + 1}`;
   await fs.mkdir(artifactDir, { recursive: true });
 
-  const novelLover = personaById("novel-lover");
-  const mmoGamer = personaById("mmo-gamer");
-  const engineer = personaById("it-engineer");
-  const activePersonas = [novelLover, mmoGamer, engineer];
+  const activePersonas = selectRandomPersonas(runId);
   const profiles = activePersonas.map(derivePlayerProfile);
 
   const pageEntries = await Promise.all(
@@ -65,12 +62,13 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       accessTokens.set(persona.id, await getAccessToken(request, persona.user));
     }
 
-    const runtimeByPersona = new Map<SwarmUserPersona["id"], PlayerRuntime>();
+    const runtimeByPersona = new Map<string, PlayerRuntime>();
+    const [sharedImpactPersona, resourceConflictPersona, worldEventPersona] = activePersonas;
     for (const persona of activePersonas) {
       const profile = derivePlayerProfile(persona);
       const token = requiredToken(accessTokens, persona.id);
       const persistedProfile = await ensurePlayerProfile(request, token, profile);
-      if (persona.id !== "it-engineer") {
+      if (persona.id !== worldEventPersona.id) {
         const session = await createPlayerSession(request, token, persistedProfile.actor_id);
         runtimeByPersona.set(persona.id, {
           persona,
@@ -92,8 +90,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       }
     }
 
-    const a = requiredRuntime(runtimeByPersona, "novel-lover");
-    const b = requiredRuntime(runtimeByPersona, "mmo-gamer");
+    const a = requiredRuntime(runtimeByPersona, sharedImpactPersona.id);
+    const b = requiredRuntime(runtimeByPersona, resourceConflictPersona.id);
     const aSharedImpactDecision = decisionForPersona(a.persona, "shared-impact");
     const aSharedImpactTurn = await resolveTurn(request, a.accessToken, a.sessionId, aSharedImpactDecision);
     const aConflictDecision = decisionForPersona(a.persona, "resource-conflict");
@@ -104,14 +102,14 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       resolveTurn(request, b.accessToken, b.sessionId, bConflictDecision),
     ]);
 
-    const cBase = requiredRuntime(runtimeByPersona, "it-engineer");
+    const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     const cSession = await createPlayerSession(request, cBase.accessToken, cBase.actorId);
     const c: PlayerRuntime = {
       ...cBase,
       sessionId: cSession.session_id,
       locationId: cSession.location_id,
     };
-    runtimeByPersona.set("it-engineer", c);
+    runtimeByPersona.set(worldEventPersona.id, c);
     const cStateBeforeTurn = await getSessionState(request, c.accessToken, c.sessionId);
     const cDecision = decisionForPersona(c.persona, "world-event");
     const cTurn = await resolveTurn(request, c.accessToken, c.sessionId, cDecision);
@@ -206,15 +204,15 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         sessionId: runtime.sessionId,
         locationId: runtime.locationId,
         eventIds:
-          runtime.persona.id === "novel-lover"
+          runtime.persona.id === a.persona.id
             ? [eventId(aSharedImpactTurn), eventId(aConflictTurn)].filter(Boolean)
-            : runtime.persona.id === "mmo-gamer"
+            : runtime.persona.id === b.persona.id
               ? [eventId(bConflictTurn)].filter(Boolean)
               : [eventId(cTurn)].filter(Boolean),
         turnIds:
-          runtime.persona.id === "novel-lover"
+          runtime.persona.id === a.persona.id
             ? [turnId(aSharedImpactTurn), turnId(aConflictTurn)].filter(Boolean)
-            : runtime.persona.id === "mmo-gamer"
+            : runtime.persona.id === b.persona.id
               ? [turnId(bConflictTurn)].filter(Boolean)
               : [turnId(cTurn)].filter(Boolean),
       })),
@@ -229,7 +227,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   }
 });
 
-function requiredToken(tokens: Map<string, string>, personaId: SwarmUserPersona["id"]): string {
+function requiredToken(tokens: Map<string, string>, personaId: string): string {
   const token = tokens.get(personaId);
   if (!token) {
     throw new Error(`Missing access token for ${personaId}`);
@@ -238,8 +236,8 @@ function requiredToken(tokens: Map<string, string>, personaId: SwarmUserPersona[
 }
 
 function requiredRuntime(
-  runtimeByPersona: Map<SwarmUserPersona["id"], PlayerRuntime>,
-  personaId: SwarmUserPersona["id"],
+  runtimeByPersona: Map<string, PlayerRuntime>,
+  personaId: string,
 ): PlayerRuntime {
   const runtime = runtimeByPersona.get(personaId);
   if (!runtime) {
@@ -271,7 +269,7 @@ function visibleInSharedContext(payload: unknown, sourceEventId: string): boolea
   return Boolean(sourceEventId) && JSON.stringify(payload).includes(sourceEventId);
 }
 
-function personaLeakTerms(personas: SwarmUserPersona[]): string[] {
+function personaLeakTerms(personas: AssignedSwarmUserPersona[]): string[] {
   return personas
     .flatMap((persona) => [
       "occupation",
