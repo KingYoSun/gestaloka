@@ -1,0 +1,265 @@
+{
+  "run_group_id": "256241a93177",
+  "generated_at": "2026-04-30T02:48:56.133Z",
+  "run_group_dir": "documents/testplay-reports/artifacts/swarm-test-commit-256241a93177",
+  "run_count": 6,
+  "completed_run_count": 3,
+  "passed_run_count": 1,
+  "failed_run_count": 2,
+  "blocked_run_count": 3,
+  "latest_completed_run_id": "2026-04-30T01-41-16-185Z",
+  "latest_completed_result": "pass",
+  "runs": [
+    {
+      "run_id": "2026-04-30T01-20-16-522Z",
+      "run_dir": "swarm-test-2026-04-30T01-20-16-522Z",
+      "created_at": null,
+      "world_id": null,
+      "status": "blocked",
+      "result_file": null,
+      "report_file": null,
+      "hard_checks": {},
+      "persona_ratings": {},
+      "persona_observed_impacts": {}
+    },
+    {
+      "run_id": "2026-04-30T01-24-18-460Z",
+      "run_dir": "swarm-test-2026-04-30T01-24-18-460Z",
+      "created_at": "2026-04-30T01:28:34.513Z",
+      "world_id": "gestaloka_reference",
+      "status": "fail",
+      "result_file": "swarm-test-2026-04-30T01-24-18-460Z/swarm-test-result.json",
+      "report_file": "swarm-test-2026-04-30T01-24-18-460Z/swarm-test-report.md",
+      "hard_checks": {
+        "persona_profile_separation": false,
+        "runtime_privacy_leak_free": false,
+        "all_turns_return_event_ids": true,
+        "all_turn_events_same_world": true,
+        "canonical_sequence_unique": true,
+        "shared_impact_visible": false,
+        "resource_conflict_recorded": true,
+        "world_broadcast_or_constraint_visible": true
+      },
+      "persona_ratings": {
+        "novel-lover": "needs work",
+        "mmo-gamer": "good",
+        "it-engineer": "good"
+      },
+      "persona_observed_impacts": {
+        "novel-lover": "The helping action did not surface in the shared-world context probe.",
+        "mmo-gamer": "Concurrent pressure produced a recorded resource constraint.",
+        "it-engineer": "Late join and follow-up exposed a world event or broadcast constraint."
+      }
+    },
+    {
+      "run_id": "2026-04-30T01-30-23-228Z",
+      "run_dir": "swarm-test-2026-04-30T01-30-23-228Z",
+      "created_at": null,
+      "world_id": null,
+      "status": "blocked",
+      "result_file": null,
+      "report_file": null,
+      "hard_checks": {},
+      "persona_ratings": {},
+      "persona_observed_impacts": {}
+    },
+    {
+      "run_id": "2026-04-30T01-36-09-976Z",
+      "run_dir": "swarm-test-2026-04-30T01-36-09-976Z",
+      "created_at": "2026-04-30T01:40:19.276Z",
+      "world_id": "gestaloka_reference",
+      "status": "fail",
+      "result_file": "swarm-test-2026-04-30T01-36-09-976Z/swarm-test-result.json",
+      "report_file": "swarm-test-2026-04-30T01-36-09-976Z/swarm-test-report.md",
+      "hard_checks": {
+        "persona_profile_separation": false,
+        "runtime_privacy_leak_free": true,
+        "all_turns_return_event_ids": true,
+        "all_turn_events_same_world": true,
+        "canonical_sequence_unique": true,
+        "shared_impact_visible": false,
+        "resource_conflict_recorded": false,
+        "world_broadcast_or_constraint_visible": true
+      },
+      "persona_ratings": {
+        "novel-lover": "needs work",
+        "mmo-gamer": "needs work",
+        "it-engineer": "good"
+      },
+      "persona_observed_impacts": {
+        "novel-lover": "The helping action did not surface in the shared-world context probe.",
+        "mmo-gamer": "Concurrent pressure completed without an observable resource constraint.",
+        "it-engineer": "Late join and follow-up exposed a world event or broadcast constraint."
+      }
+    },
+    {
+      "run_id": "2026-04-30T01-41-16-185Z",
+      "run_dir": "swarm-test-2026-04-30T01-41-16-185Z",
+      "created_at": "2026-04-30T01:46:04.657Z",
+      "world_id": "gestaloka_reference",
+      "status": "pass",
+      "result_file": "swarm-test-2026-04-30T01-41-16-185Z/swarm-test-result.json",
+      "report_file": "swarm-test-2026-04-30T01-41-16-185Z/swarm-test-report.md",
+      "hard_checks": {
+        "persona_profile_separation": true,
+        "runtime_privacy_leak_free": true,
+        "all_turns_return_event_ids": true,
+        "all_turn_events_same_world": true,
+        "canonical_sequence_unique": true,
+        "shared_impact_visible": true,
+        "resource_conflict_recorded": true,
+        "world_broadcast_or_constraint_visible": true
+      },
+      "persona_ratings": {
+        "novel-lover": "good",
+        "mmo-gamer": "good",
+        "it-engineer": "good"
+      },
+      "persona_observed_impacts": {
+        "novel-lover": "The helping action is present in shared-world context.",
+        "mmo-gamer": "Concurrent pressure produced a recorded resource constraint.",
+        "it-engineer": "Late join and follow-up exposed a world event or broadcast constraint."
+      }
+    },
+    {
+      "run_id": "2026-04-30T02-22-25-315Z",
+      "run_dir": "swarm-test-2026-04-30T02-22-25-315Z",
+      "created_at": null,
+      "world_id": null,
+      "status": "blocked",
+      "result_file": null,
+      "report_file": null,
+      "hard_checks": {},
+      "persona_ratings": {},
+      "persona_observed_impacts": {}
+    }
+  ],
+  "hard_check_summary": {
+    "persona_profile_separation": {
+      "latest": true,
+      "passed_runs": 1,
+      "completed_runs": 3
+    },
+    "runtime_privacy_leak_free": {
+      "latest": true,
+      "passed_runs": 2,
+      "completed_runs": 3
+    },
+    "all_turns_return_event_ids": {
+      "latest": true,
+      "passed_runs": 3,
+      "completed_runs": 3
+    },
+    "all_turn_events_same_world": {
+      "latest": true,
+      "passed_runs": 3,
+      "completed_runs": 3
+    },
+    "canonical_sequence_unique": {
+      "latest": true,
+      "passed_runs": 3,
+      "completed_runs": 3
+    },
+    "shared_impact_visible": {
+      "latest": true,
+      "passed_runs": 1,
+      "completed_runs": 3
+    },
+    "resource_conflict_recorded": {
+      "latest": true,
+      "passed_runs": 2,
+      "completed_runs": 3
+    },
+    "world_broadcast_or_constraint_visible": {
+      "latest": true,
+      "passed_runs": 3,
+      "completed_runs": 3
+    }
+  },
+  "persona_experience_summary": [
+    {
+      "personaId": "novel-lover",
+      "latestRating": "good",
+      "latestObservedImpact": "The helping action is present in shared-world context.",
+      "ratings": {
+        "good": 1,
+        "acceptable": 0,
+        "needs work": 2,
+        "blocked": 0
+      },
+      "runs": [
+        {
+          "run_id": "2026-04-30T01-24-18-460Z",
+          "rating": "needs work",
+          "observedImpact": "The helping action did not surface in the shared-world context probe."
+        },
+        {
+          "run_id": "2026-04-30T01-36-09-976Z",
+          "rating": "needs work",
+          "observedImpact": "The helping action did not surface in the shared-world context probe."
+        },
+        {
+          "run_id": "2026-04-30T01-41-16-185Z",
+          "rating": "good",
+          "observedImpact": "The helping action is present in shared-world context."
+        }
+      ]
+    },
+    {
+      "personaId": "mmo-gamer",
+      "latestRating": "good",
+      "latestObservedImpact": "Concurrent pressure produced a recorded resource constraint.",
+      "ratings": {
+        "good": 2,
+        "acceptable": 0,
+        "needs work": 1,
+        "blocked": 0
+      },
+      "runs": [
+        {
+          "run_id": "2026-04-30T01-24-18-460Z",
+          "rating": "good",
+          "observedImpact": "Concurrent pressure produced a recorded resource constraint."
+        },
+        {
+          "run_id": "2026-04-30T01-36-09-976Z",
+          "rating": "needs work",
+          "observedImpact": "Concurrent pressure completed without an observable resource constraint."
+        },
+        {
+          "run_id": "2026-04-30T01-41-16-185Z",
+          "rating": "good",
+          "observedImpact": "Concurrent pressure produced a recorded resource constraint."
+        }
+      ]
+    },
+    {
+      "personaId": "it-engineer",
+      "latestRating": "good",
+      "latestObservedImpact": "Late join and follow-up exposed a world event or broadcast constraint.",
+      "ratings": {
+        "good": 3,
+        "acceptable": 0,
+        "needs work": 0,
+        "blocked": 0
+      },
+      "runs": [
+        {
+          "run_id": "2026-04-30T01-24-18-460Z",
+          "rating": "good",
+          "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint."
+        },
+        {
+          "run_id": "2026-04-30T01-36-09-976Z",
+          "rating": "good",
+          "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint."
+        },
+        {
+          "run_id": "2026-04-30T01-41-16-185Z",
+          "rating": "good",
+          "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint."
+        }
+      ]
+    }
+  ]
+}
