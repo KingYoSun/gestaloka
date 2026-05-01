@@ -362,6 +362,8 @@ class StubModelProvider(BaseModelProvider):
             return self._safety_guard_output(input_payload)
         if prompt_id == "council.narrative":
             return self._narrative_output(input_payload)
+        if prompt_id == "play.localization":
+            return self._play_localization_output(input_payload)
         if prompt_id == "ambient.memory_manager":
             return self._ambient_memory_manager_output(input_payload)
         if prompt_id == "ambient.npc_manager":
@@ -375,6 +377,97 @@ class StubModelProvider(BaseModelProvider):
         if prompt_id == "idle.safety_guard":
             return self._ambient_safety_guard_output(input_payload)
         raise KeyError(f"Unsupported stub prompt: {prompt_id}")
+
+    def _play_localization_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        target_language = str(input_payload.get("target_language") or "")
+        japanese = target_language.strip().lower() in {"japanese", "日本語", "ja"}
+        items = [item for item in input_payload.get("items") or [] if isinstance(item, dict)]
+
+        proper_nouns = {
+            "GESTALOKA: Nexus Foundation": "ゲスタロカ：ネクサス基盤",
+            "GESTALOKA Reference": "ゲスタロカ・リファレンス",
+            "Nexus Foundation": "ネクサス基盤",
+            "Nexus Gate": "ネクサス・ゲート",
+            "First Stabilizer Request": "最初の安定化依頼",
+            "Breach Restoration": "裂け目の修復",
+            "Gate Steward Rikka": "ゲート守リッカ",
+            "Archivist Ione": "記録官イオネ",
+            "Broker Vell": "仲介人ヴェル",
+            "Salvager Mako": "サルベージャー・マコ",
+            "Choir Warden Anse": "聖歌守アンセ",
+            "Lift Tower Concourse": "リフト・タワー・コンコース",
+            "Archive Bazaar": "アーカイブ市場",
+            "Middle Edge": "ミドル・エッジ",
+            "Oblivion Breach": "忘却の裂け目",
+            "Nexus Writ": "ネクサス認可状",
+            "Nexus Custodians": "ネクサス管理官",
+            "Memory Church": "記憶教会",
+            "Kronos Exchange": "クロノス取引所",
+            "Relic Salvagers": "遺物サルベージャー",
+            "Returner Cell": "帰還派セル",
+            "Custodian Charter": "管理官憲章",
+            "Edge Compact": "辺境協定",
+        }
+        phrase_map = {
+            "active": "有効",
+            "used": "使用済み",
+            "The protected arrival gate where visitors enter shared city records for the first time.": (
+                "来訪者が初めて共有都市記録へ入る、守られた到着門。"
+            ),
+            "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether First Stabilizer Request will be carried through.": (
+                "ゲスタロカ：ネクサス基盤の幕開けは、最初の安定化依頼が果たされるかどうかへ向かっている。"
+            ),
+            "Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion.": (
+                "ネクサス・ゲートは、最初の安定化依頼が守られるかを見届けようとしている。場には息をつく余地があるが、動き出したばかりの出来事をまだ覚えている。"
+            ),
+            "The scene leaves behind a little more trust than it had before.": "場には、以前よりわずかに深い信頼が残る。",
+            "The tower concourse opens above the gate, where public testimony and route ledgers meet.": (
+                "門の上にはリフト・タワー・コンコースが開け、公開証言と航路台帳が交わっている。"
+            ),
+            "The breach route stays sealed until Nexus recognizes the writ.": (
+                "裂け目への道は、ネクサスが認可状を認めるまで封じられている。"
+            ),
+            "A witnessed writ that marks the bearer as trusted for the first restoration route.": (
+                "最初の修復路に進む信頼を帯びた者だと示す、証人付きの認可状。"
+            ),
+        }
+
+        def localize(text: str) -> str:
+            if not japanese:
+                return f"{target_language}: {text}" if target_language else text
+            stripped = text.strip()
+            if stripped in phrase_map:
+                return phrase_map[stripped]
+            if stripped in proper_nouns:
+                return proper_nouns[stripped]
+            localized = stripped
+            for source, target in sorted(proper_nouns.items(), key=lambda item: len(item[0]), reverse=True):
+                localized = localized.replace(source, target)
+            localized = localized.replace("the local district", "この地区")
+            localized = localized.replace("the gate steward", "門の管理者")
+            localized = localized.replace("the archivist", "記録官")
+            localized = localized.replace("watcher", "見張り役")
+            localized = localized.replace("gate_steward", "門の管理者")
+            localized = localized.replace("medium edge", "中程度の緊張")
+            localized = localized.replace("low edge", "低い緊張")
+            localized = localized.replace("high edge", "高い緊張")
+            localized = localized.replace("warm", "温かな関係")
+            localized = localized.replace("neutral", "中立的な関係")
+            localized = localized.replace("trusted", "信頼された関係")
+            if localized == stripped and all(ord(char) < 128 for char in stripped):
+                return f"{stripped}（日本語表示）"
+            return localized
+
+        return {
+            "items": [
+                {
+                    "key": str(item.get("key") or ""),
+                    "localized_text": localize(str(item.get("text") or "")),
+                }
+                for item in items
+                if str(item.get("key") or "")
+            ]
+        }
 
     def _intent_interpreter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         input_mode = str(input_payload.get("input_mode") or "choice")

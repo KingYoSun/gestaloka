@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 import app.modules.identity.oidc as oidc_module
 from app.core.config import Settings
-from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, ProjectionRecord, World
+from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, PlayLocalizedTextCache, ProjectionRecord, World
 from app.modules.identity.oidc import KeycloakOIDCAdapter, UserIdentity
 from app.modules.llm_harness.service import CouncilRoleRun, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult
@@ -336,6 +336,91 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     assert choices[0]["label"] == "Watch Nexus Gate without disturbing the flow"
     assert choices[1]["label"] == "Help the person in need and create the next opening"
     assert choices[2]["summary"] == "Change places and widen the investigation."
+
+
+def test_japanese_player_visible_state_is_localized_and_cached(client, container, auth_headers):
+    profile = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={
+            "display_name": "Sena",
+            "play_language": {"mode": "preset", "preset": "ja"},
+        },
+        headers=auth_headers,
+    )
+    assert profile.status_code == 200
+    session = client.post(
+        "/sessions",
+        json={
+            "world_id": "gestaloka_reference",
+            "player_actor_id": profile.json()["actor_id"],
+        },
+        headers=auth_headers,
+    )
+    assert session.status_code == 200
+
+    first_state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
+    assert first_state.status_code == 200
+    payload = first_state.json()
+    assert payload["current_location"]["name"] == "ネクサス・ゲート"
+    assert payload["quests"][0]["title"] == "最初の安定化依頼"
+    assert payload["local_figures"][0]["display_name"] == "ゲート守リッカ"
+    assert payload["nearby_routes"][0]["destination_name"] == "リフト・タワー・コンコース"
+    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["label"]
+    assert "Lift Tower Concourse" in payload["next_choices"][2]["canonical_input_text"]
+
+    localization_records = [
+        item
+        for item in container.observability_service._langfuse_client.records
+        if item.get("event") == "enter" and item.get("name") == "play.localization"
+    ]
+    assert localization_records
+    with container.session_factory() as db:
+        cached_count = db.execute(select(PlayLocalizedTextCache)).all()
+    first_cache_count = len(cached_count)
+    assert first_cache_count > 0
+
+    second_state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
+    assert second_state.status_code == 200
+    assert second_state.json()["current_location"]["name"] == "ネクサス・ゲート"
+    with container.session_factory() as db:
+        second_cache_count = len(db.execute(select(PlayLocalizedTextCache)).all())
+    second_localization_records = [
+        item
+        for item in container.observability_service._langfuse_client.records
+        if item.get("event") == "enter" and item.get("name") == "play.localization"
+    ]
+    assert second_cache_count == first_cache_count
+    assert len(second_localization_records) == len(localization_records)
+
+
+def test_custom_play_language_uses_localization_prompt_name(client, container, auth_headers):
+    profile = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={
+            "display_name": "Cipher",
+            "play_language": {"mode": "custom", "custom": "  Pirate\nCant  "},
+        },
+        headers=auth_headers,
+    )
+    assert profile.status_code == 200
+    session = client.post(
+        "/sessions",
+        json={
+            "world_id": "gestaloka_reference",
+            "player_actor_id": profile.json()["actor_id"],
+        },
+        headers=auth_headers,
+    )
+    assert session.status_code == 200
+
+    state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
+    assert state.status_code == 200
+    localization_inputs = [
+        item["input"]
+        for item in container.observability_service._langfuse_client.records
+        if item.get("event") == "enter" and item.get("name") == "play.localization"
+    ]
+    assert localization_inputs[-1]["target_language"] == "Pirate Cant"
 
 
 def test_failed_turn_response_exposes_structured_failure(client, container, auth_headers, monkeypatch):

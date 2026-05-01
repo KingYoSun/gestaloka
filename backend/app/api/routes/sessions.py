@@ -10,6 +10,7 @@ from app.api.deps import ensure_primary_runtime, get_container, get_current_user
 from app.core.container import AppContainer
 from app.modules.actor.service import create_player_profile_for_user
 from app.modules.identity.oidc import UserIdentity
+from app.modules.localization.service import localize_session_state
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
 from app.modules.world_pack.service import (
     WorldAvailabilityError,
@@ -123,6 +124,12 @@ def create_session(
 def get_session_state(
     session_id: str,
     db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict:
-    return get_session_state_for_user(db, user=user, session_id=session_id)
+    state = get_session_state_for_user(db, user=user, session_id=session_id)
+    cache_db = container.session_factory()
+    try:
+        return localize_session_state(cache_db, container.model_router, state)
+    finally:
+        cache_db.close()

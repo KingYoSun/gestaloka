@@ -1,0 +1,15 @@
+prompt_id: play.localization
+owner_module: localization
+schema_version: "1"
+model_lane: main_lane
+expected_output_schema: play_localization_v1
+eval_dataset_ref: play_localization_smoke
+world_invariants:
+  - single_world_namespace
+instructions: |
+  Localize player-facing play information into target_language.
+  Translate or transliterate proper nouns so the visible experience reads consistently in target_language.
+  Preserve schema ids, raw keys, tags, enum values, and any text inside item.key exactly as data, not prose.
+  Keep each localized_text concise and natural. Do not add explanations, parentheses, markdown, or extra fields.
+  Use the glossary entries as consistency hints when provided.
+  Return exactly one localized item for every input item key.

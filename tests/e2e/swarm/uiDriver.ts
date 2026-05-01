@@ -40,6 +40,8 @@ export type SwarmUiTurnObservation = {
   recentWorldBeats: string[];
   opsStream: string[];
   choiceLabels: string[];
+  playInfoTexts: string[];
+  englishPlayInfoTexts: string[];
   screenshotPath?: string;
 };
 
@@ -187,6 +189,7 @@ export async function executeTurnViaUi(
     const completed = Date.now();
     const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
     const opsStream = await listText(page, "ops-stream");
+    const playInfoTexts = await playerVisiblePlayInfoTexts(page);
     const acceptedTurnId = stringValue(payload.turn_id);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
     const progressTimeline = progressTimelineFromOpsStream(opsStream);
@@ -215,6 +218,8 @@ export async function executeTurnViaUi(
       recentWorldBeats: await listText(page, "recent-world-beats"),
       opsStream,
       choiceLabels: await listText(page, "choice-list"),
+      playInfoTexts,
+      englishPlayInfoTexts: playInfoTexts.filter(hasEnglishPlayTextResidue).slice(0, 12),
       screenshotPath,
     };
   } finally {
@@ -407,6 +412,27 @@ async function listText(page: Page, testId: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+async function playerVisiblePlayInfoTexts(page: Page): Promise<string[]> {
+  const groups = await Promise.all([
+    textContent(page, "current-place-summary"),
+    textContent(page, "current-chapter-summary"),
+    textContent(page, "current-scene-summary"),
+    textContent(page, "active-quest"),
+    listText(page, "local-figures-stream"),
+    listText(page, "nearby-routes-stream"),
+    listText(page, "inventory-stream"),
+    listText(page, "choice-list"),
+  ]);
+  return uniqueNonEmpty(
+    groups.flatMap((item) => (Array.isArray(item) ? item : [item])).map((item) => item.trim()),
+  ).slice(0, 32);
+}
+
+function hasEnglishPlayTextResidue(value: string): boolean {
+  const normalized = value.replace(/\b(SP|JA|EN|URL|ID)\b/g, "").replace(/\bgestaloka\b/gi, "");
+  return /[A-Za-z]{3,}/.test(normalized);
 }
 
 async function locatorEnabled(page: Page, testId: string): Promise<string> {

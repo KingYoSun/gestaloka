@@ -1,0 +1,11 @@
+dataset_id: play_localization_smoke
+prompt_id: play.localization
+expected_output_schema: play_localization_v1
+cases:
+  - case_id: ja_reference_names
+    world_id: gestaloka_reference
+    pack_id: gestaloka_reference
+    world_template_id: nexus_foundation
+    player_name: Demo Player
+    npc_name: Gate Steward Rikka
+    input_text: Nexus Gate

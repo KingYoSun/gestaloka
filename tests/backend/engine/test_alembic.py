@@ -59,6 +59,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "world_broadcast_events",
         "world_broadcast_deliveries",
         "outbox_events",
+        "play_localized_text_cache",
         "admin_app_users",
         "admin_runtime_configs",
         "admin_prompt_overrides",
@@ -85,6 +86,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     resource_lock_columns = {column["name"] for column in inspector.get_columns("world_resource_locks")}
     broadcast_event_columns = {column["name"] for column in inspector.get_columns("world_broadcast_events")}
     broadcast_delivery_columns = {column["name"] for column in inspector.get_columns("world_broadcast_deliveries")}
+    play_localization_columns = {column["name"] for column in inspector.get_columns("play_localized_text_cache")}
     assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
     assert {"paid_balance", "bonus_balance"} <= sp_account_columns
     assert {"paid_delta", "bonus_delta", "paid_balance_after", "bonus_balance_after"} <= sp_ledger_columns
@@ -143,6 +145,20 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     assert {"resource_type", "resource_id", "holder_turn_id", "expires_at", "constraint_summary"} <= resource_lock_columns
     assert {"semantic_key", "lifecycle_kind", "affected_location_ids", "constraint_text"} <= broadcast_event_columns
     assert {"broadcast_event_id", "session_id", "actor_id", "status", "consumed_at"} <= broadcast_delivery_columns
+    assert {
+        "world_id",
+        "actor_id_scope",
+        "target_language",
+        "source_kind",
+        "source_key",
+        "source_hash",
+        "source_text",
+        "localized_text",
+        "model_id",
+        "prompt_id",
+    } <= play_localization_columns
+    play_localization_indexes = {index["name"] for index in inspector.get_indexes("play_localized_text_cache")}
+    assert "ix_play_localized_text_cache_world_actor_language" in play_localization_indexes
 
 
 def test_alembic_revision_ids_fit_default_version_table():

@@ -13,7 +13,9 @@ from app.api.deps import ensure_primary_runtime, get_container, get_current_user
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub, with_world_context
 from app.models.entities import Session as GameSession, TurnResolutionJob
+from app.modules.actor.service import get_player_profile, normalize_play_language
 from app.modules.identity.oidc import UserIdentity
+from app.modules.localization.service import localize_turn_payload
 from app.modules.session.service import prepare_turn_for_session
 from app.modules.session.turn_manager import TurnResolutionManager
 from app.modules.world_pack.service import WorldAvailabilityError, world_context_for_world, world_health
@@ -211,7 +213,37 @@ def _success_response_content(result, world_context: dict[str, object]) -> dict[
     }
 
 
-async def _emit_turn_result_events(result, world_context: dict[str, object]) -> None:
+def _localize_turn_content(container: AppContainer, result, content: dict[str, object]) -> dict[str, object]:
+    world_id = str(result.turn.world_id)
+    actor_id = str(result.turn.actor_id or "")
+    if not world_id or not actor_id:
+        return content
+    db = container.session_factory()
+    try:
+        profile_row = get_player_profile(db, world_id, actor_id)
+        if profile_row is None:
+            return content
+        _, profile = profile_row
+        play_language = normalize_play_language((profile.preferences or {}).get("play_language"))  # type: ignore[arg-type]
+        localized = localize_turn_payload(
+            db,
+            container.model_router,
+            dict(content),
+            world_id=world_id,
+            actor_id=actor_id,
+            play_language=dict(play_language),
+        )
+        return localized
+    finally:
+        db.close()
+
+
+async def _emit_turn_result_events(container: AppContainer, result, world_context: dict[str, object]) -> None:
+    response_content = _localize_turn_content(
+        container,
+        result,
+        _success_response_content(result, world_context) if result.succeeded else _failure_response_content(result, world_context),
+    )
     if result.succeeded:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
@@ -230,63 +262,66 @@ async def _emit_turn_result_events(result, world_context: dict[str, object]) -> 
             world_context,
         )
     if result.quest_updates:
-        await realtime_hub.emit_with_world_context(result.turn.session_id, "quest.updated", {"items": result.quest_updates}, world_context)
+        await realtime_hub.emit_with_world_context(result.turn.session_id, "quest.updated", {"items": response_content.get("quest_updates", result.quest_updates)}, world_context)
     if result.faction_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "faction.standing.updated",
-            {"items": result.faction_updates},
+            {"items": response_content.get("faction_updates", result.faction_updates)},
             world_context,
         )
     if result.inventory_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "inventory.changed",
-            {"items": result.inventory_updates},
+            {"items": response_content.get("inventory_updates", result.inventory_updates)},
             world_context,
         )
     if result.location_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "location.updated",
-            {"items": result.location_updates},
+            {"items": response_content.get("location_updates", result.location_updates)},
             world_context,
         )
     if result.relationship_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "relationship.updated",
-            {"items": result.relationship_updates},
+            {"items": response_content.get("relationship_updates", result.relationship_updates)},
             world_context,
         )
     if result.consequence_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "consequence.updated",
-            {"items": result.consequence_updates},
+            {"items": response_content.get("consequence_updates", result.consequence_updates)},
             world_context,
         )
     if result.scene_updates:
-        await realtime_hub.emit_with_world_context(result.turn.session_id, "scene.updated", {"items": result.scene_updates}, world_context)
+        await realtime_hub.emit_with_world_context(result.turn.session_id, "scene.updated", {"items": response_content.get("scene_updates", result.scene_updates)}, world_context)
     if result.chapter_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "chapter.updated",
-            {"items": result.chapter_updates},
+            {"items": response_content.get("chapter_updates", result.chapter_updates)},
             world_context,
         )
     if result.branch_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "branch.updated",
-            {"items": result.branch_updates},
+            {"items": response_content.get("branch_updates", result.branch_updates)},
             world_context,
         )
     if result.ambient_updates:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "ambient.updated",
-            {"items": result.ambient_updates, "recent_world_beats": result.recent_world_beats},
+            {
+                "items": response_content.get("ambient_updates", result.ambient_updates),
+                "recent_world_beats": response_content.get("recent_world_beats", result.recent_world_beats),
+            },
             world_context,
         )
 
@@ -346,9 +381,9 @@ async def _resolve_turn_background(
             world_context,
         )
 
-    await _emit_turn_result_events(result, world_context)
+    await _emit_turn_result_events(container, result, world_context)
     if not result.succeeded:
-        failure_payload = _failure_response_content(result, world_context)
+        failure_payload = _localize_turn_content(container, result, _failure_response_content(result, world_context))
         await realtime_hub.emit_with_world_context(
             session_id,
             "turn.failed",
@@ -362,7 +397,12 @@ async def _resolve_turn_background(
         )
         return
 
-    await realtime_hub.emit_with_world_context(session_id, "turn.resolved", _success_response_content(result, world_context), world_context)
+    await realtime_hub.emit_with_world_context(
+        session_id,
+        "turn.resolved",
+        _localize_turn_content(container, result, _success_response_content(result, world_context)),
+        world_context,
+    )
 
 
 @router.post("/turns")

@@ -31,7 +31,7 @@ def test_session_can_start_from_gestaloka_reference_pack(client, container, auth
     assert state.status_code == 200
     state_payload = state.json()
     assert state_payload["current_location"]["key"] == "nexus_gate"
-    assert state_payload["current_location"]["name"] == "Nexus Gate"
+    assert state_payload["current_location"]["name"] == "ネクサス・ゲート"
     assert state_payload["world_pack"]["pack_id"] == "gestaloka_reference"
     assert state_payload["world_pack"]["followup_location_name"] == "Oblivion Breach"
     assert state_payload["world_pack"]["followup_branches"]["formal_path"]["branch_key"] == "custodian_charter"
@@ -40,7 +40,7 @@ def test_session_can_start_from_gestaloka_reference_pack(client, container, auth
     assert state_payload["chapter"]["key"] == "nexus_foundation_opening"
     assert any(item["axis_id"] == "archive_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "lift_tower_concourse" for item in state_payload["nearby_routes"])
-    assert any("Lift Tower Concourse" in item["label"] for item in state_payload["next_choices"])
+    assert any("リフト・タワー・コンコース" in item["label"] for item in state_payload["next_choices"])
 
     with container.session_factory() as db:
         world = db.execute(select(World).where(World.id == "gestaloka_reference")).scalar_one()
@@ -171,7 +171,7 @@ def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_f
     post_reward_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert post_reward_state.status_code == 200
     assert post_reward_state.json()["quests"][0]["progress"] == 2
-    assert any(item["name"] == "Nexus Writ" for item in post_reward_state.json()["inventory"])
+    assert any(item["name"] == "ネクサス認可状" for item in post_reward_state.json()["inventory"])
 
     with container.session_factory() as db:
         fallback_turn = db.get(Turn, second_payload["turn_id"])

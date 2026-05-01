@@ -699,6 +699,35 @@ class Item(Base, TimestampMixin):
     source_quest_assignment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
+class PlayLocalizedTextCache(Base, TimestampMixin):
+    __tablename__ = "play_localized_text_cache"
+    __table_args__ = (
+        UniqueConstraint(
+            "world_id",
+            "actor_id_scope",
+            "target_language",
+            "source_kind",
+            "source_key",
+            "source_hash",
+            name="uq_play_localized_text_cache_source",
+        ),
+        Index("ix_play_localized_text_cache_world_actor_language", "world_id", "actor_id_scope", "target_language"),
+        ForeignKeyConstraint(["world_id"], ["worlds.id"], ondelete="CASCADE"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    actor_id_scope: Mapped[str] = mapped_column(String(36))
+    target_language: Mapped[str] = mapped_column(String(120))
+    source_kind: Mapped[str] = mapped_column(String(64))
+    source_key: Mapped[str] = mapped_column(String(180))
+    source_hash: Mapped[str] = mapped_column(String(64))
+    source_text: Mapped[str] = mapped_column(Text)
+    localized_text: Mapped[str] = mapped_column(Text)
+    model_id: Mapped[str] = mapped_column(String(120))
+    prompt_id: Mapped[str] = mapped_column(String(120))
+
+
 class SPAccount(Base, TimestampMixin):
     __tablename__ = "sp_accounts"
     __table_args__ = (

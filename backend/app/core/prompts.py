@@ -19,6 +19,7 @@ SUPPORTED_PROMPT_SCHEMAS = {
     "ambient_memory_manager_v1": "1",
     "ambient_npc_manager_v1": "1",
     "ambient_safety_guard_v1": "1",
+    "play_localization_v1": "1",
 }
 SUPPORTED_MODEL_LANES = {"lite_lane", "main_lane", "pro_lane"}
 

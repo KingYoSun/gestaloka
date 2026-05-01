@@ -31,6 +31,7 @@ Rubric:
 - gameplay_fun: Evaluate whether the persona could pursue their motivation, whether progress/conflict/exploration produced meaningful outcomes, and whether wait time felt justified by the result.
 - story_progression: Evaluate whether the latest action changed the scene, whether cause/effect is traceable, whether other players leave perceivable traces, and whether scene/consequence/world beat continuity is visible.
 - overall: Evaluate the whole persona experience. Do not average mechanically; weigh the persona's evaluation lens.
+- For Japanese play-language runs, inspect `playInfoTexts` and `englishPlayInfoTexts`. If player-visible play information such as quests, locations, NPCs, routes, inventory, consequences, or choices remains in English outside fixed UI chrome, lower ux_clarity and include a warning.
 
 Rules:
 
