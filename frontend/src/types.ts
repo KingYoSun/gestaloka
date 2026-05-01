@@ -482,6 +482,23 @@ export type TurnAcceptedResponse = {
   world_context?: WorldContext;
 };
 
+export type StoryHistoryItem = {
+  event_id: string;
+  turn_id: string | null;
+  canonical_sequence: number | null;
+  occurred_at: string;
+  input_mode: string;
+  narrative: string;
+  reaction: string;
+  consequence: string;
+  scene_summary: string;
+};
+
+export type StoryHistoryResponse = {
+  items: StoryHistoryItem[];
+  next_before_sequence: number | null;
+};
+
 export type EventItem = {
   id: string;
   turn_id: string | null;

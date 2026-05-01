@@ -94,6 +94,37 @@ test("mobile player shell does not overflow at 375px", async ({ page }) => {
   expect(hasHorizontalOverflow).toBe(false);
 });
 
+test("mobile player drawers expose actions and status", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+  await page.getByTestId("sign-in").click();
+
+  await page.locator("#username").fill("demo");
+  await page.locator("#password").fill("demo-password");
+  await page.getByRole("button", { name: /sign in/i }).click();
+
+  await page.getByTestId("world-select").selectOption("gestaloka_reference");
+  await page.getByTestId("profile-display-name").fill(`Mobile Player ${Date.now()}`);
+  await page.getByTestId("profile-play-language").selectOption("ja");
+  await page.getByTestId("create-player-profile").click();
+  await expect(page.getByTestId("start-session")).toBeEnabled({ timeout: 30_000 });
+  await page.getByTestId("start-session").click();
+
+  await expect(page.getByTestId("story-scroll")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "行動" }).click();
+  await expect(page.getByTestId("choice-list")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "閉じる" }).click();
+
+  await page.getByRole("button", { name: "情報" }).click();
+  await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("local-figures-stream")).toBeVisible();
+  await expect(page.getByTestId("nearby-routes-stream")).toBeVisible();
+  await expect(page.getByTestId("inventory-stream")).toBeVisible();
+
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(hasHorizontalOverflow).toBe(false);
+});
+
 test("player language switcher changes fixed UI labels and persists", async ({ page }) => {
   await page.goto("/");
 

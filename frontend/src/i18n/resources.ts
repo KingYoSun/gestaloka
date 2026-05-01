@@ -96,6 +96,14 @@ const resources = {
           inProgress: "進行中",
           reaction: "反応",
           consequence: "変化",
+          sceneDetails: "場面説明",
+          height: "本文カードサイズ",
+          heightPresets: {
+            small: "小",
+            medium: "中",
+            large: "大",
+          },
+          scrollToLatest: "最新へ移動",
         },
         turn: {
           choice: "選択肢",
@@ -127,6 +135,10 @@ const resources = {
           figures: "人物",
           routes: "移動先",
           inventory: "所持品",
+        },
+        mobile: {
+          actions: "行動",
+          info: "情報",
         },
       },
       errors: {
@@ -251,6 +263,14 @@ const resources = {
           inProgress: "In progress",
           reaction: "Reaction",
           consequence: "Change",
+          sceneDetails: "Scene details",
+          height: "Story card size",
+          heightPresets: {
+            small: "S",
+            medium: "M",
+            large: "L",
+          },
+          scrollToLatest: "Jump to latest",
         },
         turn: {
           choice: "Choices",
@@ -282,6 +302,10 @@ const resources = {
           figures: "People",
           routes: "Routes",
           inventory: "Inventory",
+        },
+        mobile: {
+          actions: "Actions",
+          info: "Info",
         },
       },
       errors: {

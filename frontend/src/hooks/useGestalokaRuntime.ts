@@ -55,6 +55,8 @@ import type {
   SPLedgerItem,
   SPOverview,
   SPWallet,
+  StoryHistoryItem,
+  StoryHistoryResponse,
   TravelLogItem,
   TurnAcceptedResponse,
   TurnResponse,
@@ -106,6 +108,37 @@ function formatTurnProgressLabel(phase: string, status: string): string {
 
 function isTurnAcceptedResponse(response: TurnAcceptedResponse | TurnResponse): response is TurnAcceptedResponse {
   return "status" in response && response.status === "accepted";
+}
+
+function storyItemFromTurnResponse(response: TurnResponse): StoryHistoryItem {
+  return {
+    event_id: response.event_id,
+    turn_id: response.turn_id,
+    canonical_sequence: null,
+    occurred_at: new Date().toISOString(),
+    input_mode: response.input_mode,
+    narrative: response.narrative,
+    reaction: response.npc_reaction,
+    consequence: response.consequence_summary || response.scene_summary || "",
+    scene_summary: response.scene_summary,
+  };
+}
+
+function mergeStoryItems(current: StoryHistoryItem[], incoming: StoryHistoryItem[]): StoryHistoryItem[] {
+  const byKey = new Map<string, StoryHistoryItem>();
+  for (const item of current) {
+    byKey.set(item.event_id || item.turn_id || item.occurred_at, item);
+  }
+  for (const item of incoming) {
+    const key = item.event_id || item.turn_id || item.occurred_at;
+    byKey.set(key, { ...byKey.get(key), ...item });
+  }
+  return Array.from(byKey.values()).sort((left, right) => {
+    if (left.canonical_sequence !== null && right.canonical_sequence !== null) {
+      return left.canonical_sequence - right.canonical_sequence;
+    }
+    return new Date(left.occurred_at).getTime() - new Date(right.occurred_at).getTime();
+  });
 }
 
 function normalizeBrowserPreset(language: string): PlayLanguagePreset | null {
@@ -201,6 +234,9 @@ export function useGestalokaRuntime() {
   const [latestNarrative, setLatestNarrative] = useState("");
   const [latestReaction, setLatestReaction] = useState("");
   const [latestConsequenceSummary, setLatestConsequenceSummary] = useState("");
+  const [storyItems, setStoryItems] = useState<StoryHistoryItem[]>([]);
+  const [storyNextBeforeSequence, setStoryNextBeforeSequence] = useState<number | null>(null);
+  const [storyLoading, setStoryLoading] = useState(false);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [activity, setActivity] = useState<ActivityMessage[]>([]);
@@ -482,6 +518,7 @@ export function useGestalokaRuntime() {
     setLatestNarrative(response.narrative);
     setLatestReaction(response.npc_reaction);
     setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
+    setStoryItems((current) => mergeStoryItems(current, [storyItemFromTurnResponse(response)]));
     setTurnInputMode("choice");
     setSessionState((current) => mergeTurnResponseIntoSessionState(current, response));
     setWallet((current) =>
@@ -528,6 +565,8 @@ export function useGestalokaRuntime() {
       }
       if (!session) {
         setSessionState(null);
+        setStoryItems([]);
+        setStoryNextBeforeSequence(null);
       }
       setSocketState("idle");
       return;
@@ -685,6 +724,35 @@ export function useGestalokaRuntime() {
     setEvents(eventsResponse.items);
     setMemories(memoriesResponse.items);
     setSessionState(stateResponse);
+  }
+
+  async function refreshStoryHistory(currentSession: SessionInfo, currentToken: string) {
+    currentToken = await ensureFreshToken(currentToken);
+    const response = await apiFetch<StoryHistoryResponse>(`/sessions/${currentSession.session_id}/story?limit=20`, currentToken);
+    setStoryItems(response.items);
+    setStoryNextBeforeSequence(response.next_before_sequence);
+  }
+
+  async function handleLoadOlderStory(): Promise<number> {
+    if (!token || !session || !storyNextBeforeSequence || storyLoading) {
+      return 0;
+    }
+    try {
+      setStoryLoading(true);
+      const currentToken = await ensureFreshToken(token);
+      const response = await apiFetch<StoryHistoryResponse>(
+        `/sessions/${session.session_id}/story?limit=20&before_sequence=${storyNextBeforeSequence}`,
+        currentToken,
+      );
+      setStoryItems((current) => mergeStoryItems(response.items, current));
+      setStoryNextBeforeSequence(response.next_before_sequence);
+      return response.items.length;
+    } catch (requestError) {
+      showRequestError(requestError);
+      return 0;
+    } finally {
+      setStoryLoading(false);
+    }
   }
 
   async function refreshAdminData(
@@ -1040,6 +1108,8 @@ export function useGestalokaRuntime() {
       setLatestNarrative("");
       setLatestReaction("");
       setLatestConsequenceSummary("");
+      setStoryItems([]);
+      setStoryNextBeforeSequence(null);
       setLastRebuild(null);
       const currentToken = await ensureFreshToken(token);
       const created = await apiFetch<SessionInfo>("/sessions", currentToken, {
@@ -1058,6 +1128,7 @@ export function useGestalokaRuntime() {
       setAdjustWorldId(created.world_id);
       await Promise.all([
         refreshWorldState(created, currentToken),
+        refreshStoryHistory(created, currentToken),
         refreshWallet(currentToken),
         refreshAdminData(currentToken, created.world_id, ledgerUserFilter || me?.sub, created.world_id, created.session_id),
         refreshHealth(),
@@ -1428,6 +1499,9 @@ export function useGestalokaRuntime() {
     latestNarrative,
     latestReaction,
     latestConsequenceSummary,
+    storyItems,
+    storyHasOlder: storyNextBeforeSequence !== null,
+    storyLoading,
     events,
     memories,
     activity,
@@ -1529,6 +1603,7 @@ export function useGestalokaRuntime() {
     handleStartSession,
     handleTurnSubmit,
     handleChoiceSubmit,
+    handleLoadOlderStory,
     handleRebuildGraph,
     handleIdlePass,
     handleMemorySearch,

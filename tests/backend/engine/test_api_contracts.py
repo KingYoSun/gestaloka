@@ -794,6 +794,56 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
 
 
+def test_session_story_history_paginates_and_enforces_owner(client, container):
+    def resolve_token(token: str) -> UserIdentity:
+        if token in {"player-a", "dev-local-token"}:
+            return UserIdentity(sub="player-a", name="Player A")
+        if token == "player-b":
+            return UserIdentity(sub="player-b", name="Player B")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    container.oidc_adapter.resolve_token = resolve_token  # type: ignore[method-assign]
+    headers_a = {"Authorization": "Bearer player-a"}
+    headers_b = {"Authorization": "Bearer player-b"}
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=headers_a)
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    _, first_turn, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        headers_a,
+        {"input_mode": "choice", "choice_id": "safe"},
+    )
+    _, second_turn, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        headers_a,
+        {"input_mode": "choice", "choice_id": "progress"},
+    )
+
+    latest = client.get(f"/sessions/{session_id}/story?limit=1", headers=headers_a)
+    assert latest.status_code == 200
+    latest_payload = latest.json()
+    assert len(latest_payload["items"]) == 1
+    assert latest_payload["items"][0]["turn_id"] == second_turn["turn_id"]
+    assert latest_payload["items"][0]["event_id"] == second_turn["event_id"]
+    assert latest_payload["items"][0]["narrative"] == second_turn["narrative"]
+    assert latest_payload["items"][0]["reaction"] == second_turn["npc_reaction"]
+    assert latest_payload["items"][0]["consequence"] == second_turn["consequence_summary"]
+    assert latest_payload["next_before_sequence"]
+
+    older = client.get(
+        f"/sessions/{session_id}/story?limit=1&before_sequence={latest_payload['next_before_sequence']}",
+        headers=headers_a,
+    )
+    assert older.status_code == 200
+    assert older.json()["items"][0]["turn_id"] == first_turn["turn_id"]
+
+    denied = client.get(f"/sessions/{session_id}/story", headers=headers_b)
+    assert denied.status_code == 404
+
+
 def _receive_until_turn_resolved(websocket, *, limit: int = 64):
     messages = []
     for _ in range(limit):

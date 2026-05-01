@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
-from app.modules.actor.service import create_player_profile_for_user
+from app.models.entities import Event, Session as GameSession, Turn
+from app.modules.actor.service import create_player_profile_for_user, get_player_profile_for_user, player_profile_to_dict
 from app.modules.identity.oidc import UserIdentity
-from app.modules.localization.service import localize_session_state
+from app.modules.localization.service import localize_session_state, localize_turn_payload
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
 from app.modules.world_pack.service import (
     WorldAvailabilityError,
@@ -31,6 +33,33 @@ class CreateSessionRequest(BaseModel):
     world_name: str | None = Field(default=None, min_length=1, max_length=120)
     player_display_name: str | None = Field(default=None, min_length=1, max_length=40)
     world_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+def _session_for_user(db: Session, *, user: UserIdentity, session_id: str) -> tuple[GameSession, dict[str, Any]]:
+    game_session = db.execute(select(GameSession).where(GameSession.id == session_id)).scalar_one_or_none()
+    if game_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    player_row = get_player_profile_for_user(db, game_session.world_id, user.sub, game_session.player_actor_id)
+    if player_row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found for current user")
+    actor, profile = player_row
+    return game_session, player_profile_to_dict(actor, profile)
+
+
+def _story_item(event: Event, turn: Turn | None) -> dict[str, object]:
+    resolved_output = turn.resolved_output if turn is not None and isinstance(turn.resolved_output, dict) else {}
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    return {
+        "event_id": event.id,
+        "turn_id": event.turn_id,
+        "canonical_sequence": event.canonical_sequence,
+        "occurred_at": event.occurred_at.isoformat(),
+        "input_mode": str(resolved_output.get("input_mode") or payload.get("input_mode") or ""),
+        "narrative": str(resolved_output.get("narrative") or event.narrative or ""),
+        "reaction": str(resolved_output.get("npc_reaction") or ""),
+        "consequence": str(resolved_output.get("consequence_summary") or payload.get("consequence_summary") or ""),
+        "scene_summary": str(resolved_output.get("scene_summary") or payload.get("scene_summary") or ""),
+    }
 
 
 @router.post("/sessions")
@@ -133,3 +162,59 @@ def get_session_state(
         return localize_session_state(cache_db, container.model_router, state)
     finally:
         cache_db.close()
+
+
+@router.get("/sessions/{session_id}/story")
+def get_session_story(
+    session_id: str,
+    limit: int = Query(default=20, ge=1, le=50),
+    before_sequence: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_user),
+) -> dict[str, object]:
+    game_session, player_profile = _session_for_user(db, user=user, session_id=session_id)
+    conditions = [
+        Event.world_id == game_session.world_id,
+        Event.session_id == game_session.id,
+        Event.event_type == "player.turn.resolved",
+        Event.canonical_sequence.is_not(None),
+    ]
+    if before_sequence is not None:
+        conditions.append(Event.canonical_sequence < before_sequence)
+    stmt = (
+        select(Event, Turn)
+        .join(Turn, (Turn.id == Event.turn_id) & (Turn.world_id == Event.world_id), isouter=True)
+        .where(*conditions)
+        .order_by(Event.canonical_sequence.desc(), Event.occurred_at.desc(), Event.id.desc())
+        .limit(limit + 1)
+    )
+    rows = list(db.execute(stmt).all())
+    page_rows = rows[:limit]
+    ordered = list(reversed(page_rows))
+    items = [_story_item(event, turn) for event, turn in ordered]
+    cache_db = container.session_factory()
+    try:
+        for item in items:
+            localized = localize_turn_payload(
+                cache_db,
+                container.model_router,
+                {
+                    "consequence_summary": item["consequence"],
+                    "scene_summary": item["scene_summary"],
+                },
+                world_id=game_session.world_id,
+                actor_id=str(player_profile.get("actor_id") or ""),
+                play_language=dict(player_profile.get("play_language") or {}),
+            )
+            item["consequence"] = str(localized.get("consequence_summary") or item["consequence"])
+            item["scene_summary"] = str(localized.get("scene_summary") or item["scene_summary"])
+    finally:
+        cache_db.close()
+    next_before_sequence = min(
+        (item["canonical_sequence"] for item in items if isinstance(item["canonical_sequence"], int)),
+        default=None,
+    )
+    if len(rows) <= limit:
+        next_before_sequence = None
+    return {"items": items, "next_before_sequence": next_before_sequence}

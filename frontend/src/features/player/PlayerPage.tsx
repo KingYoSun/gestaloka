@@ -1,7 +1,6 @@
-import { Info, LogIn, ShoppingCart, UserPlus, X } from "lucide-react";
-import type { FormEvent } from "react";
-import { useState } from "react";
-import type { TFunction } from "i18next";
+import { ArrowDownToLine, ChevronDown, Info, ListChecks, LogIn, PanelRightOpen, ShoppingCart, UserPlus, X } from "lucide-react";
+import type { FormEvent, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
@@ -12,17 +11,11 @@ import { StreamList } from "../../components/ui/StreamList";
 import { Textarea } from "../../components/ui/textarea";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
-import type { NarrativeChoice, PlayLanguagePreset, PlayerProfile, WorldContext } from "../../types";
+import { cn } from "../../lib/utils";
+import type { NarrativeChoice, PlayLanguagePreset, PlayerProfile, StoryHistoryItem, WorldContext } from "../../types";
 
 type PlayerPageProps = {
   runtime: GestalokaRuntime;
-};
-
-type TextItem = {
-  key: string;
-  title?: string;
-  body: string;
-  meta?: string;
 };
 
 const playLanguageOptions: Array<{ value: PlayLanguagePreset; label: string }> = [
@@ -93,6 +86,20 @@ function formatRoutineState(state: Record<string, unknown>): string {
     .slice(0, 4)
     .map(([key, value]) => `${key}: ${String(value)}`);
   return parts.join(" / ") || "routine state summarized";
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => (typeof window === "undefined" ? false : window.matchMedia(query).matches));
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(query);
+    const update = () => setMatches(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, [query]);
+
+  return matches;
 }
 
 export function PlayerPage({ runtime }: PlayerPageProps) {
@@ -482,21 +489,109 @@ function ProfileForm({
 
 function PlayingView({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
+  const isMobile = useMediaQuery("(max-width: 640px)");
+  const [actionDrawerOpen, setActionDrawerOpen] = useState(false);
+  const [statusDrawerOpen, setStatusDrawerOpen] = useState(false);
+
   return (
     <section
-      className="grid grid-cols-[minmax(0,620px)_minmax(240px,280px)] items-start gap-6 py-5 pb-10 max-[940px]:grid-cols-1"
+      className="grid grid-cols-[minmax(0,620px)_minmax(240px,280px)] items-start gap-6 py-5 pb-10 max-[940px]:grid-cols-1 max-[640px]:pb-24"
       aria-label={t("player.labels.playing")}
     >
       <main className="grid max-w-[620px] min-w-0 gap-4 max-[940px]:max-w-none">
         <SceneHeader runtime={runtime} />
-        <LatestStory runtime={runtime} />
-        <TurnComposer runtime={runtime} />
+        <StoryHistory runtime={runtime} />
+        {!isMobile ? <TurnComposer runtime={runtime} /> : null}
       </main>
-      <aside className="grid min-w-0 gap-4" aria-label={t("player.labels.status")}>
-        <QuestBlock runtime={runtime} />
-        <SideLists runtime={runtime} />
-      </aside>
+      {!isMobile ? (
+        <aside className="grid min-w-0 gap-4" aria-label={t("player.labels.status")}>
+          <StatusBlocks runtime={runtime} />
+        </aside>
+      ) : null}
+      {isMobile ? (
+        <>
+          <MobilePlayBar onOpenActions={() => setActionDrawerOpen(true)} onOpenStatus={() => setStatusDrawerOpen(true)} />
+          <Drawer open={actionDrawerOpen} side="bottom" title={t("player.mobile.actions")} onClose={() => setActionDrawerOpen(false)}>
+            <TurnComposer runtime={runtime} />
+          </Drawer>
+          <Drawer open={statusDrawerOpen} side="right" title={t("player.mobile.info")} onClose={() => setStatusDrawerOpen(false)}>
+            <div className="grid min-w-0 gap-4">
+              <StatusBlocks runtime={runtime} />
+            </div>
+          </Drawer>
+        </>
+      ) : null}
     </section>
+  );
+}
+
+function StatusBlocks({ runtime }: PlayerPageProps) {
+  return (
+    <>
+      <QuestBlock runtime={runtime} />
+      <SideLists runtime={runtime} />
+    </>
+  );
+}
+
+function MobilePlayBar({ onOpenActions, onOpenStatus }: { onOpenActions: () => void; onOpenStatus: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-3 py-3 shadow-lg backdrop-blur">
+      <div className="mx-auto grid max-w-[620px] grid-cols-2 gap-2">
+        <Button type="button" onClick={onOpenActions}>
+          <ListChecks aria-hidden="true" />
+          {t("player.mobile.actions")}
+        </Button>
+        <Button type="button" variant="secondary" onClick={onOpenStatus}>
+          <PanelRightOpen aria-hidden="true" />
+          {t("player.mobile.info")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Drawer({
+  children,
+  onClose,
+  open,
+  side,
+  title,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  open: boolean;
+  side: "bottom" | "right";
+  title: string;
+}) {
+  const { t } = useTranslation();
+  if (!open) {
+    return null;
+  }
+  return (
+    <div className="fixed inset-0 z-40 bg-background/70" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-modal="true"
+        role="dialog"
+        aria-label={title}
+        className={cn(
+          "absolute grid min-w-0 gap-4 border-border bg-card p-4 shadow-lg",
+          side === "bottom"
+            ? "inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-lg border-t"
+            : "bottom-0 right-0 top-0 w-[min(88vw,340px)] overflow-y-auto border-l",
+        )}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <h2 className="text-base font-semibold leading-6 text-foreground">{title}</h2>
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")}>
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+        {children}
+      </section>
+    </div>
   );
 }
 
@@ -508,37 +603,147 @@ function SceneHeader({ runtime }: PlayerPageProps) {
   const scene = sessionState?.current_scene;
 
   return (
-    <Card className="grid min-w-0 gap-4 p-6 max-[480px]:p-4" aria-label={t("player.labels.scene")}>
-      <p className="text-sm font-bold lowercase leading-[21px] tracking-[0.16em] text-foreground">{t("common.brandWordmark")}</p>
-      <p className="text-xs font-semibold leading-[18px] text-muted-foreground" data-testid="session-location">
+    <Card className="grid min-w-0 gap-3 p-5 max-[480px]:p-4" aria-label={t("player.labels.scene")}>
+      <p
+        className="text-xs font-semibold leading-[18px] text-muted-foreground"
+        data-testid="current-place-summary"
+        id="scene-summary-heading"
+      >
         {location?.name ?? session?.world_name ?? t("player.world.startLocation")}
       </p>
-      <h1 className="text-[32px] font-bold leading-[48px] tracking-[1.28px] text-foreground max-[480px]:text-[28px] max-[480px]:leading-9" data-testid="current-place-summary">
+      <p hidden data-testid="session-location">
         {location?.name ?? t("player.world.startLocation")}
-      </h1>
-      {chapter?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
-      {scene?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
+      </p>
+      <details className="group grid min-w-0 gap-3" open>
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border bg-secondary px-3 py-2 text-sm font-semibold leading-5 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80 [&::-webkit-details-marker]:hidden">
+          <span>{t("player.story.sceneDetails")}</span>
+          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="grid gap-3 pt-1">
+          {chapter?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
+          {scene?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
+        </div>
+      </details>
     </Card>
   );
 }
 
-function LatestStory({ runtime }: PlayerPageProps) {
+function StoryHistory({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
-  const storyItems = buildStoryItems(runtime, t);
+  const [heightPreset, setHeightPreset] = useState<"small" | "medium" | "large">(() => {
+    if (typeof window === "undefined") {
+      return "medium";
+    }
+    const stored = window.localStorage.getItem("gestaloka.storyHeight");
+    return stored === "small" || stored === "large" ? stored : "medium";
+  });
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const storyItems = runtime.storyItems.length ? runtime.storyItems : fallbackStoryItems(runtime, t("player.story.inProgress"));
+  const latestStory = storyItems[storyItems.length - 1] ?? null;
+  const heightClass =
+    heightPreset === "small"
+      ? "h-[min(42vh,360px)]"
+      : heightPreset === "large"
+        ? "h-[min(72vh,680px)]"
+        : "h-[min(56vh,520px)]";
+
+  useEffect(() => {
+    window.localStorage.setItem("gestaloka.storyHeight", heightPreset);
+  }, [heightPreset]);
+
+  useEffect(() => {
+    if (!isAtBottom) {
+      return;
+    }
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) {
+      return;
+    }
+    scrollNode.scrollTop = scrollNode.scrollHeight;
+  }, [isAtBottom, storyItems.length]);
+
+  function updateBottomState() {
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) {
+      return;
+    }
+    setIsAtBottom(scrollNode.scrollHeight - scrollNode.scrollTop - scrollNode.clientHeight < 32);
+  }
+
+  async function handleScroll() {
+    updateBottomState();
+    const scrollNode = scrollRef.current;
+    if (!scrollNode || scrollNode.scrollTop > 24 || !runtime.storyHasOlder || runtime.storyLoading) {
+      return;
+    }
+    const previousHeight = scrollNode.scrollHeight;
+    const added = await runtime.handleLoadOlderStory();
+    if (added > 0) {
+      window.requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight - previousHeight + scrollRef.current.scrollTop;
+        }
+      });
+    }
+  }
+
+  function scrollToLatest() {
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) {
+      return;
+    }
+    scrollNode.scrollTo({ top: scrollNode.scrollHeight, behavior: "smooth" });
+    setIsAtBottom(true);
+  }
 
   return (
-    <Card className="min-w-0 p-6 max-[480px]:p-4" aria-label={t("player.labels.body")}>
-      <div className="grid gap-4">
-        {storyItems.map((item) => (
-          <article className="grid gap-3" key={item.key}>
-            {item.title ? <h2 className="text-base font-semibold leading-6 text-foreground">{item.title}</h2> : null}
-            <p className="text-lg leading-9 text-foreground" data-testid={item.key === "latest-narrative" ? "latest-narrative" : undefined}>
-              {item.body}
-            </p>
-            {item.meta ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{item.meta}</p> : null}
-          </article>
-        ))}
+    <Card className="relative grid min-w-0 gap-3 p-4" aria-label={t("player.labels.body")}>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex rounded-md border border-border bg-secondary p-1" role="group" aria-label={t("player.story.height")}>
+          {(["small", "medium", "large"] as const).map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              className={cn(
+                "min-h-9 rounded px-3 text-sm font-semibold leading-5 text-muted-foreground outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/80",
+                heightPreset === preset ? "bg-primary text-primary-foreground" : "hover:bg-card hover:text-foreground",
+              )}
+              aria-pressed={heightPreset === preset}
+              onClick={() => setHeightPreset(preset)}
+            >
+              {t(`player.story.heightPresets.${preset}`)}
+            </button>
+          ))}
+        </div>
       </div>
+      <div
+        ref={scrollRef}
+        className={cn("min-w-0 overflow-y-auto pr-2", heightClass)}
+        data-testid="story-scroll"
+        onScroll={() => void handleScroll()}
+      >
+        <div className="grid gap-4">
+          {runtime.storyLoading ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{t("common.loading")}</p> : null}
+          {storyItems.map((item) => (
+            <StoryEntry key={item.event_id || item.turn_id || item.occurred_at} item={item} latest={item === latestStory} />
+          ))}
+        </div>
+      </div>
+      {!isAtBottom ? (
+        <Button
+          className="absolute bottom-6 right-6 shadow-md"
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={scrollToLatest}
+          aria-label={t("player.story.scrollToLatest")}
+          title={t("player.story.scrollToLatest")}
+          data-testid="story-scroll-to-latest"
+        >
+          <ArrowDownToLine aria-hidden="true" />
+        </Button>
+      ) : null}
       <p hidden data-testid="latest-reaction">
         {runtime.latestReaction || ""}
       </p>
@@ -551,29 +756,46 @@ function LatestStory({ runtime }: PlayerPageProps) {
   );
 }
 
-function buildStoryItems(runtime: GestalokaRuntime, t: TFunction): TextItem[] {
+function StoryEntry({ item, latest }: { item: StoryHistoryItem; latest: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <article className="grid gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+      <p className="text-lg leading-9 text-foreground" data-testid={latest ? "latest-narrative" : undefined}>
+        {item.narrative || item.scene_summary}
+      </p>
+      {item.reaction ? (
+        <div className="grid gap-2">
+          <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.reaction")}</h2>
+          <p className="text-lg leading-9 text-foreground">{item.reaction}</p>
+        </div>
+      ) : null}
+      {item.consequence ? (
+        <div className="grid gap-2">
+          <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.consequence")}</h2>
+          <p className="text-lg leading-9 text-foreground">{item.consequence}</p>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function fallbackStoryItems(runtime: GestalokaRuntime, fallbackText: string): StoryHistoryItem[] {
   const { latestConsequenceSummary, latestNarrative, latestReaction, sessionState } = runtime;
   const scene = sessionState?.current_scene;
   const location = sessionState?.current_location ?? sessionState?.location ?? null;
-  const items: TextItem[] = [];
-
-  if (latestNarrative) {
-    items.push({ key: "latest-narrative", body: latestNarrative });
-  } else {
-    items.push({
-      key: "latest-narrative",
-      body: scene?.summary ?? location?.description ?? t("player.story.inProgress"),
-    });
-  }
-
-  if (latestReaction) {
-    items.push({ key: "latest-reaction-visible", title: t("player.story.reaction"), body: latestReaction });
-  }
-  if (latestConsequenceSummary) {
-    items.push({ key: "latest-consequence-visible", title: t("player.story.consequence"), body: latestConsequenceSummary });
-  }
-
-  return items;
+  return [
+    {
+      event_id: "fallback",
+      turn_id: null,
+      canonical_sequence: null,
+      occurred_at: new Date(0).toISOString(),
+      input_mode: "",
+      narrative: latestNarrative || scene?.summary || location?.description || fallbackText,
+      reaction: latestReaction,
+      consequence: latestConsequenceSummary,
+      scene_summary: scene?.summary ?? "",
+    },
+  ];
 }
 
 function TurnComposer({ runtime }: PlayerPageProps) {
@@ -758,12 +980,12 @@ function SPPurchaseDialog({ onClose, runtime }: { onClose: () => void; runtime: 
   }
 
   return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-background/70 p-4" role="presentation">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-4 max-[640px]:items-end max-[640px]:p-0" role="presentation">
       <section
         aria-modal="true"
         role="dialog"
         aria-label={t("player.sp.purchaseDialog")}
-        className="grid w-full max-w-md min-w-0 gap-4 rounded-lg border border-border bg-card p-5 shadow-lg"
+        className="grid w-full max-w-md min-w-0 gap-4 rounded-lg border border-border bg-card p-5 shadow-lg max-[640px]:max-w-none max-[640px]:rounded-b-none max-[640px]:border-b-0"
         data-testid="sp-purchase-dialog"
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
