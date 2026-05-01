@@ -32,9 +32,12 @@
   --brand-navy: #0b2034;
   --brand-gold: #c6922e;
   --brand-sage: #65785f;
-  --brand-white: #ffffff;
+  --brand-white: #f2eadf;
+  --brand-cream: #f2eadf;
   --brand-aqua: #7bcfd0;
-  --background: #ffffff;
+  --background: #f2eadf;
+  --background-texture: url("/brand/texture.png");
+  --background-blend-mode: multiply;
   --foreground: #0b2034;
   --card: #fffaf1;
   --card-foreground: #0b2034;
@@ -64,6 +67,8 @@
   :root {
     color-scheme: dark;
     --background: #0b2034;
+    --background-texture: none;
+    --background-blend-mode: normal;
     --foreground: hsla(38, 62%, 93%, 0.92);
     --card: #12304a;
     --card-foreground: hsla(38, 62%, 93%, 0.92);
@@ -84,7 +89,9 @@
 
 .theme-light {
   color-scheme: light;
-  --background: #ffffff;
+  --background: #f2eadf;
+  --background-texture: url("/brand/texture.png");
+  --background-blend-mode: multiply;
   --foreground: #0b2034;
   --card: #fffaf1;
   --card-foreground: #0b2034;
@@ -105,6 +112,8 @@
 .theme-dark {
   color-scheme: dark;
   --background: #0b2034;
+  --background-texture: none;
+  --background-blend-mode: normal;
   --foreground: hsla(38, 62%, 93%, 0.92);
   --card: #12304a;
   --card-foreground: hsla(38, 62%, 93%, 0.92);
@@ -137,7 +146,11 @@
     margin: 0;
     min-height: 100vh;
     overflow-x: hidden;
-    background: var(--background);
+    background-color: var(--background);
+    background-image: var(--background-texture);
+    background-repeat: repeat;
+    background-size: 627px 627px;
+    background-blend-mode: var(--background-blend-mode);
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: 16px;
@@ -150,18 +163,24 @@
 
   @media (prefers-color-scheme: dark) {
     body {
-      background: var(--background);
+      background-color: var(--background);
+      background-image: var(--background-texture);
+      background-blend-mode: var(--background-blend-mode);
     }
   }
 
   html.theme-light body,
   body.theme-light {
-    background: var(--background);
+    background-color: var(--background);
+    background-image: var(--background-texture);
+    background-blend-mode: var(--background-blend-mode);
   }
 
   html.theme-dark body,
   body.theme-dark {
-    background: var(--background);
+    background-color: var(--background);
+    background-image: var(--background-texture);
+    background-blend-mode: var(--background-blend-mode);
   }
 
   .brand-mark {
