@@ -71,6 +71,8 @@ function formatOpsEventSummary(data: Record<string, unknown>): string {
     "location_id",
     "phase",
     "status",
+    "elapsed_ms",
+    "role_elapsed_ms",
     "graph_runtime_status",
     "release_gate_verdict",
     "verdict",
@@ -1003,6 +1005,8 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
         renderItem={(item) => (
           <>
             <strong>{item.event_type}</strong>
+            <span>event_id: {item.id}</span>
+            <span>turn_id: {item.turn_id ?? "none"}</span>
             <span>{item.narrative}</span>
             <span>location: {item.location_id ?? "none"}</span>
           </>

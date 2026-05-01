@@ -24,6 +24,12 @@ export type SwarmUiTurnObservation = {
   turnId: string;
   waitStatusSamples: string[];
   waitStatusTimeline: Array<{ elapsedSeconds: number; status: string }>;
+  progressTimeline: Array<{
+    phase: string;
+    status: string;
+    elapsedMs: number | null;
+    roleElapsedMs: number | null;
+  }>;
   lastWaitStatus: string;
   maxWaitElapsedSeconds: number;
   latestNarrative: string;
@@ -181,6 +187,9 @@ export async function executeTurnViaUi(
     const completed = Date.now();
     const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
     const opsStream = await listText(page, "ops-stream");
+    const acceptedTurnId = stringValue(payload.turn_id);
+    const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
+    const progressTimeline = progressTimelineFromOpsStream(opsStream);
     return {
       personaId: persona.id,
       scenario: decision.scenario,
@@ -191,10 +200,11 @@ export async function executeTurnViaUi(
       durationMs: completed - started,
       httpDurationMs: httpCompleted - started,
       finalResolutionDurationMs: completed - started,
-      eventId: stringValue(payload.event_id) || eventIdFromOpsStream(opsStream),
-      turnId: stringValue(payload.turn_id),
+      eventId: stringValue(payload.event_id) || eventIdForTurn(eventsStream, acceptedTurnId) || eventIdFromOpsStream(opsStream),
+      turnId: acceptedTurnId,
       waitStatusSamples: nonEmptyWaitStatusSamples.slice(0, 16),
       waitStatusTimeline,
+      progressTimeline,
       lastWaitStatus: nonEmptyWaitStatusSamples[nonEmptyWaitStatusSamples.length - 1] ?? "",
       maxWaitElapsedSeconds: Math.max(Math.floor((completed - started) / 1000), 0),
       latestNarrative: await textContent(page, "latest-narrative"),
@@ -210,6 +220,77 @@ export async function executeTurnViaUi(
   } finally {
     clearInterval(sampleTimer);
   }
+}
+
+async function waitForEventsStreamForTurn(page: Page, turnId: string): Promise<string[]> {
+  let eventsStream = await listText(page, "events-stream");
+  if (!turnId || eventIdForTurn(eventsStream, turnId)) {
+    return eventsStream;
+  }
+  await expect
+    .poll(
+      async () => {
+        eventsStream = await listText(page, "events-stream");
+        return Boolean(eventIdForTurn(eventsStream, turnId));
+      },
+      { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(true);
+  return eventsStream;
+}
+
+function eventIdForTurn(items: string[], turnId: string): string {
+  if (!turnId) {
+    return "";
+  }
+  const chunks = items.flatMap((item) =>
+    item
+      .split("event_id:")
+      .slice(1)
+      .map((chunk) => `event_id:${chunk}`),
+  );
+  for (const chunk of chunks) {
+    if (!chunk.includes(`turn_id: ${turnId}`)) {
+      continue;
+    }
+    const match = /event_id: ([0-9a-f-]{36})/i.exec(chunk);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return "";
+}
+
+function progressTimelineFromOpsStream(items: string[]): SwarmUiTurnObservation["progressTimeline"] {
+  const progressChunks = items.flatMap((item) =>
+    item
+      .split("turn.progress")
+      .slice(1)
+      .map((chunk) => `turn.progress${chunk}`),
+  );
+  return progressChunks
+    .map((item) => {
+      const phase = valueAfterKey(item, "phase");
+      const status = valueAfterKey(item, "status");
+      return {
+        phase,
+        status,
+        elapsedMs: numberAfterKey(item, "elapsed_ms"),
+        roleElapsedMs: numberAfterKey(item, "role_elapsed_ms"),
+      };
+    })
+    .filter((item) => item.phase || item.status || item.elapsedMs !== null || item.roleElapsedMs !== null)
+    .reverse();
+}
+
+function valueAfterKey(text: string, key: string): string {
+  const match = new RegExp(`\\b${key}: ([^/\\n]+)`, "i").exec(text);
+  return match?.[1]?.trim() ?? "";
+}
+
+function numberAfterKey(text: string, key: string): number | null {
+  const value = Number(valueAfterKey(text, key));
+  return Number.isFinite(value) ? value : null;
 }
 
 function eventIdFromOpsStream(items: string[]): string {

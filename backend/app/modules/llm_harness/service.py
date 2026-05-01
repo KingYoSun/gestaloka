@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -1342,6 +1343,7 @@ class ModelRouter:
         self.config_name = config_name
         self.observability_service = observability_service
         self._provider: BaseModelProvider | None = None
+        self._provider_lock = threading.Lock()
 
     def execute_structured_prompt(
         self,
@@ -1680,7 +1682,9 @@ class ModelRouter:
     @property
     def provider(self) -> BaseModelProvider:
         if self._provider is None:
-            self._provider = self._build_provider()
+            with self._provider_lock:
+                if self._provider is None:
+                    self._provider = self._build_provider()
         return self._provider
 
     def _lane_sequence(self, requested_lane: str, allow_pro_fallback: bool) -> list[str]:

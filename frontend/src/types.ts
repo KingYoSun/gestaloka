@@ -484,6 +484,7 @@ export type TurnAcceptedResponse = {
 
 export type EventItem = {
   id: string;
+  turn_id: string | null;
   narrative: string;
   event_type: string;
   location_id: string | null;

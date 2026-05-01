@@ -238,6 +238,7 @@ def get_world_health(
 def event_to_dict(item) -> dict:
     return {
         "id": item.id,
+        "turn_id": item.turn_id,
         "world_id": item.world_id,
         "event_type": item.event_type,
         "canonical_sequence": item.canonical_sequence,

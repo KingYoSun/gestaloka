@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -674,10 +676,12 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "turn.resolved",
     ]
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
-    assert [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"] == [
-        "intent_interpretation",
-        "memory_council",
-        "npc_council",
+    completed_phases = [
+        message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"
+    ]
+    assert completed_phases[0] == "intent_interpretation"
+    assert set(completed_phases[1:3]) == {"memory_council", "npc_council"}
+    assert completed_phases[3:] == [
         "world_progress",
         "rules_arbiter",
         "safety_guard",
@@ -735,6 +739,56 @@ def _post_turn_and_wait_for_resolution(client, session_id: str, auth_headers: di
         assert response.status_code == 202
         messages = _receive_until_turn_resolved(websocket)
     return response.json(), messages[-1]["data"], messages
+
+
+def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, container, auth_headers, monkeypatch):
+    original_execute = container.model_router.execute_structured_prompt
+    role_windows: dict[str, dict[str, float]] = {}
+    lock = threading.Lock()
+
+    def execute_with_role_delay(*, prompt_id, **kwargs):
+        if prompt_id in {"council.memory_manager", "council.npc_manager"}:
+            with lock:
+                role_windows[prompt_id] = {"started": time.perf_counter()}
+            time.sleep(0.25)
+            result = original_execute(prompt_id=prompt_id, **kwargs)
+            with lock:
+                role_windows[prompt_id]["completed"] = time.perf_counter()
+            return result
+        return original_execute(prompt_id=prompt_id, **kwargs)
+
+    monkeypatch.setattr(container.model_router, "execute_structured_prompt", execute_with_role_delay)
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    _, _, messages = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
+    )
+
+    memory_window = role_windows["council.memory_manager"]
+    npc_window = role_windows["council.npc_manager"]
+    assert memory_window["started"] < npc_window["completed"]
+    assert npc_window["started"] < memory_window["completed"]
+    progress_events = [message["data"] for message in messages if message.get("event") == "turn.progress"]
+    assert any(event.get("phase") == "memory_council" and event.get("role_elapsed_ms") is not None for event in progress_events)
+    assert any(event.get("phase") == "npc_council" and event.get("role_elapsed_ms") is not None for event in progress_events)
+
+    council_turns_response = client.get(f"/ops/council/turns?session_id={session_id}", headers=auth_headers)
+    assert council_turns_response.status_code == 200
+    roles = council_turns_response.json()["items"][0]["roles"]
+    assert [item["council_role"] for item in roles] == [
+        "intent_interpreter",
+        "memory_manager",
+        "npc_manager",
+        "world_progress",
+        "rules_arbiter",
+        "safety_guard",
+        "narrative",
+    ]
 
 
 def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_headers):

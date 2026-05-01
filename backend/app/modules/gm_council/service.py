@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -1109,47 +1111,30 @@ class GMCouncilService:
             "ambient_murmurs": ambient_murmurs,
             "shared_world_context": shared_world_context,
         }
-        memory_result = self.model_router.execute_structured_prompt(
-            prompt_id="council.memory_manager",
-            response_model=CouncilMemoryManagerPayload,
-            input_payload=memory_input,
-            world_id=request.world_id,
-            turn_id=request.turn_id,
-            graph_context_status=request.graph_context_status,
-        )
-        role_runs.append(
-            self._role_run(
-                council_role="memory_manager",
-                stage_index=2,
-                prompt_id="council.memory_manager",
-                approval_status="prepared" if memory_result.succeeded else "failed",
-                result=memory_result,
-            )
-        )
-        if not memory_result.succeeded:
-            return TurnResolutionOutcome(
-                role_runs=role_runs,
-                final_lane=memory_result.final_lane,
-                final_payload=None,
-                failure_reason=memory_result.failure_reason,
-                rejection_role="memory_manager",
-            )
-
-        memory_payload = memory_result.final_payload
-        assert memory_payload is not None
 
         npc_input = {
             "world_id": request.world_id,
             "input_text": request.input_text,
+            "intent_summary": intent_payload.intent_summary,
             "player_name": request.player_name,
             "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
             "play_language": play_language,
             "npc_name": request.npc_name,
-            "memory_summary": memory_payload.memory_summary,
-            "focus_memories": memory_payload.focus_memories,
-            "relation_summary": memory_payload.relation_summary,
-            "state_summary": memory_payload.state_summary,
+            "relevant_memories": request.relevant_memories,
+            "relation_context": request.relation_context,
+            "focus_memories": request.relevant_memories,
+            "state_summary": _joined_state_summary(
+                [
+                    ("quests", quests),
+                    ("factions", request.session_state.get("factions") or []),
+                    ("inventory", inventory),
+                    ("scene", current_scene),
+                    ("chapter", current_chapter),
+                    ("location", current_location),
+                    ("world_beats", recent_world_beats),
+                ]
+            ),
             "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
             "usable_reward_items": usable_reward_items,
             "used_reward_items": used_reward_items,
@@ -1170,13 +1155,43 @@ class GMCouncilService:
             "ambient_murmurs": ambient_murmurs,
             "shared_world_context": shared_world_context,
         }
-        npc_result = self.model_router.execute_structured_prompt(
-            prompt_id="council.npc_manager",
-            response_model=CouncilNPCManagerPayload,
-            input_payload=npc_input,
-            world_id=request.world_id,
-            turn_id=request.turn_id,
-            graph_context_status=request.graph_context_status,
+
+        # Prewarm provider initialization before worker threads enter the router.
+        _ = self.model_router.provider
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="gm-council-role") as executor:
+            memory_context = copy_context()
+            npc_context = copy_context()
+            memory_future = executor.submit(
+                memory_context.run,
+                self.model_router.execute_structured_prompt,
+                prompt_id="council.memory_manager",
+                response_model=CouncilMemoryManagerPayload,
+                input_payload=memory_input,
+                world_id=request.world_id,
+                turn_id=request.turn_id,
+                graph_context_status=request.graph_context_status,
+            )
+            npc_future = executor.submit(
+                npc_context.run,
+                self.model_router.execute_structured_prompt,
+                prompt_id="council.npc_manager",
+                response_model=CouncilNPCManagerPayload,
+                input_payload=npc_input,
+                world_id=request.world_id,
+                turn_id=request.turn_id,
+                graph_context_status=request.graph_context_status,
+            )
+            memory_result = memory_future.result()
+            npc_result = npc_future.result()
+
+        role_runs.append(
+            self._role_run(
+                council_role="memory_manager",
+                stage_index=2,
+                prompt_id="council.memory_manager",
+                approval_status="prepared" if memory_result.succeeded else "failed",
+                result=memory_result,
+            )
         )
         role_runs.append(
             self._role_run(
@@ -1187,6 +1202,14 @@ class GMCouncilService:
                 result=npc_result,
             )
         )
+        if not memory_result.succeeded:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=memory_result.final_lane,
+                final_payload=None,
+                failure_reason=memory_result.failure_reason,
+                rejection_role="memory_manager",
+            )
         if not npc_result.succeeded:
             return TurnResolutionOutcome(
                 role_runs=role_runs,
@@ -1196,6 +1219,8 @@ class GMCouncilService:
                 rejection_role="npc_manager",
             )
 
+        memory_payload = memory_result.final_payload
+        assert memory_payload is not None
         npc_payload = npc_result.final_payload
         assert npc_payload is not None
 
@@ -1490,20 +1515,30 @@ class GMCouncilService:
             "world_id": request.world_id,
             "input_text": request.input_text,
             "player_name": request.player_name,
-            "player_profile": player_profile,
             "narrative_preferences": narrative_preferences,
             "play_language": play_language,
             "npc_name": request.npc_name,
-            "memory_summary": memory_payload.memory_summary,
+            "approved_event_package": world_progress_payload.event_payload,
             "reaction_outline": npc_payload.reaction_outline,
+            "npc_reaction_outline": npc_payload.reaction_outline,
+            "memory_highlights": memory_payload.focus_memories[:5],
             "world_tags": rules_payload.normalized_world_tags,
             "resolution_summary": world_progress_payload.resolution_summary,
             "consequence_summary": intent_payload.consequence_summary,
+            "consequence_tags": world_progress_payload.consequence_tags,
             "outcome_band": world_progress_payload.outcome_band,
             "current_scene_summary": str(current_scene.get("summary") or ""),
             "current_chapter_summary": str(current_chapter.get("summary") or ""),
             "recognized_titles": recognized_titles,
-            "shared_world_context": shared_world_context,
+            "same_world_context_summary": _joined_state_summary(
+                [
+                    ("location", current_location),
+                    ("recent_world_beats", recent_world_beats[:5] if isinstance(recent_world_beats, list) else recent_world_beats),
+                    ("ambient_murmurs", ambient_murmurs[:5] if isinstance(ambient_murmurs, list) else ambient_murmurs),
+                    ("resource_constraints", request.session_state.get("resource_constraints") or []),
+                    ("world_broadcast_constraints", request.session_state.get("world_broadcast_constraints") or []),
+                ]
+            ),
         }
         narrative_result = self.model_router.execute_structured_prompt(
             prompt_id="council.narrative",

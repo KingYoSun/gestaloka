@@ -246,6 +246,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
               ? [turnId(bConflictTurn)].filter(Boolean)
               : [turnId(cTurn)].filter(Boolean),
       })),
+      turn_observations: Array.from(turnObservationsByPersona.values()).flat(),
       artifacts: artifacts.filter(Boolean),
     });
 
@@ -260,6 +261,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       activePersonas,
       profiles,
       runtimeByPersona,
+      turnObservationsByPersona,
       artifacts: artifacts.filter(Boolean),
       lastStage,
       error,
@@ -286,6 +288,7 @@ async function writeFailureReport({
   activePersonas,
   profiles,
   runtimeByPersona,
+  turnObservationsByPersona,
   artifacts,
   lastStage,
   error,
@@ -296,6 +299,7 @@ async function writeFailureReport({
   activePersonas: AssignedSwarmUserPersona[];
   profiles: ReturnType<typeof derivePlayerProfile>[];
   runtimeByPersona: Map<string, PlayerRuntime>;
+  turnObservationsByPersona: Map<string, SwarmUiTurnObservation[]>;
   artifacts: string[];
   lastStage: string;
   error: unknown;
@@ -334,6 +338,7 @@ async function writeFailureReport({
         eventIds: [],
         turnIds: [],
       })),
+      turn_observations: Array.from(turnObservationsByPersona.values()).flat(),
       artifacts,
       failure_diagnostics: {
         stage: lastStage,

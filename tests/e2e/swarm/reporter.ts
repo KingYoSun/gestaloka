@@ -6,6 +6,7 @@ import type { TestInfo } from "@playwright/test";
 import type { DerivedPlayerProfile } from "./playerProfiles";
 import type { SwarmDecision } from "./playbook";
 import type { SwarmExperienceEvaluation, ExperienceDimension } from "./experienceJudge";
+import type { SwarmUiTurnObservation } from "./uiDriver";
 import type { SwarmUserPersona } from "./userPersonas";
 
 export type PersonaEvaluation = {
@@ -33,6 +34,7 @@ export type SwarmReport = {
     eventIds: string[];
     turnIds: string[];
   }>;
+  turn_observations?: SwarmUiTurnObservation[];
   artifacts: string[];
   failure_diagnostics?: {
     stage: string;
@@ -129,6 +131,7 @@ type RunGroupRun = {
   experience_overall_ratings: Record<string, SwarmExperienceEvaluation["overall"]["rating"]>;
   experience_evaluations: SwarmExperienceEvaluation[];
   story_observations: RunStoryObservation[];
+  turn_timing_observations: SwarmUiTurnObservation[];
 };
 
 type RunStoryObservation = {
@@ -206,6 +209,22 @@ type RunGroupAggregateReport = {
       warnings: string[];
     }>;
   };
+  turn_timing_summary: {
+    turn_count: number;
+    http_duration_ms: DurationSummary;
+    final_resolution_duration_ms: DurationSummary;
+    phase_durations: Array<{
+      phase: string;
+      sample_count: number;
+      duration_ms: DurationSummary;
+    }>;
+  };
+};
+
+type DurationSummary = {
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
 };
 
 async function buildRunGroupAggregateReport(
@@ -304,6 +323,7 @@ async function buildRunGroupAggregateReport(
       };
     }),
     experience_summary: buildExperienceSummary(completedRuns),
+    turn_timing_summary: buildTurnTimingSummary(completedRuns),
   };
 }
 
@@ -327,6 +347,7 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
       experience_overall_ratings: {},
       experience_evaluations: [],
       story_observations: [],
+      turn_timing_observations: [],
     };
   }
   const raw = await fs.readFile(path.join(runPath, resultFile), "utf8");
@@ -355,7 +376,50 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
     ),
     experience_evaluations: experienceEvaluation,
     story_observations: buildStoryObservations(report),
+    turn_timing_observations: report.turn_observations ?? [],
   };
+}
+
+function buildTurnTimingSummary(runs: RunGroupRun[]): RunGroupAggregateReport["turn_timing_summary"] {
+  const turns = runs.flatMap((run) => run.turn_timing_observations);
+  const phaseSamples = new Map<string, number[]>();
+  for (const turn of turns) {
+    for (const progress of turn.progressTimeline ?? []) {
+      if (progress.status !== "completed" || !progress.phase || typeof progress.roleElapsedMs !== "number") {
+        continue;
+      }
+      phaseSamples.set(progress.phase, [...(phaseSamples.get(progress.phase) ?? []), progress.roleElapsedMs]);
+    }
+  }
+  return {
+    turn_count: turns.length,
+    http_duration_ms: durationSummary(turns.map((turn) => turn.httpDurationMs)),
+    final_resolution_duration_ms: durationSummary(turns.map((turn) => turn.finalResolutionDurationMs)),
+    phase_durations: Array.from(phaseSamples.entries())
+      .map(([phase, values]) => ({
+        phase,
+        sample_count: values.length,
+        duration_ms: durationSummary(values),
+      }))
+      .sort((left, right) => left.phase.localeCompare(right.phase)),
+  };
+}
+
+function durationSummary(values: number[]): DurationSummary {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+  if (!sorted.length) {
+    return { p50: null, p95: null, max: null };
+  }
+  return {
+    p50: percentile(sorted, 0.5),
+    p95: percentile(sorted, 0.95),
+    max: sorted[sorted.length - 1],
+  };
+}
+
+function percentile(sortedValues: number[], ratio: number): number {
+  const index = Math.min(sortedValues.length - 1, Math.max(0, Math.ceil(sortedValues.length * ratio) - 1));
+  return sortedValues[index];
 }
 
 function buildExperienceSummary(runs: RunGroupRun[]): RunGroupAggregateReport["experience_summary"] {
@@ -513,6 +577,10 @@ function roundScore(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function durationLabel(value: number | null): string {
+  return typeof value === "number" ? `${Math.round(value)}ms` : "-";
+}
+
 const experienceDimensions: ExperienceDimension[] = ["ux_clarity", "gameplay_fun", "story_progression", "overall"];
 
 function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): string {
@@ -549,6 +617,29 @@ function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): strin
       (run) =>
         `| ${run.run_id} | ${runStorySummary(run)} | ${runWorldImpactSummary(run)} | ${runEventSummary(run)} |`,
     ),
+    "",
+    "## Turn timing telemetry",
+    "",
+    `- turn 数: ${report.turn_timing_summary.turn_count}`,
+    `- HTTP duration: p50=${durationLabel(report.turn_timing_summary.http_duration_ms.p50)}, p95=${durationLabel(
+      report.turn_timing_summary.http_duration_ms.p95,
+    )}, max=${durationLabel(report.turn_timing_summary.http_duration_ms.max)}`,
+    `- final resolution duration: p50=${durationLabel(
+      report.turn_timing_summary.final_resolution_duration_ms.p50,
+    )}, p95=${durationLabel(report.turn_timing_summary.final_resolution_duration_ms.p95)}, max=${durationLabel(
+      report.turn_timing_summary.final_resolution_duration_ms.max,
+    )}`,
+    "",
+    "| phase | samples | p50 | p95 | max |",
+    "| --- | ---: | ---: | ---: | ---: |",
+    ...(report.turn_timing_summary.phase_durations.length
+      ? report.turn_timing_summary.phase_durations.map(
+          (phase) =>
+            `| ${phase.phase} | ${phase.sample_count} | ${durationLabel(phase.duration_ms.p50)} | ${durationLabel(
+              phase.duration_ms.p95,
+            )} | ${durationLabel(phase.duration_ms.max)} |`,
+        )
+      : ["| - | 0 | - | - | - |"]),
     "",
     "## シナリオ別の展開",
     "",
