@@ -572,7 +572,7 @@ function questActionLabelPattern(action: SwarmDecision["questAction"]): RegExp {
     return /^(見送る|Decline)$/i;
   }
   if (action === "leave_quest") {
-    return /^(離れる|Leave)$/i;
+    return /^(離れる|クエストから離脱|Leave|Leave quest)$/i;
   }
   if (action === "resume_quest") {
     return /^(再開|Resume)$/i;

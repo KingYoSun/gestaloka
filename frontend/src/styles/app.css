@@ -228,3 +228,29 @@
     display: none !important;
   }
 }
+
+@layer utilities {
+  .scrollbar-gestaloka {
+    scrollbar-color: color-mix(in srgb, var(--primary) 74%, var(--foreground) 26%) color-mix(in srgb, var(--card) 86%, var(--foreground) 14%);
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-gestaloka::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .scrollbar-gestaloka::-webkit-scrollbar-track {
+    background: color-mix(in srgb, var(--card) 86%, var(--foreground) 14%);
+    border-radius: 999px;
+  }
+
+  .scrollbar-gestaloka::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--primary) 74%, var(--foreground) 26%);
+    border: 2px solid color-mix(in srgb, var(--card) 86%, var(--foreground) 14%);
+    border-radius: 999px;
+  }
+
+  .scrollbar-gestaloka::-webkit-scrollbar-thumb:hover {
+    background: var(--primary);
+  }
+}

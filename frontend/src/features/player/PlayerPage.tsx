@@ -797,7 +797,7 @@ function StatusBlocks({ runtime }: PlayerPageProps) {
 function MobilePlayBar({ onOpenActions, onOpenStatus }: { onOpenActions: () => void; onOpenStatus: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-3 py-3 shadow-lg backdrop-blur">
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-lg backdrop-blur">
       <div className="mx-auto grid max-w-[620px] grid-cols-2 gap-2">
         <Button type="button" onClick={onOpenActions}>
           <ListChecks aria-hidden="true" />
@@ -836,20 +836,22 @@ function Drawer({
         role="dialog"
         aria-label={title}
         className={cn(
-          "absolute grid min-w-0 gap-4 border-border bg-card p-4 shadow-lg",
+          "absolute grid min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-border bg-card shadow-lg",
           side === "bottom"
-            ? "inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-lg border-t"
-            : "bottom-0 right-0 top-0 w-[min(88vw,340px)] overflow-y-auto border-l",
+            ? "inset-x-0 bottom-0 max-h-[min(82dvh,720px)] rounded-t-lg border-t"
+            : "bottom-0 right-0 top-0 max-h-[100dvh] w-[min(88vw,340px)] border-l",
         )}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border p-4">
           <h2 className="text-base font-semibold leading-6 text-foreground">{title}</h2>
           <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")}>
             <X aria-hidden="true" />
           </Button>
         </div>
-        {children}
+        <div className="scrollbar-gestaloka min-h-0 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {children}
+        </div>
       </section>
     </div>
   );
@@ -874,14 +876,14 @@ function SceneHeader({ runtime }: PlayerPageProps) {
       <p hidden data-testid="session-location">
         {location?.name ?? t("player.world.startLocation")}
       </p>
-      <details className="group grid min-w-0 gap-3" open>
-        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-md border border-border bg-secondary px-3 py-2 text-sm font-semibold leading-5 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80 [&::-webkit-details-marker]:hidden">
+      <details className="group grid min-w-0 overflow-hidden rounded-md border border-border bg-secondary" open>
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold leading-5 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80 [&::-webkit-details-marker]:hidden">
           <span>{t("player.story.sceneDetails")}</span>
           <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
-        <div className="grid gap-3 pt-1">
-          {chapter?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
-          {scene?.summary ? <p className="text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
+        <div className="grid min-w-0 gap-3 border-t border-border bg-card p-3">
+          {chapter?.summary ? <p className="min-w-0 break-words text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
+          {scene?.summary ? <p className="min-w-0 break-words text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
         </div>
       </details>
     </Card>
@@ -979,7 +981,7 @@ function StoryHistory({ runtime }: PlayerPageProps) {
       </div>
       <div
         ref={scrollRef}
-        className={cn("min-w-0 overflow-y-auto pr-2", heightClass)}
+        className={cn("scrollbar-gestaloka min-w-0 overflow-y-auto pr-2", heightClass)}
         data-testid="story-scroll"
         onScroll={() => void handleScroll()}
       >
@@ -1354,19 +1356,18 @@ function QuestBlock({ runtime }: PlayerPageProps) {
     <Card className="grid min-w-0 gap-3 p-4" data-testid="active-quest">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.quest")}</h2>
-        <span className="text-xs font-semibold uppercase leading-5 text-muted-foreground">{displayLabel}</span>
       </div>
       {primaryQuest ? (
-        <div className="grid gap-3">
-          <p className="font-bold leading-6 text-foreground">{primaryQuest.title}</p>
+        <div className="grid min-w-0 gap-3">
+          <p className="min-w-0 break-words font-bold leading-6 text-foreground">{primaryQuest.title}</p>
           <p className="text-sm leading-5 text-muted-foreground" data-testid="quest-progress">
             {primaryQuest.progress}/{primaryQuest.progress_target}
           </p>
-          {primaryQuest.latest_summary ? <p className="text-sm leading-5 text-muted-foreground">{primaryQuest.latest_summary}</p> : null}
+          {primaryQuest.latest_summary ? <p className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{primaryQuest.latest_summary}</p> : null}
           {primaryQuest.chapters?.length ? (
-            <ul className="grid gap-2">
+            <ul className="grid min-w-0 gap-2">
               {primaryQuest.chapters.slice(-3).map((chapter) => (
-                <li className="text-sm leading-5 text-muted-foreground" key={chapter.id}>
+                <li className="min-w-0 break-words text-sm leading-5 text-muted-foreground" key={chapter.id}>
                   {chapter.summary}
                 </li>
               ))}

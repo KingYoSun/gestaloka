@@ -315,7 +315,27 @@ def _collect_session_state_targets(payload: dict[str, Any], targets: list[_TextT
     _register_object_fields(payload, targets, ("current_scene", "location"), "scene.location", ("id",), ("name", "description"))
     _register_object_fields(payload, targets, ("current_scene", "focus_actor"), "scene.focus_actor", ("actor_id",), ("display_name",))
     _register_list_fields(payload, targets, ("quests",), "quest", ("assignment_id", "quest_template_id"), ("title", "description", "latest_summary"))
+    _register_nested_list_fields(
+        payload,
+        targets,
+        ("quests",),
+        ("chapters",),
+        "quest_chapter",
+        ("assignment_id", "quest_template_id"),
+        ("id", "key"),
+        ("summary",),
+    )
     _register_list_fields(payload, targets, ("quest_journal",), "quest_journal", ("assignment_id", "quest_template_id"), ("title", "description", "latest_summary"))
+    _register_nested_list_fields(
+        payload,
+        targets,
+        ("quest_journal",),
+        ("chapters",),
+        "quest_chapter",
+        ("assignment_id", "quest_template_id"),
+        ("id", "key"),
+        ("summary",),
+    )
     _register_list_fields(payload, targets, ("factions",), "faction", ("faction_id",), ("name", "description"))
     _register_list_fields(payload, targets, ("inventory",), "inventory", ("id", "template_key"), ("name", "description"))
     _register_list_fields(payload, targets, ("local_figures",), "local_figure", ("actor_id",), ("display_name", "summary"))
@@ -399,6 +419,41 @@ def _register_list_fields(
         object_key = _object_key(value, key_fields) or f"{'.'.join(str(part) for part in path)}.{index}"
         for field in text_fields:
             _register_field(root, targets, (*path, index, field), f"{kind}.{field}", f"{kind}:{object_key}:{field}")
+
+
+def _register_nested_list_fields(
+    root: dict[str, Any],
+    targets: list[_TextTarget],
+    outer_path: tuple[Any, ...],
+    nested_path: tuple[Any, ...],
+    kind: str,
+    outer_key_fields: tuple[str, ...],
+    nested_key_fields: tuple[str, ...],
+    text_fields: tuple[str, ...],
+) -> None:
+    outer_values = _get_path(root, outer_path)
+    if not isinstance(outer_values, list):
+        return
+    for outer_index, outer_value in enumerate(outer_values):
+        if not isinstance(outer_value, dict):
+            continue
+        nested_values = _get_path(outer_value, nested_path)
+        if not isinstance(nested_values, list):
+            continue
+        outer_key = _object_key(outer_value, outer_key_fields) or f"{'.'.join(str(part) for part in outer_path)}.{outer_index}"
+        for nested_index, nested_value in enumerate(nested_values):
+            if not isinstance(nested_value, dict):
+                continue
+            nested_key = _object_key(nested_value, nested_key_fields) or f"{'.'.join(str(part) for part in nested_path)}.{nested_index}"
+            object_key = f"{outer_key}:{nested_key}"
+            for field in text_fields:
+                _register_field(
+                    root,
+                    targets,
+                    (*outer_path, outer_index, *nested_path, nested_index, field),
+                    f"{kind}.{field}",
+                    f"{kind}:{object_key}:{field}",
+                )
 
 
 def _register_string_list(root: dict[str, Any], targets: list[_TextTarget], path: tuple[Any, ...], kind: str) -> None:

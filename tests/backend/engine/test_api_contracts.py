@@ -43,6 +43,9 @@ PLAY_LANGUAGE_RESIDUE_FRAGMENTS = (
     "Hold position",
     "Take the clearest",
     "Ask a grounded",
+    "Help a local",
+    "can be resumed",
+    "was declined",
     "has begun",
     "begins.",
 )
@@ -72,11 +75,16 @@ def assert_no_player_visible_english_residue(payload: dict) -> None:
     for collection, fields in (
         ("next_choices", ("label", "summary")),
         ("quest_updates", ("title", "description", "latest_summary", "summary")),
+        ("quests", ("title", "description", "latest_summary", "summary")),
+        ("quest_journal", ("title", "description", "latest_summary", "summary")),
         ("chapter_updates", ("summary", "crossroads_summary", "branch_hint")),
     ):
         for item in payload.get(collection) or []:
             if isinstance(item, dict):
                 texts.extend(str(item.get(field) or "") for field in fields)
+                for chapter in item.get("chapters") or []:
+                    if isinstance(chapter, dict):
+                        texts.append(str(chapter.get("summary") or ""))
     visible_text = "\n".join(texts)
     for fragment in PLAY_LANGUAGE_RESIDUE_FRAGMENTS:
         assert fragment not in visible_text
@@ -1089,6 +1097,18 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"] == []
         assert_no_player_visible_english_residue(payload)
+
+    accepted_state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert accepted_state_response.status_code == 200
+    accepted_state_payload = accepted_state_response.json()
+    assert accepted_state_payload["quest_journal"][0]["chapters"][0]["summary"]
+    assert_no_player_visible_english_residue(accepted_state_payload)
+
+    accepted_quests_response = client.get(f"/sessions/{session_payload['session_id']}/quests", headers=auth_headers)
+    assert accepted_quests_response.status_code == 200
+    accepted_quests_payload = accepted_quests_response.json()
+    assert accepted_quests_payload["quests"][0]["chapters"][0]["summary"]
+    assert_no_player_visible_english_residue(accepted_quests_payload)
 
     assert [message["event"] for message in messages[:2]] == [
         "session.connected",

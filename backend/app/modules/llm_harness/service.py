@@ -425,6 +425,17 @@ class StubModelProvider(BaseModelProvider):
             localized = localized.replace("neutral", "中立的な関係")
             localized = localized.replace("trusted", "信頼された関係")
             localized = localized.replace(
+                "Help a local, report back what you learned, and earn enough trust to unlock the next route.",
+                "地域の人を助け、学んだことを報告し、次の道を開く信頼を得る。",
+            )
+            localized = localized.replace(
+                "Help a local and return with what you learned around ",
+                "地域の人を助け、学んだことを報告する場所: ",
+            )
+            localized = localized.replace(" was declined for now.", "はいったん見送られた。")
+            localized = localized.replace(" is paused and can be resumed later.", "は一時中断され、後で再開できる。")
+            localized = localized.replace(" has resumed.", "が再開された。")
+            localized = localized.replace(
                 " is open to exploration, with no accepted quest shaping the scene yet. "
                 "The scene has room to breathe, but it still remembers what was just set in motion.",
                 "は探索可能で、まだ受諾済みのクエストは場面を形作っていない。"
