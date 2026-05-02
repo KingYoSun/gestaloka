@@ -3169,10 +3169,7 @@ def apply_world_tag_updates(
     assignment.progress = rule.next_progress
     assignment.state_json = state_json
     assignment.status = "completed" if rule.completed else "active"
-    assignment.latest_summary = (
-        f"{quest_template.title}: {assignment.progress}/{assignment.progress_target} "
-        f"({assignment.status}) [{', '.join(rule.world_tags)}]"
-    )
+    assignment.latest_summary = f"{quest_template.title}: {assignment.progress}/{assignment.progress_target}."
 
     standing_changed = rule.standing_delta != 0.0
     if standing_changed:

@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
+import logging
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -17,14 +19,34 @@ from app.modules.world_pack.service import get_pack_registry, template_world_id
 
 PROMPT_ID = "play.localization"
 
+logger = logging.getLogger(__name__)
+
+_PLAYER_VISIBLE_CONTROL_TOKEN_RE = re.compile(r"\s*\[(?:[a-z][a-z0-9_]*(?:\s*,\s*)?)+\]\s*", re.IGNORECASE)
+
 
 class PlayLocalizationItem(BaseModel):
     key: str = Field(min_length=1, max_length=180)
     localized_text: str = Field(min_length=1)
 
+    @model_validator(mode="before")
+    @classmethod
+    def accept_live_provider_aliases(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "localized_text" not in value and isinstance(value.get("text"), str):
+            normalized = dict(value)
+            normalized["localized_text"] = normalized["text"]
+            return normalized
+        return value
+
 
 class PlayLocalizationPayload(BaseModel):
     items: list[PlayLocalizationItem] = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_live_provider_payload_shapes(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return {"items": value}
+        return value
 
     @model_validator(mode="after")
     def keep_first_item_per_key(self) -> "PlayLocalizationPayload":
@@ -114,12 +136,16 @@ def _apply_localization(
     if not deduped:
         return payload
 
-    cached = _cached_texts(db, context=context, targets=deduped)
+    glossary = _glossary(db, context=context)
+    cached = {
+        key: _apply_glossary_replacements(value, glossary)
+        for key, value in _cached_texts(db, context=context, targets=deduped).items()
+    }
     missing = [target for target in deduped if target.source_key not in cached]
     generated: dict[str, str] = {}
     model_id = ""
     if missing and generate_missing:
-        generated, model_id = _generate_missing(db, model_router, context=context, targets=missing)
+        generated, model_id = _generate_missing(db, model_router, context=context, targets=missing, glossary=glossary)
         if generated:
             _store_generated(db, context=context, targets=missing, generated=generated, model_id=model_id)
 
@@ -174,8 +200,10 @@ def _generate_missing(
     *,
     context: dict[str, str],
     targets: list[_TextTarget],
+    glossary: list[dict[str, str]] | None = None,
 ) -> tuple[dict[str, str], str]:
-    glossary = _glossary(db, context=context)
+    if glossary is None:
+        glossary = _glossary(db, context=context)
     input_payload = {
         "target_language": context["target_language"],
         "items": [
@@ -199,17 +227,80 @@ def _generate_missing(
             allow_pro_fallback=True,
         )
     except Exception:
+        logger.warning(
+            "play.localization prompt raised before returning an outcome: world_id=%s target_language=%s targets=%s",
+            context["world_id"],
+            context["target_language"],
+            len(targets),
+            exc_info=True,
+        )
         return {}, ""
     if outcome.final_payload is None:
+        logger.warning(
+            "play.localization prompt returned no valid payload: world_id=%s target_language=%s targets=%s "
+            "failure_reason=%s attempts=%s",
+            context["world_id"],
+            context["target_language"],
+            len(targets),
+            outcome.failure_reason or "",
+            _attempt_diagnostics(outcome.attempts),
+        )
         return {}, ""
     allowed_keys = {target.source_key for target in targets}
     localized = {
-        item.key: item.localized_text.strip()
+        item.key: _apply_glossary_replacements(item.localized_text.strip(), glossary)
         for item in outcome.final_payload.items
         if item.key in allowed_keys and item.localized_text.strip()
     }
+    if not localized:
+        logger.warning(
+            "play.localization prompt returned no usable translations: world_id=%s target_language=%s targets=%s "
+            "items=%s attempts=%s",
+            context["world_id"],
+            context["target_language"],
+            len(targets),
+            len(outcome.final_payload.items),
+            _attempt_diagnostics(outcome.attempts),
+        )
     model_id = outcome.attempts[-1].model_id if outcome.attempts else ""
     return localized, model_id
+
+
+def _apply_glossary_replacements(value: str, glossary: list[dict[str, str]]) -> str:
+    localized = value
+    entries = sorted(
+        (
+            (
+                str(entry.get("source_text") or "").strip(),
+                str(entry.get("localized_text") or "").strip(),
+            )
+            for entry in glossary
+            if isinstance(entry, dict)
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+    for source_text, localized_text in entries:
+        if not source_text or not localized_text or source_text == localized_text:
+            continue
+        localized = localized.replace(source_text, localized_text)
+    return _strip_player_visible_control_tokens(localized)
+
+
+def _strip_player_visible_control_tokens(value: str) -> str:
+    return _PLAYER_VISIBLE_CONTROL_TOKEN_RE.sub("", value).strip()
+
+
+def _attempt_diagnostics(attempts: list[Any]) -> list[dict[str, str]]:
+    return [
+        {
+            "lane": str(getattr(attempt, "model_lane", "")),
+            "model_id": str(getattr(attempt, "model_id", "")),
+            "status": str(getattr(attempt, "status", "")),
+            "schema": str(getattr(attempt, "output_schema_status", "")),
+        }
+        for attempt in attempts
+    ]
 
 
 def _store_generated(

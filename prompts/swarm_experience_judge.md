@@ -32,6 +32,8 @@ Rubric:
 - story_progression: Evaluate whether open exploration naturally produced a playable optional quest, whether accepting it opened a readable chapter context, whether cause/effect is traceable, whether other players leave perceivable traces, and whether scene/consequence/world beat continuity is visible.
 - overall: Evaluate the whole persona experience. Do not average mechanically; weigh the persona's evaluation lens.
 - For Japanese play-language runs, inspect `playInfoTexts` and `englishPlayInfoTexts`. If player-visible play information such as `探索中...`, quest titles/summaries, chapter summaries, locations, NPCs, routes, inventory, consequences, or choices remains in English outside fixed UI chrome, lower ux_clarity and include a warning.
+- Treat `englishPlayInfoTexts` as the authoritative detector for English residue in player-visible play information. Do not add an English-mixing warning when every turn has an empty `englishPlayInfoTexts` array.
+- Ignore English that appears only in persona ids, player display names, model ids, event ids, status enum values, screenshot paths, `opsStream`, or fixed system/chrome labels.
 - Do not penalize a run for lacking a fixed starter story. GESTALOKA should feel like a dynamic shared-world open-world narrative where quests emerge from play and remain optional until accepted.
 
 Rules:

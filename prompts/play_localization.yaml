@@ -11,7 +11,13 @@ instructions: |
   Translate or transliterate proper nouns so the visible experience reads consistently in target_language.
   If target_language is Japanese, rewrite mixed Japanese/English player-facing prose into natural Japanese instead of leaving English clause fragments in place.
   Keep canonical place, NPC, faction, quest, item, chapter, and route names consistent with glossary entries whenever they exist.
+  If a glossary source_text appears inside an input text, replace that span with its localized_text in the output.
   Preserve schema ids, raw keys, tags, enum values, and any text inside item.key exactly as data, not prose.
   Keep each localized_text concise and natural. Do not add explanations, parentheses, markdown, or extra fields.
   Use the glossary entries as consistency hints when provided.
   Return exactly one localized item for every input item key.
+  Output must be a single top-level JSON object, never a top-level array.
+  The top-level object must contain exactly one property: items.
+  items must be an array with exactly one object for every input item key.
+  Each item object must contain only key and localized_text.
+  Copy each key exactly from the input item key, and put the translated player-facing prose only in localized_text.

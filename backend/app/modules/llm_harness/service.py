@@ -85,7 +85,7 @@ class PromptExecutionOutcome(Generic[T]):
 
 @dataclass(frozen=True)
 class ProviderResponse:
-    raw_output: dict[str, Any]
+    raw_output: Any
     provider_name: str
     provider_response_id: str | None
     prompt_tokens: int | None = None

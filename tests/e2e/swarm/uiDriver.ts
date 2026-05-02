@@ -1,5 +1,6 @@
 import { expect, type Page, type Response } from "@playwright/test";
 
+import { derivePlayerProfile } from "./playerProfiles";
 import type { DerivedPlayerProfile } from "./playerProfiles";
 import type { SwarmDecision } from "./playbook";
 import type { AssignedSwarmUserPersona } from "./userPersonas";
@@ -233,6 +234,7 @@ export async function executeTurnViaUi(
     const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
     const opsStream = await listText(page, "ops-stream");
     const playInfoTexts = await playerVisiblePlayInfoTexts(page);
+    const englishResidueAllowlist = playerNameResidueAllowlist(persona);
     const questSnapshot = await questSnapshotViaUi(page);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
     const progressTimeline = progressTimelineFromOpsStream(opsStream, acceptedTurnId);
@@ -262,7 +264,9 @@ export async function executeTurnViaUi(
       opsStream,
       choiceLabels: await listText(page, "choice-list"),
       playInfoTexts,
-      englishPlayInfoTexts: playInfoTexts.filter(hasEnglishPlayTextResidue).slice(0, 12),
+      englishPlayInfoTexts: playInfoTexts
+        .filter((value) => hasEnglishPlayTextResidue(value, englishResidueAllowlist))
+        .slice(0, 12),
       ...questSnapshot,
       screenshotPath,
     };
@@ -679,9 +683,18 @@ async function questActionTexts(page: Page): Promise<string[]> {
   }
 }
 
-function hasEnglishPlayTextResidue(value: string): boolean {
+function hasEnglishPlayTextResidue(value: string, allowlist: string[] = []): boolean {
   const normalized = value.replace(/\b(SP|JA|EN|URL|ID)\b/g, "").replace(/\bgestaloka\b/gi, "");
-  return /[A-Za-z]{3,}/.test(normalized);
+  const withoutAllowedNames = allowlist.reduce(
+    (current, term) => current.split(term).join(""),
+    normalized,
+  );
+  return /[A-Za-z]{3,}/.test(withoutAllowedNames);
+}
+
+function playerNameResidueAllowlist(persona: AssignedSwarmUserPersona): string[] {
+  const displayName = derivePlayerProfile(persona).displayName;
+  return uniqueNonEmpty([displayName, ...displayName.split(/\s+/)]).filter((term) => /[A-Za-z]{3,}/.test(term));
 }
 
 async function locatorEnabled(page: Page, testId: string): Promise<string> {
