@@ -42,6 +42,13 @@ export type SwarmUiTurnObservation = {
   choiceLabels: string[];
   playInfoTexts: string[];
   englishPlayInfoTexts: string[];
+  questText: string;
+  questProgress: string;
+  chapterText: string;
+  questActionLabels: string[];
+  hasExploringLabel: boolean;
+  hasOfferedQuest: boolean;
+  hasChapterSummary: boolean;
   screenshotPath?: string;
 };
 
@@ -50,6 +57,16 @@ export type SwarmUiSessionObservation = {
   sessionId: string;
   locationId: string;
   startedAt: string;
+};
+
+export type SwarmUiQuestSnapshot = {
+  questText: string;
+  questProgress: string;
+  chapterText: string;
+  questActionLabels: string[];
+  hasExploringLabel: boolean;
+  hasOfferedQuest: boolean;
+  hasChapterSummary: boolean;
 };
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
@@ -190,6 +207,7 @@ export async function executeTurnViaUi(
     const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
     const opsStream = await listText(page, "ops-stream");
     const playInfoTexts = await playerVisiblePlayInfoTexts(page);
+    const questSnapshot = await questSnapshotViaUi(page);
     const acceptedTurnId = stringValue(payload.turn_id);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
     const progressTimeline = progressTimelineFromOpsStream(opsStream);
@@ -197,7 +215,7 @@ export async function executeTurnViaUi(
       personaId: persona.id,
       scenario: decision.scenario,
       inputMode: decision.inputMode,
-      action: decision.choiceId ?? decision.inputText ?? decision.inputMode,
+      action: decision.questAction ?? decision.choiceId ?? decision.inputText ?? decision.inputMode,
       startedAt,
       completedAt: new Date(completed).toISOString(),
       durationMs: completed - started,
@@ -220,6 +238,7 @@ export async function executeTurnViaUi(
       choiceLabels: await listText(page, "choice-list"),
       playInfoTexts,
       englishPlayInfoTexts: playInfoTexts.filter(hasEnglishPlayTextResidue).slice(0, 12),
+      ...questSnapshot,
       screenshotPath,
     };
   } finally {
@@ -339,6 +358,10 @@ async function waitForTurnResponseOrNetworkFailure(
 }
 
 async function submitDecision(page: Page, decision: SwarmDecision): Promise<void> {
+  if (decision.inputMode === "quest_action") {
+    await clickQuestAction(page, decision.questAction);
+    return;
+  }
   if (decision.inputMode === "choice") {
     const choice = page.getByTestId(`choice-${decision.choiceId}`);
     await expect(choice).toBeVisible({ timeout: 60_000 });
@@ -360,7 +383,7 @@ async function submitDecision(page: Page, decision: SwarmDecision): Promise<void
 
 async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): Promise<string> {
   const choiceTestId = decision.choiceId ? `choice-${decision.choiceId}` : "";
-  const [errorBanner, progressStatus, choiceEnabled, toggleEnabled, submitEnabled, inputValueText, choiceLabels] =
+  const [errorBanner, progressStatus, choiceEnabled, toggleEnabled, submitEnabled, inputValueText, choiceLabels, questSnapshot] =
     await Promise.all([
       textContent(page, "error-banner"),
       textContent(page, "turn-progress-status"),
@@ -369,10 +392,14 @@ async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): P
       locatorEnabled(page, "submit-turn"),
       inputValue(page, "turn-input"),
       listText(page, "choice-list"),
+      questSnapshotViaUi(page),
     ]);
   return [
     `mode=${decision.inputMode}`,
     `choice=${decision.choiceId ?? "(none)"} enabled=${choiceEnabled}`,
+    `quest_action=${decision.questAction ?? "(none)"}`,
+    `quest_actions=${questSnapshot.questActionLabels.join(" | ") || "(empty)"}`,
+    `quest=${questSnapshot.questText || "(empty)"}`,
     `toggle-free-text enabled=${toggleEnabled}`,
     `submit-turn enabled=${submitEnabled}`,
     `turn-input=${inputValueText || "(empty)"}`,
@@ -380,6 +407,27 @@ async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): P
     `choices=${choiceLabels.join(" | ") || "(empty)"}`,
     `error-banner=${errorBanner || "(empty)"}`,
   ].join("; ");
+}
+
+async function clickQuestAction(page: Page, action: SwarmDecision["questAction"]): Promise<void> {
+  const label = questActionLabelPattern(action);
+  const button = page.getByTestId("active-quest").getByRole("button", { name: label });
+  await expect(button).toBeVisible({ timeout: 60_000 });
+  await expect(button).toBeEnabled({ timeout: 60_000 });
+  await button.click();
+}
+
+function questActionLabelPattern(action: SwarmDecision["questAction"]): RegExp {
+  if (action === "decline_quest") {
+    return /^(見送る|Decline)$/i;
+  }
+  if (action === "leave_quest") {
+    return /^(離れる|Leave)$/i;
+  }
+  if (action === "resume_quest") {
+    return /^(再開|Resume)$/i;
+  }
+  return /^(受諾|Accept)$/i;
 }
 
 async function waitForTurnIdle(page: Page): Promise<void> {
@@ -428,6 +476,33 @@ async function playerVisiblePlayInfoTexts(page: Page): Promise<string[]> {
   return uniqueNonEmpty(
     groups.flatMap((item) => (Array.isArray(item) ? item : [item])).map((item) => item.trim()),
   ).slice(0, 32);
+}
+
+export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapshot> {
+  const [questText, questProgress, chapterText, questActionLabels] = await Promise.all([
+    textContent(page, "active-quest"),
+    textContent(page, "quest-progress"),
+    textContent(page, "current-chapter-summary"),
+    questActionTexts(page),
+  ]);
+  return {
+    questText,
+    questProgress,
+    chapterText,
+    questActionLabels,
+    hasExploringLabel: /探索中\.\.\.|Exploring\.\.\./i.test(questText),
+    hasOfferedQuest: questActionLabels.some((label) => /^(受諾|Accept|見送る|Decline)$/i.test(label)),
+    hasChapterSummary: Boolean(chapterText.trim()),
+  };
+}
+
+async function questActionTexts(page: Page): Promise<string[]> {
+  try {
+    const labels = await page.getByTestId("active-quest").getByRole("button").allTextContents();
+    return uniqueNonEmpty(labels);
+  } catch {
+    return [];
+  }
 }
 
 function hasEnglishPlayTextResidue(value: string): boolean {

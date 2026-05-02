@@ -40,9 +40,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("ops-stream")).not.toContainText("{");
   await expect(page.getByTestId("npc-routine-stream")).not.toContainText("{");
   await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus Gate/i, { timeout: 20_000 });
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/opening|Nexus/i, { timeout: 20_000 });
-  await expect(page.getByTestId("active-quest")).toContainText("First Stabilizer Request", { timeout: 20_000 });
-  await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
+  await expect(page.getByTestId("active-quest")).toContainText("Exploring...", { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toContainText(/Gate Steward Rikka/i, { timeout: 20_000 });
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Lift Tower Concourse/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus Custodians/i, { timeout: 20_000 });
@@ -54,32 +52,25 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("choice-progress")).toContainText("Help the person in need and create the next opening");
   await expect(page.getByTestId("choice-explore")).toContainText("Go to Lift Tower Concourse and check the old records");
 
-  for (let step = 0; step < 2; step += 1) {
-    await page.getByTestId("choice-progress").click();
-    await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
-    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
-  }
-
-  await expect(page.getByTestId("quest-progress")).toContainText("2/2", { timeout: slowTimeout });
-  await expect(page.getByTestId("inventory-stream")).toContainText(/Nexus Writ/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("choice-progress")).toBeVisible({ timeout: slowTimeout });
-
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
-  await expect(page.getByTestId("active-quest")).toContainText("Breach Restoration", { timeout: slowTimeout });
-  await expect(page.getByTestId("quest-stage")).toContainText("breach_restoration", { timeout: slowTimeout });
-  await expect(page.getByTestId("inventory-stream")).toContainText("used", { timeout: slowTimeout });
-  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Oblivion Breach/i, { timeout: slowTimeout });
-
-  await page.getByTestId("choice-progress").click();
-  await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
-  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
-  await expect(page.getByTestId("current-place-summary")).toContainText(/Oblivion Breach/i, { timeout: slowTimeout });
-  await expect(page.getByTestId("recent-travel-history")).toContainText(/Oblivion Breach|breach|restoration/i, {
+  await expect(page.getByTestId("active-quest").getByRole("button", { name: /^(Accept|受諾)$/i })).toBeVisible({
     timeout: slowTimeout,
   });
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/breach|restoration/i, { timeout: slowTimeout });
+  await expect(page.getByTestId("quest-progress")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
+
+  await page.getByTestId("active-quest").getByRole("button", { name: /^(Accept|受諾)$/i }).click();
+  await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
+  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
+  await expect(page.getByTestId("active-quest")).not.toContainText("Exploring...");
+
+  await page.getByTestId("choice-progress").click();
+  await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
+  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
+  await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
+  await expect(page.getByTestId("active-quest")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
 });
 
 test("mobile player shell does not overflow at 375px", async ({ page }) => {
@@ -117,6 +108,7 @@ test("mobile player drawers expose actions and status", async ({ page }) => {
 
   await page.getByRole("button", { name: "情報" }).click();
   await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("active-quest")).toContainText("探索中...", { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toBeVisible();
   await expect(page.getByTestId("nearby-routes-stream")).toBeVisible();
   await expect(page.getByTestId("inventory-stream")).toBeVisible();

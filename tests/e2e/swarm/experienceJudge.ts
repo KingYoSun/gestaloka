@@ -219,8 +219,10 @@ function buildJudgeEvidence(input: JudgeInput): Record<string, unknown> {
     })),
     rubric: {
       ux_clarity: "操作開始、turn待機、二重送信防止、choice/free-text切替、stream可読性、回復導線を1-5で評価する。",
-      gameplay_fun: "ペルソナ動機に合う行動選択、意味ある進行/競合/探索、待ち時間への納得感を1-5で評価する。",
-      story_progression: "直前行動反映、因果追跡、他プレイヤー痕跡、scene/consequence/world beat連続性を1-5で評価する。",
+      gameplay_fun:
+        "ペルソナ動機に合う行動選択、意味ある探索/動的クエスト提示/競合、待ち時間への納得感を1-5で評価する。",
+      story_progression:
+        "探索から任意クエストが発生したか、受諾後のchapterが文脈として読めるか、他プレイヤー痕跡とworld beat連続性を1-5で評価する。",
     },
   };
 }

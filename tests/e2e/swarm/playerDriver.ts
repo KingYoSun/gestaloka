@@ -107,9 +107,11 @@ export async function resolveTurn(
   decision: SwarmDecision,
 ): Promise<Record<string, unknown>> {
   const payload =
-    decision.inputMode === "choice"
-      ? { session_id: sessionId, input_mode: "choice", choice_id: decision.choiceId }
-      : { session_id: sessionId, input_mode: "free_text", input_text: decision.inputText };
+    decision.inputMode === "quest_action"
+      ? { session_id: sessionId, action_type: decision.questAction, quest_assignment_id: decision.questAssignmentId }
+      : decision.inputMode === "choice"
+        ? { session_id: sessionId, input_mode: "choice", choice_id: decision.choiceId }
+        : { session_id: sessionId, input_mode: "free_text", input_text: decision.inputText };
   return apiPost<Record<string, unknown>>(request, token, "/turns", payload, turnTimeoutMs);
 }
 
@@ -119,6 +121,14 @@ export async function getSessionState(
   sessionId: string,
 ): Promise<Record<string, unknown>> {
   return apiGet<Record<string, unknown>>(request, token, `/sessions/${sessionId}/state`);
+}
+
+export async function getSessionQuests(
+  request: APIRequestContext,
+  token: TokenSource,
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  return apiGet<Record<string, unknown>>(request, token, `/sessions/${sessionId}/quests`);
 }
 
 export async function getWorldEvents(request: APIRequestContext, token: TokenSource): Promise<Record<string, unknown>> {

@@ -28,10 +28,11 @@ Score each dimension from 1 to 5:
 Rubric:
 
 - ux_clarity: Evaluate whether starting play, waiting during turn resolution, preventing duplicate submits, switching choice/free-text, reading key streams, and recovering from errors are understandable from the evidence.
-- gameplay_fun: Evaluate whether the persona could pursue their motivation, whether progress/conflict/exploration produced meaningful outcomes, and whether wait time felt justified by the result.
-- story_progression: Evaluate whether the latest action changed the scene, whether cause/effect is traceable, whether other players leave perceivable traces, and whether scene/consequence/world beat continuity is visible.
+- gameplay_fun: Evaluate whether the persona could pursue their motivation, whether exploration, optional dynamic quest offers, quest acceptance, conflict, and free-text probing produced meaningful outcomes, and whether wait time felt justified by the result.
+- story_progression: Evaluate whether open exploration naturally produced a playable optional quest, whether accepting it opened a readable chapter context, whether cause/effect is traceable, whether other players leave perceivable traces, and whether scene/consequence/world beat continuity is visible.
 - overall: Evaluate the whole persona experience. Do not average mechanically; weigh the persona's evaluation lens.
-- For Japanese play-language runs, inspect `playInfoTexts` and `englishPlayInfoTexts`. If player-visible play information such as quests, locations, NPCs, routes, inventory, consequences, or choices remains in English outside fixed UI chrome, lower ux_clarity and include a warning.
+- For Japanese play-language runs, inspect `playInfoTexts` and `englishPlayInfoTexts`. If player-visible play information such as `探索中...`, quest titles/summaries, chapter summaries, locations, NPCs, routes, inventory, consequences, or choices remains in English outside fixed UI chrome, lower ux_clarity and include a warning.
+- Do not penalize a run for lacking a fixed starter story. GESTALOKA should feel like a dynamic shared-world open-world narrative where quests emerge from play and remain optional until accepted.
 
 Rules:
 

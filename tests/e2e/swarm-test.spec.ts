@@ -9,6 +9,7 @@ import {
   createTokenProvider,
   getOpsHistory,
   getOpsSharedWorld,
+  getSessionQuests,
   getSessionState,
   getWorldEvents,
   getWorldMemories,
@@ -21,8 +22,10 @@ import { buildRunId, defaultArtifactDir, writeSwarmReport, type PersonaEvaluatio
 import {
   executeTurnViaUi,
   preparePlayerUiForSession,
+  questSnapshotViaUi,
   startPlayerSessionViaUi,
   type SwarmUiTurnObservation,
+  type SwarmUiQuestSnapshot,
   type SwarmViewportProfile,
 } from "./swarm/uiDriver";
 import { selectRandomPersonas, type AssignedSwarmUserPersona } from "./swarm/userPersonas";
@@ -107,32 +110,62 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     lastStage = "ui_session_setup";
     await startRuntimeSessionViaUi(pageByPersona, a);
     await startRuntimeSessionViaUi(pageByPersona, b);
-    const aSharedImpactDecision = decisionForPersona(a.persona, "shared-impact");
-    lastStage = "shared_impact_turn";
-    const aSharedImpactTurn = await executeTurnViaUi(
+    await expect(requiredPage(pageByPersona, a.persona.id).getByTestId("active-quest")).toContainText("探索中...", {
+      timeout: 60_000,
+    });
+    await expect(requiredPage(pageByPersona, b.persona.id).getByTestId("active-quest")).toContainText("探索中...", {
+      timeout: 60_000,
+    });
+    const initialQuestSnapshots: SwarmUiQuestSnapshot[] = [
+      await questSnapshotViaUi(requiredPage(pageByPersona, a.persona.id)),
+      await questSnapshotViaUi(requiredPage(pageByPersona, b.persona.id)),
+    ];
+
+    const aQuestOfferDecision = decisionForPersona(a.persona, "quest-offer");
+    lastStage = "quest_offer_turn";
+    const aQuestOfferTurn = await executeTurnViaUi(
       requiredPage(pageByPersona, a.persona.id),
       a.persona,
-      aSharedImpactDecision,
+      aQuestOfferDecision,
       artifactDir,
       attemptLabel,
     );
-    recordTurnObservation(turnObservationsByPersona, a.persona.id, aSharedImpactTurn);
-    artifacts.push(aSharedImpactTurn.screenshotPath ?? "");
-    const aConflictDecision = decisionForPersona(a.persona, "resource-conflict");
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestOfferTurn);
+    artifacts.push(aQuestOfferTurn.screenshotPath ?? "");
+    const aQuestAfterOffer = await waitForOfferedQuest(request, a, pollTimeoutMs);
+
+    const aQuestAcceptDecision = decisionForPersona(a.persona, "quest-accept");
+    lastStage = "quest_accept_turn";
+    const aQuestAcceptTurn = await executeTurnViaUi(
+      requiredPage(pageByPersona, a.persona.id),
+      a.persona,
+      aQuestAcceptDecision,
+      artifactDir,
+      attemptLabel,
+    );
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestAcceptTurn);
+    artifacts.push(aQuestAcceptTurn.screenshotPath ?? "");
+
+    const aBodyProgressDecision = decisionForPersona(a.persona, "quest-body-progress");
     const bConflictDecision = decisionForPersona(b.persona, "resource-conflict");
 
     lastStage = "resource_conflict_turns";
-    const [aConflictTurn, bConflictTurn] = await Promise.all([
-      executeTurnViaUi(requiredPage(pageByPersona, a.persona.id), a.persona, aConflictDecision, artifactDir, attemptLabel),
+    const [aBodyProgressTurn, bConflictTurn] = await Promise.all([
+      executeTurnViaUi(requiredPage(pageByPersona, a.persona.id), a.persona, aBodyProgressDecision, artifactDir, attemptLabel),
       executeTurnViaUi(requiredPage(pageByPersona, b.persona.id), b.persona, bConflictDecision, artifactDir, attemptLabel),
     ]);
-    recordTurnObservation(turnObservationsByPersona, a.persona.id, aConflictTurn);
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aBodyProgressTurn);
     recordTurnObservation(turnObservationsByPersona, b.persona.id, bConflictTurn);
-    artifacts.push(aConflictTurn.screenshotPath ?? "", bConflictTurn.screenshotPath ?? "");
+    artifacts.push(aBodyProgressTurn.screenshotPath ?? "", bConflictTurn.screenshotPath ?? "");
+    const aQuestAfterBody = await getSessionQuests(request, a.accessToken, a.sessionId);
 
     const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_session_setup";
     await startRuntimeSessionViaUi(pageByPersona, cBase);
+    await expect(requiredPage(pageByPersona, cBase.persona.id).getByTestId("active-quest")).toContainText("探索中...", {
+      timeout: 60_000,
+    });
+    initialQuestSnapshots.push(await questSnapshotViaUi(requiredPage(pageByPersona, cBase.persona.id)));
     const c = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_pre_state";
     const cStateBeforeTurn = await getSessionState(request, c.accessToken, c.sessionId);
@@ -141,9 +174,17 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const cTurn = await executeTurnViaUi(requiredPage(pageByPersona, c.persona.id), c.persona, cDecision, artifactDir, attemptLabel);
     recordTurnObservation(turnObservationsByPersona, c.persona.id, cTurn);
     artifacts.push(cTurn.screenshotPath ?? "");
-    const turnEventIds = [eventId(aSharedImpactTurn), eventId(aConflictTurn), eventId(bConflictTurn), eventId(cTurn)].filter(Boolean);
-    const novelLoverEventIds = [eventId(aSharedImpactTurn), eventId(aConflictTurn)].filter(Boolean);
-    const conflictEventIds = [eventId(aConflictTurn), eventId(bConflictTurn)].filter(Boolean);
+    const expectedTurnEventCount = 5;
+    const turnEventIds = [
+      eventId(aQuestOfferTurn),
+      eventId(aQuestAcceptTurn),
+      eventId(aBodyProgressTurn),
+      eventId(bConflictTurn),
+      eventId(cTurn),
+    ].filter(Boolean);
+    const novelLoverEventIds = [eventId(aQuestOfferTurn), eventId(aBodyProgressTurn)].filter(Boolean);
+    const conflictEventIds = [eventId(aBodyProgressTurn), eventId(bConflictTurn)].filter(Boolean);
+    const questLifecycleEventIds = [eventId(aQuestAcceptTurn)].filter(Boolean);
     const leakTerms = personaLeakTerms(activePersonas);
 
     lastStage = "observation_poll";
@@ -154,31 +195,39 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       cStateBeforeTurn,
       opsToken,
       turnEventIds,
+      expectedTurnEventCount,
       novelLoverEventIds,
       conflictEventIds,
+      questLifecycleEventIds,
       leakTerms,
       pollTimeoutMs,
     });
     const hardChecks = {
       persona_profile_separation: profiles.every((profile) => !containsAnyTerm(profilePayloadForApi(profile), leakTerms)),
       runtime_privacy_leak_free: observation.privacyLeakFree,
-      all_turns_return_event_ids: turnEventIds.length === 4,
+      all_turns_return_event_ids: turnEventIds.length === expectedTurnEventCount,
       all_turn_events_same_world: observation.allTurnEventsSameWorld,
       canonical_sequence_unique: observation.canonicalSequenceUnique,
       shared_impact_visible: observation.sharedImpactVisible,
       resource_conflict_recorded: observation.resourceConflictRecorded,
       world_broadcast_or_constraint_visible:
         observation.worldBroadcastOrConstraintVisible,
+      exploration_label_visible: initialQuestSnapshots.every((snapshot) => snapshot.hasExploringLabel),
+      dynamic_quest_offered: aQuestOfferTurn.hasOfferedQuest || hasOfferedQuest(aQuestAfterOffer),
+      quest_accept_turn_resolved: Boolean(eventId(aQuestAcceptTurn)),
+      quest_chapter_visible: aQuestAcceptTurn.hasChapterSummary || aBodyProgressTurn.hasChapterSummary || hasQuestChapter(aQuestAfterBody),
+      quest_lifecycle_events_same_world: observation.questLifecycleEventsSameWorld,
     };
 
     const evaluations: PersonaEvaluation[] = [
       {
         personaId: a.persona.id,
-        rating: hardChecks.shared_impact_visible ? "good" : "needs work",
-        observedImpact: hardChecks.shared_impact_visible
-          ? "The helping action is present in shared-world context."
-          : "The helping action did not surface in the shared-world context probe.",
-        evidence: [...novelLoverEventIds, "session state / ops history / memory scan"].filter(Boolean),
+        rating: hardChecks.shared_impact_visible && hardChecks.dynamic_quest_offered && hardChecks.quest_chapter_visible ? "good" : "needs work",
+        observedImpact:
+          hardChecks.dynamic_quest_offered && hardChecks.quest_chapter_visible
+            ? "Exploration produced an optional quest, and accepting it opened a chapter that remained visible."
+            : "The dynamic quest offer or accepted chapter was not visible enough in the probe.",
+        evidence: [...novelLoverEventIds, "quest journal / session state / ops history / memory scan"].filter(Boolean),
       },
       {
         personaId: b.persona.id,
@@ -203,8 +252,9 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       runId,
       personas: activePersonas,
       decisions: [
-        { personaId: a.persona.id, ...aSharedImpactDecision },
-        { personaId: a.persona.id, ...aConflictDecision },
+        { personaId: a.persona.id, ...aQuestOfferDecision },
+        { personaId: a.persona.id, ...aQuestAcceptDecision },
+        { personaId: a.persona.id, ...aBodyProgressDecision },
         { personaId: b.persona.id, ...bConflictDecision },
         { personaId: c.persona.id, ...cDecision },
       ],
@@ -220,8 +270,9 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       user_personas: activePersonas,
       derived_player_profiles: profiles,
       persona_decision_log: [
-        { personaId: a.persona.id, ...aSharedImpactDecision },
-        { personaId: a.persona.id, ...aConflictDecision },
+        { personaId: a.persona.id, ...aQuestOfferDecision },
+        { personaId: a.persona.id, ...aQuestAcceptDecision },
+        { personaId: a.persona.id, ...aBodyProgressDecision },
         { personaId: b.persona.id, ...bConflictDecision },
         { personaId: c.persona.id, ...cDecision },
       ],
@@ -235,13 +286,13 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         locationId: runtime.locationId,
         eventIds:
           runtime.persona.id === a.persona.id
-            ? [eventId(aSharedImpactTurn), eventId(aConflictTurn)].filter(Boolean)
+            ? [eventId(aQuestOfferTurn), eventId(aQuestAcceptTurn), eventId(aBodyProgressTurn)].filter(Boolean)
             : runtime.persona.id === b.persona.id
               ? [eventId(bConflictTurn)].filter(Boolean)
               : [eventId(cTurn)].filter(Boolean),
         turnIds:
           runtime.persona.id === a.persona.id
-            ? [turnId(aSharedImpactTurn), turnId(aConflictTurn)].filter(Boolean)
+            ? [turnId(aQuestOfferTurn), turnId(aQuestAcceptTurn), turnId(aBodyProgressTurn)].filter(Boolean)
             : runtime.persona.id === b.persona.id
               ? [turnId(bConflictTurn)].filter(Boolean)
               : [turnId(cTurn)].filter(Boolean),
@@ -279,6 +330,7 @@ type ObservationSnapshot = {
   sharedImpactVisible: boolean;
   resourceConflictRecorded: boolean;
   worldBroadcastOrConstraintVisible: boolean;
+  questLifecycleEventsSameWorld: boolean;
 };
 
 async function writeFailureReport({
@@ -313,6 +365,11 @@ async function writeFailureReport({
     shared_impact_visible: false,
     resource_conflict_recorded: false,
     world_broadcast_or_constraint_visible: false,
+    exploration_label_visible: false,
+    dynamic_quest_offered: false,
+    quest_accept_turn_resolved: false,
+    quest_chapter_visible: false,
+    quest_lifecycle_events_same_world: false,
   };
   try {
     await writeSwarmReport(testInfo, artifactDir, {
@@ -358,8 +415,10 @@ type ObservationInput = {
   cStateBeforeTurn: Record<string, unknown>;
   opsToken: ReturnType<typeof createTokenProvider>;
   turnEventIds: string[];
+  expectedTurnEventCount: number;
   novelLoverEventIds: string[];
   conflictEventIds: string[];
+  questLifecycleEventIds: string[];
   leakTerms: string[];
   pollTimeoutMs: number;
 };
@@ -379,7 +438,8 @@ async function waitForObservationSnapshot(
           latest.canonicalSequenceUnique &&
           latest.sharedImpactVisible &&
           latest.resourceConflictRecorded &&
-          latest.worldBroadcastOrConstraintVisible
+          latest.worldBroadcastOrConstraintVisible &&
+          latest.questLifecycleEventsSameWorld
         );
       },
       {
@@ -407,6 +467,7 @@ async function collectObservationSnapshot(
   ]);
   const eventItems = eventList(events);
   const turnEvents = eventItems.filter((event) => input.turnEventIds.includes(event.id));
+  const questLifecycleEvents = eventItems.filter((event) => input.questLifecycleEventIds.includes(event.id));
   const conflictEvents = eventItems.filter((event) => input.conflictEventIds.includes(event.id));
   const sharedImpactEvents = eventItems.filter((event) => input.novelLoverEventIds.includes(event.id));
   const privacyPayloads = [aState, bState, cState, input.cStateBeforeTurn, { items: turnEvents }];
@@ -431,12 +492,51 @@ async function collectObservationSnapshot(
 
   return {
     privacyLeakFree: privacyPayloads.every((payload) => !containsAnyTerm(payload, input.leakTerms)),
-    allTurnEventsSameWorld: turnEvents.length === 4 && turnEvents.every((event) => event.world_id === worldId),
+    allTurnEventsSameWorld:
+      turnEvents.length === input.expectedTurnEventCount && turnEvents.every((event) => event.world_id === worldId),
     canonicalSequenceUnique: canonicalSequences.length > 0 && new Set(canonicalSequences).size === canonicalSequences.length,
     sharedImpactVisible,
     resourceConflictRecorded,
     worldBroadcastOrConstraintVisible,
+    questLifecycleEventsSameWorld:
+      input.questLifecycleEventIds.length > 0 &&
+      questLifecycleEvents.length === input.questLifecycleEventIds.length &&
+      questLifecycleEvents.every((event) => event.world_id === worldId),
   };
+}
+
+async function waitForOfferedQuest(
+  request: APIRequestContext,
+  runtime: PlayerRuntime,
+  timeout: number,
+): Promise<Record<string, unknown>> {
+  let latest = await getSessionQuests(request, runtime.accessToken, runtime.sessionId);
+  await expect
+    .poll(
+      async () => {
+        latest = await getSessionQuests(request, runtime.accessToken, runtime.sessionId);
+        return hasOfferedQuest(latest);
+      },
+      { timeout, intervals: [2_000, 5_000, 10_000], message: "dynamic quest offer should appear in journal" },
+    )
+    .toBe(true);
+  return latest;
+}
+
+function questItems(payload: Record<string, unknown>): Record<string, unknown>[] {
+  const rawItems = Array.isArray(payload.quests) ? payload.quests : Array.isArray(payload.items) ? payload.items : [];
+  return rawItems.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+}
+
+function hasOfferedQuest(payload: Record<string, unknown>): boolean {
+  return questItems(payload).some((item) => {
+    const actions = Array.isArray(item.available_actions) ? item.available_actions : [];
+    return item.status === "offered" && actions.includes("accept_quest");
+  });
+}
+
+function hasQuestChapter(payload: Record<string, unknown>): boolean {
+  return questItems(payload).some((item) => Array.isArray(item.chapters) && item.chapters.length > 0);
 }
 
 function requiredToken(

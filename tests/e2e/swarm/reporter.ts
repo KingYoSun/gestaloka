@@ -496,6 +496,9 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
   const evaluationByScenario = new Map<SwarmDecision["scenario"], PersonaEvaluation>();
   for (const [scenario, evaluation] of [
     ["shared-impact", report.persona_experience_evaluation[0]],
+    ["quest-offer", report.persona_experience_evaluation[0]],
+    ["quest-accept", report.persona_experience_evaluation[0]],
+    ["quest-body-progress", report.persona_experience_evaluation[0]],
     ["resource-conflict", report.persona_experience_evaluation[1]],
     ["world-event", report.persona_experience_evaluation[2]],
   ] as Array<[SwarmDecision["scenario"], PersonaEvaluation | undefined]>) {
@@ -513,7 +516,7 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
       personaId: decision.personaId,
       personaLabel: personaById.get(decision.personaId)?.label ?? ja(decision.personaId),
       scenario: decision.scenario,
-      action: decision.choiceId ?? decision.inputText ?? decision.inputMode,
+      action: decision.questAction ?? decision.choiceId ?? decision.inputText ?? decision.inputMode,
       expectedWorldImpact: decision.expectedWorldImpact,
       observedImpact: evaluation?.observedImpact ?? null,
       rating: evaluation?.rating ?? null,
@@ -527,6 +530,15 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
 function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
   if (scenario === "shared-impact") {
     return "shared_impact_visible";
+  }
+  if (scenario === "quest-offer") {
+    return "dynamic_quest_offered";
+  }
+  if (scenario === "quest-accept") {
+    return "quest_accept_turn_resolved";
+  }
+  if (scenario === "quest-body-progress") {
+    return "quest_chapter_visible";
   }
   if (scenario === "resource-conflict") {
     return "resource_conflict_recorded";
@@ -1123,7 +1135,15 @@ const japaneseLabels: Record<string, string> = {
   shared_impact_visible: "共有世界への影響が観測可能",
   resource_conflict_recorded: "リソース競合が記録される",
   world_broadcast_or_constraint_visible: "世界イベントまたは制約が観測可能",
+  exploration_label_visible: "探索中表示が観測可能",
+  dynamic_quest_offered: "動的クエスト提示が観測可能",
+  quest_accept_turn_resolved: "クエスト受諾 turn が解決",
+  quest_chapter_visible: "クエスト chapter が観測可能",
+  quest_lifecycle_events_same_world: "クエスト lifecycle event が同一 world に属する",
   "shared-impact": "共有影響",
+  "quest-offer": "クエスト提示",
+  "quest-accept": "クエスト受諾",
+  "quest-body-progress": "クエスト進行",
   "resource-conflict": "リソース競合",
   "world-event": "世界イベント",
   ux_clarity: "UX 評価",
@@ -1132,6 +1152,11 @@ const japaneseLabels: Record<string, string> = {
   overall: "総合体験",
   choice: "選択肢",
   free_text: "自由入力",
+  quest_action: "クエスト操作",
+  accept_quest: "クエスト受諾",
+  decline_quest: "クエスト辞退",
+  leave_quest: "クエスト離脱",
+  resume_quest: "クエスト再開",
   progress: "進行",
   safe: "安全",
   explore: "探索",
@@ -1163,6 +1188,10 @@ const japaneseLabels: Record<string, string> = {
     "同時行動は完了したが、観測可能な resource constraint は残らなかった。",
   "Late join and follow-up exposed a world event or broadcast constraint.":
     "遅れて参加した後の追跡行動で、世界イベントまたは broadcast constraint を観測できた。",
+  "Exploration produced an optional quest, and accepting it opened a chapter that remained visible.":
+    "探索から任意クエストが提示され、受諾後の chapter が見える形で残った。",
+  "The dynamic quest offer or accepted chapter was not visible enough in the probe.":
+    "動的クエスト提示または受諾後 chapter の可視性が十分に確認できなかった。",
   "Late join and follow-up did not expose a world event or broadcast constraint.":
     "遅れて参加した後の追跡行動では、世界イベントまたは broadcast constraint を観測できなかった。",
 };
