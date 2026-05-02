@@ -41,8 +41,9 @@ class ResolveTurnRequest(BaseModel):
     input_mode: Literal["choice", "free_text"] = "choice"
     choice_id: Literal["safe", "progress", "explore"] | None = None
     input_text: str | None = Field(default=None, min_length=1, max_length=2000)
-    action_type: Literal["narrative", "use_reward_item"] | None = None
+    action_type: Literal["narrative", "use_reward_item", "accept_quest", "decline_quest", "leave_quest", "resume_quest"] | None = None
     item_id: str | None = Field(default=None, min_length=1, max_length=36)
+    quest_assignment_id: str | None = Field(default=None, min_length=1, max_length=36)
 
     @model_validator(mode="before")
     @classmethod
@@ -55,7 +56,7 @@ class ResolveTurnRequest(BaseModel):
             normalized["input_mode"] = "free_text"
         if action_type == "narrative" and normalized.get("input_text") and not normalized.get("choice_id"):
             normalized["input_mode"] = "free_text"
-        elif action_type == "use_reward_item":
+        elif action_type == "use_reward_item" or action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest"}:
             normalized["input_mode"] = "choice"
         return normalized
 
@@ -63,16 +64,22 @@ class ResolveTurnRequest(BaseModel):
     def validate_action_payload(self) -> "ResolveTurnRequest":
         if self.action_type == "use_reward_item" and not self.item_id:
             raise ValueError("item_id is required for use_reward_item turns")
+        if self.action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest"} and not self.quest_assignment_id:
+            raise ValueError("quest_assignment_id is required for quest lifecycle turns")
         if self.action_type == "narrative" and self.input_mode != "free_text":
             self.input_mode = "free_text"
-        if self.action_type != "use_reward_item" and self.input_mode == "choice" and not self.choice_id:
+        if self.action_type not in {"use_reward_item", "accept_quest", "decline_quest", "leave_quest", "resume_quest"} and self.input_mode == "choice" and not self.choice_id:
             raise ValueError("choice_id is required for choice turns")
-        if self.action_type != "use_reward_item" and self.input_mode == "free_text" and not self.input_text:
+        if self.action_type not in {"use_reward_item", "accept_quest", "decline_quest", "leave_quest", "resume_quest"} and self.input_mode == "free_text" and not self.input_text:
             raise ValueError("input_text is required for free_text turns")
         if self.action_type == "use_reward_item" and self.choice_id is not None:
             self.choice_id = None
         if self.action_type == "use_reward_item" and self.input_text is None:
             self.input_text = f"[use_reward_item:{self.item_id}]"
+        if self.action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest"}:
+            self.choice_id = None
+            if self.input_text is None:
+                self.input_text = f"[{self.action_type}:{self.quest_assignment_id}]"
         return self
 
 
@@ -338,6 +345,7 @@ async def _resolve_turn_background(
     choice_id: str | None,
     input_text: str | None,
     item_id: str | None,
+    quest_assignment_id: str | None,
     world_context: dict[str, object],
 ) -> None:
     managed = await TurnResolutionManager(
@@ -351,6 +359,7 @@ async def _resolve_turn_background(
         choice_id=choice_id,
         input_text=input_text,
         item_id=item_id,
+        quest_assignment_id=quest_assignment_id,
         world_context=world_context,
     ).resolve()
     if managed.error is not None:
@@ -413,7 +422,11 @@ async def resolve_turn(
     user: UserIdentity = Depends(get_current_user),
 ) -> dict:
     ensure_primary_runtime(container)
-    prepared_input_mode = "choice" if payload.action_type == "use_reward_item" else payload.input_mode
+    prepared_input_mode = (
+        "choice"
+        if payload.action_type in {"use_reward_item", "accept_quest", "decline_quest", "leave_quest", "resume_quest"}
+        else payload.input_mode
+    )
     game_session = db.execute(select(GameSession).where(GameSession.id == payload.session_id)).scalar_one_or_none()
     if game_session is not None:
         try:
@@ -443,6 +456,7 @@ async def resolve_turn(
                 "choice_id": payload.choice_id,
                 "input_text": payload.input_text,
                 "item_id": payload.item_id,
+                "quest_assignment_id": payload.quest_assignment_id,
             },
             status="accepted",
             result_payload={},
@@ -470,6 +484,7 @@ async def resolve_turn(
             choice_id=payload.choice_id,
             input_text=payload.input_text,
             item_id=payload.item_id,
+            quest_assignment_id=payload.quest_assignment_id,
             world_context=world_context,
         )
     )

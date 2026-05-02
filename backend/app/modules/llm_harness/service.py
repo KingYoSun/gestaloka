@@ -273,6 +273,9 @@ class TurnResolutionPayload(BaseModel):
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
     scene_pressure: Literal["low", "medium", "high"] = "medium"
     broadcast_draft: dict[str, Any] | None = None
+    quest_offer: dict[str, Any] | None = None
+    chapter_directive: dict[str, Any] | None = None
+    followup_quest_offer: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

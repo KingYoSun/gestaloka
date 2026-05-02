@@ -42,10 +42,13 @@ from app.modules.world_state.timeline import (
     sync_active_broadcast_deliveries,
 )
 from app.modules.world_state.service import (
+    apply_quest_lifecycle_action,
+    apply_dynamic_chapter_progression,
     apply_scene_updates,
     apply_consequence_updates,
     apply_world_tag_updates,
     build_session_state,
+    create_dynamic_quest_offer,
     ensure_starter_location,
     ensure_world,
     ensure_world_slice_seed,
@@ -218,6 +221,19 @@ def create_session_for_user(
     lock_player_profile(profile)
     profile_payload = player_profile_to_dict(player_actor, profile)
 
+    bootstrap_payload = {
+        "session_id": session.id,
+        "world_id": world.id,
+        "pack_id": pack_id,
+        "world_template_id": world_template_id,
+        "npc_actor_id": guide_npc.id,
+        "location_id": starter_location.id,
+        "faction_id": seeded.faction.id,
+        "player_profile": profile_payload,
+    }
+    if seeded.quest_assignment is not None:
+        bootstrap_payload["quest_assignment_id"] = seeded.quest_assignment.id
+
     bootstrap_event = Event(
         world_id=world.id,
         session_id=session.id,
@@ -225,17 +241,7 @@ def create_session_for_user(
         event_type="session.started",
         source_actor_id=player_actor.id,
         location_id=starter_location.id,
-        payload={
-            "session_id": session.id,
-            "world_id": world.id,
-            "pack_id": pack_id,
-            "world_template_id": world_template_id,
-            "npc_actor_id": guide_npc.id,
-            "location_id": starter_location.id,
-            "faction_id": seeded.faction.id,
-            "quest_assignment_id": seeded.quest_assignment.id,
-            "player_profile": profile_payload,
-        },
+        payload=bootstrap_payload,
         narrative=str(template.bootstrap.session_started_narrative).format(
             player_name=player_actor.display_name,
             starter_location_name=starter_location.name,
@@ -362,6 +368,7 @@ def resolve_turn_for_session(
     choice_id: str | None = None,
     input_text: str | None = None,
     item_id: str | None = None,
+    quest_assignment_id: str | None = None,
 ) -> TurnResolutionResult:
     trace_context = container.observability_service.langfuse_trace(
         seed_id=prepared.turn_id,
@@ -374,6 +381,7 @@ def resolve_turn_for_session(
             "choice_id": choice_id,
             "input_text": input_text,
             "item_id": item_id,
+            "quest_assignment_id": quest_assignment_id,
         },
         metadata={
             "world_id": prepared.session.world_id,
@@ -387,7 +395,18 @@ def resolve_turn_for_session(
         tags=[container.settings.app_runtime_role],
     )
     with trace_context as trace_link:
-        if action_type == "use_reward_item":
+        if action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest"}:
+            if quest_assignment_id is None:
+                raise ValueError("quest_assignment_id is required for quest lifecycle turns")
+            result = _resolve_quest_lifecycle_turn_for_session(
+                db,
+                container,
+                prepared,
+                action_type=action_type,
+                quest_assignment_id=quest_assignment_id,
+                input_mode=input_mode,
+            )
+        elif action_type == "use_reward_item":
             if item_id is None:
                 raise ValueError("item_id is required for use_reward_item")
             result = _resolve_reward_item_turn_for_session(
@@ -1145,6 +1164,29 @@ def _resolve_narrative_turn_for_session(
     )
     db.add(event)
     db.flush()
+    dynamic_quest_updates = [
+        *create_dynamic_quest_offer(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            offer=getattr(payload, "quest_offer", None),
+        ),
+        *create_dynamic_quest_offer(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            offer=getattr(payload, "followup_quest_offer", None),
+            followup_of_assignment_id=str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None,
+        ),
+    ]
+    if dynamic_quest_updates:
+        state_updates["quest_updates"] = [*state_updates["quest_updates"], *dynamic_quest_updates]
+        event.payload = {
+            **event.payload,
+            "quest_updates": state_updates["quest_updates"],
+        }
 
     consequence_result = apply_consequence_updates(
         db,
@@ -1192,6 +1234,13 @@ def _resolve_narrative_turn_for_session(
             location_id=prepared.location_id,
             commit=branch_result.commit,
         )
+    dynamic_chapter_updates = apply_dynamic_chapter_progression(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        source_event_id=event.id,
+        chapter_directive=getattr(payload, "chapter_directive", None),
+    )
 
     pre_scene_state = build_session_state(
         db,
@@ -1236,7 +1285,7 @@ def _resolve_narrative_turn_for_session(
         "consequence_summary": consequence_result.consequence_summary,
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
-        "chapter_updates": scene_result["chapter_updates"],
+        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"]],
         "branch_updates": branch_result.updates,
         "crossroads_summary": branch_result.crossroads_summary,
         "ambient_updates": [],
@@ -1268,7 +1317,7 @@ def _resolve_narrative_turn_for_session(
         "consequence_summary": consequence_result.consequence_summary,
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
-        "chapter_updates": scene_result["chapter_updates"],
+        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"]],
         "branch_updates": branch_result.updates,
         "crossroads_summary": branch_result.crossroads_summary,
         "ambient_updates": [],
@@ -1376,7 +1425,7 @@ def _resolve_narrative_turn_for_session(
         **turn.resolved_output,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
-        "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
         "branch_updates": public_branch_updates or branch_result.updates,
         "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
@@ -1387,7 +1436,7 @@ def _resolve_narrative_turn_for_session(
         **event.payload,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
-        "chapter_updates": [*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
         "branch_updates": public_branch_updates or branch_result.updates,
         "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
@@ -1422,7 +1471,7 @@ def _resolve_narrative_turn_for_session(
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
         scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
-        chapter_updates=[*scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        chapter_updates=[*dynamic_chapter_updates, *scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
         branch_updates=public_branch_updates or branch_result.updates,
         ambient_updates=ambient_result["ambient_updates"],
         location_updates=[],
@@ -1440,6 +1489,171 @@ def _resolve_narrative_turn_for_session(
         recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
         idle_updates=[],
         progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "ambient_world_pass", "choice_generation"],
+    )
+
+
+def _resolve_quest_lifecycle_turn_for_session(
+    db: Session,
+    container: AppContainer,
+    prepared: PreparedTurnContext,
+    *,
+    action_type: str,
+    quest_assignment_id: str,
+    input_mode: str,
+) -> TurnResolutionResult:
+    game_session = prepared.session
+    player_actor = prepared.player_actor
+    turn = Turn(
+        id=prepared.turn_id,
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        actor_id=player_actor.id,
+        input_text=f"[{action_type}:{quest_assignment_id}]",
+        resolved_output={"status": "pending"},
+        model_lane="system",
+        action_type=action_type,
+        resolution_mode="quest_lifecycle",
+    )
+    db.add(turn)
+    db.flush()
+
+    event = Event(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        turn_id=turn.id,
+        event_type=f"quest.{action_type}",
+        source_actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        payload={
+            "action_type": action_type,
+            "quest_assignment_id": quest_assignment_id,
+        },
+        narrative="",
+    )
+    db.add(event)
+    db.flush()
+
+    try:
+        quest_updates, chapter_updates, summary = apply_quest_lifecycle_action(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            quest_assignment_id=quest_assignment_id,
+            action_type=action_type,
+            source_event_id=event.id,
+        )
+    except (LookupError, ValueError) as exc:
+        return _build_failed_turn_result(
+            db,
+            container,
+            prepared,
+            turn=turn,
+            action_type=action_type,
+            resolution_mode="quest_lifecycle",
+            action_label=action_type,
+            graph_context_status="quest_lifecycle",
+            failure_reason=str(exc),
+            model_lane="system",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            input_mode=input_mode,
+            interpreted_intent={"canonical_action_kind": action_type, "quest_assignment_id": quest_assignment_id},
+            next_choices=_session_state_with_latest_choices(
+                db,
+                session_id=game_session.id,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                location_id=prepared.location_id,
+            ).get("next_choices")
+            or [],
+            consequence_summary=str(exc),
+            progress_phases=["quest_lifecycle"],
+            failure_payload={"quest_assignment_id": quest_assignment_id, "action_type": action_type},
+        )
+
+    event.narrative = summary
+    event.payload = {
+        **event.payload,
+        "quest_updates": quest_updates,
+        "chapter_updates": chapter_updates,
+        "consequence_summary": summary,
+    }
+    turn.resolved_output = {
+        "status": "resolved",
+        "action_type": action_type,
+        "resolution_mode": "quest_lifecycle",
+        "input_mode": input_mode,
+        "narrative": summary,
+        "npc_reaction": "",
+        "interpreted_intent": {"canonical_action_kind": action_type, "quest_assignment_id": quest_assignment_id},
+        "quest_updates": quest_updates,
+        "chapter_updates": chapter_updates,
+        "scene_updates": [],
+        "branch_updates": [],
+        "ambient_updates": [],
+        "recent_world_beats": [],
+        "next_choices": [],
+        "consequence_summary": summary,
+        "scene_summary": "",
+        "crossroads_summary": "",
+    }
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={"turn_id": turn.id, "outcome": "quest_lifecycle", "location_id": prepared.location_id},
+        )
+    )
+    db.flush()
+    _finalize_event_timeline_and_broadcast(db, event=event)
+    post_state = build_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+        include_internal=True,
+    )
+    next_choices = post_state.get("next_choices") or []
+    turn.resolved_output = {
+        **turn.resolved_output,
+        "next_choices": next_choices,
+    }
+    return TurnResolutionResult(
+        turn=turn,
+        event=event,
+        memory_ids=[],
+        event_payload=_event_payload(event),
+        memories_payload=[],
+        graph_context_status="quest_lifecycle",
+        sp_delta=prepared.debit.delta,
+        sp_balance=prepared.debit.balance_after,
+        paid_sp=prepared.debit.paid_balance_after,
+        bonus_sp=prepared.debit.bonus_balance_after,
+        sp_ledger_id=prepared.debit.ledger_entry.id,
+        quest_updates=quest_updates,
+        faction_updates=[],
+        inventory_updates=[],
+        relationship_updates=[],
+        consequence_updates=[],
+        scene_updates=[],
+        chapter_updates=chapter_updates,
+        branch_updates=[],
+        ambient_updates=[],
+        location_updates=[],
+        action_type=action_type,
+        input_mode=input_mode,
+        interpreted_intent={"canonical_action_kind": action_type, "quest_assignment_id": quest_assignment_id},
+        next_choices=next_choices,
+        consequence_summary=summary,
+        scene_tone="steady",
+        scene_summary="",
+        crossroads_summary="",
+        current_location=post_state.get("current_location"),
+        travel_summary=None,
+        recent_world_beats=post_state.get("recent_world_beats") or [],
+        recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
+        idle_updates=[],
+        progress_phases=["quest_lifecycle", "choice_generation"],
     )
 
 
@@ -1759,7 +1973,7 @@ def _resolve_reward_item_turn_for_session(
         )
 
     _, template = resolve_world_pack(db, game_session.world_id)
-    reward_name = str(template.quest.reward_name or outcome.item.name)
+    reward_name = str((template.quest.reward_name if template.quest is not None else "") or outcome.item.name)
     followup_location_name = str(
         template.locations[template.roles.followup_location_key].name
         if template.roles.followup_location_key in template.locations

@@ -105,6 +105,15 @@ const resources = {
           },
           scrollToLatest: "最新へ移動",
         },
+        quest: {
+          exploring: "探索中...",
+          actions: {
+            accept_quest: "受諾",
+            decline_quest: "見送る",
+            leave_quest: "離れる",
+            resume_quest: "再開",
+          },
+        },
         turn: {
           choice: "選択肢",
           freeText: "自由入力",
@@ -271,6 +280,15 @@ const resources = {
             large: "L",
           },
           scrollToLatest: "Jump to latest",
+        },
+        quest: {
+          exploring: "Exploring...",
+          actions: {
+            accept_quest: "Accept",
+            decline_quest: "Decline",
+            leave_quest: "Leave",
+            resume_quest: "Resume",
+          },
         },
         turn: {
           choice: "Choices",

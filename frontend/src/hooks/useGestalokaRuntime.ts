@@ -302,7 +302,11 @@ export function useGestalokaRuntime() {
 
   const statusText = !ready ? "initializing" : authenticated ? "authenticated" : "signed-out";
   const activeWorldId = session?.world_id ?? worldId;
-  const activeQuest = sessionState?.quests.find((item) => item.status === "active") ?? sessionState?.quests[0] ?? null;
+  const activeQuest =
+    sessionState?.quest_journal?.find((item) => item.status === "active") ??
+    sessionState?.quest_journal?.find((item) => item.status === "offered" || item.status === "paused") ??
+    sessionState?.quests.find((item) => item.status === "active") ??
+    null;
   const selectedWorld = playableWorlds.find((item) => item.world_id === worldId) ?? null;
   const selectedPlayerProfile = playerProfiles.find((item) => item.actor_id === selectedPlayerActorId) ?? null;
   const editingPlayerProfile = playerProfiles.find((item) => item.actor_id === editingPlayerActorId) ?? null;
@@ -1141,7 +1145,8 @@ export function useGestalokaRuntime() {
   async function submitTurnRequest(
     payload:
       | { input_mode: "choice"; choice_id: "safe" | "progress" | "explore" }
-      | { input_mode: "free_text"; input_text: string },
+      | { input_mode: "free_text"; input_text: string }
+      | { action_type: "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest"; quest_assignment_id: string },
   ) {
     if (!token || !session) {
       setError(t("errors.startSessionFirst"));
@@ -1209,6 +1214,10 @@ export function useGestalokaRuntime() {
 
   async function handleChoiceSubmit(choiceId: "safe" | "progress" | "explore") {
     await submitTurnRequest({ input_mode: "choice", choice_id: choiceId });
+  }
+
+  async function handleQuestAction(actionType: "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest", questAssignmentId: string) {
+    await submitTurnRequest({ action_type: actionType, quest_assignment_id: questAssignmentId });
   }
 
   async function handleRebuildGraph() {
@@ -1603,6 +1612,7 @@ export function useGestalokaRuntime() {
     handleStartSession,
     handleTurnSubmit,
     handleChoiceSubmit,
+    handleQuestAction,
     handleLoadOlderStory,
     handleRebuildGraph,
     handleIdlePass,

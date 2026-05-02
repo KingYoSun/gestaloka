@@ -78,7 +78,7 @@ def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
     assert followup.should_issue_reward is False
 
 
-def test_session_seed_is_idempotent_for_character_faction_and_quest(client, container, auth_headers):
+def test_session_seed_is_idempotent_for_character_faction_and_exploration_state(client, container, auth_headers):
     first = client.post(
         "/sessions",
         json=engine_session_payload(),
@@ -95,11 +95,11 @@ def test_session_seed_is_idempotent_for_character_faction_and_quest(client, cont
 
     with container.session_factory() as db:
         assert db.execute(select(func.count(Faction.id))).scalar_one() == 5
-        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 2
-        assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 1
+        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 0
+        assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 0
         assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
         assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 5
-        assert db.execute(select(func.count(ChapterTrack.id))).scalar_one() == 1
+        assert db.execute(select(func.count(ChapterTrack.id))).scalar_one() == 0
         assert db.execute(select(func.count(SceneFrame.id))).scalar_one() == 1
         assert db.execute(select(func.count(WorldAxisState.axis_id))).scalar_one() == 5
         gate = next(

@@ -80,13 +80,17 @@ def _pack_specific_terms(registry: PackRegistry) -> list[LeakTerm]:
             _add_term(terms, value=template.world.get("default_name"), pack_id=pack_id, source="world_name")
             _add_term(terms, value=template.roles.starter_stage_key, pack_id=pack_id, source="stage_key")
             _add_term(terms, value=template.roles.followup_stage_key, pack_id=pack_id, source="stage_key")
-            _add_term(terms, value=template.roles.opening_chapter_key, pack_id=pack_id, source="chapter_key")
-            _add_term(terms, value=template.roles.followup_chapter_key, pack_id=pack_id, source="chapter_key")
+            if template.roles.opening_chapter_key:
+                _add_term(terms, value=template.roles.opening_chapter_key, pack_id=pack_id, source="chapter_key")
+            if template.roles.followup_chapter_key:
+                _add_term(terms, value=template.roles.followup_chapter_key, pack_id=pack_id, source="chapter_key")
             for slot in FOLLOWUP_BRANCH_SLOTS:
                 branch = getattr(template.roles.followup_branches, slot)
                 _add_term(terms, value=branch.branch_key, pack_id=pack_id, source="branch_key")
                 _add_term(terms, value=branch.label, pack_id=pack_id, source="branch_label")
             for quest in (template.quest, template.followup_quest):
+                if quest is None:
+                    continue
                 _add_term(terms, value=quest.stage_key, pack_id=pack_id, source="stage_key")
                 _add_term(terms, value=quest.reward_name, pack_id=pack_id, source="reward_name")
             for location in template.locations.values():

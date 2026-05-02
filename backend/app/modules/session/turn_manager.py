@@ -40,6 +40,7 @@ class TurnResolutionManager:
         choice_id: str | None,
         input_text: str | None,
         item_id: str | None,
+        quest_assignment_id: str | None,
         world_context: dict[str, object],
     ) -> None:
         self.container = container
@@ -52,6 +53,7 @@ class TurnResolutionManager:
         self.choice_id = choice_id
         self.input_text = input_text
         self.item_id = item_id
+        self.quest_assignment_id = quest_assignment_id
         self.world_context = world_context
 
     async def resolve(self) -> ManagedTurnResolution:
@@ -144,6 +146,7 @@ class TurnResolutionManager:
                     choice_id=self.choice_id,  # type: ignore[arg-type]
                     input_text=self.input_text,
                     item_id=self.item_id,
+                    quest_assignment_id=self.quest_assignment_id,
                 )
             self.container.observability_service.record_turn_resolution(
                 duration_seconds=self.container.observability_service.elapsed(started_at),

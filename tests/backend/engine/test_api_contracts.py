@@ -362,7 +362,9 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     assert first_state.status_code == 200
     payload = first_state.json()
     assert payload["current_location"]["name"] == "ネクサス・ゲート"
-    assert payload["quests"][0]["title"] == "最初の安定化依頼"
+    assert payload["quests"] == []
+    assert payload["quest_journal"] == []
+    assert payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
     assert payload["local_figures"][0]["display_name"] == "ゲート守リッカ"
     assert payload["nearby_routes"][0]["destination_name"] == "リフト・タワー・コンコース"
     assert "リフト・タワー・コンコース" in payload["next_choices"][2]["label"]
@@ -633,6 +635,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "character",
         "player_profile",
         "quests",
+        "quest_journal",
+        "quest_display_state",
         "factions",
         "inventory",
         "chapter",
@@ -657,9 +661,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     } <= set(state_response.json())
     world_pack = state_response.json()["world_pack"]
     assert state_response.json()["player_profile"]["actor_id"] == session_payload["player_actor_id"]
-    assert state_response.json()["quests"][0]["progress"] == 0
-    assert state_response.json()["quests"][0]["stage_key"] == world_pack["starter_stage_key"]
-    assert state_response.json()["chapter"]["key"] == world_pack["opening_chapter_key"]
+    assert state_response.json()["quests"] == []
+    assert state_response.json()["quest_journal"] == []
+    assert state_response.json()["quest_display_state"]["mode"] == "exploration"
+    assert state_response.json()["quest_display_state"]["label"] == "探索中..."
+    assert state_response.json()["chapter"] is None
     assert state_response.json()["current_location"]["name"] in state_response.json()["current_scene"]["summary"]
     assert state_response.json()["current_location"]["key"] == world_pack["starter_location_key"]
     assert state_response.json()["local_figures"]
@@ -738,7 +744,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["sp_balance"] == 29
         assert turn_payload["paid_sp"] == 0
         assert turn_payload["bonus_sp"] == 29
-        assert turn_payload["quest_updates"][0]["progress"] == 1
+        assert turn_payload["quest_updates"][0]["status"] == "offered"
+        assert turn_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
         assert turn_payload["inventory_updates"] == []
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
@@ -747,19 +754,17 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "session.connected",
         "turn.accepted",
     ]
-    assert [message["event"] for message in messages[-11:]] == [
-        "turn.narrative.delta",
-        "world.event.created",
-        "world.broadcast.available",
-        "memory.materialized",
-        "quest.updated",
-        "faction.standing.updated",
-        "relationship.updated",
-        "scene.updated",
-        "chapter.updated",
-        "ambient.updated",
-        "turn.resolved",
-    ]
+    event_names = [message["event"] for message in messages]
+    assert "turn.narrative.delta" in event_names
+    assert "world.event.created" in event_names
+    assert "world.broadcast.available" in event_names
+    assert "memory.materialized" in event_names
+    assert "quest.updated" in event_names
+    assert "relationship.updated" in event_names
+    assert "scene.updated" in event_names
+    assert "ambient.updated" in event_names
+    assert "chapter.updated" not in event_names
+    assert event_names[-1] == "turn.resolved"
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
     completed_phases = [
         message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"
@@ -953,7 +958,7 @@ def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_heade
     assert payload["shared_action_tag"] == "none"
 
 
-def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers):
+def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     session_response = client.post(
         "/sessions",
         json=engine_session_payload(),
@@ -961,90 +966,74 @@ def test_use_reward_item_contract_and_websocket_event_order(client, auth_headers
     )
     session_payload = session_response.json()
 
-    _post_turn_and_wait_for_resolution(
+    _, offer_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
         {"input_mode": "choice", "choice_id": "progress"},
     )
-    _post_turn_and_wait_for_resolution(
-        client,
-        session_payload["session_id"],
-        auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
-    )
+    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
-    assert state_response.json()["inventory"][0]["id"]
-    assert state_response.json()["next_choices"][1]["action_kind"] == "use_reward_item"
-    world_pack = state_response.json()["world_pack"]
+    assert state_response.json()["quest_journal"][0]["status"] == "offered"
+    assert state_response.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest"]
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
-        use_response = client.post(
+        accept_response = client.post(
             "/turns",
             json={
                 "session_id": session_payload["session_id"],
-                "input_mode": "choice",
-                "choice_id": "progress",
+                "action_type": "accept_quest",
+                "quest_assignment_id": quest_assignment_id,
             },
             headers=auth_headers,
         )
-        assert use_response.status_code == 202
-        accepted_payload = use_response.json()
+        assert accept_response.status_code == 202
+        accepted_payload = accept_response.json()
         messages = _receive_until_turn_resolved(websocket)
         payload = messages[-1]["data"]
         assert accepted_payload["turn_id"] == payload["turn_id"]
         assert payload["world_context"]["pack_id"] == "gestaloka_reference"
-        assert payload["action_type"] == "use_reward_item"
+        assert payload["action_type"] == "accept_quest"
         assert payload["input_mode"] == "choice"
-        assert payload["quest_updates"][0]["stage_key"] == world_pack["followup_stage_key"]
-        assert payload["inventory_updates"][0]["status"] == "used"
-        assert payload["inventory_updates"][0]["action"] == "used"
-        assert payload["faction_updates"][0]["delta"] == 0.1
+        assert payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
+        assert payload["quest_updates"][0]["status"] == "active"
+        assert payload["chapter_updates"][0]["quest_assignment_id"] == quest_assignment_id
+        assert payload["chapter_updates"][0]["chapter_kind"] == "prologue"
+        assert payload["inventory_updates"] == []
+        assert payload["faction_updates"] == []
         assert payload["location_updates"] == []
-        assert payload["current_location"]["key"] == world_pack["starter_location_key"]
+        assert payload["current_location"]["key"] == state_response.json()["world_pack"]["starter_location_key"]
         assert payload["travel_summary"] is None
-        assert payload["relationship_updates"]
+        assert payload["relationship_updates"] == []
 
     assert [message["event"] for message in messages[:2]] == [
         "session.connected",
         "turn.accepted",
     ]
-    assert [message["event"] for message in messages[-12:]] == [
-        "turn.narrative.delta",
+    event_names = [message["event"] for message in messages]
+    assert "quest.updated" in event_names
+    assert "chapter.updated" in event_names
+    assert "inventory.changed" not in event_names
+    assert event_names[-1] == "turn.resolved"
+    assert event_names[-4:] == [
         "world.event.created",
-        "world.broadcast.available",
-        "memory.materialized",
         "quest.updated",
-        "faction.standing.updated",
-        "inventory.changed",
-        "relationship.updated",
-        "scene.updated",
         "chapter.updated",
-        "ambient.updated",
         "turn.resolved",
     ]
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
     assert [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"] == [
-        "intent_interpretation",
-        "item_use",
-        "consequence_resolution",
-        "scene_framing",
-        "ambient_world_pass",
+        "quest_lifecycle",
         "choice_generation",
     ]
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[-1]["data"] == payload
-    broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
-    assert broadcast_message["data"]["semantic_key"]
-    assert broadcast_message["data"]["status"] == "active"
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
         assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
-    assert payload["scene_updates"]
-
-    assert payload["chapter_updates"]
+    assert payload["scene_updates"] == []
 
 
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
@@ -1092,11 +1081,20 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    _post_turn_and_wait_for_resolution(
+    _, offer_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
         {"input_mode": "choice", "choice_id": "progress"},
+    )
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {
+            "action_type": "accept_quest",
+            "quest_assignment_id": offer_payload["quest_updates"][0]["assignment_id"],
+        },
     )
     status_response = client.get("/ops/projection/status", headers=auth_headers)
     assert status_response.status_code == 200
@@ -1134,7 +1132,6 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert summary_payload["vertex_count"] >= 6
     assert summary_payload["edge_count"] >= 6
     assert summary_payload["label_counts"]["Faction"] >= 1
-    assert summary_payload["label_counts"]["Quest"] >= 1
 
     rebuild_response = client.post(
         "/ops/projection/rebuild",
@@ -1146,6 +1143,9 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert rebuild_payload["world_id"] == session_payload["world_id"]
     assert rebuild_payload["world_context"] == session_payload["world_context"]
     assert rebuild_payload["records"] >= 1
+    rebuilt_summary_response = client.get(f"/ops/worlds/{session_payload['world_id']}/graph-summary", headers=auth_headers)
+    assert rebuilt_summary_response.status_code == 200
+    assert rebuilt_summary_response.json()["label_counts"]["Quest"] >= 1
 
     retry_response = client.post(
         "/ops/projection/retry-failed",
@@ -1268,11 +1268,20 @@ def test_ops_relationship_chapter_scene_and_memory_contracts(client, auth_header
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    _post_turn_and_wait_for_resolution(
+    _, offer_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
         {"input_mode": "choice", "choice_id": "progress"},
+    )
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {
+            "action_type": "accept_quest",
+            "quest_assignment_id": offer_payload["quest_updates"][0]["assignment_id"],
+        },
     )
 
     relationships_response = client.get(

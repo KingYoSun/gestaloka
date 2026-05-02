@@ -96,8 +96,8 @@ class PackRoles(BaseModel):
     guide_npc_name: str = ""
     starter_stage_key: str = "starter_stage"
     followup_stage_key: str = "followup_stage"
-    opening_chapter_key: str = "opening_chapter"
-    followup_chapter_key: str = "followup_chapter"
+    opening_chapter_key: str | None = None
+    followup_chapter_key: str | None = None
     reward_effect_kind: str = "unlock_followup_route"
     followup_branches: PackFollowupBranches
 
@@ -374,8 +374,8 @@ class WorldTemplateDefinition(BaseModel):
     history_rules: list[PackHistoryRule] = Field(default_factory=list)
     title_rules: list[PackTitleRule] = Field(default_factory=list)
     consequence_rules: list[PackConsequenceRule] = Field(default_factory=list)
-    quest: PackQuest
-    followup_quest: PackQuest
+    quest: PackQuest | None = None
+    followup_quest: PackQuest | None = None
     character: PackCharacter = Field(default_factory=PackCharacter)
 
     @model_validator(mode="after")
@@ -389,7 +389,7 @@ class WorldTemplateDefinition(BaseModel):
         missing = required - location_keys
         if missing:
             raise ValueError(f"world template {self.template_id} is missing location keys: {sorted(missing)}")
-        npc_reward_effect = str((self.quest.state or {}).get("reward_effect_kind") or self.roles.reward_effect_kind)
+        npc_reward_effect = str(((self.quest.state if self.quest is not None else {}) or {}).get("reward_effect_kind") or self.roles.reward_effect_kind)
         if npc_reward_effect != self.roles.reward_effect_kind:
             self.roles.reward_effect_kind = npc_reward_effect
         if not self.factions:

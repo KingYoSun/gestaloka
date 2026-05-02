@@ -133,6 +133,16 @@ export function mergeTurnResponseIntoSessionState(current: SessionState | null, 
       quests.push(update);
     }
   }
+  const questJournal = [...(current.quest_journal ?? [])];
+  for (const update of response.quest_updates) {
+    const index = questJournal.findIndex((item) => item.assignment_id === update.assignment_id);
+    if (index >= 0) {
+      questJournal[index] = { ...questJournal[index], ...update };
+    } else {
+      questJournal.push(update);
+    }
+  }
+  const liveQuest = questJournal.find((item) => item.status === "offered" || item.status === "active" || item.status === "paused");
 
   const factions = [...current.factions];
   for (const update of response.faction_updates) {
@@ -229,6 +239,8 @@ export function mergeTurnResponseIntoSessionState(current: SessionState | null, 
     location: currentLocation,
     current_location: currentLocation,
     quests,
+    quest_journal: questJournal,
+    quest_display_state: liveQuest ? { mode: "quest", label: liveQuest.title } : current.quest_display_state,
     factions,
     inventory,
     chapter: currentChapter,

@@ -13,8 +13,8 @@ world_templates:
       guide_npc_name: Gate Steward Rikka
       starter_stage_key: starter_nexus
       followup_stage_key: breach_restoration
-      opening_chapter_key: nexus_foundation_opening
-      followup_chapter_key: breach_restoration_followup
+      opening_chapter_key:
+      followup_chapter_key:
       reward_effect_kind: unlock_oblivion_breach_route
       followup_branches:
         formal_path:

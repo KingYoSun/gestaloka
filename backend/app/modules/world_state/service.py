@@ -20,6 +20,7 @@ from app.models.entities import (
     Location,
     LocationRoute,
     Memory,
+    ChapterTrack,
     QuestAssignment,
     QuestTemplate,
     Relationship,
@@ -103,9 +104,9 @@ ROUTE_STATUS_LOCKED = "locked"
 class WorldSliceSeed:
     faction: Faction
     standing: FactionStanding
-    quest_template: QuestTemplate
-    quest_assignment: QuestAssignment
-    followup_quest_template: QuestTemplate
+    quest_template: QuestTemplate | None
+    quest_assignment: QuestAssignment | None
+    followup_quest_template: QuestTemplate | None
     character_sheet: CharacterSheet
 
 
@@ -168,9 +169,9 @@ def _seed_section(db: Session, world_id: str, name: str) -> dict[str, Any]:
     if name == "faction":
         return template.faction.model_dump()
     if name == "quest":
-        return template.quest.model_dump()
+        return template.quest.model_dump() if template.quest is not None else {}
     if name == "followup_quest":
-        return template.followup_quest.model_dump()
+        return template.followup_quest.model_dump() if template.followup_quest is not None else {}
     if name == "character":
         return template.character.model_dump()
     raise KeyError(f"Unknown pack section: {name}")
@@ -252,11 +253,11 @@ def _followup_stage_key(db: Session, world_id: str) -> str:
 
 
 def _opening_chapter_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("opening_chapter_key") or "opening_chapter")
+    return str(_seed_section(db, world_id, "roles").get("opening_chapter_key") or "")
 
 
 def _followup_chapter_key(db: Session, world_id: str) -> str:
-    return str(_seed_section(db, world_id, "roles").get("followup_chapter_key") or _followup_stage_key(db, world_id))
+    return str(_seed_section(db, world_id, "roles").get("followup_chapter_key") or "")
 
 
 def _reward_effect_kind(db: Session, world_id: str) -> str:
@@ -612,8 +613,11 @@ def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
         default_description="Help a local, report back what you learned, and earn enough trust to unlock the next route.",
         default_completion_target=2,
         default_reward_template_key="starter_reward",
-        default_reward_name=str(template.quest.reward_name or "World Seal"),
-        default_reward_description=str(template.quest.reward_description or "A trusted item for the next route."),
+        default_reward_name=str((template.quest.reward_name if template.quest is not None else "") or "World Seal"),
+        default_reward_description=str(
+            (template.quest.reward_description if template.quest is not None else "")
+            or "A trusted item for the next route."
+        ),
         default_stage_key=_starter_stage_key(db, world_id),
         default_unlock_requirements={},
         default_state={
@@ -631,8 +635,11 @@ def ensure_followup_quest_template(db: Session, world_id: str) -> QuestTemplate:
         world_id=world_id,
         section_name="followup_quest",
         default_id="followup_route",
-        default_title=str(template.followup_quest.title or "Follow-up Route Unsealed"),
-        default_description=str(template.followup_quest.description or "Carry earned trust into the next route."),
+        default_title=str((template.followup_quest.title if template.followup_quest is not None else "") or "Follow-up Route Unsealed"),
+        default_description=str(
+            (template.followup_quest.description if template.followup_quest is not None else "")
+            or "Carry earned trust into the next route."
+        ),
         default_completion_target=1,
         default_reward_template_key="none",
         default_reward_name="",
@@ -725,7 +732,7 @@ def ensure_followup_quest_assignment(
         quest_template=followup_template,
         latest_summary=_bootstrap_copy(db, world_id).get(
             "reward_unlock_summary",
-            f"{template.quest.reward_name} opened a follow-up route.",
+            f"{(template.quest.reward_name if template.quest is not None else 'A discovered key')} opened a follow-up route.",
         ),
         state_json={
             "lore_progress": 0,
@@ -784,29 +791,29 @@ def _existing_world_slice_seed(db: Session, *, world_id: str, player_actor_id: s
     if faction is None:
         return None
 
+    quest_template: QuestTemplate | None = None
     quest_seed = _seed_section(db, world_id, "quest")
-    quest_base_id = str(quest_seed.get("id") or "starter_quest_request")
-    _, quest_candidates = _resolve_seeded_entity_id(world_id, quest_base_id)
-    quest_template = db.execute(
-        select(QuestTemplate).where(
-            QuestTemplate.world_id == world_id,
-            QuestTemplate.id.in_(quest_candidates),
-        )
-    ).scalars().first()
-    if quest_template is None:
-        return None
+    if quest_seed:
+        quest_base_id = str(quest_seed.get("id") or "starter_quest_request")
+        _, quest_candidates = _resolve_seeded_entity_id(world_id, quest_base_id)
+        quest_template = db.execute(
+            select(QuestTemplate).where(
+                QuestTemplate.world_id == world_id,
+                QuestTemplate.id.in_(quest_candidates),
+            )
+        ).scalars().first()
 
+    followup_quest_template: QuestTemplate | None = None
     followup_seed = _seed_section(db, world_id, "followup_quest")
-    followup_base_id = str(followup_seed.get("id") or "followup_route")
-    _, followup_candidates = _resolve_seeded_entity_id(world_id, followup_base_id)
-    followup_quest_template = db.execute(
-        select(QuestTemplate).where(
-            QuestTemplate.world_id == world_id,
-            QuestTemplate.id.in_(followup_candidates),
-        )
-    ).scalars().first()
-    if followup_quest_template is None:
-        return None
+    if followup_seed:
+        followup_base_id = str(followup_seed.get("id") or "followup_route")
+        _, followup_candidates = _resolve_seeded_entity_id(world_id, followup_base_id)
+        followup_quest_template = db.execute(
+            select(QuestTemplate).where(
+                QuestTemplate.world_id == world_id,
+                QuestTemplate.id.in_(followup_candidates),
+            )
+        ).scalars().first()
 
     character_sheet = db.execute(
         select(CharacterSheet).where(
@@ -821,14 +828,18 @@ def _existing_world_slice_seed(db: Session, *, world_id: str, player_actor_id: s
             FactionStanding.faction_id == faction.id,
         )
     ).scalar_one_or_none()
-    quest_assignment = db.execute(
-        select(QuestAssignment).where(
-            QuestAssignment.world_id == world_id,
-            QuestAssignment.owner_actor_id == player_actor_id,
-            QuestAssignment.quest_template_id == quest_template.id,
-        )
-    ).scalar_one_or_none()
-    if character_sheet is None or standing is None or quest_assignment is None:
+    quest_assignment = (
+        db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == player_actor_id,
+                QuestAssignment.quest_template_id == quest_template.id,
+            )
+        ).scalar_one_or_none()
+        if quest_template is not None
+        else None
+    )
+    if character_sheet is None or standing is None:
         return None
 
     return WorldSliceSeed(
@@ -871,14 +882,19 @@ def ensure_world_slice_seed(
         ensure_membership_relationship(db, world_id=world_id, from_actor_id=guide_actor.id, faction_id=faction.id)
     standing = ensure_faction_standing(db, world_id=world_id, actor_id=player_actor_id, faction_id=faction.id)
     character_sheet = ensure_character_sheet(db, world_id, player_actor_id)
-    quest_template = ensure_starter_quest_template(db, world_id)
-    quest_assignment = ensure_starter_quest_assignment(
-        db,
-        world_id=world_id,
-        owner_actor_id=player_actor_id,
-        quest_template_id=quest_template.id,
-    )
-    followup_quest_template = ensure_followup_quest_template(db, world_id)
+    quest_template = None
+    quest_assignment = None
+    followup_quest_template = None
+    if _seed_section(db, world_id, "quest").get("seed_on_session_start", False):
+        quest_template = ensure_starter_quest_template(db, world_id)
+        quest_assignment = ensure_starter_quest_assignment(
+            db,
+            world_id=world_id,
+            owner_actor_id=player_actor_id,
+            quest_template_id=quest_template.id,
+        )
+    if _seed_section(db, world_id, "followup_quest").get("seed_on_session_start", False):
+        followup_quest_template = ensure_followup_quest_template(db, world_id)
     ensure_narrative_frame_seed(
         db,
         world_id=world_id,
@@ -1245,6 +1261,450 @@ def list_quest_summaries(db: Session, world_id: str, actor_id: str) -> list[dict
     )
     rows.sort(key=lambda item: (item[0].status != "active", item[0].created_at, item[0].id))
     return [quest_summary_to_dict(assignment, template) for assignment, template in rows]
+
+
+def list_quest_journal(db: Session, world_id: str, actor_id: str) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(QuestAssignment, QuestTemplate)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(QuestAssignment.world_id == world_id, QuestAssignment.owner_actor_id == actor_id)
+        ).all()
+    )
+    rows.sort(key=lambda item: (item[0].status not in {"active", "offered", "paused"}, item[0].created_at, item[0].id))
+    chapters_by_quest: dict[str, list[dict[str, Any]]] = {}
+    chapter_rows = list(
+        db.execute(
+            select(ChapterTrack)
+            .where(ChapterTrack.world_id == world_id, ChapterTrack.owner_actor_id == actor_id)
+            .order_by(ChapterTrack.sequence_index.asc(), ChapterTrack.created_at.asc(), ChapterTrack.id.asc())
+        ).scalars()
+    )
+    for chapter in chapter_rows:
+        if not chapter.quest_assignment_id:
+            continue
+        chapters_by_quest.setdefault(chapter.quest_assignment_id, []).append(
+            {
+                "id": chapter.id,
+                "key": chapter.chapter_key,
+                "status": chapter.status,
+                "chapter_kind": chapter.chapter_kind,
+                "sequence_index": chapter.sequence_index,
+                "summary": chapter.summary,
+            }
+        )
+    return [
+        {
+            **quest_summary_to_dict(assignment, template),
+            "chapters": chapters_by_quest.get(assignment.id, []),
+            "available_actions": _quest_available_actions(db, world_id=world_id, actor_id=actor_id, assignment=assignment),
+        }
+        for assignment, template in rows
+    ]
+
+
+def _quest_available_actions(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    assignment: QuestAssignment,
+) -> list[str]:
+    if assignment.status == "offered":
+        return ["accept_quest", "decline_quest"]
+    if assignment.status == "paused":
+        return ["resume_quest"]
+    if assignment.status != "active":
+        return []
+    chapter = get_current_chapter_summary(db, world_id, actor_id, include_internal=True)
+    chapter_kind = str((chapter or {}).get("chapter_kind") or "")
+    locked_reason = str(((chapter or {}).get("state_json") or {}).get("departure_locked_reason") or "")
+    if chapter_kind in {"prologue", "epilogue"} or locked_reason:
+        return []
+    return ["leave_quest"]
+
+
+def quest_display_state(*, player_profile: dict[str, Any] | None, quest_journal: list[dict[str, Any]]) -> dict[str, Any]:
+    visible = [item for item in quest_journal if str(item.get("status") or "") in {"offered", "active", "paused"}]
+    if visible:
+        return {
+            "mode": "quest",
+            "label": str(visible[0].get("title") or ""),
+        }
+    play_language = (player_profile or {}).get("play_language") if isinstance(player_profile, dict) else {}
+    preset = str((play_language or {}).get("preset") or "").lower() if isinstance(play_language, dict) else ""
+    prompt_name = str((play_language or {}).get("prompt_name") or "").lower() if isinstance(play_language, dict) else ""
+    label = "探索中..." if preset == "ja" or "japanese" in prompt_name else "Exploring..."
+    return {
+        "mode": "exploration",
+        "label": label,
+    }
+
+
+def create_dynamic_quest_offer(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    offer: dict[str, Any] | None,
+    followup_of_assignment_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if not isinstance(offer, dict) or not offer:
+        return []
+    title = str(offer.get("title") or "").strip()
+    description = str(offer.get("description") or offer.get("summary") or "").strip()
+    if not title or not description:
+        return []
+    existing_active = db.execute(
+        select(QuestAssignment, QuestTemplate)
+        .join(
+            QuestTemplate,
+            (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+        )
+        .where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == actor_id,
+            QuestAssignment.status.in_(("offered", "active", "paused")),
+            QuestTemplate.title == title,
+        )
+    ).first()
+    if existing_active is not None:
+        assignment, template = existing_active
+        return [
+            {
+                **quest_summary_to_dict(assignment, template),
+                "action": "offered_existing",
+                "available_actions": _quest_available_actions(db, world_id=world_id, actor_id=actor_id, assignment=assignment),
+            }
+        ]
+
+    template_id = f"dynamic_quest_{source_event_id.replace('-', '')[:20]}"
+    if followup_of_assignment_id:
+        template_id = f"followup_quest_{source_event_id.replace('-', '')[:19]}"
+    completion_target = int(offer.get("completion_target") or 3)
+    completion_target = max(1, min(completion_target, 8))
+    template = QuestTemplate(
+        id=template_id,
+        world_id=world_id,
+        title=title[:160],
+        description=description,
+        status="active",
+        stage_key=str(offer.get("stage_key") or template_id)[:96],
+        unlock_requirements=dict(offer.get("unlock_requirements") or {}),
+        completion_target=completion_target,
+        reward_template_key=str(offer.get("reward_template_key") or "none")[:96],
+        reward_name=str(offer.get("reward_name") or "")[:120],
+        reward_description=str(offer.get("reward_description") or ""),
+        state={
+            "dynamic": True,
+            "source_event_id": source_event_id,
+            "followup_of_assignment_id": followup_of_assignment_id,
+            "seed": dict(offer),
+            "reward_enabled": bool(offer.get("reward_name") or offer.get("reward_template_key")),
+        },
+    )
+    db.add(template)
+    db.flush()
+    assignment = QuestAssignment(
+        world_id=world_id,
+        owner_actor_id=actor_id,
+        quest_template_id=template.id,
+        status="offered",
+        progress=0,
+        progress_target=template.completion_target,
+        latest_summary=str(offer.get("offered_summary") or description),
+        state_json={
+            "dynamic": True,
+            "source_event_id": source_event_id,
+            "followup_of_assignment_id": followup_of_assignment_id,
+            "constraints": list(offer.get("constraints") or []),
+            "outcome_basis": offer.get("outcome_basis"),
+        },
+    )
+    db.add(assignment)
+    db.flush()
+    return [
+        {
+            **quest_summary_to_dict(assignment, template),
+            "action": "offered",
+            "available_actions": _quest_available_actions(db, world_id=world_id, actor_id=actor_id, assignment=assignment),
+            "chapters": [],
+        }
+    ]
+
+
+def apply_quest_lifecycle_action(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    quest_assignment_id: str,
+    action_type: str,
+    source_event_id: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+    row = db.execute(
+        select(QuestAssignment, QuestTemplate)
+        .join(
+            QuestTemplate,
+            (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+        )
+        .where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == actor_id,
+            QuestAssignment.id == quest_assignment_id,
+        )
+    ).one_or_none()
+    if row is None:
+        raise LookupError("Quest assignment not found")
+    assignment, template = row
+    now = datetime.now(timezone.utc)
+    chapter_updates: list[dict[str, Any]] = []
+
+    if action_type == "accept_quest":
+        if assignment.status != "offered":
+            raise ValueError("Only offered quests can be accepted")
+        assignment.status = "active"
+        assignment.latest_summary = f"{template.title} has begun."
+        chapter = ChapterTrack(
+            world_id=world_id,
+            owner_actor_id=actor_id,
+            quest_assignment_id=assignment.id,
+            chapter_key=f"{template.stage_key}:prologue",
+            chapter_kind="prologue",
+            sequence_index=0,
+            status="active",
+            summary=f"{template.title} begins. {template.description}",
+            state_json={"departure_locked_reason": "The prologue must settle before leaving this quest."},
+            opening_event_id=source_event_id,
+            opened_at=now,
+        )
+        db.add(chapter)
+        db.flush()
+        chapter_updates.append(
+            {
+                "id": chapter.id,
+                "key": chapter.chapter_key,
+                "status": chapter.status,
+                "quest_assignment_id": chapter.quest_assignment_id,
+                "chapter_kind": chapter.chapter_kind,
+                "sequence_index": chapter.sequence_index,
+                "summary": chapter.summary,
+            }
+        )
+        return [{**quest_summary_to_dict(assignment, template), "action": "accepted"}], chapter_updates, f"{template.title} begins."
+
+    if action_type == "decline_quest":
+        if assignment.status != "offered":
+            raise ValueError("Only offered quests can be declined")
+        assignment.status = "declined"
+        assignment.latest_summary = f"{template.title} was declined for now."
+        db.flush()
+        return [{**quest_summary_to_dict(assignment, template), "action": "declined"}], chapter_updates, f"{template.title} is left aside."
+
+    if action_type == "leave_quest":
+        if assignment.status != "active":
+            raise ValueError("Only active quests can be left")
+        current_chapter = get_current_chapter_summary(db, world_id, actor_id, include_internal=True)
+        chapter_kind = str((current_chapter or {}).get("chapter_kind") or "")
+        locked_reason = str(((current_chapter or {}).get("state_json") or {}).get("departure_locked_reason") or "")
+        if chapter_kind in {"prologue", "epilogue"}:
+            raise ValueError("This quest cannot be left during its prologue or epilogue")
+        if locked_reason:
+            raise ValueError(locked_reason)
+        assignment.status = "paused"
+        assignment.latest_summary = f"{template.title} is paused and can be resumed later."
+        db.flush()
+        return [{**quest_summary_to_dict(assignment, template), "action": "left"}], chapter_updates, f"{template.title} is paused."
+
+    if action_type == "resume_quest":
+        if assignment.status != "paused":
+            raise ValueError("Only paused quests can be resumed")
+        assignment.status = "active"
+        assignment.latest_summary = f"{template.title} has resumed."
+        db.flush()
+        return [{**quest_summary_to_dict(assignment, template), "action": "resumed"}], chapter_updates, f"{template.title} resumes."
+
+    raise ValueError(f"Unsupported quest action: {action_type}")
+
+
+def apply_dynamic_chapter_progression(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    chapter_directive: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    active_row = db.execute(
+        select(QuestAssignment, QuestTemplate)
+        .join(
+            QuestTemplate,
+            (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+        )
+        .where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == actor_id,
+            QuestAssignment.status.in_(("active", "completed")),
+        )
+        .order_by((QuestAssignment.status == "active").desc(), QuestAssignment.updated_at.desc(), QuestAssignment.id.desc())
+    ).first()
+    if active_row is None:
+        return []
+    assignment, template = active_row
+    current = db.execute(
+        select(ChapterTrack)
+        .where(
+            ChapterTrack.world_id == world_id,
+            ChapterTrack.owner_actor_id == actor_id,
+            ChapterTrack.quest_assignment_id == assignment.id,
+            ChapterTrack.status.in_(("active", "cooling")),
+        )
+        .order_by(ChapterTrack.sequence_index.desc(), ChapterTrack.created_at.desc(), ChapterTrack.id.desc())
+    ).scalars().first()
+    if current is None:
+        return []
+
+    now = datetime.now(timezone.utc)
+    updates: list[dict[str, Any]] = []
+    directive = chapter_directive if isinstance(chapter_directive, dict) else {}
+    directive_action = str(directive.get("action") or "").strip().lower()
+    directive_kind = str(directive.get("chapter_kind") or "").strip().lower()
+    directive_summary = str(directive.get("summary") or directive.get("chapter_summary") or "").strip()
+    directive_constraints = [str(item) for item in directive.get("constraints") or [] if str(item).strip()]
+    directive_locked_reason = str(directive.get("departure_locked_reason") or "").strip()
+
+    if directive:
+        state_json = dict(current.state_json or {})
+        if directive_constraints:
+            existing_constraints = [str(item) for item in state_json.get("constraints") or [] if str(item).strip()]
+            state_json["constraints"] = [*existing_constraints, *directive_constraints]
+        if "departure_locked_reason" in directive:
+            state_json["departure_locked_reason"] = directive_locked_reason
+        if directive.get("event_source"):
+            state_json["event_source"] = directive.get("event_source")
+        current.state_json = state_json
+        if directive_summary:
+            current.summary = directive_summary
+        current.updated_at = now
+
+    if (
+        assignment.status == "active"
+        and current.chapter_kind == "body"
+        and directive_action == "close"
+        and directive_kind == "epilogue"
+    ):
+        assignment.status = "completed"
+        assignment.latest_summary = directive_summary or f"{template.title} reaches its aftermath."
+
+    if (
+        assignment.status == "active"
+        and current.chapter_kind == "body"
+        and directive_action == "open"
+        and directive_kind in {"", "body"}
+    ):
+        current.status = "resolved"
+        current.closing_event_id = source_event_id
+        current.resolved_at = now
+        current.updated_at = now
+        chapter = ChapterTrack(
+            world_id=world_id,
+            owner_actor_id=actor_id,
+            quest_assignment_id=assignment.id,
+            chapter_key=f"{template.stage_key}:body:{current.sequence_index + 1}",
+            chapter_kind="body",
+            sequence_index=current.sequence_index + 1,
+            status="active",
+            summary=directive_summary or f"{template.title} turns into a new chapter.",
+            state_json={
+                "departure_locked_reason": directive_locked_reason,
+                "constraints": directive_constraints,
+                "event_source": directive.get("event_source"),
+            },
+            opening_event_id=source_event_id,
+            opened_at=now,
+        )
+        db.add(chapter)
+        db.flush()
+        updates.append(
+            {
+                "id": chapter.id,
+                "key": chapter.chapter_key,
+                "status": chapter.status,
+                "quest_assignment_id": chapter.quest_assignment_id,
+                "chapter_kind": chapter.chapter_kind,
+                "sequence_index": chapter.sequence_index,
+                "summary": chapter.summary,
+            }
+        )
+    if assignment.status == "active" and current.chapter_kind == "prologue":
+        current.status = "resolved"
+        current.closing_event_id = source_event_id
+        current.resolved_at = now
+        current.updated_at = now
+        chapter = ChapterTrack(
+            world_id=world_id,
+            owner_actor_id=actor_id,
+            quest_assignment_id=assignment.id,
+            chapter_key=f"{template.stage_key}:body:{current.sequence_index + 1}",
+            chapter_kind="body",
+            sequence_index=current.sequence_index + 1,
+            status="active",
+            summary=f"{template.title} continues through the player's choices.",
+            state_json={"departure_locked_reason": ""},
+            opening_event_id=source_event_id,
+            opened_at=now,
+        )
+        db.add(chapter)
+        db.flush()
+        updates.append(
+            {
+                "id": chapter.id,
+                "key": chapter.chapter_key,
+                "status": chapter.status,
+                "quest_assignment_id": chapter.quest_assignment_id,
+                "chapter_kind": chapter.chapter_kind,
+                "sequence_index": chapter.sequence_index,
+                "summary": chapter.summary,
+            }
+        )
+    elif assignment.status == "completed" and current.chapter_kind != "epilogue":
+        current.status = "resolved"
+        current.closing_event_id = source_event_id
+        current.resolved_at = now
+        current.updated_at = now
+        chapter = ChapterTrack(
+            world_id=world_id,
+            owner_actor_id=actor_id,
+            quest_assignment_id=assignment.id,
+            chapter_key=f"{template.stage_key}:epilogue:{current.sequence_index + 1}",
+            chapter_kind="epilogue",
+            sequence_index=current.sequence_index + 1,
+            status="active",
+            summary=f"{template.title} reaches its aftermath. {assignment.latest_summary}",
+            state_json={"departure_locked_reason": "The epilogue must settle before leaving this quest."},
+            opening_event_id=source_event_id,
+            opened_at=now,
+        )
+        db.add(chapter)
+        db.flush()
+        updates.append(
+            {
+                "id": chapter.id,
+                "key": chapter.chapter_key,
+                "status": chapter.status,
+                "quest_assignment_id": chapter.quest_assignment_id,
+                "chapter_kind": chapter.chapter_kind,
+                "sequence_index": chapter.sequence_index,
+                "summary": chapter.summary,
+            }
+        )
+    if updates:
+        db.flush()
+    return updates
 
 
 def _world_axis_context(axis: WorldAxisState) -> dict[str, Any]:
@@ -1714,7 +2174,7 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
         "opening_chapter_key": _opening_chapter_key(db, world_id),
         "followup_chapter_key": _followup_chapter_key(db, world_id),
         "reward_effect_kind": _reward_effect_kind(db, world_id),
-        "reward_name": str(template.quest.reward_name or ""),
+        "reward_name": str((template.quest.reward_name if template.quest is not None else "") or ""),
         "faction_name": str(template.faction.name or ""),
         "followup_branches": followup_branches,
         "branch_labels": branch_labels_from_followup_branches(followup_branches),
@@ -2222,6 +2682,7 @@ def build_session_state(
     )
     character = get_character_summary(db, world_id, actor_id)
     quests = list_quest_summaries(db, world_id, actor_id)
+    quest_journal = list_quest_journal(db, world_id, actor_id)
     factions = list_faction_summaries(db, world_id, actor_id)
     inventory = list_inventory_summaries(db, world_id, actor_id)
     relationships = list_relationship_summaries(db, world_id, actor_id)
@@ -2297,6 +2758,8 @@ def build_session_state(
         "character": character,
         "player_profile": player_profile,
         "quests": quests,
+        "quest_journal": quest_journal,
+        "quest_display_state": quest_display_state(player_profile=player_profile, quest_journal=quest_journal),
         "factions": factions,
         "inventory": inventory,
         "chapter": chapter,
@@ -2642,9 +3105,6 @@ def _active_progression_quest(
     rows.sort(key=lambda item: (item[0].status != "active", item[0].created_at, item[0].id))
     for assignment, template in rows:
         if assignment.status == "active":
-            return assignment, template
-    for assignment, template in rows:
-        if assignment.progress < assignment.progress_target:
             return assignment, template
     return None
 

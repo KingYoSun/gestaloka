@@ -246,6 +246,9 @@ export type ChapterSummaryValue = {
   id: string;
   key: string;
   status: string;
+  quest_assignment_id?: string | null;
+  chapter_kind?: "ambient" | "prologue" | "body" | "epilogue" | string;
+  sequence_index?: number;
   summary: string;
   crossroads_summary?: string;
   branch_hint?: string;
@@ -301,6 +304,20 @@ export type QuestSummary = {
   latest_summary: string;
   reward_item_id: string | null;
   state_json: Record<string, unknown>;
+  available_actions?: string[];
+  chapters?: Array<{
+    id: string;
+    key: string;
+    status: string;
+    chapter_kind: string;
+    sequence_index: number;
+    summary: string;
+  }>;
+};
+
+export type QuestDisplayState = {
+  mode: "exploration" | "quest" | string;
+  label: string;
 };
 
 export type FactionSummary = {
@@ -376,6 +393,8 @@ export type SessionState = {
   character: CharacterSummary;
   player_profile: PlayerProfile | null;
   quests: QuestSummary[];
+  quest_journal: QuestSummary[];
+  quest_display_state: QuestDisplayState;
   factions: FactionSummary[];
   inventory: InventorySummary[];
   chapter: ChapterSummary;
@@ -408,7 +427,7 @@ export type SessionState = {
 export type TurnResponse = {
   turn_id: string;
   world_context?: WorldContext;
-  action_type: "narrative" | "use_reward_item" | "travel";
+  action_type: "narrative" | "use_reward_item" | "travel" | "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest";
   input_mode: "choice" | "free_text";
   event_id: string;
   memory_ids: string[];

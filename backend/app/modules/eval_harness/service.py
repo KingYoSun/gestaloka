@@ -2251,7 +2251,10 @@ class EvalHarnessService:
             or (template.world or {}).get("default_name")
             or template.display_name
         )
-        reward_name = str(world_pack_overrides.get("reward_name") or template.quest.reward_name or "the reward item")
+        reward_name = str(
+            world_pack_overrides.get("reward_name")
+            or ((template.quest.reward_name if template.quest is not None else "") or "the reward item")
+        )
         faction_name = str(world_pack_overrides.get("faction_name") or template.faction.name or "the local faction")
         world_pack = {
             "pack_id": pack.manifest.pack_id,
@@ -2279,6 +2282,8 @@ class EvalHarnessService:
             world_pack.get("branch_labels") or branch_labels_from_followup_branches(world_pack["followup_branches"])
         )
         quest_definition = template.followup_quest if stage_key == followup_stage_key else template.quest
+        quest_id = quest_definition.id if quest_definition is not None else "eval-dynamic-quest"
+        quest_title = quest_definition.title if quest_definition is not None else "Eval Dynamic Quest"
         chapter_summary = (
             f"The opening chapter of {world_name} is still gathering momentum around the opening request."
             if chapter_key == opening_chapter_key
@@ -2326,8 +2331,8 @@ class EvalHarnessService:
             "quests": [
                 {
                     "assignment_id": "eval-quest",
-                    "quest_template_id": quest_definition.id,
-                    "title": str((case.quest_context or {}).get("title") or quest_definition.title),
+                    "quest_template_id": quest_id,
+                    "title": str((case.quest_context or {}).get("title") or quest_title),
                     "description": "Eval fixture quest",
                     "status": str((case.quest_context or {}).get("status") or "active"),
                     "stage_key": stage_key,

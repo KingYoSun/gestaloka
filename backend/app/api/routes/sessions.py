@@ -20,7 +20,7 @@ from app.modules.world_pack.service import (
     ensure_requested_world_is_playable,
     world_context_for_world,
 )
-from app.modules.world_state.service import ensure_world
+from app.modules.world_state.service import ensure_world, list_quest_journal, quest_display_state
 
 router = APIRouter(tags=["sessions"])
 
@@ -218,3 +218,20 @@ def get_session_story(
     if len(rows) <= limit:
         next_before_sequence = None
     return {"items": items, "next_before_sequence": next_before_sequence}
+
+
+@router.get("/sessions/{session_id}/quests")
+def get_session_quests(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: UserIdentity = Depends(get_current_user),
+) -> dict[str, object]:
+    game_session, player_profile = _session_for_user(db, user=user, session_id=session_id)
+    actor_id = str(player_profile.get("actor_id") or "")
+    items = list_quest_journal(db, game_session.world_id, actor_id)
+    return {
+        "quests": items,
+        "items": items,
+        "quest_display_state": quest_display_state(player_profile=player_profile, quest_journal=items),
+        "world_context": world_context_for_world(db, game_session.world_id),
+    }

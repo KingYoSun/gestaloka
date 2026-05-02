@@ -359,7 +359,7 @@ def test_release_configs_and_runtime_defaults_use_openai_compatible_fallbacks(co
             assert router._model_id_for_lane("pro_lane", route) == "test-pro-model"
 
 
-def test_shadow_replay_filters_deterministic_turns_and_uses_source_event_location(client, container, auth_headers):
+def test_shadow_replay_filters_non_council_turns_and_uses_source_event_location(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
         json=engine_session_payload(),
@@ -367,29 +367,29 @@ def test_shadow_replay_filters_deterministic_turns_and_uses_source_event_locatio
     )
     session_payload = session_response.json()
 
-    for _ in range(2):
-        post_turn_and_wait(
-            client,
-            session_id=session_payload["session_id"],
-            auth_headers=auth_headers,
-            payload={"input_mode": "choice", "choice_id": "progress"},
-        )
-
-    _, use_payload, _ = post_turn_and_wait(
+    _, offer_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
         payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert use_payload["action_type"] == "use_reward_item"
+    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
 
-    _, travel_payload, _ = post_turn_and_wait(
+    _, accept_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"action_type": "accept_quest", "quest_assignment_id": quest_assignment_id},
+    )
+    assert accept_payload["action_type"] == "accept_quest"
+
+    _, body_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
         payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert travel_payload["action_type"] == "travel"
+    assert body_payload["action_type"] == "narrative"
 
     with container.session_factory() as db:
         cases = container.eval_service._shadow_replay_cases(db, limit=10)
@@ -399,7 +399,7 @@ def test_shadow_replay_filters_deterministic_turns_and_uses_source_event_locatio
     assert source_turns
     assert all(turn.action_type == "narrative" for turn in source_turns)
     assert all(turn.resolution_mode == "gm_council" for turn in source_turns)
-    assert not any(turn.action_type in {"use_reward_item", "travel", "system"} for turn in source_turns)
+    assert not any(turn.action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest", "system"} for turn in source_turns)
     assert any("location=Nexus Gate" in line for case in cases for line in case.relation_context)
     assert not any("location=Oblivion Breach" in line for case in cases for line in case.relation_context)
 

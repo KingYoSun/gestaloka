@@ -348,6 +348,9 @@ class CouncilWorldProgressPayload(BaseModel):
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
     scene_pressure: Literal["low", "medium", "high"] = "medium"
     broadcast_draft: dict[str, Any] | None = None
+    quest_offer: dict[str, Any] | None = None
+    chapter_directive: dict[str, Any] | None = None
+    followup_quest_offer: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -389,6 +392,31 @@ class CouncilWorldProgressPayload(BaseModel):
         )
         normalized["scene_move"] = _scene_move(normalized.get("scene_move"))
         normalized["scene_pressure"] = _scene_pressure(normalized.get("scene_pressure"))
+        for key in ("quest_offer", "chapter_directive", "followup_quest_offer"):
+            if not isinstance(normalized.get(key), dict):
+                normalized[key] = None
+        quests = input_payload.get("quests") if isinstance(input_payload.get("quests"), list) else []
+        has_live_quest = any(
+            isinstance(item, dict) and str(item.get("status") or "") in {"offered", "active", "paused"}
+            for item in quests
+        )
+        current_chapter = input_payload.get("current_chapter") if isinstance(input_payload.get("current_chapter"), dict) else {}
+        in_epilogue = str((current_chapter or {}).get("chapter_kind") or "") == "epilogue"
+        if normalized["quest_offer"] is None and not has_live_quest and not in_epilogue:
+            offer_title = _first_text(normalized.get("quest_title"), input_payload.get("intent_summary"), "A local thread emerges")
+            offer_summary = _first_text(
+                normalized.get("resolution_summary"),
+                normalized.get("event_payload"),
+                input_payload.get("input_text"),
+                "The player's exploration reveals an optional thread worth following.",
+            )
+            normalized["quest_offer"] = {
+                "title": offer_title[:120],
+                "description": offer_summary,
+                "offered_summary": offer_summary,
+                "completion_target": 3,
+                "constraints": [],
+            }
         return normalized
 
 
@@ -1593,6 +1621,9 @@ class GMCouncilService:
             scene_move=world_progress_payload.scene_move,
             scene_pressure=world_progress_payload.scene_pressure,
             broadcast_draft=world_progress_payload.broadcast_draft,
+            quest_offer=world_progress_payload.quest_offer,
+            chapter_directive=world_progress_payload.chapter_directive,
+            followup_quest_offer=world_progress_payload.followup_quest_offer,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,

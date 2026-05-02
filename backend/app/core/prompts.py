@@ -13,6 +13,7 @@ SUPPORTED_PROMPT_SCHEMAS = {
     "council_memory_manager_v1": "1",
     "council_npc_manager_v1": "1",
     "council_world_progress_v2": "2",
+    "council_world_progress_v3": "3",
     "council_rules_arbiter_v1": "1",
     "council_safety_guard_v1": "1",
     "council_narrative_v1": "1",

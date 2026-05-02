@@ -1079,27 +1079,59 @@ function ChoiceList({
 
 function QuestBlock({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
-  const { activeQuest } = runtime;
+  const { activeQuest, sessionState, turnPending, handleQuestAction } = runtime;
+  const journal = sessionState?.quest_journal ?? [];
+  const displayLabel = sessionState?.quest_display_state?.label || t("player.quest.exploring");
+  const visibleQuests = journal.filter((item) => item.status === "offered" || item.status === "active" || item.status === "paused");
+  const primaryQuest = activeQuest ?? visibleQuests[0] ?? null;
 
   return (
     <Card className="grid min-w-0 gap-3 p-4" data-testid="active-quest">
-      <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.quest")}</h2>
-      {activeQuest ? (
-        <>
-          <p className="font-bold leading-6 text-foreground">{activeQuest.title}</p>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.quest")}</h2>
+        <span className="text-xs font-semibold uppercase leading-5 text-muted-foreground">{displayLabel}</span>
+      </div>
+      {primaryQuest ? (
+        <div className="grid gap-3">
+          <p className="font-bold leading-6 text-foreground">{primaryQuest.title}</p>
           <p className="text-sm leading-5 text-muted-foreground" data-testid="quest-progress">
-            {activeQuest.progress}/{activeQuest.progress_target}
+            {primaryQuest.progress}/{primaryQuest.progress_target}
           </p>
-          {activeQuest.latest_summary ? <p className="text-sm leading-5 text-muted-foreground">{activeQuest.latest_summary}</p> : null}
+          {primaryQuest.latest_summary ? <p className="text-sm leading-5 text-muted-foreground">{primaryQuest.latest_summary}</p> : null}
+          {primaryQuest.chapters?.length ? (
+            <ul className="grid gap-2">
+              {primaryQuest.chapters.slice(-3).map((chapter) => (
+                <li className="text-sm leading-5 text-muted-foreground" key={chapter.id}>
+                  {chapter.summary}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {primaryQuest.available_actions?.length ? (
+            <div className="flex flex-wrap gap-2">
+              {primaryQuest.available_actions.map((action) => (
+                <Button
+                  key={action}
+                  type="button"
+                  variant={action === "decline_quest" ? "secondary" : "default"}
+                  disabled={turnPending}
+                  onClick={() => void handleQuestAction(action as "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest", primaryQuest.assignment_id)}
+                >
+                  <ListChecks aria-hidden="true" />
+                  {t(`player.quest.actions.${action}`)}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           <p hidden data-testid="quest-stage">
-            {activeQuest.stage_key}
+            {primaryQuest.stage_key}
           </p>
           <p hidden data-testid="quest-unlock-requirements">
-            {Object.keys(activeQuest.unlock_requirements).length ? JSON.stringify(activeQuest.unlock_requirements) : "starter"}
+            {Object.keys(primaryQuest.unlock_requirements).length ? JSON.stringify(primaryQuest.unlock_requirements) : "dynamic"}
           </p>
-        </>
+        </div>
       ) : (
-        <p className="text-sm leading-5 text-muted-foreground">{t("player.story.inProgress")}</p>
+        <p className="text-sm leading-5 text-muted-foreground">{displayLabel}</p>
       )}
     </Card>
   );

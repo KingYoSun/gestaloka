@@ -36,11 +36,18 @@ def test_session_can_start_from_gestaloka_reference_pack(client, container, auth
     assert state_payload["world_pack"]["followup_location_name"] == "Oblivion Breach"
     assert state_payload["world_pack"]["followup_branches"]["formal_path"]["branch_key"] == "custodian_charter"
     assert state_payload["world_pack"]["followup_branches"]["undercurrent_path"]["branch_key"] == "edge_compact"
-    assert state_payload["quests"][0]["stage_key"] == "starter_nexus"
-    assert state_payload["chapter"]["key"] == "nexus_foundation_opening"
+    assert state_payload["quests"] == []
+    assert state_payload["quest_journal"] == []
+    assert state_payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
+    assert state_payload["chapter"] is None
     assert any(item["axis_id"] == "archive_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "lift_tower_concourse" for item in state_payload["nearby_routes"])
     assert any("リフト・タワー・コンコース" in item["label"] for item in state_payload["next_choices"])
+
+    journal = client.get(f"/sessions/{payload['session_id']}/quests", headers=auth_headers)
+    assert journal.status_code == 200
+    assert journal.json()["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
+    assert journal.json()["quests"] == []
 
     with container.session_factory() as db:
         world = db.execute(select(World).where(World.id == "gestaloka_reference")).scalar_one()
@@ -48,7 +55,7 @@ def test_session_can_start_from_gestaloka_reference_pack(client, container, auth
         assert world.state["world_template_id"] == "nexus_foundation"
 
 
-def test_gestaloka_reference_progression_reaches_followup_route(client, auth_headers):
+def test_gestaloka_reference_exploration_turn_offers_dynamic_quest_and_lifecycle_actions(client, auth_headers):
     session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
@@ -60,69 +67,84 @@ def test_gestaloka_reference_progression_reaches_followup_route(client, auth_hea
         payload={"input_mode": "choice", "choice_id": "progress"},
     )
     assert first_payload["action_type"] == "narrative"
+    assert first_payload["quest_updates"][0]["status"] == "offered"
+    assert first_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert first_payload["chapter_updates"] == []
+    quest_assignment_id = first_payload["quest_updates"][0]["assignment_id"]
 
-    _, second_payload, _ = post_turn_and_wait(
+    post_offer_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert post_offer_state.status_code == 200
+    assert post_offer_state.json()["quest_display_state"]["mode"] == "quest"
+    assert post_offer_state.json()["quest_journal"][0]["assignment_id"] == quest_assignment_id
+    assert post_offer_state.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+
+    _, accept_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"action_type": "accept_quest", "quest_assignment_id": quest_assignment_id},
+    )
+    assert accept_payload["action_type"] == "accept_quest"
+    assert accept_payload["quest_updates"][0]["status"] == "active"
+    assert accept_payload["chapter_updates"][0]["chapter_kind"] == "prologue"
+
+    _, blocked_leave_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"action_type": "leave_quest", "quest_assignment_id": quest_assignment_id},
+        terminal_event="turn.failed",
+    )
+    assert "prologue" in blocked_leave_payload["detail"]
+
+    _, body_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
         payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert second_payload["inventory_updates"][0]["template_key"] == "nexus_writs"
-    assert second_payload["inventory_updates"][0]["effect_kind"] == "unlock_oblivion_breach_route"
+    assert body_payload["chapter_updates"][0]["chapter_kind"] == "body"
 
-    post_reward_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
-    assert post_reward_state.status_code == 200
-    assert any(item["action_kind"] == "use_reward_item" for item in post_reward_state.json()["next_choices"])
-    assert all(len(item["summary"]) <= 80 for item in post_reward_state.json()["next_choices"])
+    _, leave_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"action_type": "leave_quest", "quest_assignment_id": quest_assignment_id},
+    )
+    assert leave_payload["quest_updates"][0]["status"] == "paused"
 
-    _, use_payload, _ = post_turn_and_wait(
+    _, resume_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"action_type": "resume_quest", "quest_assignment_id": quest_assignment_id},
+    )
+    assert resume_payload["quest_updates"][0]["status"] == "active"
+
+
+def test_gestaloka_reference_declines_dynamic_quest_offer(client, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    _, offer_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
         payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert use_payload["action_type"] == "use_reward_item"
-    assert use_payload["quest_updates"][0]["stage_key"] == "breach_restoration"
-    assert use_payload["chapter_updates"][-1]["key"] == "breach_restoration_followup"
+    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
 
-    post_use_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
-    assert post_use_state.status_code == 200
-    assert any(
-        item["destination_key"] == "oblivion_breach" and item["available"]
-        for item in post_use_state.json()["nearby_routes"]
-    )
-    assert not any(
-        "The breach route stays sealed until Nexus recognizes the writ." in item["summary"]
-        for item in post_use_state.json()["nearby_routes"]
-    )
-    assert any(
-        item["destination_key"] == "oblivion_breach"
-        and "recognized writ opens the restoration route" in item["summary"]
-        for item in post_use_state.json()["nearby_routes"]
-    )
-    assert all(len(item["summary"]) <= 80 for item in post_use_state.json()["next_choices"])
-    assert not any("arrival_clarity" in item["summary"] for item in post_use_state.json()["next_choices"])
-
-    _, travel_payload, _ = post_turn_and_wait(
+    _, decline_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload={"action_type": "decline_quest", "quest_assignment_id": quest_assignment_id},
     )
-    assert travel_payload["action_type"] == "travel"
-    assert travel_payload["current_location"]["key"] == "oblivion_breach"
-    assert "The breach route stays sealed until Nexus recognizes the writ." not in travel_payload["travel_summary"]
-
-    post_travel_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
-    assert post_travel_state.status_code == 200
-    assert any(
-        "recognized writ opens the restoration route" in item
-        for item in post_travel_state.json()["recent_travel_history"]
-    )
-    assert not any(
-        "The breach route stays sealed until Nexus recognizes the writ." in item
-        for item in post_travel_state.json()["recent_travel_history"]
-    )
+    assert decline_payload["quest_updates"][0]["status"] == "declined"
+    state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state.status_code == 200
+    assert state.json()["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
 
 
 def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_fails(
@@ -166,12 +188,11 @@ def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_f
         auth_headers=auth_headers,
         payload={"input_mode": "choice", "choice_id": "progress"},
     )
-    assert second_payload["inventory_updates"][0]["template_key"] == "nexus_writs"
+    assert second_payload["quest_updates"][0]["status"] == "offered"
 
-    post_reward_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
-    assert post_reward_state.status_code == 200
-    assert post_reward_state.json()["quests"][0]["progress"] == 2
-    assert any(item["name"] == "ネクサス認可状" for item in post_reward_state.json()["inventory"])
+    post_offer_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert post_offer_state.status_code == 200
+    assert post_offer_state.json()["quest_journal"][0]["status"] == "offered"
 
     with container.session_factory() as db:
         fallback_turn = db.get(Turn, second_payload["turn_id"])
