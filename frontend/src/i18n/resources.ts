@@ -61,10 +61,19 @@ const resources = {
         world: {
           unavailable: "世界を読み込めません",
           select: "世界を選択",
+          proceedCreate: "キャラクター作成に進む",
+          proceedSelect: "キャラクター選択に進む",
           start: "始める",
           startLocation: "開始地点",
         },
         profile: {
+          add: "キャラクターを追加",
+          createTitle: "キャラクター作成",
+          icon: "アイコン画像",
+          iconChoose: "画像を選択",
+          iconError: "画像を読み込めません",
+          iconRemove: "削除",
+          selectTitle: "キャラクター選択",
           gender: {
             unspecified: "未指定",
             male: "男",
@@ -129,14 +138,14 @@ const resources = {
         },
         sp: {
           paid: "有償SP",
-          bonus: "無償SP",
+          bonus: "無料SP",
           purchase: "SP購入",
           purchaseDialog: "SP購入",
           purchaseAmount: "購入SP",
           paidTooltip: "購入で付与されるSPです。",
-          bonusTooltip: "登録時配布や運営付与の無償SPです。",
-          plannedCostTooltip: "行動実行時は無償SPから優先消費します。SPは外部実行予算です。",
-          purchaseComplete: "{{amount}} SPの購入が完了しました。有償SP {{paid}} / 無償SP {{bonus}}",
+          bonusTooltip: "登録時配布や運営付与の無料SPです。",
+          plannedCostTooltip: "行動実行時は無料SPから優先消費します。SPは外部実行予算です。",
+          purchaseComplete: "{{amount}} SPの購入が完了しました。有償SP {{paid}} / 無料SP {{bonus}}",
           retryWallet: "SP残高を再取得",
         },
         side: {
@@ -237,10 +246,19 @@ const resources = {
         world: {
           unavailable: "Worlds could not be loaded",
           select: "Select a world",
+          proceedCreate: "Continue to character creation",
+          proceedSelect: "Continue to character selection",
           start: "Start",
           startLocation: "Starting point",
         },
         profile: {
+          add: "Add character",
+          createTitle: "Create character",
+          icon: "Icon image",
+          iconChoose: "Choose image",
+          iconError: "Image could not be loaded",
+          iconRemove: "Remove",
+          selectTitle: "Select character",
           gender: {
             unspecified: "Unspecified",
             male: "Male",

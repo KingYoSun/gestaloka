@@ -70,11 +70,11 @@ export type SwarmUiQuestSnapshot = {
 };
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
-  await expect(page.getByTestId("world-select")).toBeVisible({ timeout: 60_000 });
-  await page.getByTestId("world-select").selectOption("gestaloka_reference");
-  const profileSelect = page.getByTestId("player-profile-select");
-  await expect(profileSelect).toBeVisible({ timeout: 60_000 });
-  await profileSelect.selectOption({ label: profile.displayName });
+  await expect(page.getByTestId("continue-to-character")).toBeDisabled({ timeout: 60_000 });
+  await page.getByTestId("world-card-gestaloka_reference").click();
+  await expect(page.getByTestId("continue-to-character")).toBeEnabled({ timeout: 60_000 });
+  await page.getByTestId("continue-to-character").click();
+  await page.getByRole("button", { name: new RegExp(escapeRegExp(profile.displayName)) }).click();
   await expect(page.getByTestId("start-session")).toBeEnabled({ timeout: 30_000 });
 }
 
@@ -138,20 +138,21 @@ async function waitForSessionResponseOrNetworkFailure(
 }
 
 async function sessionStartDiagnostics(page: Page): Promise<string> {
-  const [errorBanner, startEnabled, worldValue, worldLabel, profileValue, profileLabel] = await Promise.all([
+  const [errorBanner, startEnabled, worldValue, worldLabel] = await Promise.all([
     textContent(page, "error-banner"),
     locatorEnabled(page, "start-session"),
     inputValue(page, "world-select"),
     selectedOptionText(page, "world-select"),
-    inputValue(page, "player-profile-select"),
-    selectedOptionText(page, "player-profile-select"),
   ]);
   return [
     `start-session enabled=${startEnabled}`,
     `world=${worldValue || "(empty)"} ${worldLabel ? `(${worldLabel})` : ""}`,
-    `profile=${profileValue || "(empty)"} ${profileLabel ? `(${profileLabel})` : ""}`,
     `error-banner=${errorBanner || "(empty)"}`,
   ].join("; ");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function waitForSessionUiReady(page: Page, personaId: string): Promise<void> {

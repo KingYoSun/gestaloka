@@ -46,6 +46,8 @@ DEFAULT_PLAY_LANGUAGE = {
     "custom": "",
     "prompt_name": PLAY_LANGUAGE_PRESETS["ja"],
 }
+ICON_IMAGE_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
+ICON_IMAGE_DATA_URL_MAX_LENGTH = 800_000
 
 
 def _clean_play_language_custom(value: object) -> str:
@@ -90,6 +92,17 @@ def normalize_play_language(value: Mapping[str, object] | str | None) -> dict[st
 def normalize_gender(value: str | None) -> str:
     candidate = str(value or "unspecified").strip()
     return candidate if candidate in GENDER_VALUES else "unspecified"
+
+
+def normalize_icon_image_data_url(value: object) -> str:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return ""
+    if len(candidate) > ICON_IMAGE_DATA_URL_MAX_LENGTH:
+        raise ValueError("icon image data URL is too large")
+    if not ICON_IMAGE_DATA_URL_PATTERN.fullmatch(candidate):
+        raise ValueError("icon image data URL must be png, jpeg, or webp base64 data")
+    return candidate
 
 
 def get_player_actor_for_user(db: Session, world_id: str, user_sub: str) -> Actor | None:
@@ -145,6 +158,7 @@ def create_player_profile_for_user(
     free_text: str = "",
     narrative_preferences: Mapping[str, object] | None = None,
     play_language: Mapping[str, object] | str | None = None,
+    icon_image_data_url: str | None = None,
 ) -> tuple[Actor, PlayerProfile]:
     actor = Actor(
         world_id=world_id,
@@ -162,7 +176,10 @@ def create_player_profile_for_user(
         background=background.strip(),
         free_text=free_text.strip(),
         narrative_preferences=normalize_narrative_preferences(narrative_preferences),
-        preferences={"play_language": normalize_play_language(play_language)},
+        preferences={
+            "play_language": normalize_play_language(play_language),
+            "icon_image_data_url": normalize_icon_image_data_url(icon_image_data_url),
+        },
     )
     db.add(profile)
     db.flush()
@@ -181,6 +198,8 @@ def update_player_profile_for_user(
     free_text: str | None = None,
     narrative_preferences: Mapping[str, object] | None = None,
     play_language: Mapping[str, object] | str | None = None,
+    icon_image_data_url: str | None = None,
+    update_icon_image_data_url: bool = False,
 ) -> tuple[Actor, PlayerProfile] | None:
     row = get_player_profile_for_user(db, world_id, user_sub, actor_id)
     if row is None:
@@ -194,6 +213,10 @@ def update_player_profile_for_user(
         preferences["play_language"] = normalize_play_language(preferences.get("play_language"))  # type: ignore[arg-type]
     else:
         preferences["play_language"] = normalize_play_language(None)
+    if update_icon_image_data_url:
+        preferences["icon_image_data_url"] = normalize_icon_image_data_url(icon_image_data_url)
+    else:
+        preferences["icon_image_data_url"] = normalize_icon_image_data_url(preferences.get("icon_image_data_url"))
     profile.preferences = preferences
     if profile.locked_at is None:
         if display_name is not None:
@@ -255,6 +278,7 @@ def lock_player_profile(profile: PlayerProfile) -> None:
 def player_profile_to_dict(actor: Actor, profile: PlayerProfile) -> dict[str, object]:
     preferences = dict(profile.preferences or {})
     play_language = normalize_play_language(preferences.get("play_language"))  # type: ignore[arg-type]
+    icon_image_data_url = normalize_icon_image_data_url(preferences.get("icon_image_data_url"))
     return {
         "actor_id": actor.id,
         "world_id": actor.world_id,
@@ -264,6 +288,7 @@ def player_profile_to_dict(actor: Actor, profile: PlayerProfile) -> dict[str, ob
         "free_text": profile.free_text,
         "narrative_preferences": normalize_narrative_preferences(profile.narrative_preferences),
         "play_language": play_language,
+        "icon_image_data_url": icon_image_data_url or None,
         "locked": profile.locked_at is not None,
         "locked_at": profile.locked_at.isoformat() if profile.locked_at is not None else None,
         "profile_setup_event_id": profile.profile_setup_event_id,

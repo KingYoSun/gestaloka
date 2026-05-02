@@ -140,6 +140,7 @@ export type PlayerProfile = {
   free_text: string;
   narrative_preferences: NarrativePreferences;
   play_language: PlayLanguage;
+  icon_image_data_url: string | null;
   locked: boolean;
   locked_at: string | null;
   profile_setup_event_id: string | null;

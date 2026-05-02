@@ -19,11 +19,7 @@ function App() {
     <AppShell
       header={
         <header className="flex items-center justify-between gap-2 pt-3">
-          {runtime.session ? (
-            <p className="text-sm font-bold lowercase leading-[21px] tracking-[0.16em] text-foreground">{t("common.brandWordmark")}</p>
-          ) : (
-            <span aria-hidden="true" />
-          )}
+          <p className="text-sm font-bold lowercase leading-[21px] tracking-[0.16em] text-foreground">{t("common.brandWordmark")}</p>
           <div className="flex items-center justify-end gap-2">
           <LanguageSwitcher />
           <ThemeToggle />

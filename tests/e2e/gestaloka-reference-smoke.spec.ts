@@ -2,6 +2,18 @@ import { expect, test } from "@playwright/test";
 
 const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:5174";
 
+async function openCharacterCreation(page: import("@playwright/test").Page, worldId: string): Promise<void> {
+  await expect(page.getByTestId("continue-to-character")).toBeDisabled({ timeout: 60_000 });
+  await page.getByTestId(`world-card-${worldId}`).click();
+  await expect(page.getByTestId("continue-to-character")).toBeEnabled({ timeout: 60_000 });
+  await page.getByTestId("continue-to-character").click();
+  const createCard = page.getByTestId("create-character-card");
+  if (await createCard.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await createCard.click();
+  }
+  await expect(page.getByTestId("profile-display-name")).toBeVisible({ timeout: 30_000 });
+}
+
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
   test.setTimeout(360_000);
   const worldId = "gestaloka_reference";
@@ -23,11 +35,12 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("sp-balance")).toContainText(/Bonus:\s*-?\d+/, { timeout: slowTimeout });
   await expect(page.getByTestId("sp-budget-note")).toContainText("execution budget");
 
-  await page.getByTestId("world-select").selectOption(worldId);
+  await openCharacterCreation(page, worldId);
   await page.getByTestId("profile-display-name").fill("Demo Player");
   await page.getByTestId("profile-play-language").selectOption("en");
   await page.getByTestId("create-player-profile").click();
-  await expect(page.getByTestId("player-profile-select")).toContainText("Demo Player", { timeout: slowTimeout });
+  await expect(page.getByRole("button", { name: /Demo Player/ })).toBeVisible({ timeout: slowTimeout });
+  await expect(page.getByTestId("start-session")).toBeEnabled({ timeout: slowTimeout });
   await page.getByTestId("start-session").click();
 
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
@@ -94,7 +107,7 @@ test("mobile player drawers expose actions and status", async ({ page }) => {
   await page.locator("#password").fill("demo-password");
   await page.getByRole("button", { name: /sign in/i }).click();
 
-  await page.getByTestId("world-select").selectOption("gestaloka_reference");
+  await openCharacterCreation(page, "gestaloka_reference");
   await page.getByTestId("profile-display-name").fill(`Mobile Player ${Date.now()}`);
   await page.getByTestId("profile-play-language").selectOption("ja");
   await page.getByTestId("create-player-profile").click();

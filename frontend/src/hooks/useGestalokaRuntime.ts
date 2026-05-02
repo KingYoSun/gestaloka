@@ -221,16 +221,17 @@ function playLanguageFromBrowser(): PlayLanguage {
 
 function createDefaultProfileDraft() {
   return {
-  display_name: "",
-  gender: "unspecified" as PlayerProfile["gender"],
-  background: "",
-  free_text: "",
-  narrative_preferences: {
-    perspective: "third_person",
-    tone: "lyrical",
-    density: "concise",
-    dialogue_style: "literary",
-  } as PlayerProfile["narrative_preferences"],
+    display_name: "",
+    gender: "unspecified" as PlayerProfile["gender"],
+    background: "",
+    free_text: "",
+    icon_image_data_url: null as string | null,
+    narrative_preferences: {
+      perspective: "third_person",
+      tone: "lyrical",
+      density: "concise",
+      dialogue_style: "literary",
+    } as PlayerProfile["narrative_preferences"],
     play_language: playLanguageFromBrowser(),
   };
 }
@@ -250,6 +251,8 @@ export function useGestalokaRuntime() {
   const [playableWorlds, setPlayableWorlds] = useState<PlayableWorldItem[]>([]);
   const [worldCatalogStatus, setWorldCatalogStatus] = useState("unknown");
   const [playerProfiles, setPlayerProfiles] = useState<PlayerProfile[]>([]);
+  const [playerProfilesLoading, setPlayerProfilesLoading] = useState(false);
+  const [playerProfilesWorldId, setPlayerProfilesWorldId] = useState("");
   const [selectedPlayerActorId, setSelectedPlayerActorId] = useState("");
   const [editingPlayerActorId, setEditingPlayerActorId] = useState("");
   const [profileDraft, setProfileDraft] = useState(() => createDefaultProfileDraft());
@@ -449,6 +452,8 @@ export function useGestalokaRuntime() {
       setPlayableWorlds([]);
       setWorldCatalogStatus("unknown");
       setPlayerProfiles([]);
+      setPlayerProfilesLoading(false);
+      setPlayerProfilesWorldId("");
       setSelectedPlayerActorId("");
       setEditingPlayerActorId("");
       setProfileDraft(createDefaultProfileDraft());
@@ -520,10 +525,20 @@ export function useGestalokaRuntime() {
   useEffect(() => {
     if (!authenticated || !token || !worldId || worldCatalogUnavailable) {
       setPlayerProfiles([]);
+      setPlayerProfilesLoading(false);
+      setPlayerProfilesWorldId("");
       setSelectedPlayerActorId("");
       return;
     }
-    void refreshPlayerProfiles(worldId, token);
+    setPlayerProfiles([]);
+    setPlayerProfilesWorldId("");
+    setSelectedPlayerActorId("");
+    setEditingPlayerActorId("");
+    setProfileDraft(createDefaultProfileDraft());
+    setPlayerProfilesLoading(true);
+    void refreshPlayerProfiles(worldId, token)
+      .catch((requestError: unknown) => showRequestError(requestError))
+      .finally(() => setPlayerProfilesLoading(false));
   }, [authenticated, token, worldId, worldCatalogUnavailable]);
 
   useEffect(() => {
@@ -740,6 +755,7 @@ export function useGestalokaRuntime() {
       currentToken,
     );
     setPlayerProfiles(payload.items);
+    setPlayerProfilesWorldId(currentWorldId);
     setSelectedPlayerActorId((current) =>
       payload.items.some((item) => item.actor_id === current) ? current : (payload.items[0]?.actor_id ?? ""),
     );
@@ -1051,15 +1067,15 @@ export function useGestalokaRuntime() {
     await keycloak.logout({ redirectUri: `${window.location.origin}/` });
   }
 
-  async function handleCreatePlayerProfile(event: FormEvent<HTMLFormElement>) {
+  async function handleCreatePlayerProfile(event: FormEvent<HTMLFormElement>): Promise<PlayerProfile | null> {
     event.preventDefault();
     if (!token || !worldId) {
       setError(t("errors.signInBeforeProfile"));
-      return;
+      return null;
     }
     if (!profileDraft.display_name.trim()) {
       setError(t("errors.nameRequired"));
-      return;
+      return null;
     }
     try {
       setProfilePending(true);
@@ -1072,6 +1088,7 @@ export function useGestalokaRuntime() {
         ? {
             narrative_preferences: profileDraft.narrative_preferences,
             play_language: profileDraft.play_language,
+            icon_image_data_url: profileDraft.icon_image_data_url,
           }
         : {
             ...profileDraft,
@@ -1091,8 +1108,10 @@ export function useGestalokaRuntime() {
       setSelectedPlayerActorId(saved.actor_id);
       setProfileDraft(createDefaultProfileDraft());
       setEditingPlayerActorId("");
+      return saved;
     } catch (requestError) {
       showRequestError(requestError);
+      return null;
     } finally {
       setProfilePending(false);
     }
@@ -1105,6 +1124,7 @@ export function useGestalokaRuntime() {
       gender: profile.gender,
       background: profile.background,
       free_text: profile.free_text,
+      icon_image_data_url: profile.icon_image_data_url,
       narrative_preferences: profile.narrative_preferences,
       play_language: profile.play_language,
     });
@@ -1519,6 +1539,8 @@ export function useGestalokaRuntime() {
     playableWorlds,
     worldCatalogStatus,
     playerProfiles,
+    playerProfilesLoading,
+    playerProfilesWorldId,
     selectedPlayerActorId,
     selectedPlayerProfile,
     setSelectedPlayerActorId,

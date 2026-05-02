@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from typing import Literal
 
 from app.api.deps import get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.modules.actor.service import (
+    ICON_IMAGE_DATA_URL_MAX_LENGTH,
     create_player_profile_for_user,
     get_player_profile_for_user,
     list_player_profiles_for_user,
+    normalize_icon_image_data_url,
     player_profile_to_dict,
     update_player_profile_for_user,
     user_has_world_membership,
@@ -66,6 +68,13 @@ class CreatePlayerProfileRequest(BaseModel):
     free_text: str = Field(default="", max_length=2000)
     narrative_preferences: NarrativePreferencesPayload = Field(default_factory=NarrativePreferencesPayload)
     play_language: PlayLanguagePayload | None = None
+    icon_image_data_url: str | None = Field(default=None, max_length=ICON_IMAGE_DATA_URL_MAX_LENGTH)
+
+    @field_validator("icon_image_data_url")
+    @classmethod
+    def validate_icon_image_data_url(cls, value: str | None) -> str | None:
+        normalized = normalize_icon_image_data_url(value)
+        return normalized or None
 
 
 class UpdatePlayerProfileRequest(BaseModel):
@@ -75,6 +84,13 @@ class UpdatePlayerProfileRequest(BaseModel):
     free_text: str | None = Field(default=None, max_length=2000)
     narrative_preferences: NarrativePreferencesPayload | None = None
     play_language: PlayLanguagePayload | None = None
+    icon_image_data_url: str | None = Field(default=None, max_length=ICON_IMAGE_DATA_URL_MAX_LENGTH)
+
+    @field_validator("icon_image_data_url")
+    @classmethod
+    def validate_icon_image_data_url(cls, value: str | None) -> str | None:
+        normalized = normalize_icon_image_data_url(value)
+        return normalized or None
 
 
 def _ensure_membership(db: Session, world_id: str, user: UserIdentity) -> None:
@@ -159,6 +175,7 @@ def create_player_profile(
         free_text=payload.free_text,
         narrative_preferences=payload.narrative_preferences.model_dump(),
         play_language=payload.play_language.model_dump() if payload.play_language else None,
+        icon_image_data_url=payload.icon_image_data_url,
     )
     db.commit()
     return player_profile_to_dict(actor, profile)
@@ -192,6 +209,8 @@ def update_player_profile(
         free_text=payload.free_text,
         narrative_preferences=payload.narrative_preferences.model_dump() if payload.narrative_preferences else None,
         play_language=payload.play_language.model_dump() if payload.play_language else None,
+        icon_image_data_url=payload.icon_image_data_url,
+        update_icon_image_data_url="icon_image_data_url" in payload.model_fields_set,
     )
     assert updated is not None
     db.commit()

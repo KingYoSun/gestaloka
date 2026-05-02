@@ -202,6 +202,7 @@ def test_world_health_blocks_world_with_missing_pack_metadata(client, container,
 
 
 def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(client, container, auth_headers):
+    icon_data_url = "data:image/png;base64,iVBORw0KGgo="
     first = client.post(
         "/worlds/gestaloka_reference/player-profiles",
         json={
@@ -209,6 +210,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
             "gender": "female",
             "background": "境界標識を読む旅人。",
             "free_text": "静かに観察する。",
+            "icon_image_data_url": icon_data_url,
             "narrative_preferences": {
                 "perspective": "first_person",
                 "tone": "logical",
@@ -229,9 +231,12 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert second.status_code == 200
     assert first.json()["play_language"]["mode"] == "custom"
     assert first.json()["play_language"]["prompt_name"] == "Pirate Cant"
+    assert first.json()["icon_image_data_url"] == icon_data_url
     assert second.json()["play_language"]["preset"] == "ja"
+    assert second.json()["icon_image_data_url"] is None
     profile_list = client.get("/worlds/gestaloka_reference/player-profiles", headers=auth_headers)
     assert [item["display_name"] for item in profile_list.json()["items"]] == ["Akari", "Ren"]
+    assert profile_list.json()["items"][0]["icon_image_data_url"] == icon_data_url
 
     session_payload = {
         "world_id": "gestaloka_reference",
@@ -243,9 +248,11 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert first_session.status_code == 200
     assert second_session.status_code == 200
     assert first_session.json()["player_profile"]["locked"] is True
+    assert first_session.json()["player_profile"]["icon_image_data_url"] == icon_data_url
     state = client.get(f"/sessions/{first_session.json()['session_id']}/state", headers=auth_headers)
     assert state.json()["player_profile"]["narrative_preferences"]["perspective"] == "first_person"
     assert state.json()["player_profile"]["play_language"]["prompt_name"] == "Pirate Cant"
+    assert state.json()["player_profile"]["icon_image_data_url"] == icon_data_url
 
     identity_patch = client.patch(
         f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
@@ -257,6 +264,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         json={
             "narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"},
             "play_language": {"mode": "preset", "preset": "en"},
+            "icon_image_data_url": "data:image/webp;base64,AAAA",
         },
         headers=auth_headers,
     )
@@ -264,6 +272,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert style_patch.status_code == 200
     assert style_patch.json()["narrative_preferences"]["perspective"] == "third_person"
     assert style_patch.json()["play_language"]["prompt_name"] == "English"
+    assert style_patch.json()["icon_image_data_url"] == "data:image/webp;base64,AAAA"
 
     _post_turn_and_wait_for_resolution(
         client,
@@ -306,6 +315,28 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         )
     assert len(profile_events) == 1
     assert {item.scope for item in profile_memories} == {"actor", "world"}
+
+
+def test_player_profile_icon_image_data_url_is_validated(client, auth_headers):
+    unsupported_mime = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={
+            "display_name": "Icon Tester",
+            "icon_image_data_url": "data:image/gif;base64,AAAA",
+        },
+        headers=auth_headers,
+    )
+    oversized = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={
+            "display_name": "Icon Tester",
+            "icon_image_data_url": f"data:image/png;base64,{'A' * 800_001}",
+        },
+        headers=auth_headers,
+    )
+
+    assert unsupported_mime.status_code == 422
+    assert oversized.status_code == 422
 
 
 def test_english_player_profile_initial_choices_are_english(client, auth_headers):
