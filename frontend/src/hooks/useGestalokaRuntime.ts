@@ -124,6 +124,24 @@ function storyItemFromTurnResponse(response: TurnResponse): StoryHistoryItem {
   };
 }
 
+function eventItemFromTurnResponse(response: TurnResponse): EventItem {
+  return {
+    id: response.event_id,
+    turn_id: response.turn_id,
+    narrative: response.narrative,
+    event_type: "player.turn.resolved",
+    location_id: response.current_location?.id ?? null,
+    payload: {
+      action_type: response.action_type,
+      input_mode: response.input_mode,
+      consequence_summary: response.consequence_summary,
+      scene_summary: response.scene_summary,
+      quest_updates: response.quest_updates,
+      world_context: response.world_context,
+    },
+  };
+}
+
 function mergeStoryItems(current: StoryHistoryItem[], incoming: StoryHistoryItem[]): StoryHistoryItem[] {
   const byKey = new Map<string, StoryHistoryItem>();
   for (const item of current) {
@@ -139,6 +157,15 @@ function mergeStoryItems(current: StoryHistoryItem[], incoming: StoryHistoryItem
     }
     return new Date(left.occurred_at).getTime() - new Date(right.occurred_at).getTime();
   });
+}
+
+function mergeEventItems(current: EventItem[], incoming: EventItem[]): EventItem[] {
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  const incomingIds = new Set(incoming.map((item) => item.id));
+  return [
+    ...incoming.map((item) => ({ ...item, ...currentById.get(item.id) })),
+    ...current.filter((item) => !incomingIds.has(item.id)),
+  ];
 }
 
 function normalizeBrowserPreset(language: string): PlayLanguagePreset | null {
@@ -523,6 +550,7 @@ export function useGestalokaRuntime() {
     setLatestReaction(response.npc_reaction);
     setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
     setStoryItems((current) => mergeStoryItems(current, [storyItemFromTurnResponse(response)]));
+    setEvents((current) => mergeEventItems(current, [eventItemFromTurnResponse(response)]));
     setTurnInputMode("choice");
     setSessionState((current) => mergeTurnResponseIntoSessionState(current, response));
     setWallet((current) =>

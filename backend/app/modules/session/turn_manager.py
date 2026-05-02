@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy.exc import OperationalError
 from starlette.concurrency import run_in_threadpool
 
 from app.core.container import AppContainer
@@ -26,6 +28,8 @@ class TurnResolutionManager:
 
     heartbeat_interval_seconds = 5.0
     provisional_after_seconds = 30.0
+    retryable_sqlstates = {"40001", "40P01"}
+    max_resolution_attempts = 3
 
     def __init__(
         self,
@@ -118,70 +122,100 @@ class TurnResolutionManager:
         return ManagedTurnResolution(result=result, emitted_phases=emitted_phases)
 
     def _resolve_work(self, progress_callback) -> Any:
-        db = self.container.session_factory()
-        started_at = self.container.observability_service.timer()
-        try:
-            job = db.get(TurnResolutionJob, self.turn_id)
-            if job is None:
-                raise LookupError(f"Turn resolution job not found: {self.turn_id}")
-            job.status = "running"
-            job.started_at = datetime.now(timezone.utc)
-            db.commit()
+        for attempt in range(1, self.max_resolution_attempts + 1):
+            db = self.container.session_factory()
+            try:
+                return self._resolve_work_once(db, progress_callback)
+            except Exception as exc:
+                db.rollback()
+                if self._is_retryable_db_error(exc) and attempt < self.max_resolution_attempts:
+                    self._mark_job_retrying(db, exc, attempt)
+                    db.close()
+                    time.sleep(0.25 * attempt)
+                    continue
+                self._mark_job_failed(db, exc)
+                raise
+            finally:
+                if db.is_active:
+                    db.close()
+        raise RuntimeError(f"Turn resolution exhausted retry attempts: {self.turn_id}")
 
-            prepared = load_prepared_turn_context_for_job(
+    def _resolve_work_once(self, db, progress_callback) -> Any:
+        started_at = self.container.observability_service.timer()
+        job = db.get(TurnResolutionJob, self.turn_id)
+        if job is None:
+            raise LookupError(f"Turn resolution job not found: {self.turn_id}")
+        job.status = "running"
+        job.started_at = datetime.now(timezone.utc)
+        db.commit()
+
+        prepared = load_prepared_turn_context_for_job(
+            db,
+            self.container,
+            session_id=self.session_id,
+            user_sub=self.user_sub,
+            turn_id=self.turn_id,
+            input_mode=self.input_mode,
+        )
+        with bind_turn_progress(progress_callback):
+            result = resolve_turn_for_session(
                 db,
                 self.container,
-                session_id=self.session_id,
-                user_sub=self.user_sub,
-                turn_id=self.turn_id,
+                prepared,
+                action_type=self.action_type,  # type: ignore[arg-type]
                 input_mode=self.input_mode,
+                choice_id=self.choice_id,  # type: ignore[arg-type]
+                input_text=self.input_text,
+                item_id=self.item_id,
+                quest_assignment_id=self.quest_assignment_id,
             )
-            with bind_turn_progress(progress_callback):
-                result = resolve_turn_for_session(
-                    db,
-                    self.container,
-                    prepared,
-                    action_type=self.action_type,  # type: ignore[arg-type]
-                    input_mode=self.input_mode,
-                    choice_id=self.choice_id,  # type: ignore[arg-type]
-                    input_text=self.input_text,
-                    item_id=self.item_id,
-                    quest_assignment_id=self.quest_assignment_id,
-                )
-            self.container.observability_service.record_turn_resolution(
-                duration_seconds=self.container.observability_service.elapsed(started_at),
-                world_id=result.turn.world_id,
-                pack_id=str(self.world_context["pack_id"]),
-                world_template_id=str(self.world_context["world_template_id"]),
-                session_id=result.turn.session_id,
-                turn_id=result.turn.id,
-                final_lane=result.turn.model_lane,
-                graph_context_status=result.graph_context_status,
-            )
-            job = db.get(TurnResolutionJob, self.turn_id)
-            if job is not None:
-                job.status = "resolved" if result.succeeded else "failed"
-                job.result_payload = {
-                    "turn_id": result.turn.id,
-                    "event_id": result.event.id,
-                    "status_code": result.status_code,
-                    "succeeded": result.succeeded,
-                    "graph_context_status": result.graph_context_status,
+        self.container.observability_service.record_turn_resolution(
+            duration_seconds=self.container.observability_service.elapsed(started_at),
+            world_id=result.turn.world_id,
+            pack_id=str(self.world_context["pack_id"]),
+            world_template_id=str(self.world_context["world_template_id"]),
+            session_id=result.turn.session_id,
+            turn_id=result.turn.id,
+            final_lane=result.turn.model_lane,
+            graph_context_status=result.graph_context_status,
+        )
+        job = db.get(TurnResolutionJob, self.turn_id)
+        if job is not None:
+            job.status = "resolved" if result.succeeded else "failed"
+            job.result_payload = {
+                "turn_id": result.turn.id,
+                "event_id": result.event.id,
+                "status_code": result.status_code,
+                "succeeded": result.succeeded,
+                "graph_context_status": result.graph_context_status,
+            }
+            if not result.succeeded:
+                job.error_payload = {
+                    "detail": result.error_detail,
+                    "failure": result.failure or {},
                 }
-                if not result.succeeded:
-                    job.error_payload = {
-                        "detail": result.error_detail,
-                        "failure": result.failure or {},
-                    }
-                job.completed_at = datetime.now(timezone.utc)
-            db.commit()
-            return result
-        except Exception as exc:
-            db.rollback()
-            self._mark_job_failed(db, exc)
-            raise
-        finally:
-            db.close()
+            job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        return result
+
+    def _is_retryable_db_error(self, exc: Exception) -> bool:
+        if not isinstance(exc, OperationalError):
+            return False
+        sqlstate = str(getattr(exc.orig, "sqlstate", "") or getattr(exc.orig, "pgcode", ""))
+        return sqlstate in self.retryable_sqlstates
+
+    def _mark_job_retrying(self, db, exc: Exception, attempt: int) -> None:
+        job = db.get(TurnResolutionJob, self.turn_id)
+        if job is None:
+            return
+        job.status = "retrying"
+        job.error_payload = {
+            "detail": "Turn resolution background job retrying",
+            "attempt": attempt,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
+        db.commit()
 
     def _mark_job_failed(self, db, exc: Exception) -> None:
         job = db.get(TurnResolutionJob, self.turn_id)

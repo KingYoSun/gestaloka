@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from app.models.entities import ActorTitleProgress, Event, Location, SPLedgerEntry, SharedHistoryRecord, Turn, World
 from app.modules.llm_harness.service import PromptExecutionOutcome
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
+from app.modules.world_state.service import create_dynamic_quest_offer, _normalize_dynamic_quest_completion_target
 from tests.backend.turn_async_helpers import post_turn_and_wait
 
 
@@ -145,6 +146,44 @@ def test_gestaloka_reference_declines_dynamic_quest_offer(client, auth_headers):
     state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state.status_code == 200
     assert state.json()["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
+
+
+def test_dynamic_quest_completion_target_normalizes_live_provider_values(client, container, auth_headers):
+    assert _normalize_dynamic_quest_completion_target("5") == 5
+    assert _normalize_dynamic_quest_completion_target(99) == 8
+    assert _normalize_dynamic_quest_completion_target(0) == 1
+    assert _normalize_dynamic_quest_completion_target(True) == 3
+
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(
+                Event.world_id == "gestaloka_reference",
+                Event.session_id == session_payload["session_id"],
+                Event.event_type == "session.started",
+            )
+            .order_by(Event.created_at.desc(), Event.id.desc())
+        ).scalar_one()
+
+        updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            offer={
+                "title": "Visitor Log Sequence",
+                "description": "A live provider supplied malformed completion target regression case.",
+                "offered_summary": "Check the visitor log safely.",
+                "completion_target": "Verify the visitor log sequence with Kaito JP Optimizer.",
+                "constraints": [],
+            },
+        )
+
+    assert updates[0]["progress_target"] == 3
 
 
 def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_fails(

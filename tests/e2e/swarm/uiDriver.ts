@@ -98,7 +98,7 @@ export async function startPlayerSessionViaUi(
     throw new Error(`UI session start failed for ${persona.id}: ${response.status()} ${await response.text()}`);
   }
   const payload = (await response.json()) as Record<string, unknown>;
-  await expect(page.getByTestId("choice-list")).toBeVisible({ timeout: 60_000 });
+  await waitForSessionUiReady(page, persona.id);
   return {
     personaId: persona.id,
     sessionId: stringValue(payload.session_id),
@@ -154,6 +154,21 @@ async function sessionStartDiagnostics(page: Page): Promise<string> {
   ].join("; ");
 }
 
+async function waitForSessionUiReady(page: Page, personaId: string): Promise<void> {
+  try {
+    await expect(page.getByTestId("story-scroll")).toBeVisible({ timeout: 60_000 });
+    await ensureActionSurface(page);
+    await expect(page.getByTestId("choice-progress")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 60_000 });
+    await ensureStatusSurface(page);
+    await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 60_000 });
+  } catch (error) {
+    throw new Error(
+      `UI session did not render a ready play surface for ${personaId}: ${errorMessage(error)}; ${await playSurfaceDiagnostics(page)}`,
+    );
+  }
+}
+
 export async function executeTurnViaUi(
   page: Page,
   persona: AssignedSwarmUserPersona,
@@ -200,6 +215,10 @@ export async function executeTurnViaUi(
     }
     const httpCompleted = Date.now();
     await expect(page.getByTestId("turn-progress-status")).toBeVisible({ timeout: 30_000 });
+    const acceptedTurnId = stringValue(payload.turn_id);
+    if (isAcceptedTurnResponse(response, payload)) {
+      await waitForAcceptedTurnFinal(page, acceptedTurnId, turnTimeoutMs);
+    }
     await waitForTurnIdle(page);
     const screenshotPath = `${artifactDir}/${attemptLabel}-${persona.id}-${decision.scenario}-after-turn.png`;
     await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -208,7 +227,6 @@ export async function executeTurnViaUi(
     const opsStream = await listText(page, "ops-stream");
     const playInfoTexts = await playerVisiblePlayInfoTexts(page);
     const questSnapshot = await questSnapshotViaUi(page);
-    const acceptedTurnId = stringValue(payload.turn_id);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
     const progressTimeline = progressTimelineFromOpsStream(opsStream);
     return {
@@ -327,6 +345,62 @@ function eventIdFromOpsStream(items: string[]): string {
   return "";
 }
 
+function isAcceptedTurnResponse(response: Response, payload: Record<string, unknown>): boolean {
+  return response.status() === 202 || payload.status === "accepted";
+}
+
+async function waitForAcceptedTurnFinal(page: Page, turnId: string, timeout: number): Promise<void> {
+  if (!turnId) {
+    return;
+  }
+  const deadline = Date.now() + timeout;
+  let opsStream: string[] = [];
+  while (Date.now() < deadline) {
+    opsStream = await listText(page, "ops-stream");
+    const finalStatus = turnFinalStatusFromOpsStream(opsStream, turnId);
+    if (finalStatus?.status === "failed") {
+      const detail = await textContent(page, "error-banner");
+      throw new Error(
+        `UI turn background resolution failed for turn_id=${turnId}: ${detail || finalStatus.evidence}`,
+      );
+    }
+    if (finalStatus?.status === "resolved") {
+      return;
+    }
+    await page.waitForTimeout(1_000);
+  }
+  throw new Error(
+    `UI turn did not observe turn.resolved or turn.failed for turn_id=${turnId}: ${opsStream.join(" | ") || "(empty ops-stream)"}`,
+  );
+}
+
+function turnFinalStatusFromOpsStream(
+  items: string[],
+  turnId: string,
+): { status: "resolved" | "failed"; evidence: string } | null {
+  for (const chunk of opsEventChunks(items)) {
+    if (!chunk.includes(`turn_id: ${turnId}`)) {
+      continue;
+    }
+    if (/turn\.failed/i.test(chunk)) {
+      return { status: "failed", evidence: chunk };
+    }
+    if (/turn\.resolved/i.test(chunk)) {
+      return { status: "resolved", evidence: chunk };
+    }
+  }
+  return null;
+}
+
+function opsEventChunks(items: string[]): string[] {
+  return items.flatMap((item) =>
+    item
+      .split(/(?=turn\.(?:accepted|progress|provisional|resolved|failed))/i)
+      .map((chunk) => chunk.trim())
+      .filter(Boolean),
+  );
+}
+
 async function waitForTurnResponseOrNetworkFailure(
   page: Page,
   personaId: string,
@@ -359,9 +433,11 @@ async function waitForTurnResponseOrNetworkFailure(
 
 async function submitDecision(page: Page, decision: SwarmDecision): Promise<void> {
   if (decision.inputMode === "quest_action") {
+    await ensureStatusSurface(page);
     await clickQuestAction(page, decision.questAction);
     return;
   }
+  await ensureActionSurface(page);
   if (decision.inputMode === "choice") {
     const choice = page.getByTestId(`choice-${decision.choiceId}`);
     await expect(choice).toBeVisible({ timeout: 60_000 });
@@ -379,6 +455,39 @@ async function submitDecision(page: Page, decision: SwarmDecision): Promise<void
   const submit = page.getByTestId("submit-turn");
   await expect(submit).toBeEnabled({ timeout: 60_000 });
   await submit.click();
+}
+
+async function ensureActionSurface(page: Page): Promise<void> {
+  if (await locatorVisible(page, "toggle-free-text")) {
+    return;
+  }
+  const actionsButton = page.getByRole("button", { name: /^(行動|Actions)$/i });
+  if (!(await roleVisible(actionsButton))) {
+    return;
+  }
+  await closeVisibleDrawer(page);
+  await actionsButton.click();
+  await expect(page.getByTestId("toggle-free-text")).toBeVisible({ timeout: 20_000 });
+}
+
+async function ensureStatusSurface(page: Page): Promise<void> {
+  if (await locatorVisible(page, "active-quest")) {
+    return;
+  }
+  const statusButton = page.getByRole("button", { name: /^(情報|Info)$/i });
+  if (!(await roleVisible(statusButton))) {
+    return;
+  }
+  await closeVisibleDrawer(page);
+  await statusButton.click();
+  await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 20_000 });
+}
+
+async function closeVisibleDrawer(page: Page): Promise<void> {
+  const closeButton = page.getByRole("button", { name: /^(閉じる|Close)$/i }).first();
+  if (await roleVisible(closeButton)) {
+    await closeButton.click();
+  }
 }
 
 async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): Promise<string> {
@@ -404,6 +513,38 @@ async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): P
     `submit-turn enabled=${submitEnabled}`,
     `turn-input=${inputValueText || "(empty)"}`,
     `turn-progress-status=${progressStatus || "(empty)"}`,
+    `choices=${choiceLabels.join(" | ") || "(empty)"}`,
+    `error-banner=${errorBanner || "(empty)"}`,
+  ].join("; ");
+}
+
+async function playSurfaceDiagnostics(page: Page): Promise<string> {
+  const [
+    errorBanner,
+    storyText,
+    activeQuest,
+    progressStatus,
+    actionButtonEnabled,
+    statusButtonEnabled,
+    toggleEnabled,
+    choiceLabels,
+  ] = await Promise.all([
+    textContent(page, "error-banner"),
+    textContent(page, "story-scroll"),
+    textContent(page, "active-quest"),
+    textContent(page, "turn-progress-status"),
+    roleEnabled(page.getByRole("button", { name: /^(行動|Actions)$/i })),
+    roleEnabled(page.getByRole("button", { name: /^(情報|Info)$/i })),
+    locatorEnabled(page, "toggle-free-text"),
+    listText(page, "choice-list"),
+  ]);
+  return [
+    `story=${storyText || "(empty)"}`,
+    `active-quest=${activeQuest || "(empty)"}`,
+    `turn-progress-status=${progressStatus || "(empty)"}`,
+    `actions-button enabled=${actionButtonEnabled}`,
+    `status-button enabled=${statusButtonEnabled}`,
+    `toggle-free-text enabled=${toggleEnabled}`,
     `choices=${choiceLabels.join(" | ") || "(empty)"}`,
     `error-banner=${errorBanner || "(empty)"}`,
   ].join("; ");
@@ -459,6 +600,30 @@ async function listText(page: Page, testId: string): Promise<string[]> {
     return uniqueNonEmpty(text.split("\n")).slice(0, 12);
   } catch {
     return [];
+  }
+}
+
+async function locatorVisible(page: Page, testId: string): Promise<boolean> {
+  try {
+    return await page.getByTestId(testId).isVisible({ timeout: 500 });
+  } catch {
+    return false;
+  }
+}
+
+async function roleVisible(locator: ReturnType<Page["getByRole"]>): Promise<boolean> {
+  try {
+    return await locator.isVisible({ timeout: 500 });
+  } catch {
+    return false;
+  }
+}
+
+async function roleEnabled(locator: ReturnType<Page["getByRole"]>): Promise<string> {
+  try {
+    return String(await locator.isEnabled({ timeout: 1_000 }));
+  } catch {
+    return "not-found";
   }
 }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -1385,8 +1386,7 @@ def create_dynamic_quest_offer(
     template_id = f"dynamic_quest_{source_event_id.replace('-', '')[:20]}"
     if followup_of_assignment_id:
         template_id = f"followup_quest_{source_event_id.replace('-', '')[:19]}"
-    completion_target = int(offer.get("completion_target") or 3)
-    completion_target = max(1, min(completion_target, 8))
+    completion_target = _normalize_dynamic_quest_completion_target(offer.get("completion_target"))
     template = QuestTemplate(
         id=template_id,
         world_id=world_id,
@@ -1435,6 +1435,28 @@ def create_dynamic_quest_offer(
             "chapters": [],
         }
     ]
+
+
+def _normalize_dynamic_quest_completion_target(value: Any) -> int:
+    if isinstance(value, bool):
+        return 3
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, float):
+        if not math.isfinite(value):
+            return 3
+        parsed = int(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 3
+        try:
+            parsed = int(float(text))
+        except (OverflowError, ValueError):
+            return 3
+    else:
+        return 3
+    return max(1, min(parsed, 8))
 
 
 def apply_quest_lifecycle_action(
