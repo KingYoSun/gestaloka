@@ -1388,12 +1388,12 @@ function QuestBlock({ runtime }: PlayerPageProps) {
               ))}
             </div>
           ) : null}
-          <p hidden data-testid="quest-stage">
-            {primaryQuest.stage_key}
-          </p>
-          <p hidden data-testid="quest-unlock-requirements">
-            {Object.keys(primaryQuest.unlock_requirements).length ? JSON.stringify(primaryQuest.unlock_requirements) : "dynamic"}
-          </p>
+          <span hidden data-testid="quest-stage" data-value={primaryQuest.stage_key} />
+          <span
+            hidden
+            data-testid="quest-unlock-requirements"
+            data-value={Object.keys(primaryQuest.unlock_requirements).length ? JSON.stringify(primaryQuest.unlock_requirements) : "dynamic"}
+          />
         </div>
       ) : (
         <p className="text-sm leading-5 text-muted-foreground">{displayLabel}</p>

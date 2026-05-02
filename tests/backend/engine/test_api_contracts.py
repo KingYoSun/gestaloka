@@ -37,9 +37,49 @@ REALTIME_WORLD_CONTEXT_KEYS = {
 }
 
 
+PLAY_LANGUAGE_RESIDUE_FRAGMENTS = (
+    "Nexus Gate",
+    "Gate Steward Rikka",
+    "Hold position",
+    "Take the clearest",
+    "Ask a grounded",
+    "has begun",
+    "begins.",
+)
+
+
 def assert_realtime_world_context(message: dict, expected: dict) -> None:
     assert message["data"]["world_context"] == expected
     assert REALTIME_WORLD_CONTEXT_KEYS <= set(message["data"]["world_context"])
+
+
+def assert_no_player_visible_english_residue(payload: dict) -> None:
+    texts: list[str] = []
+    for field in (
+        "narrative",
+        "npc_reaction",
+        "consequence_summary",
+        "scene_summary",
+        "crossroads_summary",
+        "travel_summary",
+    ):
+        value = payload.get(field)
+        if isinstance(value, str):
+            texts.append(value)
+    current_location = payload.get("current_location")
+    if isinstance(current_location, dict):
+        texts.extend(str(current_location.get(field) or "") for field in ("name", "description"))
+    for collection, fields in (
+        ("next_choices", ("label", "summary")),
+        ("quest_updates", ("title", "description", "latest_summary", "summary")),
+        ("chapter_updates", ("summary", "crossroads_summary", "branch_hint")),
+    ):
+        for item in payload.get(collection) or []:
+            if isinstance(item, dict):
+                texts.extend(str(item.get(field) or "") for field in fields)
+    visible_text = "\n".join(texts)
+    for fragment in PLAY_LANGUAGE_RESIDUE_FRAGMENTS:
+        assert fragment not in visible_text
 
 
 def test_health_reports_database_projection_and_oidc(client):
@@ -780,6 +820,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["inventory_updates"] == []
         assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
+        assert_no_player_visible_english_residue(turn_payload)
 
     assert [message["event"] for message in messages[:2]] == [
         "session.connected",
@@ -829,6 +870,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert messages[1]["data"]["turn_id"] == accepted_payload["turn_id"]
     assert messages[1]["data"]["session_id"] == session_payload["session_id"]
     assert messages[-1]["data"] == turn_payload
+    quest_message = next(message for message in messages if message["event"] == "quest.updated")
+    assert quest_message["data"]["items"] == turn_payload["quest_updates"]
     broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
     assert broadcast_message["data"]["semantic_key"]
     assert broadcast_message["data"]["status"] == "active"
@@ -1045,6 +1088,7 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
         assert payload["current_location"]["key"] == state_response.json()["world_pack"]["starter_location_key"]
         assert payload["travel_summary"] is None
         assert payload["relationship_updates"] == []
+        assert_no_player_visible_english_residue(payload)
 
     assert [message["event"] for message in messages[:2]] == [
         "session.connected",
@@ -1066,6 +1110,10 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     ]
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[-1]["data"] == payload
+    quest_message = next(message for message in messages if message["event"] == "quest.updated")
+    chapter_message = next(message for message in messages if message["event"] == "chapter.updated")
+    assert quest_message["data"]["items"] == payload["quest_updates"]
+    assert chapter_message["data"]["items"] == payload["chapter_updates"]
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"

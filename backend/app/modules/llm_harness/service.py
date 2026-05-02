@@ -433,6 +433,9 @@ class StubModelProvider(BaseModelProvider):
             "A witnessed writ that marks the bearer as trusted for the first restoration route.": (
                 "最初の修復路に進む信頼を帯びた者だと示す、証人付きの認可状。"
             ),
+            "Hold position and read the room before acting again.": "場を保ち、もう一度空気を読む。",
+            "Take the clearest available step toward the current request.": "今の依頼へ向けて、最も明確な一歩を進める。",
+            "Ask a grounded question about the current place or relationship.": "今いる場所や関係について、地に足のついた問いを投げる。",
         }
 
         def localize(text: str) -> str:
@@ -457,6 +460,22 @@ class StubModelProvider(BaseModelProvider):
             localized = localized.replace("warm", "温かな関係")
             localized = localized.replace("neutral", "中立的な関係")
             localized = localized.replace("trusted", "信頼された関係")
+            localized = localized.replace(
+                " is open to exploration, with no accepted quest shaping the scene yet. "
+                "The scene has room to breathe, but it still remembers what was just set in motion.",
+                "は探索可能で、まだ受諾済みのクエストは場面を形作っていない。"
+                "場には息をつく余地があるが、動き出したばかりの出来事をまだ覚えている。",
+            )
+            localized = localized.replace(
+                "The opening chapter of ゲスタロカ：ネクサス基盤 now turns on whether ",
+                "ゲスタロカ：ネクサス基盤の幕開けは、",
+            )
+            localized = localized.replace(" will be carried through.", "が果たされるかどうかに向かっている。")
+            localized = localized.replace(" is waiting to see whether ", "は")
+            localized = localized.replace(" will be honored.", "が守られるかを見届けようとしている。")
+            localized = localized.replace(" has begun.", "が始まった。")
+            localized = localized.replace(" begins.", "が始まる。")
+            localized = localized.replace("Scene: ", "場面: ")
             if localized == stripped and all(ord(char) < 128 for char in stripped):
                 return f"{stripped}（日本語表示）"
             return localized

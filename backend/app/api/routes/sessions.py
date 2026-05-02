@@ -200,6 +200,8 @@ def get_session_story(
                 cache_db,
                 container.model_router,
                 {
+                    "narrative": item["narrative"],
+                    "npc_reaction": item["reaction"],
                     "consequence_summary": item["consequence"],
                     "scene_summary": item["scene_summary"],
                 },
@@ -207,6 +209,8 @@ def get_session_story(
                 actor_id=str(player_profile.get("actor_id") or ""),
                 play_language=dict(player_profile.get("play_language") or {}),
             )
+            item["narrative"] = str(localized.get("narrative") or item["narrative"])
+            item["reaction"] = str(localized.get("npc_reaction") or item["reaction"])
             item["consequence"] = str(localized.get("consequence_summary") or item["consequence"])
             item["scene_summary"] = str(localized.get("scene_summary") or item["scene_summary"])
     finally:
@@ -224,14 +228,33 @@ def get_session_story(
 def get_session_quests(
     session_id: str,
     db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, object]:
     game_session, player_profile = _session_for_user(db, user=user, session_id=session_id)
     actor_id = str(player_profile.get("actor_id") or "")
     items = list_quest_journal(db, game_session.world_id, actor_id)
-    return {
+    payload = {
+        "world_id": game_session.world_id,
+        "actor_id": actor_id,
+        "player_profile": player_profile,
         "quests": items,
         "items": items,
         "quest_display_state": quest_display_state(player_profile=player_profile, quest_journal=items),
         "world_context": world_context_for_world(db, game_session.world_id),
+    }
+    cache_db = container.session_factory()
+    try:
+        localized = localize_session_state(cache_db, container.model_router, payload)
+    finally:
+        cache_db.close()
+    localized_quests = localized.get("quests") if isinstance(localized.get("quests"), list) else items
+    localized_display_state = localized.get("quest_display_state")
+    return {
+        "quests": localized_quests,
+        "items": localized_quests,
+        "quest_display_state": localized_display_state
+        if isinstance(localized_display_state, dict)
+        else payload["quest_display_state"],
+        "world_context": payload["world_context"],
     }

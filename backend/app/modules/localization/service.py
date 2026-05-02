@@ -302,7 +302,14 @@ def _collect_session_state_targets(payload: dict[str, Any], targets: list[_TextT
 
 
 def _collect_turn_payload_targets(payload: dict[str, Any], targets: list[_TextTarget]) -> None:
-    for field in ("consequence_summary", "scene_summary", "crossroads_summary", "travel_summary"):
+    for field in (
+        "narrative",
+        "npc_reaction",
+        "consequence_summary",
+        "scene_summary",
+        "crossroads_summary",
+        "travel_summary",
+    ):
         _register_field(payload, targets, (field,), f"turn.{field}", field)
     _register_list_fields(payload, targets, ("next_choices",), "choice", ("choice_id", "posture"), ("label", "summary"))
     _register_object_fields(payload, targets, ("current_location",), "location", ("id", "key"), ("name", "description"))

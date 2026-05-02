@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import func, select
 
 from app.models.entities import ActorTitleProgress, Event, Location, SPLedgerEntry, SharedHistoryRecord, Turn, World
@@ -78,6 +80,15 @@ def test_gestaloka_reference_exploration_turn_offers_dynamic_quest_and_lifecycle
     assert post_offer_state.json()["quest_display_state"]["mode"] == "quest"
     assert post_offer_state.json()["quest_journal"][0]["assignment_id"] == quest_assignment_id
     assert post_offer_state.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    quest_response = client.get(f"/sessions/{session_payload['session_id']}/quests", headers=auth_headers)
+    assert quest_response.status_code == 200
+    quest_payload = quest_response.json()
+    assert quest_payload["items"] == quest_payload["quests"]
+    assert quest_payload["quests"][0]["assignment_id"] == quest_assignment_id
+    assert quest_payload["quest_display_state"]["label"] == quest_payload["quests"][0]["title"]
+    visible_quest_text = json.dumps(quest_payload["quests"], ensure_ascii=False)
+    assert "First Stabilizer Request" not in visible_quest_text
+    assert "Nexus Gate" not in visible_quest_text
 
     _, accept_payload, _ = post_turn_and_wait(
         client,

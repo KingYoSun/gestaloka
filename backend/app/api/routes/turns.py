@@ -274,13 +274,12 @@ async def _emit_response_localization_progress(
     await realtime_hub.emit_with_world_context(session_id, "turn.progress", payload, world_context)
 
 
-async def _emit_turn_result_events(container: AppContainer, result, world_context: dict[str, object]) -> None:
-    response_content = _success_response_content(result, world_context) if result.succeeded else _failure_response_content(result, world_context)
+async def _emit_turn_result_events(result, world_context: dict[str, object], response_content: dict[str, object]) -> None:
     if result.succeeded:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
             "turn.narrative.delta",
-            {"turn_id": result.turn.id, "delta": result.turn.resolved_output.get("narrative", ""), "final": True},
+            {"turn_id": result.turn.id, "delta": response_content.get("narrative", ""), "final": True},
             world_context,
         )
 
@@ -415,7 +414,6 @@ async def _resolve_turn_background(
             world_context,
         )
 
-    await _emit_turn_result_events(container, result, world_context)
     if not result.succeeded:
         localization_started_at = time.perf_counter()
         await _emit_response_localization_progress(
@@ -428,7 +426,7 @@ async def _resolve_turn_background(
             container,
             result,
             _failure_response_content(result, world_context),
-            generate_missing=False,
+            generate_missing=True,
         )
         await _emit_response_localization_progress(
             session_id=session_id,
@@ -437,6 +435,7 @@ async def _resolve_turn_background(
             status="completed",
             started_at=localization_started_at,
         )
+        await _emit_turn_result_events(result, world_context, failure_payload)
         await realtime_hub.emit_with_world_context(
             session_id,
             "turn.failed",
@@ -461,7 +460,7 @@ async def _resolve_turn_background(
         container,
         result,
         _success_response_content(result, world_context),
-        generate_missing=False,
+        generate_missing=True,
     )
     await _emit_response_localization_progress(
         session_id=session_id,
@@ -470,6 +469,7 @@ async def _resolve_turn_background(
         status="completed",
         started_at=localization_started_at,
     )
+    await _emit_turn_result_events(result, world_context, success_payload)
     await realtime_hub.emit_with_world_context(
         session_id,
         "turn.resolved",
