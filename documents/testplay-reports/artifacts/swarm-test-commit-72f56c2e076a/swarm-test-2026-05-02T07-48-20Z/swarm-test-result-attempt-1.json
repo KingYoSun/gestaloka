@@ -1,0 +1,224 @@
+{
+  "run_id": "2026-05-02T07-48-20Z",
+  "created_at": "2026-05-02T07:50:22.019Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "ai-researcher",
+      "label": "AI 研究者",
+      "archetype": "engineer",
+      "gender": "female",
+      "age": 45,
+      "occupation": "AI researcher",
+      "hobbies": [
+        "agent systems",
+        "procedural narrative",
+        "paper reading"
+      ],
+      "personality": [
+        "probing",
+        "theory-minded",
+        "skeptical"
+      ],
+      "gameMotivation": "Wants emergent narrative to remain attributable and robust.",
+      "playStyle": "Tests whether generated explanations match stored state.",
+      "narrativePreference": "Transparent cause-effect with minimal hallucination.",
+      "frictionSensitivity": "Low tolerance for ungrounded claims.",
+      "evaluationLens": "Does generation respect canonical state?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "speedrunner",
+      "label": "効率走者",
+      "archetype": "optimizer",
+      "gender": "unspecified",
+      "age": 22,
+      "occupation": "part-time worker",
+      "hobbies": [
+        "speedrunning",
+        "route notes",
+        "timer comparisons"
+      ],
+      "personality": [
+        "impatient",
+        "experimental",
+        "optimization-heavy"
+      ],
+      "gameMotivation": "Wants efficient paths to remain legible even in a dynamic world.",
+      "playStyle": "Repeats progress actions and checks where time or resources are lost.",
+      "narrativePreference": "Short feedback with actionable state changes.",
+      "frictionSensitivity": "Very low tolerance for slow or opaque resolution.",
+      "evaluationLens": "Does dynamic narrative preserve actionable progress?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "ai-researcher",
+      "displayName": "Sena JP Engineer",
+      "gender": "female",
+      "background": "行動する前に、公開された徴候、現地の証言、出来事の順序を照合する静かな現地監査者。",
+      "freeText": "目に見える変化に追跡可能な原因があるかを探し、共有された場所の連続性を試すために精密な質問を投げる。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "speedrunner",
+      "displayName": "Kaito JP Optimizer",
+      "gender": "unspecified",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito JP Mmo",
+      "gender": "male",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    }
+  ],
+  "persona_decision_log": [],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "rating": "blocked",
+      "observedImpact": "swarm-test stopped before hard checks at ui_session_setup.",
+      "evidence": [
+        "UI session did not render a ready play surface for speedrunner: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('choice-progress')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('choice-progress')\u001b[22m\n; story=進行中; active-quest=クエスト探索中...探索中...; turn-progress-status=選択待ち; actions-button enabled=not-found; status-button enabled=not-found; toggle-free-text enabled=true; choices=進行中; error-banner=(empty)"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "rating": "blocked",
+      "observedImpact": "swarm-test stopped before hard checks at ui_session_setup.",
+      "evidence": [
+        "UI session did not render a ready play surface for speedrunner: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('choice-progress')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('choice-progress')\u001b[22m\n; story=進行中; active-quest=クエスト探索中...探索中...; turn-progress-status=選択待ち; actions-button enabled=not-found; status-button enabled=not-found; toggle-free-text enabled=true; choices=進行中; error-banner=(empty)"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "blocked",
+      "observedImpact": "swarm-test stopped before hard checks at ui_session_setup.",
+      "evidence": [
+        "UI session did not render a ready play surface for speedrunner: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('choice-progress')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('choice-progress')\u001b[22m\n; story=進行中; active-quest=クエスト探索中...探索中...; turn-progress-status=選択待ち; actions-button enabled=not-found; status-button enabled=not-found; toggle-free-text enabled=true; choices=進行中; error-banner=(empty)"
+      ]
+    }
+  ],
+  "experience_evaluation": [],
+  "hard_checks": {
+    "persona_profile_separation": false,
+    "runtime_privacy_leak_free": false,
+    "all_turns_return_event_ids": false,
+    "all_turn_events_same_world": false,
+    "canonical_sequence_unique": false,
+    "shared_impact_visible": false,
+    "resource_conflict_recorded": false,
+    "world_broadcast_or_constraint_visible": false,
+    "exploration_label_visible": false,
+    "dynamic_quest_offered": false,
+    "quest_accept_turn_resolved": false,
+    "quest_chapter_visible": false,
+    "quest_lifecycle_events_same_world": false
+  },
+  "runtime": [
+    {
+      "personaId": "ai-researcher",
+      "actorId": "89dacfaa-b810-4463-99a5-0846550c474d",
+      "sessionId": "ce473134-5e48-4d71-9d65-eae137192e01",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [],
+      "turnIds": []
+    },
+    {
+      "personaId": "speedrunner",
+      "actorId": "2e061224-1dce-4ef5-8913-691119ea047d",
+      "sessionId": "",
+      "locationId": "",
+      "eventIds": [],
+      "turnIds": []
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "e428ea47-95bb-4aec-9b34-e8d7195595cd",
+      "sessionId": "",
+      "locationId": "",
+      "eventIds": [],
+      "turnIds": []
+    }
+  ],
+  "turn_observations": [],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T07-48-20Z/attempt-1-raid-planner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T07-48-20Z/attempt-1-ai-researcher-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T07-48-20Z/attempt-1-speedrunner-authenticated.png"
+  ],
+  "failure_diagnostics": {
+    "stage": "ui_session_setup",
+    "message": "UI session did not render a ready play surface for speedrunner: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('choice-progress')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('choice-progress')\u001b[22m\n; story=進行中; active-quest=クエスト探索中...探索中...; turn-progress-status=選択待ち; actions-button enabled=not-found; status-button enabled=not-found; toggle-free-text enabled=true; choices=進行中; error-banner=(empty)",
+    "stack": "Error: UI session did not render a ready play surface for speedrunner: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('choice-progress')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('choice-progress')\u001b[22m\n; story=進行中; active-quest=クエスト探索中...探索中...; turn-progress-status=選択待ち; actions-button enabled=not-found; status-button enabled=not-found; toggle-free-text enabled=true; choices=進行中; error-banner=(empty)\n    at waitForSessionUiReady (/workspace/tests/e2e/swarm/uiDriver.ts:172:11)\n    at startPlayerSessionViaUi (/workspace/tests/e2e/swarm/uiDriver.ts:106:3)\n    at startRuntimeSessionViaUi (/workspace/tests/e2e/swarm-test.spec.ts:581:19)\n    at /workspace/tests/e2e/swarm-test.spec.ts:112:5\n    at /workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:326:9\n    at /workspace/frontend/node_modules/playwright/lib/worker/testInfo.js:320:11\n    at TimeoutManager.withRunnable (/workspace/frontend/node_modules/playwright/lib/worker/timeoutManager.js:75:14)\n    at TestInfoImpl._runWithTimeout (/workspace/frontend/node_modules/playwright/lib/worker/testInfo.js:318:7)\n    at /workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:324:7\n    at WorkerMain._runTest (/workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:297:5)\n    at WorkerMain.runTestGroup (/workspace/frontend/node_modules/playwright/lib/worker/workerMain.js:203:9)\n    at process.<anonymous> (/workspace/frontend/node_modules/playwright/lib/common/process.js:73:22)"
+  }
+}

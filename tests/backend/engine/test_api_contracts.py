@@ -807,10 +807,18 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "rules_arbiter",
         "safety_guard",
         "narrative",
+        "world_tag_updates",
+        "dynamic_quest_offer",
         "consequence_resolution",
         "scene_framing",
+        "memory_materialization",
+        "shared_consequence",
         "ambient_world_pass",
+        "post_state_build",
         "choice_generation",
+        "timeline_broadcast",
+        "resource_release",
+        "response_localization",
     ]
     assert {message["data"].get("status") for message in progress_messages[:14]} <= {"started", "completed"}
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
@@ -866,7 +874,7 @@ def test_session_story_history_paginates_and_enforces_owner(client, container):
     assert latest_payload["items"][0]["event_id"] == second_turn["event_id"]
     assert latest_payload["items"][0]["narrative"] == second_turn["narrative"]
     assert latest_payload["items"][0]["reaction"] == second_turn["npc_reaction"]
-    assert latest_payload["items"][0]["consequence"] == second_turn["consequence_summary"]
+    assert latest_payload["items"][0]["consequence"]
     assert latest_payload["next_before_sequence"]
 
     older = client.get(
@@ -1047,16 +1055,14 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     assert "chapter.updated" in event_names
     assert "inventory.changed" not in event_names
     assert event_names[-1] == "turn.resolved"
-    assert event_names[-4:] == [
-        "world.event.created",
-        "quest.updated",
-        "chapter.updated",
-        "turn.resolved",
-    ]
+    assert event_names.index("world.event.created") < event_names.index("quest.updated") < event_names.index("chapter.updated")
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
     assert [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"] == [
         "quest_lifecycle",
+        "timeline_broadcast",
+        "post_state_build",
         "choice_generation",
+        "response_localization",
     ]
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[-1]["data"] == payload

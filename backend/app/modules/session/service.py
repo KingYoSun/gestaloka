@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -22,6 +24,7 @@ from app.modules.actor.service import (
 from app.modules.economy_sp.service import InsufficientSPError, SPMutationResult
 from app.modules.gm_council.service import CouncilRequest
 from app.modules.identity.oidc import UserIdentity
+from app.modules.session.progress import elapsed_ms_since, emit_turn_progress
 from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
 from app.modules.world_state.branch import BranchCommitDraft, BranchPressureEngine, ensure_route_pressures
 from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
@@ -59,6 +62,29 @@ from app.modules.world_state.service import (
 )
 
 CHOICE_ORDER = ("safe", "progress", "explore")
+
+
+@contextmanager
+def _turn_progress_span(phase: str, *, detail: str | None = None) -> Iterator[None]:
+    started_at = time.perf_counter()
+    emit_turn_progress(phase=phase, status="started", elapsed_ms=0, detail=detail)
+    try:
+        yield
+    except Exception:
+        emit_turn_progress(
+            phase=phase,
+            status="failed",
+            elapsed_ms=elapsed_ms_since(started_at),
+            detail=detail,
+        )
+        raise
+    else:
+        emit_turn_progress(
+            phase=phase,
+            status="completed",
+            elapsed_ms=elapsed_ms_since(started_at),
+            detail=detail,
+        )
 
 
 @dataclass
@@ -1131,17 +1157,18 @@ def _resolve_narrative_turn_for_session(
             release_resources(db, held_locks)
             return redirected
 
-    resolved_world_tags = _coerce_choice_world_tags(
-        session_state=session_state,
-        selected_choice=selected_choice,
-        world_tags=payload.world_tags,
-    )
-    state_updates = apply_world_tag_updates(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        world_tags=resolved_world_tags,
-    )
+    with _turn_progress_span("world_tag_updates"):
+        resolved_world_tags = _coerce_choice_world_tags(
+            session_state=session_state,
+            selected_choice=selected_choice,
+            world_tags=payload.world_tags,
+        )
+        state_updates = apply_world_tag_updates(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            world_tags=resolved_world_tags,
+        )
 
     event = Event(
         world_id=game_session.world_id,
@@ -1164,23 +1191,24 @@ def _resolve_narrative_turn_for_session(
     )
     db.add(event)
     db.flush()
-    dynamic_quest_updates = [
-        *create_dynamic_quest_offer(
-            db,
-            world_id=game_session.world_id,
-            actor_id=player_actor.id,
-            source_event_id=event.id,
-            offer=getattr(payload, "quest_offer", None),
-        ),
-        *create_dynamic_quest_offer(
-            db,
-            world_id=game_session.world_id,
-            actor_id=player_actor.id,
-            source_event_id=event.id,
-            offer=getattr(payload, "followup_quest_offer", None),
-            followup_of_assignment_id=str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None,
-        ),
-    ]
+    with _turn_progress_span("dynamic_quest_offer"):
+        dynamic_quest_updates = [
+            *create_dynamic_quest_offer(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                source_event_id=event.id,
+                offer=getattr(payload, "quest_offer", None),
+            ),
+            *create_dynamic_quest_offer(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                source_event_id=event.id,
+                offer=getattr(payload, "followup_quest_offer", None),
+                followup_of_assignment_id=str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None,
+            ),
+        ]
     if dynamic_quest_updates:
         state_updates["quest_updates"] = [*state_updates["quest_updates"], *dynamic_quest_updates]
         event.payload = {
@@ -1188,80 +1216,82 @@ def _resolve_narrative_turn_for_session(
             "quest_updates": state_updates["quest_updates"],
         }
 
-    consequence_result = apply_consequence_updates(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        counterpart_actor_id=guide_npc.id,
-        counterpart_name=guide_npc.display_name,
-        location_id=prepared.location_id,
-        source_event_id=event.id,
-        world_tags=resolved_world_tags,
-        consequence_tags=payload.consequence_tags
-        or fallback_consequence_tags(
-            world_tags=resolved_world_tags,
-            action_kind="narrative",
-            fail_forward=bool(interpreted_intent.get("fail_forward")),
-        ),
-        action_kind="narrative",
-        fail_forward=bool(interpreted_intent.get("fail_forward")),
-    )
-    branch_result = BranchPressureEngine.apply_player_turn(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        source_event_id=event.id,
-        location_id=prepared.location_id,
-        session_state=session_state,
-        outcome_band=consequence_result.outcome_band,
-        world_tags=resolved_world_tags,
-        consequence_tags=payload.consequence_tags
-        or fallback_consequence_tags(
-            world_tags=resolved_world_tags,
-            action_kind="narrative",
-            fail_forward=bool(interpreted_intent.get("fail_forward")),
-        ),
-        branch_signals=list(getattr(payload, "branch_signals", []) or []),
-    )
-    branch_event_memories: list[Any] = []
-    if branch_result.commit is not None:
-        _, branch_event_memories = _persist_branch_commit(
+    with _turn_progress_span("consequence_resolution"):
+        consequence_result = apply_consequence_updates(
             db,
-            container,
-            game_session=game_session,
-            turn=turn,
-            player_actor=player_actor,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            counterpart_actor_id=guide_npc.id,
+            counterpart_name=guide_npc.display_name,
             location_id=prepared.location_id,
-            commit=branch_result.commit,
+            source_event_id=event.id,
+            world_tags=resolved_world_tags,
+            consequence_tags=payload.consequence_tags
+            or fallback_consequence_tags(
+                world_tags=resolved_world_tags,
+                action_kind="narrative",
+                fail_forward=bool(interpreted_intent.get("fail_forward")),
+            ),
+            action_kind="narrative",
+            fail_forward=bool(interpreted_intent.get("fail_forward")),
         )
-    dynamic_chapter_updates = apply_dynamic_chapter_progression(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        source_event_id=event.id,
-        chapter_directive=getattr(payload, "chapter_directive", None),
-    )
+        branch_result = BranchPressureEngine.apply_player_turn(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            location_id=prepared.location_id,
+            session_state=session_state,
+            outcome_band=consequence_result.outcome_band,
+            world_tags=resolved_world_tags,
+            consequence_tags=payload.consequence_tags
+            or fallback_consequence_tags(
+                world_tags=resolved_world_tags,
+                action_kind="narrative",
+                fail_forward=bool(interpreted_intent.get("fail_forward")),
+            ),
+            branch_signals=list(getattr(payload, "branch_signals", []) or []),
+        )
+        branch_event_memories: list[Any] = []
+        if branch_result.commit is not None:
+            _, branch_event_memories = _persist_branch_commit(
+                db,
+                container,
+                game_session=game_session,
+                turn=turn,
+                player_actor=player_actor,
+                location_id=prepared.location_id,
+                commit=branch_result.commit,
+            )
+        dynamic_chapter_updates = apply_dynamic_chapter_progression(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            chapter_directive=getattr(payload, "chapter_directive", None),
+        )
 
-    pre_scene_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-        include_internal=True,
-    )
-    scene_result = apply_scene_updates(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-        focus_actor_id=guide_npc.id,
-        source_event_id=event.id,
-        action_kind="narrative",
-        session_state=pre_scene_state,
-        outcome_band=consequence_result.outcome_band,
-        scene_move=branch_result.commit.forced_scene_move if branch_result.commit is not None else getattr(payload, "scene_move", None),
-        scene_pressure=getattr(payload, "scene_pressure", None),
-    )
+    with _turn_progress_span("scene_framing"):
+        pre_scene_state = build_session_state(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+            include_internal=True,
+        )
+        scene_result = apply_scene_updates(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+            focus_actor_id=guide_npc.id,
+            source_event_id=event.id,
+            action_kind="narrative",
+            session_state=pre_scene_state,
+            outcome_band=consequence_result.outcome_band,
+            scene_move=branch_result.commit.forced_scene_move if branch_result.commit is not None else getattr(payload, "scene_move", None),
+            scene_pressure=getattr(payload, "scene_pressure", None),
+        )
     combined_faction_updates = [*state_updates["faction_updates"], *consequence_result.faction_updates]
     skipped_resources = skipped_resource_constraints(resource_refs, held_locks, resource_constraints)
 
@@ -1329,42 +1359,44 @@ def _resolve_narrative_turn_for_session(
         "skipped_shared_resources": skipped_resources,
     }
 
-    memories = container.memory_service.materialize_memories(
-        db,
-        world_id=game_session.world_id,
-        source_event_id=event.id,
-        location_id=prepared.location_id,
-        drafts=[
-            {
-                **draft.model_dump(),
-                "actor_id": guide_npc.id if draft.scope == "actor" else None,
-            }
-            for draft in payload.memories
-        ]
-        + consequence_result.additional_memory_drafts,
-    )
+    with _turn_progress_span("memory_materialization"):
+        memories = container.memory_service.materialize_memories(
+            db,
+            world_id=game_session.world_id,
+            source_event_id=event.id,
+            location_id=prepared.location_id,
+            drafts=[
+                {
+                    **draft.model_dump(),
+                    "actor_id": guide_npc.id if draft.scope == "actor" else None,
+                }
+                for draft in payload.memories
+            ]
+            + consequence_result.additional_memory_drafts,
+        )
     shared_consequence_tags = payload.consequence_tags or fallback_consequence_tags(
         world_tags=resolved_world_tags,
         action_kind="narrative",
         fail_forward=bool(interpreted_intent.get("fail_forward")),
     )
-    if skipped_resources:
-        shared_result = SharedConsequenceResult(action_tag="none")
-    else:
-        shared_result = apply_shared_consequence_rules(
-            db,
-            memory_service=container.memory_service,
-            world_id=game_session.world_id,
-            actor_id=player_actor.id,
-            location_id=prepared.location_id,
-            source_event_id=event.id,
-            world_tags=resolved_world_tags,
-            consequence_tags=shared_consequence_tags,
-            action_kind="narrative",
-            explicit_action_tag=getattr(payload, "shared_action_tag", "none"),
-            interpreted_intent=interpreted_intent,
-            fail_forward=bool(interpreted_intent.get("fail_forward")),
-        )
+    with _turn_progress_span("shared_consequence"):
+        if skipped_resources:
+            shared_result = SharedConsequenceResult(action_tag="none")
+        else:
+            shared_result = apply_shared_consequence_rules(
+                db,
+                memory_service=container.memory_service,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                location_id=prepared.location_id,
+                source_event_id=event.id,
+                world_tags=resolved_world_tags,
+                consequence_tags=shared_consequence_tags,
+                action_kind="narrative",
+                explicit_action_tag=getattr(payload, "shared_action_tag", "none"),
+                interpreted_intent=interpreted_intent,
+                fail_forward=bool(interpreted_intent.get("fail_forward")),
+            )
     shared_payload = shared_result.payload()
     turn.resolved_output = {
         **turn.resolved_output,
@@ -1393,34 +1425,37 @@ def _resolve_narrative_turn_for_session(
     )
     db.flush()
 
-    ambient_input_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-        include_internal=True,
-    )
-    ambient_result = _run_ambient_world_pass(
-        db,
-        container,
-        game_session=game_session,
-        player_actor=player_actor,
-        turn=turn,
-        location_id=prepared.location_id,
-        session_state=ambient_input_state,
-    )
-    post_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-        include_internal=True,
-    )
-    public_branch_updates, crossroads_summary = _branch_response_from_state(post_state)
-    next_choices = _canonicalize_next_choices(
-        [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
-        post_state.get("next_choices") or [],
-    )
+    with _turn_progress_span("ambient_world_pass"):
+        ambient_input_state = build_session_state(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+            include_internal=True,
+        )
+        ambient_result = _run_ambient_world_pass(
+            db,
+            container,
+            game_session=game_session,
+            player_actor=player_actor,
+            turn=turn,
+            location_id=prepared.location_id,
+            session_state=ambient_input_state,
+        )
+    with _turn_progress_span("post_state_build"):
+        post_state = build_session_state(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+            include_internal=True,
+        )
+        public_branch_updates, crossroads_summary = _branch_response_from_state(post_state)
+    with _turn_progress_span("choice_generation"):
+        next_choices = _canonicalize_next_choices(
+            [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
+            post_state.get("next_choices") or [],
+        )
     turn.resolved_output = {
         **turn.resolved_output,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
@@ -1442,16 +1477,18 @@ def _resolve_narrative_turn_for_session(
         "ambient_updates": ambient_result["ambient_updates"],
         "recent_world_beats": ambient_result["recent_world_beats"],
     }
-    _finalize_event_timeline_and_broadcast(
-        db,
-        event=event,
-        resource_constraints=resource_constraints,
-        broadcast_draft=getattr(payload, "broadcast_draft", None),
-        shared_action_tag=shared_result.action_tag,
-        relevance_tags=list(payload.consequence_tags or []),
-    )
-    release_resources(db, held_locks)
-    consume_broadcast_constraints(db, world_id=game_session.world_id, session_id=game_session.id)
+    with _turn_progress_span("timeline_broadcast"):
+        _finalize_event_timeline_and_broadcast(
+            db,
+            event=event,
+            resource_constraints=resource_constraints,
+            broadcast_draft=getattr(payload, "broadcast_draft", None),
+            shared_action_tag=shared_result.action_tag,
+            relevance_tags=list(payload.consequence_tags or []),
+        )
+    with _turn_progress_span("resource_release"):
+        release_resources(db, held_locks)
+        consume_broadcast_constraints(db, world_id=game_session.world_id, session_id=game_session.id)
 
     return TurnResolutionResult(
         turn=turn,
@@ -1534,14 +1571,15 @@ def _resolve_quest_lifecycle_turn_for_session(
     db.flush()
 
     try:
-        quest_updates, chapter_updates, summary = apply_quest_lifecycle_action(
-            db,
-            world_id=game_session.world_id,
-            actor_id=player_actor.id,
-            quest_assignment_id=quest_assignment_id,
-            action_type=action_type,
-            source_event_id=event.id,
-        )
+        with _turn_progress_span("quest_lifecycle"):
+            quest_updates, chapter_updates, summary = apply_quest_lifecycle_action(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                quest_assignment_id=quest_assignment_id,
+                action_type=action_type,
+                source_event_id=event.id,
+            )
     except (LookupError, ValueError) as exc:
         return _build_failed_turn_result(
             db,
@@ -1605,15 +1643,18 @@ def _resolve_quest_lifecycle_turn_for_session(
         )
     )
     db.flush()
-    _finalize_event_timeline_and_broadcast(db, event=event)
-    post_state = build_session_state(
-        db,
-        world_id=game_session.world_id,
-        actor_id=player_actor.id,
-        location_id=prepared.location_id,
-        include_internal=True,
-    )
-    next_choices = post_state.get("next_choices") or []
+    with _turn_progress_span("timeline_broadcast"):
+        _finalize_event_timeline_and_broadcast(db, event=event)
+    with _turn_progress_span("post_state_build"):
+        post_state = build_session_state(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+            include_internal=True,
+        )
+    with _turn_progress_span("choice_generation"):
+        next_choices = post_state.get("next_choices") or []
     turn.resolved_output = {
         **turn.resolved_output,
         "next_choices": next_choices,
@@ -1763,12 +1804,13 @@ def _resolve_read_world_state_query_turn(
     )
     db.add(event)
     db.flush()
-    _finalize_event_timeline_and_broadcast(
-        db,
-        event=event,
-        shared_action_tag="none",
-        relevance_tags=["careful_observation"],
-    )
+    with _turn_progress_span("timeline_broadcast"):
+        _finalize_event_timeline_and_broadcast(
+            db,
+            event=event,
+            shared_action_tag="none",
+            relevance_tags=["careful_observation"],
+        )
     db.add(
         OutboxEvent(
             world_id=game_session.world_id,

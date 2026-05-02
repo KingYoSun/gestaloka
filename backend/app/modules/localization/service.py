@@ -73,6 +73,7 @@ def localize_turn_payload(
     world_id: str,
     actor_id: str,
     play_language: dict[str, Any],
+    generate_missing: bool = True,
 ) -> dict[str, Any]:
     localized = deepcopy(payload)
     context = _localization_context(world_id=world_id, actor_id=actor_id, play_language=play_language)
@@ -81,7 +82,7 @@ def localize_turn_payload(
 
     targets: list[_TextTarget] = []
     _collect_turn_payload_targets(localized, targets)
-    return _apply_localization(db, model_router, localized, context, targets)
+    return _apply_localization(db, model_router, localized, context, targets, generate_missing=generate_missing)
 
 
 def _localization_context(
@@ -105,6 +106,8 @@ def _apply_localization(
     payload: dict[str, Any],
     context: dict[str, str],
     targets: list[_TextTarget],
+    *,
+    generate_missing: bool = True,
 ) -> dict[str, Any]:
     deduped = _dedupe_targets(targets)
     if not deduped:
@@ -114,7 +117,7 @@ def _apply_localization(
     missing = [target for target in deduped if target.source_key not in cached]
     generated: dict[str, str] = {}
     model_id = ""
-    if missing:
+    if missing and generate_missing:
         generated, model_id = _generate_missing(db, model_router, context=context, targets=missing)
         if generated:
             _store_generated(db, context=context, targets=missing, generated=generated, model_id=model_id)

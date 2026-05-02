@@ -764,14 +764,23 @@ export function useGestalokaRuntime() {
 
   async function refreshWorldState(currentSession: SessionInfo, currentToken: string) {
     currentToken = await ensureFreshToken(currentToken);
-    const [eventsResponse, memoriesResponse, stateResponse] = await Promise.all([
-      apiFetch<{ items: EventItem[] }>(`/worlds/${currentSession.world_id}/events`, currentToken),
-      apiFetch<{ items: MemoryItem[] }>(`/worlds/${currentSession.world_id}/memories`, currentToken),
-      apiFetch<SessionState>(`/sessions/${currentSession.session_id}/state`, currentToken),
-    ]);
-    setEvents(eventsResponse.items);
-    setMemories(memoriesResponse.items);
-    setSessionState(stateResponse);
+    const eventsPromise = apiFetch<{ items: EventItem[] }>(`/worlds/${currentSession.world_id}/events`, currentToken).then(
+      (eventsResponse) => {
+        setEvents(eventsResponse.items);
+      },
+    );
+    const memoriesPromise = apiFetch<{ items: MemoryItem[] }>(
+      `/worlds/${currentSession.world_id}/memories`,
+      currentToken,
+    ).then((memoriesResponse) => {
+      setMemories(memoriesResponse.items);
+    });
+    const statePromise = apiFetch<SessionState>(`/sessions/${currentSession.session_id}/state`, currentToken).then(
+      (stateResponse) => {
+        setSessionState(stateResponse);
+      },
+    );
+    await Promise.all([eventsPromise, memoriesPromise, statePromise]);
   }
 
   async function refreshStoryHistory(currentSession: SessionInfo, currentToken: string) {

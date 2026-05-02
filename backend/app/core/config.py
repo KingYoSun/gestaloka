@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     openai_compat_embedding_model: str = ""
     openai_compat_send_embedding_dimensions: bool = True
     memory_embedding_dim: int = 768
+    memory_embedding_timeout_seconds: float = 8.0
+    memory_embedding_max_retries: int = 1
     memory_retrieval_limit: int = 8
     memory_retrieval_min_score: float = 0.1
     model_lite_id: str = ""

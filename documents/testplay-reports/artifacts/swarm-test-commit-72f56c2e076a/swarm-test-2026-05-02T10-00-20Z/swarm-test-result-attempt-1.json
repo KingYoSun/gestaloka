@@ -1,0 +1,2933 @@
+{
+  "run_id": "2026-05-02T10-00-20Z",
+  "created_at": "2026-05-02T10:08:05.002Z",
+  "world_id": "gestaloka_reference",
+  "user_personas": [
+    {
+      "id": "ai-researcher",
+      "label": "AI 研究者",
+      "archetype": "engineer",
+      "gender": "female",
+      "age": 45,
+      "occupation": "AI researcher",
+      "hobbies": [
+        "agent systems",
+        "procedural narrative",
+        "paper reading"
+      ],
+      "personality": [
+        "probing",
+        "theory-minded",
+        "skeptical"
+      ],
+      "gameMotivation": "Wants emergent narrative to remain attributable and robust.",
+      "playStyle": "Tests whether generated explanations match stored state.",
+      "narrativePreference": "Transparent cause-effect with minimal hallucination.",
+      "frictionSensitivity": "Low tolerance for ungrounded claims.",
+      "evaluationLens": "Does generation respect canonical state?",
+      "user": {
+        "username": "swarm-a",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "speedrunner",
+      "label": "効率走者",
+      "archetype": "optimizer",
+      "gender": "unspecified",
+      "age": 22,
+      "occupation": "part-time worker",
+      "hobbies": [
+        "speedrunning",
+        "route notes",
+        "timer comparisons"
+      ],
+      "personality": [
+        "impatient",
+        "experimental",
+        "optimization-heavy"
+      ],
+      "gameMotivation": "Wants efficient paths to remain legible even in a dynamic world.",
+      "playStyle": "Repeats progress actions and checks where time or resources are lost.",
+      "narrativePreference": "Short feedback with actionable state changes.",
+      "frictionSensitivity": "Very low tolerance for slow or opaque resolution.",
+      "evaluationLens": "Does dynamic narrative preserve actionable progress?",
+      "user": {
+        "username": "swarm-b",
+        "password": "swarm-password"
+      }
+    },
+    {
+      "id": "raid-planner",
+      "label": "MMO レイド攻略者",
+      "archetype": "mmo",
+      "gender": "male",
+      "age": 29,
+      "occupation": "sales",
+      "hobbies": [
+        "MMOs",
+        "raid progression",
+        "build optimization"
+      ],
+      "personality": [
+        "goal-oriented",
+        "efficiency-minded",
+        "enjoys competition"
+      ],
+      "gameMotivation": "Wants visible progress, fair contention, and readable consequences under pressure.",
+      "playStyle": "Pushes progress quickly, accepts conflict, and probes shared resources.",
+      "narrativePreference": "Concise, actionable feedback that still explains world-state changes.",
+      "frictionSensitivity": "Low tolerance for unexplained blocking or hidden state changes.",
+      "evaluationLens": "Did contention around the same goal resolve fairly and keep play moving?",
+      "user": {
+        "username": "swarm-c",
+        "password": "swarm-password"
+      }
+    }
+  ],
+  "derived_player_profiles": [
+    {
+      "sourcePersonaId": "ai-researcher",
+      "displayName": "Sena JP Engineer",
+      "gender": "female",
+      "background": "行動する前に、公開された徴候、現地の証言、出来事の順序を照合する静かな現地監査者。",
+      "freeText": "目に見える変化に追跡可能な原因があるかを探し、共有された場所の連続性を試すために精密な質問を投げる。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "literary"
+      }
+    },
+    {
+      "sourcePersonaId": "speedrunner",
+      "displayName": "Kaito JP Optimizer",
+      "gender": "unspecified",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    },
+    {
+      "sourcePersonaId": "raid-planner",
+      "displayName": "Kaito JP Mmo",
+      "gender": "male",
+      "background": "目的、ボトルネック、状況を前に進められる人物を追跡する、経路意識の強い実行役。",
+      "freeText": "現在の目的を素早く進めようとするが、混雑した経路、場所、案内役をめぐる競合について世界が説明することを期待する。",
+      "playLanguage": {
+        "mode": "preset",
+        "preset": "ja",
+        "custom": ""
+      },
+      "narrativePreferences": {
+        "perspective": "third_person",
+        "tone": "logical",
+        "density": "concise",
+        "dialogue_style": "dialogue_forward"
+      }
+    }
+  ],
+  "persona_decision_log": [
+    {
+      "personaId": "ai-researcher",
+      "scenario": "quest-offer",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 は「Does generation respect canonical state?」という観点から、探索中に物語の糸口が自然に発生するかを確認する。",
+      "expectedWorldImpact": "探索行動から任意の動的クエストが提示され、受諾するかどうかをプレイヤーが選べることを期待する。"
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "quest-accept",
+      "inputMode": "quest_action",
+      "questAction": "accept_quest",
+      "reason": "AI 研究者 は提示された物語の糸口を受け入れ、固定導線ではなく自分の選択でクエストへ入る。",
+      "expectedWorldImpact": "クエスト受諾が通常 turn として解決され、prologue chapter が文脈として表示されることを期待する。"
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "quest-body-progress",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "AI 研究者 は受諾したクエストを進め、プレイ内容から chapter が更新されるかを確認する。",
+      "expectedWorldImpact": "受諾後の行動により body chapter が開き、クエストの文脈が journal と scene に残ることを期待する。"
+    },
+    {
+      "personaId": "speedrunner",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "choiceId": "progress",
+      "reason": "効率走者 は「Repeats progress actions and checks where time or resources are lost.」というプレイスタイルで、同じ世界内の同時行動と共有リソース競合を検証する。",
+      "expectedWorldImpact": "同時探索または進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+    },
+    {
+      "personaId": "raid-planner",
+      "scenario": "world-event",
+      "inputMode": "free_text",
+      "inputText": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+      "reason": "MMO レイド攻略者 は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
+      "expectedWorldImpact": "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。"
+    }
+  ],
+  "persona_experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "rating": "good",
+      "observedImpact": "Exploration produced an optional quest, and accepting it opened a chapter that remained visible.",
+      "evidence": [
+        "17e9f5cd-9231-4526-a613-6db14792064e",
+        "da8f0970-6438-47af-924b-1c6c97a4ee06",
+        "quest journal / session state / ops history / memory scan"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "rating": "good",
+      "observedImpact": "Concurrent pressure produced a recorded resource constraint.",
+      "evidence": [
+        "0f536a77-30ad-4a82-8bf7-cb17f4a5eccc",
+        "event payload resource_constraints scan"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "rating": "good",
+      "observedImpact": "Late join and follow-up exposed a world event or broadcast constraint.",
+      "evidence": [
+        "b753b53e-f7ea-442e-878f-ad3874d4b8ea",
+        "session state broadcast constraint scan"
+      ]
+    }
+  ],
+  "experience_evaluation": [
+    {
+      "personaId": "ai-researcher",
+      "ux_clarity": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "クエストの受諾や進行が明確で、状態遷移もスムーズです。ただし、一部のUIテキストに英語と日本語が混在している箇所があり、UXの洗練度を少し下げています。"
+      },
+      "gameplay_fun": {
+        "score": 5,
+        "rating": "good",
+        "rationale": "探索から動的なクエストが自然に発生し、プレイヤーの選択が物語の進行に直接反映される体験が非常に優れています。"
+      },
+      "story_progression": {
+        "score": 5,
+        "rating": "good",
+        "rationale": "クエスト受諾後のチャプター更新や、世界の状態変化が論理的で、物語の連続性が高く保たれています。"
+      },
+      "overall": {
+        "score": 5,
+        "rating": "good",
+        "rationale": "AI研究者の期待する「物語の因果関係の透明性」が十分に確保されており、非常に質の高い体験でした。"
+      },
+      "suggestions": [
+        "UI内の英語テキスト（dynamic_quest_...など）を完全に日本語化してください。",
+        "クエスト進行中の進捗表示をより視覚的に分かりやすくする工夫があると良いでしょう。"
+      ],
+      "warnings": [
+        "一部のプレイ情報テキストに英語が混在しています。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "gemini-3.1-flash-lite-preview",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "desktop",
+          "width": 1280,
+          "height": 900
+        },
+        "decisions": [
+          {
+            "personaId": "ai-researcher",
+            "scenario": "quest-offer",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "AI 研究者 は「Does generation respect canonical state?」という観点から、探索中に物語の糸口が自然に発生するかを確認する。",
+            "expectedWorldImpact": "探索行動から任意の動的クエストが提示され、受諾するかどうかをプレイヤーが選べることを期待する。"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "quest-accept",
+            "inputMode": "quest_action",
+            "questAction": "accept_quest",
+            "reason": "AI 研究者 は提示された物語の糸口を受け入れ、固定導線ではなく自分の選択でクエストへ入る。",
+            "expectedWorldImpact": "クエスト受諾が通常 turn として解決され、prologue chapter が文脈として表示されることを期待する。"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "quest-body-progress",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "AI 研究者 は受諾したクエストを進め、プレイ内容から chapter が更新されるかを確認する。",
+            "expectedWorldImpact": "受諾後の行動により body chapter が開き、クエストの文脈が journal と scene に残ることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "ai-researcher",
+            "scenario": "quest-offer",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-05-02T10:02:13.276Z",
+            "completedAt": "2026-05-02T10:02:34.884Z",
+            "durationMs": 21608,
+            "httpDurationMs": 87,
+            "finalResolutionDurationMs": 21608,
+            "eventId": "17e9f5cd-9231-4526-a613-6db14792064e",
+            "turnId": "3157a92a-6648-4d9a-afb5-bb5bcc6a2a24",
+            "waitStatusSamples": [
+              "進行中 / npc council started / 1s",
+              "進行中 / world progress started / 3s",
+              "進行中 / world progress started / 5s",
+              "進行中 / narrative started / 7s",
+              "進行中 / shared consequence started / 9s",
+              "進行中 / ambient world pass started / 11s",
+              "進行中 / ambient world pass started / 13s",
+              "進行中 / ambient world pass heartbeat / 15s",
+              "進行中 / resource release / 17s",
+              "進行中 / resource release / 19s"
+            ],
+            "waitStatusTimeline": [
+              {
+                "elapsedSeconds": 2,
+                "status": "進行中 / npc council started / 1s"
+              },
+              {
+                "elapsedSeconds": 4,
+                "status": "進行中 / world progress started / 3s"
+              },
+              {
+                "elapsedSeconds": 6,
+                "status": "進行中 / world progress started / 5s"
+              },
+              {
+                "elapsedSeconds": 8,
+                "status": "進行中 / narrative started / 7s"
+              },
+              {
+                "elapsedSeconds": 10,
+                "status": "進行中 / shared consequence started / 9s"
+              },
+              {
+                "elapsedSeconds": 12,
+                "status": "進行中 / ambient world pass started / 11s"
+              },
+              {
+                "elapsedSeconds": 14,
+                "status": "進行中 / ambient world pass started / 13s"
+              },
+              {
+                "elapsedSeconds": 16,
+                "status": "進行中 / ambient world pass heartbeat / 15s"
+              },
+              {
+                "elapsedSeconds": 18,
+                "status": "進行中 / resource release / 17s"
+              },
+              {
+                "elapsedSeconds": 20,
+                "status": "進行中 / resource release / 19s"
+              },
+              {
+                "elapsedSeconds": 22,
+                "status": "選択待ち"
+              }
+            ],
+            "progressTimeline": [
+              {
+                "phase": "rules_arbiter",
+                "status": "completed",
+                "elapsedMs": 6606,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "safety_guard",
+                "status": "started",
+                "elapsedMs": 6606,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "safety_guard",
+                "status": "completed",
+                "elapsedMs": 6606,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "narrative",
+                "status": "started",
+                "elapsedMs": 6613,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "narrative",
+                "status": "completed",
+                "elapsedMs": 8179,
+                "roleElapsedMs": 1566
+              },
+              {
+                "phase": "world_tag_updates",
+                "status": "started",
+                "elapsedMs": 8182,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "world_tag_updates",
+                "status": "completed",
+                "elapsedMs": 8182,
+                "roleElapsedMs": 1
+              },
+              {
+                "phase": "dynamic_quest_offer",
+                "status": "started",
+                "elapsedMs": 8187,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "dynamic_quest_offer",
+                "status": "completed",
+                "elapsedMs": 8190,
+                "roleElapsedMs": 4
+              },
+              {
+                "phase": "consequence_resolution",
+                "status": "started",
+                "elapsedMs": 8190,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "consequence_resolution",
+                "status": "completed",
+                "elapsedMs": 8197,
+                "roleElapsedMs": 6
+              },
+              {
+                "phase": "scene_framing",
+                "status": "started",
+                "elapsedMs": 8197,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "scene_framing",
+                "status": "completed",
+                "elapsedMs": 8236,
+                "roleElapsedMs": 37
+              },
+              {
+                "phase": "memory_materialization",
+                "status": "started",
+                "elapsedMs": 8236,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "memory_materialization",
+                "status": "completed",
+                "elapsedMs": 9628,
+                "roleElapsedMs": 1392
+              },
+              {
+                "phase": "shared_consequence",
+                "status": "started",
+                "elapsedMs": 9628,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "shared_consequence",
+                "status": "completed",
+                "elapsedMs": 10432,
+                "roleElapsedMs": 803
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "started",
+                "elapsedMs": 10435,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "heartbeat",
+                "elapsedMs": 15435,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "completed",
+                "elapsedMs": 16008,
+                "roleElapsedMs": 5574
+              },
+              {
+                "phase": "post_state_build",
+                "status": "started",
+                "elapsedMs": 16010,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "post_state_build",
+                "status": "completed",
+                "elapsedMs": 16045,
+                "roleElapsedMs": 37
+              },
+              {
+                "phase": "choice_generation",
+                "status": "started",
+                "elapsedMs": 16047,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "choice_generation",
+                "status": "completed",
+                "elapsedMs": 16047,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "started",
+                "elapsedMs": 16047,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "completed",
+                "elapsedMs": 16062,
+                "roleElapsedMs": 14
+              },
+              {
+                "phase": "resource_release",
+                "status": "started",
+                "elapsedMs": 16062,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "resource_release",
+                "status": "completed",
+                "elapsedMs": 16065,
+                "roleElapsedMs": 1
+              },
+              {
+                "phase": "resource_release",
+                "status": "heartbeat",
+                "elapsedMs": 21065,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "started",
+                "elapsedMs": null,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "completed",
+                "elapsedMs": 3,
+                "roleElapsedMs": 3
+              }
+            ],
+            "lastWaitStatus": "進行中 / resource release / 19s",
+            "maxWaitElapsedSeconds": 21,
+            "latestNarrative": "Nexus Gateの静寂の中、Sena JP Engineerが足を踏み入れると、空間を支配する無機質な駆動音が微かに響いた。先ほど到着したKaito JP Optimizerの作業により、ゲートの安定化記録はすでに補正フェーズへと移行している。Gate Steward Rikkaは、Senaの到来を予期していたかのように、静かな眼差しで彼女を迎え入れた。",
+            "latestReaction": "「ようこそ、Nexus Gateへ。Sena様とお見受けします。先ほど到着されたKaito様が、すでにゲートの安定化記録の補正に着手されています。記録の連続性に興味をお持ちのようですが、このゲートの登録簿には、まだ監査の余地が残されています。もしよろしければ、この先のLift Tower Concourseへ向かう前に、現在の登録データの不整合を照合していただけないでしょうか。あなたの監査能力が、この街の記録の信頼性を高める助けになるはずです。」",
+            "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+            "recentSceneHistory": [
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 17e9f5cd-9231-4526-a613-6db14792064e / turn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: 17e9f5cd-9231-4526-a613-6db14792064e / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: heartbeat / elapsed_ms: 21065turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: completed / elapsed_ms: 16065 / role_elapsed_ms: 1turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: started / elapsed_ms: 16062 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: completed / elapsed_ms: 16062 / role_elapsed_ms: 14turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: completed / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: completed / elapsed_ms: 16045 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: started / elapsed_ms: 16010 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: completed / elapsed_ms: 16008 / role_elapsed_ms: 5574turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: heartbeat / elapsed_ms: 15435turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: started / elapsed_ms: 10435 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: shared_consequence / status: completed / elapsed_ms: 10432 / role_elapsed_ms: 803turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: shared_consequence / status: started / elapsed_ms: 9628 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: memory_materialization / status: completed / elapsed_ms: 9628 / role_elapsed_ms: 1392turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: memory_materialization / status: started / elapsed_ms: 8236 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: scene_framing / status: completed / elapsed_ms: 8236 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: scene_framing / status: started / elapsed_ms: 8197 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: consequence_resolution / status: completed / elapsed_ms: 8197 / role_elapsed_ms: 6turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: consequence_resolution / status: started / elapsed_ms: 8190 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: dynamic_quest_offer / status: completed / elapsed_ms: 8190 / role_elapsed_ms: 4turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: dynamic_quest_offer / status: started / elapsed_ms: 8187 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: world_tag_updates / status: completed / elapsed_ms: 8182 / role_elapsed_ms: 1turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: world_tag_updates / status: started / elapsed_ms: 8182 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: narrative / status: completed / elapsed_ms: 8179 / role_elapsed_ms: 1566turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: narrative / status: started / elapsed_ms: 6613 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: safety_guard / status: completed / elapsed_ms: 6606 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: safety_guard / status: started / elapsed_ms: 6606 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: rules_arbiter / status: completed / elapsed_ms: 6606 / role_elapsed_ms: 0"
+            ],
+            "choiceLabels": [
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "playInfoTexts": [
+              "Nexus Gate",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲートの登録簿を監査し、記録の連続性を証明する。受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "なし",
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "englishPlayInfoTexts": [
+              "Nexus Gate",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲートの登録簿を監査し、記録の連続性を証明する。受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "questText": "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲートの登録簿を監査し、記録の連続性を証明する。受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+            "questProgress": "0/3",
+            "chapterText": "",
+            "questActionLabels": [
+              "受諾",
+              "見送る"
+            ],
+            "hasExploringLabel": false,
+            "hasOfferedQuest": true,
+            "hasChapterSummary": false,
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-offer-after-turn.png"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "quest-accept",
+            "inputMode": "quest_action",
+            "action": "accept_quest",
+            "startedAt": "2026-05-02T10:02:37.303Z",
+            "completedAt": "2026-05-02T10:02:43.811Z",
+            "durationMs": 6508,
+            "httpDurationMs": 105,
+            "finalResolutionDurationMs": 6508,
+            "eventId": "3d85a2fa-196d-499c-9b95-aefc7b09e191",
+            "turnId": "9d63ed96-5528-4ae2-99df-da199b9e6bb5",
+            "waitStatusSamples": [
+              "進行中 / choice generation / 1s",
+              "進行中 / choice generation / 3s",
+              "選択待ち"
+            ],
+            "waitStatusTimeline": [
+              {
+                "elapsedSeconds": 2,
+                "status": "進行中 / choice generation / 1s"
+              },
+              {
+                "elapsedSeconds": 4,
+                "status": "進行中 / choice generation / 3s"
+              },
+              {
+                "elapsedSeconds": 6,
+                "status": "選択待ち"
+              }
+            ],
+            "progressTimeline": [
+              {
+                "phase": "quest_lifecycle",
+                "status": "started",
+                "elapsedMs": 22,
+                "roleElapsedMs": null
+              },
+              {
+                "phase": "quest_lifecycle",
+                "status": "completed",
+                "elapsedMs": 27,
+                "roleElapsedMs": 4
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "started",
+                "elapsedMs": 28,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "completed",
+                "elapsedMs": 30,
+                "roleElapsedMs": 2
+              },
+              {
+                "phase": "post_state_build",
+                "status": "started",
+                "elapsedMs": 30,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "post_state_build",
+                "status": "completed",
+                "elapsedMs": 68,
+                "roleElapsedMs": 37
+              },
+              {
+                "phase": "choice_generation",
+                "status": "started",
+                "elapsedMs": 68,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "choice_generation",
+                "status": "completed",
+                "elapsedMs": 69,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "choice_generation",
+                "status": "heartbeat",
+                "elapsedMs": 5069,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "started",
+                "elapsedMs": null,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "completed",
+                "elapsedMs": 3,
+                "roleElapsedMs": 3
+              }
+            ],
+            "lastWaitStatus": "選択待ち",
+            "maxWaitElapsedSeconds": 6,
+            "latestNarrative": "ゲート登録簿の監査 begins.",
+            "latestReaction": "",
+            "latestConsequence": "ゲート登録簿の監査 begins.",
+            "recentSceneHistory": [
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "ゲート登録簿の監査 begins.The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 3d85a2fa-196d-499c-9b95-aefc7b09e191 / turn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: response_localization / status: started / elapsed_ms: 0chapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedworld.event.createdGESTALOKA Reference / Nexus Foundationid: 3d85a2fa-196d-499c-9b95-aefc7b09e191 / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: choice_generation / status: heartbeat / elapsed_ms: 5069turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: choice_generation / status: completed / elapsed_ms: 69 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: choice_generation / status: started / elapsed_ms: 68 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: post_state_build / status: completed / elapsed_ms: 68 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: post_state_build / status: started / elapsed_ms: 30 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: timeline_broadcast / status: completed / elapsed_ms: 30 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: timeline_broadcast / status: started / elapsed_ms: 28 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: quest_lifecycle / status: completed / elapsed_ms: 27 / role_elapsed_ms: 4turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: quest_lifecycle / status: started / elapsed_ms: 22 / role_elapsed_ms: 0turn.acceptedGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / session_id: 3f3c8960-3016-4f82-9815-b0eb59e7c516turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 17e9f5cd-9231-4526-a613-6db14792064e / turn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: 17e9f5cd-9231-4526-a613-6db14792064e / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: heartbeat / elapsed_ms: 21065turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: completed / elapsed_ms: 16065 / role_elapsed_ms: 1turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: started / elapsed_ms: 16062 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: completed / elapsed_ms: 16062 / role_elapsed_ms: 14turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: completed / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: completed / elapsed_ms: 16045 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: started / elapsed_ms: 16010 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: completed / elapsed_ms: 16008 / role_elapsed_ms: 5574turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: heartbeat / elapsed_ms: 15435turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: started / elapsed_ms: 10435 / role_elapsed_ms: 0"
+            ],
+            "choiceLabels": [
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "playInfoTexts": [
+              "Nexus Gate",
+              "ゲート登録簿の監査 begins. Gate Steward Rikkaは、Nexus Gateの記録に生じている微細な不整合を懸念している。Senaの監査能力を借りて、到着者の記録とゲートの登録簿を照合し、アーカイブの整合性を回復させたいと考えている。",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲート登録簿の監査 has begun.受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "なし",
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "englishPlayInfoTexts": [
+              "Nexus Gate",
+              "ゲート登録簿の監査 begins. Gate Steward Rikkaは、Nexus Gateの記録に生じている微細な不整合を懸念している。Senaの監査能力を借りて、到着者の記録とゲートの登録簿を照合し、アーカイブの整合性を回復させたいと考えている。",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲート登録簿の監査 has begun.受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "questText": "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲート登録簿の監査 has begun.受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+            "questProgress": "0/3",
+            "chapterText": "ゲート登録簿の監査 begins. Gate Steward Rikkaは、Nexus Gateの記録に生じている微細な不整合を懸念している。Senaの監査能力を借りて、到着者の記録とゲートの登録簿を照合し、アーカイブの整合性を回復させたいと考えている。",
+            "questActionLabels": [
+              "受諾",
+              "見送る"
+            ],
+            "hasExploringLabel": false,
+            "hasOfferedQuest": true,
+            "hasChapterSummary": true,
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-accept-after-turn.png"
+          },
+          {
+            "personaId": "ai-researcher",
+            "scenario": "quest-body-progress",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-05-02T10:02:43.838Z",
+            "completedAt": "2026-05-02T10:03:35.449Z",
+            "durationMs": 51611,
+            "httpDurationMs": 130,
+            "finalResolutionDurationMs": 51611,
+            "eventId": "da8f0970-6438-47af-924b-1c6c97a4ee06",
+            "turnId": "4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a",
+            "waitStatusSamples": [
+              "進行中 / 解決中 / 1s",
+              "進行中 / 解決中 / 3s",
+              "進行中 / resolving heartbeat / 5s",
+              "進行中 / resolving heartbeat / 7s",
+              "進行中 / resolving heartbeat / 9s",
+              "進行中 / resolving heartbeat / 11s",
+              "進行中 / resolving heartbeat / 13s",
+              "進行中 / resolving heartbeat / 15s",
+              "進行中 / resolving heartbeat / 17s",
+              "進行中 / resolving heartbeat / 19s",
+              "進行中 / resolving heartbeat / 21s",
+              "進行中 / resolving heartbeat / 23s",
+              "進行中 / resolving heartbeat / 25s",
+              "進行中 / resolving heartbeat / 27s",
+              "進行中 / resolving heartbeat / 29s",
+              "進行中 / npc council started / 31s"
+            ],
+            "waitStatusTimeline": [
+              {
+                "elapsedSeconds": 2,
+                "status": "進行中 / 解決中 / 1s"
+              },
+              {
+                "elapsedSeconds": 4,
+                "status": "進行中 / 解決中 / 3s"
+              },
+              {
+                "elapsedSeconds": 6,
+                "status": "進行中 / resolving heartbeat / 5s"
+              },
+              {
+                "elapsedSeconds": 8,
+                "status": "進行中 / resolving heartbeat / 7s"
+              },
+              {
+                "elapsedSeconds": 10,
+                "status": "進行中 / resolving heartbeat / 9s"
+              },
+              {
+                "elapsedSeconds": 12,
+                "status": "進行中 / resolving heartbeat / 11s"
+              },
+              {
+                "elapsedSeconds": 14,
+                "status": "進行中 / resolving heartbeat / 13s"
+              },
+              {
+                "elapsedSeconds": 16,
+                "status": "進行中 / resolving heartbeat / 15s"
+              },
+              {
+                "elapsedSeconds": 18,
+                "status": "進行中 / resolving heartbeat / 17s"
+              },
+              {
+                "elapsedSeconds": 20,
+                "status": "進行中 / resolving heartbeat / 19s"
+              },
+              {
+                "elapsedSeconds": 22,
+                "status": "進行中 / resolving heartbeat / 21s"
+              },
+              {
+                "elapsedSeconds": 24,
+                "status": "進行中 / resolving heartbeat / 23s"
+              },
+              {
+                "elapsedSeconds": 26,
+                "status": "進行中 / resolving heartbeat / 25s"
+              },
+              {
+                "elapsedSeconds": 28,
+                "status": "進行中 / resolving heartbeat / 27s"
+              },
+              {
+                "elapsedSeconds": 30,
+                "status": "進行中 / resolving heartbeat / 29s"
+              },
+              {
+                "elapsedSeconds": 32,
+                "status": "進行中 / npc council started / 31s"
+              },
+              {
+                "elapsedSeconds": 34,
+                "status": "進行中 / world progress started / 33s"
+              },
+              {
+                "elapsedSeconds": 36,
+                "status": "進行中 / world progress started / 35s"
+              },
+              {
+                "elapsedSeconds": 38,
+                "status": "進行中 / narrative started / 37s"
+              },
+              {
+                "elapsedSeconds": 40,
+                "status": "進行中 / shared consequence started / 39s"
+              },
+              {
+                "elapsedSeconds": 42,
+                "status": "進行中 / ambient world pass started / 41s"
+              },
+              {
+                "elapsedSeconds": 44,
+                "status": "進行中 / ambient world pass started / 43s"
+              },
+              {
+                "elapsedSeconds": 46,
+                "status": "進行中 / resource release / 45s"
+              },
+              {
+                "elapsedSeconds": 48,
+                "status": "進行中 / resource release / 47s"
+              },
+              {
+                "elapsedSeconds": 50,
+                "status": "進行中 / resource release / 49s"
+              }
+            ],
+            "progressTimeline": [
+              {
+                "phase": "safety_guard",
+                "status": "started",
+                "elapsedMs": 36240,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "safety_guard",
+                "status": "completed",
+                "elapsedMs": 36240,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "narrative",
+                "status": "started",
+                "elapsedMs": 36244,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "narrative",
+                "status": "completed",
+                "elapsedMs": 38170,
+                "roleElapsedMs": 1924
+              },
+              {
+                "phase": "world_tag_updates",
+                "status": "started",
+                "elapsedMs": 38172,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "world_tag_updates",
+                "status": "completed",
+                "elapsedMs": 38179,
+                "roleElapsedMs": 7
+              },
+              {
+                "phase": "dynamic_quest_offer",
+                "status": "started",
+                "elapsedMs": 38181,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "dynamic_quest_offer",
+                "status": "completed",
+                "elapsedMs": 38184,
+                "roleElapsedMs": 2
+              },
+              {
+                "phase": "consequence_resolution",
+                "status": "started",
+                "elapsedMs": 38184,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "consequence_resolution",
+                "status": "completed",
+                "elapsedMs": 38190,
+                "roleElapsedMs": 7
+              },
+              {
+                "phase": "scene_framing",
+                "status": "started",
+                "elapsedMs": 38190,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "scene_framing",
+                "status": "completed",
+                "elapsedMs": 38231,
+                "roleElapsedMs": 40
+              },
+              {
+                "phase": "memory_materialization",
+                "status": "started",
+                "elapsedMs": 38231,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "memory_materialization",
+                "status": "completed",
+                "elapsedMs": 39654,
+                "roleElapsedMs": 1423
+              },
+              {
+                "phase": "shared_consequence",
+                "status": "started",
+                "elapsedMs": 39654,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "shared_consequence",
+                "status": "completed",
+                "elapsedMs": 40341,
+                "roleElapsedMs": 686
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "started",
+                "elapsedMs": 40343,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "completed",
+                "elapsedMs": 45309,
+                "roleElapsedMs": 4965
+              },
+              {
+                "phase": "post_state_build",
+                "status": "started",
+                "elapsedMs": 45309,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "post_state_build",
+                "status": "completed",
+                "elapsedMs": 45345,
+                "roleElapsedMs": 36
+              },
+              {
+                "phase": "choice_generation",
+                "status": "started",
+                "elapsedMs": 45345,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "choice_generation",
+                "status": "completed",
+                "elapsedMs": 45345,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "started",
+                "elapsedMs": 45345,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "completed",
+                "elapsedMs": 45355,
+                "roleElapsedMs": 10
+              },
+              {
+                "phase": "resource_release",
+                "status": "started",
+                "elapsedMs": 45355,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "resource_release",
+                "status": "completed",
+                "elapsedMs": 45359,
+                "roleElapsedMs": 2
+              },
+              {
+                "phase": "resource_release",
+                "status": "heartbeat",
+                "elapsedMs": 50360,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "started",
+                "elapsedMs": null,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "completed",
+                "elapsedMs": 3,
+                "roleElapsedMs": 3
+              }
+            ],
+            "lastWaitStatus": "進行中 / resource release / 49s",
+            "maxWaitElapsedSeconds": 51,
+            "latestNarrative": "Nexus Gateの空気が、わずかに淀みを失い澄み渡る。Senaの介入により、混乱していた登録簿の霧は晴れ、アーカイブの整合性が部分的に回復した。Gate Steward Rikkaは、端末に明滅する矛盾した到着記録を指し示し、静かな眼差しでSenaを見つめる。物理的な署名とデジタル台帳の間に残る微細な不整合は、Nexus Custodiansの監視下にあるこの場所において、看過できない技術的欠陥であった。",
+            "latestReaction": "「Sena、あなたの監査のおかげで、登録簿の霧が少し晴れました。ですが、まだ物理的な到着署名とデジタル台帳の間で、いくつかの不整合が残っています。これらを照合し、アーカイブの整合性を回復させる手助けをしていただけますか？」",
+            "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+            "recentSceneHistory": [
+              "Nexus Gate is waiting to see whether ゲート登録簿の監査 will be honored. The scene has room to breathe, but it still remembers what was just set in motion.Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene carries a taut expectation and asks for a careful next line."
+            ],
+            "recentConsequenceHistory": [
+              "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: da8f0970-6438-47af-924b-1c6c97a4ee06 / turn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4aturn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4aworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: da8f0970-6438-47af-924b-1c6c97a4ee06 / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4aturn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: resource_release / status: heartbeat / elapsed_ms: 50360turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: resource_release / status: completed / elapsed_ms: 45359 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: resource_release / status: started / elapsed_ms: 45355 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: timeline_broadcast / status: completed / elapsed_ms: 45355 / role_elapsed_ms: 10turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: timeline_broadcast / status: started / elapsed_ms: 45345 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: choice_generation / status: completed / elapsed_ms: 45345 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: choice_generation / status: started / elapsed_ms: 45345 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: post_state_build / status: completed / elapsed_ms: 45345 / role_elapsed_ms: 36turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: post_state_build / status: started / elapsed_ms: 45309 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: ambient_world_pass / status: completed / elapsed_ms: 45309 / role_elapsed_ms: 4965turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: ambient_world_pass / status: started / elapsed_ms: 40343 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: shared_consequence / status: completed / elapsed_ms: 40341 / role_elapsed_ms: 686turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: shared_consequence / status: started / elapsed_ms: 39654 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: memory_materialization / status: completed / elapsed_ms: 39654 / role_elapsed_ms: 1423turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: memory_materialization / status: started / elapsed_ms: 38231 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: scene_framing / status: completed / elapsed_ms: 38231 / role_elapsed_ms: 40turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: scene_framing / status: started / elapsed_ms: 38190 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: consequence_resolution / status: completed / elapsed_ms: 38190 / role_elapsed_ms: 7turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: consequence_resolution / status: started / elapsed_ms: 38184 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: dynamic_quest_offer / status: completed / elapsed_ms: 38184 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: dynamic_quest_offer / status: started / elapsed_ms: 38181 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: world_tag_updates / status: completed / elapsed_ms: 38179 / role_elapsed_ms: 7turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: world_tag_updates / status: started / elapsed_ms: 38172 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: narrative / status: completed / elapsed_ms: 38170 / role_elapsed_ms: 1924turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: narrative / status: started / elapsed_ms: 36244 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: safety_guard / status: completed / elapsed_ms: 36240 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: safety_guard / status: started / elapsed_ms: 36240 / role_elapsed_ms: 0"
+            ],
+            "choiceLabels": [
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "playInfoTexts": [
+              "Nexus Gate",
+              "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether ゲート登録簿の監査 will be carried through.",
+              "Nexus Gate is waiting to see whether ゲート登録簿の監査 will be honored. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエストゲート登録簿の監査ゲート登録簿の監査1/3ゲート登録簿の監査: 1/3 (active) [aid_local]受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "なし",
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "englishPlayInfoTexts": [
+              "Nexus Gate",
+              "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether ゲート登録簿の監査 will be carried through.",
+              "Nexus Gate is waiting to see whether ゲート登録簿の監査 will be honored. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエストゲート登録簿の監査ゲート登録簿の監査1/3ゲート登録簿の監査: 1/3 (active) [aid_local]受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "questText": "クエストゲート登録簿の監査ゲート登録簿の監査1/3ゲート登録簿の監査: 1/3 (active) [aid_local]受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+            "questProgress": "1/3",
+            "chapterText": "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether ゲート登録簿の監査 will be carried through.",
+            "questActionLabels": [
+              "受諾",
+              "見送る"
+            ],
+            "hasExploringLabel": false,
+            "hasOfferedQuest": true,
+            "hasChapterSummary": true,
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-body-progress-after-turn.png"
+          }
+        ]
+      }
+    },
+    {
+      "personaId": "speedrunner",
+      "ux_clarity": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "リソース競合や同時進行時のフィードバックが迅速で、効率を重視するプレイスタイルにも対応できています。"
+      },
+      "gameplay_fun": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "同時行動時の解決が公平に行われており、ストレスなくプレイを継続できました。"
+      },
+      "story_progression": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "他プレイヤーの行動が世界に反映されていることが確認でき、共有世界としての実感が持てます。"
+      },
+      "overall": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "効率的な進行を求めるプレイヤーにとっても、動的な世界の変化が可読性高く提供されています。"
+      },
+      "suggestions": [
+        "リソース競合が発生した際の通知を、より明確にユーザーへ提示してください。"
+      ],
+      "warnings": [
+        "一部のクエストタイトルや説明文に英語の識別子が含まれています。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "gemini-3.1-flash-lite-preview",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "desktop",
+          "width": 1280,
+          "height": 900
+        },
+        "decisions": [
+          {
+            "personaId": "speedrunner",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "choiceId": "progress",
+            "reason": "効率走者 は「Repeats progress actions and checks where time or resources are lost.」というプレイスタイルで、同じ世界内の同時行動と共有リソース競合を検証する。",
+            "expectedWorldImpact": "同時探索または進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "speedrunner",
+            "scenario": "resource-conflict",
+            "inputMode": "choice",
+            "action": "progress",
+            "startedAt": "2026-05-02T10:02:43.839Z",
+            "completedAt": "2026-05-02T10:03:05.320Z",
+            "durationMs": 21481,
+            "httpDurationMs": 91,
+            "finalResolutionDurationMs": 21481,
+            "eventId": "0f536a77-30ad-4a82-8bf7-cb17f4a5eccc",
+            "turnId": "174a13b5-0b7e-422d-8929-3686bf01f820",
+            "waitStatusSamples": [
+              "進行中 / npc council started / 1s",
+              "進行中 / world progress started / 3s",
+              "進行中 / world progress started / 5s",
+              "進行中 / narrative started / 7s",
+              "進行中 / shared consequence started / 9s",
+              "進行中 / ambient world pass started / 11s",
+              "進行中 / ambient world pass started / 13s",
+              "進行中 / resource release / 15s",
+              "進行中 / resource release / 17s",
+              "進行中 / resource release / 19s"
+            ],
+            "waitStatusTimeline": [
+              {
+                "elapsedSeconds": 2,
+                "status": "進行中 / npc council started / 1s"
+              },
+              {
+                "elapsedSeconds": 4,
+                "status": "進行中 / world progress started / 3s"
+              },
+              {
+                "elapsedSeconds": 6,
+                "status": "進行中 / world progress started / 5s"
+              },
+              {
+                "elapsedSeconds": 8,
+                "status": "進行中 / narrative started / 7s"
+              },
+              {
+                "elapsedSeconds": 10,
+                "status": "進行中 / shared consequence started / 9s"
+              },
+              {
+                "elapsedSeconds": 12,
+                "status": "進行中 / ambient world pass started / 11s"
+              },
+              {
+                "elapsedSeconds": 14,
+                "status": "進行中 / ambient world pass started / 13s"
+              },
+              {
+                "elapsedSeconds": 16,
+                "status": "進行中 / resource release / 15s"
+              },
+              {
+                "elapsedSeconds": 18,
+                "status": "進行中 / resource release / 17s"
+              },
+              {
+                "elapsedSeconds": 20,
+                "status": "進行中 / resource release / 19s"
+              },
+              {
+                "elapsedSeconds": 22,
+                "status": "選択待ち"
+              }
+            ],
+            "progressTimeline": [
+              {
+                "phase": "rules_arbiter",
+                "status": "completed",
+                "elapsedMs": 6314,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "safety_guard",
+                "status": "started",
+                "elapsedMs": 6314,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "safety_guard",
+                "status": "completed",
+                "elapsedMs": 6314,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "narrative",
+                "status": "started",
+                "elapsedMs": 6317,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "narrative",
+                "status": "completed",
+                "elapsedMs": 7984,
+                "roleElapsedMs": 1666
+              },
+              {
+                "phase": "world_tag_updates",
+                "status": "started",
+                "elapsedMs": 7988,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "world_tag_updates",
+                "status": "completed",
+                "elapsedMs": 7988,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "dynamic_quest_offer",
+                "status": "started",
+                "elapsedMs": 7991,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "dynamic_quest_offer",
+                "status": "completed",
+                "elapsedMs": 7993,
+                "roleElapsedMs": 2
+              },
+              {
+                "phase": "consequence_resolution",
+                "status": "started",
+                "elapsedMs": 7993,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "consequence_resolution",
+                "status": "completed",
+                "elapsedMs": 7998,
+                "roleElapsedMs": 4
+              },
+              {
+                "phase": "scene_framing",
+                "status": "started",
+                "elapsedMs": 7998,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "scene_framing",
+                "status": "completed",
+                "elapsedMs": 8038,
+                "roleElapsedMs": 39
+              },
+              {
+                "phase": "memory_materialization",
+                "status": "started",
+                "elapsedMs": 8038,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "memory_materialization",
+                "status": "completed",
+                "elapsedMs": 9471,
+                "roleElapsedMs": 1432
+              },
+              {
+                "phase": "shared_consequence",
+                "status": "started",
+                "elapsedMs": 9471,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "shared_consequence",
+                "status": "completed",
+                "elapsedMs": 10180,
+                "roleElapsedMs": 709
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "started",
+                "elapsedMs": 10182,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "heartbeat",
+                "elapsedMs": 15184,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "ambient_world_pass",
+                "status": "completed",
+                "elapsedMs": 15456,
+                "roleElapsedMs": 5273
+              },
+              {
+                "phase": "post_state_build",
+                "status": "started",
+                "elapsedMs": 15456,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "post_state_build",
+                "status": "completed",
+                "elapsedMs": 15491,
+                "roleElapsedMs": 35
+              },
+              {
+                "phase": "choice_generation",
+                "status": "started",
+                "elapsedMs": 15493,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "choice_generation",
+                "status": "completed",
+                "elapsedMs": 15493,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "started",
+                "elapsedMs": 15493,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "completed",
+                "elapsedMs": 15503,
+                "roleElapsedMs": 11
+              },
+              {
+                "phase": "resource_release",
+                "status": "started",
+                "elapsedMs": 15503,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "resource_release",
+                "status": "completed",
+                "elapsedMs": 15506,
+                "roleElapsedMs": 2
+              },
+              {
+                "phase": "resource_release",
+                "status": "heartbeat",
+                "elapsedMs": 20506,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "started",
+                "elapsedMs": null,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "completed",
+                "elapsedMs": 6,
+                "roleElapsedMs": 6
+              }
+            ],
+            "lastWaitStatus": "進行中 / resource release / 19s",
+            "maxWaitElapsedSeconds": 21,
+            "latestNarrative": "Nexus Gateの記録ログは、Kaitoの介入により以前よりも明瞭に整理されていた。Gate Steward Rikkaは、その変化を静かに確認すると、Kaitoの視線をLift Tower Concourseへと誘導した。彼女の論理的な判断によれば、現在この塔のコンコースで発生しているデータボトルネックを解消することが、アーカイブ全体の整合性を維持するために不可欠であるという。",
+            "latestReaction": "「レジストリの流れは最適化されました、Kaito。もしあなたが安定化をさらに進めるつもりなら、Lift Tower Concourseへ向かってください。現在、あそこでデータボトルネックが発生しています。アーカイブの整合性が損なわれる前に、あなたのような経路に精通した監査人の手が必要です」",
+            "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+            "recentSceneHistory": [
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 0f536a77-30ad-4a82-8bf7-cb17f4a5eccc / turn_id: 174a13b5-0b7e-422d-8929-3686bf01f820turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: response_localization / status: completed / elapsed_ms: 6 / role_elapsed_ms: 6turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: 0f536a77-30ad-4a82-8bf7-cb17f4a5eccc / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: resource_release / status: heartbeat / elapsed_ms: 20506turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: resource_release / status: completed / elapsed_ms: 15506 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: resource_release / status: started / elapsed_ms: 15503 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: timeline_broadcast / status: completed / elapsed_ms: 15503 / role_elapsed_ms: 11turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: timeline_broadcast / status: started / elapsed_ms: 15493 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: choice_generation / status: completed / elapsed_ms: 15493 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: choice_generation / status: started / elapsed_ms: 15493 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: post_state_build / status: completed / elapsed_ms: 15491 / role_elapsed_ms: 35turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: post_state_build / status: started / elapsed_ms: 15456 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: ambient_world_pass / status: completed / elapsed_ms: 15456 / role_elapsed_ms: 5273turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: ambient_world_pass / status: heartbeat / elapsed_ms: 15184turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: ambient_world_pass / status: started / elapsed_ms: 10182 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: shared_consequence / status: completed / elapsed_ms: 10180 / role_elapsed_ms: 709turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: shared_consequence / status: started / elapsed_ms: 9471 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: memory_materialization / status: completed / elapsed_ms: 9471 / role_elapsed_ms: 1432turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: memory_materialization / status: started / elapsed_ms: 8038 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: scene_framing / status: completed / elapsed_ms: 8038 / role_elapsed_ms: 39turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: scene_framing / status: started / elapsed_ms: 7998 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: consequence_resolution / status: completed / elapsed_ms: 7998 / role_elapsed_ms: 4turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: consequence_resolution / status: started / elapsed_ms: 7993 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: dynamic_quest_offer / status: completed / elapsed_ms: 7993 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: dynamic_quest_offer / status: started / elapsed_ms: 7991 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: world_tag_updates / status: completed / elapsed_ms: 7988 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: world_tag_updates / status: started / elapsed_ms: 7988 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: narrative / status: completed / elapsed_ms: 7984 / role_elapsed_ms: 1666turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: narrative / status: started / elapsed_ms: 6317 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: safety_guard / status: completed / elapsed_ms: 6314 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: safety_guard / status: started / elapsed_ms: 6314 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: rules_arbiter / status: completed / elapsed_ms: 6314 / role_elapsed_ms: 0"
+            ],
+            "choiceLabels": [
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "playInfoTexts": [
+              "Nexus Gate",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエスト塔の記録と経路の調停塔の記録と経路の調停0/3塔の記録整理を通じ、Nexusの経路管理を最適化する。受諾見送るdynamic_quest_0f536a7730ad4a828bf7dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "なし",
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "englishPlayInfoTexts": [
+              "Nexus Gate",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "クエスト塔の記録と経路の調停塔の記録と経路の調停0/3塔の記録整理を通じ、Nexusの経路管理を最適化する。受諾見送るdynamic_quest_0f536a7730ad4a828bf7dynamic",
+              "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+              "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+              "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+            ],
+            "questText": "クエスト塔の記録と経路の調停塔の記録と経路の調停0/3塔の記録整理を通じ、Nexusの経路管理を最適化する。受諾見送るdynamic_quest_0f536a7730ad4a828bf7dynamic",
+            "questProgress": "0/3",
+            "chapterText": "",
+            "questActionLabels": [
+              "受諾",
+              "見送る"
+            ],
+            "hasExploringLabel": false,
+            "hasOfferedQuest": true,
+            "hasChapterSummary": false,
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-speedrunner-resource-conflict-after-turn.png"
+          }
+        ]
+      }
+    },
+    {
+      "personaId": "raid-planner",
+      "ux_clarity": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "フリーテキスト入力による世界状態の確認は可能ですが、結果の表示がやや抽象的で、レイド攻略者の求める「即時的なアクションへのフィードバック」としては改善の余地があります。"
+      },
+      "gameplay_fun": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "共有世界の記録を確認する機能はありますが、もう少し具体的な「次に何をすべきか」のヒントが欲しいと感じました。"
+      },
+      "story_progression": {
+        "score": 4,
+        "rating": "good",
+        "rationale": "他プレイヤーの痕跡を追跡できる点は評価できます。物語の連続性は保たれています。"
+      },
+      "overall": {
+        "score": 3,
+        "rating": "acceptable",
+        "rationale": "MMOプレイヤーの視点からは、もう少し具体的な進捗指標や、競合解決の可視化があるとより満足度が高まります。"
+      },
+      "suggestions": [
+        "世界状態の確認結果に対して、次に取るべき具体的なアクションの提案を付加してください。"
+      ],
+      "warnings": [
+        "世界イベントの確認結果がやや抽象的で、プレイヤーが次に取るべき行動の指針が不明瞭です。"
+      ],
+      "judge": {
+        "status": "ok",
+        "modelId": "gemini-3.1-flash-lite-preview",
+        "message": null
+      },
+      "evidence": {
+        "viewport": {
+          "kind": "mobile",
+          "width": 375,
+          "height": 812
+        },
+        "decisions": [
+          {
+            "personaId": "raid-planner",
+            "scenario": "world-event",
+            "inputMode": "free_text",
+            "inputText": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+            "reason": "MMO レイド攻略者 は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
+            "expectedWorldImpact": "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。"
+          }
+        ],
+        "turns": [
+          {
+            "personaId": "raid-planner",
+            "scenario": "world-event",
+            "inputMode": "free_text",
+            "action": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+            "startedAt": "2026-05-02T10:05:26.341Z",
+            "completedAt": "2026-05-02T10:05:32.830Z",
+            "durationMs": 6489,
+            "httpDurationMs": 345,
+            "finalResolutionDurationMs": 6489,
+            "eventId": "b753b53e-f7ea-442e-878f-ad3874d4b8ea",
+            "turnId": "5453130a-06c3-4232-9b1b-326805b716b2",
+            "waitStatusSamples": [
+              "進行中 / timeline broadcast / 1s",
+              "進行中 / timeline broadcast / 3s",
+              "選択待ち"
+            ],
+            "waitStatusTimeline": [
+              {
+                "elapsedSeconds": 2,
+                "status": "進行中 / timeline broadcast / 1s"
+              },
+              {
+                "elapsedSeconds": 4,
+                "status": "進行中 / timeline broadcast / 3s"
+              },
+              {
+                "elapsedSeconds": 6,
+                "status": "選択待ち"
+              },
+              {
+                "elapsedSeconds": 8,
+                "status": "選択待ち"
+              }
+            ],
+            "progressTimeline": [
+              {
+                "phase": "timeline_broadcast",
+                "status": "started",
+                "elapsedMs": 73,
+                "roleElapsedMs": null
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "completed",
+                "elapsedMs": 84,
+                "roleElapsedMs": 10
+              },
+              {
+                "phase": "timeline_broadcast",
+                "status": "heartbeat",
+                "elapsedMs": 5084,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "read_world_state_query",
+                "status": "completed",
+                "elapsedMs": 0,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "started",
+                "elapsedMs": null,
+                "roleElapsedMs": 0
+              },
+              {
+                "phase": "response_localization",
+                "status": "completed",
+                "elapsedMs": 3,
+                "roleElapsedMs": 3
+              }
+            ],
+            "lastWaitStatus": "選択待ち",
+            "maxWaitElapsedSeconds": 6,
+            "latestNarrative": "Kaito JP MmoはNexus Gateで、門の報告と旅人たちの発言を照合する。これは新しい行動ではなく、共有世界に残っている記録の確認として扱われる。",
+            "latestReaction": "記録を確認すると、直近の変化は共有された出来事として残っています。観測できる手がかりは「The scene leaves behind a little more trust than it had before.」です。必要なら、この痕跡を踏まえて次の行動を選べます。",
+            "latestConsequence": "The player reads the shared-world record without changing canonical state.",
+            "recentSceneHistory": [
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+            ],
+            "recentConsequenceHistory": [
+              "The player reads the shared-world record without changing canonical state.The Nexus Custodians wait to see how the new visitor affects the gate."
+            ],
+            "recentWorldBeats": [
+              "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+            ],
+            "opsStream": [
+              "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: b753b53e-f7ea-442e-878f-ad3874d4b8ea / turn_id: 5453130a-06c3-4232-9b1b-326805b716b2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: response_localization / status: started / elapsed_ms: 0world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: b753b53e-f7ea-442e-878f-ad3874d4b8ea / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: read_world_state_query / status: completed / elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: timeline_broadcast / status: heartbeat / elapsed_ms: 5084turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: timeline_broadcast / status: completed / elapsed_ms: 84 / role_elapsed_ms: 10turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: timeline_broadcast / status: started / elapsed_ms: 73 / role_elapsed_ms: 0session.connectedGESTALOKA Reference / Nexus Foundationsession_id: f3d806d6-7acf-4787-889d-c9fa0b9561c4session.connectedGESTALOKA Reference / Nexus Foundationsession_id: f3d806d6-7acf-4787-889d-c9fa0b9561c4"
+            ],
+            "choiceLabels": [
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "playInfoTexts": [
+              "Nexus Gate",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "englishPlayInfoTexts": [
+              "Nexus Gate",
+              "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+              "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+            ],
+            "questText": "",
+            "questProgress": "",
+            "chapterText": "",
+            "questActionLabels": [],
+            "hasExploringLabel": false,
+            "hasOfferedQuest": false,
+            "hasChapterSummary": false,
+            "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-raid-planner-world-event-after-turn.png"
+          }
+        ]
+      }
+    }
+  ],
+  "hard_checks": {
+    "persona_profile_separation": true,
+    "runtime_privacy_leak_free": true,
+    "all_turns_return_event_ids": true,
+    "all_turn_events_same_world": true,
+    "canonical_sequence_unique": true,
+    "shared_impact_visible": true,
+    "resource_conflict_recorded": true,
+    "world_broadcast_or_constraint_visible": true,
+    "exploration_label_visible": true,
+    "dynamic_quest_offered": true,
+    "quest_accept_turn_resolved": true,
+    "quest_chapter_visible": true,
+    "quest_lifecycle_events_same_world": true
+  },
+  "runtime": [
+    {
+      "personaId": "ai-researcher",
+      "actorId": "b67cb65d-f542-484d-9730-258548f050e6",
+      "sessionId": "3f3c8960-3016-4f82-9815-b0eb59e7c516",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "17e9f5cd-9231-4526-a613-6db14792064e",
+        "3d85a2fa-196d-499c-9b95-aefc7b09e191",
+        "da8f0970-6438-47af-924b-1c6c97a4ee06"
+      ],
+      "turnIds": [
+        "3157a92a-6648-4d9a-afb5-bb5bcc6a2a24",
+        "9d63ed96-5528-4ae2-99df-da199b9e6bb5",
+        "4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a"
+      ]
+    },
+    {
+      "personaId": "speedrunner",
+      "actorId": "be5b01a1-3efa-4495-b7bc-6ec80a8c7fa7",
+      "sessionId": "481c58bc-d2b0-499a-af6e-da7eac528c04",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "0f536a77-30ad-4a82-8bf7-cb17f4a5eccc"
+      ],
+      "turnIds": [
+        "174a13b5-0b7e-422d-8929-3686bf01f820"
+      ]
+    },
+    {
+      "personaId": "raid-planner",
+      "actorId": "abece076-de07-4b3c-8872-0ad5cf19175f",
+      "sessionId": "f3d806d6-7acf-4787-889d-c9fa0b9561c4",
+      "locationId": "gestaloka_reference:nexus_gate",
+      "eventIds": [
+        "b753b53e-f7ea-442e-878f-ad3874d4b8ea"
+      ],
+      "turnIds": [
+        "5453130a-06c3-4232-9b1b-326805b716b2"
+      ]
+    }
+  ],
+  "turn_observations": [
+    {
+      "personaId": "ai-researcher",
+      "scenario": "quest-offer",
+      "inputMode": "choice",
+      "action": "progress",
+      "startedAt": "2026-05-02T10:02:13.276Z",
+      "completedAt": "2026-05-02T10:02:34.884Z",
+      "durationMs": 21608,
+      "httpDurationMs": 87,
+      "finalResolutionDurationMs": 21608,
+      "eventId": "17e9f5cd-9231-4526-a613-6db14792064e",
+      "turnId": "3157a92a-6648-4d9a-afb5-bb5bcc6a2a24",
+      "waitStatusSamples": [
+        "進行中 / npc council started / 1s",
+        "進行中 / world progress started / 3s",
+        "進行中 / world progress started / 5s",
+        "進行中 / narrative started / 7s",
+        "進行中 / shared consequence started / 9s",
+        "進行中 / ambient world pass started / 11s",
+        "進行中 / ambient world pass started / 13s",
+        "進行中 / ambient world pass heartbeat / 15s",
+        "進行中 / resource release / 17s",
+        "進行中 / resource release / 19s"
+      ],
+      "waitStatusTimeline": [
+        {
+          "elapsedSeconds": 2,
+          "status": "進行中 / npc council started / 1s"
+        },
+        {
+          "elapsedSeconds": 4,
+          "status": "進行中 / world progress started / 3s"
+        },
+        {
+          "elapsedSeconds": 6,
+          "status": "進行中 / world progress started / 5s"
+        },
+        {
+          "elapsedSeconds": 8,
+          "status": "進行中 / narrative started / 7s"
+        },
+        {
+          "elapsedSeconds": 10,
+          "status": "進行中 / shared consequence started / 9s"
+        },
+        {
+          "elapsedSeconds": 12,
+          "status": "進行中 / ambient world pass started / 11s"
+        },
+        {
+          "elapsedSeconds": 14,
+          "status": "進行中 / ambient world pass started / 13s"
+        },
+        {
+          "elapsedSeconds": 16,
+          "status": "進行中 / ambient world pass heartbeat / 15s"
+        },
+        {
+          "elapsedSeconds": 18,
+          "status": "進行中 / resource release / 17s"
+        },
+        {
+          "elapsedSeconds": 20,
+          "status": "進行中 / resource release / 19s"
+        },
+        {
+          "elapsedSeconds": 22,
+          "status": "選択待ち"
+        }
+      ],
+      "progressTimeline": [
+        {
+          "phase": "rules_arbiter",
+          "status": "completed",
+          "elapsedMs": 6606,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "safety_guard",
+          "status": "started",
+          "elapsedMs": 6606,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "safety_guard",
+          "status": "completed",
+          "elapsedMs": 6606,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "narrative",
+          "status": "started",
+          "elapsedMs": 6613,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "narrative",
+          "status": "completed",
+          "elapsedMs": 8179,
+          "roleElapsedMs": 1566
+        },
+        {
+          "phase": "world_tag_updates",
+          "status": "started",
+          "elapsedMs": 8182,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "world_tag_updates",
+          "status": "completed",
+          "elapsedMs": 8182,
+          "roleElapsedMs": 1
+        },
+        {
+          "phase": "dynamic_quest_offer",
+          "status": "started",
+          "elapsedMs": 8187,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "dynamic_quest_offer",
+          "status": "completed",
+          "elapsedMs": 8190,
+          "roleElapsedMs": 4
+        },
+        {
+          "phase": "consequence_resolution",
+          "status": "started",
+          "elapsedMs": 8190,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "consequence_resolution",
+          "status": "completed",
+          "elapsedMs": 8197,
+          "roleElapsedMs": 6
+        },
+        {
+          "phase": "scene_framing",
+          "status": "started",
+          "elapsedMs": 8197,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "scene_framing",
+          "status": "completed",
+          "elapsedMs": 8236,
+          "roleElapsedMs": 37
+        },
+        {
+          "phase": "memory_materialization",
+          "status": "started",
+          "elapsedMs": 8236,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "memory_materialization",
+          "status": "completed",
+          "elapsedMs": 9628,
+          "roleElapsedMs": 1392
+        },
+        {
+          "phase": "shared_consequence",
+          "status": "started",
+          "elapsedMs": 9628,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "shared_consequence",
+          "status": "completed",
+          "elapsedMs": 10432,
+          "roleElapsedMs": 803
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "started",
+          "elapsedMs": 10435,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "heartbeat",
+          "elapsedMs": 15435,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "completed",
+          "elapsedMs": 16008,
+          "roleElapsedMs": 5574
+        },
+        {
+          "phase": "post_state_build",
+          "status": "started",
+          "elapsedMs": 16010,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "post_state_build",
+          "status": "completed",
+          "elapsedMs": 16045,
+          "roleElapsedMs": 37
+        },
+        {
+          "phase": "choice_generation",
+          "status": "started",
+          "elapsedMs": 16047,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "choice_generation",
+          "status": "completed",
+          "elapsedMs": 16047,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "started",
+          "elapsedMs": 16047,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "completed",
+          "elapsedMs": 16062,
+          "roleElapsedMs": 14
+        },
+        {
+          "phase": "resource_release",
+          "status": "started",
+          "elapsedMs": 16062,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "resource_release",
+          "status": "completed",
+          "elapsedMs": 16065,
+          "roleElapsedMs": 1
+        },
+        {
+          "phase": "resource_release",
+          "status": "heartbeat",
+          "elapsedMs": 21065,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "started",
+          "elapsedMs": null,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "completed",
+          "elapsedMs": 3,
+          "roleElapsedMs": 3
+        }
+      ],
+      "lastWaitStatus": "進行中 / resource release / 19s",
+      "maxWaitElapsedSeconds": 21,
+      "latestNarrative": "Nexus Gateの静寂の中、Sena JP Engineerが足を踏み入れると、空間を支配する無機質な駆動音が微かに響いた。先ほど到着したKaito JP Optimizerの作業により、ゲートの安定化記録はすでに補正フェーズへと移行している。Gate Steward Rikkaは、Senaの到来を予期していたかのように、静かな眼差しで彼女を迎え入れた。",
+      "latestReaction": "「ようこそ、Nexus Gateへ。Sena様とお見受けします。先ほど到着されたKaito様が、すでにゲートの安定化記録の補正に着手されています。記録の連続性に興味をお持ちのようですが、このゲートの登録簿には、まだ監査の余地が残されています。もしよろしければ、この先のLift Tower Concourseへ向かう前に、現在の登録データの不整合を照合していただけないでしょうか。あなたの監査能力が、この街の記録の信頼性を高める助けになるはずです。」",
+      "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+      "recentSceneHistory": [
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+      ],
+      "recentConsequenceHistory": [
+        "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+      ],
+      "recentWorldBeats": [
+        "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+      ],
+      "opsStream": [
+        "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 17e9f5cd-9231-4526-a613-6db14792064e / turn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: 17e9f5cd-9231-4526-a613-6db14792064e / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: heartbeat / elapsed_ms: 21065turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: completed / elapsed_ms: 16065 / role_elapsed_ms: 1turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: started / elapsed_ms: 16062 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: completed / elapsed_ms: 16062 / role_elapsed_ms: 14turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: completed / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: completed / elapsed_ms: 16045 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: started / elapsed_ms: 16010 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: completed / elapsed_ms: 16008 / role_elapsed_ms: 5574turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: heartbeat / elapsed_ms: 15435turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: started / elapsed_ms: 10435 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: shared_consequence / status: completed / elapsed_ms: 10432 / role_elapsed_ms: 803turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: shared_consequence / status: started / elapsed_ms: 9628 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: memory_materialization / status: completed / elapsed_ms: 9628 / role_elapsed_ms: 1392turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: memory_materialization / status: started / elapsed_ms: 8236 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: scene_framing / status: completed / elapsed_ms: 8236 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: scene_framing / status: started / elapsed_ms: 8197 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: consequence_resolution / status: completed / elapsed_ms: 8197 / role_elapsed_ms: 6turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: consequence_resolution / status: started / elapsed_ms: 8190 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: dynamic_quest_offer / status: completed / elapsed_ms: 8190 / role_elapsed_ms: 4turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: dynamic_quest_offer / status: started / elapsed_ms: 8187 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: world_tag_updates / status: completed / elapsed_ms: 8182 / role_elapsed_ms: 1turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: world_tag_updates / status: started / elapsed_ms: 8182 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: narrative / status: completed / elapsed_ms: 8179 / role_elapsed_ms: 1566turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: narrative / status: started / elapsed_ms: 6613 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: safety_guard / status: completed / elapsed_ms: 6606 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: safety_guard / status: started / elapsed_ms: 6606 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: rules_arbiter / status: completed / elapsed_ms: 6606 / role_elapsed_ms: 0"
+      ],
+      "choiceLabels": [
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "playInfoTexts": [
+        "Nexus Gate",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲートの登録簿を監査し、記録の連続性を証明する。受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "なし",
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "englishPlayInfoTexts": [
+        "Nexus Gate",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲートの登録簿を監査し、記録の連続性を証明する。受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "questText": "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲートの登録簿を監査し、記録の連続性を証明する。受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+      "questProgress": "0/3",
+      "chapterText": "",
+      "questActionLabels": [
+        "受諾",
+        "見送る"
+      ],
+      "hasExploringLabel": false,
+      "hasOfferedQuest": true,
+      "hasChapterSummary": false,
+      "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-offer-after-turn.png"
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "quest-accept",
+      "inputMode": "quest_action",
+      "action": "accept_quest",
+      "startedAt": "2026-05-02T10:02:37.303Z",
+      "completedAt": "2026-05-02T10:02:43.811Z",
+      "durationMs": 6508,
+      "httpDurationMs": 105,
+      "finalResolutionDurationMs": 6508,
+      "eventId": "3d85a2fa-196d-499c-9b95-aefc7b09e191",
+      "turnId": "9d63ed96-5528-4ae2-99df-da199b9e6bb5",
+      "waitStatusSamples": [
+        "進行中 / choice generation / 1s",
+        "進行中 / choice generation / 3s",
+        "選択待ち"
+      ],
+      "waitStatusTimeline": [
+        {
+          "elapsedSeconds": 2,
+          "status": "進行中 / choice generation / 1s"
+        },
+        {
+          "elapsedSeconds": 4,
+          "status": "進行中 / choice generation / 3s"
+        },
+        {
+          "elapsedSeconds": 6,
+          "status": "選択待ち"
+        }
+      ],
+      "progressTimeline": [
+        {
+          "phase": "quest_lifecycle",
+          "status": "started",
+          "elapsedMs": 22,
+          "roleElapsedMs": null
+        },
+        {
+          "phase": "quest_lifecycle",
+          "status": "completed",
+          "elapsedMs": 27,
+          "roleElapsedMs": 4
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "started",
+          "elapsedMs": 28,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "completed",
+          "elapsedMs": 30,
+          "roleElapsedMs": 2
+        },
+        {
+          "phase": "post_state_build",
+          "status": "started",
+          "elapsedMs": 30,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "post_state_build",
+          "status": "completed",
+          "elapsedMs": 68,
+          "roleElapsedMs": 37
+        },
+        {
+          "phase": "choice_generation",
+          "status": "started",
+          "elapsedMs": 68,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "choice_generation",
+          "status": "completed",
+          "elapsedMs": 69,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "choice_generation",
+          "status": "heartbeat",
+          "elapsedMs": 5069,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "started",
+          "elapsedMs": null,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "completed",
+          "elapsedMs": 3,
+          "roleElapsedMs": 3
+        }
+      ],
+      "lastWaitStatus": "選択待ち",
+      "maxWaitElapsedSeconds": 6,
+      "latestNarrative": "ゲート登録簿の監査 begins.",
+      "latestReaction": "",
+      "latestConsequence": "ゲート登録簿の監査 begins.",
+      "recentSceneHistory": [
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+      ],
+      "recentConsequenceHistory": [
+        "ゲート登録簿の監査 begins.The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+      ],
+      "recentWorldBeats": [
+        "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+      ],
+      "opsStream": [
+        "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 3d85a2fa-196d-499c-9b95-aefc7b09e191 / turn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: response_localization / status: started / elapsed_ms: 0chapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedworld.event.createdGESTALOKA Reference / Nexus Foundationid: 3d85a2fa-196d-499c-9b95-aefc7b09e191 / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: choice_generation / status: heartbeat / elapsed_ms: 5069turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: choice_generation / status: completed / elapsed_ms: 69 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: choice_generation / status: started / elapsed_ms: 68 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: post_state_build / status: completed / elapsed_ms: 68 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: post_state_build / status: started / elapsed_ms: 30 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: timeline_broadcast / status: completed / elapsed_ms: 30 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: timeline_broadcast / status: started / elapsed_ms: 28 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: quest_lifecycle / status: completed / elapsed_ms: 27 / role_elapsed_ms: 4turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / phase: quest_lifecycle / status: started / elapsed_ms: 22 / role_elapsed_ms: 0turn.acceptedGESTALOKA Reference / Nexus Foundationturn_id: 9d63ed96-5528-4ae2-99df-da199b9e6bb5 / session_id: 3f3c8960-3016-4f82-9815-b0eb59e7c516turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 17e9f5cd-9231-4526-a613-6db14792064e / turn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: 17e9f5cd-9231-4526-a613-6db14792064e / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: heartbeat / elapsed_ms: 21065turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: completed / elapsed_ms: 16065 / role_elapsed_ms: 1turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: resource_release / status: started / elapsed_ms: 16062 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: completed / elapsed_ms: 16062 / role_elapsed_ms: 14turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: timeline_broadcast / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: completed / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: choice_generation / status: started / elapsed_ms: 16047 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: completed / elapsed_ms: 16045 / role_elapsed_ms: 37turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: post_state_build / status: started / elapsed_ms: 16010 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: completed / elapsed_ms: 16008 / role_elapsed_ms: 5574turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: heartbeat / elapsed_ms: 15435turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 3157a92a-6648-4d9a-afb5-bb5bcc6a2a24 / phase: ambient_world_pass / status: started / elapsed_ms: 10435 / role_elapsed_ms: 0"
+      ],
+      "choiceLabels": [
+        "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+      ],
+      "playInfoTexts": [
+        "Nexus Gate",
+        "ゲート登録簿の監査 begins. Gate Steward Rikkaは、Nexus Gateの記録に生じている微細な不整合を懸念している。Senaの監査能力を借りて、到着者の記録とゲートの登録簿を照合し、アーカイブの整合性を回復させたいと考えている。",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲート登録簿の監査 has begun.受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "なし",
+        "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+      ],
+      "englishPlayInfoTexts": [
+        "Nexus Gate",
+        "ゲート登録簿の監査 begins. Gate Steward Rikkaは、Nexus Gateの記録に生じている微細な不整合を懸念している。Senaの監査能力を借りて、到着者の記録とゲートの登録簿を照合し、アーカイブの整合性を回復させたいと考えている。",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲート登録簿の監査 has begun.受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+      ],
+      "questText": "クエストゲート登録簿の監査ゲート登録簿の監査0/3ゲート登録簿の監査 has begun.受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+      "questProgress": "0/3",
+      "chapterText": "ゲート登録簿の監査 begins. Gate Steward Rikkaは、Nexus Gateの記録に生じている微細な不整合を懸念している。Senaの監査能力を借りて、到着者の記録とゲートの登録簿を照合し、アーカイブの整合性を回復させたいと考えている。",
+      "questActionLabels": [
+        "受諾",
+        "見送る"
+      ],
+      "hasExploringLabel": false,
+      "hasOfferedQuest": true,
+      "hasChapterSummary": true,
+      "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-accept-after-turn.png"
+    },
+    {
+      "personaId": "ai-researcher",
+      "scenario": "quest-body-progress",
+      "inputMode": "choice",
+      "action": "progress",
+      "startedAt": "2026-05-02T10:02:43.838Z",
+      "completedAt": "2026-05-02T10:03:35.449Z",
+      "durationMs": 51611,
+      "httpDurationMs": 130,
+      "finalResolutionDurationMs": 51611,
+      "eventId": "da8f0970-6438-47af-924b-1c6c97a4ee06",
+      "turnId": "4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a",
+      "waitStatusSamples": [
+        "進行中 / 解決中 / 1s",
+        "進行中 / 解決中 / 3s",
+        "進行中 / resolving heartbeat / 5s",
+        "進行中 / resolving heartbeat / 7s",
+        "進行中 / resolving heartbeat / 9s",
+        "進行中 / resolving heartbeat / 11s",
+        "進行中 / resolving heartbeat / 13s",
+        "進行中 / resolving heartbeat / 15s",
+        "進行中 / resolving heartbeat / 17s",
+        "進行中 / resolving heartbeat / 19s",
+        "進行中 / resolving heartbeat / 21s",
+        "進行中 / resolving heartbeat / 23s",
+        "進行中 / resolving heartbeat / 25s",
+        "進行中 / resolving heartbeat / 27s",
+        "進行中 / resolving heartbeat / 29s",
+        "進行中 / npc council started / 31s"
+      ],
+      "waitStatusTimeline": [
+        {
+          "elapsedSeconds": 2,
+          "status": "進行中 / 解決中 / 1s"
+        },
+        {
+          "elapsedSeconds": 4,
+          "status": "進行中 / 解決中 / 3s"
+        },
+        {
+          "elapsedSeconds": 6,
+          "status": "進行中 / resolving heartbeat / 5s"
+        },
+        {
+          "elapsedSeconds": 8,
+          "status": "進行中 / resolving heartbeat / 7s"
+        },
+        {
+          "elapsedSeconds": 10,
+          "status": "進行中 / resolving heartbeat / 9s"
+        },
+        {
+          "elapsedSeconds": 12,
+          "status": "進行中 / resolving heartbeat / 11s"
+        },
+        {
+          "elapsedSeconds": 14,
+          "status": "進行中 / resolving heartbeat / 13s"
+        },
+        {
+          "elapsedSeconds": 16,
+          "status": "進行中 / resolving heartbeat / 15s"
+        },
+        {
+          "elapsedSeconds": 18,
+          "status": "進行中 / resolving heartbeat / 17s"
+        },
+        {
+          "elapsedSeconds": 20,
+          "status": "進行中 / resolving heartbeat / 19s"
+        },
+        {
+          "elapsedSeconds": 22,
+          "status": "進行中 / resolving heartbeat / 21s"
+        },
+        {
+          "elapsedSeconds": 24,
+          "status": "進行中 / resolving heartbeat / 23s"
+        },
+        {
+          "elapsedSeconds": 26,
+          "status": "進行中 / resolving heartbeat / 25s"
+        },
+        {
+          "elapsedSeconds": 28,
+          "status": "進行中 / resolving heartbeat / 27s"
+        },
+        {
+          "elapsedSeconds": 30,
+          "status": "進行中 / resolving heartbeat / 29s"
+        },
+        {
+          "elapsedSeconds": 32,
+          "status": "進行中 / npc council started / 31s"
+        },
+        {
+          "elapsedSeconds": 34,
+          "status": "進行中 / world progress started / 33s"
+        },
+        {
+          "elapsedSeconds": 36,
+          "status": "進行中 / world progress started / 35s"
+        },
+        {
+          "elapsedSeconds": 38,
+          "status": "進行中 / narrative started / 37s"
+        },
+        {
+          "elapsedSeconds": 40,
+          "status": "進行中 / shared consequence started / 39s"
+        },
+        {
+          "elapsedSeconds": 42,
+          "status": "進行中 / ambient world pass started / 41s"
+        },
+        {
+          "elapsedSeconds": 44,
+          "status": "進行中 / ambient world pass started / 43s"
+        },
+        {
+          "elapsedSeconds": 46,
+          "status": "進行中 / resource release / 45s"
+        },
+        {
+          "elapsedSeconds": 48,
+          "status": "進行中 / resource release / 47s"
+        },
+        {
+          "elapsedSeconds": 50,
+          "status": "進行中 / resource release / 49s"
+        }
+      ],
+      "progressTimeline": [
+        {
+          "phase": "safety_guard",
+          "status": "started",
+          "elapsedMs": 36240,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "safety_guard",
+          "status": "completed",
+          "elapsedMs": 36240,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "narrative",
+          "status": "started",
+          "elapsedMs": 36244,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "narrative",
+          "status": "completed",
+          "elapsedMs": 38170,
+          "roleElapsedMs": 1924
+        },
+        {
+          "phase": "world_tag_updates",
+          "status": "started",
+          "elapsedMs": 38172,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "world_tag_updates",
+          "status": "completed",
+          "elapsedMs": 38179,
+          "roleElapsedMs": 7
+        },
+        {
+          "phase": "dynamic_quest_offer",
+          "status": "started",
+          "elapsedMs": 38181,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "dynamic_quest_offer",
+          "status": "completed",
+          "elapsedMs": 38184,
+          "roleElapsedMs": 2
+        },
+        {
+          "phase": "consequence_resolution",
+          "status": "started",
+          "elapsedMs": 38184,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "consequence_resolution",
+          "status": "completed",
+          "elapsedMs": 38190,
+          "roleElapsedMs": 7
+        },
+        {
+          "phase": "scene_framing",
+          "status": "started",
+          "elapsedMs": 38190,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "scene_framing",
+          "status": "completed",
+          "elapsedMs": 38231,
+          "roleElapsedMs": 40
+        },
+        {
+          "phase": "memory_materialization",
+          "status": "started",
+          "elapsedMs": 38231,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "memory_materialization",
+          "status": "completed",
+          "elapsedMs": 39654,
+          "roleElapsedMs": 1423
+        },
+        {
+          "phase": "shared_consequence",
+          "status": "started",
+          "elapsedMs": 39654,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "shared_consequence",
+          "status": "completed",
+          "elapsedMs": 40341,
+          "roleElapsedMs": 686
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "started",
+          "elapsedMs": 40343,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "completed",
+          "elapsedMs": 45309,
+          "roleElapsedMs": 4965
+        },
+        {
+          "phase": "post_state_build",
+          "status": "started",
+          "elapsedMs": 45309,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "post_state_build",
+          "status": "completed",
+          "elapsedMs": 45345,
+          "roleElapsedMs": 36
+        },
+        {
+          "phase": "choice_generation",
+          "status": "started",
+          "elapsedMs": 45345,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "choice_generation",
+          "status": "completed",
+          "elapsedMs": 45345,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "started",
+          "elapsedMs": 45345,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "completed",
+          "elapsedMs": 45355,
+          "roleElapsedMs": 10
+        },
+        {
+          "phase": "resource_release",
+          "status": "started",
+          "elapsedMs": 45355,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "resource_release",
+          "status": "completed",
+          "elapsedMs": 45359,
+          "roleElapsedMs": 2
+        },
+        {
+          "phase": "resource_release",
+          "status": "heartbeat",
+          "elapsedMs": 50360,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "started",
+          "elapsedMs": null,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "completed",
+          "elapsedMs": 3,
+          "roleElapsedMs": 3
+        }
+      ],
+      "lastWaitStatus": "進行中 / resource release / 49s",
+      "maxWaitElapsedSeconds": 51,
+      "latestNarrative": "Nexus Gateの空気が、わずかに淀みを失い澄み渡る。Senaの介入により、混乱していた登録簿の霧は晴れ、アーカイブの整合性が部分的に回復した。Gate Steward Rikkaは、端末に明滅する矛盾した到着記録を指し示し、静かな眼差しでSenaを見つめる。物理的な署名とデジタル台帳の間に残る微細な不整合は、Nexus Custodiansの監視下にあるこの場所において、看過できない技術的欠陥であった。",
+      "latestReaction": "「Sena、あなたの監査のおかげで、登録簿の霧が少し晴れました。ですが、まだ物理的な到着署名とデジタル台帳の間で、いくつかの不整合が残っています。これらを照合し、アーカイブの整合性を回復させる手助けをしていただけますか？」",
+      "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+      "recentSceneHistory": [
+        "Nexus Gate is waiting to see whether ゲート登録簿の監査 will be honored. The scene has room to breathe, but it still remembers what was just set in motion.Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene carries a taut expectation and asks for a careful next line."
+      ],
+      "recentConsequenceHistory": [
+        "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+      ],
+      "recentWorldBeats": [
+        "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+      ],
+      "opsStream": [
+        "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: da8f0970-6438-47af-924b-1c6c97a4ee06 / turn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4aturn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedchapter.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedfaction.standing.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4aworld.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: da8f0970-6438-47af-924b-1c6c97a4ee06 / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4aturn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: resource_release / status: heartbeat / elapsed_ms: 50360turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: resource_release / status: completed / elapsed_ms: 45359 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: resource_release / status: started / elapsed_ms: 45355 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: timeline_broadcast / status: completed / elapsed_ms: 45355 / role_elapsed_ms: 10turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: timeline_broadcast / status: started / elapsed_ms: 45345 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: choice_generation / status: completed / elapsed_ms: 45345 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: choice_generation / status: started / elapsed_ms: 45345 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: post_state_build / status: completed / elapsed_ms: 45345 / role_elapsed_ms: 36turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: post_state_build / status: started / elapsed_ms: 45309 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: ambient_world_pass / status: completed / elapsed_ms: 45309 / role_elapsed_ms: 4965turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: ambient_world_pass / status: started / elapsed_ms: 40343 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: shared_consequence / status: completed / elapsed_ms: 40341 / role_elapsed_ms: 686turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: shared_consequence / status: started / elapsed_ms: 39654 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: memory_materialization / status: completed / elapsed_ms: 39654 / role_elapsed_ms: 1423turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: memory_materialization / status: started / elapsed_ms: 38231 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: scene_framing / status: completed / elapsed_ms: 38231 / role_elapsed_ms: 40turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: scene_framing / status: started / elapsed_ms: 38190 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: consequence_resolution / status: completed / elapsed_ms: 38190 / role_elapsed_ms: 7turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: consequence_resolution / status: started / elapsed_ms: 38184 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: dynamic_quest_offer / status: completed / elapsed_ms: 38184 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: dynamic_quest_offer / status: started / elapsed_ms: 38181 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: world_tag_updates / status: completed / elapsed_ms: 38179 / role_elapsed_ms: 7turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: world_tag_updates / status: started / elapsed_ms: 38172 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: narrative / status: completed / elapsed_ms: 38170 / role_elapsed_ms: 1924turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: narrative / status: started / elapsed_ms: 36244 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: safety_guard / status: completed / elapsed_ms: 36240 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 4027ed23-4a74-4f9d-9fe1-58dd3cfb2a4a / phase: safety_guard / status: started / elapsed_ms: 36240 / role_elapsed_ms: 0"
+      ],
+      "choiceLabels": [
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "playInfoTexts": [
+        "Nexus Gate",
+        "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether ゲート登録簿の監査 will be carried through.",
+        "Nexus Gate is waiting to see whether ゲート登録簿の監査 will be honored. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエストゲート登録簿の監査ゲート登録簿の監査1/3ゲート登録簿の監査: 1/3 (active) [aid_local]受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "なし",
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "englishPlayInfoTexts": [
+        "Nexus Gate",
+        "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether ゲート登録簿の監査 will be carried through.",
+        "Nexus Gate is waiting to see whether ゲート登録簿の監査 will be honored. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエストゲート登録簿の監査ゲート登録簿の監査1/3ゲート登録簿の監査: 1/3 (active) [aid_local]受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "questText": "クエストゲート登録簿の監査ゲート登録簿の監査1/3ゲート登録簿の監査: 1/3 (active) [aid_local]受諾見送るdynamic_quest_17e9f5cd92314526a613dynamic",
+      "questProgress": "1/3",
+      "chapterText": "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether ゲート登録簿の監査 will be carried through.",
+      "questActionLabels": [
+        "受諾",
+        "見送る"
+      ],
+      "hasExploringLabel": false,
+      "hasOfferedQuest": true,
+      "hasChapterSummary": true,
+      "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-body-progress-after-turn.png"
+    },
+    {
+      "personaId": "speedrunner",
+      "scenario": "resource-conflict",
+      "inputMode": "choice",
+      "action": "progress",
+      "startedAt": "2026-05-02T10:02:43.839Z",
+      "completedAt": "2026-05-02T10:03:05.320Z",
+      "durationMs": 21481,
+      "httpDurationMs": 91,
+      "finalResolutionDurationMs": 21481,
+      "eventId": "0f536a77-30ad-4a82-8bf7-cb17f4a5eccc",
+      "turnId": "174a13b5-0b7e-422d-8929-3686bf01f820",
+      "waitStatusSamples": [
+        "進行中 / npc council started / 1s",
+        "進行中 / world progress started / 3s",
+        "進行中 / world progress started / 5s",
+        "進行中 / narrative started / 7s",
+        "進行中 / shared consequence started / 9s",
+        "進行中 / ambient world pass started / 11s",
+        "進行中 / ambient world pass started / 13s",
+        "進行中 / resource release / 15s",
+        "進行中 / resource release / 17s",
+        "進行中 / resource release / 19s"
+      ],
+      "waitStatusTimeline": [
+        {
+          "elapsedSeconds": 2,
+          "status": "進行中 / npc council started / 1s"
+        },
+        {
+          "elapsedSeconds": 4,
+          "status": "進行中 / world progress started / 3s"
+        },
+        {
+          "elapsedSeconds": 6,
+          "status": "進行中 / world progress started / 5s"
+        },
+        {
+          "elapsedSeconds": 8,
+          "status": "進行中 / narrative started / 7s"
+        },
+        {
+          "elapsedSeconds": 10,
+          "status": "進行中 / shared consequence started / 9s"
+        },
+        {
+          "elapsedSeconds": 12,
+          "status": "進行中 / ambient world pass started / 11s"
+        },
+        {
+          "elapsedSeconds": 14,
+          "status": "進行中 / ambient world pass started / 13s"
+        },
+        {
+          "elapsedSeconds": 16,
+          "status": "進行中 / resource release / 15s"
+        },
+        {
+          "elapsedSeconds": 18,
+          "status": "進行中 / resource release / 17s"
+        },
+        {
+          "elapsedSeconds": 20,
+          "status": "進行中 / resource release / 19s"
+        },
+        {
+          "elapsedSeconds": 22,
+          "status": "選択待ち"
+        }
+      ],
+      "progressTimeline": [
+        {
+          "phase": "rules_arbiter",
+          "status": "completed",
+          "elapsedMs": 6314,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "safety_guard",
+          "status": "started",
+          "elapsedMs": 6314,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "safety_guard",
+          "status": "completed",
+          "elapsedMs": 6314,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "narrative",
+          "status": "started",
+          "elapsedMs": 6317,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "narrative",
+          "status": "completed",
+          "elapsedMs": 7984,
+          "roleElapsedMs": 1666
+        },
+        {
+          "phase": "world_tag_updates",
+          "status": "started",
+          "elapsedMs": 7988,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "world_tag_updates",
+          "status": "completed",
+          "elapsedMs": 7988,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "dynamic_quest_offer",
+          "status": "started",
+          "elapsedMs": 7991,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "dynamic_quest_offer",
+          "status": "completed",
+          "elapsedMs": 7993,
+          "roleElapsedMs": 2
+        },
+        {
+          "phase": "consequence_resolution",
+          "status": "started",
+          "elapsedMs": 7993,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "consequence_resolution",
+          "status": "completed",
+          "elapsedMs": 7998,
+          "roleElapsedMs": 4
+        },
+        {
+          "phase": "scene_framing",
+          "status": "started",
+          "elapsedMs": 7998,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "scene_framing",
+          "status": "completed",
+          "elapsedMs": 8038,
+          "roleElapsedMs": 39
+        },
+        {
+          "phase": "memory_materialization",
+          "status": "started",
+          "elapsedMs": 8038,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "memory_materialization",
+          "status": "completed",
+          "elapsedMs": 9471,
+          "roleElapsedMs": 1432
+        },
+        {
+          "phase": "shared_consequence",
+          "status": "started",
+          "elapsedMs": 9471,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "shared_consequence",
+          "status": "completed",
+          "elapsedMs": 10180,
+          "roleElapsedMs": 709
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "started",
+          "elapsedMs": 10182,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "heartbeat",
+          "elapsedMs": 15184,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "ambient_world_pass",
+          "status": "completed",
+          "elapsedMs": 15456,
+          "roleElapsedMs": 5273
+        },
+        {
+          "phase": "post_state_build",
+          "status": "started",
+          "elapsedMs": 15456,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "post_state_build",
+          "status": "completed",
+          "elapsedMs": 15491,
+          "roleElapsedMs": 35
+        },
+        {
+          "phase": "choice_generation",
+          "status": "started",
+          "elapsedMs": 15493,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "choice_generation",
+          "status": "completed",
+          "elapsedMs": 15493,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "started",
+          "elapsedMs": 15493,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "completed",
+          "elapsedMs": 15503,
+          "roleElapsedMs": 11
+        },
+        {
+          "phase": "resource_release",
+          "status": "started",
+          "elapsedMs": 15503,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "resource_release",
+          "status": "completed",
+          "elapsedMs": 15506,
+          "roleElapsedMs": 2
+        },
+        {
+          "phase": "resource_release",
+          "status": "heartbeat",
+          "elapsedMs": 20506,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "started",
+          "elapsedMs": null,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "completed",
+          "elapsedMs": 6,
+          "roleElapsedMs": 6
+        }
+      ],
+      "lastWaitStatus": "進行中 / resource release / 19s",
+      "maxWaitElapsedSeconds": 21,
+      "latestNarrative": "Nexus Gateの記録ログは、Kaitoの介入により以前よりも明瞭に整理されていた。Gate Steward Rikkaは、その変化を静かに確認すると、Kaitoの視線をLift Tower Concourseへと誘導した。彼女の論理的な判断によれば、現在この塔のコンコースで発生しているデータボトルネックを解消することが、アーカイブ全体の整合性を維持するために不可欠であるという。",
+      "latestReaction": "「レジストリの流れは最適化されました、Kaito。もしあなたが安定化をさらに進めるつもりなら、Lift Tower Concourseへ向かってください。現在、あそこでデータボトルネックが発生しています。アーカイブの整合性が損なわれる前に、あなたのような経路に精通した監査人の手が必要です」",
+      "latestConsequence": "The scene leaves behind a little more trust than it had before.",
+      "recentSceneHistory": [
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+      ],
+      "recentConsequenceHistory": [
+        "The scene leaves behind a little more trust than it had before.The Nexus Custodians wait to see how the new visitor affects the gate."
+      ],
+      "recentWorldBeats": [
+        "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+      ],
+      "opsStream": [
+        "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: 0f536a77-30ad-4a82-8bf7-cb17f4a5eccc / turn_id: 174a13b5-0b7e-422d-8929-3686bf01f820turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: response_localization / status: completed / elapsed_ms: 6 / role_elapsed_ms: 6turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: response_localization / status: started / elapsed_ms: 0ambient.updatedGESTALOKA Reference / Nexus Foundationevent receivedscene.updatedGESTALOKA Reference / Nexus Foundationevent receivedrelationship.updatedGESTALOKA Reference / Nexus Foundationevent receivedquest.updatedGESTALOKA Reference / Nexus Foundationevent receivedmemory.materializedGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: 0f536a77-30ad-4a82-8bf7-cb17f4a5eccc / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: resource_release / status: heartbeat / elapsed_ms: 20506turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: resource_release / status: completed / elapsed_ms: 15506 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: resource_release / status: started / elapsed_ms: 15503 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: timeline_broadcast / status: completed / elapsed_ms: 15503 / role_elapsed_ms: 11turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: timeline_broadcast / status: started / elapsed_ms: 15493 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: choice_generation / status: completed / elapsed_ms: 15493 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: choice_generation / status: started / elapsed_ms: 15493 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: post_state_build / status: completed / elapsed_ms: 15491 / role_elapsed_ms: 35turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: post_state_build / status: started / elapsed_ms: 15456 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: ambient_world_pass / status: completed / elapsed_ms: 15456 / role_elapsed_ms: 5273turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: ambient_world_pass / status: heartbeat / elapsed_ms: 15184turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: ambient_world_pass / status: started / elapsed_ms: 10182 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: shared_consequence / status: completed / elapsed_ms: 10180 / role_elapsed_ms: 709turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: shared_consequence / status: started / elapsed_ms: 9471 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: memory_materialization / status: completed / elapsed_ms: 9471 / role_elapsed_ms: 1432turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: memory_materialization / status: started / elapsed_ms: 8038 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: scene_framing / status: completed / elapsed_ms: 8038 / role_elapsed_ms: 39turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: scene_framing / status: started / elapsed_ms: 7998 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: consequence_resolution / status: completed / elapsed_ms: 7998 / role_elapsed_ms: 4turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: consequence_resolution / status: started / elapsed_ms: 7993 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: dynamic_quest_offer / status: completed / elapsed_ms: 7993 / role_elapsed_ms: 2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: dynamic_quest_offer / status: started / elapsed_ms: 7991 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: world_tag_updates / status: completed / elapsed_ms: 7988 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: world_tag_updates / status: started / elapsed_ms: 7988 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: narrative / status: completed / elapsed_ms: 7984 / role_elapsed_ms: 1666turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: narrative / status: started / elapsed_ms: 6317 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: safety_guard / status: completed / elapsed_ms: 6314 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: safety_guard / status: started / elapsed_ms: 6314 / role_elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 174a13b5-0b7e-422d-8929-3686bf01f820 / phase: rules_arbiter / status: completed / elapsed_ms: 6314 / role_elapsed_ms: 0"
+      ],
+      "choiceLabels": [
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "playInfoTexts": [
+        "Nexus Gate",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエスト塔の記録と経路の調停塔の記録と経路の調停0/3塔の記録整理を通じ、Nexusの経路管理を最適化する。受諾見送るdynamic_quest_0f536a7730ad4a828bf7dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "なし",
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "englishPlayInfoTexts": [
+        "Nexus Gate",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "クエスト塔の記録と経路の調停塔の記録と経路の調停0/3塔の記録整理を通じ、Nexusの経路管理を最適化する。受諾見送るdynamic_quest_0f536a7730ad4a828bf7dynamic",
+        "Gate Steward RikkaGate Steward Rikka keeps to the local district as the gate_steward, carrying a medium edge while the scene reads as neutral.",
+        "Lift Tower ConcourseThe tower concourse opens above the gate, where public testimony and route ledgers meet.Oblivion BreachThe breach route stays sealed until Nexus recognizes the writ.",
+        "Hold position and read the room before acting again.Hold position and read the room before acting again.Take the clearest available step toward the current request.Take the clearest available step toward the current request.Ask a grounded question about the current place or relationship.Ask a grounded question about the current place or relationship."
+      ],
+      "questText": "クエスト塔の記録と経路の調停塔の記録と経路の調停0/3塔の記録整理を通じ、Nexusの経路管理を最適化する。受諾見送るdynamic_quest_0f536a7730ad4a828bf7dynamic",
+      "questProgress": "0/3",
+      "chapterText": "",
+      "questActionLabels": [
+        "受諾",
+        "見送る"
+      ],
+      "hasExploringLabel": false,
+      "hasOfferedQuest": true,
+      "hasChapterSummary": false,
+      "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-speedrunner-resource-conflict-after-turn.png"
+    },
+    {
+      "personaId": "raid-planner",
+      "scenario": "world-event",
+      "inputMode": "free_text",
+      "action": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+      "startedAt": "2026-05-02T10:05:26.341Z",
+      "completedAt": "2026-05-02T10:05:32.830Z",
+      "durationMs": 6489,
+      "httpDurationMs": 345,
+      "finalResolutionDurationMs": 6489,
+      "eventId": "b753b53e-f7ea-442e-878f-ad3874d4b8ea",
+      "turnId": "5453130a-06c3-4232-9b1b-326805b716b2",
+      "waitStatusSamples": [
+        "進行中 / timeline broadcast / 1s",
+        "進行中 / timeline broadcast / 3s",
+        "選択待ち"
+      ],
+      "waitStatusTimeline": [
+        {
+          "elapsedSeconds": 2,
+          "status": "進行中 / timeline broadcast / 1s"
+        },
+        {
+          "elapsedSeconds": 4,
+          "status": "進行中 / timeline broadcast / 3s"
+        },
+        {
+          "elapsedSeconds": 6,
+          "status": "選択待ち"
+        },
+        {
+          "elapsedSeconds": 8,
+          "status": "選択待ち"
+        }
+      ],
+      "progressTimeline": [
+        {
+          "phase": "timeline_broadcast",
+          "status": "started",
+          "elapsedMs": 73,
+          "roleElapsedMs": null
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "completed",
+          "elapsedMs": 84,
+          "roleElapsedMs": 10
+        },
+        {
+          "phase": "timeline_broadcast",
+          "status": "heartbeat",
+          "elapsedMs": 5084,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "read_world_state_query",
+          "status": "completed",
+          "elapsedMs": 0,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "started",
+          "elapsedMs": null,
+          "roleElapsedMs": 0
+        },
+        {
+          "phase": "response_localization",
+          "status": "completed",
+          "elapsedMs": 3,
+          "roleElapsedMs": 3
+        }
+      ],
+      "lastWaitStatus": "選択待ち",
+      "maxWaitElapsedSeconds": 6,
+      "latestNarrative": "Kaito JP MmoはNexus Gateで、門の報告と旅人たちの発言を照合する。これは新しい行動ではなく、共有世界に残っている記録の確認として扱われる。",
+      "latestReaction": "記録を確認すると、直近の変化は共有された出来事として残っています。観測できる手がかりは「The scene leaves behind a little more trust than it had before.」です。必要なら、この痕跡を踏まえて次の行動を選べます。",
+      "latestConsequence": "The player reads the shared-world record without changing canonical state.",
+      "recentSceneHistory": [
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion."
+      ],
+      "recentConsequenceHistory": [
+        "The player reads the shared-world record without changing canonical state.The Nexus Custodians wait to see how the new visitor affects the gate."
+      ],
+      "recentWorldBeats": [
+        "Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move.Gate Steward Rikka keeps Nexus Gate in view as the gate_steward, watching how the air settles after the player's move."
+      ],
+      "opsStream": [
+        "turn.resolvedGESTALOKA Reference / Nexus Foundationevent_id: b753b53e-f7ea-442e-878f-ad3874d4b8ea / turn_id: 5453130a-06c3-4232-9b1b-326805b716b2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: response_localization / status: completed / elapsed_ms: 3 / role_elapsed_ms: 3turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: response_localization / status: started / elapsed_ms: 0world.broadcast.availableGESTALOKA Reference / Nexus Foundationstatus: activeworld.event.createdGESTALOKA Reference / Nexus Foundationid: b753b53e-f7ea-442e-878f-ad3874d4b8ea / world_id: gestaloka_reference / location_id: gestaloka_reference:nexus_gateturn.narrative.deltaGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: read_world_state_query / status: completed / elapsed_ms: 0turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: timeline_broadcast / status: heartbeat / elapsed_ms: 5084turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: timeline_broadcast / status: completed / elapsed_ms: 84 / role_elapsed_ms: 10turn.progressGESTALOKA Reference / Nexus Foundationturn_id: 5453130a-06c3-4232-9b1b-326805b716b2 / phase: timeline_broadcast / status: started / elapsed_ms: 73 / role_elapsed_ms: 0session.connectedGESTALOKA Reference / Nexus Foundationsession_id: f3d806d6-7acf-4787-889d-c9fa0b9561c4session.connectedGESTALOKA Reference / Nexus Foundationsession_id: f3d806d6-7acf-4787-889d-c9fa0b9561c4"
+      ],
+      "choiceLabels": [
+        "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+      ],
+      "playInfoTexts": [
+        "Nexus Gate",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+      ],
+      "englishPlayInfoTexts": [
+        "Nexus Gate",
+        "Nexus Gate is open to exploration, with no accepted quest shaping the scene yet. The scene has room to breathe, but it still remembers what was just set in motion.",
+        "Nexus Gateの気配を乱さず、まず息を整えて見守る場の流れを乱さず、まず気配と視線を確かめる。困っている相手に手を差し伸べ、次の進展を作るもっとも前進寄りの行動で、依頼や関係を進める。Lift Tower Concourseへ向かい、古い記録と視線の重なりを確かめる場を変えながら探索を進める。"
+      ],
+      "questText": "",
+      "questProgress": "",
+      "chapterText": "",
+      "questActionLabels": [],
+      "hasExploringLabel": false,
+      "hasOfferedQuest": false,
+      "hasChapterSummary": false,
+      "screenshotPath": "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-raid-planner-world-event-after-turn.png"
+    }
+  ],
+  "artifacts": [
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-raid-planner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-speedrunner-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-authenticated.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-offer-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-accept-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-ai-researcher-quest-body-progress-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-speedrunner-resource-conflict-after-turn.png",
+    "/workspace/documents/testplay-reports/artifacts/swarm-test-commit-72f56c2e076a/swarm-test-2026-05-02T10-00-20Z/attempt-1-raid-planner-world-event-after-turn.png"
+  ]
+}

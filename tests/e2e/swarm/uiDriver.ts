@@ -70,11 +70,16 @@ export type SwarmUiQuestSnapshot = {
 };
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
-  await expect(page.getByTestId("continue-to-character")).toBeDisabled({ timeout: 60_000 });
-  await page.getByTestId("world-card-gestaloka_reference").click();
-  await expect(page.getByTestId("continue-to-character")).toBeEnabled({ timeout: 60_000 });
-  await page.getByTestId("continue-to-character").click();
-  await page.getByRole("button", { name: new RegExp(escapeRegExp(profile.displayName)) }).click();
+  const worldCard = page.getByTestId("world-card-gestaloka_reference");
+  const continueButton = page.getByTestId("continue-to-character");
+  const characterButton = page.getByRole("button", { name: new RegExp(escapeRegExp(profile.displayName)) });
+
+  await expect(worldCard).toBeVisible({ timeout: 60_000 });
+  await worldCard.click();
+  await expect(continueButton).toBeEnabled({ timeout: 60_000 });
+  await continueButton.click();
+  await expect(characterButton).toBeVisible({ timeout: 30_000 });
+  await characterButton.click();
   await expect(page.getByTestId("start-session")).toBeEnabled({ timeout: 30_000 });
 }
 
@@ -156,13 +161,14 @@ function escapeRegExp(value: string): string {
 }
 
 async function waitForSessionUiReady(page: Page, personaId: string): Promise<void> {
+  const readyTimeoutMs = envInt("SWARM_SESSION_READY_TIMEOUT_MS", envInt("SWARM_POLL_TIMEOUT_MS", 120_000));
   try {
-    await expect(page.getByTestId("story-scroll")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("story-scroll")).toBeVisible({ timeout: readyTimeoutMs });
     await ensureActionSurface(page);
-    await expect(page.getByTestId("choice-progress")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 60_000 });
+    await expect(page.getByTestId("choice-progress")).toBeVisible({ timeout: readyTimeoutMs });
+    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: readyTimeoutMs });
     await ensureStatusSurface(page);
-    await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: readyTimeoutMs });
   } catch (error) {
     throw new Error(
       `UI session did not render a ready play surface for ${personaId}: ${errorMessage(error)}; ${await playSurfaceDiagnostics(page)}`,
@@ -229,7 +235,7 @@ export async function executeTurnViaUi(
     const playInfoTexts = await playerVisiblePlayInfoTexts(page);
     const questSnapshot = await questSnapshotViaUi(page);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
-    const progressTimeline = progressTimelineFromOpsStream(opsStream);
+    const progressTimeline = progressTimelineFromOpsStream(opsStream, acceptedTurnId);
     return {
       personaId: persona.id,
       scenario: decision.scenario,
@@ -266,6 +272,7 @@ export async function executeTurnViaUi(
 }
 
 async function waitForEventsStreamForTurn(page: Page, turnId: string): Promise<string[]> {
+  const eventsTimeoutMs = envInt("SWARM_EVENTS_STREAM_TIMEOUT_MS", envInt("SWARM_POLL_TIMEOUT_MS", 120_000));
   let eventsStream = await listText(page, "events-stream");
   if (!turnId || eventIdForTurn(eventsStream, turnId)) {
     return eventsStream;
@@ -276,7 +283,7 @@ async function waitForEventsStreamForTurn(page: Page, turnId: string): Promise<s
         eventsStream = await listText(page, "events-stream");
         return Boolean(eventIdForTurn(eventsStream, turnId));
       },
-      { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
+      { timeout: eventsTimeoutMs, intervals: [1_000, 2_000, 5_000] },
     )
     .toBe(true);
   return eventsStream;
@@ -304,7 +311,7 @@ function eventIdForTurn(items: string[], turnId: string): string {
   return "";
 }
 
-function progressTimelineFromOpsStream(items: string[]): SwarmUiTurnObservation["progressTimeline"] {
+function progressTimelineFromOpsStream(items: string[], turnId: string): SwarmUiTurnObservation["progressTimeline"] {
   const progressChunks = items.flatMap((item) =>
     item
       .split("turn.progress")
@@ -312,6 +319,7 @@ function progressTimelineFromOpsStream(items: string[]): SwarmUiTurnObservation[
       .map((chunk) => `turn.progress${chunk}`),
   );
   return progressChunks
+    .filter((item) => !turnId || item.includes(`turn_id: ${turnId}`))
     .map((item) => {
       const phase = valueAfterKey(item, "phase");
       const status = valueAfterKey(item, "status");

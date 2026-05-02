@@ -122,7 +122,7 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
         self.settings = settings
         self.model_name = settings.gemini_embedding_model
         try:
-            timeout_ms = max(int(settings.gemini_timeout_seconds * 1000), 1)
+            timeout_ms = max(int(min(settings.gemini_timeout_seconds, settings.memory_embedding_timeout_seconds) * 1000), 1)
             self.client = genai.Client(
                 api_key=settings.gemini_api_key,
                 http_options=genai_types.HttpOptions(timeout=timeout_ms),
@@ -138,7 +138,8 @@ class GeminiEmbeddingProvider(BaseEmbeddingProvider):
 
     def _embed(self, text: str, *, task_type: str) -> list[float]:
         last_error: Exception | None = None
-        for _ in range(max(self.settings.gemini_max_retries, 1)):
+        retry_count = max(min(self.settings.gemini_max_retries, self.settings.memory_embedding_max_retries), 1)
+        for _ in range(retry_count):
             try:
                 response = self.client.models.embed_content(
                     model=self.settings.gemini_embedding_model,
@@ -180,9 +181,10 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
             raise ValueError("OPENAI_COMPAT_EMBEDDING_MODEL is required when EMBEDDING_PROVIDER=openai_compatible")
         self.settings = settings
         self.model_name = settings.openai_compat_embedding_model
+        timeout_seconds = max(min(settings.openai_compat_timeout_seconds, settings.memory_embedding_timeout_seconds), 0.1)
         self.client = httpx.Client(
             base_url=base_url.rstrip("/"),
-            timeout=settings.openai_compat_timeout_seconds,
+            timeout=timeout_seconds,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -204,7 +206,8 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
             body["dimensions"] = self.settings.memory_embedding_dim
 
         last_error: Exception | None = None
-        for _ in range(max(self.settings.openai_compat_max_retries, 1)):
+        retry_count = max(min(self.settings.openai_compat_max_retries, self.settings.memory_embedding_max_retries), 1)
+        for _ in range(retry_count):
             try:
                 response = self.client.post("/embeddings", json=body)
                 response.raise_for_status()
