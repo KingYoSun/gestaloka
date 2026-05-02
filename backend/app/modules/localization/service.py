@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import PlayLocalizedTextCache
 from app.modules.llm_harness.service import ModelRouter
+from app.modules.world_pack.service import get_pack_registry, template_world_id
 
 
 PROMPT_ID = "play.localization"
@@ -245,6 +246,7 @@ def _store_generated(
 
 
 def _glossary(db: Session, *, context: dict[str, str], limit: int = 80) -> list[dict[str, str]]:
+    pack_entries = _pack_glossary(context=context)
     rows = list(
         db.execute(
             select(PlayLocalizedTextCache)
@@ -257,7 +259,7 @@ def _glossary(db: Session, *, context: dict[str, str], limit: int = 80) -> list[
             .limit(limit)
         ).scalars()
     )
-    return [
+    cache_entries = [
         {
             "kind": row.source_kind,
             "source_text": row.source_text,
@@ -266,6 +268,42 @@ def _glossary(db: Session, *, context: dict[str, str], limit: int = 80) -> list[
         for row in rows
         if row.source_text and row.localized_text
     ]
+    return [*pack_entries, *cache_entries]
+
+
+def _pack_glossary(*, context: dict[str, str]) -> list[dict[str, str]]:
+    world_id = context["world_id"]
+    target_language = context["target_language"]
+    target_key = _language_key(target_language)
+    try:
+        registry = get_pack_registry()
+    except Exception:
+        return []
+
+    entries: list[dict[str, str]] = []
+    for pack in registry.list_packs():
+        if not any(template_world_id(template) == world_id for template in pack.templates.values()):
+            continue
+        for item in pack.localization.glossary:
+            if _language_key(item.target_language) != target_key:
+                continue
+            entries.append(
+                {
+                    "kind": item.source_kind,
+                    "source_text": item.source_text,
+                    "localized_text": item.localized_text,
+                }
+            )
+    return entries
+
+
+def _language_key(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    return {
+        "ja": "japanese",
+        "jp": "japanese",
+        "日本語": "japanese",
+    }.get(normalized, normalized)
 
 
 def _collect_session_state_targets(payload: dict[str, Any], targets: list[_TextTarget]) -> None:

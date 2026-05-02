@@ -1,0 +1,88 @@
+glossary:
+  - target_language: Japanese
+    source_text: "GESTALOKA: Nexus Foundation"
+    localized_text: "ゲスタロカ：ネクサス基盤"
+  - target_language: Japanese
+    source_text: GESTALOKA Reference
+    localized_text: "ゲスタロカ・リファレンス"
+  - target_language: Japanese
+    source_text: Nexus Foundation
+    localized_text: "ネクサス基盤"
+  - target_language: Japanese
+    source_text: Nexus Gate
+    localized_text: "ネクサス・ゲート"
+  - target_language: Japanese
+    source_text: First Stabilizer Request
+    localized_text: "最初の安定化依頼"
+  - target_language: Japanese
+    source_text: Breach Restoration
+    localized_text: "裂け目の修復"
+  - target_language: Japanese
+    source_text: Gate Steward Rikka
+    localized_text: "ゲート守リッカ"
+  - target_language: Japanese
+    source_text: Archivist Ione
+    localized_text: "記録官イオネ"
+  - target_language: Japanese
+    source_text: Broker Vell
+    localized_text: "仲介人ヴェル"
+  - target_language: Japanese
+    source_text: Salvager Mako
+    localized_text: "サルベージャー・マコ"
+  - target_language: Japanese
+    source_text: Choir Warden Anse
+    localized_text: "聖歌守アンセ"
+  - target_language: Japanese
+    source_text: Lift Tower Concourse
+    localized_text: "リフト・タワー・コンコース"
+  - target_language: Japanese
+    source_text: Archive Bazaar
+    localized_text: "アーカイブ市場"
+  - target_language: Japanese
+    source_text: Middle Edge
+    localized_text: "ミドル・エッジ"
+  - target_language: Japanese
+    source_text: Oblivion Breach
+    localized_text: "忘却の裂け目"
+  - target_language: Japanese
+    source_text: Nexus Writ
+    localized_text: "ネクサス認可状"
+  - target_language: Japanese
+    source_text: Nexus Custodians
+    localized_text: "ネクサス管理官"
+  - target_language: Japanese
+    source_text: Memory Church
+    localized_text: "記憶教会"
+  - target_language: Japanese
+    source_text: Kronos Exchange
+    localized_text: "クロノス取引所"
+  - target_language: Japanese
+    source_text: Relic Salvagers
+    localized_text: "遺物サルベージャー"
+  - target_language: Japanese
+    source_text: Returner Cell
+    localized_text: "帰還派セル"
+  - target_language: Japanese
+    source_text: Custodian Charter
+    localized_text: "管理官憲章"
+  - target_language: Japanese
+    source_text: Edge Compact
+    localized_text: "辺境協定"
+  - target_language: Japanese
+    source_text: The protected arrival gate where visitors enter shared city records for the first time.
+    localized_text: "来訪者が初めて共有都市記録へ入る、守られた到着門。"
+  - target_language: Japanese
+    source_text: "The opening chapter of GESTALOKA: Nexus Foundation now turns on whether First Stabilizer Request will be carried through."
+    localized_text: "ゲスタロカ：ネクサス基盤の幕開けは、最初の安定化依頼が果たされるかどうかへ向かっている。"
+  - target_language: Japanese
+    source_text: Nexus Gate is waiting to see whether First Stabilizer Request will be honored. The scene has room to breathe, but it still remembers what was just set in motion.
+    localized_text: "ネクサス・ゲートは、最初の安定化依頼が守られるかを見届けようとしている。場には息をつく余地があるが、動き出したばかりの出来事をまだ覚えている。"
+  - target_language: Japanese
+    source_text: The tower concourse opens above the gate, where public testimony and route ledgers meet.
+    localized_text: "門の上にはリフト・タワー・コンコースが開け、公開証言と航路台帳が交わっている。"
+  - target_language: Japanese
+    source_text: The breach route stays sealed until Nexus recognizes the writ.
+    localized_text: "裂け目への道は、ネクサスが認可状を認めるまで封じられている。"
+  - target_language: Japanese
+    source_text: A witnessed writ that marks the bearer as trusted for the first restoration route.
+    localized_text: "最初の修復路に進む信頼を帯びた者だと示す、証人付きの認可状。"

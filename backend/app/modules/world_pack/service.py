@@ -524,6 +524,17 @@ class PromptOverlaysPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class PackLocalizationEntry(BaseModel):
+    target_language: str = Field(min_length=1, max_length=120)
+    source_text: str = Field(min_length=1)
+    localized_text: str = Field(min_length=1)
+    source_kind: str = "pack_glossary"
+
+
+class PackLocalizationPayload(BaseModel):
+    glossary: list[PackLocalizationEntry] = Field(default_factory=list)
+
+
 def serialize_followup_branches(
     followup_branches: PackFollowupBranches | Mapping[str, Any] | None,
 ) -> dict[FollowupBranchSlot, dict[str, Any]]:
@@ -600,6 +611,7 @@ class LoadedWorldPack:
     templates: dict[str, WorldTemplateDefinition]
     npcs: list[PackNPCSeed]
     prompt_overlays: PromptOverlaysPayload
+    localization: PackLocalizationPayload
     root_dir: Path
 
     def template(self, template_id: str) -> WorldTemplateDefinition:
@@ -943,6 +955,12 @@ class PackRegistry:
         templates_payload = self._read_content(root_dir, manifest, "world_templates", WorldTemplatesPayload)
         npc_payload = self._read_content(root_dir, manifest, "npcs", NPCSeedsPayload)
         prompt_payload = self._read_content(root_dir, manifest, "prompt_overlays", PromptOverlaysPayload)
+        localization_payload = self._read_optional_content(
+            root_dir,
+            manifest,
+            "localization",
+            PackLocalizationPayload,
+        )
 
         template_ids = {template.template_id for template in manifest.world_templates}
         loaded_ids = set(templates_payload.world_templates)
@@ -983,6 +1001,7 @@ class PackRegistry:
             templates=templates,
             npcs=npc_payload.npcs,
             prompt_overlays=prompt_payload,
+            localization=localization_payload,
             root_dir=root_dir,
         )
 
@@ -1006,6 +1025,17 @@ class PackRegistry:
                 pack_id=manifest.pack_id,
                 path=content_path,
             ) from exc
+
+    def _read_optional_content(
+        self,
+        root_dir: Path,
+        manifest: PackManifest,
+        key: str,
+        model: type[BaseModel],
+    ) -> BaseModel:
+        if key not in manifest.content_refs:
+            return model()
+        return self._read_content(root_dir, manifest, key, model)
 
     @staticmethod
     def _resolve_content_ref(root_dir: Path, pack_id: str, key: str, relative: str) -> Path:

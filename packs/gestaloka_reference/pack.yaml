@@ -21,3 +21,4 @@ content_refs:
   world_templates: world_templates.yaml
   npcs: npcs.yaml
   prompt_overlays: prompts.yaml
+  localization: localization.yaml

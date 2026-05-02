@@ -924,6 +924,7 @@ def test_pack_cli_exports_and_imports_archive_into_external_pack_dir(
     assert archive.is_file()
     with tarfile.open(archive, "r:gz") as tar:
         assert sorted(tar.getnames()) == [
+            "gestaloka_reference/localization.yaml",
             "gestaloka_reference/npcs.yaml",
             "gestaloka_reference/pack.yaml",
             "gestaloka_reference/prompts.yaml",
