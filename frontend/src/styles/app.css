@@ -37,7 +37,7 @@
   --brand-aqua: #7bcfd0;
   --background: #f2eadf;
   --background-texture: url("/brand/texture.png");
-  --background-blend-mode: multiply;
+  --background-blend-mode: color-burn;
   --foreground: #0b2034;
   --card: #fffaf1;
   --card-foreground: #0b2034;
@@ -91,7 +91,7 @@
   color-scheme: light;
   --background: #f2eadf;
   --background-texture: url("/brand/texture.png");
-  --background-blend-mode: multiply;
+  --background-blend-mode: color-burn;
   --foreground: #0b2034;
   --card: #fffaf1;
   --card-foreground: #0b2034;
