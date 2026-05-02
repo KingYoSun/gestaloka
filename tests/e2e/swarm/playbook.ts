@@ -7,7 +7,11 @@ export type SwarmDecision = {
     | "world-event"
     | "quest-offer"
     | "quest-accept"
-    | "quest-body-progress";
+    | "quest-body-progress"
+    | "quest-leave"
+    | "post-leave-explore"
+    | "quest-resume"
+    | "quest-epilogue-progress";
   inputMode: "choice" | "free_text" | "quest_action";
   choiceId?: "safe" | "progress" | "explore";
   inputText?: string;
@@ -45,6 +49,46 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
       choiceId: "progress",
       reason: `${persona.label} は受諾したクエストを進め、プレイ内容から chapter が更新されるかを確認する。`,
       expectedWorldImpact: "受諾後の行動により body chapter が開き、クエストの文脈が journal と scene に残ることを期待する。",
+    };
+  }
+
+  if (scenario === "quest-leave") {
+    return {
+      scenario,
+      inputMode: "quest_action",
+      questAction: "leave_quest",
+      reason: `${persona.label} はクエストを一度離れ、進行中の物語が中断可能な状態として保持されるかを確認する。`,
+      expectedWorldImpact: "クエストが paused になり、再開操作を選べる状態で journal に残ることを期待する。",
+    };
+  }
+
+  if (scenario === "post-leave-explore") {
+    return {
+      scenario,
+      inputMode: "choice",
+      choiceId: "explore",
+      reason: `${persona.label} はクエスト離脱後も同じ世界で探索を続け、寄り道が通常 turn として解決されるかを確認する。`,
+      expectedWorldImpact: "paused quest を保持したまま探索 turn が解決され、同一 world の event として記録されることを期待する。",
+    };
+  }
+
+  if (scenario === "quest-resume") {
+    return {
+      scenario,
+      inputMode: "quest_action",
+      questAction: "resume_quest",
+      reason: `${persona.label} は寄り道後にクエストへ戻り、中断した文脈を再開できるかを確認する。`,
+      expectedWorldImpact: "paused quest が active に戻り、同じ quest context の続きとして進行できることを期待する。",
+    };
+  }
+
+  if (scenario === "quest-epilogue-progress") {
+    return {
+      scenario,
+      inputMode: "choice",
+      choiceId: "progress",
+      reason: `${persona.label} は再開したクエストを最後まで進め、結末が epilogue として明示されるかを確認する。`,
+      expectedWorldImpact: "クエストが completed になり、epilogue chapter が journal と scene に残ることを期待する。",
     };
   }
 

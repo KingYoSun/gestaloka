@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 
 import { derivePlayerProfile, profilePayloadForApi } from "./swarm/playerProfiles";
-import { decisionForPersona } from "./swarm/playbook";
+import { decisionForPersona, type SwarmDecision } from "./swarm/playbook";
 import {
   authenticatePage,
   createTokenProvider,
@@ -37,12 +37,15 @@ type EventItem = {
   payload: Record<string, unknown>;
 };
 
+type SwarmTestMode = "short" | "long";
+
 test("swarm-test: persona-derived players exercise shared impact, resource contention, and world events", async ({
   browser,
   request,
 }, testInfo) => {
   test.setTimeout(envInt("SWARM_TEST_TIMEOUT_MS", 1_800_000));
 
+  const mode = swarmTestMode();
   const runId = buildRunId();
   const artifactDir = defaultArtifactDir(runId);
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
@@ -63,6 +66,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   );
   const runtimeByPersona = new Map<string, PlayerRuntime>();
   const turnObservationsByPersona = new Map<string, SwarmUiTurnObservation[]>();
+  const decisionLog: Array<SwarmDecision & { personaId: string }> = [];
   let lastStage = "authenticate";
 
   lastStage = "token_provider";
@@ -122,6 +126,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     ];
 
     const aQuestOfferDecision = decisionForPersona(a.persona, "quest-offer");
+    decisionLog.push({ personaId: a.persona.id, ...aQuestOfferDecision });
     lastStage = "quest_offer_turn";
     const aQuestOfferTurn = await executeTurnViaUi(
       requiredPage(pageByPersona, a.persona.id),
@@ -135,6 +140,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const aQuestAfterOffer = await waitForOfferedQuest(request, a, pollTimeoutMs);
 
     const aQuestAcceptDecision = decisionForPersona(a.persona, "quest-accept");
+    decisionLog.push({ personaId: a.persona.id, ...aQuestAcceptDecision });
     lastStage = "quest_accept_turn";
     const aQuestAcceptTurn = await executeTurnViaUi(
       requiredPage(pageByPersona, a.persona.id),
@@ -145,9 +151,18 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     );
     recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestAcceptTurn);
     artifacts.push(aQuestAcceptTurn.screenshotPath ?? "");
+    const aQuestAfterAccept = await waitForQuestMatch(
+      request,
+      a,
+      (payload) => hasChapterKind(payload, "prologue"),
+      pollTimeoutMs,
+      "accepted quest should expose a prologue chapter",
+    );
 
     const aBodyProgressDecision = decisionForPersona(a.persona, "quest-body-progress");
+    decisionLog.push({ personaId: a.persona.id, ...aBodyProgressDecision });
     const bConflictDecision = decisionForPersona(b.persona, "resource-conflict");
+    decisionLog.push({ personaId: b.persona.id, ...bConflictDecision });
 
     lastStage = "resource_conflict_turns";
     const [aBodyProgressTurn, bConflictTurn] = await Promise.all([
@@ -158,6 +173,109 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     recordTurnObservation(turnObservationsByPersona, b.persona.id, bConflictTurn);
     artifacts.push(aBodyProgressTurn.screenshotPath ?? "", bConflictTurn.screenshotPath ?? "");
     const aQuestAfterBody = await getSessionQuests(request, a.accessToken, a.sessionId);
+
+    let aQuestAfterLeave: Record<string, unknown> | null = null;
+    let aQuestAfterPostLeaveExplore: Record<string, unknown> | null = null;
+    let aQuestAfterResume: Record<string, unknown> | null = null;
+    let aQuestAfterEpilogue: Record<string, unknown> | null = null;
+    let postLeaveExploreTurn: SwarmUiTurnObservation | null = null;
+    const epilogueProgressTurns: SwarmUiTurnObservation[] = [];
+
+    if (mode === "long") {
+      lastStage = "quest_body_leave_available";
+      await waitForQuestMatch(
+        request,
+        a,
+        (payload) => hasQuestAction(payload, "leave_quest"),
+        pollTimeoutMs,
+        "body quest should become leaveable",
+      );
+
+      const aQuestLeaveDecision = decisionForPersona(a.persona, "quest-leave");
+      decisionLog.push({ personaId: a.persona.id, ...aQuestLeaveDecision });
+      lastStage = "quest_leave_turn";
+      const aQuestLeaveTurn = await executeTurnViaUi(
+        requiredPage(pageByPersona, a.persona.id),
+        a.persona,
+        aQuestLeaveDecision,
+        artifactDir,
+        attemptLabel,
+      );
+      recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestLeaveTurn);
+      artifacts.push(aQuestLeaveTurn.screenshotPath ?? "");
+      aQuestAfterLeave = await waitForQuestMatch(
+        request,
+        a,
+        hasPausedQuestWithResumeAction,
+        pollTimeoutMs,
+        "left quest should be paused and resumable",
+      );
+
+      const aPostLeaveExploreDecision = decisionForPersona(a.persona, "post-leave-explore");
+      decisionLog.push({ personaId: a.persona.id, ...aPostLeaveExploreDecision });
+      lastStage = "post_leave_explore_turn";
+      postLeaveExploreTurn = await executeTurnViaUi(
+        requiredPage(pageByPersona, a.persona.id),
+        a.persona,
+        aPostLeaveExploreDecision,
+        artifactDir,
+        attemptLabel,
+      );
+      recordTurnObservation(turnObservationsByPersona, a.persona.id, postLeaveExploreTurn);
+      artifacts.push(postLeaveExploreTurn.screenshotPath ?? "");
+      aQuestAfterPostLeaveExplore = await waitForQuestMatch(
+        request,
+        a,
+        hasPausedQuestWithResumeAction,
+        pollTimeoutMs,
+        "post-leave exploration should keep quest paused and resumable",
+      );
+
+      const aQuestResumeDecision = decisionForPersona(a.persona, "quest-resume");
+      decisionLog.push({ personaId: a.persona.id, ...aQuestResumeDecision });
+      lastStage = "quest_resume_turn";
+      const aQuestResumeTurn = await executeTurnViaUi(
+        requiredPage(pageByPersona, a.persona.id),
+        a.persona,
+        aQuestResumeDecision,
+        artifactDir,
+        attemptLabel,
+      );
+      recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestResumeTurn);
+      artifacts.push(aQuestResumeTurn.screenshotPath ?? "");
+      aQuestAfterResume = await waitForQuestMatch(
+        request,
+        a,
+        hasActiveQuest,
+        pollTimeoutMs,
+        "resumed quest should return to active",
+      );
+
+      lastStage = "quest_epilogue_progress_turns";
+      let latestQuestState = aQuestAfterResume;
+      for (let index = 0; index < 10 && !hasCompletedEpilogueQuest(latestQuestState); index += 1) {
+        const aQuestEpilogueDecision = decisionForPersona(a.persona, "quest-epilogue-progress");
+        decisionLog.push({ personaId: a.persona.id, ...aQuestEpilogueDecision });
+        const turn = await executeTurnViaUi(
+          requiredPage(pageByPersona, a.persona.id),
+          a.persona,
+          aQuestEpilogueDecision,
+          artifactDir,
+          attemptLabel,
+        );
+        recordTurnObservation(turnObservationsByPersona, a.persona.id, turn);
+        epilogueProgressTurns.push(turn);
+        artifacts.push(turn.screenshotPath ?? "");
+        latestQuestState = await getSessionQuests(request, a.accessToken, a.sessionId);
+      }
+      aQuestAfterEpilogue = await waitForQuestMatch(
+        request,
+        a,
+        hasCompletedEpilogueQuest,
+        pollTimeoutMs,
+        "quest should complete and expose an epilogue chapter",
+      );
+    }
 
     const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_session_setup";
@@ -170,21 +288,19 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     lastStage = "world_event_pre_state";
     const cStateBeforeTurn = await getSessionState(request, c.accessToken, c.sessionId);
     const cDecision = decisionForPersona(c.persona, "world-event");
+    decisionLog.push({ personaId: c.persona.id, ...cDecision });
     lastStage = "world_event_turn";
     const cTurn = await executeTurnViaUi(requiredPage(pageByPersona, c.persona.id), c.persona, cDecision, artifactDir, attemptLabel);
     recordTurnObservation(turnObservationsByPersona, c.persona.id, cTurn);
     artifacts.push(cTurn.screenshotPath ?? "");
-    const expectedTurnEventCount = 5;
-    const turnEventIds = [
-      eventId(aQuestOfferTurn),
-      eventId(aQuestAcceptTurn),
-      eventId(aBodyProgressTurn),
-      eventId(bConflictTurn),
-      eventId(cTurn),
-    ].filter(Boolean);
+    const allTurnObservations = Array.from(turnObservationsByPersona.values()).flat();
+    const turnEventIds = allTurnObservations.map(eventId).filter(Boolean);
     const novelLoverEventIds = [eventId(aQuestOfferTurn), eventId(aBodyProgressTurn)].filter(Boolean);
     const conflictEventIds = [eventId(aBodyProgressTurn), eventId(bConflictTurn)].filter(Boolean);
-    const questLifecycleEventIds = [eventId(aQuestAcceptTurn)].filter(Boolean);
+    const questLifecycleEventIds = allTurnObservations
+      .filter((turn) => turn.inputMode === "quest_action")
+      .map(eventId)
+      .filter(Boolean);
     const leakTerms = personaLeakTerms(activePersonas);
 
     lastStage = "observation_poll";
@@ -195,17 +311,17 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       cStateBeforeTurn,
       opsToken,
       turnEventIds,
-      expectedTurnEventCount,
+      expectedTurnEventCount: allTurnObservations.length,
       novelLoverEventIds,
       conflictEventIds,
       questLifecycleEventIds,
       leakTerms,
       pollTimeoutMs,
     });
-    const hardChecks = {
+    const hardChecks: Record<string, boolean> = {
       persona_profile_separation: profiles.every((profile) => !containsAnyTerm(profilePayloadForApi(profile), leakTerms)),
       runtime_privacy_leak_free: observation.privacyLeakFree,
-      all_turns_return_event_ids: turnEventIds.length === expectedTurnEventCount,
+      all_turns_return_event_ids: turnEventIds.length === allTurnObservations.length,
       all_turn_events_same_world: observation.allTurnEventsSameWorld,
       canonical_sequence_unique: observation.canonicalSequenceUnique,
       shared_impact_visible: observation.sharedImpactVisible,
@@ -218,16 +334,37 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       quest_chapter_visible: aQuestAcceptTurn.hasChapterSummary || aBodyProgressTurn.hasChapterSummary || hasQuestChapter(aQuestAfterBody),
       quest_lifecycle_events_same_world: observation.questLifecycleEventsSameWorld,
     };
+    if (mode === "long") {
+      hardChecks.quest_prologue_visible = hasChapterKind(aQuestAfterAccept, "prologue");
+      hardChecks.quest_left_and_paused = Boolean(aQuestAfterLeave && hasPausedQuestWithResumeAction(aQuestAfterLeave));
+      hardChecks.post_leave_exploration_resolved =
+        Boolean(postLeaveExploreTurn ? eventId(postLeaveExploreTurn) : "") &&
+        Boolean(aQuestAfterPostLeaveExplore && hasPausedQuestWithResumeAction(aQuestAfterPostLeaveExplore));
+      hardChecks.quest_resumed = Boolean(aQuestAfterResume && hasActiveQuest(aQuestAfterResume));
+      hardChecks.quest_epilogue_visible = Boolean(aQuestAfterEpilogue && hasCompletedEpilogueQuest(aQuestAfterEpilogue));
+    }
 
     const evaluations: PersonaEvaluation[] = [
       {
         personaId: a.persona.id,
-        rating: hardChecks.shared_impact_visible && hardChecks.dynamic_quest_offered && hardChecks.quest_chapter_visible ? "good" : "needs work",
+        rating:
+          hardChecks.shared_impact_visible &&
+          hardChecks.dynamic_quest_offered &&
+          hardChecks.quest_chapter_visible &&
+          (mode === "short" || hardChecks.quest_epilogue_visible)
+            ? "good"
+            : "needs work",
         observedImpact:
-          hardChecks.dynamic_quest_offered && hardChecks.quest_chapter_visible
-            ? "Exploration produced an optional quest, and accepting it opened a chapter that remained visible."
+          mode === "long" && hardChecks.quest_epilogue_visible
+            ? "Long quest lifecycle reached pause, exploration, resume, and epilogue completion."
+            : hardChecks.dynamic_quest_offered && hardChecks.quest_chapter_visible
+              ? "Exploration produced an optional quest, and accepting it opened a chapter that remained visible."
             : "The dynamic quest offer or accepted chapter was not visible enough in the probe.",
-        evidence: [...novelLoverEventIds, "quest journal / session state / ops history / memory scan"].filter(Boolean),
+        evidence: [
+          ...novelLoverEventIds,
+          ...epilogueProgressTurns.map(eventId).filter(Boolean),
+          "quest journal / session state / ops history / memory scan",
+        ].filter(Boolean),
       },
       {
         personaId: b.persona.id,
@@ -252,11 +389,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       runId,
       personas: activePersonas,
       decisions: [
-        { personaId: a.persona.id, ...aQuestOfferDecision },
-        { personaId: a.persona.id, ...aQuestAcceptDecision },
-        { personaId: a.persona.id, ...aBodyProgressDecision },
-        { personaId: b.persona.id, ...bConflictDecision },
-        { personaId: c.persona.id, ...cDecision },
+        ...decisionLog,
       ],
       observationsByPersona: turnObservationsByPersona,
       viewportByPersona,
@@ -265,39 +398,17 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     lastStage = "write_report";
     await writeSwarmReport(testInfo, artifactDir, {
       run_id: runId,
+      mode,
       created_at: new Date().toISOString(),
       world_id: worldId,
       user_personas: activePersonas,
       derived_player_profiles: profiles,
-      persona_decision_log: [
-        { personaId: a.persona.id, ...aQuestOfferDecision },
-        { personaId: a.persona.id, ...aQuestAcceptDecision },
-        { personaId: a.persona.id, ...aBodyProgressDecision },
-        { personaId: b.persona.id, ...bConflictDecision },
-        { personaId: c.persona.id, ...cDecision },
-      ],
+      persona_decision_log: decisionLog,
       persona_experience_evaluation: evaluations,
       experience_evaluation: experienceEvaluations,
       hard_checks: hardChecks,
-      runtime: [a, b, c].map((runtime) => ({
-        personaId: runtime.persona.id,
-        actorId: runtime.actorId,
-        sessionId: runtime.sessionId,
-        locationId: runtime.locationId,
-        eventIds:
-          runtime.persona.id === a.persona.id
-            ? [eventId(aQuestOfferTurn), eventId(aQuestAcceptTurn), eventId(aBodyProgressTurn)].filter(Boolean)
-            : runtime.persona.id === b.persona.id
-              ? [eventId(bConflictTurn)].filter(Boolean)
-              : [eventId(cTurn)].filter(Boolean),
-        turnIds:
-          runtime.persona.id === a.persona.id
-            ? [turnId(aQuestOfferTurn), turnId(aQuestAcceptTurn), turnId(aBodyProgressTurn)].filter(Boolean)
-            : runtime.persona.id === b.persona.id
-              ? [turnId(bConflictTurn)].filter(Boolean)
-              : [turnId(cTurn)].filter(Boolean),
-      })),
-      turn_observations: Array.from(turnObservationsByPersona.values()).flat(),
+      runtime: runtimeSummaries([a, b, c], turnObservationsByPersona),
+      turn_observations: allTurnObservations,
       artifacts: artifacts.filter(Boolean),
     });
 
@@ -309,6 +420,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       testInfo,
       artifactDir,
       runId,
+      mode,
       activePersonas,
       profiles,
       runtimeByPersona,
@@ -337,6 +449,7 @@ async function writeFailureReport({
   testInfo,
   artifactDir,
   runId,
+  mode,
   activePersonas,
   profiles,
   runtimeByPersona,
@@ -348,6 +461,7 @@ async function writeFailureReport({
   testInfo: TestInfo;
   artifactDir: string;
   runId: string;
+  mode: SwarmTestMode;
   activePersonas: AssignedSwarmUserPersona[];
   profiles: ReturnType<typeof derivePlayerProfile>[];
   runtimeByPersona: Map<string, PlayerRuntime>;
@@ -356,7 +470,7 @@ async function writeFailureReport({
   lastStage: string;
   error: unknown;
 }): Promise<void> {
-  const hardChecks = {
+  const hardChecks: Record<string, boolean> = {
     persona_profile_separation: false,
     runtime_privacy_leak_free: false,
     all_turns_return_event_ids: false,
@@ -371,9 +485,17 @@ async function writeFailureReport({
     quest_chapter_visible: false,
     quest_lifecycle_events_same_world: false,
   };
+  if (mode === "long") {
+    hardChecks.quest_prologue_visible = false;
+    hardChecks.quest_left_and_paused = false;
+    hardChecks.post_leave_exploration_resolved = false;
+    hardChecks.quest_resumed = false;
+    hardChecks.quest_epilogue_visible = false;
+  }
   try {
     await writeSwarmReport(testInfo, artifactDir, {
       run_id: runId,
+      mode,
       created_at: new Date().toISOString(),
       world_id: worldId,
       user_personas: activePersonas,
@@ -387,14 +509,7 @@ async function writeFailureReport({
       })),
       experience_evaluation: [],
       hard_checks: hardChecks,
-      runtime: Array.from(runtimeByPersona.values()).map((runtime) => ({
-        personaId: runtime.persona.id,
-        actorId: runtime.actorId,
-        sessionId: runtime.sessionId,
-        locationId: runtime.locationId,
-        eventIds: [],
-        turnIds: [],
-      })),
+      runtime: runtimeSummaries(Array.from(runtimeByPersona.values()), turnObservationsByPersona),
       turn_observations: Array.from(turnObservationsByPersona.values()).flat(),
       artifacts,
       failure_diagnostics: {
@@ -539,6 +654,65 @@ function hasQuestChapter(payload: Record<string, unknown>): boolean {
   return questItems(payload).some((item) => Array.isArray(item.chapters) && item.chapters.length > 0);
 }
 
+async function waitForQuestMatch(
+  request: APIRequestContext,
+  runtime: PlayerRuntime,
+  predicate: (payload: Record<string, unknown>) => boolean,
+  timeout: number,
+  message: string,
+): Promise<Record<string, unknown>> {
+  let latest = await getSessionQuests(request, runtime.accessToken, runtime.sessionId);
+  await expect
+    .poll(
+      async () => {
+        latest = await getSessionQuests(request, runtime.accessToken, runtime.sessionId);
+        return predicate(latest);
+      },
+      { timeout, intervals: [2_000, 5_000, 10_000], message },
+    )
+    .toBe(true);
+  return latest;
+}
+
+function hasQuestAction(payload: Record<string, unknown>, action: string): boolean {
+  return questItems(payload).some((item) => {
+    const actions = Array.isArray(item.available_actions) ? item.available_actions : [];
+    return actions.includes(action);
+  });
+}
+
+function hasChapterKind(payload: Record<string, unknown>, chapterKind: string): boolean {
+  return questItems(payload).some((item) =>
+    questChapters(item).some((chapter) => chapter.chapter_kind === chapterKind),
+  );
+}
+
+function hasPausedQuestWithResumeAction(payload: Record<string, unknown>): boolean {
+  return questItems(payload).some((item) => item.status === "paused" && questActions(item).includes("resume_quest"));
+}
+
+function hasActiveQuest(payload: Record<string, unknown>): boolean {
+  return questItems(payload).some((item) => item.status === "active");
+}
+
+function hasCompletedEpilogueQuest(payload: Record<string, unknown>): boolean {
+  return questItems(payload).some(
+    (item) => item.status === "completed" && questChapters(item).some((chapter) => chapter.chapter_kind === "epilogue"),
+  );
+}
+
+function questActions(item: Record<string, unknown>): string[] {
+  return (Array.isArray(item.available_actions) ? item.available_actions : []).filter(
+    (action): action is string => typeof action === "string",
+  );
+}
+
+function questChapters(item: Record<string, unknown>): Array<Record<string, unknown>> {
+  return (Array.isArray(item.chapters) ? item.chapters : []).filter(
+    (chapter): chapter is Record<string, unknown> => Boolean(chapter) && typeof chapter === "object",
+  );
+}
+
 function requiredToken(
   tokens: Map<string, ReturnType<typeof createTokenProvider>>,
   personaId: string,
@@ -591,6 +765,30 @@ function recordTurnObservation(
   observationsByPersona.set(personaId, [...(observationsByPersona.get(personaId) ?? []), observation]);
 }
 
+function runtimeSummaries(
+  runtimes: PlayerRuntime[],
+  observationsByPersona: Map<string, SwarmUiTurnObservation[]>,
+): Array<{
+  personaId: string;
+  actorId: string;
+  sessionId: string;
+  locationId: string;
+  eventIds: string[];
+  turnIds: string[];
+}> {
+  return runtimes.map((runtime) => {
+    const observations = observationsByPersona.get(runtime.persona.id) ?? [];
+    return {
+      personaId: runtime.persona.id,
+      actorId: runtime.actorId,
+      sessionId: runtime.sessionId,
+      locationId: runtime.locationId,
+      eventIds: observations.map(eventId).filter(Boolean),
+      turnIds: observations.map(turnId).filter(Boolean),
+    };
+  });
+}
+
 function eventList(payload: Record<string, unknown>): EventItem[] {
   const items = Array.isArray(payload.items) ? payload.items : [];
   return items.filter((item): item is EventItem => {
@@ -618,6 +816,14 @@ function turnId(payload: Record<string, unknown> | SwarmUiTurnObservation): stri
 
 function isTurnObservation(payload: Record<string, unknown> | SwarmUiTurnObservation): payload is SwarmUiTurnObservation {
   return typeof (payload as SwarmUiTurnObservation).eventId === "string";
+}
+
+function swarmTestMode(): SwarmTestMode {
+  const raw = (process.env.SWARM_TEST_MODE || "short").trim().toLowerCase();
+  if (raw === "short" || raw === "long") {
+    return raw;
+  }
+  throw new Error(`SWARM_TEST_MODE must be "short" or "long", got "${raw}"`);
 }
 
 function visibleInSharedContext(payload: unknown, sourceEventId: string): boolean {

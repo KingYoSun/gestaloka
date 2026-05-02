@@ -18,6 +18,7 @@ export type PersonaEvaluation = {
 
 export type SwarmReport = {
   run_id: string;
+  mode?: "short" | "long";
   created_at: string;
   world_id: string;
   user_personas: SwarmUserPersona[];
@@ -118,6 +119,7 @@ export async function writeRunGroupAggregateReport(runGroupDir: string, runGroup
 type RunGroupRun = {
   run_id: string;
   run_dir: string;
+  mode: "short" | "long";
   created_at: string | null;
   world_id: string | null;
   status: "pass" | "fail" | "blocked";
@@ -334,6 +336,7 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
     return {
       run_id: runDir.replace(/^swarm-test-/, ""),
       run_dir: runDir,
+      mode: "short",
       created_at: null,
       world_id: null,
       status: "blocked",
@@ -357,6 +360,7 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
   return {
     run_id: report.run_id,
     run_dir: runDir,
+    mode: report.mode ?? "short",
     created_at: report.created_at,
     world_id: report.world_id,
     status: passed ? "pass" : "fail",
@@ -499,6 +503,10 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
     ["quest-offer", report.persona_experience_evaluation[0]],
     ["quest-accept", report.persona_experience_evaluation[0]],
     ["quest-body-progress", report.persona_experience_evaluation[0]],
+    ["quest-leave", report.persona_experience_evaluation[0]],
+    ["post-leave-explore", report.persona_experience_evaluation[0]],
+    ["quest-resume", report.persona_experience_evaluation[0]],
+    ["quest-epilogue-progress", report.persona_experience_evaluation[0]],
     ["resource-conflict", report.persona_experience_evaluation[1]],
     ["world-event", report.persona_experience_evaluation[2]],
   ] as Array<[SwarmDecision["scenario"], PersonaEvaluation | undefined]>) {
@@ -539,6 +547,18 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
   }
   if (scenario === "quest-body-progress") {
     return "quest_chapter_visible";
+  }
+  if (scenario === "quest-leave") {
+    return "quest_left_and_paused";
+  }
+  if (scenario === "post-leave-explore") {
+    return "post_leave_exploration_resolved";
+  }
+  if (scenario === "quest-resume") {
+    return "quest_resumed";
+  }
+  if (scenario === "quest-epilogue-progress") {
+    return "quest_epilogue_visible";
   }
   if (scenario === "resource-conflict") {
     return "resource_conflict_recorded";
@@ -612,11 +632,11 @@ function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): strin
     "",
     "## Run 一覧",
     "",
-    "| run_id | 状態 | 作成日時 | world_id | report |",
-    "| --- | --- | --- | --- | --- |",
+    "| run_id | mode | 状態 | 作成日時 | world_id | report |",
+    "| --- | --- | --- | --- | --- | --- |",
     ...report.runs.map(
       (run) =>
-        `| ${run.run_id} | ${jaStatus(run.status)} | ${run.created_at ?? "-"} | ${run.world_id ?? "-"} | ${
+        `| ${run.run_id} | ${run.mode} | ${jaStatus(run.status)} | ${run.created_at ?? "-"} | ${run.world_id ?? "-"} | ${
           run.report_file ?? "未生成"
         } |`,
     ),
@@ -793,6 +813,7 @@ function jaStatus(status: "pass" | "fail" | "blocked"): string {
 
 type AttemptSummaryAttempt = {
   attempt_label: string;
+  mode: "short" | "long";
   result_file: string;
   report_file: string;
   created_at: string;
@@ -890,6 +911,7 @@ async function buildAttemptSummaryReport(artifactDir: string): Promise<SwarmAtte
     latest_result: Object.values(latest.report.hard_checks).every(Boolean) ? "pass" : "fail",
     attempts: attempts.map((attempt) => ({
       attempt_label: attempt.attemptLabel,
+      mode: attempt.report.mode ?? "short",
       result_file: attempt.resultFile,
       report_file: attempt.reportFile,
       created_at: attempt.report.created_at,
@@ -947,14 +969,14 @@ function attemptSummaryMarkdownReport(report: SwarmAttemptSummaryReport): string
     "",
     "## Attempt 一覧",
     "",
-    "| attempt | 作成日時 | 結果 | persona 評価 | judge warnings | report |",
-    "| --- | --- | --- | --- | ---: | --- |",
+    "| attempt | mode | 作成日時 | 結果 | persona 評価 | judge warnings | report |",
+    "| --- | --- | --- | --- | --- | ---: | --- |",
     ...report.attempts.map((attempt) => {
       const result = Object.values(attempt.hard_checks).every(Boolean) ? "合格" : "失敗";
       const ratings = Object.entries(attempt.persona_ratings)
         .map(([personaId, rating]) => `${ja(personaId)}=${ja(rating)}`)
         .join("<br>");
-      return `| ${attempt.attempt_label} | ${attempt.created_at} | ${result} | ${ratings} | ${attempt.experience_warning_count} | ${attempt.report_file} |`;
+      return `| ${attempt.attempt_label} | ${attempt.mode} | ${attempt.created_at} | ${result} | ${ratings} | ${attempt.experience_warning_count} | ${attempt.report_file} |`;
     }),
     "",
     "## ハードチェック総合",
@@ -996,6 +1018,7 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
     `# swarm-test レポート ${report.run_id}`,
     "",
     `- 作成日時: ${report.created_at}`,
+    `- mode: ${report.mode ?? "short"}`,
     `- world_id: ${report.world_id}`,
     `- 試行: ${attemptLabel}`,
     "",
@@ -1039,7 +1062,7 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
       (decision) =>
         `- ${ja(decision.personaId)}: シナリオ=${ja(decision.scenario)}; 入力=${ja(
           decision.inputMode,
-        )}; 行動=${ja(decision.choiceId ?? decision.inputText ?? "")}; 理由=${ja(
+        )}; 行動=${ja(decision.questAction ?? decision.choiceId ?? decision.inputText ?? "")}; 理由=${ja(
           decision.reason,
         )}; 期待する世界影響=${ja(decision.expectedWorldImpact)}`,
     ),
@@ -1140,10 +1163,19 @@ const japaneseLabels: Record<string, string> = {
   quest_accept_turn_resolved: "クエスト受諾 turn が解決",
   quest_chapter_visible: "クエスト chapter が観測可能",
   quest_lifecycle_events_same_world: "クエスト lifecycle event が同一 world に属する",
+  quest_prologue_visible: "クエスト prologue が観測可能",
+  quest_left_and_paused: "クエスト離脱後 paused と再開操作が観測可能",
+  post_leave_exploration_resolved: "クエスト離脱後の探索 turn が解決",
+  quest_resumed: "クエスト再開が観測可能",
+  quest_epilogue_visible: "クエスト epilogue が観測可能",
   "shared-impact": "共有影響",
   "quest-offer": "クエスト提示",
   "quest-accept": "クエスト受諾",
   "quest-body-progress": "クエスト進行",
+  "quest-leave": "クエスト離脱",
+  "post-leave-explore": "離脱後探索",
+  "quest-resume": "クエスト再開",
+  "quest-epilogue-progress": "クエストエピローグ進行",
   "resource-conflict": "リソース競合",
   "world-event": "世界イベント",
   ux_clarity: "UX 評価",
@@ -1190,6 +1222,8 @@ const japaneseLabels: Record<string, string> = {
     "遅れて参加した後の追跡行動で、世界イベントまたは broadcast constraint を観測できた。",
   "Exploration produced an optional quest, and accepting it opened a chapter that remained visible.":
     "探索から任意クエストが提示され、受諾後の chapter が見える形で残った。",
+  "Long quest lifecycle reached pause, exploration, resume, and epilogue completion.":
+    "クエスト lifecycle が離脱、探索、再開、epilogue 完了まで到達した。",
   "The dynamic quest offer or accepted chapter was not visible enough in the probe.":
     "動的クエスト提示または受諾後 chapter の可視性が十分に確認できなかった。",
   "Late join and follow-up did not expose a world event or broadcast constraint.":

@@ -1,4 +1,4 @@
-.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e swarm-test verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe playwright-mcp-clean observability-up observability-down
+.PHONY: compose-up compose-down backend-test backend-test-engine backend-test-packs pack-list pack-validate pack-export pack-import scan-pack-leaks build-frontend build-player-frontend build-admin-frontend frontend-e2e swarm-test swarm-test-long verify-v2 verify-v2-profile scan-v1-terms eval-smoke eval-verify-db-reset eval-pack-regressions shared-world-regressions eval-shadow release-gate nightly-eval release-checklist canary-up canary-down canary-probe playwright-mcp-clean observability-up observability-down
 
 COMPOSE ?= docker compose
 VERIFY_ENV = LANGFUSE_ENABLED=false OTEL_EXPORTER_OTLP_ENDPOINT= MODEL_PROVIDER=stub EMBEDDING_PROVIDER=stub
@@ -78,7 +78,11 @@ swarm-test:
 	echo "SWARM_RUN_GROUP_ID=$$run_group_id"; \
 	echo "SWARM_RUN_GROUP_DIR=$$run_group_dir"; \
 	echo "SWARM_ARTIFACT_DIR=$$artifact_dir"; \
-	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_RUN_GROUP_ID="$$run_group_id" SWARM_RUN_GROUP_DIR="$$run_group_dir" SWARM_ARTIFACT_DIR="$$artifact_dir" SWARM_PERSONA_IDS="$${SWARM_PERSONA_IDS:-}" SWARM_PERSONA_SEED="$${SWARM_PERSONA_SEED:-}" SWARM_TURN_TIMEOUT_MS="$${SWARM_TURN_TIMEOUT_MS:-600000}" SWARM_TEST_TIMEOUT_MS="$${SWARM_TEST_TIMEOUT_MS:-1800000}" SWARM_POLL_TIMEOUT_MS="$${SWARM_POLL_TIMEOUT_MS:-120000}" SWARM_JUDGE_ENABLED="$${SWARM_JUDGE_ENABLED:-true}" SWARM_JUDGE_MODEL_ID="$${SWARM_JUDGE_MODEL_ID:-}" SWARM_JUDGE_TIMEOUT_MS="$${SWARM_JUDGE_TIMEOUT_MS:-120000}" SWARM_EXPERIENCE_WARNING_THRESHOLD="$${SWARM_EXPERIENCE_WARNING_THRESHOLD:-3}" $(COMPOSE) run --rm frontend-e2e
+	echo "SWARM_TEST_MODE=$${SWARM_TEST_MODE:-short}"; \
+	COMPOSE_PROFILES=e2e E2E_SPEC="../tests/e2e/swarm-test.spec.ts" SWARM_RUN_ID="$$run_id" SWARM_RUN_GROUP_ID="$$run_group_id" SWARM_RUN_GROUP_DIR="$$run_group_dir" SWARM_ARTIFACT_DIR="$$artifact_dir" SWARM_TEST_MODE="$${SWARM_TEST_MODE:-short}" SWARM_PERSONA_IDS="$${SWARM_PERSONA_IDS:-}" SWARM_PERSONA_SEED="$${SWARM_PERSONA_SEED:-}" SWARM_TURN_TIMEOUT_MS="$${SWARM_TURN_TIMEOUT_MS:-600000}" SWARM_TEST_TIMEOUT_MS="$${SWARM_TEST_TIMEOUT_MS:-1800000}" SWARM_POLL_TIMEOUT_MS="$${SWARM_POLL_TIMEOUT_MS:-120000}" SWARM_JUDGE_ENABLED="$${SWARM_JUDGE_ENABLED:-true}" SWARM_JUDGE_MODEL_ID="$${SWARM_JUDGE_MODEL_ID:-}" SWARM_JUDGE_TIMEOUT_MS="$${SWARM_JUDGE_TIMEOUT_MS:-120000}" SWARM_EXPERIENCE_WARNING_THRESHOLD="$${SWARM_EXPERIENCE_WARNING_THRESHOLD:-3}" $(COMPOSE) run --rm frontend-e2e
+
+swarm-test-long:
+	$(MAKE) swarm-test SWARM_TEST_MODE=long
 
 verify-v2:
 	$(MAKE) backend-test
