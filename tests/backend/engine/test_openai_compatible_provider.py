@@ -6,14 +6,14 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 import app.modules.llm_harness.service as llm_service
 import app.modules.world_memory.service as memory_service
 from app.core.config import Settings
 from app.core.prompts import PromptDefinition
 from app.models.base import Base
-from app.models.entities import LLMRun
+from app.models.entities import LLMContextCacheEntry, LLMRun
 from app.modules.gm_council.service import (
     CouncilMemoryManagerPayload,
     CouncilNarrativePayload,
@@ -177,7 +177,7 @@ def test_openai_compatible_provider_can_use_json_object_response_format(monkeypa
     assert body["response_format"] == {"type": "json_object"}
 
 
-def test_openai_compatible_provider_orders_stable_context_before_request_context(monkeypatch):
+def test_openai_compatible_provider_orders_cache_contexts_before_request_context(monkeypatch):
     _FakeClient.instances.clear()
     monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
 
@@ -203,17 +203,20 @@ def test_openai_compatible_provider_orders_stable_context_before_request_context
     )
 
     content = _FakeClient.instances[-1].requests[-1]["json"]["messages"][1]["content"]
-    assert content.index("## stable_context") < content.index("## request_context")
-    stable_section = content.split("## request_context", 1)[0]
+    assert content.index("## cache_static_context") < content.index("## turn_state_context")
+    assert content.index("## turn_state_context") < content.index("## request_context")
+    static_section = content.split("## turn_state_context", 1)[0]
+    turn_section = content.split("## request_context", 1)[0]
     request_section = content.split("## request_context", 1)[1]
-    assert '"world_pack":{"pack_id":"gestaloka_reference"}' in stable_section
-    assert '"player_profile":{"background":"lamp keeper"}' in stable_section
-    assert '"current_location":{"name":"Harbor"}' in stable_section
-    assert '"input_text":"first action"' not in stable_section
+    assert '"world_pack":{"pack_id":"gestaloka_reference"}' in static_section
+    assert '"player_profile":{"background":"lamp keeper"}' in static_section
+    assert '"shared_world_context":{"world_axes":[]}' in static_section
+    assert '"current_location":{"name":"Harbor"}' in turn_section
+    assert '"input_text":"first action"' not in static_section
     assert '"input_text":"first action"' in request_section
 
 
-def test_openai_compatible_provider_keeps_stable_prefix_when_only_input_text_changes(monkeypatch):
+def test_openai_compatible_provider_keeps_static_context_when_only_input_text_changes(monkeypatch):
     _FakeClient.instances.clear()
     monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
 
@@ -237,8 +240,208 @@ def test_openai_compatible_provider_keeps_stable_prefix_when_only_input_text_cha
 
     first_content = _FakeClient.instances[-1].requests[-2]["json"]["messages"][1]["content"]
     second_content = _FakeClient.instances[-1].requests[-1]["json"]["messages"][1]["content"]
-    assert first_content.split("## request_context", 1)[0] == second_content.split("## request_context", 1)[0]
+    assert first_content.split("## turn_state_context", 1)[0] == second_content.split("## turn_state_context", 1)[0]
     assert first_content != second_content
+
+
+class _FakeCache:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class _FakeCaches:
+    def __init__(self) -> None:
+        self.create_calls: list[dict[str, Any]] = []
+
+    def create(self, *, model: str, config: Any) -> _FakeCache:
+        self.create_calls.append({"model": model, "config": config})
+        return _FakeCache(f"cachedContents/{len(self.create_calls)}")
+
+
+class _FakeGenAIClient:
+    instances: list["_FakeGenAIClient"] = []
+
+    def __init__(self, *, api_key: str) -> None:
+        self.api_key = api_key
+        self.caches = _FakeCaches()
+        _FakeGenAIClient.instances.append(self)
+
+
+class _FakePart:
+    @staticmethod
+    def from_text(*, text: str) -> dict[str, str]:
+        return {"text": text}
+
+
+class _FakeContent:
+    def __init__(self, *, role: str, parts: list[Any]) -> None:
+        self.role = role
+        self.parts = parts
+
+
+class _FakeCreateCachedContentConfig:
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+
+
+class _FakeGenAITypes:
+    Part = _FakePart
+    Content = _FakeContent
+    CreateCachedContentConfig = _FakeCreateCachedContentConfig
+
+
+def _explicit_cache_session_factory(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'explicit-cache.db'}")
+    Base.metadata.create_all(bind=engine)
+    return sessionmaker(bind=engine)
+
+
+def _large_static_payload(input_text: str = "first action") -> dict[str, Any]:
+    return {
+        "world_id": "world-1",
+        "world_pack": {"pack_id": "gestaloka_reference", "lore": "same world " * 3000},
+        "player_profile": {"background": "lamp keeper", "notes": "stable profile " * 3000},
+        "shared_world_context": {"world_axes": ["light" for _ in range(600)]},
+        "current_location": {"name": "Harbor"},
+        "input_text": input_text,
+    }
+
+
+def test_openai_compatible_provider_reuses_explicit_context_cache(monkeypatch, tmp_path):
+    _FakeClient.instances.clear()
+    _FakeGenAIClient.instances.clear()
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(llm_service, "genai", type("FakeGenAI", (), {"Client": _FakeGenAIClient}))
+    monkeypatch.setattr(llm_service, "genai_types", _FakeGenAITypes)
+
+    session_factory = _explicit_cache_session_factory(tmp_path)
+    provider = OpenAICompatibleProvider(
+        _settings(
+            openai_compat_response_format="json_object",
+            openai_compat_explicit_context_cache_enabled=True,
+            openai_compat_context_cache_ttl_seconds=3600,
+        ),
+        session_factory=session_factory,
+    )
+    for input_text in ("first action", "second action"):
+        provider.generate(
+            prompt=_prompt(),
+            response_model=_ProviderPayload,
+            model_id="gemini-3-flash-preview",
+            lane="main_lane",
+            input_payload=_large_static_payload(input_text),
+            temperature=0.3,
+        )
+
+    cache_client = _FakeGenAIClient.instances[-1]
+    assert len(cache_client.caches.create_calls) == 1
+    first_body = _FakeClient.instances[-1].requests[-2]["json"]
+    second_body = _FakeClient.instances[-1].requests[-1]["json"]
+    assert first_body["cached_content"] == "cachedContents/1"
+    assert second_body["cached_content"] == "cachedContents/1"
+    assert "## cache_static_context" not in first_body["messages"][1]["content"]
+    with session_factory() as db:
+        rows = db.execute(select(LLMContextCacheEntry)).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].cache_name == "cachedContents/1"
+
+
+def test_openai_compatible_provider_skips_explicit_cache_under_minimum(monkeypatch, tmp_path):
+    _FakeClient.instances.clear()
+    _FakeGenAIClient.instances.clear()
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(llm_service, "genai", type("FakeGenAI", (), {"Client": _FakeGenAIClient}))
+    monkeypatch.setattr(llm_service, "genai_types", _FakeGenAITypes)
+
+    provider = OpenAICompatibleProvider(
+        _settings(openai_compat_response_format="json_object", openai_compat_explicit_context_cache_enabled=True),
+        session_factory=_explicit_cache_session_factory(tmp_path),
+    )
+    provider.generate(
+        prompt=_prompt(),
+        response_model=_ProviderPayload,
+        model_id="gemini-3-flash-preview",
+        lane="main_lane",
+        input_payload={"world_id": "world-1", "world_pack": {"pack_id": "gestaloka_reference"}, "input_text": "hello"},
+        temperature=0.3,
+    )
+
+    assert _FakeGenAIClient.instances == []
+    body = _FakeClient.instances[-1].requests[-1]["json"]
+    assert "cached_content" not in body
+    assert "## cache_static_context" in body["messages"][1]["content"]
+
+
+def test_openai_compatible_provider_falls_back_when_explicit_cache_create_fails(monkeypatch, tmp_path):
+    class _FailingCaches(_FakeCaches):
+        def create(self, *, model: str, config: Any) -> _FakeCache:
+            raise RuntimeError("cache unavailable")
+
+    class _FailingGenAIClient(_FakeGenAIClient):
+        def __init__(self, *, api_key: str) -> None:
+            self.api_key = api_key
+            self.caches = _FailingCaches()
+            _FakeGenAIClient.instances.append(self)
+
+    _FakeClient.instances.clear()
+    _FakeGenAIClient.instances.clear()
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(llm_service, "genai", type("FakeGenAI", (), {"Client": _FailingGenAIClient}))
+    monkeypatch.setattr(llm_service, "genai_types", _FakeGenAITypes)
+
+    provider = OpenAICompatibleProvider(
+        _settings(openai_compat_response_format="json_object", openai_compat_explicit_context_cache_enabled=True),
+        session_factory=_explicit_cache_session_factory(tmp_path),
+    )
+    provider.generate(
+        prompt=_prompt(),
+        response_model=_ProviderPayload,
+        model_id="gemini-3-flash-preview",
+        lane="main_lane",
+        input_payload=_large_static_payload(),
+        temperature=0.3,
+    )
+
+    body = _FakeClient.instances[-1].requests[-1]["json"]
+    assert "cached_content" not in body
+    assert "## cache_static_context" in body["messages"][1]["content"]
+
+
+def test_openai_compatible_provider_reads_gemini_usage_metadata(monkeypatch):
+    _FakeClient.instances.clear()
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+
+    original_post = _FakeClient.post
+
+    def post_with_gemini_usage(self, url: str, *, json: dict[str, Any]) -> _FakeResponse:
+        response = original_post(self, url, json=json)
+        payload = response.json()
+        payload.pop("usage", None)
+        payload["usage_metadata"] = {
+            "prompt_token_count": 100,
+            "candidates_token_count": 10,
+            "total_token_count": 110,
+            "cached_content_token_count": 70,
+        }
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(_FakeClient, "post", post_with_gemini_usage)
+
+    provider = OpenAICompatibleProvider(_settings(openai_compat_response_format="json_object"))
+    response = provider.generate(
+        prompt=_prompt(),
+        response_model=_ProviderPayload,
+        model_id="main-test",
+        lane="main_lane",
+        input_payload={"input_text": "hello"},
+        temperature=0.3,
+    )
+
+    assert response.prompt_tokens == 100
+    assert response.completion_tokens == 10
+    assert response.total_tokens == 110
+    assert response.prompt_cache_hit_tokens == 70
+    assert response.prompt_cache_miss_tokens == 30
 
 
 def test_live_intent_payload_shape_is_normalized_before_validation():

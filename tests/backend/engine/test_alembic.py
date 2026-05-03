@@ -60,6 +60,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "world_broadcast_deliveries",
         "outbox_events",
         "play_localized_text_cache",
+        "llm_context_cache_entries",
         "admin_app_users",
         "admin_runtime_configs",
         "admin_prompt_overrides",
@@ -87,6 +88,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     broadcast_event_columns = {column["name"] for column in inspector.get_columns("world_broadcast_events")}
     broadcast_delivery_columns = {column["name"] for column in inspector.get_columns("world_broadcast_deliveries")}
     play_localization_columns = {column["name"] for column in inspector.get_columns("play_localized_text_cache")}
+    llm_context_cache_columns = {column["name"] for column in inspector.get_columns("llm_context_cache_entries")}
     assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
     assert {"paid_balance", "bonus_balance"} <= sp_account_columns
     assert {"paid_delta", "bonus_delta", "paid_balance_after", "bonus_balance_after"} <= sp_ledger_columns
@@ -159,6 +161,22 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     } <= play_localization_columns
     play_localization_indexes = {index["name"] for index in inspector.get_indexes("play_localized_text_cache")}
     assert "ix_play_localized_text_cache_world_actor_language" in play_localization_indexes
+    assert {
+        "provider_name",
+        "model_id",
+        "context_hash",
+        "cache_name",
+        "expires_at",
+        "token_count",
+        "last_used_at",
+        "status",
+    } <= llm_context_cache_columns
+    llm_context_cache_indexes = {index["name"] for index in inspector.get_indexes("llm_context_cache_entries")}
+    assert "ix_llm_context_cache_entries_status_expires" in llm_context_cache_indexes
+    llm_context_cache_uniques = {
+        unique["name"] for unique in inspector.get_unique_constraints("llm_context_cache_entries")
+    }
+    assert "uq_llm_context_cache_provider_model_hash" in llm_context_cache_uniques
 
 
 def test_alembic_revision_ids_fit_default_version_table():

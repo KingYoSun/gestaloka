@@ -812,6 +812,29 @@ class LLMRun(Base, TimestampMixin):
     langfuse_status: Mapped[str] = mapped_column(String(32), default="disabled")
 
 
+class LLMContextCacheEntry(Base, TimestampMixin):
+    __tablename__ = "llm_context_cache_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_name",
+            "model_id",
+            "context_hash",
+            name="uq_llm_context_cache_provider_model_hash",
+        ),
+        Index("ix_llm_context_cache_entries_status_expires", "status", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    provider_name: Mapped[str] = mapped_column(String(64))
+    model_id: Mapped[str] = mapped_column(String(120))
+    context_hash: Mapped[str] = mapped_column(String(128))
+    cache_name: Mapped[str] = mapped_column(String(500))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="active")
+
+
 class OutboxEvent(Base, TimestampMixin):
     __tablename__ = "outbox_events"
     __table_args__ = (ForeignKeyConstraint(["event_id", "world_id"], ["events.id", "events.world_id"]),)

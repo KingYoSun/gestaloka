@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     openai_compat_max_retries: int = 2
     openai_compat_response_format: str = "json_schema"
     openai_compat_context_cache_enabled: bool = True
+    openai_compat_explicit_context_cache_enabled: bool = False
+    openai_compat_context_cache_ttl_seconds: int = 3600
     openai_compat_embedding_api_key: str = ""
     openai_compat_embedding_base_url: str = ""
     openai_compat_embedding_model: str = ""

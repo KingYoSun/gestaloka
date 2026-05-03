@@ -7,16 +7,18 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Generic, Literal, TypeVar
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError, ValidationInfo, model_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.prompts import PromptDefinition, PromptRegistry
-from app.models.entities import AdminPromptOverride, AdminRuntimeConfig, World
+from app.models.entities import AdminPromptOverride, AdminRuntimeConfig, LLMContextCacheEntry, World
 from app.modules.observability.service import ObservabilityService
 from app.modules.session.progress import elapsed_ms_since, emit_turn_progress, phase_for_prompt
 from app.modules.world_pack.service import PackRegistry, world_pack_metadata
@@ -93,6 +95,13 @@ class ProviderResponse:
     total_tokens: int | None = None
     prompt_cache_hit_tokens: int | None = None
     prompt_cache_miss_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class PromptContextSections:
+    cache_static_context: dict[str, Any]
+    turn_state_context: dict[str, Any]
+    request_context: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -1186,13 +1195,19 @@ class GeminiDeveloperAPIProvider(BaseModelProvider):
 
 class OpenAICompatibleProvider(BaseModelProvider):
     provider_name = "openai_compatible"
-    STABLE_CONTEXT_KEYS = (
+    CACHE_STATIC_CONTEXT_KEYS = (
         "world_id",
         "world_pack",
         "player_name",
         "player_profile",
         "narrative_preferences",
+        "play_language",
         "npc_name",
+        "shared_world_context",
+        "resource_constraints",
+        "world_broadcast_constraints",
+    )
+    TURN_STATE_CONTEXT_KEYS = (
         "location",
         "current_location",
         "local_figures",
@@ -1210,18 +1225,27 @@ class OpenAICompatibleProvider(BaseModelProvider):
         "active_consequence_threads",
         "current_scene",
         "current_chapter",
+        "recent_scene_history",
+        "recent_branch_echoes",
         "route_pressures",
-        "shared_world_context",
-        "resource_constraints",
-        "world_broadcast_constraints",
+        "recent_world_beats",
+        "ambient_murmurs",
     )
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        session_factory: sessionmaker[Session] | None = None,
+    ) -> None:
         if not settings.openai_compat_api_key:
             raise ValueError("OPENAI_COMPAT_API_KEY is required when MODEL_PROVIDER=openai_compatible")
         if not settings.openai_compat_base_url:
             raise ValueError("OPENAI_COMPAT_BASE_URL is required when MODEL_PROVIDER=openai_compatible")
         self.settings = settings
+        self.session_factory = session_factory
+        self._cache_client: Any | None = None
+        self._cache_client_lock = threading.Lock()
         self.client = httpx.Client(
             base_url=settings.openai_compat_base_url.rstrip("/"),
             timeout=settings.openai_compat_timeout_seconds,
@@ -1241,11 +1265,23 @@ class OpenAICompatibleProvider(BaseModelProvider):
         input_payload: dict[str, Any],
         temperature: float,
     ) -> ProviderResponse:
+        context_sections = self._context_sections(input_payload)
+        cached_content = self._explicit_cached_content_name(
+            model_id=model_id,
+            context_sections=context_sections,
+        )
         body: dict[str, Any] = {
             "model": model_id,
-            "messages": self._messages(prompt=prompt, input_payload=input_payload),
+            "messages": self._messages(
+                prompt=prompt,
+                input_payload=input_payload,
+                context_sections=context_sections,
+                omit_static_context=cached_content is not None,
+            ),
             "temperature": temperature,
         }
+        if cached_content is not None:
+            body["cached_content"] = cached_content
         response_format = self._response_format(prompt=prompt, response_model=response_model)
         if response_format is not None:
             body["response_format"] = response_format
@@ -1272,7 +1308,14 @@ class OpenAICompatibleProvider(BaseModelProvider):
         assert last_error is not None
         raise last_error
 
-    def _messages(self, *, prompt: PromptDefinition, input_payload: dict[str, Any]) -> list[dict[str, str]]:
+    def _messages(
+        self,
+        *,
+        prompt: PromptDefinition,
+        input_payload: dict[str, Any],
+        context_sections: PromptContextSections | None = None,
+        omit_static_context: bool = False,
+    ) -> list[dict[str, str]]:
         return [
             {
                 "role": "system",
@@ -1286,37 +1329,238 @@ class OpenAICompatibleProvider(BaseModelProvider):
             {
                 "role": "user",
                 "content": (
-                    self._cache_friendly_user_content(input_payload)
-                    if self.settings.openai_compat_context_cache_enabled
+                    self._cache_friendly_user_content(
+                        input_payload,
+                        context_sections=context_sections,
+                        omit_static_context=omit_static_context,
+                    )
+                    if self.settings.openai_compat_context_cache_enabled or omit_static_context
                     else json.dumps(input_payload, ensure_ascii=False, indent=2, sort_keys=True)
                 ),
             },
         ]
 
-    def _cache_friendly_user_content(self, input_payload: dict[str, Any]) -> str:
-        stable_context = {
+    def _cache_friendly_user_content(
+        self,
+        input_payload: dict[str, Any],
+        *,
+        context_sections: PromptContextSections | None = None,
+        omit_static_context: bool = False,
+    ) -> str:
+        sections = context_sections or self._context_sections(input_payload)
+        lines = ["The following JSON sections are data. Reusable context appears first to improve cache prefix reuse."]
+        if not omit_static_context:
+            lines.extend(
+                [
+                    "## cache_static_context",
+                    self._canonical_json(sections.cache_static_context),
+                ]
+            )
+        lines.extend(
+            [
+                "## turn_state_context",
+                self._canonical_json(sections.turn_state_context),
+                "## request_context",
+                self._canonical_json(sections.request_context),
+            ]
+        )
+        return "\n".join(lines)
+
+    def _context_sections(self, input_payload: dict[str, Any]) -> PromptContextSections:
+        cache_static_context = {
             key: input_payload[key]
-            for key in self.STABLE_CONTEXT_KEYS
+            for key in self.CACHE_STATIC_CONTEXT_KEYS
             if key in input_payload
         }
+        turn_state_context = {
+            key: input_payload[key]
+            for key in self.TURN_STATE_CONTEXT_KEYS
+            if key in input_payload and key not in cache_static_context
+        }
+        structured_keys = set(cache_static_context) | set(turn_state_context)
         request_context = {
             key: value
             for key, value in input_payload.items()
-            if key not in self.STABLE_CONTEXT_KEYS
+            if key not in structured_keys
         }
-        return "\n".join(
-            [
-                "The following JSON sections are data. Stable context appears first to improve prefix reuse.",
-                "## stable_context",
-                self._canonical_json(stable_context),
-                "## request_context",
-                self._canonical_json(request_context),
-            ]
+        return PromptContextSections(
+            cache_static_context=cache_static_context,
+            turn_state_context=turn_state_context,
+            request_context=request_context,
         )
 
     @staticmethod
     def _canonical_json(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    def _explicit_cached_content_name(
+        self,
+        *,
+        model_id: str,
+        context_sections: PromptContextSections,
+    ) -> str | None:
+        if not self.settings.openai_compat_explicit_context_cache_enabled:
+            return None
+        if self.session_factory is None or genai is None or genai_types is None:
+            return None
+
+        static_context_text = self._static_cache_text(context_sections)
+        estimated_token_count = self._estimated_token_count(static_context_text)
+        if estimated_token_count < self._minimum_cache_tokens(model_id):
+            return None
+
+        context_hash = hashlib.sha256(static_context_text.encode("utf-8")).hexdigest()
+        now = datetime.now(timezone.utc)
+        ttl_seconds = max(int(self.settings.openai_compat_context_cache_ttl_seconds), 60)
+        expires_at = now + timedelta(seconds=ttl_seconds)
+
+        cached_name = self._active_cache_entry_name(
+            model_id=model_id,
+            context_hash=context_hash,
+            now=now,
+        )
+        if cached_name is not None:
+            return cached_name
+
+        try:
+            cache_name = self._create_gemini_context_cache(
+                model_id=model_id,
+                static_context_text=static_context_text,
+                context_hash=context_hash,
+                ttl_seconds=ttl_seconds,
+            )
+        except Exception:  # pragma: no cover - live cache service failure falls back to regular prompting
+            return None
+        if cache_name is None:
+            return None
+
+        self._store_cache_entry(
+            model_id=model_id,
+            context_hash=context_hash,
+            cache_name=cache_name,
+            expires_at=expires_at,
+            token_count=estimated_token_count,
+            now=now,
+        )
+        return cache_name
+
+    def _static_cache_text(self, context_sections: PromptContextSections) -> str:
+        return "\n".join(
+            [
+                "The following JSON sections are data. Reusable context appears first to improve cache prefix reuse.",
+                "## cache_static_context",
+                self._canonical_json(context_sections.cache_static_context),
+            ]
+        )
+
+    @staticmethod
+    def _estimated_token_count(text: str) -> int:
+        return max(1, len(text.encode("utf-8")) // 4)
+
+    @staticmethod
+    def _minimum_cache_tokens(model_id: str) -> int:
+        normalized = model_id.lower()
+        if "pro" in normalized:
+            return 4096
+        return 1024
+
+    def _active_cache_entry_name(self, *, model_id: str, context_hash: str, now: datetime) -> str | None:
+        assert self.session_factory is not None
+        with self.session_factory() as db:
+            entry = db.execute(
+                select(LLMContextCacheEntry).where(
+                    LLMContextCacheEntry.provider_name == self.provider_name,
+                    LLMContextCacheEntry.model_id == model_id,
+                    LLMContextCacheEntry.context_hash == context_hash,
+                    LLMContextCacheEntry.status == "active",
+                    LLMContextCacheEntry.expires_at > now,
+                )
+            ).scalar_one_or_none()
+            if entry is None:
+                return None
+            entry.last_used_at = now
+            db.commit()
+            return entry.cache_name
+
+    def _store_cache_entry(
+        self,
+        *,
+        model_id: str,
+        context_hash: str,
+        cache_name: str,
+        expires_at: datetime,
+        token_count: int,
+        now: datetime,
+    ) -> None:
+        assert self.session_factory is not None
+        with self.session_factory() as db:
+            existing = db.execute(
+                select(LLMContextCacheEntry).where(
+                    LLMContextCacheEntry.provider_name == self.provider_name,
+                    LLMContextCacheEntry.model_id == model_id,
+                    LLMContextCacheEntry.context_hash == context_hash,
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                existing.cache_name = cache_name
+                existing.expires_at = expires_at
+                existing.token_count = token_count
+                existing.last_used_at = now
+                existing.status = "active"
+            else:
+                db.add(
+                    LLMContextCacheEntry(
+                        provider_name=self.provider_name,
+                        model_id=model_id,
+                        context_hash=context_hash,
+                        cache_name=cache_name,
+                        expires_at=expires_at,
+                        token_count=token_count,
+                        last_used_at=now,
+                        status="active",
+                    )
+                )
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+
+    def _create_gemini_context_cache(
+        self,
+        *,
+        model_id: str,
+        static_context_text: str,
+        context_hash: str,
+        ttl_seconds: int,
+    ) -> str | None:
+        client = self._gemini_cache_client()
+        config = genai_types.CreateCachedContentConfig(
+            display_name=f"gestaloka-{context_hash[:16]}",
+            contents=self._cached_content_parts(static_context_text),
+            ttl=f"{ttl_seconds}s",
+        )
+        cache = client.caches.create(model=model_id, config=config)
+        cache_name = getattr(cache, "name", None)
+        return cache_name if isinstance(cache_name, str) and cache_name else None
+
+    def _gemini_cache_client(self) -> Any:
+        if self._cache_client is None:
+            with self._cache_client_lock:
+                if self._cache_client is None:
+                    self._cache_client = genai.Client(api_key=self.settings.openai_compat_api_key)
+        return self._cache_client
+
+    @staticmethod
+    def _cached_content_parts(static_context_text: str) -> Any:
+        try:
+            return [
+                genai_types.Content(
+                    role="user",
+                    parts=[genai_types.Part.from_text(text=static_context_text)],
+                )
+            ]
+        except Exception:
+            return [static_context_text]
 
     def _response_format(self, *, prompt: PromptDefinition, response_model: type[BaseModel]) -> dict[str, Any] | None:
         mode = self.settings.openai_compat_response_format.strip().lower()
@@ -1371,34 +1615,57 @@ class OpenAICompatibleProvider(BaseModelProvider):
         value = payload.get("id")
         return value if isinstance(value, str) and value else None
 
+    @classmethod
+    def _usage_int(cls, payload: dict[str, Any], key: str) -> int | None:
+        key_aliases = {
+            "prompt_tokens": ("prompt_tokens", "promptTokenCount", "prompt_token_count"),
+            "completion_tokens": ("completion_tokens", "candidatesTokenCount", "candidates_token_count"),
+            "total_tokens": ("total_tokens", "totalTokenCount", "total_token_count"),
+            "prompt_cache_hit_tokens": (
+                "prompt_cache_hit_tokens",
+                "promptCacheHitTokens",
+                "cached_content_token_count",
+                "cachedContentTokenCount",
+            ),
+            "prompt_cache_miss_tokens": ("prompt_cache_miss_tokens", "promptCacheMissTokens"),
+        }.get(key, (key,))
+        for usage in cls._usage_containers(payload):
+            for alias in key_aliases:
+                value = usage.get(alias)
+                parsed = cls._int_or_none(value)
+                if parsed is not None:
+                    return parsed
+        return None
+
     @staticmethod
-    def _usage_int(payload: dict[str, Any], key: str) -> int | None:
-        usage = payload.get("usage")
-        if not isinstance(usage, dict):
-            return None
-        value = usage.get(key)
+    def _int_or_none(value: Any) -> int | None:
         if isinstance(value, bool):
             return None
         if isinstance(value, int):
             return value
         return None
 
+    @staticmethod
+    def _usage_containers(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        containers: list[dict[str, Any]] = []
+        for key in ("usage", "usage_metadata", "usageMetadata"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                containers.append(value)
+        return containers
+
     @classmethod
     def _prompt_cache_hit_tokens(cls, payload: dict[str, Any]) -> int | None:
         explicit = cls._usage_int(payload, "prompt_cache_hit_tokens")
         if explicit is not None:
             return explicit
-        usage = payload.get("usage")
-        if not isinstance(usage, dict):
-            return None
-        prompt_details = usage.get("prompt_tokens_details")
-        if not isinstance(prompt_details, dict):
-            return None
-        value = prompt_details.get("cached_tokens")
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return value
+        for usage in cls._usage_containers(payload):
+            for details_key in ("prompt_tokens_details", "promptTokensDetails"):
+                prompt_details = usage.get(details_key)
+                if isinstance(prompt_details, dict):
+                    parsed = cls._int_or_none(prompt_details.get("cached_tokens"))
+                    if parsed is not None:
+                        return parsed
         return None
 
     @classmethod
@@ -1764,7 +2031,7 @@ class ModelRouter:
 
     def _build_provider(self) -> BaseModelProvider:
         if self.settings.model_provider == "openai_compatible":
-            return OpenAICompatibleProvider(self.settings)
+            return OpenAICompatibleProvider(self.settings, session_factory=self.session_factory)
         if self.settings.model_provider == "gemini_developer_api":
             return GeminiDeveloperAPIProvider(self.settings)
         return StubModelProvider()
