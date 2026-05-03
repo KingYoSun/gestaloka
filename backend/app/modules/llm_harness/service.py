@@ -368,6 +368,8 @@ class StubModelProvider(BaseModelProvider):
             return self._intent_interpreter_output(input_payload)
         if prompt_id == "council.npc_manager":
             return self._npc_manager_output(input_payload)
+        if prompt_id == "council.situation_mapper":
+            return self._situation_mapper_output(input_payload)
         if prompt_id == "council.world_progress":
             return self._world_progress_output(input_payload)
         if prompt_id == "council.rules_arbiter":
@@ -727,6 +729,83 @@ class StubModelProvider(BaseModelProvider):
             ),
         }
 
+    def _situation_mapper_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        intent_summary = str(input_payload.get("intent_summary") or input_payload.get("input_text") or "場を見る")
+        current_scene = input_payload.get("current_scene") if isinstance(input_payload.get("current_scene"), dict) else {}
+        current_location = input_payload.get("current_location") if isinstance(input_payload.get("current_location"), dict) else {}
+        default_choice_templates = input_payload.get("default_choice_templates") or []
+        affordances: list[dict[str, Any]] = []
+        for template in default_choice_templates[:3]:
+            if not isinstance(template, dict):
+                continue
+            label = str(template.get("label") or template.get("canonical_input_text") or template.get("summary") or "").strip()
+            summary = str(template.get("summary") or template.get("canonical_input_text") or label).strip()
+            affordances.append(
+                {
+                    "label": label or "場の変化を確かめる",
+                    "intent_summary": summary or label or "場の変化を確かめる",
+                    "risk_hint": "大きな危険はなく、状況を読みやすい。",
+                    "effect_hint": "次に何を選べるかが明確になる。",
+                    "action_kind": str(template.get("action_kind") or "narrative"),
+                    "travel_target_key": str(template.get("travel_target_key") or "").strip() or None,
+                }
+            )
+        if len(affordances) < 2:
+            affordances = [
+                {
+                    "label": "場の変化を確かめる",
+                    "intent_summary": "直前の結果を読み、何が変わったかを確かめる",
+                    "risk_hint": "大きな危険はない。",
+                    "effect_hint": "現在の状況が明確になる。",
+                    "action_kind": "narrative",
+                    "travel_target_key": None,
+                },
+                {
+                    "label": "近くの相手に反応を求める",
+                    "intent_summary": "近くの相手に声をかけ、反応と情報を得る",
+                    "risk_hint": "相手の注意を引く。",
+                    "effect_hint": "NPCの意図や次の糸口が見える。",
+                    "action_kind": "narrative",
+                    "travel_target_key": None,
+                },
+                {
+                    "label": "周囲の手がかりを探る",
+                    "intent_summary": "周囲の手がかりを探り、未解決の問いを絞る",
+                    "risk_hint": "時間を使う。",
+                    "effect_hint": "隠れた圧力や機会を見つける。",
+                    "action_kind": "narrative",
+                    "travel_target_key": None,
+                },
+            ]
+        return {
+            "action_result_focus": f"{intent_summary} の結果として、次に判断すべき場面が更新される。",
+            "current_situation": str(
+                current_scene.get("summary")
+                or current_location.get("description")
+                or "現在の場面は次の判断を待っている。"
+            ),
+            "visible_elements": [
+                str(current_location.get("name") or "現在地"),
+                *[
+                    str(item.get("display_name") or item.get("name") or item)
+                    if isinstance(item, dict)
+                    else str(item)
+                    for item in (input_payload.get("local_figures") or [])[:3]
+                ],
+            ],
+            "immediate_pressure": str(
+                current_scene.get("pressure_summary")
+                or input_payload.get("consequence_summary")
+                or "場の反応が次の行動を待っている。"
+            ),
+            "open_questions": ["何が変わったか", "誰が次に反応するか"],
+            "affordances": affordances[:4],
+            "risk_level": "low" if bool(input_payload.get("fail_forward")) else "medium",
+            "effect_level": "standard",
+            "fail_forward_hint": "失敗しても状況の圧力やNPCの反応を変えて次の判断点を作る。",
+            "agency_guard": "プレイヤーの次の行動、決意、感情をAIが確定しない。",
+        }
+
     def _world_progress_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         player_name = str(input_payload.get("player_name") or "Player")
         npc_name = str(input_payload.get("npc_name") or "NPC")
@@ -754,21 +833,28 @@ class StubModelProvider(BaseModelProvider):
         if world_tags == ["none"]:
             risk_level = "low"
         npc_anchor = str(input_payload.get("reaction_outline") or f"{npc_name} responds to the new event.")
-        default_choice_templates = input_payload.get("default_choice_templates") or []
+        game_frame = input_payload.get("game_frame") if isinstance(input_payload.get("game_frame"), dict) else {}
+        frame_affordances = game_frame.get("affordances") if isinstance(game_frame.get("affordances"), list) else []
+        default_choice_templates = frame_affordances or input_payload.get("default_choice_templates") or []
         if not isinstance(default_choice_templates, list):
             default_choice_templates = []
         next_choices: list[dict[str, Any]] = []
-        for template in default_choice_templates[:3]:
+        for index, template in enumerate(default_choice_templates[:3]):
             if not isinstance(template, dict):
                 continue
-            posture = str(template.get("posture") or "progress")
+            posture = str(template.get("posture") or ("safe", "progress", "explore")[min(index, 2)])
             label = str(template.get("label") or template.get("canonical_input_text") or "Continue through the scene.")
             action_kind = str(template.get("action_kind") or "narrative")
+            risk_hint = str(template.get("risk_hint") or "").strip()
+            effect_hint = str(template.get("effect_hint") or "").strip()
+            intent_summary = str(template.get("canonical_input_text") or template.get("intent_summary") or label)
+            if risk_hint or effect_hint:
+                intent_summary = f"{intent_summary} {effect_hint or '状況が進む'} {risk_hint or '大きな危険はない'}"
             next_choices.append(
                 {
                     "posture": posture if posture in {"safe", "progress", "explore"} else "progress",
                     "label": label,
-                    "intent_summary": str(template.get("canonical_input_text") or label),
+                    "intent_summary": intent_summary,
                     "action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
                     "travel_target_key": str(template.get("travel_target_key") or "").strip() or None,
                 }
@@ -2087,6 +2173,7 @@ class ModelRouter:
             "council.intent_interpreter",
             "council.memory_manager",
             "council.npc_manager",
+            "council.situation_mapper",
             "council.world_progress",
         }
         has_eval_control_marker = "__force_invalid_main__" in input_text or "__force_safety_reject__" in input_text

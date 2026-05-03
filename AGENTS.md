@@ -6,6 +6,7 @@
 
 - 実装の最終的な真実はコードとテストです。
 - 固定済み前提は [documents/adr/ADR-000-v2-foundation.md](documents/adr/ADR-000-v2-foundation.md) を参照してください。
+- ゲーム進行 / AI GM 実践ルールは [GAME.md](GAME.md) を参照してください。
 - フロントエンドの視覚設計ルールは [DESIGN.md](DESIGN.md) を参照してください。
 
 ## Architecture Rules

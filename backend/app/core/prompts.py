@@ -12,6 +12,7 @@ SUPPORTED_PROMPT_SCHEMAS = {
     "council_intent_interpreter_v1": "1",
     "council_memory_manager_v1": "1",
     "council_npc_manager_v1": "1",
+    "council_situation_mapper_v1": "1",
     "council_world_progress_v2": "2",
     "council_world_progress_v3": "3",
     "council_rules_arbiter_v1": "1",
@@ -77,7 +78,7 @@ class PromptRegistry:
             raise FileNotFoundError(f"Prompt directory not found: {self.prompt_dir}")
 
         definitions: dict[str, PromptDefinition] = {}
-        for prompt_file in sorted(self.prompt_dir.glob("*.yaml")):
+        for prompt_file in sorted(self.prompt_dir.rglob("*.yaml")):
             with prompt_file.open("r", encoding="utf-8") as handle:
                 raw = yaml.safe_load(handle) or {}
 

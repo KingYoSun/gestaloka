@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 import app.modules.identity.oidc as oidc_module
 from app.core.config import Settings
-from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, PlayLocalizedTextCache, ProjectionRecord, World
+from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, PlayLocalizedTextCache, ProjectionRecord, Turn, World
 from app.modules.identity.oidc import KeycloakOIDCAdapter, UserIdentity
 from app.modules.llm_harness.service import CouncilRoleRun, ProviderResponse, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult
@@ -989,15 +989,16 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert completed_phases[0] == "intent_interpretation"
     assert set(completed_phases[1:3]) == {"memory_council", "npc_council"}
     assert completed_phases[3:] == [
+        "situation_mapping",
         "world_progress",
         "rules_arbiter",
         "safety_guard",
-            "narrative",
-            "world_tag_updates",
-            "dynamic_quest_offer",
-            "quest_resolution_hint",
-            "consequence_resolution",
-            "scene_framing",
+        "narrative",
+        "world_tag_updates",
+        "dynamic_quest_offer",
+        "quest_resolution_hint",
+        "consequence_resolution",
+        "scene_framing",
         "memory_materialization",
         "shared_consequence",
         "ambient_world_pass",
@@ -1152,11 +1153,76 @@ def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, co
         "intent_interpreter",
         "memory_manager",
         "npc_manager",
+        "situation_mapper",
         "world_progress",
         "rules_arbiter",
         "safety_guard",
         "narrative",
     ]
+
+
+def test_situation_frame_reaches_world_progress_and_narrative(client, container, auth_headers, monkeypatch):
+    original_execute = container.model_router.execute_structured_prompt
+    captured: dict[str, dict] = {}
+
+    def capture_game_frame(*, prompt_id, input_payload, **kwargs):
+        if prompt_id in {"council.world_progress", "council.narrative"}:
+            captured[prompt_id] = input_payload
+        return original_execute(prompt_id=prompt_id, input_payload=input_payload, **kwargs)
+
+    monkeypatch.setattr(container.model_router, "execute_structured_prompt", capture_game_frame)
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_response.json()["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "safe"},
+    )
+
+    for prompt_id in ("council.world_progress", "council.narrative"):
+        game_frame = captured[prompt_id]["game_frame"]
+        assert game_frame["current_situation"]
+        assert game_frame["immediate_pressure"]
+        assert len(game_frame["affordances"]) >= 2
+        assert game_frame["agency_guard"]
+
+
+def test_situation_mapper_schema_failure_uses_deterministic_frame(client, container, auth_headers, monkeypatch):
+    original_execute = container.model_router.execute_structured_prompt
+    captured_world_progress: dict = {}
+
+    def fail_situation_mapper(*, prompt_id, input_payload, **kwargs):
+        nonlocal captured_world_progress
+        if prompt_id == "council.situation_mapper":
+            return SimpleNamespace(
+                attempts=[],
+                final_lane="lite_lane",
+                final_payload=None,
+                failure_reason="lite_lane output failed schema validation",
+                succeeded=False,
+            )
+        if prompt_id == "council.world_progress":
+            captured_world_progress = input_payload
+        return original_execute(prompt_id=prompt_id, input_payload=input_payload, **kwargs)
+
+    monkeypatch.setattr(container.model_router, "execute_structured_prompt", fail_situation_mapper)
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+
+    _, payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_response.json()["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "safe"},
+    )
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn.resolved_output["used_fallback"] is True
+    assert captured_world_progress["game_frame"]["affordances"]
+    assert [item["choice_id"] for item in payload["next_choices"]] == ["safe", "progress", "explore"]
 
 
 def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_headers):
@@ -1333,7 +1399,7 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
     assert progress_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
 
 
-def test_generated_narrative_choice_does_not_inherit_fallback_travel(client, container, auth_headers, monkeypatch):
+def test_situation_frame_choice_keeps_explicit_travel_contract(client, container, auth_headers, monkeypatch):
     provider = container.model_router.provider
     original_generate = provider.generate
 
@@ -1393,10 +1459,10 @@ def test_generated_narrative_choice_does_not_inherit_fallback_travel(client, con
         {"input_mode": "choice", "choice_id": "safe"},
     )
     generated_explore = first_payload["next_choices"][2]
-    assert generated_explore["label"] == "現在の場所について質問する"
-    assert generated_explore["canonical_input_text"] == "現在の場所について質問する"
-    assert generated_explore["action_kind"] == "narrative"
-    assert generated_explore["travel_target_key"] is None
+    assert generated_explore["label"] != "現在の場所について質問する"
+    assert "リフト・タワー・コンコース" in generated_explore["label"]
+    assert generated_explore["action_kind"] == "travel"
+    assert generated_explore["travel_target_key"] == "lift_tower_concourse"
 
     _, second_payload, _ = _post_turn_and_wait_for_resolution(
         client,
@@ -1404,9 +1470,9 @@ def test_generated_narrative_choice_does_not_inherit_fallback_travel(client, con
         auth_headers,
         {"input_mode": "choice", "choice_id": "explore"},
     )
-    assert second_payload["action_type"] == "narrative"
-    assert second_payload["interpreted_intent"]["canonical_action_kind"] == "narrative"
-    assert second_payload["current_location"]["key"] == "nexus_gate"
+    assert second_payload["action_type"] == "travel"
+    assert second_payload["interpreted_intent"]["canonical_action_kind"] == "travel"
+    assert second_payload["current_location"]["key"] == "lift_tower_concourse"
 
 
 def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers):
@@ -1564,6 +1630,7 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
         "intent_interpreter",
         "memory_manager",
         "npc_manager",
+        "situation_mapper",
         "world_progress",
         "rules_arbiter",
         "safety_guard",

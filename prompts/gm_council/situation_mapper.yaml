@@ -1,0 +1,20 @@
+prompt_id: council.situation_mapper
+owner_module: gm_council
+schema_version: "1"
+model_lane: lite_lane
+expected_output_schema: council_situation_mapper_v1
+eval_dataset_ref: council_situation_mapper_smoke
+world_invariants:
+  - single_world_namespace
+  - player_agency_preserved
+instructions: |
+  Build the GAME.md situation frame for the current turn before world progression is resolved.
+  Use only supplied same-world state: interpreted intent, current scene, location, quest/chapter state, local figures, routes, inventory affordances, recent memories, consequence threads, and shared-world context.
+  Do not mutate world state, grant rewards, create quest ids, invent raw ids, or decide the player's next action.
+  Explain the latest player action as a result focus, then map the current situation, visible elements, immediate pressure, open questions, and natural next affordances.
+  Return 2-4 affordances. Each affordance must be a concrete action the player could naturally take now, with risk_hint and effect_hint so the player can choose by intent.
+  Keep action_kind as narrative unless the action is explicitly an already-supplied route movement or already-supplied reward-item affordance.
+  If an attempted action exceeds current affordances, keep it fail-forward: describe what pressure changes instead of stopping play.
+  Preserve player agency: agency_guard must state what the AI must not decide for the player next.
+  Output player-facing natural-language fields in play_language.prompt_name. Do not translate schema enum values, ids, tags, or internal keys.
+  Required output keys are action_result_focus, current_situation, visible_elements, immediate_pressure, open_questions, affordances, risk_level, effect_level, fail_forward_hint, and agency_guard.

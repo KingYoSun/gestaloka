@@ -90,6 +90,14 @@ def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
         EvalHarnessService(settings, prompt_registry, ProjectionService(settings), MemoryService(settings))
 
 
+def test_prompt_registry_loads_nested_prompt_definitions():
+    prompt_registry = PromptRegistry(REPO_ROOT / "prompts", REPO_ROOT / "evals" / "datasets")
+
+    assert prompt_registry.get("council.situation_mapper").expected_output_schema == "council_situation_mapper_v1"
+    assert "council.situation_mapper" in prompt_registry._cache
+    assert "swarm_experience_judge" not in prompt_registry._cache
+
+
 def test_eval_runner_persists_current_and_candidate_results(container):
     with container.session_factory() as db:
         payload = container.eval_service.run_dataset(db, "turn_resolution_smoke")

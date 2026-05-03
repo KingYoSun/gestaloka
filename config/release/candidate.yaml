@@ -9,6 +9,9 @@ routes:
   council.npc_manager:
     prompt_id: council.npc_manager
     default_lane: lite_lane
+  council.situation_mapper:
+    prompt_id: council.situation_mapper
+    default_lane: lite_lane
   council.world_progress:
     prompt_id: council.world_progress
     default_lane: main_lane

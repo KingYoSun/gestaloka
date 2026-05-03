@@ -18,10 +18,11 @@ PROMPT_PHASES: dict[str, tuple[str, int]] = {
     "council.intent_interpreter": ("intent_interpretation", 1),
     "council.memory_manager": ("memory_council", 2),
     "council.npc_manager": ("npc_council", 3),
-    "council.world_progress": ("world_progress", 4),
-    "council.rules_arbiter": ("rules_arbiter", 5),
-    "council.safety_guard": ("safety_guard", 6),
-    "council.narrative": ("narrative", 7),
+    "council.situation_mapper": ("situation_mapping", 4),
+    "council.world_progress": ("world_progress", 5),
+    "council.rules_arbiter": ("rules_arbiter", 6),
+    "council.safety_guard": ("safety_guard", 7),
+    "council.narrative": ("narrative", 8),
 }
 
 

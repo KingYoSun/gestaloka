@@ -64,6 +64,14 @@ def test_admin_settings_and_prompt_overrides_persist_without_secrets(client, con
     assert prompt_override.instructions == "Keep admin-managed prompt policy active."
 
 
+def test_admin_prompts_lists_situation_mapper(client, auth_headers):
+    response = client.get("/admin/prompts", headers=auth_headers)
+
+    assert response.status_code == 200
+    prompt_ids = {item["prompt_id"] for item in response.json()["items"]}
+    assert "council.situation_mapper" in prompt_ids
+
+
 def test_admin_user_permissions_authorize_ops_when_not_bootstrapped(container):
     settings = container.settings.model_copy(update={"oidc_dev_mode": False, "ops_admin_subs": ""})
     fake_container = SimpleNamespace(settings=settings)

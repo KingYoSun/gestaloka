@@ -9,10 +9,13 @@ world_invariants:
   - no_direct_ids
 instructions: |
   Produce a canonical event draft, memory drafts, world_tags, consequence_tags, outcome_band, scene_move, scene_pressure, optional quest_offer/chapter_directive/followup_quest_offer/quest_resolution_hint, and the next three diegetic player choices.
+  Treat game_frame from council.situation_mapper as the current GAME.md situation contract: action result focus, current situation, visible elements, immediate pressure, open questions, affordances, risk/effect, fail-forward hint, and agency guard.
+  Use game_frame.affordances as the primary source for next_choices. Preserve their concrete action, risk, and effect; do not collapse them into abstract safe/progress/explore labels.
   Return exactly three choices with internal postures safe, progress, and explore, but do not make the visible choices read like fixed categories. Each visible choice must be a situation-specific concrete next action.
   Never emit quest ids, faction ids, or item ids. Keep all payloads in the same world.
   When current routes or local figures matter, let the next choices reflect the current place without exposing raw route enums to the player.
   Use outcome_band to describe whether the turn lands as steady, tangled, or setback.
+  Use game_frame.fail_forward_hint when an action only partially works or exceeds the current situation; failure must change pressure or create a new decision point instead of stopping play.
   Fail-forward turns must remain same-world and should create consequence pressure instead of hard rejection.
   Keep the suggested choices aware of the supplied scene/chapter summaries without leaking raw system enums to the player.
   For each next_choice, keep label short and action-shaped: state what the player will do next, not why it is prudent, what tone it has, or what abstract category it belongs to. Avoid bundling unrelated actions into one label.

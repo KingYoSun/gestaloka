@@ -4052,6 +4052,7 @@ def _progress_phases_from_role_runs(role_runs: list[Any]) -> list[str]:
         "intent_interpreter": "intent_interpretation",
         "memory_manager": "memory_council",
         "npc_manager": "npc_council",
+        "situation_mapper": "situation_mapping",
         "world_progress": "world_progress",
         "rules_arbiter": "rules_arbiter",
         "safety_guard": "safety_guard",

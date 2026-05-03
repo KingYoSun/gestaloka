@@ -348,6 +348,124 @@ class CouncilNPCManagerPayload(BaseModel):
         return normalized
 
 
+class SituationAffordanceDraft(BaseModel):
+    label: str = Field(min_length=1)
+    intent_summary: str = Field(min_length=1)
+    risk_hint: str = Field(min_length=1)
+    effect_hint: str = Field(min_length=1)
+    action_kind: Literal["narrative", "use_reward_item", "travel"] = "narrative"
+    travel_target_key: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        label = _first_text(normalized.get("label"), normalized.get("action"), normalized.get("intent_summary"))
+        normalized["label"] = label or "Read the situation before acting."
+        normalized["intent_summary"] = _first_text(
+            normalized.get("intent_summary"),
+            normalized.get("summary"),
+            normalized.get("canonical_input_text"),
+            normalized["label"],
+        )
+        normalized["risk_hint"] = _first_text(
+            normalized.get("risk_hint"),
+            normalized.get("risk"),
+            "Low immediate risk.",
+        )
+        normalized["effect_hint"] = _first_text(
+            normalized.get("effect_hint"),
+            normalized.get("effect"),
+            "Clarifies the next situation.",
+        )
+        action_kind = str(normalized.get("action_kind") or "narrative").strip()
+        normalized["action_kind"] = action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative"
+        if normalized["action_kind"] != "travel":
+            normalized["travel_target_key"] = None
+        return normalized
+
+
+class CouncilSituationMapperPayload(BaseModel):
+    action_result_focus: str = Field(min_length=1)
+    current_situation: str = Field(min_length=1)
+    visible_elements: list[str] = Field(min_length=1)
+    immediate_pressure: str = Field(min_length=1)
+    open_questions: list[str] = Field(default_factory=list)
+    affordances: list[SituationAffordanceDraft] = Field(min_length=2, max_length=4)
+    risk_level: Literal["low", "medium", "high"] = "low"
+    effect_level: Literal["limited", "standard", "great"] = "standard"
+    fail_forward_hint: str = Field(min_length=1)
+    agency_guard: str = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any, info: ValidationInfo) -> Any:
+        if not isinstance(value, dict):
+            return value
+        input_payload = info.context.get("input_payload", {}) if info.context else {}
+        input_payload = input_payload if isinstance(input_payload, dict) else {}
+        normalized = dict(value)
+        current_scene = input_payload.get("current_scene") if isinstance(input_payload.get("current_scene"), dict) else {}
+        current_location = input_payload.get("current_location") if isinstance(input_payload.get("current_location"), dict) else {}
+        normalized["action_result_focus"] = _first_text(
+            normalized.get("action_result_focus"),
+            normalized.get("result_focus"),
+            input_payload.get("consequence_summary"),
+            input_payload.get("intent_summary"),
+            "The latest player action changes what can be judged next.",
+        )
+        normalized["current_situation"] = _first_text(
+            normalized.get("current_situation"),
+            normalized.get("situation"),
+            current_scene.get("summary"),
+            current_location.get("description"),
+            "The current scene remains legible enough for the next decision.",
+        )
+        normalized["visible_elements"] = _memory_list(
+            normalized.get("visible_elements"),
+            normalized.get("visible"),
+            current_location.get("name"),
+            input_payload.get("local_figures"),
+            input_payload.get("important_inventory_affordances"),
+        )[:8] or ["The current place", "The nearby guide"]
+        normalized["immediate_pressure"] = _first_text(
+            normalized.get("immediate_pressure"),
+            normalized.get("pressure"),
+            current_scene.get("pressure_summary"),
+            input_payload.get("active_consequence_threads"),
+            "The scene is waiting for the player's next clear move.",
+        )
+        normalized["open_questions"] = _memory_list(
+            normalized.get("open_questions"),
+            normalized.get("unresolved_questions"),
+            "What changed because of the latest action?",
+        )[:5]
+        affordances = normalized.get("affordances")
+        if not isinstance(affordances, list) or len([item for item in affordances if isinstance(item, dict)]) < 2:
+            affordances = input_payload.get("default_choice_templates") or []
+        normalized["affordances"] = affordances
+        risk = str(normalized.get("risk_level") or "").strip()
+        normalized["risk_level"] = risk if risk in {"low", "medium", "high"} else _risk_level(
+            input_payload.get("risk_level"),
+            input_payload.get("outcome_band"),
+            normalize_consequence_tags(input_payload.get("consequence_tags") or []),
+        )
+        effect = str(normalized.get("effect_level") or "").strip()
+        normalized["effect_level"] = effect if effect in {"limited", "standard", "great"} else "standard"
+        normalized["fail_forward_hint"] = _first_text(
+            normalized.get("fail_forward_hint"),
+            normalized.get("failure_hint"),
+            "If the action cannot fully succeed, change pressure and create a new decision point.",
+        )
+        normalized["agency_guard"] = _first_text(
+            normalized.get("agency_guard"),
+            "Do not decide the player's next action, feelings, or commitment.",
+        )
+        return normalized
+
+
 class CouncilWorldProgressPayload(BaseModel):
     event_type: Literal["player.turn.resolved"]
     event_payload: dict[str, Any]
@@ -399,8 +517,27 @@ class CouncilWorldProgressPayload(BaseModel):
             _normalize_live_consequence_tokens(normalized.get("consequence_tags"))
         )
         normalized["risk_level"] = _risk_level(normalized.get("risk_level"), normalized.get("outcome_band"), normalized["consequence_tags"])
+        game_frame = input_payload.get("game_frame") if isinstance(input_payload.get("game_frame"), dict) else {}
+        frame_affordances = game_frame.get("affordances") if isinstance(game_frame.get("affordances"), list) else []
+        framed_choices: list[dict[str, Any]] = []
+        for index, affordance in enumerate(item for item in frame_affordances if isinstance(item, dict)):
+            posture = ("safe", "progress", "explore", "explore")[min(index, 3)]
+            risk_hint = _first_text(affordance.get("risk_hint"), "risk is legible")
+            effect_hint = _first_text(affordance.get("effect_hint"), "effect is legible")
+            intent_summary = _first_text(affordance.get("intent_summary"), affordance.get("label"))
+            framed_choices.append(
+                {
+                    "posture": posture,
+                    "label": _first_text(affordance.get("label"), intent_summary),
+                    "intent_summary": f"{intent_summary} {effect_hint} {risk_hint}".strip(),
+                    "canonical_input_text": intent_summary,
+                    "action_kind": affordance.get("action_kind") or "narrative",
+                    "travel_target_key": affordance.get("travel_target_key"),
+                }
+            )
         normalized["next_choices"] = _choice_drafts(
-            normalized.get("next_choices")
+            framed_choices
+            or normalized.get("next_choices")
             or normalized.get("choices")
             or normalized.get("next_three_diegetic_player_choices")
             or normalized.get("next_player_choices")
@@ -617,10 +754,11 @@ class GMCouncilService:
         ("intent_interpreter", 1, "council.intent_interpreter", False),
         ("memory_manager", 2, "council.memory_manager", False),
         ("npc_manager", 3, "council.npc_manager", False),
-        ("world_progress", 4, "council.world_progress", False),
-        ("rules_arbiter", 5, "council.rules_arbiter", True),
-        ("safety_guard", 6, "council.safety_guard", True),
-        ("narrative", 7, "council.narrative", True),
+        ("situation_mapper", 4, "council.situation_mapper", False),
+        ("world_progress", 5, "council.world_progress", False),
+        ("rules_arbiter", 6, "council.rules_arbiter", True),
+        ("safety_guard", 7, "council.safety_guard", True),
+        ("narrative", 8, "council.narrative", True),
     ]
 
     def __init__(self, settings: Settings, model_router: ModelRouter) -> None:
@@ -960,6 +1098,63 @@ class GMCouncilService:
             quest_offer=quest_offer,
         )
 
+    @staticmethod
+    def _fallback_situation_frame(
+        *,
+        request: CouncilRequest,
+        intent_payload: CouncilIntentInterpreterPayload,
+        memory_payload: CouncilMemoryManagerPayload,
+        npc_payload: CouncilNPCManagerPayload,
+    ) -> CouncilSituationMapperPayload:
+        current_scene = request.session_state.get("current_scene") or {}
+        current_location = request.session_state.get("current_location") or request.session_state.get("location") or {}
+        visible_elements = _memory_list(
+            current_location.get("name") if isinstance(current_location, dict) else None,
+            (current_scene or {}).get("location") if isinstance(current_scene, dict) else None,
+            request.session_state.get("local_figures") or request.session_state.get("plaza_figures") or [],
+            request.session_state.get("important_inventory_affordances") or [],
+        )[:8]
+        default_choices = _choice_drafts(request.session_state.get("next_choices") or [])
+        affordances: list[dict[str, Any]] = []
+        for choice in default_choices:
+            summary = str(choice.get("intent_summary") or choice.get("label") or "").strip()
+            affordances.append(
+                {
+                    "label": str(choice.get("label") or summary or "場を読む"),
+                    "intent_summary": summary or str(choice.get("label") or "場を読む"),
+                    "risk_hint": "今の場面で無理なく試せる。",
+                    "effect_hint": "次の状況判断に必要な情報や反応が得られる。",
+                    "action_kind": choice.get("action_kind") or "narrative",
+                    "travel_target_key": choice.get("travel_target_key"),
+                }
+            )
+        return CouncilSituationMapperPayload.model_validate(
+            {
+                "action_result_focus": _first_text(
+                    intent_payload.consequence_summary,
+                    intent_payload.intent_summary,
+                    "直前の行動で場面の読み取り方が変わる。",
+                ),
+                "current_situation": _first_text(
+                    (current_scene or {}).get("summary") if isinstance(current_scene, dict) else None,
+                    (current_location or {}).get("description") if isinstance(current_location, dict) else None,
+                    memory_payload.state_summary,
+                ),
+                "visible_elements": visible_elements or ["現在地", request.npc_name],
+                "immediate_pressure": _first_text(
+                    (current_scene or {}).get("pressure_summary") if isinstance(current_scene, dict) else None,
+                    request.session_state.get("active_consequence_threads") or [],
+                    npc_payload.reaction_outline,
+                ),
+                "open_questions": _memory_list("何が変わったか", "誰が反応するか")[:2],
+                "affordances": affordances[:4],
+                "risk_level": "low" if intent_payload.fail_forward else "medium",
+                "effect_level": "standard",
+                "fail_forward_hint": "うまくいかない場合も、場の圧力や誰かの反応を変えて次の判断点を作る。",
+                "agency_guard": "プレイヤーの次の行動、決意、感情をAIが確定しない。",
+            }
+        )
+
     def _choice_intent_outcome(
         self,
         *,
@@ -1284,6 +1479,71 @@ class GMCouncilService:
         npc_payload = npc_result.final_payload
         assert npc_payload is not None
 
+        situation_input = {
+            "world_id": request.world_id,
+            "input_text": request.input_text,
+            "player_name": request.player_name,
+            "player_profile": player_profile,
+            "narrative_preferences": narrative_preferences,
+            "play_language": play_language,
+            "npc_name": request.npc_name,
+            "intent_summary": intent_payload.intent_summary,
+            "requested_choice_posture": intent_payload.requested_choice_posture,
+            "selected_choice": request.selected_choice or {},
+            "fail_forward": intent_payload.fail_forward,
+            "consequence_summary": intent_payload.consequence_summary,
+            "consequence_tags": intent_payload.consequence_tags,
+            "memory_summary": memory_payload.memory_summary,
+            "relation_summary": memory_payload.relation_summary,
+            "state_summary": memory_payload.state_summary,
+            "reaction_outline": npc_payload.reaction_outline,
+            "focus_memories": npc_payload.focus_memories,
+            "default_choice_templates": default_choice_templates,
+            "important_inventory_affordances": important_inventory_affordances,
+            "relationship_summaries": relationship_summaries,
+            "active_consequence_threads": active_consequence_threads,
+            "recent_consequence_history": recent_consequence_history,
+            "current_scene": current_scene,
+            "current_chapter": current_chapter,
+            "recent_scene_history": recent_scene_history,
+            "current_location": current_location,
+            "local_figures": local_figures,
+            "nearby_routes": nearby_routes,
+            "recent_travel_history": recent_travel_history,
+            "recent_world_beats": recent_world_beats,
+            "ambient_murmurs": ambient_murmurs,
+            "shared_world_context": shared_world_context,
+        }
+        situation_result = self.model_router.execute_structured_prompt(
+            prompt_id="council.situation_mapper",
+            response_model=CouncilSituationMapperPayload,
+            input_payload=situation_input,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+        )
+        role_runs.append(
+            self._role_run(
+                council_role="situation_mapper",
+                stage_index=4,
+                prompt_id="council.situation_mapper",
+                approval_status="prepared" if situation_result.succeeded else "failed",
+                result=situation_result,
+            )
+        )
+        deterministic_fallback_used = False
+        if situation_result.succeeded and situation_result.final_payload is not None:
+            situation_payload = situation_result.final_payload
+        else:
+            situation_payload = self._fallback_situation_frame(
+                request=request,
+                intent_payload=intent_payload,
+                memory_payload=memory_payload,
+                npc_payload=npc_payload,
+            )
+            deterministic_fallback_used = True
+        game_frame = situation_payload.model_dump()
+
         world_progress_input = {
             "world_id": request.world_id,
             "input_text": request.input_text,
@@ -1303,6 +1563,7 @@ class GMCouncilService:
             "fail_forward": intent_payload.fail_forward,
             "consequence_summary": intent_payload.consequence_summary,
             "consequence_tags": intent_payload.consequence_tags,
+            "game_frame": game_frame,
             "default_choice_templates": default_choice_templates,
             "relationship_summaries": relationship_summaries,
             "recognized_titles": recognized_titles,
@@ -1337,13 +1598,12 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="world_progress",
-                stage_index=4,
+                stage_index=5,
                 prompt_id="council.world_progress",
                 approval_status="prepared" if world_progress_result.succeeded else "failed",
                 result=world_progress_result,
             )
         )
-        deterministic_fallback_used = False
         if not world_progress_result.succeeded:
             fallback_payload = self._world_progress_fallback_payload(
                 request=request,
@@ -1422,7 +1682,7 @@ class GMCouncilService:
             emit_turn_progress(
                 phase="rules_arbiter",
                 status="started",
-                stage_index=5,
+                stage_index=6,
                 elapsed_ms=0,
                 detail="deterministic_validator",
             )
@@ -1446,7 +1706,7 @@ class GMCouncilService:
             emit_turn_progress(
                 phase="rules_arbiter",
                 status="completed",
-                stage_index=5,
+                stage_index=6,
                 elapsed_ms=0,
                 detail="deterministic_validator",
             )
@@ -1468,7 +1728,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="rules_arbiter",
-                stage_index=5,
+                stage_index=6,
                 prompt_id="council.rules_arbiter",
                 approval_status=rules_approval,
                 result=rules_result,
@@ -1520,7 +1780,7 @@ class GMCouncilService:
             emit_turn_progress(
                 phase="safety_guard",
                 status="started",
-                stage_index=6,
+                stage_index=7,
                 elapsed_ms=0,
                 detail="deterministic_validator",
             )
@@ -1543,7 +1803,7 @@ class GMCouncilService:
             emit_turn_progress(
                 phase="safety_guard",
                 status="completed",
-                stage_index=6,
+                stage_index=7,
                 elapsed_ms=0,
                 detail="deterministic_validator",
             )
@@ -1553,7 +1813,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="safety_guard",
-                stage_index=6,
+                stage_index=7,
                 prompt_id="council.safety_guard",
                 approval_status=safety_approval,
                 result=safety_result,
@@ -1587,6 +1847,7 @@ class GMCouncilService:
             "world_tags": rules_payload.normalized_world_tags,
             "resolution_summary": world_progress_payload.resolution_summary,
             "consequence_summary": intent_payload.consequence_summary,
+            "game_frame": game_frame,
             "intent_summary": intent_payload.intent_summary,
             "requested_choice_posture": intent_payload.requested_choice_posture,
             "selected_choice": request.selected_choice or {},
@@ -1618,7 +1879,7 @@ class GMCouncilService:
         role_runs.append(
             self._role_run(
                 council_role="narrative",
-                stage_index=7,
+                stage_index=8,
                 prompt_id="council.narrative",
                 approval_status="approved" if narrative_result.succeeded else "failed",
                 result=narrative_result,
