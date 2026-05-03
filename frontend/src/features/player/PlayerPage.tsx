@@ -1503,7 +1503,7 @@ function QuestBlock({ runtime }: PlayerPageProps) {
   const [questListOpen, setQuestListOpen] = useState(false);
   const journal = sessionState?.quest_journal ?? [];
   const displayLabel = sessionState?.quest_display_state?.label || t("player.quest.exploring");
-  const visibleQuests = journal.filter((item) => item.status === "offered" || item.status === "active" || item.status === "paused");
+  const visibleQuests = journal.filter((item) => item.status === "offered" || item.status === "active" || item.status === "paused" || item.status === "completed");
   const primaryQuest = activeQuest ?? null;
 
   return (
@@ -1593,6 +1593,7 @@ function QuestListDialog({
     { key: "active", quests: quests.filter((quest) => quest.status === "active") },
     { key: "offered", quests: quests.filter((quest) => quest.status === "offered") },
     { key: "paused", quests: quests.filter((quest) => quest.status === "paused") },
+    { key: "completed", quests: quests.filter((quest) => quest.status === "completed") },
   ].filter((group) => group.quests.length);
 
   return (

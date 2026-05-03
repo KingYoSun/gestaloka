@@ -10,6 +10,7 @@ from app.modules.world_state.shared_consequence import apply_shared_consequence_
 from app.modules.world_state.service import (
     apply_quest_lifecycle_action,
     create_dynamic_quest_offer,
+    quest_offer_repeats_resolution,
     record_quest_resolution_hint,
     _normalize_dynamic_quest_completion_target,
 )
@@ -207,7 +208,11 @@ def test_dynamic_quest_completion_target_normalizes_live_provider_values(client,
     assert updates[0]["progress_target"] == 3
 
 
-def test_dynamic_quest_offer_merges_similar_live_quests_and_caps_offered_queue(client, container, auth_headers):
+def test_dynamic_quest_offer_merges_similar_offered_quest_and_suppresses_distinct_live_offers(
+    client,
+    container,
+    auth_headers,
+):
     session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
@@ -242,26 +247,19 @@ def test_dynamic_quest_offer_merges_similar_live_quests_and_caps_offered_queue(c
         assert similar_updates[0]["assignment_id"] == first_updates[0]["assignment_id"]
         assert similar_updates[0]["action"] == "merged_existing"
 
-        distinct_offers = [
-            ("星図の奪還", "失われた星図を取り戻す。"),
-            ("地下水路の合意", "地下水路の管理者と合意を結ぶ。"),
-            ("鐘楼の封印調査", "鐘楼に残る封印を調査する。"),
-            ("灯台記録の修復", "灯台に残された記録を修復する。"),
-        ]
-        for index, (title, description) in enumerate(distinct_offers):
-            create_dynamic_quest_offer(
-                db,
-                world_id="gestaloka_reference",
-                actor_id=session_payload["player_actor_id"],
-                source_event_id=f"dynamic-queue-{index}",
-                offer={
-                    "title": title,
-                    "description": description,
-                    "offered_summary": description,
-                    "completion_target": 3,
-                    "constraints": [],
-                },
-            )
+        distinct_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="dynamic-distinct-suppressed",
+            offer={
+                "title": "星図の奪還",
+                "description": "失われた星図を取り戻す。",
+                "offered_summary": "星図の奪還が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
         offered_count = db.execute(
             select(func.count(QuestAssignment.id)).where(
                 QuestAssignment.world_id == "gestaloka_reference",
@@ -269,16 +267,149 @@ def test_dynamic_quest_offer_merges_similar_live_quests_and_caps_offered_queue(c
                 QuestAssignment.status == "offered",
             )
         ).scalar_one()
-        superseded_count = db.execute(
+
+    assert distinct_updates == []
+    assert offered_count == 1
+
+
+def test_dynamic_quest_offer_suppresses_new_offer_while_active_quest_exists(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        first = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="active-gate-quest",
+            offer={
+                "title": "門記録の整理",
+                "description": "門の記録を整理する。",
+                "offered_summary": "門記録の整理が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )[0]
+        apply_quest_lifecycle_action(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            quest_assignment_id=first["assignment_id"],
+            action_type="accept_quest",
+            source_event_id=source_event.id,
+        )
+
+        blocked_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="active-distinct-suppressed",
+            offer={
+                "title": "別件の星図調査",
+                "description": "門とは別の星図を調査する。",
+                "offered_summary": "別件の星図調査が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        offered_count = db.execute(
             select(func.count(QuestAssignment.id)).where(
                 QuestAssignment.world_id == "gestaloka_reference",
                 QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
-                QuestAssignment.status == "superseded",
+                QuestAssignment.status == "offered",
             )
         ).scalar_one()
 
-    assert offered_count == 3
-    assert superseded_count >= 1
+    assert blocked_updates == []
+    assert offered_count == 0
+
+
+def test_dynamic_followup_offer_requires_completed_source_and_no_live_quest(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        source = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="followup-source-quest",
+            offer={
+                "title": "門記録を収束させる",
+                "description": "門記録の収束を進める。",
+                "offered_summary": "門記録の収束が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )[0]
+        blocked_while_offered = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="followup-blocked-live",
+            followup_of_assignment_id=source["assignment_id"],
+            offer={
+                "title": "塔記録の照合",
+                "description": "塔記録を照合する後続任務。",
+                "offered_summary": "塔記録の照合が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        assignment = db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == "gestaloka_reference",
+                QuestAssignment.id == source["assignment_id"],
+            )
+        ).scalar_one()
+        assignment.status = "completed"
+        assignment.progress = assignment.progress_target
+        db.flush()
+        followup_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            followup_of_assignment_id=source["assignment_id"],
+            offer={
+                "title": "塔記録の照合",
+                "description": "塔記録を照合する後続任務。",
+                "offered_summary": "塔記録の照合が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+
+    assert blocked_while_offered == []
+    assert followup_updates[0]["status"] == "offered"
+    assert followup_updates[0]["state_json"]["followup_of_assignment_id"] == source["assignment_id"]
+
+
+def test_dynamic_quest_offer_rejects_completed_resolution_text():
+    resolution_summary = "ナートはリッカと共に門の記録ログを精査し、綻びを修正しました。"
+
+    assert quest_offer_repeats_resolution(
+        offer={
+            "title": "特定した綻びをリッカと共に修正する",
+            "description": resolution_summary,
+            "offered_summary": resolution_summary,
+        },
+        resolution_summary=resolution_summary,
+    )
 
 
 def test_accepting_or_resuming_quest_keeps_only_one_active_focus(client, container, auth_headers):
@@ -306,6 +437,14 @@ def test_accepting_or_resuming_quest_keeps_only_one_active_focus(client, contain
                 "constraints": [],
             },
         )[0]
+        first_assignment = db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == "gestaloka_reference",
+                QuestAssignment.id == first["assignment_id"],
+            )
+        ).scalar_one()
+        first_assignment.status = "declined"
+        db.flush()
         second = create_dynamic_quest_offer(
             db,
             world_id="gestaloka_reference",
@@ -319,15 +458,9 @@ def test_accepting_or_resuming_quest_keeps_only_one_active_focus(client, contain
                 "constraints": [],
             },
         )[0]
+        first_assignment.status = "active"
+        db.flush()
 
-        apply_quest_lifecycle_action(
-            db,
-            world_id="gestaloka_reference",
-            actor_id=session_payload["player_actor_id"],
-            quest_assignment_id=first["assignment_id"],
-            action_type="accept_quest",
-            source_event_id=source_event.id,
-        )
         second_updates, _, _ = apply_quest_lifecycle_action(
             db,
             world_id="gestaloka_reference",

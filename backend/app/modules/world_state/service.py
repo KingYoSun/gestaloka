@@ -1411,6 +1411,26 @@ def _quest_offer_is_similar(template: QuestTemplate, *, title: str, description:
     return _quest_text_similarity(existing, incoming) >= QUEST_SIMILARITY_THRESHOLD
 
 
+def quest_offer_repeats_resolution(*, offer: dict[str, Any] | None, resolution_summary: str | None) -> bool:
+    if not isinstance(offer, dict) or not offer:
+        return False
+    resolution = _quest_similarity_text(resolution_summary)
+    if not resolution:
+        return False
+    fields = [
+        offer.get("title"),
+        offer.get("description"),
+        offer.get("summary"),
+        offer.get("offered_summary"),
+    ]
+    for value in fields:
+        candidate = _quest_similarity_text(value)
+        if candidate and (candidate == resolution or _quest_text_similarity(candidate, resolution) >= 0.75):
+            return True
+    combined = _quest_similarity_text(*fields)
+    return bool(combined and _quest_text_similarity(combined, resolution) >= 0.75)
+
+
 def _merge_dynamic_quest_offer(
     db: Session,
     *,
@@ -1485,6 +1505,8 @@ def create_dynamic_quest_offer(
     )
     for assignment, template in live_rows:
         if _quest_offer_is_similar(template, title=title, description=description):
+            if assignment.status != "offered":
+                return []
             return [
                 _merge_dynamic_quest_offer(
                     db,
@@ -1496,6 +1518,21 @@ def create_dynamic_quest_offer(
                     source_event_id=source_event_id,
                 )
             ]
+
+    if live_rows:
+        return []
+
+    if followup_of_assignment_id:
+        source_assignment = db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == actor_id,
+                QuestAssignment.id == followup_of_assignment_id,
+                QuestAssignment.status == "completed",
+            )
+        ).scalar_one_or_none()
+        if source_assignment is None:
+            return []
 
     superseded_updates: list[dict[str, Any]] = []
     offered_rows = [

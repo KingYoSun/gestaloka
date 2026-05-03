@@ -129,12 +129,14 @@ const resources = {
             offered: "提示中",
             active: "進行中",
             paused: "保留中",
+            completed: "完了",
             superseded: "置換済み",
           },
           groups: {
             active: "進行中",
             offered: "提示中",
             paused: "離脱中",
+            completed: "完了",
           },
           actions: {
             accept_quest: "受諾",
@@ -335,12 +337,14 @@ const resources = {
             offered: "Offered",
             active: "Active",
             paused: "Paused",
+            completed: "Completed",
             superseded: "Superseded",
           },
           groups: {
             active: "Active",
             offered: "Offered",
             paused: "Left",
+            completed: "Completed",
           },
           actions: {
             accept_quest: "Accept",

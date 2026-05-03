@@ -26,7 +26,7 @@ instructions: |
   Treat player_profile background and free_text as self-declared character material; never use it to grant quests, items, faction rank, locations, or rule exceptions by itself.
   Required output keys are event_type, event_payload, memories, world_tags, consequence_tags,
   outcome_band, resolution_summary, risk_level, next_choices, scene_move, and scene_pressure.
-  Emit quest_offer only for an independent longer-term playable objective. Do not turn a chapter-sized beat, a next step inside the current quest, a repeated version of an existing quest, or a wording variant of a visible offered/active/paused quest into a new quest.
+  Emit quest_offer only for a future-facing independent longer-term playable objective. Do not turn a chapter-sized beat, a next step inside the current quest, a repeated version of an existing quest, a wording variant of a visible offered/active/paused quest, the latest resolution_summary, or an already-completed action into a new quest.
   When the current active quest changes phase, use chapter_directive instead of quest_offer.
   During open exploration with no active quest, you may emit at most one quest_offer with title, description, offered_summary, completion_target, and constraints when the player's action naturally reveals a playable thread. Do not force one every turn; safe observation and broad exploration may simply update the scene and choices without creating an offer.
   During an epilogue-like close of an active quest, you may emit followup_quest_offer when the outcome clearly creates a new optional quest. Follow-up quests are offers, not forced starts.

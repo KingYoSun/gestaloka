@@ -71,12 +71,36 @@ from app.modules.world_state.service import (
     ensure_world_slice_seed,
     get_location_summary,
     get_location_by_key,
+    quest_offer_repeats_resolution,
     record_quest_resolution_hint,
     travel_to_location,
     use_reward_item,
 )
 
 CHOICE_ORDER = ("safe", "progress", "explore")
+
+
+def _session_has_live_quest(session_state: dict[str, Any], *, statuses: set[str] | None = None) -> bool:
+    target_statuses = statuses or {"offered", "active", "paused"}
+    return any(
+        isinstance(item, dict) and str(item.get("status") or "") in target_statuses
+        for item in session_state.get("quests") or []
+    )
+
+
+def _filter_dynamic_quest_offer_for_turn(
+    offer: dict[str, Any] | None,
+    *,
+    resolution_summary: str | None,
+    suppress_for_active_focus: bool = False,
+) -> dict[str, Any] | None:
+    if not isinstance(offer, dict) or not offer:
+        return None
+    if suppress_for_active_focus:
+        return None
+    if quest_offer_repeats_resolution(offer=offer, resolution_summary=resolution_summary):
+        return None
+    return offer
 
 
 @contextmanager
@@ -1429,20 +1453,31 @@ def _resolve_narrative_turn_for_session(
     db.add(event)
     db.flush()
     with _turn_progress_span("dynamic_quest_offer"):
+        resolution_summary = str(getattr(payload, "resolution_summary", "") or "")
+        suppress_primary_offer = _session_has_live_quest(session_state, statuses={"active", "paused"})
+        quest_offer = _filter_dynamic_quest_offer_for_turn(
+            getattr(payload, "quest_offer", None),
+            resolution_summary=resolution_summary,
+            suppress_for_active_focus=suppress_primary_offer,
+        )
+        followup_quest_offer = _filter_dynamic_quest_offer_for_turn(
+            getattr(payload, "followup_quest_offer", None),
+            resolution_summary=resolution_summary,
+        )
         dynamic_quest_updates = [
             *create_dynamic_quest_offer(
                 db,
                 world_id=game_session.world_id,
                 actor_id=player_actor.id,
                 source_event_id=event.id,
-                offer=getattr(payload, "quest_offer", None),
+                offer=quest_offer,
             ),
             *create_dynamic_quest_offer(
                 db,
                 world_id=game_session.world_id,
                 actor_id=player_actor.id,
                 source_event_id=event.id,
-                offer=getattr(payload, "followup_quest_offer", None),
+                offer=followup_quest_offer,
                 followup_of_assignment_id=str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None,
             ),
         ]
