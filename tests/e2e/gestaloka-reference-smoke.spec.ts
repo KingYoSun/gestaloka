@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 
 const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:5174";
 
+type ProgressPhaseCollector = {
+  completedPhases: () => string[];
+};
+
 async function openCharacterCreation(page: import("@playwright/test").Page, worldId: string): Promise<void> {
   await expect(page.getByTestId("continue-to-character")).toBeDisabled({ timeout: 60_000 });
   await page.getByTestId(`world-card-${worldId}`).click();
@@ -12,6 +16,47 @@ async function openCharacterCreation(page: import("@playwright/test").Page, worl
     await createCard.click();
   }
   await expect(page.getByTestId("profile-display-name")).toBeVisible({ timeout: 30_000 });
+}
+
+function collectCompletedProgressPhases(page: import("@playwright/test").Page): ProgressPhaseCollector {
+  const completedPhases: string[] = [];
+  page.on("websocket", (socket) => {
+    socket.on("framereceived", ({ payload }) => {
+      const text = typeof payload === "string" ? payload : payload.toString();
+      try {
+        const message = JSON.parse(text) as { event?: unknown; data?: { phase?: unknown; status?: unknown } };
+        const phase = typeof message.data?.phase === "string" ? message.data.phase : "";
+        if (message.event === "turn.progress" && message.data?.status === "completed" && phase) {
+          completedPhases.push(phase);
+        }
+      } catch {
+        // Non-JSON websocket frames are irrelevant to turn progress.
+      }
+    });
+  });
+  return { completedPhases: () => [...completedPhases] };
+}
+
+async function expectSituationMappingBeforeWorldProgress(collector: ProgressPhaseCollector): Promise<void> {
+  let completedPhases: string[] = [];
+  await expect
+    .poll(
+      () => {
+        completedPhases = collector.completedPhases();
+        return hasSituationMappingBeforeWorldProgress(completedPhases);
+      },
+      { timeout: 30_000, message: "situation_mapping should complete before world_progress" },
+    )
+    .toBe(true);
+  expect(completedPhases).toContain("situation_mapping");
+  expect(completedPhases).toContain("world_progress");
+  expect(completedPhases.indexOf("situation_mapping")).toBeLessThan(completedPhases.indexOf("world_progress"));
+}
+
+function hasSituationMappingBeforeWorldProgress(completedPhases: string[]): boolean {
+  const situationIndex = completedPhases.indexOf("situation_mapping");
+  const worldProgressIndex = completedPhases.indexOf("world_progress");
+  return situationIndex >= 0 && worldProgressIndex >= 0 && situationIndex < worldProgressIndex;
 }
 
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
@@ -41,6 +86,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("create-player-profile").click();
   await expect(page.getByRole("button", { name: /Demo Player/ })).toBeVisible({ timeout: slowTimeout });
   await expect(page.getByTestId("start-session")).toBeEnabled({ timeout: slowTimeout });
+  const progressPhases = collectCompletedProgressPhases(page);
   await page.getByTestId("start-session").click();
 
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
@@ -68,6 +114,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
+  await expectSituationMappingBeforeWorldProgress(progressPhases);
   const offerDialog = page.getByTestId("quest-offer-dialog");
   await expect(offerDialog).toBeVisible({ timeout: slowTimeout });
   const ignoredTurnRequest = page
@@ -77,18 +124,10 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await offerDialog.getByRole("button", { name: /^(Ignore|無視)$/i }).click();
   await expect(offerDialog).toBeHidden({ timeout: slowTimeout });
   expect(await ignoredTurnRequest).toBe(false);
-  await expect(page.getByTestId("active-quest").getByRole("button", { name: /^(Accept|受諾)$/i })).toBeVisible({
-    timeout: slowTimeout,
-  });
-  await expect(page.getByTestId("quest-progress")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
-  await expect(page.getByTestId("active-quest")).not.toContainText(/dynamic_quest_|followup_quest_|\bdynamic\b/i);
-  await expect(page.getByTestId("quest-stage")).toHaveText("");
-  await expect(page.getByTestId("quest-stage")).toHaveAttribute("data-value", /\S/);
-  await expect(page.getByTestId("quest-unlock-requirements")).toHaveText("");
-  await expect(page.getByTestId("quest-unlock-requirements")).toHaveAttribute("data-value", /\S/);
 
   await page.getByTestId("quest-list-open").click();
   await expect(page.getByTestId("quest-list-dialog")).toBeVisible({ timeout: slowTimeout });
+  await expect(page.getByTestId("quest-list-dialog")).not.toContainText(/dynamic_quest_|followup_quest_|\bdynamic\b/i);
   await expect(page.getByTestId("quest-list-dialog").getByRole("button", { name: /^(Accept|受諾)$/i })).toBeVisible({
     timeout: slowTimeout,
   });
@@ -97,6 +136,12 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
   await expect(page.getByTestId("active-quest")).not.toContainText("Exploring...");
+  await expect(page.getByTestId("quest-progress")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("active-quest")).not.toContainText(/dynamic_quest_|followup_quest_|\bdynamic\b/i);
+  await expect(page.getByTestId("quest-stage")).toHaveText("");
+  await expect(page.getByTestId("quest-stage")).toHaveAttribute("data-value", /\S/);
+  await expect(page.getByTestId("quest-unlock-requirements")).toHaveText("");
+  await expect(page.getByTestId("quest-unlock-requirements")).toHaveAttribute("data-value", /\S/);
 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });

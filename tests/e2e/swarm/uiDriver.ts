@@ -70,6 +70,13 @@ export type SwarmUiQuestSnapshot = {
   hasChapterSummary: boolean;
 };
 
+type CapturedProgressEvent = SwarmUiTurnObservation["progressTimeline"][number] & {
+  turnId: string;
+};
+
+const capturedProgressByPage = new WeakMap<Page, CapturedProgressEvent[]>();
+const progressCaptureAttached = new WeakSet<Page>();
+
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
   const worldCard = page.getByTestId("world-card-gestaloka_reference");
   const continueButton = page.getByTestId("continue-to-character");
@@ -88,6 +95,7 @@ export async function startPlayerSessionViaUi(
   page: Page,
   persona: AssignedSwarmUserPersona,
 ): Promise<SwarmUiSessionObservation> {
+  ensureProgressFrameCapture(page);
   const startedAt = new Date().toISOString();
   let response: Response;
   try {
@@ -237,7 +245,7 @@ export async function executeTurnViaUi(
     const englishResidueAllowlist = playerNameResidueAllowlist(persona);
     const questSnapshot = await questSnapshotViaUi(page);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
-    const progressTimeline = progressTimelineFromOpsStream(opsStream, acceptedTurnId);
+    const progressTimeline = progressTimelineForTurn(page, opsStream, acceptedTurnId);
     return {
       personaId: persona.id,
       scenario: decision.scenario,
@@ -315,6 +323,63 @@ function eventIdForTurn(items: string[], turnId: string): string {
   return "";
 }
 
+function ensureProgressFrameCapture(page: Page): void {
+  if (progressCaptureAttached.has(page)) {
+    return;
+  }
+  progressCaptureAttached.add(page);
+  capturedProgressByPage.set(page, []);
+  page.on("websocket", (socket) => {
+    socket.on("framereceived", ({ payload }) => {
+      const text = typeof payload === "string" ? payload : payload.toString();
+      try {
+        const message = JSON.parse(text) as {
+          event?: unknown;
+          data?: {
+            turn_id?: unknown;
+            phase?: unknown;
+            status?: unknown;
+            elapsed_ms?: unknown;
+            role_elapsed_ms?: unknown;
+          };
+        };
+        if (message.event !== "turn.progress") {
+          return;
+        }
+        const turnId = typeof message.data?.turn_id === "string" ? message.data.turn_id : "";
+        const phase = typeof message.data?.phase === "string" ? message.data.phase : "";
+        const status = typeof message.data?.status === "string" ? message.data.status : "";
+        if (!turnId || (!phase && !status)) {
+          return;
+        }
+        const progressEvents = capturedProgressByPage.get(page) ?? [];
+        progressEvents.push({
+          turnId,
+          phase,
+          status,
+          elapsedMs: numberValue(message.data?.elapsed_ms),
+          roleElapsedMs: numberValue(message.data?.role_elapsed_ms),
+        });
+        capturedProgressByPage.set(page, progressEvents);
+      } catch {
+        // Ignore non-JSON websocket frames.
+      }
+    });
+  });
+}
+
+function progressTimelineForTurn(
+  page: Page,
+  opsStreamItems: string[],
+  turnId: string,
+): SwarmUiTurnObservation["progressTimeline"] {
+  const captured = (capturedProgressByPage.get(page) ?? [])
+    .filter((event) => event.turnId === turnId)
+    .map(({ turnId: _turnId, ...event }) => event);
+  const visible = progressTimelineFromOpsStream(opsStreamItems, turnId);
+  return uniqueProgressEvents([...captured, ...visible]);
+}
+
 function progressTimelineFromOpsStream(items: string[], turnId: string): SwarmUiTurnObservation["progressTimeline"] {
   const progressChunks = items.flatMap((item) =>
     item
@@ -338,6 +403,20 @@ function progressTimelineFromOpsStream(items: string[], turnId: string): SwarmUi
     .reverse();
 }
 
+function uniqueProgressEvents(
+  events: SwarmUiTurnObservation["progressTimeline"],
+): SwarmUiTurnObservation["progressTimeline"] {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    const key = `${event.phase}\u0000${event.status}\u0000${event.elapsedMs ?? ""}\u0000${event.roleElapsedMs ?? ""}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 function valueAfterKey(text: string, key: string): string {
   const match = new RegExp(`\\b${key}: ([^/\\n]+)`, "i").exec(text);
   return match?.[1]?.trim() ?? "";
@@ -346,6 +425,11 @@ function valueAfterKey(text: string, key: string): string {
 function numberAfterKey(text: string, key: string): number | null {
   const value = Number(valueAfterKey(text, key));
   return Number.isFinite(value) ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function eventIdFromOpsStream(items: string[]): string {
@@ -565,10 +649,21 @@ async function playSurfaceDiagnostics(page: Page): Promise<string> {
 
 async function clickQuestAction(page: Page, action: SwarmDecision["questAction"]): Promise<void> {
   const label = questActionLabelPattern(action);
-  const button = page.getByTestId("active-quest").getByRole("button", { name: label });
-  await expect(button).toBeVisible({ timeout: 60_000 });
-  await expect(button).toBeEnabled({ timeout: 60_000 });
-  await button.click();
+  const activeQuestButton = page.getByTestId("active-quest").getByRole("button", { name: label });
+  if (await roleVisible(activeQuestButton)) {
+    await expect(activeQuestButton).toBeEnabled({ timeout: 60_000 });
+    await activeQuestButton.click();
+    return;
+  }
+
+  const questListOpen = page.getByTestId("quest-list-open");
+  await expect(questListOpen).toBeVisible({ timeout: 60_000 });
+  await expect(questListOpen).toBeEnabled({ timeout: 60_000 });
+  await questListOpen.click();
+  const dialogButton = page.getByTestId("quest-list-dialog").getByRole("button", { name: label });
+  await expect(dialogButton).toBeVisible({ timeout: 60_000 });
+  await expect(dialogButton).toBeEnabled({ timeout: 60_000 });
+  await dialogButton.click();
 }
 
 function questActionLabelPattern(action: SwarmDecision["questAction"]): RegExp {

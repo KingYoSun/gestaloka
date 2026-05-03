@@ -333,6 +333,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       quest_accept_turn_resolved: Boolean(eventId(aQuestAcceptTurn)),
       quest_chapter_visible: aQuestAcceptTurn.hasChapterSummary || aBodyProgressTurn.hasChapterSummary || hasQuestChapter(aQuestAfterBody),
       quest_lifecycle_events_same_world: observation.questLifecycleEventsSameWorld,
+      situation_mapping_before_world_progress:
+        allTurnObservations.length > 0 && allTurnObservations.every(hasSituationMappingBeforeWorldProgress),
     };
     if (mode === "long") {
       hardChecks.quest_prologue_visible = hasChapterKind(aQuestAfterAccept, "prologue");
@@ -484,6 +486,7 @@ async function writeFailureReport({
     quest_accept_turn_resolved: false,
     quest_chapter_visible: false,
     quest_lifecycle_events_same_world: false,
+    situation_mapping_before_world_progress: false,
   };
   if (mode === "long") {
     hardChecks.quest_prologue_visible = false;
@@ -699,6 +702,21 @@ function hasCompletedEpilogueQuest(payload: Record<string, unknown>): boolean {
   return questItems(payload).some(
     (item) => item.status === "completed" && questChapters(item).some((chapter) => chapter.chapter_kind === "epilogue"),
   );
+}
+
+function hasSituationMappingBeforeWorldProgress(turn: SwarmUiTurnObservation): boolean {
+  const completedPhases = turn.progressTimeline
+    .filter((progress) => progress.status === "completed")
+    .map((progress) => progress.phase);
+  const usesCouncilPipeline = completedPhases.some((phase) =>
+    ["intent_interpretation", "memory_council", "npc_council", "situation_mapping", "world_progress"].includes(phase),
+  );
+  if (!usesCouncilPipeline) {
+    return completedPhases.some((phase) => ["read_world_state_query", "travel_resolution", "item_use"].includes(phase));
+  }
+  const situationIndex = completedPhases.indexOf("situation_mapping");
+  const worldProgressIndex = completedPhases.indexOf("world_progress");
+  return situationIndex >= 0 && worldProgressIndex >= 0 && situationIndex < worldProgressIndex;
 }
 
 function questActions(item: Record<string, unknown>): string[] {

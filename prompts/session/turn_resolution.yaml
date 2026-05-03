@@ -16,6 +16,7 @@ instructions: |
   - council.intent_interpreter
   - council.memory_manager
   - council.npc_manager
+  - council.situation_mapper
   - council.world_progress
   - council.rules_arbiter
   - council.safety_guard
