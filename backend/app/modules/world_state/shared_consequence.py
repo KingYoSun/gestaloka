@@ -25,6 +25,7 @@ from app.modules.world_memory.service import MemoryService
 from app.modules.world_pack.service import PackConsequenceRule, SharedWorldActionTag, resolve_world_pack
 from app.modules.world_state.history import canonize_history_candidates
 from app.modules.world_state.rules import standing_band
+from app.modules.world_state.entity_generation import pack_seed_entity_key
 
 
 ACTION_TAG_VALUES = {
@@ -198,6 +199,10 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
                 world_id=world_id,
                 name=faction_seed.name,
                 description=faction_seed.description,
+                entity_key=pack_seed_entity_key("community", faction_seed.id),
+                origin_kind="pack_seed",
+                origin_ref=faction_seed.id,
+                visibility_scope="world",
                 state=state_payload,
             )
             try:
@@ -210,6 +215,10 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
                     raise
                 faction.name = faction_seed.name
                 faction.description = faction_seed.description
+                faction.entity_key = faction.entity_key or pack_seed_entity_key("community", faction_seed.id)
+                faction.origin_kind = faction.origin_kind or "pack_seed"
+                faction.origin_ref = faction.origin_ref or faction_seed.id
+                faction.visibility_scope = faction.visibility_scope or "world"
                 faction.state = {
                     **state_payload,
                     "influence": float((faction.state or {}).get("influence") or 0.0),
@@ -217,6 +226,10 @@ def ensure_shared_world_seed(db: Session, *, world_id: str, actor_id: str | None
         else:
             faction.name = faction_seed.name
             faction.description = faction_seed.description
+            faction.entity_key = faction.entity_key or pack_seed_entity_key("community", faction_seed.id)
+            faction.origin_kind = faction.origin_kind or "pack_seed"
+            faction.origin_ref = faction.origin_ref or faction_seed.id
+            faction.visibility_scope = faction.visibility_scope or "world"
             faction.state = state_payload
         faction_count += 1
 

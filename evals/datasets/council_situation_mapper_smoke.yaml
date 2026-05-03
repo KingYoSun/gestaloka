@@ -4,17 +4,17 @@ expected_output_schema: council_situation_mapper_v1
 cases:
   - case_id: nexus-gate-situation-frame
     world_id: eval-gestaloka-regression
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
+    npc_name: Nexus Entry Liaison
     input_text: 周囲を観察し、門で何が起きているか確かめる
     input_mode: choice
     choice_id: safe
     relevant_memories: []
     relation_context:
-      - location=Nexus Gate
-      - active_quest=First Stabilizer Request [active 0/2]
+      - location=Nexus City
+      - active_quest=Visitor Log Registration [active 0/2]
     graph_context_status: ready
     expect_success: true
     expect_final_lane: main_lane

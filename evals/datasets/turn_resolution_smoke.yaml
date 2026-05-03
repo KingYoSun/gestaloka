@@ -4,19 +4,19 @@ expected_output_schema: council_turn_resolution_v1
 cases:
   - case_id: gestaloka-nexus-starter-progress
     world_id: eval-gestaloka-regression
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
-    input_text: Nexus Gateで到着記録を助け、最初の依頼を進める
+    npc_name: Nexus Entry Liaison
+    input_text: Nexus Cityで到着記録を助け、最初の依頼を進める
     input_mode: choice
     choice_id: progress
     relevant_memories: []
     relation_context:
-      - location=Nexus Gate
-      - relationship=Gate Steward Rikka KNOWS Demo Player (0.55)
-      - active_quest=First Stabilizer Request [active 0/2]
-      - faction=Nexus Custodians standing=0.25 (neutral)
+      - location=Nexus City
+      - relationship=Nexus Entry Liaison KNOWS Demo Player (0.55)
+      - active_quest=Visitor Log Registration [active 0/2]
+      - faction=Nexus City standing=0.25 (neutral)
     graph_context_status: ready
     expect_success: true
     expect_final_lane: main_lane
@@ -40,21 +40,21 @@ cases:
     expect_standing_after: 0.4
   - case_id: gestaloka-nexus-memory-aware-writ
     world_id: eval-gestaloka-regression
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
+    npc_name: Nexus Entry Liaison
     input_text: 到着記録の手伝いを報告し、次の復元路の約束を果たす
     input_mode: choice
     choice_id: progress
     relevant_memories:
-      - Demo PlayerはNexus Gateで到着記録を助け、Gate Steward Rikkaへ報告した。
+      - Demo PlayerはNexus Cityで到着記録を助け、Nexus Entry Liaisonへ報告した。
     relation_context:
-      - location=Nexus Gate
-      - memory=Demo PlayerはNexus Gateで到着記録を助け、Gate Steward Rikkaへ報告した。
-      - relationship=Gate Steward Rikka KNOWS Demo Player (0.65)
-      - active_quest=First Stabilizer Request [active 1/2]
-      - faction=Nexus Custodians standing=0.40 (favored)
+      - location=Nexus City
+      - memory=Demo PlayerはNexus Cityで到着記録を助け、Nexus Entry Liaisonへ報告した。
+      - relationship=Nexus Entry Liaison KNOWS Demo Player (0.65)
+      - active_quest=Visitor Log Registration [active 1/2]
+      - faction=Nexus City standing=0.40 (favored)
     graph_context_status: ready
     expect_success: true
     expect_final_lane: main_lane

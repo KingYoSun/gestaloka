@@ -9,6 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, NPCProfile, PlayerProfile, Relationship
 from app.modules.world_pack.service import PackNPCSeed, resolve_world_pack
+from app.modules.world_state.entity_generation import (
+    active_resource_locked,
+    generated_entity_key,
+    materialize_entity_draft,
+    pack_seed_entity_key,
+)
 
 GENDER_VALUES = {"male", "female", "unspecified", "other"}
 NARRATIVE_PREFERENCE_OPTIONS = {
@@ -344,6 +350,10 @@ def _ensure_seeded_npc(
         )
     ).scalar_one_or_none()
     if npc is not None:
+        npc.entity_key = npc.entity_key or pack_seed_entity_key("npc", seed.display_name)
+        npc.origin_kind = npc.origin_kind or "pack_seed"
+        npc.origin_ref = npc.origin_ref or seed.display_name
+        npc.visibility_scope = npc.visibility_scope or "world"
         if home_location_id and npc.current_location_id != home_location_id:
             npc.current_location_id = home_location_id
         profile = db.execute(
@@ -385,6 +395,10 @@ def _ensure_seeded_npc(
         actor_type="npc",
         display_name=seed.display_name,
         status="active",
+        entity_key=pack_seed_entity_key("npc", seed.display_name),
+        origin_kind="pack_seed",
+        origin_ref=seed.display_name,
+        visibility_scope="world",
     )
     db.add(npc)
     db.flush()
@@ -425,9 +439,33 @@ def get_or_create_guide_npc(db: Session, world_id: str, *, location_id: str | No
     guide_seed = next((seed for seed in pack.npcs if seed.display_name == guide_name or seed.is_guide), None)
     if guide_seed is not None:
         return _ensure_seeded_npc(db, world_id, guide_seed, location_ids_by_key=None)
+    guide_archetype_id = str(template.roles.guide_archetype_id or "").strip()
+    archetype = next((item for item in template.npc_archetypes if item.id == guide_archetype_id), None)
+    if archetype is not None:
+        location_key = str(archetype.default_location_key or template.roles.starter_location_key or "")
+        generated = materialize_entity_draft(
+            db,
+            world_id=world_id,
+            actor_id=None,
+            session_id=None,
+            source_event_id=None,
+            current_location_id=location_id,
+            draft={
+                "entity_type": "npc",
+                "archetype_id": archetype.id,
+                "display_name": archetype.display_name,
+                "semantic_key_hint": f"{archetype.id}:{location_key}",
+                "location_key": location_key,
+                "community_id": archetype.default_community_id,
+                "description": archetype.description,
+            },
+        )
+        if generated is not None:
+            actor = db.execute(select(Actor).where(Actor.world_id == world_id, Actor.id == generated.entity_id)).scalar_one()
+            return actor
     if pack.npcs:
         return _ensure_seeded_npc(db, world_id, pack.npcs[0], location_ids_by_key=None)
-    raise LookupError(f"Pack for world {world_id} does not define any NPC seeds")
+    raise LookupError(f"Pack for world {world_id} does not define NPC seeds or guide_archetype_id")
 
 
 def get_guide_npc_for_location(db: Session, world_id: str, *, location_id: str | None = None) -> Actor | None:
@@ -438,9 +476,22 @@ def get_guide_npc_for_location(db: Session, world_id: str, *, location_id: str |
     if location_id is not None:
         stmt = stmt.where(Actor.current_location_id == location_id)
     rows = list(db.execute(stmt.order_by(Actor.created_at.asc(), Actor.id.asc())).scalars())
+    rows = [
+        row
+        for row in rows
+        if not active_resource_locked(db, world_id=world_id, resource_type="npc", resource_id=row.id)
+    ]
     if not rows:
         return None
     _, template = resolve_world_pack(db, world_id)
+    guide_archetype_id = str(template.roles.guide_archetype_id or "").strip()
+    if guide_archetype_id:
+        archetype_rows = [actor for actor in rows if str(actor.origin_ref or "") == guide_archetype_id]
+        if archetype_rows:
+            archetype_rows.sort(key=lambda actor: (actor.display_name, actor.id))
+            return archetype_rows[0]
+        if not str(template.roles.guide_npc_name or "").strip():
+            return None
     guide_name = template.roles.guide_npc_name
     rows.sort(key=lambda actor: (actor.display_name != guide_name, actor.display_name, actor.id))
     return rows[0]

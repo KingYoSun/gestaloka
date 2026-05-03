@@ -260,8 +260,8 @@ Shared World Core の session state は、現在の player-local state に加え
 
 完了根拠:
 
-- `packs/gestaloka_reference/` が `world_axes`、5 factions、4 history levels、3 title rules、shared consequence rules を宣言する。
-- `tests/backend/packs/gestaloka_reference/test_gestaloka_reference_pack.py` で session flow、followup route、world canon、title recognition、SP 非連動を検証する。
+- `packs/gestaloka_world_reference/` が `world_axes`、5 factions、4 history levels、3 title rules、shared consequence rules を宣言する。
+- `tests/backend/packs/gestaloka_world_reference/test_gestaloka_world_reference_pack.py` で session flow、followup route、world canon、title recognition、SP 非連動を検証する。
 - `make pack-validate` と backend suite が reference pack を含んで通る。
 
 ### Phase 7: verification hardening

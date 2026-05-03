@@ -5,5 +5,5 @@ cases:
   - case_id: ambient-memory-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
+    npc_name: Nexus Entry Liaison
     input_text: プレイヤーの行動のあと、広場の空気を拾う

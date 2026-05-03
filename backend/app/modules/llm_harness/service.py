@@ -287,6 +287,7 @@ class TurnResolutionPayload(BaseModel):
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
+    entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)

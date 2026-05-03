@@ -94,6 +94,7 @@ class PackRoles(BaseModel):
     lore_location_key: str = "lore"
     followup_location_key: str = "followup"
     guide_npc_name: str = ""
+    guide_archetype_id: str = ""
     starter_stage_key: str = "starter_stage"
     followup_stage_key: str = "followup_stage"
     opening_chapter_key: str | None = None
@@ -266,6 +267,54 @@ class PackSharedFaction(BaseModel):
         )
 
 
+class PackCommunity(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    profile: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    parent_community_id: str | None = None
+    location_keys: list[str] = Field(default_factory=list)
+    world_axis_interests: dict[str, float] = Field(default_factory=dict)
+    relationships: dict[str, float] = Field(default_factory=dict)
+    initial_standing: float = Field(default=0.0, ge=-1.0, le=1.0)
+    state: dict[str, Any] = Field(default_factory=dict)
+
+    def to_shared_faction(self) -> PackSharedFaction:
+        governance = self.profile.get("GovernanceAndDecisionMaking", {})
+        culture = self.profile.get("CultureAndValues", {})
+        policy = str(
+            self.state.get("policy")
+            or governance.get("governance_form")
+            or culture.get("shared_values")
+            or ""
+        )
+        return PackSharedFaction(
+            id=self.id,
+            name=self.name,
+            description=self.description,
+            policy=policy,
+            initial_standing=self.initial_standing,
+            relationships=dict(self.relationships),
+            world_axis_interests=dict(self.world_axis_interests),
+            location_keys=list(self.location_keys),
+            state={**dict(self.state or {}), "community_profile": dict(self.profile), "community_tags": list(self.tags)},
+        )
+
+
+class PackEntityArchetype(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    entity_type: Literal["npc", "location", "community"]
+    display_name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    generation_policy: Literal["on_demand", "seed"] = "on_demand"
+    reuse_policy: Literal["world_reusable", "always_new"] = "world_reusable"
+    uniqueness_scope: Literal["world", "location", "community", "scene"] = "world"
+    default_location_key: str | None = None
+    default_community_id: str | None = None
+    traits: dict[str, Any] = Field(default_factory=dict)
+
+
 class PackNPCMemoryPolicy(BaseModel):
     remember_player_interactions: bool = True
     remember_local_public_events: bool = True
@@ -379,7 +428,11 @@ class WorldTemplateDefinition(BaseModel):
     routes: list[PackRoute]
     faction: PackFaction
     world_axes: list[PackWorldAxis] = Field(default_factory=list)
+    communities: list[PackCommunity] = Field(default_factory=list)
     factions: list[PackSharedFaction] = Field(default_factory=list)
+    npc_archetypes: list[PackEntityArchetype] = Field(default_factory=list)
+    location_archetypes: list[PackEntityArchetype] = Field(default_factory=list)
+    community_archetypes: list[PackEntityArchetype] = Field(default_factory=list)
     npc_memory_policy: PackNPCMemoryPolicy = Field(default_factory=PackNPCMemoryPolicy)
     history_rules: list[PackHistoryRule] = Field(default_factory=list)
     title_rules: list[PackTitleRule] = Field(default_factory=list)
@@ -404,15 +457,29 @@ class WorldTemplateDefinition(BaseModel):
             self.roles.reward_effect_kind = npc_reward_effect
         if not self.factions:
             self.factions = [PackSharedFaction.from_primary_faction(self.faction)]
+        existing_faction_ids = {faction.id for faction in self.factions}
+        for community in self.communities:
+            if community.id not in existing_faction_ids:
+                self.factions.append(community.to_shared_faction())
+                existing_faction_ids.add(community.id)
 
         _ensure_unique_ids(self.world_axes, label=f"world template {self.template_id} world_axes")
+        _ensure_unique_ids(self.communities, label=f"world template {self.template_id} communities")
         _ensure_unique_ids(self.factions, label=f"world template {self.template_id} factions")
+        _ensure_unique_ids(self.npc_archetypes, label=f"world template {self.template_id} npc_archetypes")
+        _ensure_unique_ids(self.location_archetypes, label=f"world template {self.template_id} location_archetypes")
+        _ensure_unique_ids(self.community_archetypes, label=f"world template {self.template_id} community_archetypes")
         _ensure_unique_ids(self.history_rules, label=f"world template {self.template_id} history_rules")
         _ensure_unique_ids(self.title_rules, label=f"world template {self.template_id} title_rules")
         _ensure_unique_ids(self.consequence_rules, label=f"world template {self.template_id} consequence_rules")
 
         axis_ids = {axis.id for axis in self.world_axes}
         faction_ids = {faction.id for faction in self.factions}
+        community_ids = {community.id for community in self.communities}
+        archetype_ids = {
+            archetype.id
+            for archetype in [*self.npc_archetypes, *self.location_archetypes, *self.community_archetypes]
+        }
         history_rule_ids = {rule.id for rule in self.history_rules}
         location_keys = set(self.locations)
         title_ids = {rule.id for rule in self.title_rules}
@@ -449,6 +516,56 @@ class WorldTemplateDefinition(BaseModel):
                 label=f"world template {self.template_id} faction {faction.id!r} location_keys",
                 values=faction.location_keys,
                 allowed=location_keys,
+            )
+
+        for community in self.communities:
+            if community.parent_community_id is not None:
+                _raise_unknown_refs(
+                    label=f"world template {self.template_id} community {community.id!r} parent_community_id",
+                    values=[community.parent_community_id],
+                    allowed=community_ids,
+                )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} community {community.id!r} location_keys",
+                values=community.location_keys,
+                allowed=location_keys,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} community {community.id!r} world_axis_interests",
+                values=set(community.world_axis_interests),
+                allowed=axis_ids,
+            )
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} community {community.id!r} relationships",
+                values=set(community.relationships),
+                allowed=community_ids | faction_ids,
+            )
+
+        for archetype in [*self.npc_archetypes, *self.location_archetypes, *self.community_archetypes]:
+            if archetype.default_location_key is not None:
+                _raise_unknown_refs(
+                    label=f"world template {self.template_id} archetype {archetype.id!r} default_location_key",
+                    values=[archetype.default_location_key],
+                    allowed=location_keys,
+                )
+            if archetype.default_community_id is not None:
+                _raise_unknown_refs(
+                    label=f"world template {self.template_id} archetype {archetype.id!r} default_community_id",
+                    values=[archetype.default_community_id],
+                    allowed=community_ids | faction_ids,
+                )
+            if archetype.entity_type == "npc" and archetype not in self.npc_archetypes:
+                raise ValueError(f"world template {self.template_id} archetype {archetype.id!r} is in the wrong section")
+            if archetype.entity_type == "location" and archetype not in self.location_archetypes:
+                raise ValueError(f"world template {self.template_id} archetype {archetype.id!r} is in the wrong section")
+            if archetype.entity_type == "community" and archetype not in self.community_archetypes:
+                raise ValueError(f"world template {self.template_id} archetype {archetype.id!r} is in the wrong section")
+
+        if self.roles.guide_archetype_id:
+            _raise_unknown_refs(
+                label=f"world template {self.template_id} roles.guide_archetype_id",
+                values=[self.roles.guide_archetype_id],
+                allowed=archetype_ids,
             )
 
         for rule in self.history_rules:
@@ -1147,11 +1264,18 @@ class PackRegistry:
         template: WorldTemplateDefinition,
         npc_names: set[str],
     ) -> None:
+        anchor_refs = (
+            npc_names
+            | {item.id for item in template.npc_archetypes}
+            | {item.id for item in template.communities}
+            | {item.id for item in template.location_archetypes}
+            | set(template.locations)
+        )
         for slot, branch in template.roles.followup_branches.by_slot().items():
-            missing = [name for name in branch.anchor_npcs if name not in npc_names]
+            missing = [name for name in branch.anchor_npcs if name not in anchor_refs]
             if missing:
                 raise WorldPackError(
-                    f"Pack {pack_id} template {template.template_id} slot {slot} references unknown anchor_npcs: {missing}",
+                    f"Pack {pack_id} template {template.template_id} slot {slot} references unknown anchor_npcs/anchor_refs: {missing}",
                     code="unknown_anchor_npc",
                     pack_id=pack_id,
                 )
@@ -1163,6 +1287,7 @@ class PackRegistry:
         npc_names: set[str],
     ) -> None:
         references: list[tuple[str, list[str]]] = []
+        npc_refs = npc_names | {item.id for item in template.npc_archetypes}
         for faction in template.factions:
             references.append((f"faction {faction.id!r} npc_names", faction.npc_names))
         for rule in template.history_rules:
@@ -1186,7 +1311,7 @@ class PackRegistry:
             references.append((f"consequence_rule {rule.id!r} relationship_deltas", relationship_refs))
 
         for label, values in references:
-            missing = [name for name in values if name not in npc_names]
+            missing = [name for name in values if name not in npc_refs]
             if missing:
                 raise WorldPackError(
                     f"Pack {pack_id} template {template.template_id} {label} references unknown NPCs: {sorted(set(missing))}",

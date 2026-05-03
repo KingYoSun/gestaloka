@@ -61,7 +61,7 @@ function hasSituationMappingBeforeWorldProgress(completedPhases: string[]): bool
 
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
   test.setTimeout(360_000);
-  const worldId = "gestaloka_reference";
+  const worldId = "gestaloka_world_reference";
   const slowTimeout = 30_000;
   const turnTimeout = 180_000;
 
@@ -90,19 +90,19 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("start-session").click();
 
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
-  await expect(page.getByTestId("session-pack")).toContainText("GESTALOKA Reference", { timeout: 20_000 });
-  await expect(page.getByTestId("session-pack")).toContainText("Nexus Foundation", { timeout: 20_000 });
+  await expect(page.getByTestId("session-pack")).toContainText("GESTALOKA World Reference", { timeout: 20_000 });
+  await expect(page.getByTestId("session-pack")).toContainText("Layered World Foundation", { timeout: 20_000 });
   await expect(page.getByTestId("ops-stream")).toContainText("session.connected", { timeout: 20_000 });
-  await expect(page.getByTestId("ops-stream")).toContainText("GESTALOKA Reference", { timeout: 20_000 });
+  await expect(page.getByTestId("ops-stream")).toContainText("GESTALOKA World Reference", { timeout: 20_000 });
   await expect(page.getByTestId("ops-stream")).not.toContainText("missing world context");
   await expect(page.getByTestId("ops-stream")).not.toContainText("global");
   await expect(page.getByTestId("ops-stream")).not.toContainText("{");
   await expect(page.getByTestId("npc-routine-stream")).not.toContainText("{");
-  await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus Gate/i, { timeout: 20_000 });
+  await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus City/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("Exploring...", { timeout: 20_000 });
-  await expect(page.getByTestId("local-figures-stream")).toContainText(/Gate Steward Rikka/i, { timeout: 20_000 });
-  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Lift Tower Concourse/i, { timeout: 20_000 });
-  await expect(page.getByTestId("faction-standing")).toContainText(/Nexus Custodians/i, { timeout: 20_000 });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Nexus Entry Liaison/i, { timeout: 20_000 });
+  await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Universal Library/i, { timeout: 20_000 });
+  await expect(page.getByTestId("faction-standing")).toContainText(/Nexus City/i, { timeout: 20_000 });
   await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち");
   await expect(page.getByTestId("turn-cost-note")).toContainText(/消費SP|Choice cost|SP/);
   await page.getByTestId("toggle-free-text").click();
@@ -171,7 +171,7 @@ test("mobile player drawers expose actions and status", async ({ page }) => {
   await page.locator("#password").fill("demo-password");
   await page.getByRole("button", { name: /sign in/i }).click();
 
-  await openCharacterCreation(page, "gestaloka_reference");
+  await openCharacterCreation(page, "gestaloka_world_reference");
   await page.getByTestId("profile-display-name").fill(`Mobile Player ${Date.now()}`);
   await page.getByTestId("profile-play-language").selectOption("ja");
   await page.getByTestId("create-player-profile").click();

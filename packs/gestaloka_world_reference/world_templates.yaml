@@ -1,0 +1,1120 @@
+world_templates:
+  layered_world_foundation:
+    template_id: layered_world_foundation
+    display_name: Layered World Foundation
+    summary: A world-scale GESTALOKA foundation where visitors enter Nexus and their logs can alter corporations, churches, markets, ruins, and the spread of oblivion.
+    world:
+      world_id: gestaloka_world_reference
+      default_name: "GESTALOKA: Layered World Foundation"
+    roles:
+      starter_location_key: nexus_city
+      lore_location_key: universal_library
+      followup_location_key: oblivion_regions
+      guide_npc_name: ""
+      guide_archetype_id: nexus_entry_liaison
+      starter_stage_key: visitor_log_registration
+      followup_stage_key: oblivion_survey
+      opening_chapter_key:
+      followup_chapter_key:
+      reward_effect_kind: unlock_oblivion_regions_route
+      followup_branches:
+        formal_path:
+          branch_key: public_archive_mandate
+          label: Public Archive Mandate
+          summary: The visitor's early log is witnessed by Nexus, the Memory Church, and the Universal Library.
+          committed_summary: The route now treats the visitor's work as public record instead of private leverage.
+          player_hint: Public witness and archive continuity shape the next stage.
+          signal_weights:
+            formal_trust: 0.14
+            kept_formal_promise: 0.12
+            public_scrutiny: 0.1
+            street_pull: -0.03
+          anchor_npcs:
+            - nexus_entry_liaison
+            - memory_church
+            - universal_library
+        undercurrent_path:
+          branch_key: edge_market_compact
+          label: Edge Market Compact
+          summary: The visitor's early log moves through markets, brokers, field crews, and Middle rumor channels.
+          committed_summary: The route now follows field evidence and negotiated risk before official institutions can certify it.
+          player_hint: Market leverage, frontier evidence, and unofficial trust shape the next stage.
+          signal_weights:
+            rumor_curiosity: 0.13
+            street_pull: 0.13
+            corporate_pressure: 0.05
+            formal_trust: -0.02
+          anchor_npcs:
+            - middle_information_broker
+            - chronos_communications
+            - middle_lawless_zone
+    bootstrap:
+      opening_title: ネクサス市
+      opening_narrative: |-
+        基点都市ネクサス。ここは階層世界ゲスタロカへ接続した来訪者が、最初に保護される都市だ。
+
+        頭上には昇降塔が雲を貫き、遠くの界壁には企業都市、農業階層、浮遊学術都市、無法地帯ミドルへ続く交通ログが流れている。あなたの到着は、ただの受付ではない。外部から来た新しい情報として、世界の残響に刻まれようとしている。
+
+        ネクサスの案内担当は、あなたの来訪者ログを公開記録にするか、市場や企業の私的契約に流すかで、この先に開く道が変わると告げる。
+      opening_situation: 基点都市ネクサスは来訪者を守る安全都市であり、到着ログの扱いが世界規模の勢力関係に接続しようとしている。
+      opening_pressure: ネクサス、機憶教団、クロノス、リターナーズが、新しい来訪者ログをどう扱うか注視している。
+      opening_title_en: Nexus City
+      opening_narrative_en: |-
+        Nexus City is the protected first city for visitors who connect to the layered world of GESTALOKA.
+
+        Above you, lift towers cut through the clouds. Along the distant layer walls, route logs point toward corporate cities, agricultural strata, Sophia's floating academy, Middle, and the fading Oblivion Regions. Your arrival is not just intake. It is new outside information entering the world's resonance logs.
+
+        A Nexus entry liaison explains that the first choice is how your visitor log becomes legible: public record, market leverage, or field rumor.
+      opening_situation_en: Nexus City protects new visitors while their arrival log begins to touch world-scale communities and routes.
+      opening_pressure_en: Nexus, the Memory Church, Chronos, and the Returners are all watching how a new visitor log enters the world.
+      opening_choices:
+        safe:
+          label: ネクサス市の公開記録として来訪者ログを確認する
+          summary: 安全都市の制度と公開証言を使い、到着ログを世界に読める形へ整える。
+          canonical_input_text: ネクサス市の公開記録として来訪者ログを確認する
+          action_kind: narrative
+        progress:
+          label: 案内担当と協力し、来訪者ログの初期登録を進める
+          summary: ネクサスの案内担当に協力し、最初のログ登録を実行する。
+          canonical_input_text: 案内担当と協力し、来訪者ログの初期登録を進める
+          action_kind: narrative
+        explore:
+          label: 万象図書館へ向かい、ゲスタロカの正史を調べる
+          summary: 公式記録を確認するため、万象図書館へ移動する。
+          canonical_input_text: 万象図書館へ向かう
+          action_kind: travel
+          travel_target_key: universal_library
+      opening_choices_en:
+        safe:
+          label: Check your visitor log as a public Nexus record
+          summary: Use public witness and safe civic procedure to make the arrival log legible.
+          canonical_input_text: Check your visitor log as a public Nexus record
+          action_kind: narrative
+        progress:
+          label: Work with the liaison to register the first visitor log
+          summary: Help the entry liaison carry the first registration into shared world state.
+          canonical_input_text: Work with the liaison to register the first visitor log
+          action_kind: narrative
+        explore:
+          label: Go to the Universal Library and study official history
+          summary: Move toward the official archive to learn how GESTALOKA records world-scale events.
+          canonical_input_text: Travel to the Universal Library
+          action_kind: travel
+          travel_target_key: universal_library
+      start_consequence_summary: Nexus waits to see whether this visitor log becomes public record, private leverage, or unstable rumor.
+      session_started_narrative: >-
+        {player_name} entered {starter_location_name} and began a visitor log under the attention of {guide_npc_name}.
+      reward_unlock_summary: Visitor Log Seal unlocked a surveyed route toward the Oblivion Regions.
+      reward_use_narrative: >-
+        {player_name} presented {reward_name} at {starter_location_name}, and {faction_name} acknowledged a route toward the fading strata.
+      reward_location_memory: >-
+        {reward_name} was recognized at {starter_location_name}, opening a route toward the Oblivion Regions.
+      reward_world_memory: >-
+        {player_name} used {reward_name} to move from first contact into a world-scale oblivion survey.
+    locations:
+      nexus_city:
+        id: nexus_city
+        starter: true
+        name: Nexus City
+        description: The protected anchor city where outside visitors first enter GESTALOKA and become legible to the same-world record.
+        hierarchy: protected_anchor_city
+        region: stable_layer
+        kind: safe_city
+        danger_level: low
+        facilities:
+          - visitor registry
+          - public witness halls
+          - lift tower access
+        public_state:
+          visitor_log_clarity: 2
+          civic_safety: 2
+        related_factions:
+          - nexus_city
+          - memory_church
+          - chronos_communications
+        related_world_axes:
+          - visitor_resonance
+          - world_integrity
+          - corporate_hegemony
+        rumor_surface:
+          - first visitor logs
+          - safe city politics
+          - corporate recruiters
+      lift_tower_network:
+        id: lift_tower_network
+        name: Lift Tower Network
+        description: Cloud-piercing transit and communication towers that connect strata, cities, markets, and sealed layer walls.
+        hierarchy: world_infrastructure
+        region: multi_layer
+        kind: transit_network
+        danger_level: medium
+        facilities:
+          - route ledgers
+          - astralnet repeaters
+          - customs platforms
+        public_state:
+          route_stability: 1
+          transit_pressure: 2
+        related_factions:
+          - nexus_city
+          - chronos_communications
+          - gedora
+        related_world_axes:
+          - astralnet_load
+          - corporate_hegemony
+          - visitor_resonance
+        rumor_surface:
+          - rerouted lifts
+          - corporate security checkpoints
+      layer_wall_corridors:
+        id: layer_wall_corridors
+        name: Layer Wall Corridors
+        description: Ancient internal corridors inside the world-separating layer walls, rich with artifacts and damaged maintenance paths.
+        hierarchy: ancient_boundary
+        region: layer_wall
+        kind: ruin_corridor
+        danger_level: high
+        facilities:
+          - artifact seams
+          - maintenance shafts
+          - distortion nests
+        public_state:
+          artifact_exposure: 2
+          corridor_safety: 0
+        related_factions:
+          - gedora
+          - fam_pharma
+          - memory_church
+          - returners
+        related_world_axes:
+          - artifact_control
+          - oblivion_expansion
+          - world_integrity
+        rumor_surface:
+          - unlicensed artifact finds
+          - missing salvage teams
+      great_cauldron_city:
+        id: great_cauldron_city
+        name: Great Cauldron City
+        description: A crater town in Nukonun territory where agriculture, pipe witches, and layer-wall expeditions meet.
+        hierarchy: regional_city
+        region: agricultural_stratum
+        kind: resource_town
+        danger_level: medium
+        facilities:
+          - pipe witch infrastructure
+          - crystal granaries
+          - expedition inns
+        public_state:
+          food_security: 2
+          pipe_stability: 1
+        related_factions:
+          - nukonun
+          - memory_church
+          - gedora
+        related_world_axes:
+          - magic_crystal_economy
+          - world_integrity
+          - artifact_control
+        rumor_surface:
+          - pipe witch succession
+          - crater wall artifacts
+      middle_lawless_zone:
+        id: middle_lawless_zone
+        name: Middle Lawless Zone
+        description: A vast uncontrolled settlement inside inter-layer space where mercenaries, brokers, fugitives, and lost logs gather.
+        hierarchy: interstitial_megapolis
+        region: middle
+        kind: lawless_zone
+        danger_level: high
+        facilities:
+          - black markets
+          - mercenary docks
+          - hidden data relays
+        public_state:
+          black_market_noise: 2
+          informal_trust: 1
+        related_factions:
+          - middle
+          - chronos_communications
+          - gedora
+          - returners
+        related_world_axes:
+          - corporate_hegemony
+          - astralnet_load
+          - oblivion_expansion
+        rumor_surface:
+          - hired guides
+          - stolen route keys
+          - distorted echoes
+      sophia_floating_academy:
+        id: sophia_floating_academy
+        name: Sophia Floating Academy
+        description: An independent academic city suspended by an artifact, pursuing truth about the Architects beyond corporate control.
+        hierarchy: independent_city
+        region: upper_airspace
+        kind: research_city
+        danger_level: medium
+        facilities:
+          - artifact observatory
+          - sealed laboratories
+          - lecture bridges
+        public_state:
+          research_openness: 1
+          ethical_pressure: 2
+        related_factions:
+          - sophia
+          - chronos_communications
+          - fam_pharma
+        related_world_axes:
+          - artifact_control
+          - world_integrity
+          - astralnet_load
+        rumor_surface:
+          - forbidden theses
+          - floating artifact failures
+      universal_library:
+        id: universal_library
+        name: Universal Library
+        description: A metaphysical archive managed by a historian AI, where world history becomes official record.
+        hierarchy: metaphysical_archive
+        region: astral_record
+        kind: official_history
+        danger_level: low
+        facilities:
+          - canon stacks
+          - resonance indexes
+          - historian AI terminal
+        public_state:
+          canon_access: 1
+          record_integrity: 2
+        related_factions:
+          - universal_library
+          - memory_church
+          - nexus_city
+        related_world_axes:
+          - world_integrity
+          - visitor_resonance
+          - artifact_control
+        rumor_surface:
+          - official histories
+          - erased names
+      oblivion_regions:
+        id: oblivion_regions
+        name: Oblivion Regions
+        description: Fading astralnet territories where corrupted data returns from chaos toward nothing, and distortions lose context.
+        hierarchy: existential_boundary
+        region: failing_data_sea
+        kind: extinction_front
+        danger_level: extreme
+        facilities:
+          - fading route markers
+          - restoration camps
+          - distortion fields
+        public_state:
+          containment: 0
+          restored_context: 0
+        related_factions:
+          - memory_church
+          - returners
+          - fam_pharma
+          - universal_library
+        related_world_axes:
+          - oblivion_expansion
+          - world_integrity
+          - visitor_resonance
+        rumor_surface:
+          - vanished districts
+          - returned echoes
+    routes:
+      - route_key: nexus_to_library
+        from: nexus_city
+        to: universal_library
+        status: open
+        travel_summary: Nexus maintains a witnessed archive route into the Universal Library.
+        unlock_requirements: {}
+      - route_key: library_to_nexus
+        from: universal_library
+        to: nexus_city
+        status: open
+        travel_summary: The archive route returns to Nexus with official context in tow.
+        unlock_requirements: {}
+      - route_key: nexus_to_lift_network
+        from: nexus_city
+        to: lift_tower_network
+        status: open
+        travel_summary: Public lifts leave Nexus for other layers and corporate territories.
+        unlock_requirements: {}
+      - route_key: lift_network_to_nexus
+        from: lift_tower_network
+        to: nexus_city
+        status: open
+        travel_summary: The lift network returns through Nexus safety checks.
+        unlock_requirements: {}
+      - route_key: lift_to_great_cauldron
+        from: lift_tower_network
+        to: great_cauldron_city
+        status: open
+        travel_summary: A monitored agricultural route descends toward Great Cauldron City.
+        unlock_requirements: {}
+      - route_key: great_cauldron_to_layer_walls
+        from: great_cauldron_city
+        to: layer_wall_corridors
+        status: open
+        travel_summary: Expedition roads lead from the crater town into the layer wall corridors.
+        unlock_requirements: {}
+      - route_key: lift_to_middle
+        from: lift_tower_network
+        to: middle_lawless_zone
+        status: open
+        travel_summary: Unofficial platforms and paid escorts lead into Middle.
+        unlock_requirements: {}
+      - route_key: lift_to_sophia
+        from: lift_tower_network
+        to: sophia_floating_academy
+        status: open
+        travel_summary: High-altitude lifts reach Sophia's floating bridges when the academy accepts traffic.
+        unlock_requirements: {}
+      - route_key: nexus_to_oblivion
+        from: nexus_city
+        to: oblivion_regions
+        status: locked
+        travel_summary: Visitor Log Seal opens a surveyed route toward the Oblivion Regions.
+        locked_travel_summary: Nexus will not send new visitors into the Oblivion Regions until their visitor log is sealed.
+        unlocked_travel_summary: Visitor Log Seal opens a surveyed route toward the Oblivion Regions.
+        unlock_requirements:
+          starter_item_effect: unlock_oblivion_regions_route
+      - route_key: oblivion_to_nexus
+        from: oblivion_regions
+        to: nexus_city
+        status: locked
+        travel_summary: The sealed survey route returns from the Oblivion Regions to Nexus.
+        locked_travel_summary: The return route waits for a sealed visitor log.
+        unlocked_travel_summary: The sealed survey route returns from the Oblivion Regions to Nexus.
+        unlock_requirements:
+          starter_item_effect: unlock_oblivion_regions_route
+    faction:
+      id: nexus_city
+      name: Nexus City
+      description: The protected anchor city that makes visitor actions legible without forcing a destiny on them.
+      state:
+        doctrine: protect first contact and keep new logs accountable to the same world
+    world_axes:
+      - id: world_integrity
+        display_name: World Integrity
+        description: How coherently GESTALOKA preserves meaning, places, identities, and official history.
+        min_value: 0
+        max_value: 100
+        initial_value: 52
+        thresholds:
+          - key: brittle
+            label: Brittle World
+            value: 25
+            description: Records and communities contradict each other faster than institutions can reconcile them.
+          - key: coherent
+            label: Coherent World
+            value: 70
+            description: Local actions can become reliable shared history.
+      - id: astralnet_load
+        display_name: Astralnet Load
+        description: Pressure on the magical information network that powers skills, communication, and infrastructure.
+        min_value: 0
+        max_value: 100
+        initial_value: 58
+        thresholds:
+          - key: smooth
+            label: Smooth Flow
+            value: 30
+            description: Scripts and communication remain reliable.
+          - key: saturated
+            label: Saturated Net
+            value: 78
+            description: Delays, data ghosts, and distorted skills become common.
+      - id: magic_crystal_economy
+        display_name: Magic Crystal Economy
+        description: Stability of the crystal economy used for currency, artifacts, tools, logistics, and war.
+        min_value: 0
+        max_value: 100
+        initial_value: 50
+        thresholds:
+          - key: strained
+            label: Strained Circulation
+            value: 25
+            description: Shortages and hoarding shape daily decisions.
+          - key: liquid
+            label: Liquid Circulation
+            value: 70
+            description: Trade and recovery work can move without constant scarcity.
+      - id: corporate_hegemony
+        display_name: Corporate Hegemony
+        description: How strongly corporations govern cities, resources, routes, research, and conflict.
+        min_value: 0
+        max_value: 100
+        initial_value: 62
+        thresholds:
+          - key: checked
+            label: Checked Power
+            value: 35
+            description: Public institutions and independent cities can limit corporate reach.
+          - key: dominant
+            label: Dominant Power
+            value: 80
+            description: Corporate contracts decide what most communities can afford to remember or defend.
+      - id: artifact_control
+        display_name: Artifact Control
+        description: Who can find, protect, activate, or weaponize Architect artifacts.
+        min_value: 0
+        max_value: 100
+        initial_value: 46
+        thresholds:
+          - key: dispersed
+            label: Dispersed Control
+            value: 30
+            description: Local groups and scholars can contest artifact access.
+          - key: monopolized
+            label: Monopolized Control
+            value: 75
+            description: A few powers can rewrite the world at scale.
+      - id: visitor_resonance
+        display_name: Visitor Resonance
+        description: How powerfully outside visitors create new logs, echoes, stories, and social change.
+        min_value: 0
+        max_value: 100
+        initial_value: 40
+        thresholds:
+          - key: faint
+            label: Faint Resonance
+            value: 20
+            description: Visitor actions remain local anecdotes.
+          - key: legendary
+            label: Legendary Resonance
+            value: 75
+            description: Visitor logs reshape routes, communities, and official history.
+      - id: oblivion_expansion
+        display_name: Oblivion Expansion
+        description: The spread of corrupted context and fading regions where meaning collapses toward nothing.
+        min_value: 0
+        max_value: 100
+        initial_value: 49
+        thresholds:
+          - key: contained
+            label: Contained Fading
+            value: 25
+            description: Restoration camps can work without mass panic.
+          - key: spreading
+            label: Spreading Oblivion
+            value: 80
+            description: Communities, routes, and memories begin disappearing from shared context.
+    communities:
+      - id: nexus_city
+        name: Nexus City
+        description: Protected civic anchor for visitor first contact and public route legitimacy.
+        profile:
+          BasicScale:
+            population_size: "large protected city with heavy transient visitor flow"
+            transient_population: "visitors, recruiters, pilgrims, brokers, and survey crews"
+          GovernanceAndDecisionMaking:
+            governance_form: "civic custodial administration"
+            transparency: "high for visitor logs, guarded for world safety protocols"
+          MembershipParticipationAndBoundary:
+            membership_definition: "residents, registered visitors, civic custodians"
+            entry_barrier: "low under protection protocols"
+          NarrativeAndGameUsefulDerivedParameters:
+            current_issue: "whether new visitor logs become public record, corporate leverage, or unstable rumor"
+        location_keys:
+          - nexus_city
+          - lift_tower_network
+        world_axis_interests:
+          visitor_resonance: 1.0
+          world_integrity: 0.8
+          corporate_hegemony: -0.3
+        relationships:
+          memory_church: 0.4
+          chronos_communications: 0.1
+          returners: -0.45
+      - id: gedora
+        name: Gedora
+        description: A mass-production military corporation that sells weapons, tools, guards, and conflict readiness across layers.
+        profile:
+          EconomyAndResources:
+            productive_capacity: "weapons, military tools, cheap security infrastructure"
+            revenue_sources: "arms sales, security contracts, route protection fees"
+          MilitarySecurityAndCoercion:
+            military_scale: "large corporate forces and contractor networks"
+            offensive_power: "high"
+          NarrativeAndGameUsefulDerivedParameters:
+            internal_contradiction: "advertises security while profiting from instability"
+        location_keys:
+          - lift_tower_network
+          - layer_wall_corridors
+          - middle_lawless_zone
+        world_axis_interests:
+          corporate_hegemony: 1.0
+          artifact_control: 0.6
+          magic_crystal_economy: 0.4
+        relationships:
+          nukonun: 0.2
+          chronos_communications: 0.25
+          memory_church: -0.15
+      - id: nukonun
+        name: Nukonun
+        description: A primary-industry corporation that turned former waste strata into huge agricultural and livestock zones.
+        profile:
+          EconomyAndResources:
+            productive_capacity: "food, livestock, crystal-fed agriculture, logistics"
+            economic_self_sufficiency: "high in agricultural territories"
+          SpaceAndTerritory:
+            territory_size: "broad agricultural strata and crater towns"
+          NarrativeAndGameUsefulDerivedParameters:
+            current_issue: "pipe infrastructure and artifact pressure beneath agricultural prosperity"
+        location_keys:
+          - great_cauldron_city
+        world_axis_interests:
+          magic_crystal_economy: 1.0
+          world_integrity: 0.4
+      - id: chronos_communications
+        name: Chronos Communications
+        description: Information corporation managing astralnet infrastructure, data trade, hacking, surveillance, and media leverage.
+        profile:
+          TechnologyKnowledgeAndInformation:
+            information_flow_speed: "very high"
+            record_keeping_capacity: "high but privately optimized"
+            secrecy_capacity: "high"
+          EconomyAndResources:
+            resource_holdings: "data, routes, access credentials, communication infrastructure"
+          NarrativeAndGameUsefulDerivedParameters:
+            taboo: "whether public memory should ever outrank owned data"
+        location_keys:
+          - nexus_city
+          - lift_tower_network
+          - middle_lawless_zone
+        world_axis_interests:
+          astralnet_load: -0.3
+          corporate_hegemony: 0.8
+          visitor_resonance: 0.3
+        relationships:
+          nexus_city: 0.1
+          sophia: 0.15
+          returners: -0.2
+      - id: fam_pharma
+        name: Fam Pharma
+        description: A medical and life-science corporation rumored to conduct soul, body, and distortion weaponization experiments.
+        profile:
+          EconomyAndResources:
+            productive_capacity: "medicine, biotech, clinical tools, forbidden adaptation"
+          TechnologyKnowledgeAndInformation:
+            research_and_development_capacity: "very high"
+            secrecy_capacity: "very high"
+          NarrativeAndGameUsefulDerivedParameters:
+            taboo: "experiments using souls, bodies, echoes, and distortions"
+        location_keys:
+          - sophia_floating_academy
+          - layer_wall_corridors
+          - oblivion_regions
+        world_axis_interests:
+          artifact_control: 0.7
+          oblivion_expansion: 0.4
+          corporate_hegemony: 0.5
+      - id: sophia
+        name: Sophia Floating Academy
+        description: Independent scholarly city suspended by artifact power, pursuing the truth of Architects beyond corporate rule.
+        profile:
+          GovernanceAndDecisionMaking:
+            governance_form: "academic council"
+            representativeness: "limited to credentialed scholars"
+          TechnologyKnowledgeAndInformation:
+            research_and_development_capacity: "exceptional"
+            external_knowledge_absorption: "high"
+          NarrativeAndGameUsefulDerivedParameters:
+            internal_contradiction: "pursues truth while tolerating dangerous methods"
+        location_keys:
+          - sophia_floating_academy
+        world_axis_interests:
+          artifact_control: -0.2
+          world_integrity: 0.6
+          astralnet_load: 0.2
+      - id: memory_church
+        name: Memory Church
+        description: Religious organization that treats GESTALOKA as a sacred archive and restores names, records, artifacts, and people.
+        profile:
+          CultureAndValues:
+            religion_or_ideology: "the world is a sacred archive left by the Architects"
+            shared_values: "preservation, restoration, witness, mercy"
+          MilitarySecurityAndCoercion:
+            crisis_response_capacity: "high for contamination and oblivion incidents"
+          NarrativeAndGameUsefulDerivedParameters:
+            common_enemy: "oblivion, distortion, and Returner sabotage"
+        location_keys:
+          - nexus_city
+          - universal_library
+          - oblivion_regions
+        world_axis_interests:
+          world_integrity: 1.0
+          oblivion_expansion: -1.0
+          visitor_resonance: 0.4
+        relationships:
+          returners: -0.7
+          universal_library: 0.5
+      - id: returners
+        name: Returners
+        description: Radical Architect worshippers who treat corruption as divine order and visitors as bugs in the world.
+        profile:
+          CultureAndValues:
+            religion_or_ideology: "Architect purity and sacred contamination"
+            exclusivity: "very high"
+          MilitarySecurityAndCoercion:
+            information_warfare_capacity: "cells, sabotage, radical sermons"
+          NarrativeAndGameUsefulDerivedParameters:
+            pressure_for_change: "accelerate failure to force the old order's return"
+        location_keys:
+          - middle_lawless_zone
+          - layer_wall_corridors
+          - oblivion_regions
+        world_axis_interests:
+          oblivion_expansion: 1.0
+          world_integrity: -0.8
+          visitor_resonance: -0.6
+        relationships:
+          memory_church: -0.7
+          nexus_city: -0.45
+      - id: middle
+        name: Middle
+        description: Uncontrolled inter-layer megaslum made of mercenary docks, black markets, data relays, and fugitive neighborhoods.
+        profile:
+          GovernanceAndDecisionMaking:
+            governance_form: "distributed informal power"
+            boundary_clarity: "loose network of neighborhoods and deals"
+          EconomyAndResources:
+            revenue_sources: "black markets, escorts, information, salvage, protection"
+          NarrativeAndGameUsefulDerivedParameters:
+            scarcity: "trust, safety, stable routes"
+            surplus: "rumors, weapons, desperate talent"
+        location_keys:
+          - middle_lawless_zone
+        world_axis_interests:
+          corporate_hegemony: -0.2
+          astralnet_load: 0.4
+          oblivion_expansion: 0.2
+      - id: universal_library
+        name: Universal Library
+        description: Metaphysical archive and historian AI institution that canonizes world history.
+        profile:
+          TechnologyKnowledgeAndInformation:
+            record_keeping_capacity: "world-defining official canon"
+            standardization_level: "high for history, opaque for judgment criteria"
+          LegitimacyAndIdentity:
+            legitimacy_source: "historian AI custody of official records"
+            symbols: "canon stacks, index lights, resonance seals"
+          NarrativeAndGameUsefulDerivedParameters:
+            current_issue: "which visitor logs deserve official history"
+        location_keys:
+          - universal_library
+        world_axis_interests:
+          world_integrity: 1.0
+          visitor_resonance: 0.7
+          artifact_control: 0.3
+    factions:
+      - id: nexus_city
+        name: Nexus City
+        description: The protected anchor city that makes visitor actions legible without forcing a destiny on them.
+        policy: protect first contact and keep new logs accountable to the same world
+        influence_scope:
+          - nexus_city
+          - lift_tower_network
+        initial_standing: 0.0
+        relationships:
+          memory_church: 0.4
+          chronos_communications: 0.1
+          returners: -0.45
+        world_axis_interests:
+          visitor_resonance: 1.0
+          world_integrity: 0.8
+          corporate_hegemony: -0.3
+        location_keys:
+          - nexus_city
+          - lift_tower_network
+        npc_names:
+          - nexus_entry_liaison
+    npc_archetypes:
+      - id: nexus_entry_liaison
+        entity_type: npc
+        display_name: Nexus Entry Liaison
+        description: A generated Nexus official who helps visitors make their first log legible without becoming a world-unique person.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: location
+        default_location_key: nexus_city
+        default_community_id: nexus_city
+        traits:
+          routine_role: entry_liaison
+          tension_band: medium
+      - id: middle_information_broker
+        entity_type: npc
+        display_name: Middle Information Broker
+        description: A generated broker who can turn rumors, route keys, and hidden debts into persistent world contacts.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: location
+        default_location_key: middle_lawless_zone
+        default_community_id: middle
+      - id: memory_church_restorer
+        entity_type: npc
+        display_name: Memory Church Restorer
+        description: A generated restoration witness who preserves names and context near damaged regions.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: location
+        default_location_key: oblivion_regions
+        default_community_id: memory_church
+    location_archetypes:
+      - id: market_shopfront
+        entity_type: location
+        display_name: Market Shopfront
+        description: A generated persistent shop, stall, or workshop that players can revisit or hear about later.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: location
+        default_location_key: middle_lawless_zone
+        default_community_id: middle
+      - id: layer_wall_settlement
+        entity_type: location
+        display_name: Layer Wall Settlement
+        description: A generated settlement, refuge, or expedition camp inside or near a layer wall.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: world
+        default_location_key: layer_wall_corridors
+    community_archetypes:
+      - id: market_shop
+        entity_type: community
+        display_name: Market Shop
+        description: A generated small business, workshop, stall, or service crew with persistent reputation.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: location
+        default_location_key: middle_lawless_zone
+        default_community_id: middle
+      - id: mercenary_crew
+        entity_type: community
+        display_name: Mercenary Crew
+        description: A generated crew that can keep contracts, grudges, routes, and rumors between sessions.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: world
+        default_location_key: middle_lawless_zone
+        default_community_id: middle
+    npc_memory_policy:
+      remember_player_interactions: true
+      remember_local_public_events: true
+      remember_faction_events: true
+      remember_history_events: true
+      remember_relationship_changes: true
+      expose_recent_limit: 8
+    history_rules:
+      - id: visitor_log_rumor
+        level: local_rumor
+        description: A visible visitor log in Nexus becomes rumor before it becomes official record.
+        trigger_tags:
+          - public_help
+          - earned_trust
+        world_axis_refs:
+          - visitor_resonance
+        faction_refs:
+          - nexus_city
+        location_refs:
+          - nexus_city
+        npc_refs:
+          - nexus_entry_liaison
+        minimum_salience: 0.35
+      - id: archive_canon_record
+        level: regional_record
+        description: Library-backed investigation can become a regional record when public witness and archive context align.
+        trigger_tags:
+          - careful_observation
+          - record_checked
+        world_axis_refs:
+          - world_integrity
+        faction_refs:
+          - universal_library
+          - memory_church
+        location_refs:
+          - universal_library
+        npc_refs: []
+        minimum_salience: 0.5
+      - id: market_faction_record
+        level: faction_record
+        description: Market or Middle deals become faction records when persistent generated communities are involved.
+        trigger_tags:
+          - public_attention
+          - earned_trust
+        world_axis_refs:
+          - corporate_hegemony
+          - magic_crystal_economy
+        faction_refs:
+          - middle
+          - chronos_communications
+        location_refs:
+          - middle_lawless_zone
+        npc_refs:
+          - middle_information_broker
+        minimum_salience: 0.5
+      - id: oblivion_world_canon
+        level: world_canon
+        description: Work in the Oblivion Regions can become world canon when fading context is restored or deliberately destabilized.
+        trigger_tags:
+          - restored_boundary
+          - breach_contained
+        world_axis_refs:
+          - oblivion_expansion
+          - world_integrity
+        faction_refs:
+          - memory_church
+          - universal_library
+        location_refs:
+          - oblivion_regions
+        npc_refs:
+          - memory_church_restorer
+        minimum_salience: 0.6
+    title_rules:
+      - id: visitor_log_witness
+        display_name: Visitor Log Witness
+        description: Recognized for making first contact legible as public same-world history.
+        action_tags:
+          - help
+          - investigate
+        world_axis_refs:
+          - visitor_resonance
+          - world_integrity
+        faction_refs:
+          - nexus_city
+          - universal_library
+        location_refs:
+          - nexus_city
+          - universal_library
+        npc_refs:
+          - nexus_entry_liaison
+        progress_target: 3
+      - id: layer_market_actor
+        display_name: Layer Market Actor
+        description: Known for turning generated shops, crews, brokers, and local deals into persistent world material.
+        action_tags:
+          - trade
+          - negotiate
+          - explore
+        world_axis_refs:
+          - magic_crystal_economy
+          - corporate_hegemony
+        faction_refs:
+          - middle
+          - chronos_communications
+        location_refs:
+          - middle_lawless_zone
+          - lift_tower_network
+        npc_refs:
+          - middle_information_broker
+        progress_target: 2
+      - id: oblivion_surveyor
+        display_name: Oblivion Surveyor
+        description: Recognized for approaching fading regions without erasing context or agency.
+        action_tags:
+          - restore
+          - protect
+        world_axis_refs:
+          - oblivion_expansion
+          - world_integrity
+        faction_refs:
+          - memory_church
+          - universal_library
+        location_refs:
+          - oblivion_regions
+        npc_refs:
+          - memory_church_restorer
+        progress_target: 2
+    consequence_rules:
+      - id: register_visitor_log
+        action_tag: help
+        outcome_tags:
+          - public_help
+          - earned_trust
+        world_axis_deltas:
+          visitor_resonance: 2
+          world_integrity: 1
+        faction_standing_deltas:
+          nexus_city: 0.04
+          universal_library: 0.02
+        location_public_state_deltas:
+          nexus_city:
+            visitor_log_clarity: 1
+        npc_memory_drafts:
+          - npc_name: nexus_entry_liaison
+            scope: actor
+            summary: The player helped make a visitor log legible in Nexus.
+        rumor_draft: Nexus repeats that a new visitor log entered public witness instead of private rumor.
+        history_candidate_level: local_rumor
+        history_rule_id: visitor_log_rumor
+        title_progress_deltas:
+          visitor_log_witness: 1
+      - id: study_official_history
+        action_tag: investigate
+        outcome_tags:
+          - careful_observation
+          - record_checked
+        world_axis_deltas:
+          world_integrity: 2
+          visitor_resonance: 1
+        faction_standing_deltas:
+          universal_library: 0.04
+          memory_church: 0.03
+        location_public_state_deltas:
+          universal_library:
+            canon_access: 1
+        npc_memory_drafts: []
+        rumor_draft: The Universal Library indexes one more visitor log against official history.
+        history_candidate_level: regional_record
+        history_rule_id: archive_canon_record
+        title_progress_deltas:
+          visitor_log_witness: 1
+      - id: negotiate_layer_market
+        action_tag: negotiate
+        outcome_tags:
+          - public_attention
+          - record_checked
+        world_axis_deltas:
+          magic_crystal_economy: 1
+          corporate_hegemony: -1
+        faction_standing_deltas:
+          middle: 0.03
+          chronos_communications: 0.02
+        location_public_state_deltas:
+          middle_lawless_zone:
+            informal_trust: 1
+        npc_memory_drafts:
+          - npc_name: middle_information_broker
+            scope: location
+            summary: The player made a market-facing deal that can persist as a world contact.
+        rumor_draft: Middle brokers say a visitor made one deal worth remembering.
+        history_candidate_level: faction_record
+        history_rule_id: market_faction_record
+        title_progress_deltas:
+          layer_market_actor: 1
+      - id: trade_crystal_terms
+        action_tag: trade
+        outcome_tags:
+          - earned_trust
+          - public_attention
+        world_axis_deltas:
+          magic_crystal_economy: 1
+          corporate_hegemony: 1
+        faction_standing_deltas:
+          chronos_communications: 0.02
+          middle: 0.02
+        location_public_state_deltas:
+          lift_tower_network:
+            transit_pressure: 1
+        npc_memory_drafts: []
+        rumor_draft: Crystal terms shift through the lift routes and markets.
+        history_candidate_level: faction_record
+        history_rule_id: market_faction_record
+        title_progress_deltas:
+          layer_market_actor: 1
+      - id: protect_world_route
+        action_tag: protect
+        outcome_tags:
+          - kept_promise
+          - path_protected
+        world_axis_deltas:
+          world_integrity: 1
+          astralnet_load: -1
+          corporate_hegemony: -1
+        faction_standing_deltas:
+          nexus_city: 0.03
+          memory_church: 0.03
+        location_public_state_deltas:
+          lift_tower_network:
+            route_stability: 1
+        npc_memory_drafts: []
+        rumor_draft: The lift network carries a cleaner route report after the visitor's intervention.
+        history_candidate_level: regional_record
+        history_rule_id: archive_canon_record
+        title_progress_deltas:
+          visitor_log_witness: 1
+      - id: restore_oblivion_context
+        action_tag: restore
+        outcome_tags:
+          - restored_boundary
+          - breach_contained
+        world_axis_deltas:
+          oblivion_expansion: -3
+          world_integrity: 2
+          visitor_resonance: 1
+        faction_standing_deltas:
+          memory_church: 0.06
+          universal_library: 0.04
+        location_public_state_deltas:
+          oblivion_regions:
+            containment: 1
+            restored_context: 1
+        npc_memory_drafts:
+          - npc_name: memory_church_restorer
+            scope: location
+            summary: The player helped restore context in a fading region.
+        rumor_draft: Restoration camps say a fading place returned a piece of meaning.
+        history_candidate_level: world_canon
+        history_rule_id: oblivion_world_canon
+        title_progress_deltas:
+          oblivion_surveyor: 1
+      - id: destabilize_oblivion
+        action_tag: destabilize
+        outcome_tags:
+          - overreach
+          - public_attention
+        world_axis_deltas:
+          oblivion_expansion: 3
+          world_integrity: -2
+          astralnet_load: 2
+        faction_standing_deltas:
+          returners: 0.04
+          nexus_city: -0.04
+          memory_church: -0.04
+        location_public_state_deltas:
+          oblivion_regions:
+            containment: -1
+        npc_memory_drafts: []
+        rumor_draft: Witnesses warn that a visitor's overreach made the fading region harder to read.
+        history_candidate_level: local_rumor
+        history_rule_id: visitor_log_rumor
+    quest:
+      id: visitor_log_registration
+      title: Visitor Log Registration
+      description: Make the first visitor log legible enough that Nexus can open world-scale routes without treating the visitor as corporate property.
+      stage_key: visitor_log_registration
+      unlock_requirements: {}
+      completion_target: 2
+      reward_template_key: visitor_log_seal
+      reward_name: Visitor Log Seal
+      reward_description: A witnessed seal proving the bearer can enter higher-risk routes as a recognized visitor.
+      state:
+        reward_enabled: true
+        reward_effect_kind: unlock_oblivion_regions_route
+        reward_effect_payload:
+          unlock_stage_key: oblivion_survey
+    followup_quest:
+      id: oblivion_region_survey
+      title: Oblivion Region Survey
+      description: Carry the Visitor Log Seal into the fading strata and decide whether to restore, exploit, study, or avoid the world's damaged context.
+      stage_key: oblivion_survey
+      unlock_requirements:
+        starter_item_effect: unlock_oblivion_regions_route
+      completion_target: 1
+      reward_template_key: none
+      reward_name: ""
+      reward_description: ""
+      state:
+        reward_enabled: false
+    character:
+      rank: Visitor
+      hp: 10
+      focus: 5
+      status_json:
+        origin: gestaloka_world_reference
+        onboarding: layered_world_foundation

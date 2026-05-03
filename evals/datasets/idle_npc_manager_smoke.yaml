@@ -5,5 +5,5 @@ cases:
   - case_id: idle-npc-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
+    npc_name: Nexus Entry Liaison
     input_text: 人通りの少ない時間に、配達人が広場の外で起こす小さな動きを決める

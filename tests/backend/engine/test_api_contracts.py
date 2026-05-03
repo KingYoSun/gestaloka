@@ -18,10 +18,10 @@ from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_pack.service import PackRegistry
 
 
-def engine_session_payload(*, world_id: str = "gestaloka_reference") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "gestaloka_world_reference") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "world_name": "GESTALOKA: Nexus Foundation",
+        "world_name": "GESTALOKA: Layered World Foundation",
         "player_display_name": "Demo Player",
     }
 
@@ -38,8 +38,8 @@ REALTIME_WORLD_CONTEXT_KEYS = {
 
 
 PLAY_LANGUAGE_RESIDUE_FRAGMENTS = (
-    "Nexus Gate",
-    "Gate Steward Rikka",
+    "Nexus City",
+    "Nexus Entry Liaison",
     "Hold position",
     "Take the clearest",
     "Ask a grounded",
@@ -190,19 +190,19 @@ def test_playable_world_catalog_is_world_visible_and_keeps_pack_as_context(clien
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ready"
-    reference = next(item for item in payload["items"] if item["world_id"] == "gestaloka_reference")
-    assert reference["display_name"] == "GESTALOKA: Nexus Foundation"
-    assert reference["health_url"] == "/worlds/gestaloka_reference/health"
+    reference = next(item for item in payload["items"] if item["world_id"] == "gestaloka_world_reference")
+    assert reference["display_name"] == "GESTALOKA: Layered World Foundation"
+    assert reference["health_url"] == "/worlds/gestaloka_world_reference/health"
     assert reference["status"] == "playable"
-    assert reference["pack_context"]["pack_id"] == "gestaloka_reference"
+    assert reference["pack_context"]["pack_id"] == "gestaloka_world_reference"
 
 
 def test_world_health_reports_playable_world(client, auth_headers):
-    response = client.get("/worlds/gestaloka_reference/health", headers=auth_headers)
+    response = client.get("/worlds/gestaloka_world_reference/health", headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json()["status"] == "playable"
-    assert response.json()["pack_context"]["world_template_id"] == "nexus_foundation"
+    assert response.json()["pack_context"]["world_template_id"] == "layered_world_foundation"
 
 
 def test_session_rejects_unknown_world_as_unavailable(client, auth_headers):
@@ -240,10 +240,10 @@ def test_existing_world_pack_metadata_is_immutable(client, auth_headers):
 
 def test_world_health_blocks_world_with_missing_pack_metadata(client, container, auth_headers):
     with container.session_factory() as db:
-        db.add(World(id="gestaloka_reference", name="GESTALOKA: Nexus Foundation", status="active", state={}))
+        db.add(World(id="gestaloka_world_reference", name="GESTALOKA: Layered World Foundation", status="active", state={}))
         db.commit()
 
-    response = client.get("/worlds/gestaloka_reference/health", headers=auth_headers)
+    response = client.get("/worlds/gestaloka_world_reference/health", headers=auth_headers)
 
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "world_pack_metadata_missing"
@@ -252,7 +252,7 @@ def test_world_health_blocks_world_with_missing_pack_metadata(client, container,
 def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(client, container, auth_headers):
     icon_data_url = "data:image/png;base64,iVBORw0KGgo="
     first = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "Akari",
             "gender": "female",
@@ -270,7 +270,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         headers=auth_headers,
     )
     second = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={"display_name": "Ren", "gender": "other"},
         headers=auth_headers,
     )
@@ -282,14 +282,14 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert first.json()["icon_image_data_url"] == icon_data_url
     assert second.json()["play_language"]["preset"] == "ja"
     assert second.json()["icon_image_data_url"] is None
-    profile_list = client.get("/worlds/gestaloka_reference/player-profiles", headers=auth_headers)
+    profile_list = client.get("/worlds/gestaloka_world_reference/player-profiles", headers=auth_headers)
     assert [item["display_name"] for item in profile_list.json()["items"]] == ["Akari", "Ren"]
     assert profile_list.json()["items"][0]["icon_image_data_url"] == icon_data_url
 
     session_payload = {
-        "world_id": "gestaloka_reference",
+        "world_id": "gestaloka_world_reference",
         "player_actor_id": first.json()["actor_id"],
-        "world_name": "GESTALOKA: Nexus Foundation",
+        "world_name": "GESTALOKA: Layered World Foundation",
     }
     first_session = client.post("/sessions", json=session_payload, headers=auth_headers)
     second_session = client.post("/sessions", json=session_payload, headers=auth_headers)
@@ -303,12 +303,12 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert state.json()["player_profile"]["icon_image_data_url"] == icon_data_url
 
     identity_patch = client.patch(
-        f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
+        f"/worlds/gestaloka_world_reference/player-profiles/{first.json()['actor_id']}",
         json={"display_name": "Changed"},
         headers=auth_headers,
     )
     style_patch = client.patch(
-        f"/worlds/gestaloka_reference/player-profiles/{first.json()['actor_id']}",
+        f"/worlds/gestaloka_world_reference/player-profiles/{first.json()['actor_id']}",
         json={
             "narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"},
             "play_language": {"mode": "preset", "preset": "en"},
@@ -343,11 +343,11 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert narrative_inputs[-1]["play_language"]["prompt_name"] == "English"
 
     with container.session_factory() as db:
-        profile = db.get(PlayerProfile, {"actor_id": first.json()["actor_id"], "world_id": "gestaloka_reference"})
+        profile = db.get(PlayerProfile, {"actor_id": first.json()["actor_id"], "world_id": "gestaloka_world_reference"})
         profile_events = list(
             db.execute(
                 select(Event).where(
-                    Event.world_id == "gestaloka_reference",
+                    Event.world_id == "gestaloka_world_reference",
                     Event.source_actor_id == first.json()["actor_id"],
                     Event.event_type == "player.profile.created",
                 )
@@ -356,7 +356,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         profile_memories = list(
             db.execute(
                 select(Memory).where(
-                    Memory.world_id == "gestaloka_reference",
+                    Memory.world_id == "gestaloka_world_reference",
                     Memory.source_event_id == profile.profile_setup_event_id,
                 )
             ).scalars()
@@ -367,13 +367,13 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
 
 def test_start_session_reuses_latest_active_session_and_restores_story(client, auth_headers):
     profile_response = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={"display_name": "Resume Player"},
         headers=auth_headers,
     )
     assert profile_response.status_code == 200
     session_payload = {
-        "world_id": "gestaloka_reference",
+        "world_id": "gestaloka_world_reference",
         "player_actor_id": profile_response.json()["actor_id"],
     }
     first_session = client.post("/sessions", json=session_payload, headers=auth_headers)
@@ -398,7 +398,7 @@ def test_start_session_reuses_latest_active_session_and_restores_story(client, a
 
 def test_player_profile_icon_image_data_url_is_validated(client, auth_headers):
     unsupported_mime = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "Icon Tester",
             "icon_image_data_url": "data:image/gif;base64,AAAA",
@@ -406,7 +406,7 @@ def test_player_profile_icon_image_data_url_is_validated(client, auth_headers):
         headers=auth_headers,
     )
     oversized = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "Icon Tester",
             "icon_image_data_url": f"data:image/png;base64,{'A' * 800_001}",
@@ -420,7 +420,7 @@ def test_player_profile_icon_image_data_url_is_validated(client, auth_headers):
 
 def test_english_player_profile_initial_choices_are_english(client, auth_headers):
     profile = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "English Tester",
             "play_language": {"mode": "preset", "preset": "en"},
@@ -431,9 +431,9 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     session = client.post(
         "/sessions",
         json={
-            "world_id": "gestaloka_reference",
+            "world_id": "gestaloka_world_reference",
             "player_actor_id": profile.json()["actor_id"],
-            "world_name": "GESTALOKA: Nexus Foundation",
+            "world_name": "GESTALOKA: Layered World Foundation",
         },
         headers=auth_headers,
     )
@@ -443,18 +443,18 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     assert state.status_code == 200
     choices = state.json()["next_choices"]
     assert [item["choice_id"] for item in choices] == ["safe", "progress", "explore"]
-    assert choices[0]["label"] == "Watch the gate and understand what went wrong"
-    assert choices[1]["label"] == "Help Rikka steady the disturbed arrival record"
-    assert choices[2]["summary"] == "Move to Lift Tower Concourse and widen your understanding."
+    assert choices[0]["label"] == "Check your visitor log as a public Nexus record"
+    assert choices[1]["label"] == "Work with the liaison to register the first visitor log"
+    assert choices[2]["summary"] == "Move toward the official archive to learn how GESTALOKA records world-scale events."
 
     story = client.get(f"/sessions/{session.json()['session_id']}/story?limit=1", headers=auth_headers)
     assert story.status_code == 200
-    assert story.json()["items"][0]["narrative"].startswith("Nexus Gate is the arrival gate")
+    assert story.json()["items"][0]["narrative"].startswith("Nexus City is the protected first city")
 
 
 def test_japanese_player_visible_state_is_localized_and_cached(client, container, auth_headers):
     profile = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "Sena",
             "play_language": {"mode": "preset", "preset": "ja"},
@@ -465,7 +465,7 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     session = client.post(
         "/sessions",
         json={
-            "world_id": "gestaloka_reference",
+            "world_id": "gestaloka_world_reference",
             "player_actor_id": profile.json()["actor_id"],
         },
         headers=auth_headers,
@@ -475,14 +475,14 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     first_state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
     assert first_state.status_code == 200
     payload = first_state.json()
-    assert payload["current_location"]["name"] == "ネクサス・ゲート"
+    assert payload["current_location"]["name"] == "ネクサス市"
     assert payload["quests"] == []
     assert payload["quest_journal"] == []
     assert payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
-    assert payload["local_figures"][0]["display_name"] == "ゲート守リッカ"
-    assert payload["nearby_routes"][0]["destination_name"] == "リフト・タワー・コンコース"
-    assert payload["next_choices"][2]["label"] == "上階の記録所へ向かい、この街の仕組みを探る"
-    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["canonical_input_text"]
+    assert any(item["display_name"] == "ネクサス案内担当" for item in payload["local_figures"])
+    assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
+    assert payload["next_choices"][2]["label"] == "万象図書館へ向かい、ゲスタロカの正史を調べる"
+    assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
 
     localization_records = [
         item
@@ -497,7 +497,7 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
 
     second_state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
     assert second_state.status_code == 200
-    assert second_state.json()["current_location"]["name"] == "ネクサス・ゲート"
+    assert second_state.json()["current_location"]["name"] == "ネクサス市"
     with container.session_factory() as db:
         second_cache_count = len(db.execute(select(PlayLocalizedTextCache)).all())
     second_localization_records = [
@@ -538,9 +538,9 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
                 localized = localized.replace(source, target)
             if localized == text.strip():
                 return f"{localized}（日本語表示）"
-            return localized.replace("ネクサス・ゲート", "Nexus Gate").replace(
-                "リフト・タワー・コンコース",
-                "Lift Tower Concourse",
+            return localized.replace("ネクサス市", "Nexus City").replace(
+                "万象図書館",
+                "Universal Library",
             )
 
         return ProviderResponse(
@@ -559,7 +559,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
 
     monkeypatch.setattr(provider, "generate", generate_live_shape)
     profile = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "Sena",
             "play_language": {"mode": "preset", "preset": "ja"},
@@ -570,7 +570,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
     session = client.post(
         "/sessions",
         json={
-            "world_id": "gestaloka_reference",
+            "world_id": "gestaloka_world_reference",
             "player_actor_id": profile.json()["actor_id"],
         },
         headers=auth_headers,
@@ -580,11 +580,11 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
     first_state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
     assert first_state.status_code == 200
     payload = first_state.json()
-    assert payload["current_location"]["name"] == "ネクサス・ゲート"
-    assert payload["local_figures"][0]["display_name"] == "ゲート守リッカ"
-    assert payload["nearby_routes"][0]["destination_name"] == "リフト・タワー・コンコース"
-    assert "この街の仕組み" in payload["next_choices"][2]["label"]
-    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["canonical_input_text"]
+    assert payload["current_location"]["name"] == "ネクサス市"
+    assert any(item["display_name"] == "ネクサス案内担当" for item in payload["local_figures"])
+    assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
+    assert "ゲスタロカの正史" in payload["next_choices"][2]["label"]
+    assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
     assert_no_player_visible_english_residue(payload)
 
     localization_records = [
@@ -599,7 +599,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
 
     second_state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
     assert second_state.status_code == 200
-    assert second_state.json()["current_location"]["name"] == "ネクサス・ゲート"
+    assert second_state.json()["current_location"]["name"] == "ネクサス市"
     with container.session_factory() as db:
         second_cache_count = len(db.execute(select(PlayLocalizedTextCache)).all())
     second_localization_records = [
@@ -613,7 +613,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
 
 def test_custom_play_language_uses_localization_prompt_name(client, container, auth_headers):
     profile = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={
             "display_name": "Cipher",
             "play_language": {"mode": "custom", "custom": "  Pirate\nCant  "},
@@ -624,7 +624,7 @@ def test_custom_play_language_uses_localization_prompt_name(client, container, a
     session = client.post(
         "/sessions",
         json={
-            "world_id": "gestaloka_reference",
+            "world_id": "gestaloka_world_reference",
             "player_actor_id": profile.json()["actor_id"],
         },
         headers=auth_headers,
@@ -691,7 +691,7 @@ def test_failed_turn_response_exposes_structured_failure(client, container, auth
 
 def test_player_profile_ownership_is_enforced(client, container, auth_headers):
     profile_response = client.post(
-        "/worlds/gestaloka_reference/player-profiles",
+        "/worlds/gestaloka_world_reference/player-profiles",
         json={"display_name": "Owner"},
         headers=auth_headers,
     )
@@ -707,20 +707,20 @@ def test_player_profile_ownership_is_enforced(client, container, auth_headers):
     container.oidc_adapter.resolve_token = resolve_token  # type: ignore[method-assign]
     other_headers = {"Authorization": "Bearer other"}
 
-    assert client.get("/worlds/gestaloka_reference/player-profiles", headers=other_headers).json()["items"] == []
+    assert client.get("/worlds/gestaloka_world_reference/player-profiles", headers=other_headers).json()["items"] == []
     edit_response = client.patch(
-        f"/worlds/gestaloka_reference/player-profiles/{profile_response.json()['actor_id']}",
+        f"/worlds/gestaloka_world_reference/player-profiles/{profile_response.json()['actor_id']}",
         json={"narrative_preferences": {"perspective": "third_person", "tone": "lyrical", "density": "concise", "dialogue_style": "literary"}},
         headers=other_headers,
     )
     start_response = client.post(
         "/sessions",
-        json={"world_id": "gestaloka_reference", "player_actor_id": profile_response.json()["actor_id"]},
+        json={"world_id": "gestaloka_world_reference", "player_actor_id": profile_response.json()["actor_id"]},
         headers=other_headers,
     )
     missing_response = client.post(
         "/sessions",
-        json={"world_id": "gestaloka_reference"},
+        json={"world_id": "gestaloka_world_reference"},
         headers={"Authorization": "Bearer owner"},
     )
     assert edit_response.status_code == 404
@@ -770,7 +770,7 @@ def test_world_membership_mismatch_returns_404(client, container):
     assert session_response.status_code == 200
 
     access_response = client.get(
-        "/worlds/gestaloka_reference/events",
+        "/worlds/gestaloka_world_reference/events",
         headers={"Authorization": "Bearer player-b"},
     )
     assert access_response.status_code == 404
@@ -834,11 +834,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert session_payload["world_context"] == {
         "world_id": session_payload["world_id"],
         "world_name": session_payload["world_name"],
-        "pack_id": "gestaloka_reference",
-        "pack_display_name": "GESTALOKA Reference",
-        "world_template_id": "nexus_foundation",
-        "world_template_display_name": "Nexus Foundation",
-        "semantic_tags": ["layered-world", "archive", "corruption", "factions"],
+        "pack_id": "gestaloka_world_reference",
+        "pack_display_name": "GESTALOKA World Reference",
+        "world_template_id": "layered_world_foundation",
+        "world_template_display_name": "Layered World Foundation",
+        "semantic_tags": ["layered-world", "persistent-entities", "communities", "astralnet", "artifact-economy"],
     }
     assert session_payload["player_profile"]["display_name"] == "Demo Player"
     assert session_payload["player_profile"]["locked"] is True
@@ -882,7 +882,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["quest_display_state"]["mode"] == "exploration"
     assert state_response.json()["quest_display_state"]["label"] == "探索中..."
     assert state_response.json()["chapter"] is None
-    assert state_response.json()["current_location"]["name"] in state_response.json()["current_scene"]["summary"]
+    assert "ネクサス" in state_response.json()["current_scene"]["summary"]
     assert state_response.json()["current_location"]["key"] == world_pack["starter_location_key"]
     assert state_response.json()["local_figures"]
     assert state_response.json()["plaza_figures"] == state_response.json()["local_figures"]
@@ -947,13 +947,14 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "world_context",
             "shared_action_tag",
             "shared_consequence_updates",
+            "entity_updates",
         }
         assert turn_payload["shared_action_tag"] == "help"
         assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "help"
         assert turn_payload["shared_consequence_updates"]["applied_rule_ids"]
         assert turn_payload["shared_consequence_updates"]["axis_updates"]
-        assert turn_payload["world_context"]["pack_id"] == "gestaloka_reference"
-        assert turn_payload["world_context"]["world_template_id"] == "nexus_foundation"
+        assert turn_payload["world_context"]["pack_id"] == "gestaloka_world_reference"
+        assert turn_payload["world_context"]["world_template_id"] == "layered_world_foundation"
         assert turn_payload["action_type"] == "narrative"
         assert turn_payload["input_mode"] == "choice"
         assert turn_payload["sp_delta"] == -1
@@ -995,6 +996,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "safety_guard",
         "narrative",
         "world_tag_updates",
+        "entity_materialization",
         "dynamic_quest_offer",
         "quest_resolution_hint",
         "consequence_resolution",
@@ -1024,8 +1026,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert broadcast_message["data"]["status"] == "active"
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
-        assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
-        assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
+        assert message["data"]["world_context"]["pack_id"] == "gestaloka_world_reference"
+        assert message["data"]["world_context"]["world_template_id"] == "layered_world_foundation"
 
 
 def test_session_story_history_paginates_and_enforces_owner(client, container):
@@ -1287,7 +1289,7 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
         messages = _receive_until_turn_resolved(websocket)
         payload = messages[-1]["data"]
         assert accepted_payload["turn_id"] == payload["turn_id"]
-        assert payload["world_context"]["pack_id"] == "gestaloka_reference"
+        assert payload["world_context"]["pack_id"] == "gestaloka_world_reference"
         assert payload["action_type"] == "accept_quest"
         assert payload["input_mode"] == "choice"
         assert payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
@@ -1354,8 +1356,8 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     assert chapter_message["data"]["items"] == payload["chapter_updates"]
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
-        assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
-        assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
+        assert message["data"]["world_context"]["pack_id"] == "gestaloka_world_reference"
+        assert message["data"]["world_context"]["world_template_id"] == "layered_world_foundation"
     assert payload["scene_summary"]
 
 
@@ -1431,8 +1433,8 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
                     },
                     {
                         "posture": "progress",
-                        "label": "到着記録を一行だけ直す",
-                        "intent_summary": "到着記録を一行だけ直す",
+                        "label": "来訪者ログを一行だけ直す",
+                        "intent_summary": "来訪者ログを一行だけ直す",
                     },
                     {
                         "posture": "explore",
@@ -1460,9 +1462,9 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
     )
     generated_explore = first_payload["next_choices"][2]
     assert generated_explore["label"] != "現在の場所について質問する"
-    assert "リフト・タワー・コンコース" in generated_explore["label"]
+    assert "万象図書館" in generated_explore["label"]
     assert generated_explore["action_kind"] == "travel"
-    assert generated_explore["travel_target_key"] == "lift_tower_concourse"
+    assert generated_explore["travel_target_key"] == "universal_library"
 
     _, second_payload, _ = _post_turn_and_wait_for_resolution(
         client,
@@ -1472,7 +1474,7 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
     )
     assert second_payload["action_type"] == "travel"
     assert second_payload["interpreted_intent"]["canonical_action_kind"] == "travel"
-    assert second_payload["current_location"]["key"] == "lift_tower_concourse"
+    assert second_payload["current_location"]["key"] == "universal_library"
 
 
 def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers):
@@ -1488,7 +1490,7 @@ def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers
 
     assert payload["action_type"] == "travel"
     assert payload["interpreted_intent"]["canonical_action_kind"] == "travel"
-    assert payload["current_location"]["key"] == "lift_tower_concourse"
+    assert payload["current_location"]["key"] == "universal_library"
 
 
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
@@ -1508,8 +1510,8 @@ def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
         idle_response = client.post(f"/ops/worlds/{session_payload['world_id']}/idle-pass", headers=auth_headers)
         assert idle_response.status_code == 200
         idle_payload = idle_response.json()
-        assert idle_payload["world_context"]["pack_id"] == "gestaloka_reference"
-        assert idle_payload["world_context"]["world_template_id"] == "nexus_foundation"
+        assert idle_payload["world_context"]["pack_id"] == "gestaloka_world_reference"
+        assert idle_payload["world_context"]["world_template_id"] == "layered_world_foundation"
 
         message = websocket.receive_json()
         moved_items = [item for item in idle_payload["idle_updates"] if item.get("moved")]
@@ -1575,11 +1577,11 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     assert worlds_response.status_code == 200
     worlds_payload = worlds_response.json()
     world_item = next(item for item in worlds_payload["items"] if item["world_context"]["world_id"] == session_payload["world_id"])
-    assert world_item["world_context"]["pack_id"] == "gestaloka_reference"
-    assert world_item["world_context"]["world_template_id"] == "nexus_foundation"
+    assert world_item["world_context"]["pack_id"] == "gestaloka_world_reference"
+    assert world_item["world_context"]["world_template_id"] == "layered_world_foundation"
     assert world_item["status"] == "active"
     assert world_item["active_session_count"] >= 1
-    filtered_worlds_response = client.get("/ops/worlds?pack_id=gestaloka_reference&world_template_id=nexus_foundation", headers=auth_headers)
+    filtered_worlds_response = client.get("/ops/worlds?pack_id=gestaloka_world_reference&world_template_id=layered_world_foundation", headers=auth_headers)
     assert filtered_worlds_response.status_code == 200
     assert {item["world_context"]["world_id"] for item in filtered_worlds_response.json()["items"]} == {
         session_payload["world_id"]
@@ -1878,7 +1880,7 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     assert {"provider", "model", "dimension", "pending_count", "failed_count", "runtime_status"} <= set(status_payload)
 
     search_response = client.get(
-        f"/ops/worlds/{session_payload['world_id']}/memory-search?query=%E5%88%B0%E7%9D%80%E8%A8%98%E9%8C%B2&limit=4",
+        f"/ops/worlds/{session_payload['world_id']}/memory-search?query=来訪者ログ&limit=4",
         headers=auth_headers,
     )
     assert search_response.status_code == 200
@@ -1886,7 +1888,7 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     assert search_payload["world_context"] == session_payload["world_context"]
     assert search_payload["trace"]["status"] == "ready"
     assert len(search_payload["hits"]) >= 1
-    assert any("到着記録" in item["text"] for item in search_payload["hits"])
+    assert any("来訪者ログ" in item["text"] or "visitor log" in item["text"].lower() for item in search_payload["hits"])
 
     reindex_response = client.post(
         "/ops/memories/reindex",
@@ -1939,7 +1941,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         (item["pack_id"], item["pack_display_name"], item["world_template_id"], item["world_template_display_name"])
         for item in run_payload["summary"]["pack_scope"]
     } == {
-        ("gestaloka_reference", "GESTALOKA Reference", "nexus_foundation", "Nexus Foundation"),
+        ("gestaloka_world_reference", "GESTALOKA World Reference", "layered_world_foundation", "Layered World Foundation"),
     }
     assert run_payload["summary"]["variants"]["current"]["gate_passed"] is True
     assert run_payload["langfuse_trace_id"]
@@ -1953,7 +1955,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert runs_payload["items"][0]["summary"]["pack_scope"] == run_payload["summary"]["pack_scope"]
     assert runs_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     reference_runs_response = client.get(
-        "/ops/evals/runs?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
+        "/ops/evals/runs?pack_id=gestaloka_world_reference&world_template_id=layered_world_foundation",
         headers=auth_headers,
     )
     assert reference_runs_response.status_code == 200
@@ -1975,18 +1977,18 @@ def test_ops_eval_contracts(client, container, auth_headers):
         )
         for item in detail_response.json()["results"]
     } == {
-        ("gestaloka_reference", "GESTALOKA Reference", "nexus_foundation", "Nexus Foundation"),
+        ("gestaloka_world_reference", "GESTALOKA World Reference", "layered_world_foundation", "Layered World Foundation"),
     }
     assert detail_response.json()["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     reference_detail_response = client.get(
-        f"/ops/evals/runs/{run_payload['id']}?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
+        f"/ops/evals/runs/{run_payload['id']}?pack_id=gestaloka_world_reference&world_template_id=layered_world_foundation",
         headers=auth_headers,
     )
     assert reference_detail_response.status_code == 200
     assert {
         item["pack_context"]["pack_id"]
         for item in reference_detail_response.json()["results"]
-    } == {"gestaloka_reference"}
+    } == {"gestaloka_world_reference"}
     assert len(reference_detail_response.json()["results"]) == len(detail_response.json()["results"])
 
     observability_response = client.get("/ops/observability/summary", headers=auth_headers)
@@ -1996,7 +1998,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert observability_payload["snapshot_id"]
     assert observability_payload["langfuse"]["runtime_status"] == "ready"
     scoped_observability_response = client.get(
-        "/ops/observability/summary?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
+        "/ops/observability/summary?pack_id=gestaloka_world_reference&world_template_id=layered_world_foundation",
         headers=auth_headers,
     )
     assert scoped_observability_response.status_code == 200
@@ -2006,26 +2008,26 @@ def test_ops_eval_contracts(client, container, auth_headers):
     for trace in scoped_traces:
         attributes = trace["attributes"]
         assert (
-            attributes.get("pack_id") == "gestaloka_reference"
-            or "gestaloka_reference" in str(attributes.get("eval.pack_ids", "")).split(",")
+            attributes.get("pack_id") == "gestaloka_world_reference"
+            or "gestaloka_world_reference" in str(attributes.get("eval.pack_ids", "")).split(",")
         )
         assert (
-            attributes.get("world_template_id") == "nexus_foundation"
-            or "nexus_foundation" in str(attributes.get("eval.world_template_ids", "")).split(",")
+            attributes.get("world_template_id") == "layered_world_foundation"
+            or "layered_world_foundation" in str(attributes.get("eval.world_template_ids", "")).split(",")
         )
     missing_observability_response = client.get("/ops/observability/summary?pack_id=missing_pack", headers=auth_headers)
     assert missing_observability_response.status_code == 200
     assert missing_observability_response.json()["recent_traces"] == []
     scoped_snapshots_response = client.get(
-        "/ops/observability/snapshots?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
+        "/ops/observability/snapshots?pack_id=gestaloka_world_reference&world_template_id=layered_world_foundation",
         headers=auth_headers,
     )
     assert scoped_snapshots_response.status_code == 200
     scoped_snapshots = scoped_snapshots_response.json()["items"]
     assert scoped_snapshots[0]["id"] == scoped_observability_payload["snapshot_id"]
     assert scoped_snapshots[0]["snapshot_kind"] == "summary"
-    assert scoped_snapshots[0]["pack_id"] == "gestaloka_reference"
-    assert scoped_snapshots[0]["world_template_id"] == "nexus_foundation"
+    assert scoped_snapshots[0]["pack_id"] == "gestaloka_world_reference"
+    assert scoped_snapshots[0]["world_template_id"] == "layered_world_foundation"
     assert scoped_snapshots[0]["trace_count"] == len(scoped_traces)
     missing_snapshots_response = client.get("/ops/observability/snapshots?pack_id=missing_pack", headers=auth_headers)
     assert missing_snapshots_response.status_code == 200
@@ -2060,10 +2062,10 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert set(checklist_payload["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_gestaloka_regression"]["pack_scope"] == [
         {
-            "pack_id": "gestaloka_reference",
-            "pack_display_name": "GESTALOKA Reference",
-            "world_template_id": "nexus_foundation",
-            "world_template_display_name": "Nexus Foundation",
+            "pack_id": "gestaloka_world_reference",
+            "pack_display_name": "GESTALOKA World Reference",
+            "world_template_id": "layered_world_foundation",
+            "world_template_display_name": "Layered World Foundation",
         }
     ]
     assert checklist_payload["checks"]["shared_world_health"]["status"] == "ready"
@@ -2101,7 +2103,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert admin_progress_response.status_code == 200
     assert admin_progress_response.json()["completed_report_id"] == checklist_payload["report_id"]
     scoped_latest_response = client.get(
-        "/ops/release/checklists/latest?pack_id=gestaloka_reference&world_template_id=nexus_foundation",
+        "/ops/release/checklists/latest?pack_id=gestaloka_world_reference&world_template_id=layered_world_foundation",
         headers=auth_headers,
     )
     assert scoped_latest_response.status_code == 200
@@ -2111,7 +2113,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
     assert set(scoped_latest_payload["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert set(scoped_latest_payload["runs"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
     assert all(
-        item["pack_context"]["pack_id"] == "gestaloka_reference"
+        item["pack_context"]["pack_id"] == "gestaloka_world_reference"
         for item in scoped_latest_payload["shadow_failures"]
     )
     missing_latest_response = client.get("/ops/release/checklists/latest?pack_id=missing_pack", headers=auth_headers)

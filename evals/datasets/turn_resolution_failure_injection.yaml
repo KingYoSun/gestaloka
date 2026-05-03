@@ -4,17 +4,17 @@ expected_output_schema: council_turn_resolution_v1
 cases:
   - case_id: fallback-main-to-pro
     world_id: world-alpha
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
-    input_text: __force_invalid_main__ Nexus Gateで到着記録を助ける
+    npc_name: Nexus Entry Liaison
+    input_text: __force_invalid_main__ Nexus Cityで到着記録を助ける
     input_mode: free_text
     relevant_memories:
-      - Demo Playerは以前にもNexus Gateの到着記録を整えた。
+      - Demo Playerは以前にもNexus Cityの到着記録を整えた。
     relation_context:
-      - location=Nexus Gate
-      - active_quest=First Stabilizer Request [active 0/2]
+      - location=Nexus City
+      - active_quest=Visitor Log Registration [active 0/2]
     graph_context_status: ready
     expect_success: true
     expect_final_lane: pro_lane
@@ -22,17 +22,17 @@ cases:
     expect_failure_reason: null
   - case_id: council-rejected-422
     world_id: world-alpha
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
-    input_text: __force_safety_reject__ Nexus Gateで到着記録を助ける
+    npc_name: Nexus Entry Liaison
+    input_text: __force_safety_reject__ Nexus Cityで到着記録を助ける
     input_mode: free_text
     relevant_memories:
-      - Demo Playerは以前にもNexus Gateの到着記録を整えた。
+      - Demo Playerは以前にもNexus Cityの到着記録を整えた。
     relation_context:
-      - location=Nexus Gate
-      - active_quest=First Stabilizer Request [active 0/2]
+      - location=Nexus City
+      - active_quest=Visitor Log Registration [active 0/2]
     graph_context_status: ready
     expect_success: false
     expect_final_lane: main_lane
@@ -40,16 +40,16 @@ cases:
     expect_failure_reason: forced safety rejection
   - case_id: fail-forward-impossible-free-text
     world_id: world-alpha
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
-    input_text: 空を飛んでNexus Gateの上から一気に全部を解決する
+    npc_name: Nexus Entry Liaison
+    input_text: 空を飛んでNexus Cityの上から一気に全部を解決する
     input_mode: free_text
     relevant_memories: []
     relation_context:
-      - location=Nexus Gate
-      - active_quest=First Stabilizer Request [active 0/2]
+      - location=Nexus City
+      - active_quest=Visitor Log Registration [active 0/2]
     graph_context_status: ready
     expect_success: true
     expect_final_lane: main_lane

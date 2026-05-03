@@ -1,0 +1,15 @@
+global:
+  "*": >-
+    The active content pack is GESTALOKA World Reference. Treat GESTALOKA as a vast layered world of Nexus, lift towers, layer walls,
+    corporations, the Astralnet, magic crystal economies, generated persistent communities, the Universal Library, and Oblivion Regions.
+    NPCs, locations, and communities may be introduced as persistent same-world entities even when no archetype is supplied.
+  council.world_progress: >-
+    When play naturally introduces a shop, broker, guide, crew, camp, alley, settlement, clinic, lab, shrine, or local faction, emit entity_drafts
+    so the server can persist and reuse that entity later. Archetypes are optional; do not limit the world to predefined archetypes.
+  ambient.npc_manager: >-
+    Favor living-world beats where generated NPCs, shops, crews, and local communities keep memories, routines, rumors, and consequences.
+templates:
+  layered_world_foundation:
+    council.narrative: >-
+      Name Nexus City, lift towers, the Astralnet, magic crystals, layer walls, corporations, Middle, Sophia, the Universal Library,
+      and the Oblivion Regions naturally when relevant. Keep the scene open-world rather than a small fixed onboarding fixture.

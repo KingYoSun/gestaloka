@@ -4,7 +4,7 @@
 
 ## 1. 前提
 
-- 対象 world は `GESTALOKA Reference / Nexus Foundation`。
+- 対象 world は `GESTALOKA World Reference / Layered World Foundation`。
 - `make swarm-test` / `make swarm-test-long` は、既存 stack が起動している場合も含め、必ず一度終了してから再ビルド・再起動します。稼働中 container を再利用すると、修正済みコードが backend / frontend process に反映されない可能性があります。
 
 ```bash

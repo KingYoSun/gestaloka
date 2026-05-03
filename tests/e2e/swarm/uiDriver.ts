@@ -78,7 +78,7 @@ const capturedProgressByPage = new WeakMap<Page, CapturedProgressEvent[]>();
 const progressCaptureAttached = new WeakSet<Page>();
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
-  const worldCard = page.getByTestId("world-card-gestaloka_reference");
+  const worldCard = page.getByTestId("world-card-gestaloka_world_reference");
   const continueButton = page.getByTestId("continue-to-character");
   const characterButton = page.getByRole("button", { name: new RegExp(escapeRegExp(profile.displayName)) });
 

@@ -93,13 +93,24 @@ class AdminPromptOverride(Base, TimestampMixin):
 
 class Location(Base, TimestampMixin):
     __tablename__ = "locations"
-    __table_args__ = (UniqueConstraint("id", "world_id", name="uq_locations_id_world"),)
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_locations_id_world"),
+        UniqueConstraint("world_id", "entity_key", name="uq_locations_world_entity_key"),
+        Index("ix_locations_generated_origin", "world_id", "origin_kind", "visibility_scope"),
+    )
 
     id: Mapped[str] = mapped_column(String(96), primary_key=True)
     world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default="")
     state: Mapped[dict] = mapped_column(JSON, default=dict)
+    entity_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    origin_kind: Mapped[str] = mapped_column(String(32), default="pack_seed")
+    origin_ref: Mapped[str] = mapped_column(String(160), default="")
+    visibility_scope: Mapped[str] = mapped_column(String(32), default="world")
+    first_seen_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    first_seen_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class LocationRoute(Base, TimestampMixin):
@@ -127,7 +138,9 @@ class Actor(Base, TimestampMixin):
     __tablename__ = "actors"
     __table_args__ = (
         UniqueConstraint("id", "world_id", name="uq_actors_id_world"),
+        UniqueConstraint("world_id", "entity_key", name="uq_actors_world_entity_key"),
         ForeignKeyConstraint(["current_location_id", "world_id"], ["locations.id", "locations.world_id"]),
+        Index("ix_actors_generated_origin", "world_id", "origin_kind", "visibility_scope"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -137,6 +150,13 @@ class Actor(Base, TimestampMixin):
     user_sub: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_name: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(32), default="active")
+    entity_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    origin_kind: Mapped[str] = mapped_column(String(32), default="pack_seed")
+    origin_ref: Mapped[str] = mapped_column(String(160), default="")
+    visibility_scope: Mapped[str] = mapped_column(String(32), default="world")
+    first_seen_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    first_seen_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class PlayerProfile(Base, TimestampMixin):
@@ -535,7 +555,11 @@ class CharacterSheet(Base, TimestampMixin):
 
 class Faction(Base, TimestampMixin):
     __tablename__ = "factions"
-    __table_args__ = (UniqueConstraint("id", "world_id", name="uq_factions_id_world"),)
+    __table_args__ = (
+        UniqueConstraint("id", "world_id", name="uq_factions_id_world"),
+        UniqueConstraint("world_id", "entity_key", name="uq_factions_world_entity_key"),
+        Index("ix_factions_generated_origin", "world_id", "origin_kind", "visibility_scope"),
+    )
 
     id: Mapped[str] = mapped_column(String(96), primary_key=True)
     world_id: Mapped[str] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"))
@@ -543,6 +567,13 @@ class Faction(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(32), default="active")
     state: Mapped[dict] = mapped_column(JSON, default=dict)
+    entity_key: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    origin_kind: Mapped[str] = mapped_column(String(32), default="pack_seed")
+    origin_ref: Mapped[str] = mapped_column(String(160), default="")
+    visibility_scope: Mapped[str] = mapped_column(String(32), default="world")
+    first_seen_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    first_seen_actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class FactionStanding(Base, TimestampMixin):

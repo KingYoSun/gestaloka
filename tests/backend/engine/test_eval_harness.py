@@ -36,10 +36,10 @@ from app.modules.world_memory.service import MemoryService
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists() and (parent / "backend").is_dir())
 
 
-def engine_session_payload(*, world_id: str = "gestaloka_reference") -> dict[str, str]:
+def engine_session_payload(*, world_id: str = "gestaloka_world_reference") -> dict[str, str]:
     return {
         "world_id": world_id,
-        "world_name": "GESTALOKA: Nexus Foundation",
+        "world_name": "GESTALOKA: Layered World Foundation",
         "player_display_name": "Demo Player",
     }
 
@@ -58,17 +58,17 @@ def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
                 "cases:",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
-                "    pack_id: gestaloka_reference",
-                "    world_template_id: nexus_foundation",
+                "    pack_id: gestaloka_world_reference",
+                "    world_template_id: layered_world_foundation",
                 "    player_name: Demo Player",
-                "    npc_name: Gate Steward Rikka",
+                "    npc_name: Nexus Entry Liaison",
                 "    input_text: one",
                 "  - case_id: duplicated",
                 "    world_id: world-alpha",
-                "    pack_id: gestaloka_reference",
-                "    world_template_id: nexus_foundation",
+                "    pack_id: gestaloka_world_reference",
+                "    world_template_id: layered_world_foundation",
                 "    player_name: Demo Player",
-                "    npc_name: Gate Steward Rikka",
+                "    npc_name: Nexus Entry Liaison",
                 "    input_text: two",
             ]
         ),
@@ -118,7 +118,7 @@ def test_eval_runner_persists_current_and_candidate_results(container):
     assert {
         (item.raw_output["pack_context"]["pack_id"], item.raw_output["pack_context"]["world_template_id"])
         for item in case_results
-    } == {("gestaloka_reference", "nexus_foundation")}
+    } == {("gestaloka_world_reference", "layered_world_foundation")}
     assert payload["langfuse_trace_url"] == runs[0].langfuse_trace_url
     with container.session_factory() as db:
         detail = container.eval_service.get_run_detail(db, runs[0].id)
@@ -128,8 +128,8 @@ def test_eval_runner_persists_current_and_candidate_results(container):
         for item in container.observability_service.recent_trace_attributes(limit=200)
         if item["name"] == "eval.run"
     )
-    assert eval_trace["attributes"]["eval.pack_ids"] == "gestaloka_reference"
-    assert eval_trace["attributes"]["eval.world_template_ids"] == "nexus_foundation"
+    assert eval_trace["attributes"]["eval.pack_ids"] == "gestaloka_world_reference"
+    assert eval_trace["attributes"]["eval.world_template_ids"] == "layered_world_foundation"
 
 
 def test_eval_runner_reuses_identical_current_candidate_config(container, monkeypatch: pytest.MonkeyPatch):
@@ -408,8 +408,8 @@ def test_shadow_replay_filters_non_council_turns_and_uses_source_event_location(
     assert all(turn.action_type == "narrative" for turn in source_turns)
     assert all(turn.resolution_mode == "gm_council" for turn in source_turns)
     assert not any(turn.action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest", "system"} for turn in source_turns)
-    assert any("location=Nexus Gate" in line for case in cases for line in case.relation_context)
-    assert not any("location=Oblivion Breach" in line for case in cases for line in case.relation_context)
+    assert any("location=Nexus City" in line for case in cases for line in case.relation_context)
+    assert not any("location=Oblivion Regions" in line for case in cases for line in case.relation_context)
 
 
 def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, container, auth_headers):
@@ -488,8 +488,8 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
     assert progress["completed_report_id"] == gate["report_id"]
     assert progress["elapsed_seconds"] >= 0
     assert gate_with_failure["shadow_failures"]
-    assert gate_with_failure["shadow_failures"][0]["pack_context"]["pack_id"] == "gestaloka_reference"
-    assert gate_with_failure["shadow_failures"][0]["pack_context"]["world_template_display_name"] == "Nexus Foundation"
+    assert gate_with_failure["shadow_failures"][0]["pack_context"]["pack_id"] == "gestaloka_world_reference"
+    assert gate_with_failure["shadow_failures"][0]["pack_context"]["world_template_display_name"] == "Layered World Foundation"
     assert gate_with_failure["shadow_failures"][0]["retrieval_required"] in {True, False}
     assert "graph" in gate_with_failure["shadow_failures"][0]["failure_categories"]
     assert gate_with_failure["shadow_failures"][0]["failure_diagnostics"]
@@ -544,11 +544,11 @@ def test_domain_eval_reads_consequence_tags_from_interpreted_intent(container):
     case = EvalCaseInput(
         case_id="interpreted-intent-consequence-tags",
         prompt_id="session.turn_resolution",
-        world_id="gestaloka_reference",
-        pack_id="gestaloka_reference",
-        world_template_id="nexus_foundation",
+        world_id="gestaloka_world_reference",
+        pack_id="gestaloka_world_reference",
+        world_template_id="layered_world_foundation",
         player_name="Demo Player",
-        npc_name="Gate Steward Rikka",
+        npc_name="Nexus Entry Liaison",
         input_text="help the traveler",
         relevant_memories=[],
         relation_context=[],
@@ -702,8 +702,8 @@ def test_release_gate_blocks_on_shared_world_axis_drift(client, container, auth_
     with container.session_factory() as db:
         axis = db.execute(
             select(WorldAxisState).where(
-                WorldAxisState.world_id == "gestaloka_reference",
-                WorldAxisState.axis_id == "archive_integrity",
+                WorldAxisState.world_id == "gestaloka_world_reference",
+                WorldAxisState.axis_id == "world_integrity",
             )
         ).scalar_one()
         axis.current_value = axis.current_value + 1
@@ -736,7 +736,7 @@ def test_release_gate_blocks_on_shared_world_memory_gap(client, container, auth_
     event_id = turn_payload["event_id"]
 
     with container.session_factory() as db:
-        db.execute(delete(Memory).where(Memory.world_id == "gestaloka_reference", Memory.source_event_id == event_id))
+        db.execute(delete(Memory).where(Memory.world_id == "gestaloka_world_reference", Memory.source_event_id == event_id))
         gate = container.eval_service.run_release_checklist(db, trigger_type="manual", shadow_limit=3)
         db.commit()
 
@@ -765,7 +765,7 @@ def test_release_gate_blocks_on_cross_world_shared_event_link(client, container,
     with container.session_factory() as db:
         memory = db.execute(
             select(Memory).where(
-                Memory.world_id == "gestaloka_reference",
+                Memory.world_id == "gestaloka_world_reference",
                 Memory.source_event_id == reference_turn_payload["event_id"],
             )
         ).scalars().first()
@@ -783,9 +783,9 @@ def test_release_gate_blocks_on_cross_world_shared_event_link(client, container,
             """,
             (
                 "alternate_reference_world",
-                "GESTALOKA: Nexus Foundation Alt",
+                "GESTALOKA: Layered World Foundation Alt",
                 "active",
-                '{"pack_id": "gestaloka_reference", "world_template_id": "nexus_foundation"}',
+                '{"pack_id": "gestaloka_world_reference", "world_template_id": "layered_world_foundation"}',
             ),
         )
         conn.exec_driver_sql(

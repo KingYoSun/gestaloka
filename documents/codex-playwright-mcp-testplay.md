@@ -100,20 +100,20 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 5. Player UI の表示言語 switcher で `JA` / `EN` を切り替え、`sign-in` の固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
 6. `Sign in` から `demo / demo-password` で login し、`auth-status` と `sp-balance` を確認する。
 
-### GESTALOKA Reference
+### GESTALOKA World Reference
 
 1. 必要なら page refresh し、Player UI で新しい session を開始できる状態にする。
-2. `world-select` で `GESTALOKA Reference` を選ぶ。
+2. `world-select` で `GESTALOKA World Reference` を選ぶ。
 3. 既存 profile がある場合は `player-profile-select` で選択し、表示されるプレイ言語を確認する。ない場合は `profile-display-name` に名前を入れ、必要なら性別・背景・自由記述・文体・`profile-play-language` を設定し、`create-player-profile` を実行する。
 4. `start-session` を実行する。
-5. `socket-status=open`、`session-pack`、`session.connected`、`Nexus Gate`、`First Stabilizer Request`、`0/2`、`Gate Steward Rikka`、`Lift Tower Concourse`、faction standing を確認する。
+5. `socket-status=open`、`session-pack`、`session.connected`、`Nexus City`、`Visitor Log Registration`、`0/2`、`Nexus Entry Liaison`、`Universal Library`、faction standing を確認する。
 6. 行動入力欄で `sp-bucket-balance` が有償SP / 無償SPの主表示になっていること、`turn-cost-note` が選択肢の消費予定SPを表示することを確認する。情報アイコンは `title` / accessible name で補足を持ち、インライン長文になっていないことを確認する。
 7. `sp-purchase-button` を押し、`sp-purchase-dialog` に現在の有償SP / 無償SP、5段階の購入SP選択肢、購入ボタン、キャンセル、右上の閉じるボタンがあることを確認する。
 8. `sp-purchase-option-5` を選び購入ボタンを押す。mock購入完了後、`sp-purchase-complete` が表示され、`paid-sp-balance` が購入前より 5 増え、`bonus-sp-balance` は変わらないことを確認する。Dialog を閉じた後も行動入力欄の `sp-bucket-balance` が更新後の値を表示することを確認する。
 9. `toggle-free-text` を押し、`turn-cost-note` が自由入力の消費予定SPに切り替わること、補足が tooltip に留まることを確認する。その後 `toggle-choice-mode` で choice mode に戻す。
-10. `quest-progress` が `2/2` になるまで `choice-progress` を最大 4 回実行し、`Nexus Writ`、route unlock effect、writ / breach / restoration 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
-11. `Breach Restoration` または `breach_restoration` が表示されるまで、到達済み choice を最大 3 回選び、used 表示と `Oblivion Breach` route を確認する。
-12. `Oblivion Breach` への travel history または current location 更新が観測できるまで、移動 affordance のある choice を最大 3 回実行し、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。公式 smoke 判定は引き続き stub E2E を正とし、live provider の手動観測は到達状態と揺れを併記する。
+10. `quest-progress` が `2/2` になるまで `choice-progress` を最大 4 回実行し、`Visitor Log Seal`、route unlock effect、writ / breach / restoration 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
+11. `Breach Restoration` または `oblivion_survey` が表示されるまで、到達済み choice を最大 3 回選び、used 表示と `Oblivion Regions` route を確認する。
+12. `Oblivion Regions` への travel history または current location 更新が観測できるまで、移動 affordance のある choice を最大 3 回実行し、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。公式 smoke 判定は引き続き stub E2E を正とし、live provider の手動観測は到達状態と揺れを併記する。
 
 プレイ言語確認を主目的にする場合:
 
@@ -129,7 +129,7 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 2. Admin UI の表示言語 switcher で `JA` / `EN` を切り替え、固定文言、`html[lang]`、reload 後の永続化を確認する。以後の testplay で使う表示言語に戻す。
 3. `admin-dashboard` で pack status、template 数、projection pending、release summary が管理向け KPI として読めることを確認する。
 4. 左サイドバーで `admin-nav-packs`、`admin-nav-templates`、`admin-nav-users`、`admin-nav-llm`、`admin-nav-usage`、`admin-nav-lanes`、`admin-nav-prompts`、`admin-nav-sp`、`admin-nav-release` を順に開き、各画面の `data-testid` が一意に存在することを確認する。
-5. `admin-packs` で `GESTALOKA Reference` が表示され、pack 数 1、template 数 1、failure 0 相当の状態が読めることを確認する。
+5. `admin-packs` で `GESTALOKA World Reference` が表示され、pack 数 1、template 数 1、failure 0 相当の状態が読めることを確認する。
 6. `admin-world-templates` で template の publish 状態が読めることを確認する。
 7. `admin-users` で app-level permission 管理画面が表示され、Keycloak Admin API 作成画面になっていないことを確認する。
 8. `admin-llm-settings` で secret 本体ではなく secret/env 参照名だけを扱っていることを確認する。

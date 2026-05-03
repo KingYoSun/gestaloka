@@ -112,8 +112,8 @@ def test_resource_lock_conflict_continues_turn_and_records_constraints(client, c
     session_response = client.post(
         "/sessions",
         json={
-            "world_id": "gestaloka_reference",
-            "world_name": "GESTALOKA: Nexus Foundation",
+            "world_id": "gestaloka_world_reference",
+            "world_name": "GESTALOKA: Layered World Foundation",
             "player_display_name": "Demo Player",
         },
         headers=auth_headers,
@@ -123,7 +123,7 @@ def test_resource_lock_conflict_continues_turn_and_records_constraints(client, c
     with container.session_factory() as db:
         db.add(
             WorldResourceLock(
-                world_id="gestaloka_reference",
+                world_id="gestaloka_world_reference",
                 resource_type="location",
                 resource_id=session_payload["location_id"],
                 status="active",
@@ -143,13 +143,13 @@ def test_resource_lock_conflict_continues_turn_and_records_constraints(client, c
 
     with container.session_factory() as db:
         event = db.execute(
-            select(Event).where(Event.world_id == "gestaloka_reference", Event.id == turn_payload["event_id"])
+            select(Event).where(Event.world_id == "gestaloka_world_reference", Event.id == turn_payload["event_id"])
         ).scalar_one()
         assert event.payload["resource_constraints"]
         assert any(item["resource_type"] == "location" for item in event.payload["skipped_shared_resources"])
         assert db.execute(
             select(WorldTimelineEntry).where(
-                WorldTimelineEntry.world_id == "gestaloka_reference",
+                WorldTimelineEntry.world_id == "gestaloka_world_reference",
                 WorldTimelineEntry.source_event_id == event.id,
                 WorldTimelineEntry.entry_kind == "resource_conflict",
             )

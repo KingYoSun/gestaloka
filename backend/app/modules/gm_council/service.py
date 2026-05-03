@@ -484,6 +484,7 @@ class CouncilWorldProgressPayload(BaseModel):
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
+    entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -547,6 +548,10 @@ class CouncilWorldProgressPayload(BaseModel):
         for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint"):
             if not isinstance(normalized.get(key), dict):
                 normalized[key] = None
+        entity_drafts = normalized.get("entity_drafts")
+        if not isinstance(entity_drafts, list):
+            entity_drafts = []
+        normalized["entity_drafts"] = [item for item in entity_drafts if isinstance(item, dict)]
         quests = input_payload.get("quests") if isinstance(input_payload.get("quests"), list) else []
         has_live_quest = any(
             isinstance(item, dict) and str(item.get("status") or "") in {"offered", "active", "paused"}
@@ -1096,6 +1101,7 @@ class GMCouncilService:
                 "constraint_text": "Canonical choice fallback preserved same-world progression after schema failure.",
             },
             quest_offer=quest_offer,
+            entity_drafts=[],
         )
 
     @staticmethod
@@ -1931,6 +1937,7 @@ class GMCouncilService:
             chapter_directive=world_progress_payload.chapter_directive,
             followup_quest_offer=world_progress_payload.followup_quest_offer,
             quest_resolution_hint=world_progress_payload.quest_resolution_hint,
+            entity_drafts=world_progress_payload.entity_drafts,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,

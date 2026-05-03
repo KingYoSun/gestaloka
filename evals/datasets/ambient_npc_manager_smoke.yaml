@@ -5,5 +5,5 @@ cases:
   - case_id: ambient-npc-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Archivist Ione
+    npc_name: Historian AI of the Universal Library
     input_text: 広場の余韻をどう動かすか

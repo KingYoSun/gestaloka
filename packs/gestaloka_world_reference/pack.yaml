@@ -1,0 +1,25 @@
+pack_id: gestaloka_world_reference
+version: 2.0.0
+engine_api_version: v2
+display_name: GESTALOKA World Reference
+visibility: public
+publish_status: playable
+world_templates:
+  - template_id: layered_world_foundation
+    display_name: Layered World Foundation
+    summary: A world-scale GESTALOKA reference where layered cities, corporations, churches, markets, ruins, and generated living entities share one persistent world state.
+    visibility: public
+    publish_status: playable
+semantic_tags:
+  - layered-world
+  - persistent-entities
+  - communities
+  - astralnet
+  - artifact-economy
+prompt_overlays:
+  - prompt_overlays
+content_refs:
+  world_templates: world_templates.yaml
+  npcs: npcs.yaml
+  prompt_overlays: prompts.yaml
+  localization: localization.yaml

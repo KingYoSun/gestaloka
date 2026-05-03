@@ -32,8 +32,8 @@ from app.modules.world_state.service import ensure_starter_faction, ensure_world
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "gestaloka_reference",
-        "world_name": "GESTALOKA: Nexus Foundation",
+        "world_id": "gestaloka_world_reference",
+        "world_name": "GESTALOKA: Layered World Foundation",
         "player_display_name": "Demo Player",
     }
 
@@ -94,32 +94,32 @@ def test_session_seed_is_idempotent_for_character_faction_and_exploration_state(
     assert second.status_code == 200
 
     with container.session_factory() as db:
-        assert db.execute(select(func.count(Faction.id))).scalar_one() == 5
+        assert db.execute(select(func.count(Faction.id))).scalar_one() == 10
         assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 0
         assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 0
         assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
-        assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 5
+        assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 10
         assert db.execute(select(func.count(ChapterTrack.id))).scalar_one() == 0
         assert db.execute(select(func.count(SceneFrame.id))).scalar_one() == 1
-        assert db.execute(select(func.count(WorldAxisState.axis_id))).scalar_one() == 5
+        assert db.execute(select(func.count(WorldAxisState.axis_id))).scalar_one() == 7
         gate = next(
             location
-            for location in db.execute(select(Location).where(Location.world_id == "gestaloka_reference")).scalars()
-            if location.state["key"] == "nexus_gate"
+            for location in db.execute(select(Location).where(Location.world_id == "gestaloka_world_reference")).scalars()
+            if location.state["key"] == "nexus_city"
         )
-        assert gate.state["public_state"]["civic_trust"] == 1
+        assert gate.state["public_state"]["visitor_log_clarity"] == 2
 
 
 def test_starter_faction_seed_survives_insert_race(container, monkeypatch):
-    world_id = "gestaloka_reference"
-    faction_id = "gestaloka_reference:nexus_custodians"
+    world_id = "gestaloka_world_reference"
+    faction_id = "gestaloka_world_reference:nexus_city"
     with container.session_factory() as db:
         ensure_world(
             db,
             world_id,
-            pack_id="gestaloka_reference",
-            world_template_id="nexus_foundation",
-            world_name="GESTALOKA: Nexus Foundation",
+            pack_id="gestaloka_world_reference",
+            world_template_id="layered_world_foundation",
+            world_name="GESTALOKA: Layered World Foundation",
         )
         db.commit()
 
@@ -138,7 +138,7 @@ def test_starter_faction_seed_survives_insert_race(container, monkeypatch):
                         world_id=world_id,
                         name="Raced Custodians",
                         description="Inserted by a concurrent seed transaction.",
-                        state={"pack_faction_id": "nexus_custodians", "policy": "race"},
+                            state={"pack_faction_id": "nexus_city", "policy": "race"},
                     )
                 )
                 original_flush()
@@ -173,55 +173,55 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
     with container.session_factory() as db:
         axis = db.execute(
             select(WorldAxisState).where(
-                WorldAxisState.world_id == "gestaloka_reference",
-                WorldAxisState.axis_id == "archive_integrity",
+                WorldAxisState.world_id == "gestaloka_world_reference",
+                WorldAxisState.axis_id == "world_integrity",
             )
         ).scalar_one()
-        assert axis.current_value == 55
+        assert axis.current_value == 53
         assert axis.last_event_id == turn_payload["event_id"]
 
         primary_standing = db.execute(
             select(FactionStanding).where(
-                FactionStanding.world_id == "gestaloka_reference",
+                FactionStanding.world_id == "gestaloka_world_reference",
                 FactionStanding.actor_id == session_payload["player_actor_id"],
-                FactionStanding.faction_id == "gestaloka_reference:nexus_custodians",
+                FactionStanding.faction_id == "gestaloka_world_reference:nexus_city",
             )
         ).scalar_one()
         assert primary_standing.standing > 0
 
         gate = next(
             location
-            for location in db.execute(select(Location).where(Location.world_id == "gestaloka_reference")).scalars()
-            if location.state["key"] == "nexus_gate"
+            for location in db.execute(select(Location).where(Location.world_id == "gestaloka_world_reference")).scalars()
+            if location.state["key"] == "nexus_city"
         )
-        assert gate.state["public_state"]["civic_trust"] == 2
+        assert gate.state["public_state"]["visitor_log_clarity"] == 3
 
         assert db.execute(
             select(func.count(Memory.id)).where(
-                Memory.world_id == "gestaloka_reference",
+                Memory.world_id == "gestaloka_world_reference",
                 Memory.source_event_id == turn_payload["event_id"],
-                Memory.text.contains("first arrival"),
+                Memory.text.contains("visitor log"),
             )
         ).scalar_one() >= 1
         assert db.execute(
             select(func.count(SharedHistoryRecord.id)).where(
-                SharedHistoryRecord.world_id == "gestaloka_reference",
+                SharedHistoryRecord.world_id == "gestaloka_world_reference",
                 SharedHistoryRecord.source_event_id == turn_payload["event_id"],
                 SharedHistoryRecord.status == "canonized",
             )
         ).scalar_one() == 1
         assert db.execute(
             select(func.count(SharedHistoryRecord.id)).where(
-                SharedHistoryRecord.world_id == "gestaloka_reference",
+                SharedHistoryRecord.world_id == "gestaloka_world_reference",
                 SharedHistoryRecord.source_event_id == turn_payload["event_id"],
                 SharedHistoryRecord.level == "local_rumor",
             )
         ).scalar_one() == 1
         title_progress = db.execute(
             select(ActorTitleProgress).where(
-                ActorTitleProgress.world_id == "gestaloka_reference",
+                ActorTitleProgress.world_id == "gestaloka_world_reference",
                 ActorTitleProgress.actor_id == session_payload["player_actor_id"],
-                ActorTitleProgress.title_rule_id == "nexus_stabilizer",
+                ActorTitleProgress.title_rule_id == "visitor_log_witness",
             )
         ).scalar_one()
         assert title_progress.progress == 1
@@ -233,7 +233,7 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
         apply_shared_consequence_rules(
             db,
             memory_service=container.memory_service,
-            world_id="gestaloka_reference",
+            world_id="gestaloka_world_reference",
             actor_id=session_payload["player_actor_id"],
             location_id=session_payload["location_id"],
             source_event_id=event_id,
@@ -246,18 +246,18 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
         assert db.execute(select(func.count(SharedConsequenceApplication.rule_id))).scalar_one() == applications_before
         assert db.execute(
             select(WorldAxisState.current_value).where(
-                WorldAxisState.world_id == "gestaloka_reference",
-                WorldAxisState.axis_id == "archive_integrity",
+                WorldAxisState.world_id == "gestaloka_world_reference",
+                WorldAxisState.axis_id == "world_integrity",
             )
         ).scalar_one() == axis_before
 
-        rebuilt = container.projection_service.rebuild(db, "gestaloka_reference")
+        rebuilt = container.projection_service.rebuild(db, "gestaloka_world_reference")
         labels = {item["label"] for item in rebuilt}
         assert {"WorldAxis", "SharedHistory", "TitleProgress"} <= labels
         projection_labels = {
             record.payload.get("label")
             for record in db.execute(
-                select(ProjectionRecord).where(ProjectionRecord.world_id == "gestaloka_reference")
+                select(ProjectionRecord).where(ProjectionRecord.world_id == "gestaloka_world_reference")
             ).scalars()
         }
         assert {"WorldAxis", "SharedHistory", "TitleProgress"} <= projection_labels
@@ -275,9 +275,9 @@ def test_shared_consequence_projection_does_not_cross_worlds(client, container, 
         db.add(
             World(
                 id="alternate_reference_world",
-                name="GESTALOKA: Nexus Foundation Alt",
+                name="GESTALOKA: Layered World Foundation Alt",
                 status="active",
-                state={"pack_id": "gestaloka_reference", "world_template_id": "nexus_foundation"},
+                state={"pack_id": "gestaloka_world_reference", "world_template_id": "layered_world_foundation"},
             )
         )
         db.commit()
@@ -378,7 +378,7 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
     shared_context = player_b_state.json()["shared_world_context"]
 
     assert player_a_turn_payload["event_id"] in shared_context["trace"]["source_event_ids"]
-    assert any(item["axis_id"] == "archive_integrity" and item["current_value"] == 55 for item in shared_context["world_axes"])
+    assert any(item["axis_id"] == "world_integrity" and item["current_value"] == 53 for item in shared_context["world_axes"])
     assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in shared_context["recent_history"])
     assert any(
         item["source_event_id"] == player_a_turn_payload["event_id"]
@@ -387,7 +387,7 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
         for item in shared_context["recent_history"]
     )
     assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in shared_context["rumor_surface"])
-    assert shared_context["location_public_state"]["public_state"]["civic_trust"] == 2
+    assert shared_context["location_public_state"]["public_state"]["visitor_log_clarity"] == 3
     assert "user_sub" not in str(shared_context)
 
     _, player_b_turn_payload, _ = post_turn_and_wait(
@@ -426,26 +426,26 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
         for payload in generation_inputs
     )
 
-    ops_shared = client.get("/ops/worlds/gestaloka_reference/shared-world", headers=ops_headers)
+    ops_shared = client.get("/ops/worlds/gestaloka_world_reference/shared-world", headers=ops_headers)
     assert ops_shared.status_code == 200
     assert player_a_turn_payload["event_id"] in ops_shared.json()["shared_world_context"]["trace"]["source_event_ids"]
-    ops_history = client.get("/ops/worlds/gestaloka_reference/history?level=local_rumor&status=canonized", headers=ops_headers)
+    ops_history = client.get("/ops/worlds/gestaloka_world_reference/history?level=local_rumor&status=canonized", headers=ops_headers)
     assert ops_history.status_code == 200
     assert any(item["source_event_id"] == player_a_turn_payload["event_id"] for item in ops_history.json()["items"])
     ops_titles = client.get(
-        f"/ops/worlds/gestaloka_reference/titles?actor_id={player_a_payload['player_actor_id']}&status=in_progress",
+        f"/ops/worlds/gestaloka_world_reference/titles?actor_id={player_a_payload['player_actor_id']}&status=in_progress",
         headers=ops_headers,
     )
     assert ops_titles.status_code == 200
-    assert any(item["title_rule_id"] == "nexus_stabilizer" for item in ops_titles.json()["items"])
+    assert any(item["title_rule_id"] == "visitor_log_witness" for item in ops_titles.json()["items"])
 
     with container.session_factory() as db:
         db.add(
             World(
                 id="alternate_reference_world",
-                name="GESTALOKA: Nexus Foundation Alt",
+                name="GESTALOKA: Layered World Foundation Alt",
                 status="active",
-                state={"pack_id": "gestaloka_reference", "world_template_id": "nexus_foundation"},
+                state={"pack_id": "gestaloka_world_reference", "world_template_id": "layered_world_foundation"},
             )
         )
         db.commit()
@@ -472,13 +472,13 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
     with container.session_factory() as db:
         sp_count_before = db.execute(
             select(func.count(SPLedgerEntry.id)).where(
-                SPLedgerEntry.world_id == "gestaloka_reference",
+                SPLedgerEntry.world_id == "gestaloka_world_reference",
                 SPLedgerEntry.actor_id == session_payload["player_actor_id"],
             )
         ).scalar_one()
         for index in range(3):
             turn = Turn(
-                world_id="gestaloka_reference",
+                world_id="gestaloka_world_reference",
                 session_id=session_payload["session_id"],
                 actor_id=session_payload["player_actor_id"],
                 input_text=f"recognized harbor help {index}",
@@ -490,7 +490,7 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
             db.add(turn)
             db.flush()
             event = Event(
-                world_id="gestaloka_reference",
+                world_id="gestaloka_world_reference",
                 session_id=session_payload["session_id"],
                 turn_id=turn.id,
                 event_type="player.turn.resolved",
@@ -504,7 +504,7 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
             apply_shared_consequence_rules(
                 db,
                 memory_service=container.memory_service,
-                world_id="gestaloka_reference",
+                world_id="gestaloka_world_reference",
                 actor_id=session_payload["player_actor_id"],
                 location_id=session_payload["location_id"],
                 source_event_id=event.id,
@@ -518,21 +518,21 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
     recognized_titles = state_response.json()["recognized_titles"]
-    assert any(item["title_rule_id"] == "nexus_stabilizer" and item["status"] == "recognized" for item in recognized_titles)
+    assert any(item["title_rule_id"] == "visitor_log_witness" and item["status"] == "recognized" for item in recognized_titles)
 
     with container.session_factory() as db:
         title_progress = db.execute(
             select(ActorTitleProgress).where(
-                ActorTitleProgress.world_id == "gestaloka_reference",
+                ActorTitleProgress.world_id == "gestaloka_world_reference",
                 ActorTitleProgress.actor_id == session_payload["player_actor_id"],
-                ActorTitleProgress.title_rule_id == "nexus_stabilizer",
+                ActorTitleProgress.title_rule_id == "visitor_log_witness",
             )
         ).scalar_one()
         assert title_progress.progress == title_progress.progress_target
         assert title_progress.status == "recognized"
         assert db.execute(
             select(func.count(SPLedgerEntry.id)).where(
-                SPLedgerEntry.world_id == "gestaloka_reference",
+                SPLedgerEntry.world_id == "gestaloka_world_reference",
                 SPLedgerEntry.actor_id == session_payload["player_actor_id"],
             )
         ).scalar_one() == sp_count_before
@@ -543,7 +543,7 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
         auth_headers=auth_headers,
         payload={
             "input_mode": "free_text",
-            "input_text": "Nexus StabilizerとしてNexus Gateの記録を確かめる",
+            "input_text": "Visitor Log WitnessとしてNexus Cityの記録を確かめる",
         },
     )
     generation_inputs = [
@@ -552,7 +552,7 @@ def test_title_recognition_reaches_session_and_prompt_context_without_sp_side_ef
         if record.get("event") == "enter" and record.get("as_type") == "generation"
     ]
     assert any(
-        any(item.get("title_rule_id") == "nexus_stabilizer" for item in payload.get("recognized_titles", []))
+        any(item.get("title_rule_id") == "visitor_log_witness" for item in payload.get("recognized_titles", []))
         for payload in generation_inputs
     )
 

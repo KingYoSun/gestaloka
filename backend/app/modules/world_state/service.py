@@ -84,6 +84,7 @@ from app.modules.world_state.consequence import (
     thread_summary,
     thread_title,
 )
+from app.modules.world_state.entity_generation import pack_seed_entity_key
 from app.modules.world_state.scene import (
     SceneFrameEngine,
     ensure_narrative_frame_seed,
@@ -317,6 +318,10 @@ def ensure_seeded_locations(db: Session, world_id: str) -> dict[str, Location]:
                 name=str(payload.get("name") or location_key.replace("_", " ").title()),
                 description=str(payload.get("description") or ""),
                 state=state,
+                entity_key=pack_seed_entity_key("location", str(payload.get("id") or location_key)),
+                origin_kind="pack_seed",
+                origin_ref=str(payload.get("id") or location_key),
+                visibility_scope="world",
             )
             db.add(location)
             db.flush()
@@ -324,6 +329,10 @@ def ensure_seeded_locations(db: Session, world_id: str) -> dict[str, Location]:
             location.name = str(payload.get("name") or location.name)
             location.description = str(payload.get("description") or location.description)
             location.state = state
+            location.entity_key = location.entity_key or pack_seed_entity_key("location", str(payload.get("id") or location_key))
+            location.origin_kind = location.origin_kind or "pack_seed"
+            location.origin_ref = location.origin_ref or str(payload.get("id") or location_key)
+            location.visibility_scope = location.visibility_scope or "world"
             db.flush()
         seeded[location_key] = location
     return seeded
@@ -486,6 +495,11 @@ def ensure_starter_faction(db: Session, world_id: str) -> Faction:
     )
     faction = db.execute(stmt).scalars().first()
     if faction is not None:
+        faction.entity_key = faction.entity_key or pack_seed_entity_key("community", faction_base_id)
+        faction.origin_kind = faction.origin_kind or "pack_seed"
+        faction.origin_ref = faction.origin_ref or faction_base_id
+        faction.visibility_scope = faction.visibility_scope or "world"
+        db.flush()
         return faction
 
     faction = Faction(
@@ -493,6 +507,10 @@ def ensure_starter_faction(db: Session, world_id: str) -> Faction:
         world_id=world_id,
         name=str((shared_seed.name if shared_seed is not None else None) or faction_seed.get("name") or "Starter Faction"),
         description=str((shared_seed.description if shared_seed is not None else None) or faction_seed.get("description") or ""),
+        entity_key=pack_seed_entity_key("community", faction_base_id),
+        origin_kind="pack_seed",
+        origin_ref=faction_base_id,
+        visibility_scope="world",
         state={
             **dict(faction_seed.get("state") or {}),
             "pack_faction_id": faction_base_id,

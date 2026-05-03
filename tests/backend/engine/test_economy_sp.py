@@ -8,8 +8,8 @@ from tests.backend.turn_async_helpers import post_turn_and_wait
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "gestaloka_reference",
-        "world_name": "GESTALOKA: Nexus Foundation",
+        "world_id": "gestaloka_world_reference",
+        "world_name": "GESTALOKA: Layered World Foundation",
         "player_display_name": "Demo Player",
     }
 
@@ -195,7 +195,7 @@ def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, a
         "free_text_turn_cost": 3,
         "world_context": error_payload["world_context"],
     }
-    assert error_payload["world_context"]["pack_id"] == "gestaloka_reference"
+    assert error_payload["world_context"]["pack_id"] == "gestaloka_world_reference"
 
     with container.session_factory() as db:
         after_turns = db.execute(select(func.count(Turn.id))).scalar_one()
@@ -234,7 +234,7 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
             "delta": 3,
             "reason_code": "admin_adjustment",
             "sp_bucket": "bonus",
-            "world_id": "gestaloka_reference",
+            "world_id": "gestaloka_world_reference",
             "note": "bonus grant",
         },
         headers=auth_headers,
@@ -245,15 +245,15 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
     assert adjustment_response.json()["bonus_sp"] == 33
 
     ledger_response = client.get(
-        "/ops/sp/ledger?user_sub=local-player&world_id=gestaloka_reference&limit=20",
+        "/ops/sp/ledger?user_sub=local-player&world_id=gestaloka_world_reference&limit=20",
         headers=auth_headers,
     )
     assert ledger_response.status_code == 200
     items = ledger_response.json()["items"]
     assert items[0]["reason_code"] == "admin_adjustment"
     assert items[0]["created_by_sub"] == "local-player"
-    assert items[0]["world_context"]["pack_id"] == "gestaloka_reference"
-    assert items[0]["world_context"]["world_template_id"] == "nexus_foundation"
+    assert items[0]["world_context"]["pack_id"] == "gestaloka_world_reference"
+    assert items[0]["world_context"]["world_template_id"] == "layered_world_foundation"
 
     global_ledger_response = client.get("/ops/sp/ledger?user_sub=local-player&limit=20", headers=auth_headers)
     assert global_ledger_response.status_code == 200
@@ -262,7 +262,7 @@ def test_ops_sp_adjustment_and_filtered_ledger(client, container, auth_headers):
 
     updated_overview_response = client.get("/ops/sp/overview", headers=auth_headers)
     assert updated_overview_response.status_code == 200
-    assert updated_overview_response.json()["recent_adjustments"][0]["world_context"]["pack_id"] == "gestaloka_reference"
+    assert updated_overview_response.json()["recent_adjustments"][0]["world_context"]["pack_id"] == "gestaloka_world_reference"
 
     with container.session_factory() as db:
         latest = db.execute(

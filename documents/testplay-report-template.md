@@ -17,7 +17,7 @@
   - Backend health:
   - Langfuse:
 - 対象 bundled pack:
-  - `GESTALOKA Reference / Nexus Foundation`
+  - `GESTALOKA World Reference / Layered World Foundation`
 
 ## 2. 事前検証
 
@@ -40,7 +40,7 @@
 | --- | --- | --- | --- | --- |
 | Preflight | login / health / 初期描画 |  |  |  |
 | Player profile | profile 作成・選択 / start-session 無効状態 |  |  |  |
-| GESTALOKA Reference | Nexus Gate から Oblivion Breach までの smoke flow |  |  |  |
+| GESTALOKA World Reference | Nexus City から Oblivion Regions までの smoke flow |  |  |  |
 | Player state | quest / inventory / route / travel / relationship / world beats |  |  |  |
 | Admin / Packs | dashboard / pack catalog / scaffold / archive import / publish status |  |  |  |
 | Admin / Config | users / LLM settings / model lanes / prompts / SP |  |  |  |

@@ -5,10 +5,10 @@ from app.modules.localization.service import PlayLocalizationPayload, _apply_glo
 
 def test_play_localization_payload_accepts_canonical_items_object() -> None:
     payload = PlayLocalizationPayload.model_validate(
-        {"items": [{"key": "location:nexus_gate:name:abc123", "localized_text": "ネクサス・ゲート"}]}
+        {"items": [{"key": "location:nexus_city:name:abc123", "localized_text": "ネクサス・ゲート"}]}
     )
 
-    assert payload.items[0].key == "location:nexus_gate:name:abc123"
+    assert payload.items[0].key == "location:nexus_city:name:abc123"
     assert payload.items[0].localized_text == "ネクサス・ゲート"
 
 
@@ -52,14 +52,14 @@ def test_play_localization_payload_keeps_first_duplicate_key() -> None:
 
 def test_glossary_replacements_remove_residual_source_names() -> None:
     localized = _apply_glossary_replacements(
-        "Nexus Gateの気配を読み、Lift Tower Concourseへ向かう。[aid_local]",
+        "Nexus Cityの気配を読み、Universal Libraryへ向かう。[aid_local]",
         [
             {
-                "source_text": "Nexus Gate",
+                "source_text": "Nexus City",
                 "localized_text": "ネクサス・ゲート",
             },
             {
-                "source_text": "Lift Tower Concourse",
+                "source_text": "Universal Library",
                 "localized_text": "リフト・タワー・コンコース",
             },
         ],
@@ -73,11 +73,11 @@ def test_glossary_replacements_collapse_repeated_localized_name_prefixes() -> No
         "ゲート守ゲート守リッカに礼を言い、記録官記録官イオネへ報告する。",
         [
             {
-                "source_text": "Gate Steward Rikka",
+                "source_text": "Nexus Entry Liaison",
                 "localized_text": "ゲート守リッカ",
             },
             {
-                "source_text": "Archivist Ione",
+                "source_text": "Historian AI of the Universal Library",
                 "localized_text": "記録官イオネ",
             },
         ],

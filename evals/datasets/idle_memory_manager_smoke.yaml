@@ -5,5 +5,5 @@ cases:
   - case_id: idle-memory-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
+    npc_name: Nexus Entry Liaison
     input_text: 広場から少し離れた場所で、配達人が何を気に留めるかを要約する

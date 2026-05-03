@@ -203,6 +203,7 @@ def _success_response_content(result, world_context: dict[str, object]) -> dict[
         "faction_updates": result.faction_updates,
         "inventory_updates": result.inventory_updates,
         "location_updates": result.location_updates,
+        "entity_updates": result.turn.resolved_output.get("entity_updates", []),
         "relationship_updates": result.relationship_updates,
         "consequence_updates": result.consequence_updates,
         "scene_updates": result.scene_updates,

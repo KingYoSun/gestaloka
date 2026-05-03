@@ -3,9 +3,9 @@ prompt_id: play.localization
 expected_output_schema: play_localization_v1
 cases:
   - case_id: ja_reference_names
-    world_id: gestaloka_reference
-    pack_id: gestaloka_reference
-    world_template_id: nexus_foundation
+    world_id: gestaloka_world_reference
+    pack_id: gestaloka_world_reference
+    world_template_id: layered_world_foundation
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
-    input_text: Nexus Gate
+    npc_name: Nexus Entry Liaison
+    input_text: Nexus City

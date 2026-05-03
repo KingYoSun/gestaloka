@@ -4,7 +4,7 @@ import { profilePayloadForApi, type DerivedPlayerProfile } from "./playerProfile
 import type { SwarmDecision } from "./playbook";
 import type { AssignedSwarmUserPersona, SwarmAuthUser } from "./userPersonas";
 
-export const worldId = "gestaloka_reference";
+export const worldId = "gestaloka_world_reference";
 export const apiBaseURL = process.env.SWARM_API_BASE_URL ?? "http://localhost:8000";
 export const keycloakTokenURL =
   process.env.SWARM_KEYCLOAK_TOKEN_URL ??

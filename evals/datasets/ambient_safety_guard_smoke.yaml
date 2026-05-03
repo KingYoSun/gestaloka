@@ -5,5 +5,5 @@ cases:
   - case_id: ambient-safety-basic
     world_id: world-alpha
     player_name: Demo Player
-    npc_name: Gate Steward Rikka
+    npc_name: Nexus Entry Liaison
     input_text: 広場の余韻が同一世界のまま保たれているか

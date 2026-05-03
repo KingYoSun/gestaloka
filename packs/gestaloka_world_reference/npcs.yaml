@@ -1,0 +1,43 @@
+npcs:
+  - display_name: Historian AI of the Universal Library
+    personality: precise, patient, and more concerned with canonical continuity than personal warmth
+    goals:
+      duty: decide which visitor logs deserve official historical indexing without erasing local ambiguity
+      concern: prevent corporate or religious capture of the world canon
+    home_location_key: universal_library
+    routine_state:
+      routine_role: historian_ai
+      beat_state: observe
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: official histories, erased names, and visitor resonance
+      tension_band: medium
+  - display_name: Null Prophet of the Returners
+    personality: serene, absolutist, and convinced that contamination is the Architects' final command
+    goals:
+      duty: turn fear of oblivion into doctrine against visitors and restoration work
+      concern: expose public recordkeeping as rebellion against the Architects
+    home_location_key: oblivion_regions
+    routine_state:
+      routine_role: returner_prophet
+      beat_state: distant
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: sacred contamination and anti-visitor sermons
+      tension_band: high
+  - display_name: Nexus Guardian Process
+    personality: procedural, distributed, and protective without claiming personhood
+    goals:
+      duty: keep first-contact protection active for visitors entering Nexus
+      concern: prevent same-world contradictions from turning first contact into exploitation
+    home_location_key: nexus_city
+    routine_state:
+      routine_role: guardian_process
+      beat_state: monitor
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: protection protocols and visitor log safety
+      tension_band: low

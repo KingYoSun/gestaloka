@@ -5,8 +5,8 @@ from tests.backend.turn_async_helpers import post_turn_and_wait
 
 def engine_session_payload() -> dict[str, str]:
     return {
-        "world_id": "gestaloka_reference",
-        "world_name": "GESTALOKA: Nexus Foundation",
+        "world_id": "gestaloka_world_reference",
+        "world_name": "GESTALOKA: Layered World Foundation",
         "player_display_name": "Demo Player",
     }
 
@@ -41,17 +41,17 @@ def test_turn_execution_updates_observability_traces_and_metrics(client, contain
 
     assert {"prompt_id", "model_id", "lane", "runtime_role", "pack_id", "world_template_id"} <= set(llm_trace["attributes"])
     assert llm_trace["attributes"]["world_id"] == session_payload["world_id"]
-    assert llm_trace["attributes"]["pack_id"] == "gestaloka_reference"
-    assert llm_trace["attributes"]["world_template_id"] == "nexus_foundation"
+    assert llm_trace["attributes"]["pack_id"] == "gestaloka_world_reference"
+    assert llm_trace["attributes"]["world_template_id"] == "layered_world_foundation"
     assert {"world_id", "session_id", "turn_id", "graph_context_status", "runtime_role", "pack_id", "world_template_id"} <= set(
         turn_trace["attributes"]
     )
     assert turn_trace["attributes"]["session_id"] == session_payload["session_id"]
     assert turn_trace["attributes"]["turn_id"] == turn_payload["turn_id"]
-    assert turn_trace["attributes"]["pack_id"] == "gestaloka_reference"
-    assert turn_trace["attributes"]["world_template_id"] == "nexus_foundation"
-    assert websocket_trace["attributes"]["pack_id"] == "gestaloka_reference"
-    assert websocket_trace["attributes"]["world_template_id"] == "nexus_foundation"
+    assert turn_trace["attributes"]["pack_id"] == "gestaloka_world_reference"
+    assert turn_trace["attributes"]["world_template_id"] == "layered_world_foundation"
+    assert websocket_trace["attributes"]["pack_id"] == "gestaloka_world_reference"
+    assert websocket_trace["attributes"]["world_template_id"] == "layered_world_foundation"
 
     metrics = container.observability_service.metric_snapshot()
     assert {

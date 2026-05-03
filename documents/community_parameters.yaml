@@ -1,0 +1,156 @@
+CommunityParameters:
+  BasicScale:
+    description: "コミュニティの外形的な規模"
+    parameters:
+      population_size: "所属人数、住民数、社員数、構成員数"
+      active_population: "実際に活動している人数"
+      core_member_count: "意思決定・運営・戦闘・開発などを担う人数"
+      transient_population: "訪問者、顧客、傭兵、外部協力者、一時参加者"
+      growth_rate: "人口、売上、領土、影響力などの増減率"
+      age_distribution: "若年層中心、老齢化、熟練者中心など"
+      population_density: "単位空間あたりの人口集中度"
+
+  SpaceAndTerritory:
+    description: "どこに存在し、どこまで届くか"
+    parameters:
+      location: "本拠地、首都、オフィス、拠点"
+      territory_size: "国土、支配地域、営業地域、活動範囲"
+      spatial_influence_range: "文化圏、商圏、軍事的射程、通信圏"
+      geographic_advantage: "港、山岳、防衛地形、交通要衝、資源地帯"
+      mobility: "定住型、遊牧型、艦隊型、リモート型、分散型"
+      number_of_bases: "支部、都市、基地、店舗、サーバー、ノード数"
+      boundary_clarity: "国境や所属境界が明確か、ゆるいネットワークか"
+
+  EconomyAndResources:
+    description: "何で食っているか、何を持っているか"
+    parameters:
+      economic_scale: "GDP、売上、流通総額、資産規模"
+      revenue_sources: "税、販売、寄付、略奪、サブスク、広告、手数料"
+      productive_capacity: "食料、工業、知識、魔力、ソフトウェア、軍需などの生産力"
+      resource_holdings: "土地、鉱物、データ、人材、IP、信用、魔法資源"
+      fiscal_capacity: "投資、戦争、研究、福祉に回せる余力"
+      logistics_capacity: "物資、人、情報を動かす力"
+      technological_capital: "設備、インフラ、研究成果、コードベース、特許"
+      economic_self_sufficiency: "外部依存の強さ、自給自足可能性"
+      inequality_level: "富、権限、機会の偏り"
+
+  MilitarySecurityAndCoercion:
+    description: "武力、安全保障、強制力"
+    parameters:
+      military_scale: "軍隊、警備、傭兵、戦闘員、兵器数"
+      defense_power: "侵略、攻撃、内部崩壊への耐性"
+      offensive_power: "他者に損害を与える能力"
+      public_order_capacity: "内部秩序を維持する能力"
+      information_warfare_capacity: "諜報、広報、宣伝、監視、サイバー能力"
+      law_enforcement_power: "ルール違反者を取り締まる能力"
+      deterrence_power: "戦わずに相手を抑止する能力"
+      crisis_response_capacity: "災害、炎上、侵攻、倒産、疫病への対応能力"
+
+  GovernanceAndDecisionMaking:
+    description: "どのように統治し、どう意思決定するか"
+    parameters:
+      governance_form: "王政、民主制、評議会、独裁、株式会社、DAO、長老制"
+      decision_making_speed: "意思決定の速さ"
+      decision_making_quality: "長期的に妥当な判断を下せるか"
+      centralization_level: "中央集権か分権か"
+      representativeness: "構成員の意見が反映される度合い"
+      bureaucratic_maturity: "制度、手続き、官僚制の整備度"
+      corruption_level: "権力や資源の私物化の度合い"
+      transparency: "意思決定や会計の透明性"
+      succession_system: "リーダー交代や継承の安定性"
+      internal_conflict_level: "派閥、政争、労使対立、宗派対立の度合い"
+
+  SocialStructureAndHierarchy:
+    description: "内部がどう分かれているか"
+    parameters:
+      hierarchy_structure: "貴族/平民、経営/現場、古参/新参など"
+      mobility_within_structure: "下層から上層へ移動できるか"
+      role_specialization: "専門職が多いか、兼任が多いか"
+      occupational_composition: "戦士、商人、研究者、農民、エンジニアなどの構成"
+      education_level: "知識、技能、識字率、専門性"
+      diversity: "種族、文化、職能、思想、出自の幅"
+      inclusiveness: "外部者や少数派を受け入れる度合い"
+      internal_network_density: "構成員同士のつながりの強さ"
+
+  CultureAndValues:
+    description: "何を重んじ、何を良し悪しとするか"
+    parameters:
+      shared_values: "名誉、自由、利益、信仰、効率、忠誠、創作など"
+      norms: "何が良く、何が悪いとされるか"
+      traditions: "儀式、慣習、神話、創業精神、社内文化"
+      religion_or_ideology: "信仰、哲学、政治思想、ミッション"
+      cultural_influence: "流行、言語、芸術、教育、メディアへの影響力"
+      exclusivity: "外部文化を拒むか、混ざりやすいか"
+      narrative_identity: "英雄譚、建国神話、創業神話、敗北の記憶"
+      honor_system: "何が称賛され、何が恥とされるか"
+
+  TechnologyKnowledgeAndInformation:
+    description: "知識・技術・情報の扱い"
+    parameters:
+      technological_level: "産業、魔法、AI、軍事、医療などの発展度"
+      research_and_development_capacity: "新技術を生み出す力"
+      information_flow_speed: "ニュース、命令、噂が広がる速さ"
+      record_keeping_capacity: "文書化、ログ、歴史、ナレッジ管理の能力"
+      education_and_training_system: "人材育成の仕組み"
+      secrecy_capacity: "機密保持能力"
+      external_knowledge_absorption: "他文化、他社、他国から学ぶ力"
+      standardization_level: "手順、規格、プロトコル、共通言語の整備度"
+
+  ExternalRelations:
+    description: "他コミュニティとの関係"
+    parameters:
+      alliances: "味方、提携先、親会社、宗主国"
+      hostile_relations: "競合、仇敵、戦争相手、対立派閥"
+      dependency_relations: "食料、技術、資金、防衛、人材などの依存"
+      negotiation_power: "他者に条件を飲ませる力"
+      trustworthiness: "約束を守ると見なされている度合い"
+      reputation: "外部からの見られ方"
+      influence_network: "どの勢力に間接的影響を持つか"
+      isolation_level: "外部世界からどれだけ孤立しているか"
+
+  LegitimacyAndIdentity:
+    description: "なぜその集団が成立・維持されているのか"
+    parameters:
+      legitimacy_source: "王家、選挙、実績、神託、創業者、契約など"
+      sense_of_belonging: "メンバーの所属意識の強さ"
+      loyalty: "離脱しにくさ、献身度"
+      common_enemy: "外敵や競合による結束の有無"
+      shared_memory: "戦争、災害、創業、革命、勝利体験"
+      brand_power: "名前そのものが持つ信用や魅力"
+      symbols: "旗、紋章、ロゴ、制服、聖地、スローガン"
+
+  StabilityAndSustainability:
+    description: "続くかどうか、崩れないか"
+    parameters:
+      internal_stability: "暴動、離職、分裂、反乱の起きにくさ"
+      external_threat_resilience: "戦争、競争、災害、規制への耐性"
+      fiscal_sustainability: "資金ショートしないか"
+      talent_reproduction_capacity: "次世代を育てられるか"
+      institutional_continuity: "リーダー不在でも制度が回るか"
+      adaptability: "環境変化に合わせて変われるか"
+      innovativeness: "新しい仕組みや発明を生み出せるか"
+      decline_signs: "人口減、腐敗、形骸化、内向き化などの兆候"
+
+  MembershipParticipationAndBoundary:
+    description: "誰がどう参加し、どう抜けるか"
+    parameters:
+      entry_barrier: "誰でも入れるか、審査・推薦・試験があるか"
+      exit_barrier: "自由に抜けられるか、罰則があるか"
+      membership_definition: "住民、社員、信徒、ユーザー、臣民、契約者など"
+      member_rights: "投票権、発言権、資源利用権、保護"
+      member_obligations: "税、労働、兵役、献金、規約遵守"
+      member_rewards: "給与、名誉、保護、居場所、成長機会"
+      sanctions: "追放、降格、罰金、処刑、BAN、信用低下"
+
+  NarrativeAndGameUsefulDerivedParameters:
+    description: "物語生成、ゲーム運用、世界シミュレーション向け派生要素"
+    parameters:
+      tension_state: "平時、冷戦、内乱前夜、戦時、復興期など"
+      scarcity: "食料、人材、正統性、魔力、時間、信用など不足しているもの"
+      surplus: "武力、金、人口、技術、信仰、怨念など過剰に持っているもの"
+      current_issue: "飢饉、後継者問題、競合襲来、資金難、移民問題"
+      taboo: "触れてはいけない話題、禁忌、歴史的傷"
+      internal_contradiction: "理念と現実のズレ"
+      external_misunderstanding: "実態と評判のギャップ"
+      pressure_for_change: "技術革新、人口減、外敵、気候、規制、神託"
+      relationship_with_player: "敵、味方、雇用主、保護者、被支配者、交渉相手"

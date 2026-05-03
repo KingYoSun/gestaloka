@@ -190,7 +190,7 @@ def test_openai_compatible_provider_orders_cache_contexts_before_request_context
         lane="main_lane",
         input_payload={
             "world_id": "world-1",
-            "world_pack": {"pack_id": "gestaloka_reference"},
+            "world_pack": {"pack_id": "gestaloka_world_reference"},
             "player_profile": {"background": "lamp keeper"},
             "narrative_preferences": {"tone": "measured"},
             "current_location": {"name": "Harbor"},
@@ -209,7 +209,7 @@ def test_openai_compatible_provider_orders_cache_contexts_before_request_context
     static_section = content.split("## turn_state_context", 1)[0]
     turn_section = content.split("## request_context", 1)[0]
     request_section = content.split("## request_context", 1)[1]
-    assert '"world_pack":{"pack_id":"gestaloka_reference"}' in static_section
+    assert '"world_pack":{"pack_id":"gestaloka_world_reference"}' in static_section
     assert '"player_profile":{"background":"lamp keeper"}' in static_section
     assert '"shared_world_context":{"world_axes":[]}' in static_section
     assert '"current_location":{"name":"Harbor"}' in turn_section
@@ -224,7 +224,7 @@ def test_openai_compatible_provider_keeps_static_context_when_only_input_text_ch
     provider = OpenAICompatibleProvider(_settings(openai_compat_response_format="json_object"))
     base_payload = {
         "world_id": "world-1",
-        "world_pack": {"pack_id": "gestaloka_reference"},
+        "world_pack": {"pack_id": "gestaloka_world_reference"},
         "player_profile": {"background": "lamp keeper"},
         "current_location": {"name": "Harbor"},
         "input_text": "first action",
@@ -300,7 +300,7 @@ def _explicit_cache_session_factory(tmp_path):
 def _large_static_payload(input_text: str = "first action") -> dict[str, Any]:
     return {
         "world_id": "world-1",
-        "world_pack": {"pack_id": "gestaloka_reference", "lore": "same world " * 3000},
+        "world_pack": {"pack_id": "gestaloka_world_reference", "lore": "same world " * 3000},
         "player_profile": {"background": "lamp keeper", "notes": "stable profile " * 3000},
         "shared_world_context": {"world_axes": ["light" for _ in range(600)]},
         "current_location": {"name": "Harbor"},
@@ -403,7 +403,7 @@ def test_openai_compatible_provider_skips_explicit_cache_under_minimum(monkeypat
         response_model=_ProviderPayload,
         model_id="gemini-3-flash-preview",
         lane="main_lane",
-        input_payload={"world_id": "world-1", "world_pack": {"pack_id": "gestaloka_reference"}, "input_text": "hello"},
+        input_payload={"world_id": "world-1", "world_pack": {"pack_id": "gestaloka_world_reference"}, "input_text": "hello"},
         temperature=0.3,
     )
 
@@ -495,29 +495,29 @@ def test_live_intent_payload_shape_is_normalized_before_validation():
             "summary": "到着記録を手伝うことで、次の進展を促す。",
             "action_kind": "narrative",
             "consequence_tags": ["trust:minor", "public_scrutiny"],
-            "canonical_input_text": "Nexus Gateで到着記録の処理を手伝う",
-            "narrative_consequence": "Gate Steward Rikka acknowledges the help.",
+            "canonical_input_text": "Nexus Cityで到着記録の処理を手伝う",
+            "narrative_consequence": "Nexus Entry Liaison acknowledges the help.",
         },
-        context={"input_payload": {"input_mode": "free_text", "input_text": "Nexus Gateで到着記録を助ける"}},
+        context={"input_payload": {"input_mode": "free_text", "input_text": "Nexus Cityで到着記録を助ける"}},
     )
 
     assert payload.input_mode == "free_text"
     assert payload.canonical_action_kind == "narrative"
-    assert payload.intent_summary == "Nexus Gateで到着記録の処理を手伝う"
+    assert payload.intent_summary == "Nexus Cityで到着記録の処理を手伝う"
     assert payload.requested_choice_posture == "progress"
     assert payload.consequence_tags == ["earned_trust"]
-    assert payload.consequence_summary == "Gate Steward Rikka acknowledges the help."
+    assert payload.consequence_summary == "Nexus Entry Liaison acknowledges the help."
 
 
 def test_live_memory_payload_shape_is_normalized_before_validation():
     payload = CouncilMemoryManagerPayload.model_validate(
         {
             "same_world_memory": "Demo Player helped with arrival records.",
-            "relation": "Gate Steward Rikka KNOWS Demo Player (0.65)",
-            "quest": "First Stabilizer Request [active 1/2]",
-            "faction": "Nexus Custodians standing=0.40",
+            "relation": "Nexus Entry Liaison KNOWS Demo Player (0.65)",
+            "quest": "Visitor Log Registration [active 1/2]",
+            "faction": "Nexus City standing=0.40",
             "inventory": [],
-            "scene": "Nexus Gate is waiting on the current request.",
+            "scene": "Nexus City is waiting on the current request.",
             "chapter": "The opening chapter is gathering momentum.",
         },
         context={"input_payload": {"relevant_memories": ["Demo Player helped with arrival records."]}},
@@ -525,24 +525,24 @@ def test_live_memory_payload_shape_is_normalized_before_validation():
 
     assert payload.memory_summary == "Demo Player helped with arrival records."
     assert payload.focus_memories == ["Demo Player helped with arrival records."]
-    assert payload.relation_summary == "Gate Steward Rikka KNOWS Demo Player (0.65)"
-    assert "First Stabilizer Request" in payload.state_summary
-    assert "Nexus Gate" in payload.state_summary
+    assert payload.relation_summary == "Nexus Entry Liaison KNOWS Demo Player (0.65)"
+    assert "Visitor Log Registration" in payload.state_summary
+    assert "Nexus City" in payload.state_summary
 
 
 def test_live_memory_payload_normalizes_wrong_scalar_and_mapping_types():
     payload = CouncilMemoryManagerPayload.model_validate(
         {
             "memory_summary": "No significant memories recorded yet.",
-            "focus_memories": "Player's intent: help arrival records at Nexus Gate.",
-            "relation_summary": "Gate Steward Rikka knows Demo Player.",
-            "state_summary": {"location": "Nexus Gate", "active_quest": "First Stabilizer Request"},
+            "focus_memories": "Player's intent: help arrival records at Nexus City.",
+            "relation_summary": "Nexus Entry Liaison knows Demo Player.",
+            "state_summary": {"location": "Nexus City", "active_quest": "Visitor Log Registration"},
         }
     )
 
-    assert payload.focus_memories == ["Player's intent: help arrival records at Nexus Gate."]
-    assert "location: Nexus Gate" in payload.state_summary
-    assert "active_quest: First Stabilizer Request" in payload.state_summary
+    assert payload.focus_memories == ["Player's intent: help arrival records at Nexus City."]
+    assert "location: Nexus City" in payload.state_summary
+    assert "active_quest: Visitor Log Registration" in payload.state_summary
 
 
 def test_live_npc_payload_shape_is_normalized_before_validation():
@@ -610,9 +610,9 @@ def test_live_world_progress_payload_shape_is_normalized_before_validation():
         {
             "event_type": "player.turn.resolved",
             "scene_move": "advance",
-            "world_tags": ["nexus_gate_activity", "stabilizer_request_progress"],
+            "world_tags": ["nexus_city_activity", "stabilizer_request_progress"],
             "outcome_band": "steady",
-            "memory_drafts": ["Demo Player helped Gate Steward Rikka with arrival records."],
+            "memory_drafts": ["Demo Player helped Nexus Entry Liaison with arrival records."],
             "scene_pressure": "eval: slight escalation",
             "consequence_tags": ["earned_trust", "quest_progress"],
             "canonical_event_draft": "Rikka acknowledges the help and marks the request forward.",
@@ -622,11 +622,11 @@ def test_live_world_progress_payload_shape_is_normalized_before_validation():
                 "exploration_relationship": {"label": "Ask Rikka about the gate", "summary": "Learn more."},
             },
         },
-        context={"input_payload": {"world_id": "gestaloka_reference", "input_text": "Nexus Gateで到着記録を助ける"}},
+        context={"input_payload": {"world_id": "gestaloka_world_reference", "input_text": "Nexus Cityで到着記録を助ける"}},
     )
 
-    assert payload.event_payload["world_id"] == "gestaloka_reference"
-    assert payload.memories[0].text == "Demo Player helped Gate Steward Rikka with arrival records."
+    assert payload.event_payload["world_id"] == "gestaloka_world_reference"
+    assert payload.memories[0].text == "Demo Player helped Nexus Entry Liaison with arrival records."
     assert payload.world_tags == ["aid_local"]
     assert payload.consequence_tags == ["earned_trust"]
     assert payload.resolution_summary == "Rikka acknowledges the help and marks the request forward."

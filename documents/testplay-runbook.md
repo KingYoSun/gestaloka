@@ -17,7 +17,7 @@ Codex app から Playwright MCP で実施する場合は、補助手順
 - Langfuse: `http://localhost:3001`
 - Demo login: `demo / demo-password`
 - Bundled playable packs:
-  - `GESTALOKA Reference / Nexus Foundation`
+  - `GESTALOKA World Reference / Layered World Foundation`
 - 公式 smoke 検証は Make target 経由で `MODEL_PROVIDER=stub` / `EMBEDDING_PROVIDER=stub` 相当の設定を使う。
 - 探索的な手動テストプレイでは `.env` の live provider 設定を使う。live provider を使わない確認は、`.env` 側で stub provider に寄せる。
 
@@ -58,37 +58,37 @@ docker compose up --build
 - `http://localhost:8000/health` が `status` と database / projection / world pack health を返す。
 - `http://localhost:3001` で Langfuse が開ける。
 
-## 4. GESTALOKA Reference 手動テスト
+## 4. GESTALOKA World Reference 手動テスト
 
 1. Player UI で新しい session を開始できる状態にする。必要なら page refresh する。
-2. world selector で `GESTALOKA Reference` を選択して session を開始する。
+2. world selector で `GESTALOKA World Reference` を選択して session を開始する。
 3. 以下を確認する。
    - WebSocket status が open
-   - session pack が `GESTALOKA Reference (gestaloka_reference) / Nexus Foundation`
-   - ops stream に `session.connected` と `GESTALOKA Reference`
+   - session pack が `GESTALOKA World Reference (gestaloka_world_reference) / Layered World Foundation`
+   - ops stream に `session.connected` と `GESTALOKA World Reference`
    - ops stream に `missing world context` が出ない
    - ops stream に不適切な `global` 表示が出ない
-   - current place が `Nexus Gate`
-   - active quest が `First Stabilizer Request`
+   - current place が `Nexus City`
+   - active quest が `Visitor Log Registration`
    - quest progress が `0/2`
-   - local figures に `Gate Steward Rikka`
-   - nearby routes または choices に `Lift Tower Concourse`
+   - local figures に `Nexus Entry Liaison`
+   - nearby routes または choices に `Universal Library`
    - faction standing が表示される
 4. `progress` choice を 2 回実行する。
 5. 以下を確認する。
    - quest progress が `2/2`
-   - inventory に `Nexus Writ`
-   - `Nexus Writ` が route unlock 用 effect を持つ
+   - inventory に `Visitor Log Seal`
+   - `Visitor Log Seal` が route unlock 用 effect を持つ
    - choice list に writ / breach / restoration 系の選択肢
 6. `progress` choice を実行する。
 7. 以下を確認する。
    - active quest が `Breach Restoration`
-   - quest stage が `breach_restoration`
-   - inventory 上で `Nexus Writ` が used 扱い
-   - nearby routes に `Oblivion Breach`
+   - quest stage が `oblivion_survey`
+   - inventory 上で `Visitor Log Seal` が used 扱い
+   - nearby routes に `Oblivion Regions`
 8. さらに `progress` choice を実行する。
 9. 以下を確認する。
-   - current place が `Oblivion Breach`
+   - current place が `Oblivion Regions`
    - recent travel history に breach / restoration 系の変化
    - recent consequence history または recent scene history に Shared World Core の反映
    - faction standing、relationship summary、recent world beats のいずれかに turn 結果が反映される
@@ -98,7 +98,7 @@ docker compose up --build
 Admin UI で以下を確認する。
 
 - Dashboard に pack status、template 数、projection pending、release summary が表示される。
-- Packs で `GESTALOKA Reference` が表示され、Catalog の pack 数が 1、template 数が 1、failure が 0 相当で読める。
+- Packs で `GESTALOKA World Reference` が表示され、Catalog の pack 数が 1、template 数が 1、failure が 0 相当で読める。
 - Packs から scaffold 作成、archive import、publish status 更新のフォームや操作が見える。
 - World Templates で pack/template context と publish status が表示される。
 - Users & Permissions で app-level PostgreSQL permission を管理する画面が表示される。Keycloak Admin API の user creation 画面ではない。

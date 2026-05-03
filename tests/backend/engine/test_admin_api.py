@@ -107,8 +107,8 @@ def test_admin_pack_and_template_lists_are_available(client, auth_headers):
     assert packs.status_code == 200
     assert templates.status_code == 200
     assert users.status_code == 200
-    assert packs.json()["items"][0]["pack_id"] == "gestaloka_reference"
-    assert templates.json()["items"][0]["template_id"] == "nexus_foundation"
+    assert packs.json()["items"][0]["pack_id"] == "gestaloka_world_reference"
+    assert templates.json()["items"][0]["template_id"] == "layered_world_foundation"
     assert all("raw" not in item for item in templates.json()["items"])
 
 
@@ -116,8 +116,8 @@ def test_admin_llm_usage_returns_model_timeline(client, container, auth_headers)
     session_response = client.post(
         "/sessions",
         json={
-            "world_id": "gestaloka_reference",
-            "world_name": "GESTALOKA: Nexus Foundation",
+            "world_id": "gestaloka_world_reference",
+            "world_name": "GESTALOKA: Layered World Foundation",
             "player_display_name": "Demo Player",
         },
         headers=auth_headers,

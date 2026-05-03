@@ -42,6 +42,7 @@ from app.modules.session.progress import elapsed_ms_since, emit_turn_progress
 from app.modules.world_memory.service import build_retrieval_query_text, retrieval_trace_to_dict
 from app.modules.world_state.branch import BranchCommitDraft, BranchPressureEngine, ensure_route_pressures
 from app.modules.world_state.consequence import fallback_consequence_tags, scene_tone_for_band
+from app.modules.world_state.entity_generation import materialize_entity_drafts
 from app.modules.world_state.rules import normalize_world_tags
 from app.modules.world_state.shared_consequence import SharedConsequenceResult, apply_shared_consequence_rules
 from app.modules.world_state.timeline import (
@@ -1452,6 +1453,24 @@ def _resolve_narrative_turn_for_session(
     )
     db.add(event)
     db.flush()
+    with _turn_progress_span("entity_materialization"):
+        entity_updates = [
+            item.payload()
+            for item in materialize_entity_drafts(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                session_id=game_session.id,
+                source_event_id=event.id,
+                current_location_id=prepared.location_id,
+                drafts=getattr(payload, "entity_drafts", []),
+            )
+        ]
+    if entity_updates:
+        event.payload = {
+            **event.payload,
+            "entity_updates": entity_updates,
+        }
     with _turn_progress_span("dynamic_quest_offer"):
         resolution_summary = str(getattr(payload, "resolution_summary", "") or "")
         suppress_primary_offer = _session_has_live_quest(session_state, statuses={"active", "paused"})
@@ -1612,6 +1631,7 @@ def _resolve_narrative_turn_for_session(
         "inventory_updates": state_updates["inventory_updates"],
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "entity_updates": entity_updates,
         "resource_constraints": resource_constraints,
         "skipped_shared_resources": skipped_resources,
         "scene_move": getattr(payload, "scene_move", None),
@@ -1641,6 +1661,7 @@ def _resolve_narrative_turn_for_session(
         "faction_updates": combined_faction_updates,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
+        "entity_updates": entity_updates,
         "resource_constraints": resource_constraints,
         "skipped_shared_resources": skipped_resources,
     }
