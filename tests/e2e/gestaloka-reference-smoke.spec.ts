@@ -62,8 +62,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("toggle-free-text").click();
   await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input|SP/);
   await page.getByTestId("toggle-choice-mode").click();
-  await expect(page.getByTestId("choice-progress")).toContainText("Help the person in need and create the next opening");
-  await expect(page.getByTestId("choice-explore")).toContainText("Go to Lift Tower Concourse and check the old records");
+  await expect(page.getByTestId("choice-progress")).toContainText("Help Rikka steady the disturbed arrival record");
+  await expect(page.getByTestId("choice-explore")).toContainText("Go upstairs and learn how the city keeps records");
 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
