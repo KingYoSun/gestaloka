@@ -1266,22 +1266,26 @@ class OpenAICompatibleProvider(BaseModelProvider):
         temperature: float,
     ) -> ProviderResponse:
         context_sections = self._context_sections(input_payload)
+        system_content = self._system_content(prompt)
         cached_content = self._explicit_cached_content_name(
             model_id=model_id,
             context_sections=context_sections,
+            system_content=system_content,
         )
         body: dict[str, Any] = {
             "model": model_id,
             "messages": self._messages(
                 prompt=prompt,
+                system_content=system_content,
                 input_payload=input_payload,
                 context_sections=context_sections,
                 omit_static_context=cached_content is not None,
+                omit_system_instruction=cached_content is not None,
             ),
             "temperature": temperature,
         }
         if cached_content is not None:
-            body["cached_content"] = cached_content
+            body["extra_body"] = {"google": {"cached_content": cached_content}}
         response_format = self._response_format(prompt=prompt, response_model=response_model)
         if response_format is not None:
             body["response_format"] = response_format
@@ -1313,19 +1317,15 @@ class OpenAICompatibleProvider(BaseModelProvider):
         *,
         prompt: PromptDefinition,
         input_payload: dict[str, Any],
+        system_content: str | None = None,
         context_sections: PromptContextSections | None = None,
         omit_static_context: bool = False,
+        omit_system_instruction: bool = False,
     ) -> list[dict[str, str]]:
-        return [
-            {
-                "role": "system",
-                "content": "\n\n".join(
-                    [
-                        prompt.instructions.strip(),
-                        "Return a JSON object only.",
-                    ]
-                ),
-            },
+        messages: list[dict[str, str]] = []
+        if not omit_system_instruction:
+            messages.append({"role": "system", "content": system_content or self._system_content(prompt)})
+        messages.append(
             {
                 "role": "user",
                 "content": (
@@ -1338,7 +1338,17 @@ class OpenAICompatibleProvider(BaseModelProvider):
                     else json.dumps(input_payload, ensure_ascii=False, indent=2, sort_keys=True)
                 ),
             },
-        ]
+        )
+        return messages
+
+    @staticmethod
+    def _system_content(prompt: PromptDefinition) -> str:
+        return "\n\n".join(
+            [
+                prompt.instructions.strip(),
+                "Return a JSON object only.",
+            ]
+        )
 
     def _cache_friendly_user_content(
         self,
@@ -1398,6 +1408,7 @@ class OpenAICompatibleProvider(BaseModelProvider):
         *,
         model_id: str,
         context_sections: PromptContextSections,
+        system_content: str,
     ) -> str | None:
         if not self.settings.openai_compat_explicit_context_cache_enabled:
             return None
@@ -1405,11 +1416,12 @@ class OpenAICompatibleProvider(BaseModelProvider):
             return None
 
         static_context_text = self._static_cache_text(context_sections)
-        estimated_token_count = self._estimated_token_count(static_context_text)
+        cache_fingerprint_text = "\n".join([system_content, static_context_text])
+        estimated_token_count = self._estimated_token_count(cache_fingerprint_text)
         if estimated_token_count < self._minimum_cache_tokens(model_id):
             return None
 
-        context_hash = hashlib.sha256(static_context_text.encode("utf-8")).hexdigest()
+        context_hash = hashlib.sha256(cache_fingerprint_text.encode("utf-8")).hexdigest()
         now = datetime.now(timezone.utc)
         ttl_seconds = max(int(self.settings.openai_compat_context_cache_ttl_seconds), 60)
         expires_at = now + timedelta(seconds=ttl_seconds)
@@ -1426,6 +1438,7 @@ class OpenAICompatibleProvider(BaseModelProvider):
             cache_name = self._create_gemini_context_cache(
                 model_id=model_id,
                 static_context_text=static_context_text,
+                system_content=system_content,
                 context_hash=context_hash,
                 ttl_seconds=ttl_seconds,
             )
@@ -1530,6 +1543,7 @@ class OpenAICompatibleProvider(BaseModelProvider):
         *,
         model_id: str,
         static_context_text: str,
+        system_content: str,
         context_hash: str,
         ttl_seconds: int,
     ) -> str | None:
@@ -1537,6 +1551,7 @@ class OpenAICompatibleProvider(BaseModelProvider):
         config = genai_types.CreateCachedContentConfig(
             display_name=f"gestaloka-{context_hash[:16]}",
             contents=self._cached_content_parts(static_context_text),
+            system_instruction=system_content,
             ttl=f"{ttl_seconds}s",
         )
         cache = client.caches.create(model=model_id, config=config)

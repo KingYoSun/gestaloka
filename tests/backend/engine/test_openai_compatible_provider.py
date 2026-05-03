@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -335,15 +336,55 @@ def test_openai_compatible_provider_reuses_explicit_context_cache(monkeypatch, t
 
     cache_client = _FakeGenAIClient.instances[-1]
     assert len(cache_client.caches.create_calls) == 1
+    cache_config = cache_client.caches.create_calls[0]["config"]
+    assert cache_config.kwargs["system_instruction"] == "Answer with structured JSON.\n\nReturn a JSON object only."
     first_body = _FakeClient.instances[-1].requests[-2]["json"]
     second_body = _FakeClient.instances[-1].requests[-1]["json"]
-    assert first_body["cached_content"] == "cachedContents/1"
-    assert second_body["cached_content"] == "cachedContents/1"
-    assert "## cache_static_context" not in first_body["messages"][1]["content"]
+    assert first_body["extra_body"]["google"]["cached_content"] == "cachedContents/1"
+    assert second_body["extra_body"]["google"]["cached_content"] == "cachedContents/1"
+    assert "cached_content" not in first_body
+    assert "cached_content" not in second_body
+    assert [message["role"] for message in first_body["messages"]] == ["user"]
+    assert "## cache_static_context" not in first_body["messages"][0]["content"]
     with session_factory() as db:
         rows = db.execute(select(LLMContextCacheEntry)).scalars().all()
     assert len(rows) == 1
     assert rows[0].cache_name == "cachedContents/1"
+
+
+def test_openai_compatible_provider_scopes_explicit_cache_by_system_instruction(monkeypatch, tmp_path):
+    _FakeClient.instances.clear()
+    _FakeGenAIClient.instances.clear()
+    monkeypatch.setattr(llm_service.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(llm_service, "genai", type("FakeGenAI", (), {"Client": _FakeGenAIClient}))
+    monkeypatch.setattr(llm_service, "genai_types", _FakeGenAITypes)
+
+    session_factory = _explicit_cache_session_factory(tmp_path)
+    provider = OpenAICompatibleProvider(
+        _settings(
+            openai_compat_response_format="json_object",
+            openai_compat_explicit_context_cache_enabled=True,
+        ),
+        session_factory=session_factory,
+    )
+    first_prompt = _prompt()
+    second_prompt = replace(first_prompt, instructions="Answer with a different structured JSON policy.")
+    for prompt in (first_prompt, second_prompt):
+        provider.generate(
+            prompt=prompt,
+            response_model=_ProviderPayload,
+            model_id="gemini-3-flash-preview",
+            lane="main_lane",
+            input_payload=_large_static_payload(),
+            temperature=0.3,
+        )
+
+    cache_client = _FakeGenAIClient.instances[-1]
+    assert len(cache_client.caches.create_calls) == 2
+    first_body = _FakeClient.instances[-1].requests[-2]["json"]
+    second_body = _FakeClient.instances[-1].requests[-1]["json"]
+    assert first_body["extra_body"]["google"]["cached_content"] == "cachedContents/1"
+    assert second_body["extra_body"]["google"]["cached_content"] == "cachedContents/2"
 
 
 def test_openai_compatible_provider_skips_explicit_cache_under_minimum(monkeypatch, tmp_path):
@@ -369,6 +410,7 @@ def test_openai_compatible_provider_skips_explicit_cache_under_minimum(monkeypat
     assert _FakeGenAIClient.instances == []
     body = _FakeClient.instances[-1].requests[-1]["json"]
     assert "cached_content" not in body
+    assert "extra_body" not in body
     assert "## cache_static_context" in body["messages"][1]["content"]
 
 
@@ -404,6 +446,7 @@ def test_openai_compatible_provider_falls_back_when_explicit_cache_create_fails(
 
     body = _FakeClient.instances[-1].requests[-1]["json"]
     assert "cached_content" not in body
+    assert "extra_body" not in body
     assert "## cache_static_context" in body["messages"][1]["content"]
 
 
