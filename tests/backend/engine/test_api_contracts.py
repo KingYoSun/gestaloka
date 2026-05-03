@@ -365,6 +365,37 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
     assert {item.scope for item in profile_memories} == {"actor", "world"}
 
 
+def test_start_session_reuses_latest_active_session_and_restores_story(client, auth_headers):
+    profile_response = client.post(
+        "/worlds/gestaloka_reference/player-profiles",
+        json={"display_name": "Resume Player"},
+        headers=auth_headers,
+    )
+    assert profile_response.status_code == 200
+    session_payload = {
+        "world_id": "gestaloka_reference",
+        "player_actor_id": profile_response.json()["actor_id"],
+    }
+    first_session = client.post("/sessions", json=session_payload, headers=auth_headers)
+    assert first_session.status_code == 200
+    session_id = first_session.json()["session_id"]
+
+    _, turn_payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "safe"},
+    )
+    resumed_session = client.post("/sessions", json=session_payload, headers=auth_headers)
+    assert resumed_session.status_code == 200
+    assert resumed_session.json()["session_id"] == session_id
+
+    latest_story = client.get(f"/sessions/{session_id}/story?limit=1", headers=auth_headers)
+    assert latest_story.status_code == 200
+    assert latest_story.json()["items"][0]["turn_id"] == turn_payload["turn_id"]
+    assert latest_story.json()["items"][0]["narrative"] == turn_payload["narrative"]
+
+
 def test_player_profile_icon_image_data_url_is_validated(client, auth_headers):
     unsupported_mime = client.post(
         "/worlds/gestaloka_reference/player-profiles",
@@ -1240,6 +1271,46 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
         assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
     assert payload["scene_updates"] == []
+
+
+def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_headers):
+    session_response = client.post(
+        "/sessions",
+        json=engine_session_payload(),
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+    initial_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
+    initial_choice_labels = [item["label"] for item in initial_state["next_choices"]]
+
+    _, safe_payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "safe"},
+    )
+    assert safe_payload["quest_updates"] == []
+    assert [item["choice_id"] for item in safe_payload["next_choices"]] == ["safe", "progress", "explore"]
+    assert [item["label"] for item in safe_payload["next_choices"]] != initial_choice_labels
+
+    _, explore_payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "explore"},
+    )
+    assert explore_payload["quest_updates"] == []
+    assert [item["choice_id"] for item in explore_payload["next_choices"]] == ["safe", "progress", "explore"]
+
+    _, progress_payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "progress"},
+    )
+    assert progress_payload["quest_updates"][0]["status"] == "offered"
+    assert progress_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
 
 
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):

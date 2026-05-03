@@ -78,7 +78,12 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("quest-unlock-requirements")).toHaveText("");
   await expect(page.getByTestId("quest-unlock-requirements")).toHaveAttribute("data-value", /\S/);
 
-  await page.getByTestId("active-quest").getByRole("button", { name: /^(Accept|受諾)$/i }).click();
+  await page.getByTestId("quest-list-open").click();
+  await expect(page.getByTestId("quest-list-dialog")).toBeVisible({ timeout: slowTimeout });
+  await expect(page.getByTestId("quest-list-dialog").getByRole("button", { name: /^(Accept|受諾)$/i })).toBeVisible({
+    timeout: slowTimeout,
+  });
+  await page.getByTestId("quest-list-dialog").getByRole("button", { name: /^(Accept|受諾)$/i }).click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });

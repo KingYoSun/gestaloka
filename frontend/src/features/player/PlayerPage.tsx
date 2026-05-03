@@ -1035,7 +1035,7 @@ function StoryHistory({ runtime }: PlayerPageProps) {
   });
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const baseStoryItems = runtime.storyItems.length ? runtime.storyItems : fallbackStoryItems(runtime, t("player.story.inProgress"));
+  const baseStoryItems = runtime.storyItems.length ? runtime.storyItems : fallbackStoryItems(runtime, t("player.story.noTurnsYet"));
   const storyItems =
     runtime.streamingStoryItem && !baseStoryItems.some((item) => item.turn_id && item.turn_id === runtime.streamingStoryItem?.turn_id)
       ? [...baseStoryItems, runtime.streamingStoryItem]
@@ -1181,9 +1181,7 @@ function StoryEntry({ item, latest }: { item: StoryHistoryItem; latest: boolean 
 }
 
 function fallbackStoryItems(runtime: GestalokaRuntime, fallbackText: string): StoryHistoryItem[] {
-  const { latestConsequenceSummary, latestNarrative, latestReaction, sessionState } = runtime;
-  const scene = sessionState?.current_scene;
-  const location = sessionState?.current_location ?? sessionState?.location ?? null;
+  const { latestConsequenceSummary, latestNarrative, latestReaction } = runtime;
   return [
     {
       event_id: "fallback",
@@ -1191,10 +1189,10 @@ function fallbackStoryItems(runtime: GestalokaRuntime, fallbackText: string): St
       canonical_sequence: null,
       occurred_at: new Date(0).toISOString(),
       input_mode: "",
-      narrative: latestNarrative || scene?.summary || location?.description || fallbackText,
+      narrative: latestNarrative || fallbackText,
       reaction: latestReaction,
       consequence: latestConsequenceSummary,
-      scene_summary: scene?.summary ?? "",
+      scene_summary: "",
     },
   ];
 }
@@ -1485,6 +1483,7 @@ function ChoiceList({
 function QuestBlock({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
   const { activeQuest, sessionState, turnPending, handleQuestAction } = runtime;
+  const [questListOpen, setQuestListOpen] = useState(false);
   const journal = sessionState?.quest_journal ?? [];
   const displayLabel = sessionState?.quest_display_state?.label || t("player.quest.exploring");
   const visibleQuests = journal.filter((item) => item.status === "offered" || item.status === "active" || item.status === "paused");
@@ -1494,6 +1493,10 @@ function QuestBlock({ runtime }: PlayerPageProps) {
     <Card className="grid min-w-0 gap-3 p-4" data-testid="active-quest">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.quest")}</h2>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setQuestListOpen(true)} data-testid="quest-list-open">
+          <ListChecks aria-hidden="true" />
+          {t("player.quest.list")}
+        </Button>
       </div>
       {primaryQuest ? (
         <div className="grid min-w-0 gap-3">
@@ -1537,7 +1540,96 @@ function QuestBlock({ runtime }: PlayerPageProps) {
       ) : (
         <p className="text-sm leading-5 text-muted-foreground">{displayLabel}</p>
       )}
+      {questListOpen ? (
+        <QuestListDialog
+          quests={visibleQuests}
+          turnPending={turnPending}
+          onClose={() => setQuestListOpen(false)}
+          onQuestAction={(action, assignmentId) => void handleQuestAction(action, assignmentId)}
+        />
+      ) : null}
     </Card>
+  );
+}
+
+type QuestAction = "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest";
+
+function QuestListDialog({
+  onClose,
+  onQuestAction,
+  quests,
+  turnPending,
+}: {
+  onClose: () => void;
+  onQuestAction: (action: QuestAction, assignmentId: string) => void;
+  quests: QuestSummary[];
+  turnPending: boolean;
+}) {
+  const { t } = useTranslation();
+
+  function handleAction(action: QuestAction, assignmentId: string) {
+    onQuestAction(action, assignmentId);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-4 max-[640px]:items-end max-[640px]:p-0" role="presentation">
+      <section
+        role="dialog"
+        aria-labelledby="quest-list-dialog-title"
+        className="grid max-h-[min(80vh,680px)] w-full max-w-[560px] min-w-0 grid-rows-[auto_minmax(0,1fr)] gap-4 rounded-lg border border-border bg-card p-5 text-card-foreground shadow-lg max-[640px]:max-h-[85vh] max-[640px]:max-w-none max-[640px]:rounded-b-none max-[640px]:border-b-0"
+        data-testid="quest-list-dialog"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <h2 id="quest-list-dialog-title" className="text-base font-semibold leading-6 text-foreground">
+            {t("player.quest.listTitle")}
+          </h2>
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")} disabled={turnPending}>
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="scrollbar-gestaloka min-h-0 overflow-y-auto pr-1">
+          {quests.length ? (
+            <ul className="grid gap-3">
+              {quests.map((quest) => (
+                <li key={quest.assignment_id} className="grid min-w-0 gap-3 rounded-md border border-border bg-secondary p-3" data-testid={`quest-list-item-${quest.assignment_id}`}>
+                  <div className="grid min-w-0 gap-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <p className="min-w-0 break-words font-bold leading-6 text-foreground">{quest.title}</p>
+                      <span className="rounded border border-border bg-card px-2 py-0.5 text-xs font-semibold leading-[18px] text-muted-foreground">
+                        {t(`player.quest.status.${quest.status}`, { defaultValue: quest.status })}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      {quest.progress}/{quest.progress_target}
+                    </p>
+                    {quest.latest_summary ? <p className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{quest.latest_summary}</p> : null}
+                  </div>
+                  {quest.available_actions?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {quest.available_actions.map((action) => (
+                        <Button
+                          key={action}
+                          type="button"
+                          variant={action === "decline_quest" ? "secondary" : "default"}
+                          disabled={turnPending}
+                          onClick={() => handleAction(action as QuestAction, quest.assignment_id)}
+                        >
+                          <ListChecks aria-hidden="true" />
+                          {t(`player.quest.actions.${action}`)}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm leading-5 text-muted-foreground">{t("player.quest.empty")}</p>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
-from app.models.entities import Actor, Event, LLMRun, OutboxEvent, PlayerProfile, Session as GameSession, SPLedgerEntry, Turn, new_id
+from app.models.entities import Actor, Event, LLMRun, Location, OutboxEvent, PlayerProfile, Session as GameSession, SPLedgerEntry, Turn, new_id
 from app.modules.world_pack.service import resolve_world_pack
 from app.modules.actor.service import (
     ensure_relationship,
@@ -179,14 +179,65 @@ def create_session_for_user(
     if player_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player profile not found")
     player_actor, profile = player_row
-    if player_actor.current_location_id != starter_location.id:
-        player_actor.current_location_id = starter_location.id
-        db.flush()
     seeded = ensure_world_slice_seed(
         db,
         world_id=world_id,
         player_actor_id=player_actor.id,
     )
+    existing_session = db.execute(
+        select(GameSession)
+        .where(
+            GameSession.world_id == world.id,
+            GameSession.player_actor_id == player_actor.id,
+            GameSession.status == "active",
+        )
+        .order_by(GameSession.updated_at.desc(), GameSession.created_at.desc(), GameSession.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if existing_session is not None:
+        current_location_id = player_actor.current_location_id or starter_location.id
+        current_location = db.execute(
+            select(Location).where(Location.world_id == world.id, Location.id == current_location_id)
+        ).scalar_one_or_none() or starter_location
+        guide_npc = get_or_create_guide_npc(db, world_id, location_id=current_location.id)
+        ensure_relationship(
+            db,
+            world_id=world_id,
+            from_actor_id=player_actor.id,
+            to_actor_id=guide_npc.id,
+            relationship_type="KNOWS",
+            strength=0.55,
+        )
+        ensure_relationship(
+            db,
+            world_id=world_id,
+            from_actor_id=guide_npc.id,
+            to_actor_id=player_actor.id,
+            relationship_type="KNOWS",
+            strength=0.55,
+        )
+        lock_player_profile(profile)
+        profile_payload = player_profile_to_dict(player_actor, profile)
+        sync_active_broadcast_deliveries(
+            db,
+            world_id=world.id,
+            session_id=existing_session.id,
+            actor_id=player_actor.id,
+            location_id=current_location.id,
+        )
+        websocket_url = f"{container.settings.public_ws_base_url.rstrip('/')}/ws/sessions/{existing_session.id}"
+        return SessionCreationResult(
+            session=existing_session,
+            world=world,
+            player_actor=player_actor,
+            player_profile=profile_payload,
+            guide_npc=guide_npc,
+            starter_location=current_location,
+            websocket_url=websocket_url,
+        )
+    if player_actor.current_location_id != starter_location.id:
+        player_actor.current_location_id = starter_location.id
+        db.flush()
     guide_npc = get_or_create_guide_npc(db, world_id, location_id=starter_location.id)
     ensure_relationship(
         db,
@@ -1452,10 +1503,19 @@ def _resolve_narrative_turn_for_session(
         )
         public_branch_updates, crossroads_summary = _branch_response_from_state(post_state)
     with _turn_progress_span("choice_generation"):
-        next_choices = _canonicalize_next_choices(
-            [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices],
-            post_state.get("next_choices") or [],
-        )
+        post_state_choices = post_state.get("next_choices") or []
+        payload_choices = [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices]
+        previous_choices = session_state.get("next_choices") or []
+        if _choices_are_effectively_same(payload_choices, previous_choices):
+            next_choices = _canonicalize_next_choices(post_state_choices, post_state_choices)
+        else:
+            next_choices = _canonicalize_next_choices(payload_choices, post_state_choices)
+        if _choices_are_effectively_same(next_choices, previous_choices):
+            next_choices = _contextualize_repeated_choices(
+                next_choices,
+                input_text=input_text,
+                consequence_summary=str(payload.consequence_summary or scene_result["scene_summary"] or ""),
+            )
     turn.resolved_output = {
         **turn.resolved_output,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
@@ -3284,6 +3344,80 @@ def _canonicalize_next_choices(
             }
         )
     return normalized
+
+
+def _choice_signature(choice: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(choice.get("posture") or choice.get("choice_id") or "").strip(),
+        str(choice.get("label") or "").strip(),
+        str(choice.get("travel_target_key") or "").strip(),
+        str(choice.get("action_kind") or "narrative").strip(),
+    )
+
+
+def _choices_are_effectively_same(left: list[dict[str, Any]] | list[Any], right: list[dict[str, Any]] | list[Any]) -> bool:
+    left_choices = [item for item in left if isinstance(item, dict)]
+    right_choices = [item for item in right if isinstance(item, dict)]
+    if len(left_choices) != len(right_choices) or not left_choices:
+        return False
+    return {_choice_signature(item) for item in left_choices} == {_choice_signature(item) for item in right_choices}
+
+
+def _choices_look_english(choices: list[dict[str, Any]]) -> bool:
+    text = " ".join(str(item.get("label") or "") for item in choices)
+    if not text:
+        return False
+    ascii_letters = sum(1 for char in text if char.isascii() and char.isalpha())
+    non_ascii = sum(1 for char in text if not char.isascii())
+    return ascii_letters > non_ascii
+
+
+def _contextualize_repeated_choices(
+    choices: list[dict[str, Any]],
+    *,
+    input_text: str,
+    consequence_summary: str,
+) -> list[dict[str, Any]]:
+    context = " ".join((consequence_summary or input_text).split()).strip()
+    if len(context) > 120:
+        context = f"{context[:117]}..."
+    if not context:
+        context = "直前の結果"
+    english = _choices_look_english(choices)
+    refreshed: list[dict[str, Any]] = []
+    for choice in choices:
+        item = dict(choice)
+        if str(item.get("action_kind") or "narrative") != "narrative":
+            refreshed.append(item)
+            continue
+        posture = str(item.get("posture") or item.get("choice_id") or "")
+        if english:
+            if posture == "safe":
+                item["label"] = "Read the latest result before acting again"
+                item["summary"] = f"Pause and judge what changed: {context}"
+                item["canonical_input_text"] = f"Read the latest result before acting again: {context}"
+            elif posture == "progress":
+                item["label"] = "Use the latest result to push the scene forward"
+                item["summary"] = f"Act from the concrete result: {context}"
+                item["canonical_input_text"] = f"Use the latest result to push the scene forward: {context}"
+            else:
+                item["label"] = "Trace who noticed the latest result"
+                item["summary"] = f"Explore where the result is spreading: {context}"
+                item["canonical_input_text"] = f"Trace who noticed the latest result: {context}"
+        elif posture == "safe":
+            item["label"] = "直前の結果を受け止め、次に動く前に場を読む"
+            item["summary"] = f"何が変わったかを確かめる: {context}"
+            item["canonical_input_text"] = f"直前の結果を受け止め、次に動く前に場を読む: {context}"
+        elif posture == "progress":
+            item["label"] = "直前の結果を足場に、場面を次へ進める"
+            item["summary"] = f"具体的な結果から前へ動く: {context}"
+            item["canonical_input_text"] = f"直前の結果を足場に、場面を次へ進める: {context}"
+        else:
+            item["label"] = "直前の結果が誰に届いたかを探る"
+            item["summary"] = f"結果の広がり方を追う: {context}"
+            item["canonical_input_text"] = f"直前の結果が誰に届いたかを探る: {context}"
+        refreshed.append(item)
+    return refreshed
 
 
 def _select_choice(choices: list[dict[str, Any]], choice_id: str) -> dict[str, Any] | None:

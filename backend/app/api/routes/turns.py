@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ensure_primary_runtime, get_container, get_current_user, get_db
 from app.core.container import AppContainer
 from app.core.realtime import realtime_hub, with_world_context
-from app.models.entities import Session as GameSession, TurnResolutionJob
+from app.models.entities import Event, Session as GameSession, Turn, TurnResolutionJob
 from app.modules.actor.service import get_player_profile, normalize_play_language
 from app.modules.identity.oidc import UserIdentity
 from app.modules.localization.service import localize_turn_payload
@@ -253,6 +253,32 @@ def _localize_turn_content(
         db.close()
 
 
+def _persist_player_facing_turn_text(container: AppContainer, result, content: dict[str, object]) -> None:
+    updates = {
+        "narrative": str(content.get("narrative") or ""),
+        "npc_reaction": str(content.get("npc_reaction") or ""),
+        "consequence_summary": str(content.get("consequence_summary") or ""),
+        "scene_summary": str(content.get("scene_summary") or ""),
+    }
+    if not any(updates.values()):
+        return
+    db = container.session_factory()
+    try:
+        turn = db.get(Turn, result.turn.id)
+        if turn is not None and isinstance(turn.resolved_output, dict):
+            turn.resolved_output = {**turn.resolved_output, **updates}
+        event = db.get(Event, result.event.id)
+        if event is not None and updates["narrative"]:
+            event.narrative = updates["narrative"]
+        db.commit()
+        if isinstance(result.turn.resolved_output, dict):
+            result.turn.resolved_output = {**result.turn.resolved_output, **updates}
+        if updates["narrative"]:
+            result.event.narrative = updates["narrative"]
+    finally:
+        db.close()
+
+
 async def _emit_response_localization_progress(
     *,
     session_id: str,
@@ -435,6 +461,7 @@ async def _resolve_turn_background(
             status="completed",
             started_at=localization_started_at,
         )
+        _persist_player_facing_turn_text(container, result, failure_payload)
         await _emit_turn_result_events(result, world_context, failure_payload)
         await realtime_hub.emit_with_world_context(
             session_id,
@@ -469,6 +496,7 @@ async def _resolve_turn_background(
         status="completed",
         started_at=localization_started_at,
     )
+    _persist_player_facing_turn_text(container, result, success_payload)
     await _emit_turn_result_events(result, world_context, success_payload)
     await realtime_hub.emit_with_world_context(
         session_id,

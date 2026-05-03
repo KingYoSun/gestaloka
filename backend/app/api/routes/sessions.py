@@ -12,7 +12,7 @@ from app.core.container import AppContainer
 from app.models.entities import Event, Session as GameSession, Turn
 from app.modules.actor.service import create_player_profile_for_user, get_player_profile_for_user, player_profile_to_dict
 from app.modules.identity.oidc import UserIdentity
-from app.modules.localization.service import localize_session_state, localize_turn_payload
+from app.modules.localization.service import localize_session_state
 from app.modules.session.service import create_session_for_user, get_session_state_for_user
 from app.modules.world_pack.service import (
     WorldAvailabilityError,
@@ -193,28 +193,6 @@ def get_session_story(
     page_rows = rows[:limit]
     ordered = list(reversed(page_rows))
     items = [_story_item(event, turn) for event, turn in ordered]
-    cache_db = container.session_factory()
-    try:
-        for item in items:
-            localized = localize_turn_payload(
-                cache_db,
-                container.model_router,
-                {
-                    "narrative": item["narrative"],
-                    "npc_reaction": item["reaction"],
-                    "consequence_summary": item["consequence"],
-                    "scene_summary": item["scene_summary"],
-                },
-                world_id=game_session.world_id,
-                actor_id=str(player_profile.get("actor_id") or ""),
-                play_language=dict(player_profile.get("play_language") or {}),
-            )
-            item["narrative"] = str(localized.get("narrative") or item["narrative"])
-            item["reaction"] = str(localized.get("npc_reaction") or item["reaction"])
-            item["consequence"] = str(localized.get("consequence_summary") or item["consequence"])
-            item["scene_summary"] = str(localized.get("scene_summary") or item["scene_summary"])
-    finally:
-        cache_db.close()
     next_before_sequence = min(
         (item["canonical_sequence"] for item in items if isinstance(item["canonical_sequence"], int)),
         default=None,

@@ -104,6 +104,7 @@ const resources = {
         },
         story: {
           inProgress: "進行中",
+          noTurnsYet: "まだ行動は記録されていません。選択肢か自由入力で最初の行動を決めてください。",
           reaction: "反応",
           consequence: "変化",
           sceneDetails: "場面説明",
@@ -119,8 +120,16 @@ const resources = {
         },
         quest: {
           exploring: "探索中...",
+          list: "一覧",
+          listTitle: "クエスト一覧",
+          empty: "現在操作できるクエストはありません。",
           offerDialogTitle: "新しいクエストが発生",
           offerDialogSummary: "概要",
+          status: {
+            offered: "提示中",
+            active: "進行中",
+            paused: "保留中",
+          },
           actions: {
             accept_quest: "受諾",
             decline_quest: "見送る",
@@ -294,6 +303,7 @@ const resources = {
         },
         story: {
           inProgress: "In progress",
+          noTurnsYet: "No actions have been recorded yet. Choose an option or enter an action to begin.",
           reaction: "Reaction",
           consequence: "Change",
           sceneDetails: "Scene details",
@@ -309,8 +319,16 @@ const resources = {
         },
         quest: {
           exploring: "Exploring...",
+          list: "List",
+          listTitle: "Quest List",
+          empty: "No currently actionable quests.",
           offerDialogTitle: "New quest available",
           offerDialogSummary: "Summary",
+          status: {
+            offered: "Offered",
+            active: "Active",
+            paused: "Paused",
+          },
           actions: {
             accept_quest: "Accept",
             decline_quest: "Decline",

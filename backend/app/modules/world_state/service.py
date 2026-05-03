@@ -2280,6 +2280,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     inventory = session_state.get("inventory") or []
     relationships = session_state.get("relationships") or []
     active_threads = session_state.get("active_consequence_threads") or []
+    recent_consequence_history = session_state.get("recent_consequence_history") or []
     current_location = session_state.get("current_location") or session_state.get("location") or {}
     current_location_name = str(current_location.get("name") or "the scene")
     current_location_key = str(current_location.get("key") or starter_location_key)
@@ -2340,6 +2341,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     leading_route = str((nearby_routes[0] or {}).get("summary") or "") if nearby_routes else ""
     leading_travel = str(recent_travel_history[0] or "") if recent_travel_history else ""
     leading_branch_echo = str(recent_branch_echoes[0] or "") if recent_branch_echoes else ""
+    leading_consequence = str(recent_consequence_history[0] or "") if recent_consequence_history else ""
     dominant_branch = dominant_branch_key(route_pressures, world_pack=world_pack)
     dominant_branch_slot = branch_slot_for_key(world_pack, dominant_branch)
 
@@ -2679,6 +2681,38 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["label"] = "Follow the rumors and sightlines beneath the scene"
                     choice["summary"] = "Explore the situation and widen your understanding."
                     choice["canonical_input_text"] = f"Explore the mood and local concerns around {current_location_name}"
+
+    if leading_consequence or leading_world_beat or leading_murmur:
+        signal = leading_consequence or leading_world_beat or leading_murmur
+        for choice in (safe_choice, progress_choice, explore_choice):
+            if str(choice.get("action_kind") or "narrative") != "narrative":
+                continue
+            posture = str(choice.get("posture") or choice.get("choice_id") or "")
+            if english_play_language:
+                if posture == "safe":
+                    choice["label"] = "Read the change that just settled in the scene"
+                    choice["summary"] = f"Pause and judge the latest result: {signal}"
+                    choice["canonical_input_text"] = f"Read the latest change around {current_location_name}: {signal}"
+                elif posture == "progress":
+                    choice["label"] = "Act on the opening created by the last result"
+                    choice["summary"] = f"Use the latest result to move forward: {signal}"
+                    choice["canonical_input_text"] = f"Act on the opening created by the latest result: {signal}"
+                else:
+                    choice["label"] = "Trace who noticed the latest change"
+                    choice["summary"] = f"Explore how the result is spreading: {signal}"
+                    choice["canonical_input_text"] = f"Trace who noticed the latest change around {current_location_name}: {signal}"
+            elif posture == "safe":
+                choice["label"] = "直前の変化を受け止め、場の揺れを静かに読む"
+                choice["summary"] = f"直前の結果を急がず確かめる: {signal}"
+                choice["canonical_input_text"] = f"{current_location_name}で直前の変化を受け止め、場の揺れを静かに読む"
+            elif posture == "progress":
+                choice["label"] = "直前に生まれた糸口を使い、次の進展へ踏み込む"
+                choice["summary"] = f"直前の結果を足場に前へ進める: {signal}"
+                choice["canonical_input_text"] = "直前に生まれた糸口を使い、次の進展へ踏み込む"
+            else:
+                choice["label"] = "直前の変化が誰に届いたか、噂と視線をたどる"
+                choice["summary"] = f"結果の広がり方を探索する: {signal}"
+                choice["canonical_input_text"] = f"{current_location_name}で直前の変化が誰に届いたかを探る"
 
     for choice in (safe_choice, progress_choice, explore_choice):
         summary = " ".join(str(choice.get("summary") or "").split()).strip()

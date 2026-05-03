@@ -402,7 +402,9 @@ class CouncilWorldProgressPayload(BaseModel):
         )
         current_chapter = input_payload.get("current_chapter") if isinstance(input_payload.get("current_chapter"), dict) else {}
         in_epilogue = str((current_chapter or {}).get("chapter_kind") or "") == "epilogue"
-        if normalized["quest_offer"] is None and not has_live_quest and not in_epilogue:
+        requested_posture = str(input_payload.get("requested_choice_posture") or "").strip()
+        should_backfill_offer = requested_posture == "progress"
+        if normalized["quest_offer"] is None and not has_live_quest and not in_epilogue and should_backfill_offer:
             offer_title = _first_text(normalized.get("quest_title"), input_payload.get("intent_summary"), "A local thread emerges")
             offer_summary = _first_text(
                 normalized.get("resolution_summary"),
@@ -890,6 +892,20 @@ class GMCouncilService:
         )
         current_scene = request.session_state.get("current_scene") or {}
         current_chapter = request.session_state.get("chapter") or {}
+        quests = request.session_state.get("quests") if isinstance(request.session_state.get("quests"), list) else []
+        has_live_quest = any(
+            isinstance(item, dict) and str(item.get("status") or "") in {"offered", "active", "paused"}
+            for item in quests
+        )
+        quest_offer = None
+        if posture == "progress" and not has_live_quest and intent_payload.canonical_action_kind == "narrative":
+            quest_offer = {
+                "title": intent_summary[:120],
+                "description": consequence_summary,
+                "offered_summary": consequence_summary,
+                "completion_target": 3,
+                "constraints": [],
+            }
         return CouncilWorldProgressPayload(
             event_type="player.turn.resolved",
             event_payload={
@@ -926,6 +942,7 @@ class GMCouncilService:
                 "summary": f"{player_name}'s selected action carries through the current scene.",
                 "constraint_text": "Canonical choice fallback preserved same-world progression after schema failure.",
             },
+            quest_offer=quest_offer,
         )
 
     def _choice_intent_outcome(
@@ -1266,6 +1283,8 @@ class GMCouncilService:
             "reaction_outline": npc_payload.reaction_outline,
             "focus_memories": npc_payload.focus_memories,
             "intent_summary": intent_payload.intent_summary,
+            "requested_choice_posture": intent_payload.requested_choice_posture,
+            "selected_choice": request.selected_choice or {},
             "fail_forward": intent_payload.fail_forward,
             "consequence_summary": intent_payload.consequence_summary,
             "consequence_tags": intent_payload.consequence_tags,
@@ -1553,6 +1572,9 @@ class GMCouncilService:
             "world_tags": rules_payload.normalized_world_tags,
             "resolution_summary": world_progress_payload.resolution_summary,
             "consequence_summary": intent_payload.consequence_summary,
+            "intent_summary": intent_payload.intent_summary,
+            "requested_choice_posture": intent_payload.requested_choice_posture,
+            "selected_choice": request.selected_choice or {},
             "consequence_tags": world_progress_payload.consequence_tags,
             "outcome_band": world_progress_payload.outcome_band,
             "current_scene_summary": str(current_scene.get("summary") or ""),

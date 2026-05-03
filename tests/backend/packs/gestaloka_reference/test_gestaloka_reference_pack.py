@@ -229,7 +229,7 @@ def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_f
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload={"input_mode": "choice", "choice_id": "safe"},
     )
 
     _, second_payload, _ = post_turn_and_wait(
