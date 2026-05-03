@@ -286,6 +286,7 @@ class TurnResolutionPayload(BaseModel):
     quest_offer: dict[str, Any] | None = None
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
+    quest_resolution_hint: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

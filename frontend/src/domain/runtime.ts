@@ -142,7 +142,7 @@ export function mergeTurnResponseIntoSessionState(current: SessionState | null, 
       questJournal.push(update);
     }
   }
-  const liveQuest = questJournal.find((item) => item.status === "offered" || item.status === "active" || item.status === "paused");
+  const liveQuest = questJournal.find((item) => item.status === "active");
 
   const factions = [...current.factions];
   for (const update of response.faction_updates) {

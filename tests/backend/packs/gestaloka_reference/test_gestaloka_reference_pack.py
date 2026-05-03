@@ -4,10 +4,15 @@ import json
 
 from sqlalchemy import func, select
 
-from app.models.entities import ActorTitleProgress, Event, Location, SPLedgerEntry, SharedHistoryRecord, Turn, World
+from app.models.entities import ActorTitleProgress, Event, Location, QuestAssignment, SPLedgerEntry, SharedHistoryRecord, Turn, World
 from app.modules.llm_harness.service import PromptExecutionOutcome
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
-from app.modules.world_state.service import create_dynamic_quest_offer, _normalize_dynamic_quest_completion_target
+from app.modules.world_state.service import (
+    apply_quest_lifecycle_action,
+    create_dynamic_quest_offer,
+    record_quest_resolution_hint,
+    _normalize_dynamic_quest_completion_target,
+)
 from tests.backend.turn_async_helpers import post_turn_and_wait
 
 
@@ -200,6 +205,229 @@ def test_dynamic_quest_completion_target_normalizes_live_provider_values(client,
         )
 
     assert updates[0]["progress_target"] == 3
+
+
+def test_dynamic_quest_offer_merges_similar_live_quests_and_caps_offered_queue(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        first_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="dynamic-source-one",
+            offer={
+                "title": "訪問者の証を刻む",
+                "description": "ネクサス・ゲートで訪問者の証を正式に登録する。",
+                "offered_summary": "訪問者の証の登録が始まった。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        similar_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="dynamic-source-two",
+            offer={
+                "title": "訪問者証の登録を進める",
+                "description": "ネクサス・ゲートで訪問者の証を刻み、登録の流れを続ける。",
+                "offered_summary": "同じ登録の局面が既存クエストへ統合された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        assert similar_updates[0]["assignment_id"] == first_updates[0]["assignment_id"]
+        assert similar_updates[0]["action"] == "merged_existing"
+
+        distinct_offers = [
+            ("星図の奪還", "失われた星図を取り戻す。"),
+            ("地下水路の合意", "地下水路の管理者と合意を結ぶ。"),
+            ("鐘楼の封印調査", "鐘楼に残る封印を調査する。"),
+            ("灯台記録の修復", "灯台に残された記録を修復する。"),
+        ]
+        for index, (title, description) in enumerate(distinct_offers):
+            create_dynamic_quest_offer(
+                db,
+                world_id="gestaloka_reference",
+                actor_id=session_payload["player_actor_id"],
+                source_event_id=f"dynamic-queue-{index}",
+                offer={
+                    "title": title,
+                    "description": description,
+                    "offered_summary": description,
+                    "completion_target": 3,
+                    "constraints": [],
+                },
+            )
+        offered_count = db.execute(
+            select(func.count(QuestAssignment.id)).where(
+                QuestAssignment.world_id == "gestaloka_reference",
+                QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
+                QuestAssignment.status == "offered",
+            )
+        ).scalar_one()
+        superseded_count = db.execute(
+            select(func.count(QuestAssignment.id)).where(
+                QuestAssignment.world_id == "gestaloka_reference",
+                QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
+                QuestAssignment.status == "superseded",
+            )
+        ).scalar_one()
+
+    assert offered_count == 3
+    assert superseded_count >= 1
+
+
+def test_accepting_or_resuming_quest_keeps_only_one_active_focus(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        first = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="focus-quest-one",
+            offer={
+                "title": "星図の奪還",
+                "description": "失われた星図を取り戻す。",
+                "offered_summary": "星図の奪還が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )[0]
+        second = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="focus-quest-two",
+            offer={
+                "title": "地下水路の合意",
+                "description": "地下水路の管理者と合意を結ぶ。",
+                "offered_summary": "地下水路の合意が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )[0]
+
+        apply_quest_lifecycle_action(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            quest_assignment_id=first["assignment_id"],
+            action_type="accept_quest",
+            source_event_id=source_event.id,
+        )
+        second_updates, _, _ = apply_quest_lifecycle_action(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            quest_assignment_id=second["assignment_id"],
+            action_type="accept_quest",
+            source_event_id=source_event.id,
+        )
+        statuses = {
+            item.id: item.status
+            for item in db.execute(
+                select(QuestAssignment).where(
+                    QuestAssignment.world_id == "gestaloka_reference",
+                    QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
+                )
+            ).scalars()
+        }
+        resume_updates, _, _ = apply_quest_lifecycle_action(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            quest_assignment_id=first["assignment_id"],
+            action_type="resume_quest",
+            source_event_id=source_event.id,
+        )
+        resumed_statuses = {
+            item.id: item.status
+            for item in db.execute(
+                select(QuestAssignment).where(
+                    QuestAssignment.world_id == "gestaloka_reference",
+                    QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
+                )
+            ).scalars()
+        }
+
+    assert statuses[first["assignment_id"]] == "paused"
+    assert statuses[second["assignment_id"]] == "active"
+    assert any(item["action"] == "paused_by_focus_change" for item in second_updates)
+    assert resumed_statuses[first["assignment_id"]] == "active"
+    assert resumed_statuses[second["assignment_id"]] == "paused"
+    assert any(item["action"] == "paused_by_focus_change" for item in resume_updates)
+
+
+def test_paused_quest_resolution_hint_resolves_into_epilogue_on_resume(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        quest = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="pending-resolution-quest",
+            offer={
+                "title": "境界の修復",
+                "description": "境界の修復を進める長期目的。",
+                "offered_summary": "境界の修復が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )[0]
+        assignment = db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == "gestaloka_reference",
+                QuestAssignment.id == quest["assignment_id"],
+            )
+        ).scalar_one()
+        assignment.status = "paused"
+        db.flush()
+
+        hint_updates = record_quest_resolution_hint(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            hint={
+                "title": "境界の修復",
+                "summary": "別行動中に境界の修復条件が満たされた。",
+            },
+        )
+        resume_updates, chapter_updates, _ = apply_quest_lifecycle_action(
+            db,
+            world_id="gestaloka_reference",
+            actor_id=session_payload["player_actor_id"],
+            quest_assignment_id=quest["assignment_id"],
+            action_type="resume_quest",
+            source_event_id=source_event.id,
+        )
+
+    assert hint_updates[0]["action"] == "deferred_resolution_recorded"
+    assert resume_updates[0]["status"] == "completed"
+    assert resume_updates[0]["progress"] == resume_updates[0]["progress_target"]
+    assert chapter_updates[0]["chapter_kind"] == "epilogue"
 
 
 def test_gestaloka_reference_progression_falls_back_when_world_progress_schema_fails(

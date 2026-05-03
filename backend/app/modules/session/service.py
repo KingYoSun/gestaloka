@@ -71,6 +71,7 @@ from app.modules.world_state.service import (
     ensure_world_slice_seed,
     get_location_summary,
     get_location_by_key,
+    record_quest_resolution_hint,
     travel_to_location,
     use_reward_item,
 )
@@ -1451,6 +1452,20 @@ def _resolve_narrative_turn_for_session(
             **event.payload,
             "quest_updates": state_updates["quest_updates"],
         }
+    with _turn_progress_span("quest_resolution_hint"):
+        deferred_quest_updates = record_quest_resolution_hint(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            hint=getattr(payload, "quest_resolution_hint", None),
+        )
+    if deferred_quest_updates:
+        state_updates["quest_updates"] = [*state_updates["quest_updates"], *deferred_quest_updates]
+        event.payload = {
+            **event.payload,
+            "quest_updates": state_updates["quest_updates"],
+        }
 
     with _turn_progress_span("consequence_resolution"):
         consequence_result = apply_consequence_updates(
@@ -1770,7 +1785,15 @@ def _resolve_narrative_turn_for_session(
         recent_world_beats=ambient_result["recent_world_beats"],
         recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
         idle_updates=[],
-        progress_phases=[*progress_phases, "consequence_resolution", "scene_framing", "ambient_world_pass", "choice_generation"],
+        progress_phases=[
+            *progress_phases,
+            "dynamic_quest_offer",
+            "quest_resolution_hint",
+            "consequence_resolution",
+            "scene_framing",
+            "ambient_world_pass",
+            "choice_generation",
+        ],
     )
 
 

@@ -365,6 +365,7 @@ class CouncilWorldProgressPayload(BaseModel):
     quest_offer: dict[str, Any] | None = None
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
+    quest_resolution_hint: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -406,7 +407,7 @@ class CouncilWorldProgressPayload(BaseModel):
         )
         normalized["scene_move"] = _scene_move(normalized.get("scene_move"))
         normalized["scene_pressure"] = _scene_pressure(normalized.get("scene_pressure"))
-        for key in ("quest_offer", "chapter_directive", "followup_quest_offer"):
+        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint"):
             if not isinstance(normalized.get(key), dict):
                 normalized[key] = None
         quests = input_payload.get("quests") if isinstance(input_payload.get("quests"), list) else []
@@ -1668,6 +1669,7 @@ class GMCouncilService:
             quest_offer=world_progress_payload.quest_offer,
             chapter_directive=world_progress_payload.chapter_directive,
             followup_quest_offer=world_progress_payload.followup_quest_offer,
+            quest_resolution_hint=world_progress_payload.quest_resolution_hint,
         )
         return TurnResolutionOutcome(
             role_runs=role_runs,

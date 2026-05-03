@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -99,6 +100,8 @@ from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, World
 FOLLOWUP_STANDING_DELTA = 0.10
 ROUTE_STATUS_OPEN = "open"
 ROUTE_STATUS_LOCKED = "locked"
+MAX_OFFERED_QUESTS = 3
+QUEST_SIMILARITY_THRESHOLD = 0.30
 
 
 @dataclass(frozen=True)
@@ -1328,6 +1331,36 @@ def _quest_available_actions(
     return ["leave_quest"]
 
 
+def _quest_update_dict(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    assignment: QuestAssignment,
+    template: QuestTemplate,
+    action: str | None = None,
+) -> dict[str, Any]:
+    payload = {
+        **quest_summary_to_dict(assignment, template),
+        "available_actions": _quest_available_actions(db, world_id=world_id, actor_id=actor_id, assignment=assignment),
+    }
+    if action:
+        payload["action"] = action
+    return payload
+
+
+def _chapter_update_dict(chapter: ChapterTrack) -> dict[str, Any]:
+    return {
+        "id": chapter.id,
+        "key": chapter.chapter_key,
+        "status": chapter.status,
+        "quest_assignment_id": chapter.quest_assignment_id,
+        "chapter_kind": chapter.chapter_kind,
+        "sequence_index": chapter.sequence_index,
+        "summary": chapter.summary,
+    }
+
+
 def quest_display_state(*, player_profile: dict[str, Any] | None, quest_journal: list[dict[str, Any]]) -> dict[str, Any]:
     visible = [item for item in quest_journal if str(item.get("status") or "") in {"offered", "active", "paused"}]
     if visible:
@@ -1345,6 +1378,76 @@ def quest_display_state(*, player_profile: dict[str, Any] | None, quest_journal:
     }
 
 
+def _quest_similarity_text(*values: Any) -> str:
+    text = " ".join(str(value or "") for value in values)
+    return re.sub(r"[\W_]+", "", text.lower(), flags=re.UNICODE)
+
+
+def _quest_ngrams(text: str, *, size: int = 3) -> set[str]:
+    if not text:
+        return set()
+    if len(text) <= size:
+        return {text}
+    return {text[index : index + size] for index in range(0, len(text) - size + 1)}
+
+
+def _quest_text_similarity(left: str, right: str) -> float:
+    scores: list[float] = []
+    for size in (2, 3):
+        left_grams = _quest_ngrams(left, size=size)
+        right_grams = _quest_ngrams(right, size=size)
+        if left_grams and right_grams:
+            scores.append(len(left_grams & right_grams) / len(left_grams | right_grams))
+    return max(scores, default=0.0)
+
+
+def _quest_offer_is_similar(template: QuestTemplate, *, title: str, description: str) -> bool:
+    existing_title = _quest_similarity_text(template.title)
+    incoming_title = _quest_similarity_text(title)
+    if existing_title and incoming_title and existing_title == incoming_title:
+        return True
+    existing = _quest_similarity_text(template.title, template.description)
+    incoming = _quest_similarity_text(title, description)
+    return _quest_text_similarity(existing, incoming) >= QUEST_SIMILARITY_THRESHOLD
+
+
+def _merge_dynamic_quest_offer(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    assignment: QuestAssignment,
+    template: QuestTemplate,
+    offer: dict[str, Any],
+    source_event_id: str,
+) -> dict[str, Any]:
+    summary = str(offer.get("offered_summary") or offer.get("description") or offer.get("summary") or "").strip()
+    if summary:
+        assignment.latest_summary = summary
+    state_json = dict(assignment.state_json or {})
+    merged_offers = [item for item in state_json.get("merged_offers") or [] if isinstance(item, dict)]
+    merged_offers.append(
+        {
+            "source_event_id": source_event_id,
+            "title": str(offer.get("title") or "").strip(),
+            "summary": summary,
+            "constraints": list(offer.get("constraints") or []),
+        }
+    )
+    state_json["merged_offers"] = merged_offers[-5:]
+    state_json["last_merged_offer_event_id"] = source_event_id
+    assignment.state_json = state_json
+    db.flush()
+    return _quest_update_dict(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        assignment=assignment,
+        template=template,
+        action="merged_existing",
+    )
+
+
 def create_dynamic_quest_offer(
     db: Session,
     *,
@@ -1360,6 +1463,62 @@ def create_dynamic_quest_offer(
     description = str(offer.get("description") or offer.get("summary") or "").strip()
     if not title or not description:
         return []
+    live_rows = list(
+        db.execute(
+            select(QuestAssignment, QuestTemplate)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == actor_id,
+                QuestAssignment.status.in_(("offered", "active", "paused")),
+            )
+            .order_by(
+                (QuestAssignment.status == "active").desc(),
+                (QuestAssignment.status == "offered").desc(),
+                QuestAssignment.updated_at.desc(),
+                QuestAssignment.id.desc(),
+            )
+        ).all()
+    )
+    for assignment, template in live_rows:
+        if _quest_offer_is_similar(template, title=title, description=description):
+            return [
+                _merge_dynamic_quest_offer(
+                    db,
+                    world_id=world_id,
+                    actor_id=actor_id,
+                    assignment=assignment,
+                    template=template,
+                    offer=offer,
+                    source_event_id=source_event_id,
+                )
+            ]
+
+    superseded_updates: list[dict[str, Any]] = []
+    offered_rows = [
+        (assignment, template)
+        for assignment, template in sorted(live_rows, key=lambda item: (item[0].created_at, item[0].id))
+        if assignment.status == "offered"
+    ]
+    while len(offered_rows) >= MAX_OFFERED_QUESTS:
+        stale_assignment, stale_template = offered_rows.pop(0)
+        stale_assignment.status = "superseded"
+        stale_assignment.latest_summary = f"{stale_template.title} was superseded by a newer quest offer."
+        db.flush()
+        superseded_updates.append(
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=stale_assignment,
+                template=stale_template,
+                action="superseded",
+            )
+        )
+
     existing_active = db.execute(
         select(QuestAssignment, QuestTemplate)
         .join(
@@ -1428,6 +1587,7 @@ def create_dynamic_quest_offer(
     db.add(assignment)
     db.flush()
     return [
+        *superseded_updates,
         {
             **quest_summary_to_dict(assignment, template),
             "action": "offered",
@@ -1457,6 +1617,155 @@ def _normalize_dynamic_quest_completion_target(value: Any) -> int:
     else:
         return 3
     return max(1, min(parsed, 8))
+
+
+def _pause_other_active_quests(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    keep_assignment_id: str,
+) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(QuestAssignment, QuestTemplate)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == actor_id,
+                QuestAssignment.status == "active",
+                QuestAssignment.id != keep_assignment_id,
+            )
+            .order_by(QuestAssignment.updated_at.desc(), QuestAssignment.id.desc())
+        ).all()
+    )
+    updates: list[dict[str, Any]] = []
+    for assignment, template in rows:
+        assignment.status = "paused"
+        assignment.latest_summary = f"{template.title} is paused while another quest is in focus."
+        updates.append(
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=assignment,
+                template=template,
+                action="paused_by_focus_change",
+            )
+        )
+    if updates:
+        db.flush()
+    return updates
+
+
+def _open_epilogue_chapter_for_assignment(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    assignment: QuestAssignment,
+    template: QuestTemplate,
+    summary: str,
+) -> list[dict[str, Any]]:
+    current = db.execute(
+        select(ChapterTrack)
+        .where(
+            ChapterTrack.world_id == world_id,
+            ChapterTrack.owner_actor_id == actor_id,
+            ChapterTrack.quest_assignment_id == assignment.id,
+            ChapterTrack.status.in_(("active", "cooling")),
+        )
+        .order_by(ChapterTrack.sequence_index.desc(), ChapterTrack.created_at.desc(), ChapterTrack.id.desc())
+    ).scalars().first()
+    if current is not None and current.chapter_kind == "epilogue":
+        current.summary = summary or current.summary
+        current.updated_at = datetime.now(timezone.utc)
+        db.flush()
+        return [_chapter_update_dict(current)]
+
+    now = datetime.now(timezone.utc)
+    next_index = 0
+    if current is not None:
+        current.status = "resolved"
+        current.closing_event_id = source_event_id
+        current.resolved_at = now
+        current.updated_at = now
+        next_index = current.sequence_index + 1
+    chapter = ChapterTrack(
+        world_id=world_id,
+        owner_actor_id=actor_id,
+        quest_assignment_id=assignment.id,
+        chapter_key=f"{template.stage_key}:epilogue:{next_index}",
+        chapter_kind="epilogue",
+        sequence_index=next_index,
+        status="active",
+        summary=summary or f"{template.title} reaches its aftermath. {assignment.latest_summary}",
+        state_json={"departure_locked_reason": "The epilogue must settle before leaving this quest."},
+        opening_event_id=source_event_id,
+        opened_at=now,
+    )
+    db.add(chapter)
+    db.flush()
+    return [_chapter_update_dict(chapter)]
+
+
+def record_quest_resolution_hint(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    hint: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(hint, dict) or not hint:
+        return []
+    title = str(hint.get("title") or hint.get("quest_title") or "").strip()
+    summary = str(hint.get("summary") or hint.get("resolution_summary") or hint.get("outcome_summary") or "").strip()
+    if not title and not summary:
+        return []
+    rows = list(
+        db.execute(
+            select(QuestAssignment, QuestTemplate)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == actor_id,
+                QuestAssignment.status.in_(("paused", "offered")),
+            )
+            .order_by((QuestAssignment.status == "paused").desc(), QuestAssignment.updated_at.desc(), QuestAssignment.id.desc())
+        ).all()
+    )
+    for assignment, template in rows:
+        if title and not _quest_offer_is_similar(template, title=title, description=summary):
+            continue
+        state_json = dict(assignment.state_json or {})
+        state_json["pending_resolution"] = {
+            "source_event_id": source_event_id,
+            "title": title or template.title,
+            "summary": summary or f"{template.title} is ready to resolve when resumed.",
+            "hint": dict(hint),
+        }
+        assignment.state_json = state_json
+        assignment.latest_summary = summary or assignment.latest_summary
+        db.flush()
+        return [
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=assignment,
+                template=template,
+                action="deferred_resolution_recorded",
+            )
+        ]
+    return []
 
 
 def apply_quest_lifecycle_action(
@@ -1491,6 +1800,12 @@ def apply_quest_lifecycle_action(
             raise ValueError("Only offered quests can be accepted")
         assignment.status = "active"
         assignment.latest_summary = f"{template.title} has begun."
+        focus_updates = _pause_other_active_quests(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            keep_assignment_id=assignment.id,
+        )
         chapter = ChapterTrack(
             world_id=world_id,
             owner_actor_id=actor_id,
@@ -1506,18 +1821,18 @@ def apply_quest_lifecycle_action(
         )
         db.add(chapter)
         db.flush()
-        chapter_updates.append(
-            {
-                "id": chapter.id,
-                "key": chapter.chapter_key,
-                "status": chapter.status,
-                "quest_assignment_id": chapter.quest_assignment_id,
-                "chapter_kind": chapter.chapter_kind,
-                "sequence_index": chapter.sequence_index,
-                "summary": chapter.summary,
-            }
-        )
-        return [{**quest_summary_to_dict(assignment, template), "action": "accepted"}], chapter_updates, f"{template.title} begins."
+        chapter_updates.append(_chapter_update_dict(chapter))
+        return [
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=assignment,
+                template=template,
+                action="accepted",
+            ),
+            *focus_updates,
+        ], chapter_updates, f"{template.title} begins."
 
     if action_type == "decline_quest":
         if assignment.status != "offered":
@@ -1545,10 +1860,59 @@ def apply_quest_lifecycle_action(
     if action_type == "resume_quest":
         if assignment.status != "paused":
             raise ValueError("Only paused quests can be resumed")
+        state_json = dict(assignment.state_json or {})
+        pending_resolution = state_json.get("pending_resolution") if isinstance(state_json.get("pending_resolution"), dict) else None
         assignment.status = "active"
+        focus_updates = _pause_other_active_quests(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            keep_assignment_id=assignment.id,
+        )
+        if pending_resolution:
+            summary = str(pending_resolution.get("summary") or f"{template.title} resolves from earlier actions.").strip()
+            state_json.pop("pending_resolution", None)
+            state_json["resolved_from_pending_event_id"] = pending_resolution.get("source_event_id")
+            assignment.state_json = state_json
+            assignment.status = "completed"
+            assignment.progress = max(assignment.progress, assignment.progress_target)
+            assignment.latest_summary = summary
+            chapter_updates.extend(
+                _open_epilogue_chapter_for_assignment(
+                    db,
+                    world_id=world_id,
+                    actor_id=actor_id,
+                    source_event_id=source_event_id,
+                    assignment=assignment,
+                    template=template,
+                    summary=summary,
+                )
+            )
+            db.flush()
+            return [
+                _quest_update_dict(
+                    db,
+                    world_id=world_id,
+                    actor_id=actor_id,
+                    assignment=assignment,
+                    template=template,
+                    action="resumed",
+                ),
+                *focus_updates,
+            ], chapter_updates, summary
         assignment.latest_summary = f"{template.title} has resumed."
         db.flush()
-        return [{**quest_summary_to_dict(assignment, template), "action": "resumed"}], chapter_updates, f"{template.title} resumes."
+        return [
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=assignment,
+                template=template,
+                action="resumed",
+            ),
+            *focus_updates,
+        ], chapter_updates, f"{template.title} resumes."
 
     raise ValueError(f"Unsupported quest action: {action_type}")
 

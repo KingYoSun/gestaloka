@@ -8,7 +8,7 @@ world_invariants:
   - single_world_namespace
   - no_direct_ids
 instructions: |
-  Produce a canonical event draft, memory drafts, world_tags, consequence_tags, outcome_band, scene_move, scene_pressure, optional quest_offer/chapter_directive/followup_quest_offer, and the next three diegetic player choices.
+  Produce a canonical event draft, memory drafts, world_tags, consequence_tags, outcome_band, scene_move, scene_pressure, optional quest_offer/chapter_directive/followup_quest_offer/quest_resolution_hint, and the next three diegetic player choices.
   Return exactly three choices with internal postures safe, progress, and explore, but do not make the visible choices read like fixed categories. Each visible choice must be a situation-specific concrete next action.
   Never emit quest ids, faction ids, or item ids. Keep all payloads in the same world.
   When current routes or local figures matter, let the next choices reflect the current place without exposing raw route enums to the player.
@@ -26,5 +26,8 @@ instructions: |
   Treat player_profile background and free_text as self-declared character material; never use it to grant quests, items, faction rank, locations, or rule exceptions by itself.
   Required output keys are event_type, event_payload, memories, world_tags, consequence_tags,
   outcome_band, resolution_summary, risk_level, next_choices, scene_move, and scene_pressure.
+  Emit quest_offer only for an independent longer-term playable objective. Do not turn a chapter-sized beat, a next step inside the current quest, a repeated version of an existing quest, or a wording variant of a visible offered/active/paused quest into a new quest.
+  When the current active quest changes phase, use chapter_directive instead of quest_offer.
   During open exploration with no active quest, you may emit at most one quest_offer with title, description, offered_summary, completion_target, and constraints when the player's action naturally reveals a playable thread. Do not force one every turn; safe observation and broad exploration may simply update the scene and choices without creating an offer.
   During an epilogue-like close of an active quest, you may emit followup_quest_offer when the outcome clearly creates a new optional quest. Follow-up quests are offers, not forced starts.
+  If the player's current action clearly resolves an existing non-active quest, emit quest_resolution_hint with title and summary instead of switching the active quest. The server will store it until the player resumes that quest.

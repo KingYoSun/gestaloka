@@ -801,6 +801,7 @@ function PlayingView({ runtime }: PlayerPageProps) {
         (item.available_actions ?? []).includes("accept_quest") &&
         (item.available_actions ?? []).includes("decline_quest"),
     );
+    const hasActiveQuest = (runtime.sessionState.quest_journal ?? []).some((item) => item.status === "active");
     const knownIds = knownOfferedQuestIdsRef.current;
     if (!questOfferTrackingReadyRef.current) {
       offeredQuests.forEach((item) => knownIds.add(item.assignment_id));
@@ -813,7 +814,11 @@ function PlayingView({ runtime }: PlayerPageProps) {
       setQuestOfferDialogQuest(null);
       return;
     }
-    if (freshQuest && !questOfferDialogQuest) {
+    if (questOfferDialogQuest && hasActiveQuest) {
+      setQuestOfferDialogQuest(null);
+      return;
+    }
+    if (freshQuest && !questOfferDialogQuest && !hasActiveQuest) {
       setQuestOfferDialogQuest(freshQuest);
     }
   }, [questOfferDialogQuest, runtime.playHydrating, runtime.sessionState]);
@@ -1499,7 +1504,7 @@ function QuestBlock({ runtime }: PlayerPageProps) {
   const journal = sessionState?.quest_journal ?? [];
   const displayLabel = sessionState?.quest_display_state?.label || t("player.quest.exploring");
   const visibleQuests = journal.filter((item) => item.status === "offered" || item.status === "active" || item.status === "paused");
-  const primaryQuest = activeQuest ?? visibleQuests[0] ?? null;
+  const primaryQuest = activeQuest ?? null;
 
   return (
     <Card className="grid min-w-0 gap-3 p-4" data-testid="active-quest">
@@ -1584,6 +1589,12 @@ function QuestListDialog({
     onClose();
   }
 
+  const groupedQuests = [
+    { key: "active", quests: quests.filter((quest) => quest.status === "active") },
+    { key: "offered", quests: quests.filter((quest) => quest.status === "offered") },
+    { key: "paused", quests: quests.filter((quest) => quest.status === "paused") },
+  ].filter((group) => group.quests.length);
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-4 max-[640px]:items-end max-[640px]:p-0" role="presentation">
       <section
@@ -1602,40 +1613,49 @@ function QuestListDialog({
         </div>
         <div className="scrollbar-gestaloka min-h-0 overflow-y-auto pr-1">
           {quests.length ? (
-            <ul className="grid gap-3">
-              {quests.map((quest) => (
-                <li key={quest.assignment_id} className="grid min-w-0 gap-3 rounded-md border border-border bg-secondary p-3" data-testid={`quest-list-item-${quest.assignment_id}`}>
-                  <div className="grid min-w-0 gap-1">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <p className="min-w-0 break-words font-bold leading-6 text-foreground">{quest.title}</p>
-                      <span className="rounded border border-border bg-card px-2 py-0.5 text-xs font-semibold leading-[18px] text-muted-foreground">
-                        {t(`player.quest.status.${quest.status}`, { defaultValue: quest.status })}
-                      </span>
-                    </div>
-                    <p className="text-sm leading-5 text-muted-foreground">
-                      {quest.progress}/{quest.progress_target}
-                    </p>
-                    {quest.latest_summary ? <p className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{quest.latest_summary}</p> : null}
-                  </div>
-                  {quest.available_actions?.length ? (
-                    <div className="flex flex-wrap gap-2">
-                      {quest.available_actions.map((action) => (
-                        <Button
-                          key={action}
-                          type="button"
-                          variant={action === "decline_quest" ? "secondary" : "default"}
-                          disabled={turnPending}
-                          onClick={() => handleAction(action as QuestAction, quest.assignment_id)}
-                        >
-                          <ListChecks aria-hidden="true" />
-                          {t(`player.quest.actions.${action}`)}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
-                </li>
+            <div className="grid gap-4">
+              {groupedQuests.map((group) => (
+                <section className="grid min-w-0 gap-2" key={group.key}>
+                  <h3 className="text-sm font-semibold leading-5 text-muted-foreground">
+                    {t(`player.quest.groups.${group.key}`)}
+                  </h3>
+                  <ul className="grid gap-3">
+                    {group.quests.map((quest) => (
+                      <li key={quest.assignment_id} className="grid min-w-0 gap-3 rounded-md border border-border bg-secondary p-3" data-testid={`quest-list-item-${quest.assignment_id}`}>
+                        <div className="grid min-w-0 gap-1">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <p className="min-w-0 break-words font-bold leading-6 text-foreground">{quest.title}</p>
+                            <span className="rounded border border-border bg-card px-2 py-0.5 text-xs font-semibold leading-[18px] text-muted-foreground">
+                              {t(`player.quest.status.${quest.status}`, { defaultValue: quest.status })}
+                            </span>
+                          </div>
+                          <p className="text-sm leading-5 text-muted-foreground">
+                            {quest.progress}/{quest.progress_target}
+                          </p>
+                          {quest.latest_summary ? <p className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{quest.latest_summary}</p> : null}
+                        </div>
+                        {quest.available_actions?.length ? (
+                          <div className="flex flex-wrap gap-2">
+                            {quest.available_actions.map((action) => (
+                              <Button
+                                key={action}
+                                type="button"
+                                variant={action === "decline_quest" ? "secondary" : "default"}
+                                disabled={turnPending}
+                                onClick={() => handleAction(action as QuestAction, quest.assignment_id)}
+                              >
+                                <ListChecks aria-hidden="true" />
+                                {t(`player.quest.actions.${action}`)}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           ) : (
             <p className="text-sm leading-5 text-muted-foreground">{t("player.quest.empty")}</p>
           )}

@@ -353,7 +353,6 @@ export function useGestalokaRuntime() {
   const activeWorldId = session?.world_id ?? worldId;
   const activeQuest =
     sessionState?.quest_journal?.find((item) => item.status === "active") ??
-    sessionState?.quest_journal?.find((item) => item.status === "offered" || item.status === "paused") ??
     sessionState?.quests.find((item) => item.status === "active") ??
     null;
   const selectedWorld = playableWorlds.find((item) => item.world_id === worldId) ?? null;

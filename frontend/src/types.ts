@@ -452,7 +452,7 @@ export type TurnResponse = {
   }>;
   current_location: CurrentLocationSummary;
   travel_summary: string | null;
-  quest_updates: Array<QuestSummary & { world_tags?: string[]; summary?: string }>;
+  quest_updates: Array<QuestSummary & { action?: string; world_tags?: string[]; summary?: string }>;
   faction_updates: Array<FactionSummary & { delta?: number }>;
   inventory_updates: Array<InventorySummary & { action?: string }>;
   relationship_updates: Array<RelationshipSummary & { delta?: number }>;
