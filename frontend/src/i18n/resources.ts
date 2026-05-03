@@ -64,6 +64,7 @@ const resources = {
           proceedCreate: "キャラクター作成に進む",
           proceedSelect: "キャラクター選択に進む",
           start: "始める",
+          starting: "ゲーム開始中",
           startLocation: "開始地点",
         },
         profile: {
@@ -106,6 +107,8 @@ const resources = {
           reaction: "反応",
           consequence: "変化",
           sceneDetails: "場面説明",
+          preparing: "本文準備中",
+          generating: "本文生成中",
           height: "本文カードサイズ",
           heightPresets: {
             small: "小",
@@ -116,6 +119,8 @@ const resources = {
         },
         quest: {
           exploring: "探索中...",
+          offerDialogTitle: "新しいクエストが発生",
+          offerDialogSummary: "概要",
           actions: {
             accept_quest: "受諾",
             decline_quest: "見送る",
@@ -249,6 +254,7 @@ const resources = {
           proceedCreate: "Continue to character creation",
           proceedSelect: "Continue to character selection",
           start: "Start",
+          starting: "Starting game",
           startLocation: "Starting point",
         },
         profile: {
@@ -291,6 +297,8 @@ const resources = {
           reaction: "Reaction",
           consequence: "Change",
           sceneDetails: "Scene details",
+          preparing: "Preparing story",
+          generating: "Generating story",
           height: "Story card size",
           heightPresets: {
             small: "S",
@@ -301,6 +309,8 @@ const resources = {
         },
         quest: {
           exploring: "Exploring...",
+          offerDialogTitle: "New quest available",
+          offerDialogSummary: "Summary",
           actions: {
             accept_quest: "Accept",
             decline_quest: "Decline",

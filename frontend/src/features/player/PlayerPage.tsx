@@ -1,4 +1,4 @@
-import { ArrowDownToLine, BookPlus, ChevronDown, ImagePlus, Info, ListChecks, LogIn, PanelRightOpen, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowDownToLine, BookPlus, ChevronDown, ImagePlus, Info, ListChecks, LoaderCircle, LogIn, PanelRightOpen, ShoppingCart, Trash2, UserPlus, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,7 +12,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
 import { cn } from "../../lib/utils";
-import type { NarrativeChoice, PlayLanguagePreset, PlayerProfile, StoryHistoryItem, WorldContext } from "../../types";
+import type { NarrativeChoice, PlayLanguagePreset, PlayerProfile, QuestSummary, StoryHistoryItem, WorldContext } from "../../types";
 
 type PlayerPageProps = {
   runtime: GestalokaRuntime;
@@ -111,6 +111,23 @@ export function PlayerPage({ runtime }: PlayerPageProps) {
       {runtime.session ? <PlayingView runtime={runtime} /> : null}
       <PlayerTestSurface runtime={runtime} />
     </section>
+  );
+}
+
+function ProcessingOverlay({ label, testId }: { label: string; testId: string }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-background/78 p-4 backdrop-blur-sm"
+      data-testid={testId}
+      role="status"
+      aria-live="polite"
+      aria-label={label}
+    >
+      <div className="inline-flex min-w-0 items-center gap-3 rounded-md border border-border bg-card px-5 py-4 text-sm font-semibold leading-5 text-foreground shadow-lg">
+        <LoaderCircle className="size-5 animate-spin text-primary" aria-hidden="true" />
+        <span>{label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -318,7 +335,7 @@ function WorldStartView({ runtime }: PlayerPageProps) {
             <h1 className="text-[28px] font-bold leading-9 tracking-[1.12px] text-foreground max-[480px]:text-2xl max-[480px]:leading-8">
               {t("player.profile.selectTitle")}
             </h1>
-            <Button type="button" variant="secondary" onClick={() => setStep("world")}>
+            <Button type="button" variant="secondary" onClick={() => setStep("world")} disabled={runtime.sessionStarting}>
               {t("player.world.select")}
             </Button>
           </div>
@@ -329,13 +346,18 @@ function WorldStartView({ runtime }: PlayerPageProps) {
                 profile={profile}
                 selected={selectedPlayerActorId === profile.actor_id}
                 onEdit={handleEditProfile}
-                onSelect={() => setSelectedPlayerActorId(profile.actor_id)}
+                onSelect={() => {
+                  if (!runtime.sessionStarting) {
+                    setSelectedPlayerActorId(profile.actor_id);
+                  }
+                }}
               />
             ))}
             <button
               type="button"
               className="grid min-h-[220px] w-[min(100%,280px)] place-items-center rounded-lg border border-dashed border-border bg-card p-5 text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80"
               onClick={handleCreateFromSelection}
+              disabled={runtime.sessionStarting}
               aria-label={t("player.profile.add")}
               data-testid="create-character-card"
             >
@@ -343,10 +365,11 @@ function WorldStartView({ runtime }: PlayerPageProps) {
             </button>
           </div>
           <form onSubmit={handleStartSession}>
-            <Button data-testid="start-session" type="submit" disabled={!selectedPlayerProfile}>
+            <Button data-testid="start-session" type="submit" disabled={!selectedPlayerProfile || runtime.sessionStarting}>
               {t("player.world.start")}
             </Button>
           </form>
+          {runtime.sessionStarting ? <ProcessingOverlay label={t("player.world.starting")} testId="session-starting-overlay" /> : null}
         </div>
       </section>
     );
@@ -752,6 +775,48 @@ function PlayingView({ runtime }: PlayerPageProps) {
   const isMobile = useMediaQuery("(max-width: 640px)");
   const [actionDrawerOpen, setActionDrawerOpen] = useState(false);
   const [statusDrawerOpen, setStatusDrawerOpen] = useState(false);
+  const [questOfferDialogQuest, setQuestOfferDialogQuest] = useState<QuestSummary | null>(null);
+  const knownOfferedQuestIdsRef = useRef<Set<string>>(new Set());
+  const questOfferTrackingReadyRef = useRef(false);
+
+  useEffect(() => {
+    if (runtime.turnNarrativeStreaming) {
+      setActionDrawerOpen(false);
+    }
+  }, [runtime.turnNarrativeStreaming]);
+
+  useEffect(() => {
+    knownOfferedQuestIdsRef.current = new Set();
+    questOfferTrackingReadyRef.current = false;
+    setQuestOfferDialogQuest(null);
+  }, [runtime.session?.session_id]);
+
+  useEffect(() => {
+    if (!runtime.sessionState || runtime.playHydrating) {
+      return;
+    }
+    const offeredQuests = (runtime.sessionState.quest_journal ?? []).filter(
+      (item) =>
+        item.status === "offered" &&
+        (item.available_actions ?? []).includes("accept_quest") &&
+        (item.available_actions ?? []).includes("decline_quest"),
+    );
+    const knownIds = knownOfferedQuestIdsRef.current;
+    if (!questOfferTrackingReadyRef.current) {
+      offeredQuests.forEach((item) => knownIds.add(item.assignment_id));
+      questOfferTrackingReadyRef.current = true;
+      return;
+    }
+    const freshQuest = offeredQuests.find((item) => !knownIds.has(item.assignment_id)) ?? null;
+    offeredQuests.forEach((item) => knownIds.add(item.assignment_id));
+    if (questOfferDialogQuest && !offeredQuests.some((item) => item.assignment_id === questOfferDialogQuest.assignment_id)) {
+      setQuestOfferDialogQuest(null);
+      return;
+    }
+    if (freshQuest && !questOfferDialogQuest) {
+      setQuestOfferDialogQuest(freshQuest);
+    }
+  }, [questOfferDialogQuest, runtime.playHydrating, runtime.sessionState]);
 
   return (
     <section
@@ -780,6 +845,15 @@ function PlayingView({ runtime }: PlayerPageProps) {
             </div>
           </Drawer>
         </>
+      ) : null}
+      {runtime.playHydrating ? <ProcessingOverlay label={t("player.story.preparing")} testId="play-hydrating-overlay" /> : null}
+      {questOfferDialogQuest ? (
+        <QuestOfferDialog
+          quest={questOfferDialogQuest}
+          turnPending={runtime.turnPending}
+          onClose={() => setQuestOfferDialogQuest(null)}
+          onQuestAction={(action, assignmentId) => void runtime.handleQuestAction(action, assignmentId)}
+        />
       ) : null}
     </section>
   );
@@ -826,20 +900,80 @@ function Drawer({
   title: string;
 }) {
   const { t } = useTranslation();
-  if (!open) {
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      return;
+    }
+    setVisible(false);
+    const timeout = window.setTimeout(() => setMounted(false), 360);
+    return () => window.clearTimeout(timeout);
+  }, [open]);
+
+  useEffect(() => {
+    if (!mounted || !open) {
+      return;
+    }
+    setVisible(false);
+    let nestedAnimationFrame = 0;
+    const animationFrame = window.requestAnimationFrame(() => {
+      nestedAnimationFrame = window.requestAnimationFrame(() => setVisible(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      if (nestedAnimationFrame) {
+        window.cancelAnimationFrame(nestedAnimationFrame);
+      }
+    };
+  }, [mounted, open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+    setVisible(false);
+  }, [open]);
+
+  if (!mounted) {
     return null;
   }
   return (
-    <div className="fixed inset-0 z-40 bg-background/70" role="presentation" onMouseDown={onClose}>
+    <div
+      className={cn(
+        "fixed inset-0 z-40 bg-background/70",
+        visible ? "" : "pointer-events-none",
+      )}
+      role="presentation"
+      onMouseDown={() => {
+        if (open) {
+          onClose();
+        }
+      }}
+    >
       <section
-        aria-modal="true"
         role="dialog"
         aria-label={title}
         className={cn(
-          "absolute grid min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-border bg-card shadow-lg",
+          "absolute grid min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-border bg-card shadow-lg transition-transform duration-200 ease-out",
           side === "bottom"
-            ? "inset-x-0 bottom-0 max-h-[min(82dvh,720px)] rounded-t-lg border-t"
-            : "bottom-0 right-0 top-0 max-h-[100dvh] w-[min(88vw,340px)] border-l",
+            ? cn("inset-x-0 bottom-0 max-h-[min(82dvh,720px)] rounded-t-lg border-t", visible ? "translate-y-0" : "translate-y-full")
+            : cn("bottom-0 right-0 top-0 max-h-[100dvh] w-[min(88vw,340px)] border-l", visible ? "translate-x-0" : "translate-x-full"),
         )}
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -901,8 +1035,13 @@ function StoryHistory({ runtime }: PlayerPageProps) {
   });
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const storyItems = runtime.storyItems.length ? runtime.storyItems : fallbackStoryItems(runtime, t("player.story.inProgress"));
+  const baseStoryItems = runtime.storyItems.length ? runtime.storyItems : fallbackStoryItems(runtime, t("player.story.inProgress"));
+  const storyItems =
+    runtime.streamingStoryItem && !baseStoryItems.some((item) => item.turn_id && item.turn_id === runtime.streamingStoryItem?.turn_id)
+      ? [...baseStoryItems, runtime.streamingStoryItem]
+      : baseStoryItems;
   const latestStory = storyItems[storyItems.length - 1] ?? null;
+  const latestNarrativeLength = latestStory?.narrative.length ?? 0;
   const heightClass =
     heightPreset === "small"
       ? "h-[min(42vh,360px)]"
@@ -923,7 +1062,7 @@ function StoryHistory({ runtime }: PlayerPageProps) {
       return;
     }
     scrollNode.scrollTop = scrollNode.scrollHeight;
-  }, [isAtBottom, storyItems.length]);
+  }, [isAtBottom, latestNarrativeLength, storyItems.length]);
 
   function updateBottomState() {
     const scrollNode = scrollRef.current;
@@ -1249,7 +1388,6 @@ function SPPurchaseDialog({ onClose, runtime }: { onClose: () => void; runtime: 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-4 max-[640px]:items-end max-[640px]:p-0" role="presentation">
       <section
-        aria-modal="true"
         role="dialog"
         aria-label={t("player.sp.purchaseDialog")}
         className="grid w-full max-w-md min-w-0 gap-4 rounded-lg border border-border bg-card p-5 shadow-lg max-[640px]:max-w-none max-[640px]:rounded-b-none max-[640px]:border-b-0"
@@ -1400,6 +1538,63 @@ function QuestBlock({ runtime }: PlayerPageProps) {
         <p className="text-sm leading-5 text-muted-foreground">{displayLabel}</p>
       )}
     </Card>
+  );
+}
+
+function QuestOfferDialog({
+  onClose,
+  onQuestAction,
+  quest,
+  turnPending,
+}: {
+  onClose: () => void;
+  onQuestAction: (action: "accept_quest" | "decline_quest", assignmentId: string) => void;
+  quest: QuestSummary;
+  turnPending: boolean;
+}) {
+  const { t } = useTranslation();
+  const summary = quest.description || quest.latest_summary || t("common.none");
+
+  function handleAction(action: "accept_quest" | "decline_quest") {
+    onQuestAction(action, quest.assignment_id);
+    onClose();
+  }
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 grid items-start justify-items-start p-4" role="presentation">
+      <section
+        role="dialog"
+        aria-labelledby="quest-offer-dialog-title"
+        className="pointer-events-auto grid w-full max-w-[420px] min-w-0 gap-4 rounded-lg border border-border bg-card p-5 text-card-foreground shadow-lg"
+        data-testid="quest-offer-dialog"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="grid min-w-0 gap-2">
+            <p className="text-xs font-semibold leading-[18px] text-primary">{t("player.quest.offerDialogTitle")}</p>
+            <h2 id="quest-offer-dialog-title" className="min-w-0 break-words text-base font-semibold leading-6 text-foreground">
+              {quest.title}
+            </h2>
+          </div>
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")} disabled={turnPending}>
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="grid min-w-0 gap-2">
+          <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{t("player.quest.offerDialogSummary")}</p>
+          <p className="min-w-0 break-words text-sm leading-6 text-foreground">{summary}</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 max-[420px]:grid max-[420px]:grid-cols-1">
+          <Button type="button" variant="secondary" onClick={() => handleAction("decline_quest")} disabled={turnPending}>
+            {t("player.quest.actions.decline_quest")}
+          </Button>
+          <Button type="button" onClick={() => handleAction("accept_quest")} disabled={turnPending}>
+            <ListChecks aria-hidden="true" />
+            {t("player.quest.actions.accept_quest")}
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 

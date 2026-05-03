@@ -62,5 +62,12 @@ def emit_turn_progress(
     callback(payload)
 
 
+def emit_turn_event(event: str, data: dict[str, object]) -> None:
+    callback = _turn_progress_callback.get()
+    if callback is None:
+        return
+    callback({"event": event, "data": data})
+
+
 def elapsed_ms_since(started_at: float) -> int:
     return max(int((time.perf_counter() - started_at) * 1000), 0)

@@ -84,6 +84,16 @@ class TurnResolutionManager:
                     "phase": latest_phase,
                     "status": "heartbeat",
                 }
+            event_name = payload.get("event")
+            if isinstance(event_name, str) and event_name:
+                event_data = payload.get("data")
+                await realtime_hub.emit_with_world_context(
+                    self.session_id,
+                    event_name,
+                    event_data if isinstance(event_data, dict) else {},
+                    self.world_context,
+                )
+                continue
             payload = self._normalize_progress_payload(payload, started_at, loop.time())
             phase = str(payload.get("phase") or latest_phase)
             latest_phase = phase

@@ -19,7 +19,7 @@ from app.modules.llm_harness.service import (
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
-from app.modules.session.progress import emit_turn_progress
+from app.modules.session.progress import emit_turn_event, emit_turn_progress
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
@@ -1598,6 +1598,14 @@ class GMCouncilService:
 
         narrative_payload = narrative_result.final_payload
         assert narrative_payload is not None
+        emit_turn_event(
+            "turn.narrative.delta",
+            {
+                "turn_id": request.turn_id,
+                "delta": narrative_payload.narrative,
+                "final": False,
+            },
+        )
 
         final_payload = TurnResolutionPayload(
             narrative=narrative_payload.narrative,

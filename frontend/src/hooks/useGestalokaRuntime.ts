@@ -124,6 +124,20 @@ function storyItemFromTurnResponse(response: TurnResponse): StoryHistoryItem {
   };
 }
 
+function streamingStoryItemFromDelta(turnId: string, narrative: string): StoryHistoryItem {
+  return {
+    event_id: `streaming-${turnId}`,
+    turn_id: turnId,
+    canonical_sequence: null,
+    occurred_at: new Date().toISOString(),
+    input_mode: "",
+    narrative,
+    reaction: "",
+    consequence: "",
+    scene_summary: "",
+  };
+}
+
 function eventItemFromTurnResponse(response: TurnResponse): EventItem {
   return {
     id: response.event_id,
@@ -257,6 +271,8 @@ export function useGestalokaRuntime() {
   const [editingPlayerActorId, setEditingPlayerActorId] = useState("");
   const [profileDraft, setProfileDraft] = useState(() => createDefaultProfileDraft());
   const [profilePending, setProfilePending] = useState(false);
+  const [sessionStarting, setSessionStarting] = useState(false);
+  const [playHydrating, setPlayHydrating] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [turnInputMode, setTurnInputMode] = useState<"choice" | "free_text">("choice");
@@ -265,6 +281,8 @@ export function useGestalokaRuntime() {
   const [latestReaction, setLatestReaction] = useState("");
   const [latestConsequenceSummary, setLatestConsequenceSummary] = useState("");
   const [storyItems, setStoryItems] = useState<StoryHistoryItem[]>([]);
+  const [streamingStoryItem, setStreamingStoryItem] = useState<StoryHistoryItem | null>(null);
+  const [streamingTurnId, setStreamingTurnId] = useState("");
   const [storyNextBeforeSequence, setStoryNextBeforeSequence] = useState<number | null>(null);
   const [storyLoading, setStoryLoading] = useState(false);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -320,6 +338,7 @@ export function useGestalokaRuntime() {
   const [turnProgressElapsedSeconds, setTurnProgressElapsedSeconds] = useState(0);
   const [turnProgressStartedAt, setTurnProgressStartedAt] = useState<number | null>(null);
   const [turnProvisionalMessage, setTurnProvisionalMessage] = useState("");
+  const [turnNarrativeStreaming, setTurnNarrativeStreaming] = useState(false);
   const [rebuildPending, setRebuildPending] = useState(false);
   const [memorySearchPending, setMemorySearchPending] = useState(false);
   const [memoryReindexPending, setMemoryReindexPending] = useState(false);
@@ -457,6 +476,10 @@ export function useGestalokaRuntime() {
       setSelectedPlayerActorId("");
       setEditingPlayerActorId("");
       setProfileDraft(createDefaultProfileDraft());
+      setSessionStarting(false);
+      setPlayHydrating(false);
+      setStreamingStoryItem(null);
+      setStreamingTurnId("");
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -565,6 +588,8 @@ export function useGestalokaRuntime() {
     setLatestReaction(response.npc_reaction);
     setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
     setStoryItems((current) => mergeStoryItems(current, [storyItemFromTurnResponse(response)]));
+    setStreamingStoryItem(null);
+    setStreamingTurnId("");
     setEvents((current) => mergeEventItems(current, [eventItemFromTurnResponse(response)]));
     setTurnInputMode("choice");
     setSessionState((current) => mergeTurnResponseIntoSessionState(current, response));
@@ -583,6 +608,7 @@ export function useGestalokaRuntime() {
     setTurnProgressStartedAt(null);
     setTurnProgressLiveLabel("");
     setTurnProvisionalMessage("");
+    setTurnNarrativeStreaming(false);
 
     if (!token || !session) {
       return;
@@ -604,6 +630,27 @@ export function useGestalokaRuntime() {
     void backgroundRefresh;
   }
 
+  function applyNarrativeDelta(data: Record<string, unknown>) {
+    const rawDelta = data.delta;
+    if (typeof rawDelta !== "string" || rawDelta.length === 0) {
+      return;
+    }
+    const rawTurnId = data.turn_id;
+    const turnId = typeof rawTurnId === "string" && rawTurnId.trim() ? rawTurnId : streamingTurnId || "pending";
+    const final = data.final === true;
+    setStreamingTurnId(turnId);
+    setTurnNarrativeStreaming(true);
+    setStreamingStoryItem((current) => {
+      const nextNarrative = final || !current || current.turn_id !== turnId
+        ? rawDelta
+        : `${current.narrative}${rawDelta}`;
+      return {
+        ...(current?.turn_id === turnId ? current : streamingStoryItemFromDelta(turnId, "")),
+        narrative: nextNarrative,
+      };
+    });
+  }
+
   useEffect(() => {
     if (!session || !token) {
       if (socketRef.current) {
@@ -613,7 +660,10 @@ export function useGestalokaRuntime() {
       if (!session) {
         setSessionState(null);
         setStoryItems([]);
+        setStreamingStoryItem(null);
+        setStreamingTurnId("");
         setStoryNextBeforeSequence(null);
+        setPlayHydrating(false);
       }
       setSocketState("idle");
       return;
@@ -627,6 +677,9 @@ export function useGestalokaRuntime() {
       setActivity((current) => [parsed, ...current].slice(0, 40));
       if (parsed.event === "turn.resolved") {
         applyResolvedTurnResponse(parsed.data as TurnResponse);
+      }
+      if (parsed.event === "turn.narrative.delta") {
+        applyNarrativeDelta(parsed.data as Record<string, unknown>);
       }
       if (parsed.event === "turn.progress") {
         const phase = typeof parsed.data.phase === "string" ? parsed.data.phase : "";
@@ -650,6 +703,9 @@ export function useGestalokaRuntime() {
         setTurnProgressPhase("idle");
         setTurnProgressStartedAt(null);
         setTurnProgressLiveLabel("");
+        setTurnNarrativeStreaming(false);
+        setStreamingStoryItem(null);
+        setStreamingTurnId("");
       }
       if (parsed.event === "graph.projection.updated") {
         void refreshAdminData(
@@ -1164,12 +1220,17 @@ export function useGestalokaRuntime() {
     }
 
     try {
+      setSessionStarting(true);
+      setPlayHydrating(false);
       setError("");
       setActivity([]);
       setLatestNarrative("");
       setLatestReaction("");
       setLatestConsequenceSummary("");
       setStoryItems([]);
+      setStreamingStoryItem(null);
+      setStreamingTurnId("");
+      setTurnNarrativeStreaming(false);
       setStoryNextBeforeSequence(null);
       setLastRebuild(null);
       const currentToken = await ensureFreshToken(token);
@@ -1180,7 +1241,9 @@ export function useGestalokaRuntime() {
           player_actor_id: selectedPlayerProfile.actor_id,
         }),
       });
+      setPlayHydrating(true);
       setSession(created);
+      setSessionStarting(false);
       setPlayerProfiles((current) =>
         current.map((item) => (item.actor_id === created.player_profile.actor_id ? created.player_profile : item)),
       );
@@ -1190,12 +1253,17 @@ export function useGestalokaRuntime() {
       await Promise.all([
         refreshWorldState(created, currentToken),
         refreshStoryHistory(created, currentToken),
+      ]);
+      void Promise.all([
         refreshWallet(currentToken),
         refreshAdminData(currentToken, created.world_id, ledgerUserFilter || me?.sub, created.world_id, created.session_id),
         refreshHealth(),
-      ]);
+      ]).catch((requestError: unknown) => showRequestError(requestError));
     } catch (requestError) {
       showRequestError(requestError);
+    } finally {
+      setSessionStarting(false);
+      setPlayHydrating(false);
     }
   }
 
@@ -1223,6 +1291,9 @@ export function useGestalokaRuntime() {
       setTurnProgressPhase("submitting");
       setTurnProgressLiveLabel("");
       setTurnProvisionalMessage("");
+      setTurnNarrativeStreaming(false);
+      setStreamingStoryItem(null);
+      setStreamingTurnId("");
       setError("");
       const currentToken = await ensureFreshToken(token);
       setTurnPhase("resolving");
@@ -1242,6 +1313,9 @@ export function useGestalokaRuntime() {
       return;
     } catch (requestError) {
       showRequestError(requestError);
+      setTurnNarrativeStreaming(false);
+      setStreamingStoryItem(null);
+      setStreamingTurnId("");
       await Promise.all([
         refreshWallet(token),
         refreshAdminData(
@@ -1558,6 +1632,8 @@ export function useGestalokaRuntime() {
     profileDraft,
     setProfileDraft,
     profilePending,
+    sessionStarting,
+    playHydrating,
     session,
     sessionState,
     turnInputMode,
@@ -1568,6 +1644,8 @@ export function useGestalokaRuntime() {
     latestReaction,
     latestConsequenceSummary,
     storyItems,
+    streamingStoryItem,
+    streamingTurnId,
     storyHasOlder: storyNextBeforeSequence !== null,
     storyLoading,
     events,
@@ -1632,6 +1710,7 @@ export function useGestalokaRuntime() {
     turnProgressLiveLabel,
     turnProgressElapsedSeconds,
     turnProvisionalMessage,
+    turnNarrativeStreaming,
     rebuildPending,
     memorySearchPending,
     memoryReindexPending,
