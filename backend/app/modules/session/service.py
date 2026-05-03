@@ -3786,44 +3786,43 @@ def _canonicalize_next_choices(
     normalized: list[dict[str, Any]] = []
     for posture in CHOICE_ORDER:
         fallback = fallback_by_posture.get(posture, {})
+        has_current = posture in raw_by_posture
         current = raw_by_posture.get(posture, fallback)
         fallback_action_kind = str(fallback.get("action_kind") or "narrative")
-        requested_action_kind = str(current.get("action_kind") or fallback_action_kind or "narrative")
+        requested_action_kind = str(current.get("action_kind") or ("narrative" if has_current else fallback_action_kind))
         action_kind = requested_action_kind if requested_action_kind in {"narrative", "use_reward_item", "travel"} else "narrative"
-        if fallback_action_kind == "use_reward_item":
-            action_kind = "use_reward_item"
-        if fallback_action_kind == "travel":
-            action_kind = "travel"
         label = str(
             current.get("label")
-            or fallback.get("label")
-            or fallback.get("canonical_input_text")
+            or (fallback.get("label") if not has_current else "")
+            or (fallback.get("canonical_input_text") if not has_current else "")
             or posture
         ).strip()
         canonical_input_text = str(
             current.get("canonical_input_text")
             or current.get("intent_summary")
-            or fallback.get("canonical_input_text")
+            or (fallback.get("canonical_input_text") if not has_current else "")
             or label
         ).strip()
         summary = str(
             current.get("summary")
             or current.get("intent_summary")
-            or fallback.get("summary")
+            or (fallback.get("summary") if not has_current else "")
             or label
         ).strip()
+        travel_target_key = None
+        if action_kind == "travel":
+            travel_target_key = str(
+                current.get("travel_target_key") or (fallback.get("travel_target_key") if not has_current else "")
+            ).strip() or None
         normalized.append(
             {
-                "choice_id": str(fallback.get("choice_id") or posture),
+                "choice_id": str(current.get("choice_id") or fallback.get("choice_id") or posture),
                 "posture": posture,
                 "label": label,
                 "summary": summary,
                 "canonical_input_text": canonical_input_text,
                 "action_kind": action_kind,
-                "travel_target_key": str(
-                    fallback.get("travel_target_key") or current.get("travel_target_key") or ""
-                ).strip()
-                or None,
+                "travel_target_key": travel_target_key,
             }
         )
     return normalized

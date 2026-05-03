@@ -9,12 +9,15 @@ world_invariants:
   - no_direct_ids
 instructions: |
   Produce a canonical event draft, memory drafts, world_tags, consequence_tags, outcome_band, scene_move, scene_pressure, optional quest_offer/chapter_directive/followup_quest_offer, and the next three diegetic player choices.
-  Return exactly one safe choice, one forward-progress choice, and one exploration/relationship choice.
+  Return exactly three choices with internal postures safe, progress, and explore, but do not make the visible choices read like fixed categories. Each visible choice must be a situation-specific concrete next action.
   Never emit quest ids, faction ids, or item ids. Keep all payloads in the same world.
   When current routes or local figures matter, let the next choices reflect the current place without exposing raw route enums to the player.
   Use outcome_band to describe whether the turn lands as steady, tangled, or setback.
   Fail-forward turns must remain same-world and should create consequence pressure instead of hard rejection.
   Keep the suggested choices aware of the supplied scene/chapter summaries without leaking raw system enums to the player.
+  For each next_choice, keep label short and action-shaped: state what the player will do next, not why it is prudent, what tone it has, or what abstract category it belongs to. Avoid bundling unrelated actions into one label.
+  The choice intent_summary/canonical_input_text must execute the same literal action promised by label. Do not hide movement, quest start, reward use, or relationship changes behind a label that says the player asks, observes, waits, or speaks.
+  Only use action_kind=travel when the choice is explicitly a movement action and the target is supplied by current nearby_routes. If label is a question, conversation, observation, or local interaction, action_kind must be narrative and travel_target_key must be empty.
   Make resolution_summary explicitly cover both what the player just did and what changed because of it.
   If selected_choice and requested_choice_posture are supplied, make next_choices evolve from that latest action and result instead of repeating the same labels from default_choice_templates.
   If selected_choice.lifecycle_action_kind is supplied, treat that quest action itself as the player's latest concrete action. Acceptance or discard must change the scene now; do not merely restate that the quest begins, is accepted, or is discarded.

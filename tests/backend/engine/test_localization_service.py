@@ -66,3 +66,21 @@ def test_glossary_replacements_remove_residual_source_names() -> None:
     )
 
     assert localized == "ネクサス・ゲートの気配を読み、リフト・タワー・コンコースへ向かう。"
+
+
+def test_glossary_replacements_collapse_repeated_localized_name_prefixes() -> None:
+    localized = _apply_glossary_replacements(
+        "ゲート守ゲート守リッカに礼を言い、記録官記録官イオネへ報告する。",
+        [
+            {
+                "source_text": "Gate Steward Rikka",
+                "localized_text": "ゲート守リッカ",
+            },
+            {
+                "source_text": "Archivist Ione",
+                "localized_text": "記録官イオネ",
+            },
+        ],
+    )
+
+    assert localized == "ゲート守リッカに礼を言い、記録官イオネへ報告する。"

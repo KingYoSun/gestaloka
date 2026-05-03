@@ -175,6 +175,13 @@ def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
         if posture not in {"safe", "progress", "explore"} or posture in seen:
             continue
         label = _first_text(item.get("label"), item.get("intent_summary"), item.get("summary"), posture)
+        canonical_input_text = _first_text(
+            item.get("canonical_input_text"),
+            item.get("canonical_text"),
+            item.get("normalized_action"),
+            item.get("intent_summary"),
+            label,
+        )
         action_kind = str(item.get("action_kind") or "narrative")
         if action_kind not in {"narrative", "use_reward_item", "travel"}:
             action_kind = "narrative"
@@ -182,7 +189,13 @@ def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
             {
                 "posture": posture,
                 "label": label,
-                "intent_summary": _first_text(item.get("intent_summary"), item.get("summary"), label),
+                "intent_summary": _first_text(
+                    item.get("intent_summary"),
+                    item.get("summary"),
+                    canonical_input_text,
+                    label,
+                ),
+                "canonical_input_text": canonical_input_text,
                 "action_kind": action_kind,
                 "travel_target_key": item.get("travel_target_key"),
             }
@@ -190,9 +203,9 @@ def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
         seen.add(posture)
 
     defaults = {
-        "safe": "Hold position and read the room before acting again.",
-        "progress": "Take the clearest available step toward the current request.",
-        "explore": "Ask a grounded question about the current place or relationship.",
+        "safe": "Check who reacted first.",
+        "progress": "Help the nearest person.",
+        "explore": "Ask what changed here.",
     }
     for posture, label in defaults.items():
         if posture not in seen:
@@ -201,6 +214,7 @@ def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
                     "posture": posture,
                     "label": label,
                     "intent_summary": label,
+                    "canonical_input_text": label,
                     "action_kind": "narrative",
                     "travel_target_key": None,
                 }

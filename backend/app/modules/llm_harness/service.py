@@ -178,6 +178,7 @@ class NarrativeChoiceDraft(BaseModel):
     posture: Literal["safe", "progress", "explore"]
     label: str = Field(min_length=1)
     intent_summary: str = Field(min_length=1)
+    canonical_input_text: str | None = None
     action_kind: Literal["narrative", "use_reward_item", "travel"] = "narrative"
     travel_target_key: str | None = None
 

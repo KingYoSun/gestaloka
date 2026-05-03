@@ -284,7 +284,20 @@ def _apply_glossary_replacements(value: str, glossary: list[dict[str, str]]) -> 
         if not source_text or not localized_text or source_text == localized_text:
             continue
         localized = localized.replace(source_text, localized_text)
-    return _strip_player_visible_control_tokens(localized)
+    return _strip_player_visible_control_tokens(_collapse_glossary_prefix_duplication(localized, entries))
+
+
+def _collapse_glossary_prefix_duplication(value: str, entries: list[tuple[str, str]]) -> str:
+    collapsed = value
+    for _source_text, localized_text in entries:
+        if not localized_text:
+            continue
+        for split_at in range(1, len(localized_text)):
+            prefix = localized_text[:split_at]
+            if not prefix or not localized_text[split_at:]:
+                continue
+            collapsed = collapsed.replace(f"{prefix}{localized_text}", localized_text)
+    return collapsed
 
 
 def _strip_player_visible_control_tokens(value: str) -> str:

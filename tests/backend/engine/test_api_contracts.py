@@ -1332,6 +1332,98 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
     assert progress_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
 
 
+def test_generated_narrative_choice_does_not_inherit_fallback_travel(client, container, auth_headers, monkeypatch):
+    provider = container.model_router.provider
+    original_generate = provider.generate
+
+    def generate_choice_shape(*, prompt, response_model, model_id, lane, input_payload, temperature):
+        if prompt.prompt_id != "council.world_progress":
+            return original_generate(
+                prompt=prompt,
+                response_model=response_model,
+                model_id=model_id,
+                lane=lane,
+                input_payload=input_payload,
+                temperature=temperature,
+            )
+        return ProviderResponse(
+            raw_output={
+                "event_type": "player.turn.resolved",
+                "event_payload": {"world_id": input_payload["world_id"], "summary": input_payload["input_text"]},
+                "memories": [{"scope": "world", "text": "The player read the gate before moving.", "salience": 0.6}],
+                "world_tags": ["investigate"],
+                "consequence_tags": ["careful_observation"],
+                "outcome_band": "steady",
+                "resolution_summary": "The player asks a local question and keeps the scene at the gate.",
+                "risk_level": "low",
+                "next_choices": [
+                    {
+                        "posture": "safe",
+                        "label": "リッカの反応を確かめる",
+                        "intent_summary": "リッカの反応を確かめる",
+                    },
+                    {
+                        "posture": "progress",
+                        "label": "到着記録を一行だけ直す",
+                        "intent_summary": "到着記録を一行だけ直す",
+                    },
+                    {
+                        "posture": "explore",
+                        "label": "現在の場所について質問する",
+                        "intent_summary": "現在の場所について質問する",
+                    },
+                ],
+                "scene_move": "hold",
+                "scene_pressure": "medium",
+            },
+            provider_name="choice-shape-test",
+            provider_response_id=None,
+        )
+
+    monkeypatch.setattr(provider, "generate", generate_choice_shape)
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    _, first_payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "safe"},
+    )
+    generated_explore = first_payload["next_choices"][2]
+    assert generated_explore["label"] == "現在の場所について質問する"
+    assert generated_explore["canonical_input_text"] == "現在の場所について質問する"
+    assert generated_explore["action_kind"] == "narrative"
+    assert generated_explore["travel_target_key"] is None
+
+    _, second_payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "explore"},
+    )
+    assert second_payload["action_type"] == "narrative"
+    assert second_payload["interpreted_intent"]["canonical_action_kind"] == "narrative"
+    assert second_payload["current_location"]["key"] == "nexus_gate"
+
+
+def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers):
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+
+    _, payload, _ = _post_turn_and_wait_for_resolution(
+        client,
+        session_response.json()["session_id"],
+        auth_headers,
+        {"input_mode": "choice", "choice_id": "explore"},
+    )
+
+    assert payload["action_type"] == "travel"
+    assert payload["interpreted_intent"]["canonical_action_kind"] == "travel"
+    assert payload["current_location"]["key"] == "lift_tower_concourse"
+
+
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
     session_response = client.post(
         "/sessions",
