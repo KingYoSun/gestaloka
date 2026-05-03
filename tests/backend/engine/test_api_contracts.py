@@ -443,9 +443,13 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     assert state.status_code == 200
     choices = state.json()["next_choices"]
     assert [item["choice_id"] for item in choices] == ["safe", "progress", "explore"]
-    assert choices[0]["label"] == "Watch Nexus Gate without disturbing the flow"
-    assert choices[1]["label"] == "Help the person in need and create the next opening"
-    assert choices[2]["summary"] == "Change places and widen the investigation."
+    assert choices[0]["label"] == "Watch the gate and understand what went wrong"
+    assert choices[1]["label"] == "Help Rikka steady the disturbed arrival record"
+    assert choices[2]["summary"] == "Move to Lift Tower Concourse and widen your understanding."
+
+    story = client.get(f"/sessions/{session.json()['session_id']}/story?limit=1", headers=auth_headers)
+    assert story.status_code == 200
+    assert story.json()["items"][0]["narrative"].startswith("Nexus Gate is the arrival gate")
 
 
 def test_japanese_player_visible_state_is_localized_and_cached(client, container, auth_headers):
@@ -477,8 +481,8 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     assert payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
     assert payload["local_figures"][0]["display_name"] == "ゲート守リッカ"
     assert payload["nearby_routes"][0]["destination_name"] == "リフト・タワー・コンコース"
-    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["label"]
-    assert "Lift Tower Concourse" in payload["next_choices"][2]["canonical_input_text"]
+    assert payload["next_choices"][2]["label"] == "上階の記録所へ向かい、この街の仕組みを探る"
+    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["canonical_input_text"]
 
     localization_records = [
         item
@@ -579,7 +583,8 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
     assert payload["current_location"]["name"] == "ネクサス・ゲート"
     assert payload["local_figures"][0]["display_name"] == "ゲート守リッカ"
     assert payload["nearby_routes"][0]["destination_name"] == "リフト・タワー・コンコース"
-    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["label"]
+    assert "この街の仕組み" in payload["next_choices"][2]["label"]
+    assert "リフト・タワー・コンコース" in payload["next_choices"][2]["canonical_input_text"]
     assert_no_player_visible_english_residue(payload)
 
     localization_records = [
@@ -1699,7 +1704,7 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     assert {"provider", "model", "dimension", "pending_count", "failed_count", "runtime_status"} <= set(status_payload)
 
     search_response = client.get(
-        f"/ops/worlds/{session_payload['world_id']}/memory-search?query=%E6%97%85%E4%BA%BA%E3%82%92%E5%8A%A9%E3%81%91%E3%81%9F&limit=4",
+        f"/ops/worlds/{session_payload['world_id']}/memory-search?query=%E5%88%B0%E7%9D%80%E8%A8%98%E9%8C%B2&limit=4",
         headers=auth_headers,
     )
     assert search_response.status_code == 200
@@ -1707,7 +1712,7 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
     assert search_payload["world_context"] == session_payload["world_context"]
     assert search_payload["trace"]["status"] == "ready"
     assert len(search_payload["hits"]) >= 1
-    assert any("旅人を助け" in item["text"] for item in search_payload["hits"])
+    assert any("到着記録" in item["text"] for item in search_payload["hits"])
 
     reindex_response = client.post(
         "/ops/memories/reindex",

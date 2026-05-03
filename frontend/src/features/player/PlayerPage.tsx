@@ -1161,22 +1161,34 @@ function StoryEntry({ item, latest }: { item: StoryHistoryItem; latest: boolean 
   const { t } = useTranslation();
   return (
     <article className="grid gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
-      <p className="text-lg leading-9 text-foreground" data-testid={latest ? "latest-narrative" : undefined}>
-        {item.narrative || item.scene_summary}
-      </p>
+      <StoryText text={item.narrative || item.scene_summary} testId={latest ? "latest-narrative" : undefined} />
       {item.reaction ? (
         <div className="grid gap-2">
           <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.reaction")}</h2>
-          <p className="text-lg leading-9 text-foreground">{item.reaction}</p>
+          <StoryText text={item.reaction} />
         </div>
       ) : null}
       {item.consequence ? (
         <div className="grid gap-2">
           <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.consequence")}</h2>
-          <p className="text-lg leading-9 text-foreground">{item.consequence}</p>
+          <StoryText text={item.consequence} />
         </div>
       ) : null}
     </article>
+  );
+}
+
+function StoryText({ text, testId }: { text: string; testId?: string }) {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return (
+    <div className="grid gap-3 text-lg leading-9 text-foreground" data-testid={testId}>
+      {(paragraphs.length ? paragraphs : [text]).map((paragraph, index) => (
+        <p key={`${paragraph}-${index}`}>{paragraph}</p>
+      ))}
+    </div>
   );
 }
 

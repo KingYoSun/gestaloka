@@ -35,6 +35,8 @@ def test_session_can_start_from_gestaloka_reference_pack(client, container, auth
     state_payload = state.json()
     assert state_payload["current_location"]["key"] == "nexus_gate"
     assert state_payload["current_location"]["name"] == "ネクサス・ゲート"
+    assert state_payload["current_scene"]["summary"]
+    assert "到着門" in state_payload["current_scene"]["summary"]
     assert state_payload["world_pack"]["pack_id"] == "gestaloka_reference"
     assert state_payload["world_pack"]["followup_location_name"] == "Oblivion Breach"
     assert state_payload["world_pack"]["followup_branches"]["formal_path"]["branch_key"] == "custodian_charter"
@@ -45,7 +47,20 @@ def test_session_can_start_from_gestaloka_reference_pack(client, container, auth
     assert state_payload["chapter"] is None
     assert any(item["axis_id"] == "archive_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "lift_tower_concourse" for item in state_payload["nearby_routes"])
-    assert any("リフト・タワー・コンコース" in item["label"] for item in state_payload["next_choices"])
+    assert state_payload["next_choices"][0]["label"] == "周囲を観察し、門で何が起きているか確かめる"
+    assert state_payload["next_choices"][1]["label"] == "リッカを手伝い、乱れた到着記録を整える"
+    assert state_payload["next_choices"][2]["label"] == "上階の記録所へ向かい、この街の仕組みを探る"
+
+    story = client.get(f"/sessions/{payload['session_id']}/story", headers=auth_headers)
+    assert story.status_code == 200
+    story_payload = story.json()
+    assert len(story_payload["items"]) == 1
+    opening = story_payload["items"][0]
+    assert opening["narrative"].startswith("ネクサス・ゲート。")
+    assert "都市の共有記録" in opening["narrative"]
+    assert "session_id" not in opening["narrative"]
+    assert "raw" not in opening["narrative"].lower()
+    assert opening["consequence"] == ""
 
     journal = client.get(f"/sessions/{payload['session_id']}/quests", headers=auth_headers)
     assert journal.status_code == 200

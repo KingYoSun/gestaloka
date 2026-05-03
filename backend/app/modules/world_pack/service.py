@@ -153,6 +153,16 @@ class PackBootstrap(BaseModel):
     session_started_narrative: str = (
         "{player_name} began a session in {starter_location_name} and received the first request from {guide_npc_name}."
     )
+    opening_title: str = ""
+    opening_narrative: str = ""
+    opening_situation: str = ""
+    opening_pressure: str = ""
+    opening_title_en: str = ""
+    opening_narrative_en: str = ""
+    opening_situation_en: str = ""
+    opening_pressure_en: str = ""
+    opening_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    opening_choices_en: dict[str, dict[str, Any]] = Field(default_factory=dict)
     reward_unlock_summary: str = "{reward_name} unlocked the next route."
     reward_use_narrative: str = (
         "{player_name} raised {reward_name} in {starter_location_name}, and {faction_name} opened the next route."

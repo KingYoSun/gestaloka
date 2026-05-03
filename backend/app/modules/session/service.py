@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Iterator
 
 from fastapi import HTTPException, status
@@ -10,7 +11,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.container import AppContainer
-from app.models.entities import Actor, Event, LLMRun, Location, OutboxEvent, PlayerProfile, Session as GameSession, SPLedgerEntry, Turn, new_id
+from app.models.entities import (
+    Actor,
+    ChapterTrack,
+    Event,
+    LLMRun,
+    Location,
+    OutboxEvent,
+    PlayerProfile,
+    SceneFrame,
+    Session as GameSession,
+    SPLedgerEntry,
+    Turn,
+    new_id,
+)
 from app.modules.world_pack.service import resolve_world_pack
 from app.modules.actor.service import (
     ensure_relationship,
@@ -153,6 +167,133 @@ class PreparedTurnContext:
     turn_id: str
     debit: SPMutationResult
     input_mode: str
+
+
+def _profile_prefers_english(profile_payload: dict[str, object]) -> bool:
+    play_language = profile_payload.get("play_language") if isinstance(profile_payload, dict) else {}
+    play_language = play_language if isinstance(play_language, dict) else {}
+    return (
+        str(play_language.get("preset") or "").strip().lower() == "en"
+        or str(play_language.get("prompt_name") or "").strip().lower() == "english"
+    )
+
+
+def _bootstrap_text(template: Any, field: str, *, english: bool) -> str:
+    bootstrap = template.bootstrap
+    if english:
+        localized = str(getattr(bootstrap, f"{field}_en", "") or "").strip()
+        if localized:
+            return localized
+    return str(getattr(bootstrap, field, "") or "").strip()
+
+
+def _opening_narrative(template: Any, *, profile_payload: dict[str, object], starter_location: Location, guide_npc: Actor) -> str:
+    english = _profile_prefers_english(profile_payload)
+    narrative = _bootstrap_text(template, "opening_narrative", english=english)
+    if narrative:
+        return narrative
+    if english:
+        return (
+            f"{starter_location.name} is the first threshold into the city. "
+            f"{guide_npc.display_name} is watching a disturbed arrival record and asks for calm help."
+        )
+    return (
+        f"{starter_location.name}。ここは、この世界へ入る最初の場所だ。"
+        f"{guide_npc.display_name}が乱れた到着記録を見つめ、落ち着いた助けを求めている。"
+    )
+
+
+def _ensure_opening_scene_seed(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    location_id: str,
+    focus_actor_id: str,
+    source_event_id: str,
+    template: Any,
+    profile_payload: dict[str, object],
+) -> None:
+    existing_scene = db.execute(
+        select(SceneFrame)
+        .where(
+            SceneFrame.world_id == world_id,
+            SceneFrame.owner_actor_id == actor_id,
+            SceneFrame.status.in_(("active", "cooling")),
+        )
+        .order_by((SceneFrame.status == "active").desc(), SceneFrame.updated_at.desc(), SceneFrame.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    english = _profile_prefers_english(profile_payload)
+    starter_location = template.locations.get(template.roles.starter_location_key)
+    situation = _bootstrap_text(template, "opening_situation", english=english)
+    if not situation:
+        situation = str(getattr(starter_location, "description", "") or "").strip() or "The first scene is ready."
+    pressure = _bootstrap_text(template, "opening_pressure", english=english)
+    if not pressure:
+        pressure = str(template.bootstrap.start_consequence_summary or "").strip()
+    title = _bootstrap_text(template, "opening_title", english=english)
+    chapter_key = str(template.roles.opening_chapter_key or "")
+    now = datetime.now(timezone.utc)
+    chapter: ChapterTrack | None = None
+    if chapter_key:
+        chapter = db.execute(
+            select(ChapterTrack).where(
+                ChapterTrack.world_id == world_id,
+                ChapterTrack.owner_actor_id == actor_id,
+                ChapterTrack.chapter_key == chapter_key,
+            )
+        ).scalar_one_or_none()
+        chapter_summary = title or situation
+        if chapter is None:
+            chapter = ChapterTrack(
+                world_id=world_id,
+                owner_actor_id=actor_id,
+                chapter_key=chapter_key,
+                chapter_kind="ambient",
+                status="active",
+                summary=chapter_summary,
+                opening_event_id=source_event_id,
+                opened_at=now,
+            )
+            db.add(chapter)
+            db.flush()
+        elif not str(chapter.summary or "").strip():
+            chapter.summary = chapter_summary
+            chapter.opening_event_id = chapter.opening_event_id or source_event_id
+            chapter.updated_at = now
+            db.flush()
+
+    if existing_scene is not None:
+        existing_scene.chapter_track_id = chapter.id if chapter is not None else existing_scene.chapter_track_id
+        existing_scene.scene_phase = "establish"
+        existing_scene.status = "active"
+        existing_scene.location_id = location_id
+        existing_scene.focus_actor_id = focus_actor_id
+        existing_scene.stakes_summary = situation
+        existing_scene.pressure_summary = pressure
+        existing_scene.opening_event_id = existing_scene.opening_event_id or source_event_id
+        existing_scene.updated_at = now
+        db.flush()
+        return
+
+    db.add(
+        SceneFrame(
+            world_id=world_id,
+            owner_actor_id=actor_id,
+            chapter_track_id=chapter.id if chapter is not None else None,
+            scene_phase="establish",
+            status="active",
+            location_id=location_id,
+            focus_actor_id=focus_actor_id,
+            stakes_summary=situation,
+            pressure_summary=pressure,
+            opening_event_id=source_event_id,
+            opened_at=now,
+        )
+    )
+    db.flush()
 
 
 def create_session_for_user(
@@ -338,6 +479,50 @@ def create_session_for_user(
     )
     db.flush()
     _finalize_event_timeline_and_broadcast(db, event=bootstrap_event)
+    opening_event = Event(
+        world_id=world.id,
+        session_id=session.id,
+        turn_id=bootstrap_turn.id,
+        event_type="player.story.opening",
+        source_actor_id=player_actor.id,
+        location_id=starter_location.id,
+        payload={
+            "action_type": "story_opening",
+            "player_visible": True,
+            "title": _bootstrap_text(
+                template,
+                "opening_title",
+                english=_profile_prefers_english(profile_payload),
+            ),
+        },
+        narrative=_opening_narrative(
+            template,
+            profile_payload=profile_payload,
+            starter_location=starter_location,
+            guide_npc=guide_npc,
+        ),
+    )
+    db.add(opening_event)
+    db.flush()
+    canonicalize_event(
+        db,
+        opening_event,
+        entry_kind="event",
+        scope_kind="story_opening",
+        affected_location_ids=[starter_location.id],
+        narrative_constraint=str(opening_event.payload.get("title") or ""),
+        payload={"event_type": opening_event.event_type, "turn_id": opening_event.turn_id},
+    )
+    _ensure_opening_scene_seed(
+        db,
+        world_id=world.id,
+        actor_id=player_actor.id,
+        location_id=starter_location.id,
+        focus_actor_id=guide_npc.id,
+        source_event_id=opening_event.id,
+        template=template,
+        profile_payload=profile_payload,
+    )
     sync_active_broadcast_deliveries(
         db,
         world_id=world.id,

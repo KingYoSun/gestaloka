@@ -49,6 +49,8 @@ def _session_for_user(db: Session, *, user: UserIdentity, session_id: str) -> tu
 def _story_item(event: Event, turn: Turn | None) -> dict[str, object]:
     resolved_output = turn.resolved_output if turn is not None and isinstance(turn.resolved_output, dict) else {}
     payload = event.payload if isinstance(event.payload, dict) else {}
+    if event.event_type == "player.story.opening":
+        resolved_output = {}
     return {
         "event_id": event.id,
         "turn_id": event.turn_id,
@@ -177,7 +179,7 @@ def get_session_story(
     conditions = [
         Event.world_id == game_session.world_id,
         Event.session_id == game_session.id,
-        Event.event_type == "player.turn.resolved",
+        Event.event_type.in_(("player.story.opening", "player.turn.resolved")),
         Event.canonical_sequence.is_not(None),
     ]
     if before_sequence is not None:

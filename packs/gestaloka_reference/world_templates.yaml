@@ -50,6 +50,58 @@ world_templates:
             - Broker Vell
             - Salvager Mako
     bootstrap:
+      opening_title: ネクサス・ゲート
+      opening_narrative: |-
+        ネクサス・ゲート。ここは、初めて来た人を都市の共有記録に登録する到着門だ。
+
+        あなたが足を踏み入れると、門の記録灯が一瞬だけ乱れ、受付を守るリッカが顔を上げる。彼女は、この街では「誰が、何をしたか」が人々の記憶と道を少しずつ変えていくのだと短く告げる。
+
+        いま必要なのは、難しい儀式ではない。乱れた到着記録を確かめ、門の混乱を落ち着かせることだ。
+      opening_situation: ネクサス・ゲートは、初めて来た人を都市の共有記録に登録する到着門で、いま到着記録の乱れを落ち着かせる助けを必要としている。
+      opening_pressure: 門の記録灯が一瞬だけ乱れ、受付を守るリッカがあなたに静かな助けを求めている。
+      opening_title_en: Nexus Gate
+      opening_narrative_en: |-
+        Nexus Gate is the arrival gate where first-time visitors are entered into the city's shared records.
+
+        As you step through, the gate's record-lamps flicker out of order, and Gate Steward Rikka looks up from the registry. She explains briefly that in this city, what people do can change memory, trust, and even the roads that open next.
+
+        The first need is simple: check the disturbed arrival record and help the gate settle.
+      opening_situation_en: Nexus Gate is the arrival gate for first-time visitors, and its disturbed arrival record needs to be checked before the city can answer clearly.
+      opening_pressure_en: The gate's record-lamps have flickered out of order, and Gate Steward Rikka is asking for calm help.
+      opening_choices:
+        safe:
+          label: 周囲を観察し、門で何が起きているか確かめる
+          summary: まず到着門の様子を読み、何が乱れているのかを掴む。
+          canonical_input_text: 周囲を観察し、ネクサス・ゲートで何が起きているか確かめる
+          action_kind: narrative
+        progress:
+          label: リッカを手伝い、乱れた到着記録を整える
+          summary: 受付を守るリッカの依頼に応え、最初の混乱を落ち着かせる。
+          canonical_input_text: リッカを手伝い、乱れた到着記録を整える
+          action_kind: narrative
+        explore:
+          label: 上階の記録所へ向かい、この街の仕組みを探る
+          summary: リフト・タワー・コンコースへ移動し、共有記録の仕組みを確かめる。
+          canonical_input_text: リフト・タワー・コンコースへ向かう
+          action_kind: travel
+          travel_target_key: lift_tower_concourse
+      opening_choices_en:
+        safe:
+          label: Watch the gate and understand what went wrong
+          summary: Read the arrival gate before disturbing the scene.
+          canonical_input_text: Watch Nexus Gate and understand what went wrong
+          action_kind: narrative
+        progress:
+          label: Help Rikka steady the disturbed arrival record
+          summary: Answer the steward's first request and settle the gate.
+          canonical_input_text: Help Rikka steady the disturbed arrival record
+          action_kind: narrative
+        explore:
+          label: Go upstairs and learn how the city keeps records
+          summary: Move to Lift Tower Concourse and widen your understanding.
+          canonical_input_text: Travel to Lift Tower Concourse
+          action_kind: travel
+          travel_target_key: lift_tower_concourse
       start_consequence_summary: The Nexus Custodians wait to see how the new visitor affects the gate.
       session_started_narrative: >-
         {player_name} began at {starter_location_name} and received the first stabilizer request from {guide_npc_name}.

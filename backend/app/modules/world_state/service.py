@@ -2178,6 +2178,7 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
     lore_key = _lore_location_key(db, world_id)
     followup_key = _followup_location_key(db, world_id)
     followup_branches = _followup_branches(db, world_id)
+    bootstrap = template.bootstrap
     return {
         "pack_id": pack.manifest.pack_id,
         "pack_display_name": pack.manifest.display_name,
@@ -2200,6 +2201,18 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
         "faction_name": str(template.faction.name or ""),
         "followup_branches": followup_branches,
         "branch_labels": branch_labels_from_followup_branches(followup_branches),
+        "bootstrap": {
+            "opening_title": str(bootstrap.opening_title or ""),
+            "opening_narrative": str(bootstrap.opening_narrative or ""),
+            "opening_situation": str(bootstrap.opening_situation or ""),
+            "opening_pressure": str(bootstrap.opening_pressure or ""),
+            "opening_title_en": str(bootstrap.opening_title_en or ""),
+            "opening_narrative_en": str(bootstrap.opening_narrative_en or ""),
+            "opening_situation_en": str(bootstrap.opening_situation_en or ""),
+            "opening_pressure_en": str(bootstrap.opening_pressure_en or ""),
+            "opening_choices": dict(bootstrap.opening_choices or {}),
+            "opening_choices_en": dict(bootstrap.opening_choices_en or {}),
+        },
     }
 
 
@@ -2344,6 +2357,18 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     leading_consequence = str(recent_consequence_history[0] or "") if recent_consequence_history else ""
     dominant_branch = dominant_branch_key(route_pressures, world_pack=world_pack)
     dominant_branch_slot = branch_slot_for_key(world_pack, dominant_branch)
+    opening_bootstrap = world_pack.get("bootstrap") if isinstance(world_pack.get("bootstrap"), dict) else {}
+    is_initial_opening_state = (
+        current_location_key == starter_location_key
+        and stage_key == starter_stage_key
+        and progress == 0
+        and not quests
+        and not inventory
+        and not recent_consequence_history
+        and not recent_world_beats
+        and not ambient_murmurs
+        and not recent_travel_history
+    )
 
     def route_to(location_key: str) -> dict[str, Any] | None:
         return next(
@@ -2681,6 +2706,19 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["label"] = "Follow the rumors and sightlines beneath the scene"
                     choice["summary"] = "Explore the situation and widen your understanding."
                     choice["canonical_input_text"] = f"Explore the mood and local concerns around {current_location_name}"
+
+    if is_initial_opening_state:
+        opening_choices = opening_bootstrap.get("opening_choices_en" if english_play_language else "opening_choices")
+        if isinstance(opening_choices, dict):
+            for choice in (safe_choice, progress_choice, explore_choice):
+                choice_id = str(choice.get("choice_id") or "")
+                opening_choice = opening_choices.get(choice_id)
+                if not isinstance(opening_choice, dict):
+                    continue
+                for field in ("label", "summary", "canonical_input_text", "action_kind", "travel_target_key"):
+                    value = opening_choice.get(field)
+                    if isinstance(value, str) and value.strip():
+                        choice[field] = value.strip()
 
     if leading_consequence or leading_world_beat or leading_murmur:
         signal = leading_consequence or leading_world_beat or leading_murmur
