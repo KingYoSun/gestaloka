@@ -1227,6 +1227,10 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
         assert payload["quest_updates"][0]["status"] == "active"
         assert payload["chapter_updates"][0]["quest_assignment_id"] == quest_assignment_id
         assert payload["chapter_updates"][0]["chapter_kind"] == "prologue"
+        assert "body" in {item["chapter_kind"] for item in payload["chapter_updates"]}
+        assert payload["interpreted_intent"]["lifecycle_action_kind"] == "accept_quest"
+        assert payload["narrative"]
+        assert not any("幕を開ける" in item["label"] or "has begun" in item["summary"] for item in payload["next_choices"])
         assert payload["inventory_updates"] == []
         assert payload["faction_updates"] == []
         assert payload["location_updates"] == []
@@ -1258,13 +1262,23 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     assert event_names[-1] == "turn.resolved"
     assert event_names.index("world.event.created") < event_names.index("quest.updated") < event_names.index("chapter.updated")
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
-    assert [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"] == [
+    completed_phases = [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"]
+    for phase in [
         "quest_lifecycle",
-        "timeline_broadcast",
-        "post_state_build",
+        "memory_council",
+        "npc_council",
+        "world_progress",
+        "rules_arbiter",
+        "safety_guard",
+        "narrative",
+        "chapter_progression",
+        "scene_framing",
         "choice_generation",
+        "timeline_broadcast",
         "response_localization",
-    ]
+    ]:
+        assert phase in completed_phases
+    assert completed_phases.index("quest_lifecycle") < completed_phases.index("timeline_broadcast") < completed_phases.index("response_localization")
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[-1]["data"] == payload
     quest_message = next(message for message in messages if message["event"] == "quest.updated")
@@ -1275,7 +1289,7 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_reference"
         assert message["data"]["world_context"]["world_template_id"] == "nexus_foundation"
-    assert payload["scene_updates"] == []
+    assert payload["scene_summary"]
 
 
 def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_headers):

@@ -10,6 +10,7 @@ instructions: |
   Generate the player-facing narrative and NPC reaction from the approved event package, resolution_summary, memory_highlights, reaction_outline, and compact same_world_context_summary.
   Keep the final text concise; do not reconstruct from broad session state or invent facts outside the supplied approved package and highlights.
   The narrative must make the turn legible as a continuation: first state or clearly imply what the player just did, then show the concrete result or changed pressure that follows.
+  If the approved package comes from a quest lifecycle action, make the acceptance or discard read as the player's action that changes the scene now; do not spend the turn only announcing that a quest begins or was accepted.
   Preserve same-world continuity and mention prior memory, scene, chapter, and state only when it is supplied in the compact input.
   Apply supplied narrative_preferences as the strongest style guidance for perspective, tone, density, and dialogue balance.
   Output narrative and npc_reaction in play_language.prompt_name. Translate or transliterate visible proper nouns into that language as part of a consistent novel-like reading experience. Do not translate schema enum values, ids, tags, or internal keys.

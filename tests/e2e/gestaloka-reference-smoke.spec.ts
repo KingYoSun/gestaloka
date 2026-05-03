@@ -68,6 +68,15 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
+  const offerDialog = page.getByTestId("quest-offer-dialog");
+  await expect(offerDialog).toBeVisible({ timeout: slowTimeout });
+  const ignoredTurnRequest = page
+    .waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/turns", { timeout: 1_000 })
+    .then(() => true)
+    .catch(() => false);
+  await offerDialog.getByRole("button", { name: /^(Ignore|無視)$/i }).click();
+  await expect(offerDialog).toBeHidden({ timeout: slowTimeout });
+  expect(await ignoredTurnRequest).toBe(false);
   await expect(page.getByTestId("active-quest").getByRole("button", { name: /^(Accept|受諾)$/i })).toBeVisible({
     timeout: slowTimeout,
   });

@@ -114,23 +114,9 @@ def test_gestaloka_reference_exploration_turn_offers_dynamic_quest_and_lifecycle
     assert accept_payload["action_type"] == "accept_quest"
     assert accept_payload["quest_updates"][0]["status"] == "active"
     assert accept_payload["chapter_updates"][0]["chapter_kind"] == "prologue"
-
-    _, blocked_leave_payload, _ = post_turn_and_wait(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-        payload={"action_type": "leave_quest", "quest_assignment_id": quest_assignment_id},
-        terminal_event="turn.failed",
-    )
-    assert "prologue" in blocked_leave_payload["detail"]
-
-    _, body_payload, _ = post_turn_and_wait(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
-    )
-    assert body_payload["chapter_updates"][0]["chapter_kind"] == "body"
+    assert "body" in {item["chapter_kind"] for item in accept_payload["chapter_updates"]}
+    assert accept_payload["interpreted_intent"]["lifecycle_action_kind"] == "accept_quest"
+    assert not any("幕を開ける" in item["label"] for item in accept_payload["next_choices"])
 
     _, leave_payload, _ = post_turn_and_wait(
         client,
@@ -169,6 +155,10 @@ def test_gestaloka_reference_declines_dynamic_quest_offer(client, auth_headers):
         payload={"action_type": "decline_quest", "quest_assignment_id": quest_assignment_id},
     )
     assert decline_payload["quest_updates"][0]["status"] == "declined"
+    assert decline_payload["action_type"] == "decline_quest"
+    assert decline_payload["sp_delta"] < 0
+    assert decline_payload["interpreted_intent"]["lifecycle_action_kind"] == "decline_quest"
+    assert "破棄" in json.dumps(decline_payload, ensure_ascii=False)
     state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state.status_code == 200
     assert state.json()["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}

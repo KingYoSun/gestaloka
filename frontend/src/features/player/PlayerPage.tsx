@@ -1689,6 +1689,9 @@ function QuestOfferDialog({
           <p className="min-w-0 break-words text-sm leading-6 text-foreground">{summary}</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2 max-[420px]:grid max-[420px]:grid-cols-1">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={turnPending}>
+            {t("player.quest.actions.ignore_quest")}
+          </Button>
           <Button type="button" variant="secondary" onClick={() => handleAction("decline_quest")} disabled={turnPending}>
             {t("player.quest.actions.decline_quest")}
           </Button>

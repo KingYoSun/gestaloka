@@ -132,7 +132,8 @@ const resources = {
           },
           actions: {
             accept_quest: "受諾",
-            decline_quest: "見送る",
+            decline_quest: "破棄",
+            ignore_quest: "無視",
             leave_quest: "クエストから離脱",
             resume_quest: "再開",
           },
@@ -331,7 +332,8 @@ const resources = {
           },
           actions: {
             accept_quest: "Accept",
-            decline_quest: "Decline",
+            decline_quest: "Discard",
+            ignore_quest: "Ignore",
             leave_quest: "Leave quest",
             resume_quest: "Resume",
           },

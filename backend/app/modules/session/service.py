@@ -1774,6 +1774,110 @@ def _resolve_narrative_turn_for_session(
     )
 
 
+def _quest_lifecycle_title(quest_updates: list[dict[str, Any]], fallback_summary: str) -> str:
+    if quest_updates:
+        title = str(quest_updates[0].get("title") or "").strip()
+        if title:
+            return title
+    summary = fallback_summary.strip()
+    if " " in summary:
+        return summary.split(" ", 1)[0].strip("\"'「」") or summary
+    return summary or "the quest"
+
+
+def _quest_lifecycle_action_text(
+    *,
+    action_type: str,
+    quest_updates: list[dict[str, Any]],
+    fallback_summary: str,
+    session_state: dict[str, Any],
+) -> str:
+    english = _profile_prefers_english((session_state.get("player_profile") or {}) if isinstance(session_state, dict) else {})
+    title = _quest_lifecycle_title(quest_updates, fallback_summary)
+    if english:
+        if action_type == "accept_quest":
+            return f'Accept "{title}" and take the first concrete step into the responsibility it creates.'
+        if action_type == "decline_quest":
+            return f'Discard "{title}" and make clear that this thread will not be pursued.'
+        if action_type == "leave_quest":
+            return f'Step away from "{title}" for now, leaving it paused while the scene settles around that choice.'
+        if action_type == "resume_quest":
+            return f'Resume "{title}" and return attention to the responsibility already accepted.'
+        return fallback_summary
+    if action_type == "accept_quest":
+        return f"「{title}」を受諾し、その責務へ最初の具体的な一歩を踏み出す。"
+    if action_type == "decline_quest":
+        return f"「{title}」を破棄し、この糸口を追わないと明確に決める。"
+    if action_type == "leave_quest":
+        return f"「{title}」からいったん離れ、その判断が場に残す揺れを受け止める。"
+    if action_type == "resume_quest":
+        return f"「{title}」を再開し、引き受けた責務へ意識を戻す。"
+    return fallback_summary
+
+
+def _quest_lifecycle_choice_summary(*, action_type: str, fallback_summary: str, english: bool) -> str:
+    if english:
+        if action_type == "accept_quest":
+            return "The acceptance itself changes the scene and must open a concrete next beat."
+        if action_type == "decline_quest":
+            return "Discarding the quest closes this offered thread and leaves a visible consequence in the scene."
+        if action_type == "leave_quest":
+            return "Leaving the quest pauses the active responsibility and shifts attention back to the surrounding scene."
+        if action_type == "resume_quest":
+            return "Resuming the quest restores the accepted responsibility as the active thread."
+        return fallback_summary
+    if action_type == "accept_quest":
+        return "受諾そのものが場を動かし、具体的な次の局面を開く。"
+    if action_type == "decline_quest":
+        return "破棄によって提示された糸口を閉じ、その判断が場に結果を残す。"
+    if action_type == "leave_quest":
+        return "離脱によって進行中の責務を保留し、周囲の場へ意識を戻す。"
+    if action_type == "resume_quest":
+        return "再開によって引き受けた責務を再び中心に戻す。"
+    return fallback_summary
+
+
+def _quest_lifecycle_selected_choice(
+    *,
+    action_type: str,
+    action_text: str,
+    quest_updates: list[dict[str, Any]],
+    fallback_summary: str,
+    session_state: dict[str, Any],
+) -> dict[str, Any]:
+    english = _profile_prefers_english((session_state.get("player_profile") or {}) if isinstance(session_state, dict) else {})
+    posture = "progress" if action_type in {"accept_quest", "resume_quest"} else "safe"
+    return {
+        "choice_id": posture,
+        "posture": posture,
+        "label": action_text,
+        "summary": _quest_lifecycle_choice_summary(
+            action_type=action_type,
+            fallback_summary=fallback_summary,
+            english=english,
+        ),
+        "canonical_input_text": action_text,
+        "action_kind": "narrative",
+        "quest_assignment_id": str((quest_updates[0] if quest_updates else {}).get("assignment_id") or ""),
+        "lifecycle_action_kind": action_type,
+    }
+
+
+def _quest_lifecycle_fallback_narrative(
+    *,
+    action_type: str,
+    action_text: str,
+    summary: str,
+    session_state: dict[str, Any],
+) -> str:
+    english = _profile_prefers_english((session_state.get("player_profile") or {}) if isinstance(session_state, dict) else {})
+    if english:
+        verb = "acceptance" if action_type == "accept_quest" else "discarding" if action_type == "decline_quest" else "choice"
+        return f"{action_text} The {verb} is registered as a player action, and the scene shifts around it. {summary}"
+    label = "受諾" if action_type == "accept_quest" else "破棄" if action_type == "decline_quest" else "判断"
+    return f"{action_text} その{label}はプレイヤーの行動として場に刻まれ、状況が動く。{summary}"
+
+
 def _resolve_quest_lifecycle_turn_for_session(
     db: Session,
     container: AppContainer,
@@ -1785,6 +1889,14 @@ def _resolve_quest_lifecycle_turn_for_session(
 ) -> TurnResolutionResult:
     game_session = prepared.session
     player_actor = prepared.player_actor
+    guide_npc = prepared.guide_npc
+    pre_state = _session_state_with_latest_choices(
+        db,
+        session_id=game_session.id,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
     turn = Turn(
         id=prepared.turn_id,
         world_id=game_session.world_id,
@@ -1853,43 +1965,178 @@ def _resolve_quest_lifecycle_turn_for_session(
             failure_payload={"quest_assignment_id": quest_assignment_id, "action_type": action_type},
         )
 
-    event.narrative = summary
-    event.payload = {
-        **event.payload,
-        "quest_updates": quest_updates,
-        "chapter_updates": chapter_updates,
-        "consequence_summary": summary,
-    }
-    turn.resolved_output = {
-        "status": "resolved",
-        "action_type": action_type,
-        "resolution_mode": "quest_lifecycle",
-        "input_mode": input_mode,
-        "narrative": summary,
-        "npc_reaction": "",
-        "interpreted_intent": {"canonical_action_kind": action_type, "quest_assignment_id": quest_assignment_id},
-        "quest_updates": quest_updates,
-        "chapter_updates": chapter_updates,
-        "scene_updates": [],
-        "branch_updates": [],
-        "ambient_updates": [],
-        "recent_world_beats": [],
-        "next_choices": [],
-        "consequence_summary": summary,
-        "scene_summary": "",
-        "crossroads_summary": "",
-    }
-    db.add(
-        OutboxEvent(
+    with _turn_progress_span("post_lifecycle_state_build"):
+        post_lifecycle_state = _session_state_with_latest_choices(
+            db,
+            session_id=game_session.id,
             world_id=game_session.world_id,
-            event_id=event.id,
-            projection_type="world_graph.upsert",
-            payload={"turn_id": turn.id, "outcome": "quest_lifecycle", "location_id": prepared.location_id},
+            actor_id=player_actor.id,
+            location_id=prepared.location_id,
+        )
+
+    action_text = _quest_lifecycle_action_text(
+        action_type=action_type,
+        quest_updates=quest_updates,
+        fallback_summary=summary,
+        session_state=post_lifecycle_state,
+    )
+    selected_choice = _quest_lifecycle_selected_choice(
+        action_type=action_type,
+        action_text=action_text,
+        quest_updates=quest_updates,
+        fallback_summary=summary,
+        session_state=post_lifecycle_state,
+    )
+    graph_context = container.projection_service.resolve_relation_context(
+        db,
+        world_id=game_session.world_id,
+        primary_actor_id=guide_npc.id,
+        counterpart_actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    retrieval = container.memory_service.search(
+        db,
+        world_id=game_session.world_id,
+        query_text=build_retrieval_query_text(
+            action_text,
+            session_state=post_lifecycle_state,
+            relation_context=graph_context.context.prompt_lines(),
+        ),
+        actor_id=guide_npc.id,
+        location_id=prepared.location_id,
+    )
+    resolution = container.council_service.resolve_turn(
+        CouncilRequest(
+            world_id=game_session.world_id,
+            turn_id=turn.id,
+            player_name=player_actor.display_name,
+            npc_name=guide_npc.display_name,
+            input_text=action_text,
+            input_mode="choice",
+            selected_choice=selected_choice,
+            relevant_memories=[item.text for item in retrieval.memories],
+            relation_context=graph_context.context.prompt_lines(),
+            graph_context_status=graph_context.status,
+            session_state=post_lifecycle_state,
         )
     )
-    db.flush()
-    with _turn_progress_span("timeline_broadcast"):
-        _finalize_event_timeline_and_broadcast(db, event=event)
+    _persist_role_runs(
+        db,
+        world_id=game_session.world_id,
+        turn_id=turn.id,
+        workflow_name="gm_council",
+        role_runs=resolution.role_runs,
+        graph_context_status=graph_context.status,
+    )
+
+    payload = resolution.final_payload
+    council_trace = [
+        {
+            "role": item.council_role,
+            "approval_status": item.approval_status,
+            "final_lane": item.final_lane,
+        }
+        for item in resolution.role_runs
+    ]
+    progress_phases = ["quest_lifecycle", *_progress_phases_from_role_runs(resolution.role_runs)]
+    if payload is not None:
+        narrative = payload.narrative
+        npc_reaction = payload.npc_reaction
+        consequence_summary = payload.consequence_summary
+        world_tags = list(payload.world_tags or [])
+        consequence_tags = list(payload.consequence_tags or [])
+        interpreted_intent = {
+            **dict(payload.interpreted_intent or {}),
+            "canonical_action_kind": action_type,
+            "lifecycle_action_kind": action_type,
+            "quest_assignment_id": quest_assignment_id,
+            "intent_summary": action_text,
+        }
+        with _turn_progress_span("chapter_progression"):
+            dynamic_chapter_updates = apply_dynamic_chapter_progression(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                source_event_id=event.id,
+                chapter_directive=getattr(payload, "chapter_directive", None),
+            )
+        chapter_updates = [*chapter_updates, *dynamic_chapter_updates]
+        with _turn_progress_span("memory_materialization"):
+            memories = container.memory_service.materialize_memories(
+                db,
+                world_id=game_session.world_id,
+                source_event_id=event.id,
+                location_id=prepared.location_id,
+                drafts=[
+                    {
+                        **draft.model_dump(),
+                        "actor_id": guide_npc.id if draft.scope == "actor" else None,
+                    }
+                    for draft in payload.memories
+                ],
+            )
+        with _turn_progress_span("scene_framing"):
+            scene_input_state = build_session_state(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                location_id=prepared.location_id,
+                include_internal=True,
+            )
+            scene_result = apply_scene_updates(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                location_id=prepared.location_id,
+                focus_actor_id=guide_npc.id,
+                source_event_id=event.id,
+                action_kind="narrative",
+                session_state=scene_input_state,
+                outcome_band=payload.outcome_band,
+                scene_move=getattr(payload, "scene_move", None),
+                scene_pressure=getattr(payload, "scene_pressure", None),
+            )
+        chapter_updates = [*chapter_updates, *scene_result["chapter_updates"]]
+        scene_updates = scene_result["scene_updates"]
+        scene_summary = scene_result["scene_summary"]
+        scene_tone = scene_tone_for_band(payload.outcome_band)
+        model_lane = resolution.final_lane
+    else:
+        narrative = _quest_lifecycle_fallback_narrative(
+            action_type=action_type,
+            action_text=action_text,
+            summary=summary,
+            session_state=post_lifecycle_state,
+        )
+        npc_reaction = ""
+        consequence_summary = summary
+        world_tags = ["none"]
+        consequence_tags = []
+        interpreted_intent = {
+            "canonical_action_kind": action_type,
+            "lifecycle_action_kind": action_type,
+            "quest_assignment_id": quest_assignment_id,
+            "intent_summary": action_text,
+        }
+        memories = []
+        scene_updates = []
+        scene_summary = ""
+        scene_tone = "steady"
+        model_lane = resolution.final_lane or "system"
+
+    event.narrative = narrative
+    event.payload = {
+        **event.payload,
+        "player_action_text": action_text,
+        "world_tags": world_tags,
+        "consequence_tags": consequence_tags,
+        "quest_updates": quest_updates,
+        "chapter_updates": chapter_updates,
+        "consequence_summary": consequence_summary,
+        "scene_summary": scene_summary,
+        "scene_updates": scene_updates,
+        "council_trace": council_trace,
+    }
     with _turn_progress_span("post_state_build"):
         post_state = build_session_state(
             db,
@@ -1899,18 +2146,69 @@ def _resolve_quest_lifecycle_turn_for_session(
             include_internal=True,
         )
     with _turn_progress_span("choice_generation"):
-        next_choices = post_state.get("next_choices") or []
+        post_state_choices = post_state.get("next_choices") or []
+        payload_choices = (
+            [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices]
+            if payload is not None
+            else post_state_choices
+        )
+        next_choices = _canonicalize_next_choices(payload_choices, post_state_choices)
+        previous_choices = pre_state.get("next_choices") or []
+        if _choices_are_effectively_same(next_choices, previous_choices):
+            next_choices = _contextualize_repeated_choices(
+                next_choices,
+                input_text=action_text,
+                consequence_summary=consequence_summary,
+            )
     turn.resolved_output = {
-        **turn.resolved_output,
+        "status": "resolved",
+        "action_type": action_type,
+        "resolution_mode": "quest_lifecycle",
+        "input_mode": input_mode,
+        "narrative": narrative,
+        "npc_reaction": npc_reaction,
+        "graph_context_status": graph_context.status,
+        "used_fallback": resolution.used_fallback,
+        "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+        "interpreted_intent": interpreted_intent,
+        "world_tags": world_tags,
+        "consequence_tags": consequence_tags,
+        "quest_updates": quest_updates,
+        "chapter_updates": chapter_updates,
+        "scene_updates": scene_updates,
+        "branch_updates": [],
+        "ambient_updates": [],
+        "recent_world_beats": [],
         "next_choices": next_choices,
+        "consequence_summary": consequence_summary,
+        "scene_tone": scene_tone,
+        "scene_summary": scene_summary,
+        "crossroads_summary": "",
+        "council_trace": council_trace,
     }
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={
+                "turn_id": turn.id,
+                "outcome": "quest_lifecycle",
+                "location_id": prepared.location_id,
+                "graph_context_status": graph_context.status,
+            },
+        )
+    )
+    db.flush()
+    with _turn_progress_span("timeline_broadcast"):
+        _finalize_event_timeline_and_broadcast(db, event=event)
     return TurnResolutionResult(
         turn=turn,
         event=event,
-        memory_ids=[],
+        memory_ids=[memory.id for memory in memories],
         event_payload=_event_payload(event),
-        memories_payload=[],
-        graph_context_status="quest_lifecycle",
+        memories_payload=[_memory_payload(memory) for memory in memories],
+        graph_context_status=graph_context.status,
         sp_delta=prepared.debit.delta,
         sp_balance=prepared.debit.balance_after,
         paid_sp=prepared.debit.paid_balance_after,
@@ -1921,25 +2219,25 @@ def _resolve_quest_lifecycle_turn_for_session(
         inventory_updates=[],
         relationship_updates=[],
         consequence_updates=[],
-        scene_updates=[],
+        scene_updates=scene_updates,
         chapter_updates=chapter_updates,
         branch_updates=[],
         ambient_updates=[],
         location_updates=[],
         action_type=action_type,
         input_mode=input_mode,
-        interpreted_intent={"canonical_action_kind": action_type, "quest_assignment_id": quest_assignment_id},
+        interpreted_intent=interpreted_intent,
         next_choices=next_choices,
-        consequence_summary=summary,
-        scene_tone="steady",
-        scene_summary="",
+        consequence_summary=consequence_summary,
+        scene_tone=scene_tone,
+        scene_summary=scene_summary,
         crossroads_summary="",
         current_location=post_state.get("current_location"),
         travel_summary=None,
         recent_world_beats=post_state.get("recent_world_beats") or [],
         recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
         idle_updates=[],
-        progress_phases=["quest_lifecycle", "choice_generation"],
+        progress_phases=[*progress_phases, "chapter_progression", "scene_framing", "choice_generation"],
     )
 
 
