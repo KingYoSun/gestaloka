@@ -66,6 +66,7 @@ frontend-e2e:
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build backend; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build player-frontend; \
 	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build admin-frontend; \
+	$(VERIFY_COMPOSE_ENV) $(COMPOSE) build frontend-e2e; \
 	$(VERIFY_COMPOSE_ENV) COMPOSE_PROFILES=e2e E2E_SPEC="$(E2E_SPEC)" $(COMPOSE) run --rm frontend-e2e
 
 swarm-test:

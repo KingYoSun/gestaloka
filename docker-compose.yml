@@ -792,7 +792,9 @@ services:
     command: python -m app.modules.world_state.scheduler loop
 
   frontend-e2e:
-    image: mcr.microsoft.com/playwright:v1.59.1-noble
+    build:
+      context: ./frontend
+      dockerfile: e2e.Dockerfile
     container_name: gestaloka-v2-frontend-e2e
     profiles:
       - e2e
@@ -821,6 +823,7 @@ services:
       MODEL_LITE_ID: ${MODEL_LITE_ID:-}
       MODEL_MAIN_ID: ${MODEL_MAIN_ID:-}
       PROMPT_DIR: /workspace/prompts
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium
       CI: "1"
     volumes:
       - ./frontend:/workspace/frontend

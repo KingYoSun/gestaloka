@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
 export default defineConfig({
   testDir: "../tests/e2e",
   outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR ?? "/tmp/gestaloka-playwright-results",
@@ -7,5 +9,6 @@ export default defineConfig({
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173",
     locale: "ja-JP",
+    launchOptions: chromiumExecutablePath ? { executablePath: chromiumExecutablePath } : undefined,
   },
 });

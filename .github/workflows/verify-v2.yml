@@ -84,7 +84,7 @@ jobs:
       fail-fast: false
       matrix:
         spec:
-          - /workspace/tests/e2e/gestaloka-reference-smoke.spec.ts
+          - /workspace/tests/e2e/gestaloka-world-reference-smoke.spec.ts
 
     steps:
       - uses: actions/checkout@v4
