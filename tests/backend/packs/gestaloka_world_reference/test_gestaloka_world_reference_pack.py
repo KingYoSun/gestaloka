@@ -234,6 +234,7 @@ def test_generated_freeform_entities_persist_and_reuse_across_sessions(client, c
             select(Faction).where(Faction.world_id == "gestaloka_world_reference", Faction.entity_key == first_updates[2].entity_key)
         ).scalar_one()
         assert generated_community.state["community_generated"] is True
+        assert len(generated_community.id) <= 96
 
 
 def test_generated_npc_lock_creates_alternate_persistent_actor(client, container, auth_headers):

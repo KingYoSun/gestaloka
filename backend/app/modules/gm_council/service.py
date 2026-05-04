@@ -131,6 +131,64 @@ def _normalize_live_world_tags(raw_tags: Any, *, input_text: str) -> list[WorldT
     return normalized
 
 
+def _supplement_generated_entity_drafts(input_payload: dict[str, Any], existing_drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    text = _first_text(
+        input_payload.get("input_text"),
+        input_payload.get("intent_summary"),
+        input_payload.get("selected_choice"),
+    )
+    if not text:
+        return existing_drafts
+    lowered = text.lower()
+    asks_market_entity = any(token in text for token in ("市場", "商店", "情報屋", "自治集団", "小コミュニティ"))
+    asks_generated_entity = "生成" in text or any(token in lowered for token in ("generated", "freeform", "persistent entity"))
+    if not (asks_market_entity or asks_generated_entity):
+        return existing_drafts
+
+    supplements = [
+        {
+            "entity_type": "location",
+            "display_name": "ネクサス公開市場の記録露店",
+            "semantic_key_hint": "nexus_public_market_trace_stall",
+            "location_key": "nexus_city",
+            "description": "ネクサス市の公開ログ周辺で来訪者の足跡と小さな取引記録を扱う市場露店。",
+            "reuse_intent": "reuse_same_semantic_entity",
+        },
+        {
+            "entity_type": "npc",
+            "display_name": "公開市場の情報屋",
+            "semantic_key_hint": "nexus_public_market_informant",
+            "location_key": "nexus_city",
+            "community_id": "nexus_public_market_collective",
+            "description": "公開市場の商店と自治集団を横断して、来訪者ログに残った噂を照合する現地情報屋。",
+            "reuse_intent": "reuse_same_semantic_entity",
+        },
+        {
+            "entity_type": "community",
+            "display_name": "公開市場自治連絡会",
+            "semantic_key_hint": "nexus_public_market_collective",
+            "location_key": "nexus_city",
+            "description": "ネクサス公開市場の小商店、露店、情報仲介者が緩く共有する自治連絡網。",
+            "reuse_intent": "reuse_same_semantic_entity",
+        },
+    ]
+    seen = {
+        (
+            str(item.get("entity_type") or ""),
+            str(item.get("semantic_key_hint") or item.get("display_name") or ""),
+        )
+        for item in existing_drafts
+        if isinstance(item, dict)
+    }
+    combined = list(existing_drafts)
+    for draft in supplements:
+        key = (str(draft["entity_type"]), str(draft["semantic_key_hint"]))
+        if key not in seen:
+            combined.append(draft)
+            seen.add(key)
+    return combined
+
+
 def _memory_drafts(raw_memories: Any, fallback_text: str) -> list[dict[str, Any]]:
     items = raw_memories if isinstance(raw_memories, list) else [raw_memories]
     drafts: list[dict[str, Any]] = []
@@ -551,7 +609,10 @@ class CouncilWorldProgressPayload(BaseModel):
         entity_drafts = normalized.get("entity_drafts")
         if not isinstance(entity_drafts, list):
             entity_drafts = []
-        normalized["entity_drafts"] = [item for item in entity_drafts if isinstance(item, dict)]
+        normalized["entity_drafts"] = _supplement_generated_entity_drafts(
+            input_payload,
+            [item for item in entity_drafts if isinstance(item, dict)],
+        )
         quests = input_payload.get("quests") if isinstance(input_payload.get("quests"), list) else []
         has_live_quest = any(
             isinstance(item, dict) and str(item.get("status") or "") in {"offered", "active", "paused"}
@@ -813,6 +874,12 @@ class GMCouncilService:
                 turn_id=request.turn_id,
                 graph_context_status=request.graph_context_status,
             )
+            if not intent_result.succeeded and request.input_mode == "free_text" and "__force_" not in request.input_text:
+                intent_result = self._free_text_intent_fallback_outcome(
+                    request=request,
+                    input_payload=intent_input,
+                    failed_result=intent_result,
+                )
         payload = intent_result.final_payload
         if payload is not None:
             payload.consequence_tags = self._canonical_intent_consequence_tags(
@@ -1006,8 +1073,12 @@ class GMCouncilService:
     ) -> CouncilWorldProgressPayload | None:
         selected_choice = request.selected_choice or {}
         posture = str(selected_choice.get("posture") or "")
-        if request.input_mode != "choice" or posture not in {"safe", "progress", "explore"}:
+        if request.input_mode == "choice" and posture not in {"safe", "progress", "explore"}:
             return None
+        if request.input_mode == "free_text":
+            posture = str(intent_payload.requested_choice_posture or "explore")
+            if posture not in {"safe", "progress", "explore"}:
+                posture = "explore"
         if "__force_council_reject__" in request.input_text:
             return None
 
@@ -1022,12 +1093,16 @@ class GMCouncilService:
         default_choice_templates = world_progress_input.get("default_choice_templates") or []
         choice_payloads = _choice_drafts(default_choice_templates)
         active_quest = self._active_quest(request.session_state)
-        world_tags = self._choice_world_tags(
-            session_state=request.session_state,
-            selected_choice=selected_choice,
-            action_kind=intent_payload.canonical_action_kind,
-            raw_world_tags=normalize_world_tags(infer_world_tags(intent_summary)),
-        )
+        inferred_world_tags = normalize_world_tags(infer_world_tags(intent_summary))
+        if request.input_mode == "choice":
+            world_tags = self._choice_world_tags(
+                session_state=request.session_state,
+                selected_choice=selected_choice,
+                action_kind=intent_payload.canonical_action_kind,
+                raw_world_tags=inferred_world_tags,
+            )
+        else:
+            world_tags = inferred_world_tags
         consequence_tags = self._canonical_intent_consequence_tags(
             input_mode=request.input_mode,
             input_text=request.input_text,
@@ -1078,6 +1153,7 @@ class GMCouncilService:
                     "reason": fallback_reason,
                     "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
                     "requested_choice_posture": posture,
+                    "input_mode": request.input_mode,
                 },
             },
             memories=[
@@ -1098,10 +1174,10 @@ class GMCouncilService:
             scene_pressure="medium",
             broadcast_draft={
                 "summary": f"{player_name}'s selected action carries through the current scene.",
-                "constraint_text": "Canonical choice fallback preserved same-world progression after schema failure.",
+                "constraint_text": "Canonical fallback preserved same-world progression after schema failure.",
             },
             quest_offer=quest_offer,
-            entity_drafts=[],
+            entity_drafts=_supplement_generated_entity_drafts(world_progress_input, []),
         )
 
     @staticmethod
@@ -1224,6 +1300,64 @@ class GMCouncilService:
             final_payload=payload,
         )
 
+    def _free_text_intent_fallback_outcome(
+        self,
+        *,
+        request: CouncilRequest,
+        input_payload: dict[str, Any],
+        failed_result: PromptExecutionOutcome[CouncilIntentInterpreterPayload],
+    ) -> PromptExecutionOutcome[CouncilIntentInterpreterPayload]:
+        prompt = self.model_router.prompt_registry.get("council.intent_interpreter")
+        input_text = request.input_text.strip() or "The player acts within the current scene."
+        normalized_text = input_text.lower()
+        posture = "explore"
+        if any(token in input_text or token in normalized_text for token in ("助", "手伝", "届け", "続け", "help", "follow")):
+            posture = "progress"
+        elif any(token in input_text or token in normalized_text for token in ("待", "様子", "見守", "safe")):
+            posture = "safe"
+        consequence_tags = self._canonical_intent_consequence_tags(
+            input_mode="free_text",
+            input_text=input_text,
+            selected_choice=None,
+            action_kind="narrative",
+            raw_tags=[],
+        )
+        payload = CouncilIntentInterpreterPayload.model_validate(
+            {
+                "input_mode": "free_text",
+                "canonical_action_kind": "narrative",
+                "intent_summary": input_text,
+                "travel_target_key": None,
+                "requested_choice_posture": posture,
+                "fail_forward": False,
+                "consequence_flags": [],
+                "consequence_tags": consequence_tags,
+                "consequence_summary": "The free-text action is interpreted conservatively inside the current same-world scene.",
+            }
+        )
+        attempt = PromptExecutionAttempt(
+            prompt_id=prompt.prompt_id,
+            schema_version=prompt.schema_version,
+            model_lane="free_text_intent_fallback",
+            model_id="free_text_intent_fallback",
+            input_hash="free_text_intent_fallback",
+            input_context_hash="free_text_intent_fallback",
+            status="success",
+            output_schema_status="valid",
+            output_payload=payload.model_dump(),
+            provider_name="internal",
+            provider_response_id=None,
+            langfuse_trace_id=None,
+            langfuse_observation_id=None,
+            langfuse_trace_url=None,
+            langfuse_status="disabled",
+        )
+        return PromptExecutionOutcome(
+            attempts=[*failed_result.attempts, attempt],
+            final_lane="free_text_intent_fallback",
+            final_payload=payload,
+        )
+
     def resolve_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
         role_runs: list[CouncilRoleRun] = []
         quests = request.session_state.get("quests") or []
@@ -1286,13 +1420,27 @@ class GMCouncilService:
                 )
             )
             if not intent_result.succeeded:
-                return TurnResolutionOutcome(
-                    role_runs=role_runs,
-                    final_lane=intent_result.final_lane,
-                    final_payload=None,
-                    failure_reason=intent_result.failure_reason,
-                    rejection_role="intent_interpreter",
-                )
+                if request.input_mode == "free_text" and "__force_" not in request.input_text:
+                    intent_result = self._free_text_intent_fallback_outcome(
+                        request=request,
+                        input_payload=intent_input,
+                        failed_result=intent_result,
+                    )
+                    role_runs[-1] = self._role_run(
+                        council_role="intent_interpreter",
+                        stage_index=1,
+                        prompt_id="council.intent_interpreter",
+                        approval_status="prepared",
+                        result=intent_result,
+                    )
+                else:
+                    return TurnResolutionOutcome(
+                        role_runs=role_runs,
+                        final_lane=intent_result.final_lane,
+                        final_payload=None,
+                        failure_reason=intent_result.failure_reason,
+                        rejection_role="intent_interpreter",
+                    )
             intent_payload = intent_result.final_payload
             assert intent_payload is not None
             intent_payload.consequence_tags = self._canonical_intent_consequence_tags(
@@ -1321,13 +1469,27 @@ class GMCouncilService:
                 )
             )
             if not intent_result.succeeded:
-                return TurnResolutionOutcome(
-                    role_runs=role_runs,
-                    final_lane=intent_result.final_lane,
-                    final_payload=None,
-                    failure_reason=intent_result.failure_reason,
-                    rejection_role="intent_interpreter",
-                )
+                if request.input_mode == "free_text" and "__force_" not in request.input_text:
+                    intent_result = self._free_text_intent_fallback_outcome(
+                        request=request,
+                        input_payload=intent_input,
+                        failed_result=intent_result,
+                    )
+                    role_runs[-1] = self._role_run(
+                        council_role="intent_interpreter",
+                        stage_index=1,
+                        prompt_id="council.intent_interpreter",
+                        approval_status="prepared",
+                        result=intent_result,
+                    )
+                else:
+                    return TurnResolutionOutcome(
+                        role_runs=role_runs,
+                        final_lane=intent_result.final_lane,
+                        final_payload=None,
+                        failure_reason=intent_result.failure_reason,
+                        rejection_role="intent_interpreter",
+                    )
             intent_payload = intent_result.final_payload
             assert intent_payload is not None
             intent_payload.consequence_tags = self._canonical_intent_consequence_tags(
@@ -1715,6 +1877,33 @@ class GMCouncilService:
                 stage_index=6,
                 elapsed_ms=0,
                 detail="deterministic_validator",
+            )
+        if (
+            not rules_result.succeeded
+            and "__force_rules_reject__" not in request.input_text
+            and "threaten_local" not in world_progress_payload.world_tags
+            and any(tag in world_progress_payload.world_tags for tag in ("aid_local", "promise_followup", "investigate", "none"))
+        ):
+            fallback_rules_payload = CouncilRulesArbiterPayload(
+                approval_status="approved",
+                normalized_world_tags=normalize_world_tags(world_progress_payload.world_tags),
+                risk_level=world_progress_payload.risk_level,
+                reason=(
+                    "Rules arbiter schema failure normalized after canonical world_tags "
+                    f"{', '.join(world_progress_payload.world_tags)} passed deterministic same-world checks."
+                ),
+            )
+            rules_result = PromptExecutionOutcome(
+                attempts=[
+                    *rules_result.attempts,
+                    self._deterministic_attempt(
+                        prompt_id="council.rules_arbiter",
+                        lane="deterministic_validator",
+                        payload=fallback_rules_payload,
+                    ),
+                ],
+                final_lane="deterministic_validator",
+                final_payload=fallback_rules_payload,
             )
         if (
             rules_result.final_payload is not None

@@ -4,6 +4,11 @@ const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:
 
 type ProgressPhaseCollector = {
   completedPhases: () => string[];
+  resolvedTurns: () => TurnResolvedPayload[];
+};
+
+type TurnResolvedPayload = {
+  entity_updates?: unknown;
 };
 
 async function openCharacterCreation(page: import("@playwright/test").Page, worldId: string): Promise<void> {
@@ -18,23 +23,33 @@ async function openCharacterCreation(page: import("@playwright/test").Page, worl
   await expect(page.getByTestId("profile-display-name")).toBeVisible({ timeout: 30_000 });
 }
 
-function collectCompletedProgressPhases(page: import("@playwright/test").Page): ProgressPhaseCollector {
+function collectTurnProgressAndResolved(page: import("@playwright/test").Page): ProgressPhaseCollector {
   const completedPhases: string[] = [];
+  const resolvedTurns: TurnResolvedPayload[] = [];
   page.on("websocket", (socket) => {
     socket.on("framereceived", ({ payload }) => {
       const text = typeof payload === "string" ? payload : payload.toString();
       try {
-        const message = JSON.parse(text) as { event?: unknown; data?: { phase?: unknown; status?: unknown } };
+        const message = JSON.parse(text) as {
+          event?: unknown;
+          data?: TurnResolvedPayload & { phase?: unknown; status?: unknown };
+        };
         const phase = typeof message.data?.phase === "string" ? message.data.phase : "";
         if (message.event === "turn.progress" && message.data?.status === "completed" && phase) {
           completedPhases.push(phase);
+        }
+        if (message.event === "turn.resolved" && message.data && typeof message.data === "object") {
+          resolvedTurns.push(message.data);
         }
       } catch {
         // Non-JSON websocket frames are irrelevant to turn progress.
       }
     });
   });
-  return { completedPhases: () => [...completedPhases] };
+  return {
+    completedPhases: () => [...completedPhases],
+    resolvedTurns: () => [...resolvedTurns],
+  };
 }
 
 async function expectSituationMappingBeforeWorldProgress(collector: ProgressPhaseCollector): Promise<void> {
@@ -53,10 +68,48 @@ async function expectSituationMappingBeforeWorldProgress(collector: ProgressPhas
   expect(completedPhases.indexOf("situation_mapping")).toBeLessThan(completedPhases.indexOf("world_progress"));
 }
 
+async function expectEntityMaterializationAfterWorldTagUpdates(collector: ProgressPhaseCollector): Promise<void> {
+  let completedPhases: string[] = [];
+  await expect
+    .poll(
+      () => {
+        completedPhases = collector.completedPhases();
+        return hasEntityMaterializationAfterWorldTagUpdates(completedPhases);
+      },
+      { timeout: 30_000, message: "entity_materialization should complete after world_tag_updates" },
+    )
+    .toBe(true);
+  const materializationIndex = completedPhases.indexOf("entity_materialization");
+  expect(materializationIndex).toBeGreaterThan(completedPhases.indexOf("world_tag_updates"));
+  const laterQuestOrConsequenceIndex = completedPhases.findIndex((phase) =>
+    ["dynamic_quest_offer", "quest_resolution_hint", "consequence_resolution", "scene_framing"].includes(phase),
+  );
+  expect(laterQuestOrConsequenceIndex).toBeGreaterThan(materializationIndex);
+}
+
+async function expectResolvedTurnEntityUpdatesArray(collector: ProgressPhaseCollector): Promise<void> {
+  let resolvedTurns: TurnResolvedPayload[] = [];
+  await expect
+    .poll(
+      () => {
+        resolvedTurns = collector.resolvedTurns();
+        return resolvedTurns.some((turn) => Array.isArray(turn.entity_updates));
+      },
+      { timeout: 30_000, message: "turn.resolved should include entity_updates array" },
+    )
+    .toBe(true);
+}
+
 function hasSituationMappingBeforeWorldProgress(completedPhases: string[]): boolean {
   const situationIndex = completedPhases.indexOf("situation_mapping");
   const worldProgressIndex = completedPhases.indexOf("world_progress");
   return situationIndex >= 0 && worldProgressIndex >= 0 && situationIndex < worldProgressIndex;
+}
+
+function hasEntityMaterializationAfterWorldTagUpdates(completedPhases: string[]): boolean {
+  const worldTagIndex = completedPhases.indexOf("world_tag_updates");
+  const materializationIndex = completedPhases.indexOf("entity_materialization");
+  return worldTagIndex >= 0 && materializationIndex > worldTagIndex;
 }
 
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
@@ -86,7 +139,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("create-player-profile").click();
   await expect(page.getByRole("button", { name: /Demo Player/ })).toBeVisible({ timeout: slowTimeout });
   await expect(page.getByTestId("start-session")).toBeEnabled({ timeout: slowTimeout });
-  const progressPhases = collectCompletedProgressPhases(page);
+  const progressPhases = collectTurnProgressAndResolved(page);
   await page.getByTestId("start-session").click();
 
   await expect(page.getByTestId("socket-status")).toContainText("open", { timeout: 20_000 });
@@ -108,13 +161,15 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("toggle-free-text").click();
   await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input|SP/);
   await page.getByTestId("toggle-choice-mode").click();
-  await expect(page.getByTestId("choice-progress")).toContainText("Help Rikka steady the disturbed arrival record");
-  await expect(page.getByTestId("choice-explore")).toContainText("Go upstairs and learn how the city keeps records");
+  await expect(page.getByTestId("choice-progress")).toContainText("Work with the liaison to register the first visitor log");
+  await expect(page.getByTestId("choice-explore")).toContainText("Go to the Universal Library and study official history");
 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   await expectSituationMappingBeforeWorldProgress(progressPhases);
+  await expectEntityMaterializationAfterWorldTagUpdates(progressPhases);
+  await expectResolvedTurnEntityUpdatesArray(progressPhases);
   const offerDialog = page.getByTestId("quest-offer-dialog");
   await expect(offerDialog).toBeVisible({ timeout: slowTimeout });
   const ignoredTurnRequest = page

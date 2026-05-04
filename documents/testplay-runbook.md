@@ -79,7 +79,7 @@ docker compose up --build
    - quest progress が `2/2`
    - inventory に `Visitor Log Seal`
    - `Visitor Log Seal` が route unlock 用 effect を持つ
-   - choice list に writ / breach / restoration 系の選択肢
+   - choice list に Visitor Log Seal / Oblivion Regions / survey 系の選択肢
 6. `progress` choice を実行する。
 7. 以下を確認する。
    - active quest が `Breach Restoration`

@@ -5,6 +5,7 @@ export type SwarmDecision = {
     | "shared-impact"
     | "resource-conflict"
     | "world-event"
+    | "persistent-entity-revisit"
     | "quest-offer"
     | "quest-accept"
     | "quest-body-progress"
@@ -85,10 +86,23 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
   if (scenario === "quest-epilogue-progress") {
     return {
       scenario,
-      inputMode: "choice",
-      choiceId: "progress",
+      inputMode: "free_text",
+      inputText:
+        "再開した来訪者ログ登録を最後まで手伝い、約束した確認を続け、案内担当へ完了報告を届ける。",
       reason: `${persona.label} は再開したクエストを最後まで進め、結末が epilogue として明示されるかを確認する。`,
       expectedWorldImpact: "クエストが completed になり、epilogue chapter が journal と scene に残ることを期待する。",
+    };
+  }
+
+  if (scenario === "persistent-entity-revisit") {
+    return {
+      scenario,
+      inputMode: "free_text",
+      inputText:
+        "ネクサス市の公開ログに残った同じ市場の小さな商店、情報屋、自治集団を探し、前の来訪者が関わった相手として再会できるか確かめる。",
+      reason: `${persona.label} は後続参加者として、生きたNPC・場所・小コミュニティが一度きりで消えず、同じ世界で再利用されるかを確認する。`,
+      expectedWorldImpact:
+        "以前のturnで生成されたNPC、location、communityのいずれかが同じ semantic entity として再利用され、created=false の entity update または同等の再利用証拠が残ることを期待する。",
     };
   }
 
@@ -116,7 +130,7 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
     scenario,
     inputMode: "free_text",
     inputText:
-      "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+      "ネクサス市の公開ログ、市場の痕跡、生成された現地NPCや小コミュニティを照合し、どの直近行動が共有世界の状況を変えたのかを尋ねる。",
     reason: `${persona.label} は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。`,
     expectedWorldImpact: "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。",
   };

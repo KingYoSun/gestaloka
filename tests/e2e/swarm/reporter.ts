@@ -36,12 +36,22 @@ export type SwarmReport = {
     turnIds: string[];
   }>;
   turn_observations?: SwarmUiTurnObservation[];
+  generated_entity_observation?: GeneratedEntityObservation;
   artifacts: string[];
   failure_diagnostics?: {
     stage: string;
     message: string;
     stack?: string;
   };
+};
+
+export type GeneratedEntityObservation = {
+  created_count: number;
+  reused_count: number;
+  entity_types: string[];
+  origin_kinds: string[];
+  source_turn_ids: string[];
+  source_event_ids: string[];
 };
 
 export function buildRunId(): string {
@@ -134,6 +144,7 @@ type RunGroupRun = {
   experience_evaluations: SwarmExperienceEvaluation[];
   story_observations: RunStoryObservation[];
   turn_timing_observations: SwarmUiTurnObservation[];
+  generated_entity_observation: GeneratedEntityObservation;
 };
 
 type RunStoryObservation = {
@@ -221,6 +232,7 @@ type RunGroupAggregateReport = {
       duration_ms: DurationSummary;
     }>;
   };
+  generated_entity_summary: GeneratedEntityObservation;
 };
 
 type DurationSummary = {
@@ -326,6 +338,7 @@ async function buildRunGroupAggregateReport(
     }),
     experience_summary: buildExperienceSummary(completedRuns),
     turn_timing_summary: buildTurnTimingSummary(completedRuns),
+    generated_entity_summary: buildGeneratedEntitySummary(completedRuns),
   };
 }
 
@@ -351,6 +364,7 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
       experience_evaluations: [],
       story_observations: [],
       turn_timing_observations: [],
+      generated_entity_observation: emptyGeneratedEntityObservation(),
     };
   }
   const raw = await fs.readFile(path.join(runPath, resultFile), "utf8");
@@ -381,7 +395,34 @@ async function readRunGroupRun(runGroupDir: string, runDir: string): Promise<Run
     experience_evaluations: experienceEvaluation,
     story_observations: buildStoryObservations(report),
     turn_timing_observations: report.turn_observations ?? [],
+    generated_entity_observation: report.generated_entity_observation ?? emptyGeneratedEntityObservation(),
   };
+}
+
+function emptyGeneratedEntityObservation(): GeneratedEntityObservation {
+  return {
+    created_count: 0,
+    reused_count: 0,
+    entity_types: [],
+    origin_kinds: [],
+    source_turn_ids: [],
+    source_event_ids: [],
+  };
+}
+
+function buildGeneratedEntitySummary(runs: RunGroupRun[]): GeneratedEntityObservation {
+  return {
+    created_count: runs.reduce((total, run) => total + run.generated_entity_observation.created_count, 0),
+    reused_count: runs.reduce((total, run) => total + run.generated_entity_observation.reused_count, 0),
+    entity_types: uniqueStrings(runs.flatMap((run) => run.generated_entity_observation.entity_types)),
+    origin_kinds: uniqueStrings(runs.flatMap((run) => run.generated_entity_observation.origin_kinds)),
+    source_turn_ids: uniqueStrings(runs.flatMap((run) => run.generated_entity_observation.source_turn_ids)),
+    source_event_ids: uniqueStrings(runs.flatMap((run) => run.generated_entity_observation.source_event_ids)),
+  };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort();
 }
 
 function buildTurnTimingSummary(runs: RunGroupRun[]): RunGroupAggregateReport["turn_timing_summary"] {
@@ -509,6 +550,7 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
     ["quest-epilogue-progress", report.persona_experience_evaluation[0]],
     ["resource-conflict", report.persona_experience_evaluation[1]],
     ["world-event", report.persona_experience_evaluation[2]],
+    ["persistent-entity-revisit", report.persona_experience_evaluation[2]],
   ] as Array<[SwarmDecision["scenario"], PersonaEvaluation | undefined]>) {
     if (evaluation) {
       evaluationByScenario.set(scenario, evaluation);
@@ -562,6 +604,9 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
   }
   if (scenario === "resource-conflict") {
     return "resource_conflict_recorded";
+  }
+  if (scenario === "persistent-entity-revisit") {
+    return "generated_entity_reused";
   }
   return "world_broadcast_or_constraint_visible";
 }
@@ -672,6 +717,15 @@ function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): strin
             )} | ${durationLabel(phase.duration_ms.max)} |`,
         )
       : ["| - | 0 | - | - | - |"]),
+    "",
+    "## 生成Entity永続化",
+    "",
+    `- created: ${report.generated_entity_summary.created_count}`,
+    `- reused: ${report.generated_entity_summary.reused_count}`,
+    `- entity types: ${report.generated_entity_summary.entity_types.join(", ") || "なし"}`,
+    `- origin kinds: ${report.generated_entity_summary.origin_kinds.join(", ") || "なし"}`,
+    `- source turns: ${report.generated_entity_summary.source_turn_ids.join(", ") || "なし"}`,
+    `- source events: ${report.generated_entity_summary.source_event_ids.join(", ") || "なし"}`,
     "",
     "## シナリオ別の展開",
     "",
@@ -1026,6 +1080,15 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
     "",
     ...Object.entries(report.hard_checks).map(([key, value]) => `- ${ja(key)}: ${value ? "合格" : "失敗"}`),
     "",
+    "## 生成Entity観測",
+    "",
+    `- created: ${report.generated_entity_observation?.created_count ?? 0}`,
+    `- reused: ${report.generated_entity_observation?.reused_count ?? 0}`,
+    `- entity types: ${(report.generated_entity_observation?.entity_types ?? []).join(", ") || "なし"}`,
+    `- origin kinds: ${(report.generated_entity_observation?.origin_kinds ?? []).join(", ") || "なし"}`,
+    `- source turns: ${(report.generated_entity_observation?.source_turn_ids ?? []).join(", ") || "なし"}`,
+    `- source events: ${(report.generated_entity_observation?.source_event_ids ?? []).join(", ") || "なし"}`,
+    "",
     ...(report.failure_diagnostics
       ? [
           "## 失敗診断",
@@ -1163,11 +1226,15 @@ const japaneseLabels: Record<string, string> = {
   quest_accept_turn_resolved: "クエスト受諾 turn が解決",
   quest_chapter_visible: "クエスト chapter が観測可能",
   quest_lifecycle_events_same_world: "クエスト lifecycle event が同一 world に属する",
+  entity_updates_field_present: "turn.resolved の entity_updates 配線が観測可能",
+  entity_materialization_completed: "entity_materialization phase が完了",
   quest_prologue_visible: "クエスト prologue が観測可能",
   quest_left_and_paused: "クエスト離脱後 paused と再開操作が観測可能",
   post_leave_exploration_resolved: "クエスト離脱後の探索 turn が解決",
   quest_resumed: "クエスト再開が観測可能",
   quest_epilogue_visible: "クエスト epilogue が観測可能",
+  generated_entity_created: "生成entity作成が観測可能",
+  generated_entity_reused: "生成entity再利用が観測可能",
   "shared-impact": "共有影響",
   "quest-offer": "クエスト提示",
   "quest-accept": "クエスト受諾",
@@ -1178,6 +1245,7 @@ const japaneseLabels: Record<string, string> = {
   "quest-epilogue-progress": "クエストエピローグ進行",
   "resource-conflict": "リソース競合",
   "world-event": "世界イベント",
+  "persistent-entity-revisit": "永続生成entity再訪",
   ux_clarity: "UX 評価",
   gameplay_fun: "ゲームプレイの面白さ",
   story_progression: "ストーリー展開評価",
@@ -1204,8 +1272,8 @@ const japaneseLabels: Record<string, string> = {
     "このペルソナは、進行経路と共有リソース競合を負荷検証する。",
   "Concurrent progress should resolve fairly and record any resource constraint without blocking play.":
     "同時進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。",
-  "I compare the current gate reports with what travelers are saying and ask which recent action changed the local situation.":
-    "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
+  "I compare Nexus public logs, market traces, generated local NPCs, and small communities, then ask which recent action changed shared-world conditions.":
+    "ネクサス市の公開ログ、市場の痕跡、生成された現地NPCや小コミュニティを照合し、どの直近行動が共有世界の状況を変えたのかを尋ねる。",
   "This persona joins late and probes whether public world events have a traceable cause.":
     "このペルソナは遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。",
   "The response should expose shared-world continuity through broadcast, memory, or recent history.":
@@ -1220,6 +1288,8 @@ const japaneseLabels: Record<string, string> = {
     "同時行動は完了したが、観測可能な resource constraint は残らなかった。",
   "Late join and follow-up exposed a world event or broadcast constraint.":
     "遅れて参加した後の追跡行動で、世界イベントまたは broadcast constraint を観測できた。",
+  "Late join and follow-up reused a generated living entity in the same world.":
+    "遅れて参加した後の追跡行動で、同じ世界内の生成済み生きたentity再利用を観測できた。",
   "Exploration produced an optional quest, and accepting it opened a chapter that remained visible.":
     "探索から任意クエストが提示され、受諾後の chapter が見える形で残った。",
   "Long quest lifecycle reached pause, exploration, resume, and epilogue completion.":

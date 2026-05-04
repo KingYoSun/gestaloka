@@ -320,6 +320,11 @@ def _generated_location_id(world_id: str, entity_key: str) -> str:
     return f"loc-{digest}"
 
 
+def _generated_community_id(world_id: str, entity_key: str) -> str:
+    digest = hashlib.sha1(f"{world_id}:{entity_key}".encode("utf-8")).hexdigest()[:16]
+    return pack_scoped_entity_id(world_id, f"community-{digest}")
+
+
 def _materialize_location(
     db: Session,
     *,
@@ -400,9 +405,10 @@ def _materialize_community(
 
     if existing is not None:
         metadata = _alternate_metadata(metadata)
-    faction_id = pack_scoped_entity_id(world_id, normalize_entity_key_part(metadata["entity_key"]))
+    faction_id = _generated_community_id(world_id, metadata["entity_key"])
+    pack_faction_id = f"generated_{hashlib.sha1(metadata['entity_key'].encode('utf-8')).hexdigest()[:16]}"
     state = {
-        "pack_faction_id": normalize_entity_key_part(metadata["entity_key"]),
+        "pack_faction_id": pack_faction_id,
         "community_generated": True,
         "location_keys": [location_key] if location_key else [],
         "policy": description,

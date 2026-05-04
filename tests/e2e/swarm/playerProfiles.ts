@@ -39,7 +39,7 @@ function profileTemplate(persona: SwarmUserPersona): Omit<DerivedPlayerProfile, 
     return {
       namePrefix: "Mio",
       background:
-        "門の記録を丁寧に見守り、旅人、門番、地域の噂のあいだに生まれる感情の変化を読み取る記録係。",
+        "ネクサス市の公開ログを丁寧に見守り、来訪者、案内担当、市場や小コミュニティの噂のあいだに生まれる感情の変化を読み取る記録係。",
       freeText:
         "記憶に残る親切、修復された関係、後から別の旅人が気づける手がかりなど、目に見える痕跡を残す行動を好む。",
       narrativePreferences: {

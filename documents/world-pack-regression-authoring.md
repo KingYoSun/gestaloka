@@ -12,7 +12,7 @@
 - template: `layered_world_foundation`
 - regression dataset: `turn_resolution_gestaloka_regression`
 - backend tests: `tests/backend/packs/gestaloka_world_reference/`
-- Playwright smoke: `tests/e2e/gestaloka-reference-smoke.spec.ts`
+- Playwright smoke: `tests/e2e/gestaloka-world-reference-smoke.spec.ts`
 
 新しい bundled pack は、この粒度を下回らない coverage を持たせます。
 

@@ -28,7 +28,7 @@
 | pack leak scan | `make scan-pack-leaks` |  | engine/frontend runtime への bundled pack 固有語混入を確認 |
 | shared-world regressions | `make shared-world-regressions` |  | shared-world health と pack smoke を確認 |
 | pack regressions | `make eval-pack-regressions` |  | `turn_resolution_gestaloka_regression` を確認 |
-| frontend E2E | `make frontend-e2e` |  | `gestaloka-reference-smoke.spec.ts` と mobile overflow を確認 |
+| frontend E2E | `make frontend-e2e` |  | `gestaloka-world-reference-smoke.spec.ts` と mobile overflow を確認 |
 | canary probe | `make canary-probe` |  | `make canary-up` 後に実行 |
 | release checklist | `make release-checklist` |  | compose stack の `backend` container 内で gate を実行 |
 

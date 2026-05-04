@@ -39,6 +39,15 @@ type EventItem = {
 
 type SwarmTestMode = "short" | "long";
 
+type GeneratedEntityObservation = {
+  created_count: number;
+  reused_count: number;
+  entity_types: string[];
+  origin_kinds: string[];
+  source_turn_ids: string[];
+  source_event_ids: string[];
+};
+
 test("swarm-test: persona-derived players exercise shared impact, resource contention, and world events", async ({
   browser,
   request,
@@ -293,7 +302,35 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const cTurn = await executeTurnViaUi(requiredPage(pageByPersona, c.persona.id), c.persona, cDecision, artifactDir, attemptLabel);
     recordTurnObservation(turnObservationsByPersona, c.persona.id, cTurn);
     artifacts.push(cTurn.screenshotPath ?? "");
+    let cPersistentEntityRevisitTurn: SwarmUiTurnObservation | null = null;
+    if (mode === "long") {
+      const cPersistentEntityRevisitDecision = decisionForPersona(c.persona, "persistent-entity-revisit");
+      decisionLog.push({ personaId: c.persona.id, ...cPersistentEntityRevisitDecision });
+      lastStage = "persistent_entity_revisit_turn";
+      cPersistentEntityRevisitTurn = await executeTurnViaUi(
+        requiredPage(pageByPersona, c.persona.id),
+        c.persona,
+        cPersistentEntityRevisitDecision,
+        artifactDir,
+        attemptLabel,
+      );
+      recordTurnObservation(turnObservationsByPersona, c.persona.id, cPersistentEntityRevisitTurn);
+      artifacts.push(cPersistentEntityRevisitTurn.screenshotPath ?? "");
+      const cPersistentEntityFollowupDecision = decisionForPersona(c.persona, "persistent-entity-revisit");
+      decisionLog.push({ personaId: c.persona.id, ...cPersistentEntityFollowupDecision });
+      lastStage = "persistent_entity_revisit_followup_turn";
+      const cPersistentEntityFollowupTurn = await executeTurnViaUi(
+        requiredPage(pageByPersona, c.persona.id),
+        c.persona,
+        cPersistentEntityFollowupDecision,
+        artifactDir,
+        attemptLabel,
+      );
+      recordTurnObservation(turnObservationsByPersona, c.persona.id, cPersistentEntityFollowupTurn);
+      artifacts.push(cPersistentEntityFollowupTurn.screenshotPath ?? "");
+    }
     const allTurnObservations = Array.from(turnObservationsByPersona.values()).flat();
+    const generatedEntityObservation = generatedEntityObservationForTurns(allTurnObservations);
     const turnEventIds = allTurnObservations.map(eventId).filter(Boolean);
     const novelLoverEventIds = [eventId(aQuestOfferTurn), eventId(aBodyProgressTurn)].filter(Boolean);
     const conflictEventIds = [eventId(aBodyProgressTurn), eventId(bConflictTurn)].filter(Boolean);
@@ -333,6 +370,10 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       quest_accept_turn_resolved: Boolean(eventId(aQuestAcceptTurn)),
       quest_chapter_visible: aQuestAcceptTurn.hasChapterSummary || aBodyProgressTurn.hasChapterSummary || hasQuestChapter(aQuestAfterBody),
       quest_lifecycle_events_same_world: observation.questLifecycleEventsSameWorld,
+      entity_updates_field_present:
+        allTurnObservations.length > 0 && allTurnObservations.every((turn) => turn.hasEntityUpdatesField),
+      entity_materialization_completed:
+        allTurnObservations.length > 0 && allTurnObservations.every(hasEntityMaterializationCompletedForCouncilTurn),
       situation_mapping_before_world_progress:
         allTurnObservations.length > 0 && allTurnObservations.every(hasSituationMappingBeforeWorldProgress),
     };
@@ -344,6 +385,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         Boolean(aQuestAfterPostLeaveExplore && hasPausedQuestWithResumeAction(aQuestAfterPostLeaveExplore));
       hardChecks.quest_resumed = Boolean(aQuestAfterResume && hasActiveQuest(aQuestAfterResume));
       hardChecks.quest_epilogue_visible = Boolean(aQuestAfterEpilogue && hasCompletedEpilogueQuest(aQuestAfterEpilogue));
+      hardChecks.generated_entity_created = generatedEntityObservation.created_count > 0;
+      hardChecks.generated_entity_reused = generatedEntityObservation.reused_count > 0;
     }
 
     const evaluations: PersonaEvaluation[] = [
@@ -379,10 +422,17 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       {
         personaId: c.persona.id,
         rating: hardChecks.world_broadcast_or_constraint_visible ? "good" : "needs work",
-        observedImpact: hardChecks.world_broadcast_or_constraint_visible
-          ? "Late join and follow-up exposed a world event or broadcast constraint."
-          : "Late join and follow-up did not expose a world event or broadcast constraint.",
-        evidence: [eventId(cTurn), "session state broadcast constraint scan"].filter(Boolean),
+        observedImpact:
+          mode === "long" && hardChecks.generated_entity_reused
+            ? "Late join and follow-up reused a generated living entity in the same world."
+            : hardChecks.world_broadcast_or_constraint_visible
+              ? "Late join and follow-up exposed a world event or broadcast constraint."
+              : "Late join and follow-up did not expose a world event or broadcast constraint.",
+        evidence: [
+          eventId(cTurn),
+          cPersistentEntityRevisitTurn ? eventId(cPersistentEntityRevisitTurn) : "",
+          "session state broadcast constraint / generated entity scan",
+        ].filter(Boolean),
       },
     ];
 
@@ -411,6 +461,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       hard_checks: hardChecks,
       runtime: runtimeSummaries([a, b, c], turnObservationsByPersona),
       turn_observations: allTurnObservations,
+      generated_entity_observation: generatedEntityObservation,
       artifacts: artifacts.filter(Boolean),
     });
 
@@ -486,6 +537,8 @@ async function writeFailureReport({
     quest_accept_turn_resolved: false,
     quest_chapter_visible: false,
     quest_lifecycle_events_same_world: false,
+    entity_updates_field_present: false,
+    entity_materialization_completed: false,
     situation_mapping_before_world_progress: false,
   };
   if (mode === "long") {
@@ -494,6 +547,8 @@ async function writeFailureReport({
     hardChecks.post_leave_exploration_resolved = false;
     hardChecks.quest_resumed = false;
     hardChecks.quest_epilogue_visible = false;
+    hardChecks.generated_entity_created = false;
+    hardChecks.generated_entity_reused = false;
   }
   try {
     await writeSwarmReport(testInfo, artifactDir, {
@@ -514,6 +569,9 @@ async function writeFailureReport({
       hard_checks: hardChecks,
       runtime: runtimeSummaries(Array.from(runtimeByPersona.values()), turnObservationsByPersona),
       turn_observations: Array.from(turnObservationsByPersona.values()).flat(),
+      generated_entity_observation: generatedEntityObservationForTurns(
+        Array.from(turnObservationsByPersona.values()).flat(),
+      ),
       artifacts,
       failure_diagnostics: {
         stage: lastStage,
@@ -708,15 +766,54 @@ function hasSituationMappingBeforeWorldProgress(turn: SwarmUiTurnObservation): b
   const completedPhases = turn.progressTimeline
     .filter((progress) => progress.status === "completed")
     .map((progress) => progress.phase);
-  const usesCouncilPipeline = completedPhases.some((phase) =>
-    ["intent_interpretation", "memory_council", "npc_council", "situation_mapping", "world_progress"].includes(phase),
-  );
+  const usesCouncilPipeline = usesCouncilProgressPipeline(completedPhases);
   if (!usesCouncilPipeline) {
     return completedPhases.some((phase) => ["read_world_state_query", "travel_resolution", "item_use"].includes(phase));
   }
   const situationIndex = completedPhases.indexOf("situation_mapping");
   const worldProgressIndex = completedPhases.indexOf("world_progress");
   return situationIndex >= 0 && worldProgressIndex >= 0 && situationIndex < worldProgressIndex;
+}
+
+function hasEntityMaterializationCompletedForCouncilTurn(turn: SwarmUiTurnObservation): boolean {
+  if (turn.inputMode === "quest_action") {
+    return true;
+  }
+  const completedPhases = turn.progressTimeline
+    .filter((progress) => progress.status === "completed")
+    .map((progress) => progress.phase);
+  if (!usesCouncilProgressPipeline(completedPhases)) {
+    return true;
+  }
+  const worldTagIndex = completedPhases.indexOf("world_tag_updates");
+  const materializationIndex = completedPhases.indexOf("entity_materialization");
+  return materializationIndex >= 0 && (worldTagIndex < 0 || materializationIndex > worldTagIndex);
+}
+
+function usesCouncilProgressPipeline(completedPhases: string[]): boolean {
+  return completedPhases.some((phase) =>
+    ["intent_interpretation", "memory_council", "npc_council", "situation_mapping", "world_progress"].includes(phase),
+  );
+}
+
+function generatedEntityObservationForTurns(turns: SwarmUiTurnObservation[]): GeneratedEntityObservation {
+  const generatedUpdates = turns.flatMap((turn) =>
+    turn.entityUpdates
+      .filter((update) => update.origin_kind === "archetype_generated" || update.origin_kind === "freeform_generated")
+      .map((update) => ({ turn, update })),
+  );
+  return {
+    created_count: generatedUpdates.filter(({ update }) => update.created === true).length,
+    reused_count: generatedUpdates.filter(({ update }) => update.created === false).length,
+    entity_types: uniqueStrings(generatedUpdates.map(({ update }) => update.entity_type)),
+    origin_kinds: uniqueStrings(generatedUpdates.map(({ update }) => update.origin_kind)),
+    source_turn_ids: uniqueStrings(generatedUpdates.map(({ turn }) => turn.turnId)),
+    source_event_ids: uniqueStrings(generatedUpdates.map(({ turn }) => turn.eventId)),
+  };
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
 }
 
 function questActions(item: Record<string, unknown>): string[] {

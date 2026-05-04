@@ -50,7 +50,18 @@ export type SwarmUiTurnObservation = {
   hasExploringLabel: boolean;
   hasOfferedQuest: boolean;
   hasChapterSummary: boolean;
+  hasEntityUpdatesField: boolean;
+  entityUpdates: SwarmEntityUpdate[];
   screenshotPath?: string;
+};
+
+export type SwarmEntityUpdate = {
+  entity_type?: string;
+  entity_id?: string;
+  entity_key?: string;
+  display_name?: string;
+  origin_kind?: string;
+  created?: boolean;
 };
 
 export type SwarmUiSessionObservation = {
@@ -74,7 +85,14 @@ type CapturedProgressEvent = SwarmUiTurnObservation["progressTimeline"][number] 
   turnId: string;
 };
 
+type CapturedResolvedTurn = {
+  turnId: string;
+  entityUpdates: SwarmEntityUpdate[];
+  hasEntityUpdatesField: boolean;
+};
+
 const capturedProgressByPage = new WeakMap<Page, CapturedProgressEvent[]>();
+const capturedResolvedTurnsByPage = new WeakMap<Page, CapturedResolvedTurn[]>();
 const progressCaptureAttached = new WeakSet<Page>();
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
@@ -96,29 +114,43 @@ export async function startPlayerSessionViaUi(
   persona: AssignedSwarmUserPersona,
 ): Promise<SwarmUiSessionObservation> {
   ensureProgressFrameCapture(page);
-  const startedAt = new Date().toISOString();
-  let response: Response;
-  try {
-    [response] = await Promise.all([
-      waitForSessionResponseOrNetworkFailure(page, persona.id, 120_000),
-      page.getByTestId("start-session").click(),
-    ]);
-  } catch (error) {
-    throw new Error(
-      `UI session start did not observe /sessions for ${persona.id}: ${errorMessage(error)}; ${await sessionStartDiagnostics(page)}`,
-    );
+  const attempts = 3;
+  const errors: string[] = [];
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const startedAt = new Date().toISOString();
+    let response: Response;
+    try {
+      [response] = await Promise.all([
+        waitForSessionResponseOrNetworkFailure(page, persona.id, 120_000),
+        page.getByTestId("start-session").click(),
+      ]);
+    } catch (error) {
+      errors.push(`attempt ${attempt}: ${errorMessage(error)}; ${await sessionStartDiagnostics(page)}`);
+      if (attempt < attempts) {
+        await page.waitForTimeout(2_000 * attempt);
+        continue;
+      }
+      throw new Error(`UI session start did not observe /sessions for ${persona.id}: ${errors.join(" | ")}`);
+    }
+    if (!response.ok()) {
+      const responseText = await response.text();
+      errors.push(`attempt ${attempt}: ${response.status()} ${responseText}`);
+      if (attempt < attempts && response.status() >= 500) {
+        await page.waitForTimeout(2_000 * attempt);
+        continue;
+      }
+      throw new Error(`UI session start failed for ${persona.id}: ${errors.join(" | ")}`);
+    }
+    const payload = (await response.json()) as Record<string, unknown>;
+    await waitForSessionUiReady(page, persona.id);
+    return {
+      personaId: persona.id,
+      sessionId: stringValue(payload.session_id),
+      locationId: stringValue(payload.location_id),
+      startedAt,
+    };
   }
-  if (!response.ok()) {
-    throw new Error(`UI session start failed for ${persona.id}: ${response.status()} ${await response.text()}`);
-  }
-  const payload = (await response.json()) as Record<string, unknown>;
-  await waitForSessionUiReady(page, persona.id);
-  return {
-    personaId: persona.id,
-    sessionId: stringValue(payload.session_id),
-    locationId: stringValue(payload.location_id),
-    startedAt,
-  };
+  throw new Error(`UI session start exhausted retries for ${persona.id}: ${errors.join(" | ")}`);
 }
 
 async function waitForSessionResponseOrNetworkFailure(
@@ -246,6 +278,7 @@ export async function executeTurnViaUi(
     const questSnapshot = await questSnapshotViaUi(page);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
     const progressTimeline = progressTimelineForTurn(page, opsStream, acceptedTurnId);
+    const resolvedTurn = resolvedTurnForTurn(page, acceptedTurnId);
     return {
       personaId: persona.id,
       scenario: decision.scenario,
@@ -276,6 +309,8 @@ export async function executeTurnViaUi(
         .filter((value) => hasEnglishPlayTextResidue(value, englishResidueAllowlist))
         .slice(0, 12),
       ...questSnapshot,
+      hasEntityUpdatesField: resolvedTurn?.hasEntityUpdatesField ?? false,
+      entityUpdates: resolvedTurn?.entityUpdates ?? [],
       screenshotPath,
     };
   } finally {
@@ -329,6 +364,7 @@ function ensureProgressFrameCapture(page: Page): void {
   }
   progressCaptureAttached.add(page);
   capturedProgressByPage.set(page, []);
+  capturedResolvedTurnsByPage.set(page, []);
   page.on("websocket", (socket) => {
     socket.on("framereceived", ({ payload }) => {
       const text = typeof payload === "string" ? payload : payload.toString();
@@ -341,8 +377,23 @@ function ensureProgressFrameCapture(page: Page): void {
             status?: unknown;
             elapsed_ms?: unknown;
             role_elapsed_ms?: unknown;
+            entity_updates?: unknown;
           };
         };
+        if (message.event === "turn.resolved") {
+          const turnId = typeof message.data?.turn_id === "string" ? message.data.turn_id : "";
+          if (!turnId) {
+            return;
+          }
+          const resolvedTurns = capturedResolvedTurnsByPage.get(page) ?? [];
+          resolvedTurns.push({
+            turnId,
+            entityUpdates: normalizeEntityUpdates(message.data?.entity_updates),
+            hasEntityUpdatesField: Object.prototype.hasOwnProperty.call(message.data ?? {}, "entity_updates"),
+          });
+          capturedResolvedTurnsByPage.set(page, resolvedTurns);
+          return;
+        }
         if (message.event !== "turn.progress") {
           return;
         }
@@ -366,6 +417,30 @@ function ensureProgressFrameCapture(page: Page): void {
       }
     });
   });
+}
+
+function resolvedTurnForTurn(page: Page, turnId: string): CapturedResolvedTurn | null {
+  if (!turnId) {
+    return null;
+  }
+  const resolvedTurns = capturedResolvedTurnsByPage.get(page) ?? [];
+  return [...resolvedTurns].reverse().find((item) => item.turnId === turnId) ?? null;
+}
+
+function normalizeEntityUpdates(value: unknown): SwarmEntityUpdate[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .map((item) => ({
+      entity_type: stringValue(item.entity_type),
+      entity_id: stringValue(item.entity_id),
+      entity_key: stringValue(item.entity_key),
+      display_name: stringValue(item.display_name),
+      origin_kind: stringValue(item.origin_kind),
+      created: typeof item.created === "boolean" ? item.created : undefined,
+    }));
 }
 
 function progressTimelineForTurn(
