@@ -26,6 +26,15 @@ def engine_session_payload(*, world_id: str = "gestaloka_world_reference") -> di
     }
 
 
+def post_enterprise_offer_turn(client, session_id: str, auth_headers: dict[str, str]):
+    return _post_turn_and_wait_for_resolution(
+        client,
+        session_id,
+        auth_headers,
+        {"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"},
+    )
+
+
 REALTIME_WORLD_CONTEXT_KEYS = {
     "world_id",
     "world_name",
@@ -443,8 +452,8 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     assert state.status_code == 200
     choices = state.json()["next_choices"]
     assert [item["choice_id"] for item in choices] == ["safe", "progress", "explore"]
-    assert choices[0]["label"] == "Check your visitor log as a public Nexus record"
-    assert choices[1]["label"] == "Route your visitor log into a private market contract"
+    assert choices[0]["label"] == "Check your arrival log at the public Nexus registry"
+    assert choices[1]["label"] == "Go to the lift tower network and inspect recruiters and route logs"
     assert (
         choices[2]["summary"]
         == "Check the official archive before choosing whether the arrival log becomes public record or contract leverage."
@@ -453,6 +462,7 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     story = client.get(f"/sessions/{session.json()['session_id']}/story?limit=1", headers=auth_headers)
     assert story.status_code == 200
     assert story.json()["items"][0]["narrative"].startswith("Nexus City is the protected first city")
+    assert "unknown visitor" in story.json()["items"][0]["narrative"]
 
 
 def test_japanese_player_visible_state_is_localized_and_cached(client, container, auth_headers):
@@ -482,7 +492,7 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     assert payload["quests"] == []
     assert payload["quest_journal"] == []
     assert payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
-    assert any(item["display_name"] == "ネクサス案内担当" for item in payload["local_figures"])
+    assert any(item["display_name"] == "ネクサス案内担当カナタ" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
     assert payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
     assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
@@ -584,7 +594,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
     assert first_state.status_code == 200
     payload = first_state.json()
     assert payload["current_location"]["name"] == "ネクサス市"
-    assert any(item["display_name"] == "ネクサス案内担当" for item in payload["local_figures"])
+    assert any(item["display_name"] == "ネクサス案内担当カナタ" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
     assert "古い記録と来訪者ログ" in payload["next_choices"][2]["label"]
     assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
@@ -899,7 +909,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             json={
                 "session_id": session_payload["session_id"],
                 "input_mode": "choice",
-                "choice_id": "progress",
+                "choice_id": "safe",
             },
             headers=auth_headers,
         )
@@ -952,8 +962,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "shared_consequence_updates",
             "entity_updates",
         }
-        assert turn_payload["shared_action_tag"] == "help"
-        assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "help"
+        assert turn_payload["shared_action_tag"] == "investigate"
+        assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "investigate"
         assert turn_payload["shared_consequence_updates"]["applied_rule_ids"]
         assert turn_payload["shared_consequence_updates"]["axis_updates"]
         assert turn_payload["world_context"]["pack_id"] == "gestaloka_world_reference"
@@ -964,10 +974,9 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["sp_balance"] == 29
         assert turn_payload["paid_sp"] == 0
         assert turn_payload["bonus_sp"] == 29
-        assert turn_payload["quest_updates"][0]["status"] == "offered"
-        assert turn_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+        assert turn_payload["quest_updates"] == []
         assert turn_payload["inventory_updates"] == []
-        assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "progress"
+        assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "safe"
         assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
         assert_no_player_visible_english_residue(turn_payload)
 
@@ -980,7 +989,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert "world.event.created" in event_names
     assert "world.broadcast.available" in event_names
     assert "memory.materialized" in event_names
-    assert "quest.updated" in event_names
+    assert "quest.updated" not in event_names
     assert "relationship.updated" in event_names
     assert "scene.updated" in event_names
     assert "ambient.updated" in event_names
@@ -1022,8 +1031,6 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert messages[1]["data"]["turn_id"] == accepted_payload["turn_id"]
     assert messages[1]["data"]["session_id"] == session_payload["session_id"]
     assert messages[-1]["data"] == turn_payload
-    quest_message = next(message for message in messages if message["event"] == "quest.updated")
-    assert quest_message["data"]["items"] == turn_payload["quest_updates"]
     broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
     assert broadcast_message["data"]["semantic_key"]
     assert broadcast_message["data"]["status"] == "active"
@@ -1058,7 +1065,7 @@ def test_session_story_history_paginates_and_enforces_owner(client, container):
         client,
         session_id,
         headers_a,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "choice", "choice_id": "safe"},
     )
 
     latest = client.get(f"/sessions/{session_id}/story?limit=1", headers=headers_a)
@@ -1140,7 +1147,7 @@ def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, co
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "choice", "choice_id": "safe"},
     )
 
     memory_window = role_windows["council.memory_manager"]
@@ -1265,17 +1272,16 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    _, offer_payload, _ = _post_turn_and_wait_for_resolution(
+    _, offer_payload, _ = post_enterprise_offer_turn(
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
     )
     quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.json()["quest_journal"][0]["status"] == "offered"
-    assert state_response.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert state_response.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
         accept_response = client.post(
@@ -1398,10 +1404,10 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"},
     )
     assert progress_payload["quest_updates"][0]["status"] == "offered"
-    assert progress_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert progress_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
 
 
 def test_situation_frame_choice_keeps_explicit_travel_contract(client, container, auth_headers, monkeypatch):
@@ -1541,11 +1547,10 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    _, offer_payload, _ = _post_turn_and_wait_for_resolution(
+    _, offer_payload, _ = post_enterprise_offer_turn(
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
     )
     _post_turn_and_wait_for_resolution(
         client,
@@ -1684,7 +1689,7 @@ def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(cli
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "choice", "choice_id": "safe"},
     )
 
     with container.session_factory() as db:
@@ -1729,11 +1734,10 @@ def test_ops_relationship_chapter_scene_and_memory_contracts(client, auth_header
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    _, offer_payload, _ = _post_turn_and_wait_for_resolution(
+    _, offer_payload, _ = post_enterprise_offer_turn(
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
     )
     _post_turn_and_wait_for_resolution(
         client,
@@ -1868,13 +1872,13 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "choice", "choice_id": "safe"},
     )
     _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "choice", "choice_id": "safe"},
     )
 
     status_response = client.get("/ops/memories/status", headers=auth_headers)

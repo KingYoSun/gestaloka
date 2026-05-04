@@ -44,6 +44,14 @@ def engine_session_payload(*, world_id: str = "gestaloka_world_reference") -> di
     }
 
 
+def enterprise_offer_payload() -> dict[str, str]:
+    return {"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"}
+
+
+def visitor_log_help_payload() -> dict[str, str]:
+    return {"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"}
+
+
 def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
     dataset_dir = tmp_path / "datasets"
     dataset_dir.mkdir()
@@ -379,7 +387,7 @@ def test_shadow_replay_filters_non_council_turns_and_uses_source_event_location(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=enterprise_offer_payload(),
     )
     quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
 
@@ -395,7 +403,7 @@ def test_shadow_replay_filters_non_council_turns_and_uses_source_event_location(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
     assert body_payload["action_type"] == "narrative"
 
@@ -696,7 +704,7 @@ def test_release_gate_blocks_on_shared_world_axis_drift(client, container, auth_
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
 
     with container.session_factory() as db:
@@ -731,7 +739,7 @@ def test_release_gate_blocks_on_shared_world_memory_gap(client, container, auth_
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
     event_id = turn_payload["event_id"]
 
@@ -760,7 +768,7 @@ def test_release_gate_blocks_on_cross_world_shared_event_link(client, container,
         client,
         session_id=reference_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
     with container.session_factory() as db:
         memory = db.execute(
@@ -890,7 +898,7 @@ def test_langfuse_flush_failure_degrades_but_does_not_fail_turn(client, containe
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
 
     council_turns = client.get(

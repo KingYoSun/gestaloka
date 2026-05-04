@@ -153,7 +153,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("npc-routine-stream")).not.toContainText("{");
   await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus City/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText("Exploring...", { timeout: 20_000 });
-  await expect(page.getByTestId("local-figures-stream")).toContainText(/Nexus Entry Liaison/i, { timeout: 20_000 });
+  await expect(page.getByTestId("local-figures-stream")).toContainText(/Nexus Entry Liaison Kanata/i, { timeout: 20_000 });
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Universal Library/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus City/i, { timeout: 20_000 });
   await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち");
@@ -161,7 +161,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("toggle-free-text").click();
   await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input|SP/);
   await page.getByTestId("toggle-choice-mode").click();
-  await expect(page.getByTestId("choice-progress")).toContainText("Route your visitor log into a private market contract");
+  await expect(page.getByTestId("choice-progress")).toContainText("Go to the lift tower network and inspect recruiters and route logs");
   await expect(page.getByTestId("choice-explore")).toContainText(
     "Go to the Universal Library and compare old records with your visitor log",
   );
@@ -172,15 +172,9 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expectSituationMappingBeforeWorldProgress(progressPhases);
   await expectEntityMaterializationAfterWorldTagUpdates(progressPhases);
   await expectResolvedTurnEntityUpdatesArray(progressPhases);
-  const offerDialog = page.getByTestId("quest-offer-dialog");
-  await expect(offerDialog).toBeVisible({ timeout: slowTimeout });
-  const ignoredTurnRequest = page
-    .waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/turns", { timeout: 1_000 })
-    .then(() => true)
-    .catch(() => false);
-  await offerDialog.getByRole("button", { name: /^(Ignore|無視)$/i }).click();
-  await expect(offerDialog).toBeHidden({ timeout: slowTimeout });
-  expect(await ignoredTurnRequest).toBe(false);
+  const inlineQuest = page.getByTestId("inline-quest-decision");
+  await expect(inlineQuest).toBeVisible({ timeout: slowTimeout });
+  await expect(inlineQuest).toContainText(/Accept|受諾/);
 
   await page.getByTestId("quest-list-open").click();
   await expect(page.getByTestId("quest-list-dialog")).toBeVisible({ timeout: slowTimeout });

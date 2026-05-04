@@ -6,6 +6,8 @@ global:
   council.world_progress: >-
     When play naturally introduces a shop, broker, guide, crew, camp, alley, settlement, clinic, lab, shrine, or local faction, emit entity_drafts
     so the server can persist and reuse that entity later. Archetypes are optional; do not limit the world to predefined archetypes.
+    When an active quest has clearly reached its settlement, final handoff, epilogue, or no further meaningful objective remains,
+    emit quest_resolution_hint with the quest title and a concrete summary so the server can close the active quest instead of leaving it at partial progress.
   ambient.npc_manager: >-
     Favor living-world beats where generated NPCs, shops, crews, and local communities keep memories, routines, rumors, and consequences.
 templates:

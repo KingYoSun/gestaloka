@@ -38,6 +38,10 @@ def engine_session_payload() -> dict[str, str]:
     }
 
 
+def visitor_log_help_payload() -> dict[str, str]:
+    return {"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"}
+
+
 def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
     first = QuestRuleEngine.evaluate(
         QuestRuleInput(
@@ -167,7 +171,7 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
 
     with container.session_factory() as db:
@@ -299,7 +303,7 @@ def test_shared_consequence_projection_does_not_cross_worlds(client, container, 
         client,
         session_id=reference_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
     assert turn_payload["shared_action_tag"] == "help"
 
@@ -363,7 +367,7 @@ def test_shared_world_context_flows_between_players_without_crossing_worlds(clie
         session_id=player_a_payload["session_id"],
         auth_headers=headers_a,
         token="player-a",
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload=visitor_log_help_payload(),
     )
     assert player_a_turn_payload["shared_action_tag"] == "help"
 

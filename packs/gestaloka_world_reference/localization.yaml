@@ -45,6 +45,9 @@ glossary:
     source_text: Nexus Entry Liaison
     localized_text: "ネクサス案内担当"
   - target_language: Japanese
+    source_text: Nexus Entry Liaison Kanata
+    localized_text: "ネクサス案内担当カナタ"
+  - target_language: Japanese
     source_text: Historian AI of the Universal Library
     localized_text: "万象図書館の歴史家AI"
   - target_language: Japanese

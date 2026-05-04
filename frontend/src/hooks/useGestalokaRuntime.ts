@@ -1277,7 +1277,7 @@ export function useGestalokaRuntime() {
     payload:
       | { input_mode: "choice"; choice_id: "safe" | "progress" | "explore" }
       | { input_mode: "free_text"; input_text: string }
-      | { action_type: "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest"; quest_assignment_id: string },
+      | { action_type: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest"; quest_assignment_id: string },
   ) {
     if (!token || !session) {
       setError(t("errors.startSessionFirst"));
@@ -1355,7 +1355,7 @@ export function useGestalokaRuntime() {
     await submitTurnRequest({ input_mode: "choice", choice_id: choiceId });
   }
 
-  async function handleQuestAction(actionType: "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest", questAssignmentId: string) {
+  async function handleQuestAction(actionType: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest", questAssignmentId: string) {
     await submitTurnRequest({ action_type: actionType, quest_assignment_id: questAssignmentId });
   }
 

@@ -683,7 +683,7 @@ def resolve_turn_for_session(
         tags=[container.settings.app_runtime_role],
     )
     with trace_context as trace_link:
-        if action_type in {"accept_quest", "decline_quest", "leave_quest", "resume_quest"}:
+        if action_type in {"accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"}:
             if quest_assignment_id is None:
                 raise ValueError("quest_assignment_id is required for quest lifecycle turns")
             result = _resolve_quest_lifecycle_turn_for_session(
@@ -1878,6 +1878,8 @@ def _quest_lifecycle_action_text(
             return f'Accept "{title}" and take the first concrete step into the responsibility it creates.'
         if action_type == "decline_quest":
             return f'Discard "{title}" and make clear that this thread will not be pursued.'
+        if action_type == "ignore_quest":
+            return f'Ignore "{title}" for now, leaving it offered while returning attention to the current scene.'
         if action_type == "leave_quest":
             return f'Step away from "{title}" for now, leaving it paused while the scene settles around that choice.'
         if action_type == "resume_quest":
@@ -1887,6 +1889,8 @@ def _quest_lifecycle_action_text(
         return f"「{title}」を受諾し、その責務へ最初の具体的な一歩を踏み出す。"
     if action_type == "decline_quest":
         return f"「{title}」を破棄し、この糸口を追わないと明確に決める。"
+    if action_type == "ignore_quest":
+        return f"「{title}」を今は無視し、提示を残したまま現在の場面へ意識を戻す。"
     if action_type == "leave_quest":
         return f"「{title}」からいったん離れ、その判断が場に残す揺れを受け止める。"
     if action_type == "resume_quest":
@@ -1900,6 +1904,8 @@ def _quest_lifecycle_choice_summary(*, action_type: str, fallback_summary: str, 
             return "The acceptance itself changes the scene and must open a concrete next beat."
         if action_type == "decline_quest":
             return "Discarding the quest closes this offered thread and leaves a visible consequence in the scene."
+        if action_type == "ignore_quest":
+            return "Ignoring the quest leaves it offered for later while returning attention to the current choices."
         if action_type == "leave_quest":
             return "Leaving the quest pauses the active responsibility and shifts attention back to the surrounding scene."
         if action_type == "resume_quest":
@@ -1909,6 +1915,8 @@ def _quest_lifecycle_choice_summary(*, action_type: str, fallback_summary: str, 
         return "受諾そのものが場を動かし、具体的な次の局面を開く。"
     if action_type == "decline_quest":
         return "破棄によって提示された糸口を閉じ、その判断が場に結果を残す。"
+    if action_type == "ignore_quest":
+        return "無視によって提示は後回しになり、現在の場面の選択へ注意が戻る。"
     if action_type == "leave_quest":
         return "離脱によって進行中の責務を保留し、周囲の場へ意識を戻す。"
     if action_type == "resume_quest":
@@ -1951,9 +1959,9 @@ def _quest_lifecycle_fallback_narrative(
 ) -> str:
     english = _profile_prefers_english((session_state.get("player_profile") or {}) if isinstance(session_state, dict) else {})
     if english:
-        verb = "acceptance" if action_type == "accept_quest" else "discarding" if action_type == "decline_quest" else "choice"
+        verb = "acceptance" if action_type == "accept_quest" else "discarding" if action_type == "decline_quest" else "ignoring" if action_type == "ignore_quest" else "choice"
         return f"{action_text} The {verb} is registered as a player action, and the scene shifts around it. {summary}"
-    label = "受諾" if action_type == "accept_quest" else "破棄" if action_type == "decline_quest" else "判断"
+    label = "受諾" if action_type == "accept_quest" else "破棄" if action_type == "decline_quest" else "無視" if action_type == "ignore_quest" else "判断"
     return f"{action_text} その{label}はプレイヤーの行動として場に刻まれ、状況が動く。{summary}"
 
 
@@ -2226,14 +2234,17 @@ def _resolve_quest_lifecycle_turn_for_session(
         )
     with _turn_progress_span("choice_generation"):
         post_state_choices = post_state.get("next_choices") or []
+        previous_choices = pre_state.get("next_choices") or []
         payload_choices = (
             [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices]
             if payload is not None
             else post_state_choices
         )
-        next_choices = _canonicalize_next_choices(payload_choices, post_state_choices)
-        previous_choices = pre_state.get("next_choices") or []
-        if _choices_are_effectively_same(next_choices, previous_choices):
+        if action_type in {"accept_quest", "decline_quest", "ignore_quest"} and previous_choices:
+            next_choices = _canonicalize_next_choices(previous_choices, post_state_choices)
+        else:
+            next_choices = _canonicalize_next_choices(payload_choices, post_state_choices)
+        if action_type not in {"accept_quest", "decline_quest", "ignore_quest"} and _choices_are_effectively_same(next_choices, previous_choices):
             next_choices = _contextualize_repeated_choices(
                 next_choices,
                 input_text=action_text,

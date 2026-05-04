@@ -1336,7 +1336,11 @@ def _quest_available_actions(
     assignment: QuestAssignment,
 ) -> list[str]:
     if assignment.status == "offered":
-        return ["accept_quest", "decline_quest"]
+        state_json = dict(assignment.state_json or {})
+        actions = ["accept_quest", "decline_quest"]
+        if not bool(state_json.get("inline_prompt_ignored")):
+            actions.append("ignore_quest")
+        return actions
     if assignment.status == "paused":
         return ["resume_quest"]
     if assignment.status != "active":
@@ -1792,14 +1796,50 @@ def record_quest_resolution_hint(
             .where(
                 QuestAssignment.world_id == world_id,
                 QuestAssignment.owner_actor_id == actor_id,
-                QuestAssignment.status.in_(("paused", "offered")),
+                QuestAssignment.status.in_(("active", "paused", "offered")),
             )
-            .order_by((QuestAssignment.status == "paused").desc(), QuestAssignment.updated_at.desc(), QuestAssignment.id.desc())
+            .order_by(
+                (QuestAssignment.status == "active").desc(),
+                (QuestAssignment.status == "paused").desc(),
+                QuestAssignment.updated_at.desc(),
+                QuestAssignment.id.desc(),
+            )
         ).all()
     )
+    active_rows = [(assignment, template) for assignment, template in rows if assignment.status == "active"]
     for assignment, template in rows:
-        if title and not _quest_offer_is_similar(template, title=title, description=summary):
+        title_matches = bool(title and _quest_offer_is_similar(template, title=title, description=summary))
+        single_active_summary_hint = assignment.status == "active" and not title and bool(summary) and len(active_rows) == 1
+        if not title_matches and not single_active_summary_hint:
             continue
+        if assignment.status == "active":
+            state_json = dict(assignment.state_json or {})
+            state_json["resolved_from_resolution_hint_event_id"] = source_event_id
+            state_json["resolution_hint"] = dict(hint)
+            assignment.state_json = state_json
+            assignment.status = "completed"
+            assignment.progress = max(assignment.progress, assignment.progress_target)
+            assignment.latest_summary = summary or f"{template.title} is complete."
+            _open_epilogue_chapter_for_assignment(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                source_event_id=source_event_id,
+                assignment=assignment,
+                template=template,
+                summary=assignment.latest_summary,
+            )
+            db.flush()
+            return [
+                _quest_update_dict(
+                    db,
+                    world_id=world_id,
+                    actor_id=actor_id,
+                    assignment=assignment,
+                    template=template,
+                    action="completed_from_resolution_hint",
+                )
+            ]
         state_json = dict(assignment.state_json or {})
         state_json["pending_resolution"] = {
             "source_event_id": source_event_id,
@@ -1896,6 +1936,26 @@ def apply_quest_lifecycle_action(
         assignment.latest_summary = f"{template.title} was declined for now."
         db.flush()
         return [{**quest_summary_to_dict(assignment, template), "action": "declined"}], chapter_updates, f"{template.title} is left aside."
+
+    if action_type == "ignore_quest":
+        if assignment.status != "offered":
+            raise ValueError("Only offered quests can be ignored")
+        state_json = dict(assignment.state_json or {})
+        state_json["inline_prompt_ignored"] = True
+        state_json["inline_prompt_ignored_at_event_id"] = source_event_id
+        assignment.state_json = state_json
+        assignment.latest_summary = f"{template.title} remains available, but it is no longer interrupting the current scene."
+        db.flush()
+        return [
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=assignment,
+                template=template,
+                action="ignored",
+            )
+        ], chapter_updates, f"{template.title} is left available for later."
 
     if action_type == "leave_quest":
         if assignment.status != "active":

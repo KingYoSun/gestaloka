@@ -621,7 +621,10 @@ class CouncilWorldProgressPayload(BaseModel):
         current_chapter = input_payload.get("current_chapter") if isinstance(input_payload.get("current_chapter"), dict) else {}
         in_epilogue = str((current_chapter or {}).get("chapter_kind") or "") == "epilogue"
         requested_posture = str(input_payload.get("requested_choice_posture") or "").strip()
-        should_backfill_offer = requested_posture == "progress"
+        input_text_for_offer = _first_text(input_payload.get("input_text"), input_payload.get("intent_summary"))
+        should_backfill_offer = requested_posture == "progress" or any(
+            token in input_text_for_offer for token in ("企業勧誘", "企業契約", "契約", "corporate recruiter", "corporate contract")
+        )
         if normalized["quest_offer"] is None and not has_live_quest and not in_epilogue and should_backfill_offer:
             offer_title = _first_text(normalized.get("quest_title"), input_payload.get("intent_summary"), "A local thread emerges")
             offer_summary = _first_text(
@@ -1139,7 +1142,11 @@ class GMCouncilService:
             for item in quests
         )
         quest_offer = None
-        if posture == "progress" and not has_live_quest and intent_payload.canonical_action_kind == "narrative":
+        input_text_for_offer = _first_text(request.input_text, intent_payload.intent_summary)
+        should_backfill_offer = posture == "progress" or any(
+            token in input_text_for_offer for token in ("企業勧誘", "企業契約", "契約", "corporate recruiter", "corporate contract")
+        )
+        if should_backfill_offer and not has_live_quest and intent_payload.canonical_action_kind == "narrative":
             quest_offer = {
                 "title": intent_summary[:120],
                 "description": consequence_summary,

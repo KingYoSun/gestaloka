@@ -137,7 +137,7 @@ def test_resource_lock_conflict_continues_turn_and_records_constraints(client, c
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
+        payload={"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"},
     )
     assert turn_payload["shared_action_tag"] == "none"
 

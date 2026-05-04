@@ -16,6 +16,7 @@ from app.modules.world_pack.service import resolve_world_pack
 
 GeneratedEntityType = Literal["npc", "location", "community"]
 GeneratedOriginKind = Literal["pack_seed", "archetype_generated", "freeform_generated"]
+NPC_PERSONAL_NAMES = ("Kanata", "Mio", "Riku", "Sena", "Iori", "Towa", "Akari", "Ren")
 
 
 def pack_scoped_entity_id(world_id: str, base_id: str) -> str:
@@ -74,6 +75,20 @@ def generated_entity_key(
 
 def pack_seed_entity_key(entity_type: GeneratedEntityType, base_id: str) -> str:
     return f"{entity_type}:pack:{normalize_entity_key_part(base_id)}"
+
+
+def _stable_npc_personal_name(entity_key: str, archetype_id: str) -> str:
+    if archetype_id == "nexus_entry_liaison" or "nexus_entry_liaison" in entity_key:
+        return "Kanata"
+    digest = hashlib.sha1(entity_key.encode("utf-8")).hexdigest()
+    return NPC_PERSONAL_NAMES[int(digest[:2], 16) % len(NPC_PERSONAL_NAMES)]
+
+
+def _generated_npc_display_name(display_name: str, *, entity_key: str, archetype_id: str) -> str:
+    base = display_name.strip() or "Generated NPC"
+    if any(base.endswith(f" {name}") or base.endswith(name) for name in NPC_PERSONAL_NAMES):
+        return base[:120]
+    return f"{base} {_stable_npc_personal_name(entity_key, archetype_id)}"[:120]
 
 
 def active_resource_locked(db: Session, *, world_id: str, resource_type: str, resource_id: str) -> bool:
@@ -219,6 +234,8 @@ def materialize_entity_draft(
         location_key=location_key,
         community_id=community_id,
     )
+    if entity_type == "npc":
+        display_name = _generated_npc_display_name(display_name, entity_key=entity_key, archetype_id=archetype_id)
     metadata = _metadata(
         entity_key=entity_key,
         origin_kind=origin_kind,

@@ -428,7 +428,7 @@ export type SessionState = {
 export type TurnResponse = {
   turn_id: string;
   world_context?: WorldContext;
-  action_type: "narrative" | "use_reward_item" | "travel" | "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest";
+  action_type: "narrative" | "use_reward_item" | "travel" | "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest";
   input_mode: "choice" | "free_text";
   event_id: string;
   memory_ids: string[];

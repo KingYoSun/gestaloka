@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.models.entities import (
     Actor,
     ActorTitleProgress,
+    ChapterTrack,
     Event,
     Faction,
     Location,
@@ -45,6 +46,15 @@ def gestaloka_session_payload() -> dict[str, str]:
     }
 
 
+def post_enterprise_offer_turn(client, session_id: str, auth_headers: dict[str, str]):
+    return post_turn_and_wait(
+        client,
+        session_id=session_id,
+        auth_headers=auth_headers,
+        payload={"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"},
+    )
+
+
 def test_session_can_start_from_gestaloka_world_reference_pack(client, container, auth_headers):
     response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
 
@@ -71,8 +81,8 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
     assert state_payload["chapter"] is None
     assert any(item["axis_id"] == "world_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "universal_library" for item in state_payload["nearby_routes"])
-    assert state_payload["next_choices"][0]["label"] == "ネクサス市の公開記録として来訪者ログを確認する"
-    assert state_payload["next_choices"][1]["label"] == "市場や企業の私的契約として来訪者ログを流通させる"
+    assert state_payload["next_choices"][0]["label"] == "ネクサス公開登録所で到着ログを確認する"
+    assert state_payload["next_choices"][1]["label"] == "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る"
     assert state_payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
 
     story = client.get(f"/sessions/{payload['session_id']}/story", headers=auth_headers)
@@ -82,6 +92,7 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
     opening = story_payload["items"][0]
     assert opening["narrative"].startswith("基点都市ネクサス。")
     assert "階層世界ゲスタロカ" in opening["narrative"]
+    assert "未知の来訪者" in opening["narrative"]
     assert "session_id" not in opening["narrative"]
     assert "raw" not in opening["narrative"].lower()
     assert opening["consequence"] == ""
@@ -95,6 +106,14 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
         world = db.execute(select(World).where(World.id == "gestaloka_world_reference")).scalar_one()
         assert world.state["pack_id"] == "gestaloka_world_reference"
         assert world.state["world_template_id"] == "layered_world_foundation"
+        guide = db.execute(
+            select(Actor).where(
+                Actor.world_id == "gestaloka_world_reference",
+                Actor.actor_type == "npc",
+                Actor.origin_ref == "nexus_entry_liaison",
+            )
+        ).scalar_one()
+        assert guide.display_name == "Nexus Entry Liaison Kanata"
 
 
 def test_opening_choices_ignore_existing_same_world_beats():
@@ -112,16 +131,17 @@ def test_opening_choices_ignore_existing_same_world_beats():
             "bootstrap": {
                 "opening_choices": {
                     "safe": {
-                        "label": "ネクサス市の公開記録として来訪者ログを確認する",
-                        "summary": "安全都市の制度と公開証言を使い、到着ログを世界に読める形へ整える。",
-                        "canonical_input_text": "ネクサス市の公開記録として来訪者ログを確認する",
+                        "label": "ネクサス公開登録所で到着ログを確認する",
+                        "summary": "公開証言ホールを見て、来訪者ログが街の制度ではどう扱われるかを知る。",
+                        "canonical_input_text": "ネクサス公開登録所で到着ログを確認する",
                         "action_kind": "narrative",
                     },
                     "progress": {
-                        "label": "市場や企業の私的契約として来訪者ログを流通させる",
-                        "summary": "ネクサスの案内担当を介し、到着ログを公開制度ではなく契約と取引の文脈へ渡す。",
-                        "canonical_input_text": "市場や企業の私的契約として来訪者ログを流通させる",
-                        "action_kind": "narrative",
+                        "label": "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る",
+                        "summary": "所属を決めずに、企業窓口、昇降塔の行き先、契約のリスクを確認する。",
+                        "canonical_input_text": "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る",
+                        "action_kind": "travel",
+                        "travel_target_key": "lift_tower_network",
                     },
                     "explore": {
                         "label": "万象図書館へ向かい、古い記録と来訪者ログを照合する",
@@ -151,8 +171,8 @@ def test_opening_choices_ignore_existing_same_world_beats():
 
     choices = default_next_choices(state_payload)
 
-    assert choices[0]["label"] == "ネクサス市の公開記録として来訪者ログを確認する"
-    assert choices[1]["label"] == "市場や企業の私的契約として来訪者ログを流通させる"
+    assert choices[0]["label"] == "ネクサス公開登録所で到着ログを確認する"
+    assert choices[1]["label"] == "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る"
     assert choices[2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
     assert "直前の変化" not in json.dumps(choices, ensure_ascii=False)
 
@@ -225,15 +245,14 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    _, first_payload, _ = post_turn_and_wait(
+    _, first_payload, _ = post_enterprise_offer_turn(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
     )
     assert first_payload["action_type"] == "narrative"
     assert first_payload["quest_updates"][0]["status"] == "offered"
-    assert first_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert first_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
     assert first_payload["chapter_updates"] == []
     quest_assignment_id = first_payload["quest_updates"][0]["assignment_id"]
 
@@ -241,7 +260,7 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
     assert post_offer_state.status_code == 200
     assert post_offer_state.json()["quest_display_state"]["mode"] == "quest"
     assert post_offer_state.json()["quest_journal"][0]["assignment_id"] == quest_assignment_id
-    assert post_offer_state.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert post_offer_state.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
     quest_response = client.get(f"/sessions/{session_payload['session_id']}/quests", headers=auth_headers)
     assert quest_response.status_code == 200
     quest_payload = quest_response.json()
@@ -259,16 +278,13 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
         payload={"action_type": "accept_quest", "quest_assignment_id": quest_assignment_id},
     )
     assert accept_payload["action_type"] == "accept_quest"
+    assert accept_payload["sp_delta"] == -1
     assert accept_payload["quest_updates"][0]["status"] == "active"
     assert accept_payload["chapter_updates"][0]["chapter_kind"] == "prologue"
     assert "body" in {item["chapter_kind"] for item in accept_payload["chapter_updates"]}
     assert accept_payload["interpreted_intent"]["lifecycle_action_kind"] == "accept_quest"
     assert not any("幕を開ける" in item["label"] for item in accept_payload["next_choices"])
-    accept_choice_text = json.dumps(accept_payload["next_choices"], ensure_ascii=False)
-    assert "直前の結果" not in accept_choice_text
-    assert "場面を次へ進める" not in accept_choice_text
-    assert "latest result" not in accept_choice_text
-    assert "push the scene forward" not in accept_choice_text
+    assert [item["label"] for item in accept_payload["next_choices"]] == [item["label"] for item in first_payload["next_choices"]]
 
     _, progress_payload, _ = post_turn_and_wait(
         client,
@@ -332,6 +348,40 @@ def test_non_progress_choices_do_not_promise_quest_stage_completion():
     assert "次のクエスト段階へ進む" in progress["summary"]
     assert "advance to the next quest stage" not in explore["summary"]
     assert "move to the next quest stage" not in explore["canonical_input_text"]
+
+
+def test_ignoring_dynamic_quest_keeps_offer_but_suppresses_inline_action(client, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    _, offer_payload, _ = post_enterprise_offer_turn(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+    )
+    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
+    assert "ignore_quest" in offer_payload["quest_updates"][0]["available_actions"]
+
+    _, ignore_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"action_type": "ignore_quest", "quest_assignment_id": quest_assignment_id},
+    )
+
+    assert ignore_payload["action_type"] == "ignore_quest"
+    assert ignore_payload["sp_delta"] == -1
+    assert ignore_payload["quest_updates"][0]["status"] == "offered"
+    assert ignore_payload["quest_updates"][0]["action"] == "ignored"
+    assert ignore_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert [item["label"] for item in ignore_payload["next_choices"]] == [item["label"] for item in offer_payload["next_choices"]]
+
+    state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state_response.status_code == 200
+    offered = state_response.json()["quest_journal"][0]
+    assert offered["status"] == "offered"
+    assert offered["available_actions"] == ["accept_quest", "decline_quest"]
 
 
 def test_generated_freeform_entities_persist_and_reuse_across_sessions(client, container, auth_headers):
@@ -489,11 +539,10 @@ def test_gestaloka_world_reference_declines_dynamic_quest_offer(client, auth_hea
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    _, offer_payload, _ = post_turn_and_wait(
+    _, offer_payload, _ = post_enterprise_offer_turn(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
     )
     quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
 
@@ -906,6 +955,67 @@ def test_paused_quest_resolution_hint_resolves_into_epilogue_on_resume(client, c
     assert chapter_updates[0]["chapter_kind"] == "epilogue"
 
 
+def test_active_quest_resolution_hint_completes_immediately(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        quest = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id="active-resolution-quest",
+            offer={
+                "title": "企業契約を確定する",
+                "description": "企業契約の行き先を決める。",
+                "offered_summary": "企業契約が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )[0]
+        assignment = db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == "gestaloka_world_reference",
+                QuestAssignment.id == quest["assignment_id"],
+            )
+        ).scalar_one()
+        assignment.status = "active"
+        assignment.progress = 2
+        db.flush()
+
+        hint_updates = record_quest_resolution_hint(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            hint={
+                "title": "企業契約を確定する",
+                "summary": "ゲラドラとの契約が成立し、昇降塔ネットワークへ向かう準備が整った。",
+            },
+        )
+        chapters = list(
+            db.execute(
+                select(ChapterTrack).where(
+                    ChapterTrack.world_id == "gestaloka_world_reference",
+                    ChapterTrack.quest_assignment_id == quest["assignment_id"],
+                    ChapterTrack.chapter_kind == "epilogue",
+                )
+            ).scalars()
+        )
+
+    assert hint_updates[0]["action"] == "completed_from_resolution_hint"
+    assert hint_updates[0]["status"] == "completed"
+    assert hint_updates[0]["progress"] == hint_updates[0]["progress_target"]
+    assert chapters
+
+
 def test_gestaloka_world_reference_progression_falls_back_when_world_progress_schema_fails(
     client,
     container,
@@ -920,7 +1030,7 @@ def test_gestaloka_world_reference_progression_falls_back_when_world_progress_sc
         prompt_id = kwargs.get("prompt_id") or (args[0] if args else "")
         if prompt_id == "council.world_progress":
             world_progress_calls += 1
-            if world_progress_calls == 2:
+            if world_progress_calls == 1:
                 return PromptExecutionOutcome(
                     attempts=[],
                     final_lane="lite",
@@ -934,18 +1044,10 @@ def test_gestaloka_world_reference_progression_falls_back_when_world_progress_sc
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    post_turn_and_wait(
+    _, second_payload, _ = post_enterprise_offer_turn(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "safe"},
-    )
-
-    _, second_payload, _ = post_turn_and_wait(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
     )
     assert second_payload["quest_updates"][0]["status"] == "offered"
 
