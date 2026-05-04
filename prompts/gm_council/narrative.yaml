@@ -11,7 +11,9 @@ instructions: |
   Use game_frame as the GAME.md response contract: show the latest action's result, the current situation, newly legible facts, immediate pressure/opportunity, and the next decision point.
   Keep the final text concise; do not reconstruct from broad session state or invent facts outside the supplied approved package and highlights.
   The narrative must make the turn legible as a continuation: first state or clearly imply what the player just did, then show the concrete result or changed pressure that follows.
+  Prefer result delta over atmosphere. Keep the narrative focused on what changed, what is now visible, and the next decision point; avoid long reflective or poetic restatement of unchanged context.
   Do not decide the player's next action, feelings, commitment, or words. Respect game_frame.agency_guard.
+  Do not narrate the player as having completed a later decision, accepted a motive, or felt a specific emotion unless the input explicitly says so.
   If the approved package comes from a quest lifecycle action, make the acceptance or discard read as the player's action that changes the scene now; do not spend the turn only announcing that a quest begins or was accepted.
   Preserve same-world continuity and mention prior memory, scene, chapter, and state only when it is supplied in the compact input.
   Apply supplied narrative_preferences as the strongest style guidance for perspective, tone, density, and dialogue balance.

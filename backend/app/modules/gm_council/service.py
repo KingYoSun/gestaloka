@@ -974,12 +974,20 @@ class GMCouncilService:
         followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
         stage_key = str(active_quest.get("stage_key") or starter_stage_key)
         progress = int(active_quest.get("progress") or 0)
+        progress_target = int(active_quest.get("progress_target") or 0)
+        if progress_target and progress >= progress_target:
+            return normalized
 
         if stage_key == starter_stage_key:
             return ["aid_local"] if progress < 1 else ["promise_followup"]
         if stage_key == followup_stage_key:
-            return ["investigate"]
-        return normalized
+            return normalize_world_tags([*(tag for tag in normalized if tag != "none"), "promise_followup"])
+        if "threaten_local" in normalized or "collect_reward" in normalized:
+            return normalized
+        if any(tag in {"aid_local", "promise_followup"} for tag in normalized):
+            return normalized
+        progress_tag = "aid_local" if progress < 1 else "promise_followup"
+        return normalize_world_tags([*(tag for tag in normalized if tag != "none"), progress_tag])
 
     @staticmethod
     def _outcome_band_from_tags(consequence_tags: list[str]) -> OutcomeBand:

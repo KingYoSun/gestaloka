@@ -3893,6 +3893,9 @@ def _canonicalize_next_choices(
             travel_target_key = str(
                 current.get("travel_target_key") or (fallback.get("travel_target_key") if not has_current else "")
             ).strip() or None
+        label = _sanitize_non_progress_choice_promise(posture=posture, text=label)
+        summary = _sanitize_non_progress_choice_promise(posture=posture, text=summary)
+        canonical_input_text = _sanitize_non_progress_choice_promise(posture=posture, text=canonical_input_text)
         normalized.append(
             {
                 "choice_id": str(current.get("choice_id") or fallback.get("choice_id") or posture),
@@ -3905,6 +3908,25 @@ def _canonicalize_next_choices(
             }
         )
     return normalized
+
+
+def _sanitize_non_progress_choice_promise(*, posture: str, text: str) -> str:
+    if posture == "progress" or not text:
+        return text
+    replacements = {
+        "次のクエスト段階へ進む": "次の判断材料が増える",
+        "次の段階へ進む": "次の判断材料が増える",
+        "登録が完了する": "登録内容の問題点が見える",
+        "登録を完了する": "登録内容を確認する",
+        "registration completes": "registration can be checked",
+        "complete the registration": "check the registration",
+        "advance to the next quest stage": "reveal the next decision point",
+        "move to the next quest stage": "reveal the next decision point",
+    }
+    sanitized = text
+    for source, replacement in replacements.items():
+        sanitized = sanitized.replace(source, replacement)
+    return sanitized
 
 
 def _choice_signature(choice: dict[str, Any]) -> tuple[str, str, str, str]:
@@ -3954,29 +3976,29 @@ def _contextualize_repeated_choices(
         posture = str(item.get("posture") or item.get("choice_id") or "")
         if english:
             if posture == "safe":
-                item["label"] = "Read the latest result before acting again"
-                item["summary"] = f"Pause and judge what changed: {context}"
-                item["canonical_input_text"] = f"Read the latest result before acting again: {context}"
+                item["label"] = "Ask the local witness what changed"
+                item["summary"] = f"Confirm the visible result before committing further: {context}"
+                item["canonical_input_text"] = f"Ask the local witness what changed after: {context}"
             elif posture == "progress":
-                item["label"] = "Use the latest result to push the scene forward"
-                item["summary"] = f"Act from the concrete result: {context}"
-                item["canonical_input_text"] = f"Use the latest result to push the scene forward: {context}"
+                item["label"] = "Settle one unfinished task in front of you"
+                item["summary"] = f"Turn the visible result into a concrete state change: {context}"
+                item["canonical_input_text"] = f"Settle one unfinished task opened by: {context}"
             else:
-                item["label"] = "Trace who noticed the latest result"
-                item["summary"] = f"Explore where the result is spreading: {context}"
-                item["canonical_input_text"] = f"Trace who noticed the latest result: {context}"
+                item["label"] = "Trace where the new reaction spreads"
+                item["summary"] = f"Check who or what now reacts differently: {context}"
+                item["canonical_input_text"] = f"Trace where the new reaction spreads after: {context}"
         elif posture == "safe":
-            item["label"] = "直前の結果を受け止め、次に動く前に場を読む"
-            item["summary"] = f"何が変わったかを確かめる: {context}"
-            item["canonical_input_text"] = f"直前の結果を受け止め、次に動く前に場を読む: {context}"
+            item["label"] = "近くの証人に何が変わったか確認する"
+            item["summary"] = f"次へ踏み込む前に、見えている結果を確かめる: {context}"
+            item["canonical_input_text"] = f"近くの証人に何が変わったか確認する: {context}"
         elif posture == "progress":
-            item["label"] = "直前の結果を足場に、場面を次へ進める"
-            item["summary"] = f"具体的な結果から前へ動く: {context}"
-            item["canonical_input_text"] = f"直前の結果を足場に、場面を次へ進める: {context}"
+            item["label"] = "目の前の未処理項目を一つ確定する"
+            item["summary"] = f"見えている結果を、状態が変わる具体行動へ移す: {context}"
+            item["canonical_input_text"] = f"目の前の未処理項目を一つ確定する: {context}"
         else:
-            item["label"] = "直前の結果が誰に届いたかを探る"
-            item["summary"] = f"結果の広がり方を追う: {context}"
-            item["canonical_input_text"] = f"直前の結果が誰に届いたかを探る: {context}"
+            item["label"] = "新しい反応がどこへ広がったか調べる"
+            item["summary"] = f"誰や何が反応を変えたかを追う: {context}"
+            item["canonical_input_text"] = f"新しい反応がどこへ広がったか調べる: {context}"
         refreshed.append(item)
     return refreshed
 
@@ -4063,8 +4085,14 @@ def _coerce_choice_world_tags(
     world_pack = session_state.get("world_pack") or {}
     starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
     followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
-    if stage_key in {starter_stage_key, followup_stage_key}:
-        return normalize_world_tags([*normalized, "promise_followup"])
+    if "threaten_local" in normalized:
+        return normalized
+    if stage_key == starter_stage_key:
+        progress_tag = "aid_local" if progress < 1 else "promise_followup"
+    else:
+        progress_tag = "promise_followup"
+    if stage_key in {starter_stage_key, followup_stage_key} or str(active_quest.get("status") or "") == "active":
+        return normalize_world_tags([*(tag for tag in normalized if tag != "none"), progress_tag])
     return normalized
 
 

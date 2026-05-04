@@ -20,6 +20,7 @@ from app.models.entities import (
     WorldResourceLock,
 )
 from app.modules.llm_harness.service import PromptExecutionOutcome
+from app.modules.session.service import _canonicalize_next_choices
 from app.modules.world_state.entity_generation import materialize_entity_drafts
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 from app.modules.world_state.service import (
@@ -138,6 +139,22 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
     assert "body" in {item["chapter_kind"] for item in accept_payload["chapter_updates"]}
     assert accept_payload["interpreted_intent"]["lifecycle_action_kind"] == "accept_quest"
     assert not any("幕を開ける" in item["label"] for item in accept_payload["next_choices"])
+    accept_choice_text = json.dumps(accept_payload["next_choices"], ensure_ascii=False)
+    assert "直前の結果" not in accept_choice_text
+    assert "場面を次へ進める" not in accept_choice_text
+    assert "latest result" not in accept_choice_text
+    assert "push the scene forward" not in accept_choice_text
+
+    _, progress_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={"input_mode": "choice", "choice_id": "progress"},
+    )
+    assert progress_payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
+    assert progress_payload["quest_updates"][0]["progress"] > accept_payload["quest_updates"][0]["progress"]
+    assert progress_payload["quest_updates"][0]["world_tags"] != ["none"]
+    assert any(tag in progress_payload["quest_updates"][0]["world_tags"] for tag in ("aid_local", "promise_followup"))
 
     _, leave_payload, _ = post_turn_and_wait(
         client,
@@ -154,6 +171,42 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
         payload={"action_type": "resume_quest", "quest_assignment_id": quest_assignment_id},
     )
     assert resume_payload["quest_updates"][0]["status"] == "active"
+
+
+def test_non_progress_choices_do_not_promise_quest_stage_completion():
+    choices = _canonicalize_next_choices(
+        [
+            {
+                "posture": "safe",
+                "label": "図書館でログを確認する",
+                "summary": "来訪者ログの登録が完了する。",
+                "canonical_input_text": "安全にcomplete the registration",
+                "action_kind": "narrative",
+            },
+            {
+                "posture": "progress",
+                "label": "未処理項目を確定する",
+                "summary": "次のクエスト段階へ進む。",
+                "canonical_input_text": "未処理項目を確定する",
+                "action_kind": "narrative",
+            },
+            {
+                "posture": "explore",
+                "label": "反応の広がりを調べる",
+                "summary": "advance to the next quest stage by observing.",
+                "canonical_input_text": "move to the next quest stage by observing",
+                "action_kind": "narrative",
+            },
+        ],
+        [],
+    )
+
+    safe, progress, explore = choices
+    assert "登録が完了する" not in safe["summary"]
+    assert "complete the registration" not in safe["canonical_input_text"]
+    assert "次のクエスト段階へ進む" in progress["summary"]
+    assert "advance to the next quest stage" not in explore["summary"]
+    assert "move to the next quest stage" not in explore["canonical_input_text"]
 
 
 def test_generated_freeform_entities_persist_and_reuse_across_sessions(client, container, auth_headers):
