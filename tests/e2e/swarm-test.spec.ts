@@ -366,6 +366,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       world_broadcast_or_constraint_visible:
         observation.worldBroadcastOrConstraintVisible,
       exploration_label_visible: initialQuestSnapshots.every((snapshot) => snapshot.hasExploringLabel),
+      inline_quest_decision_visible: aQuestOfferTurn.hasInlineQuestDecision,
       dynamic_quest_offered: aQuestOfferTurn.hasOfferedQuest || hasOfferedQuest(aQuestAfterOffer),
       quest_accept_turn_resolved: Boolean(eventId(aQuestAcceptTurn)),
       quest_chapter_visible: aQuestAcceptTurn.hasChapterSummary || aBodyProgressTurn.hasChapterSummary || hasQuestChapter(aQuestAfterBody),
@@ -534,6 +535,7 @@ async function writeFailureReport({
     world_broadcast_or_constraint_visible: false,
     exploration_label_visible: false,
     dynamic_quest_offered: false,
+    inline_quest_decision_visible: false,
     quest_accept_turn_resolved: false,
     quest_chapter_visible: false,
     quest_lifecycle_events_same_world: false,

@@ -1255,6 +1255,7 @@ const japaneseLabels: Record<string, string> = {
   quest_action: "クエスト操作",
   accept_quest: "クエスト受諾",
   decline_quest: "クエスト辞退",
+  ignore_quest: "クエスト無視",
   leave_quest: "クエスト離脱",
   resume_quest: "クエスト再開",
   progress: "進行",

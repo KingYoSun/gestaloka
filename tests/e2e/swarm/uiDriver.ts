@@ -1,4 +1,4 @@
-import { expect, type Page, type Response } from "@playwright/test";
+import { expect, type Locator, type Page, type Response } from "@playwright/test";
 
 import { derivePlayerProfile } from "./playerProfiles";
 import type { DerivedPlayerProfile } from "./playerProfiles";
@@ -47,8 +47,10 @@ export type SwarmUiTurnObservation = {
   questProgress: string;
   chapterText: string;
   questActionLabels: string[];
+  inlineQuestActionLabels: string[];
   hasExploringLabel: boolean;
   hasOfferedQuest: boolean;
+  hasInlineQuestDecision: boolean;
   hasChapterSummary: boolean;
   hasEntityUpdatesField: boolean;
   entityUpdates: SwarmEntityUpdate[];
@@ -76,8 +78,10 @@ export type SwarmUiQuestSnapshot = {
   questProgress: string;
   chapterText: string;
   questActionLabels: string[];
+  inlineQuestActionLabels: string[];
   hasExploringLabel: boolean;
   hasOfferedQuest: boolean;
+  hasInlineQuestDecision: boolean;
   hasChapterSummary: boolean;
 };
 
@@ -605,7 +609,6 @@ async function waitForTurnResponseOrNetworkFailure(
 
 async function submitDecision(page: Page, decision: SwarmDecision): Promise<void> {
   if (decision.inputMode === "quest_action") {
-    await ensureStatusSurface(page);
     await clickQuestAction(page, decision.questAction);
     return;
   }
@@ -724,6 +727,14 @@ async function playSurfaceDiagnostics(page: Page): Promise<string> {
 
 async function clickQuestAction(page: Page, action: SwarmDecision["questAction"]): Promise<void> {
   const label = questActionLabelPattern(action);
+  const inlineButton = action ? page.getByTestId(`quest-action-${action}`) : null;
+  if (inlineButton && await locatorVisibleByLocator(inlineButton)) {
+    await expect(inlineButton).toBeEnabled({ timeout: 60_000 });
+    await inlineButton.click();
+    return;
+  }
+
+  await ensureStatusSurface(page);
   const activeQuestButton = page.getByTestId("active-quest").getByRole("button", { name: label });
   if (await roleVisible(activeQuestButton)) {
     await expect(activeQuestButton).toBeEnabled({ timeout: 60_000 });
@@ -745,6 +756,9 @@ function questActionLabelPattern(action: SwarmDecision["questAction"]): RegExp {
   if (action === "decline_quest") {
     return /^(見送る|Decline)$/i;
   }
+  if (action === "ignore_quest") {
+    return /^(無視|Ignore)$/i;
+  }
   if (action === "leave_quest") {
     return /^(離れる|クエストから離脱|Leave|Leave quest)$/i;
   }
@@ -761,6 +775,13 @@ async function waitForTurnIdle(page: Page): Promise<void> {
   } catch {
     // Some fail-forward or late-scene states may settle without a progress
     // choice. The next action's locator wait will enforce readiness when needed.
+  }
+  try {
+    await expect(page.getByTestId("quest-action-accept_quest")).toBeEnabled({ timeout: 10_000 });
+    return;
+  } catch {
+    // Offered quests replace the normal choice list with an inline decision
+    // panel. If no offer is visible, fall through to the generic input check.
   }
   try {
     await expect(page.getByTestId("toggle-free-text")).toBeEnabled({ timeout: 10_000 });
@@ -789,6 +810,14 @@ async function listText(page: Page, testId: string): Promise<string[]> {
 async function locatorVisible(page: Page, testId: string): Promise<boolean> {
   try {
     return await page.getByTestId(testId).isVisible({ timeout: 500 });
+  } catch {
+    return false;
+  }
+}
+
+async function locatorVisibleByLocator(locator: Locator): Promise<boolean> {
+  try {
+    return await locator.isVisible({ timeout: 500 });
   } catch {
     return false;
   }
@@ -827,19 +856,24 @@ async function playerVisiblePlayInfoTexts(page: Page): Promise<string[]> {
 }
 
 export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapshot> {
-  const [questText, questProgress, chapterText, questActionLabels] = await Promise.all([
+  const [questText, questProgress, chapterText, questActionLabels, inlineQuestActionLabels, inlineQuestText] = await Promise.all([
     textContent(page, "active-quest"),
     textContent(page, "quest-progress"),
     textContent(page, "current-chapter-summary"),
     questActionTexts(page),
+    inlineQuestActionTexts(page),
+    textContent(page, "inline-quest-decision"),
   ]);
+  const allQuestActionLabels = uniqueNonEmpty([...questActionLabels, ...inlineQuestActionLabels]);
   return {
     questText,
     questProgress,
     chapterText,
-    questActionLabels,
+    questActionLabels: allQuestActionLabels,
+    inlineQuestActionLabels,
     hasExploringLabel: /探索中\.\.\.|Exploring\.\.\./i.test(questText),
-    hasOfferedQuest: questActionLabels.some((label) => /^(受諾|Accept|見送る|Decline)$/i.test(label)),
+    hasOfferedQuest: allQuestActionLabels.some((label) => /^(受諾|Accept|見送る|Decline|無視|Ignore)$/i.test(label)),
+    hasInlineQuestDecision: Boolean(inlineQuestText.trim()) || inlineQuestActionLabels.length > 0,
     hasChapterSummary: Boolean(chapterText.trim()),
   };
 }
@@ -847,6 +881,15 @@ export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapsh
 async function questActionTexts(page: Page): Promise<string[]> {
   try {
     const labels = await page.getByTestId("active-quest").getByRole("button").allTextContents();
+    return uniqueNonEmpty(labels);
+  } catch {
+    return [];
+  }
+}
+
+async function inlineQuestActionTexts(page: Page): Promise<string[]> {
+  try {
+    const labels = await page.getByTestId("inline-quest-decision").getByRole("button").allTextContents();
     return uniqueNonEmpty(labels);
   } catch {
     return [];

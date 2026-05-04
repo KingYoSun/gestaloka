@@ -16,7 +16,7 @@ export type SwarmDecision = {
   inputMode: "choice" | "free_text" | "quest_action";
   choiceId?: "safe" | "progress" | "explore";
   inputText?: string;
-  questAction?: "accept_quest" | "decline_quest" | "leave_quest" | "resume_quest";
+  questAction?: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest";
   questAssignmentId?: string;
   reason: string;
   expectedWorldImpact: string;
@@ -26,10 +26,10 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
   if (scenario === "quest-offer") {
     return {
       scenario,
-      inputMode: "choice",
-      choiceId: "progress",
-      reason: `${persona.label} は「${persona.evaluationLens}」という観点から、探索中に物語の糸口が自然に発生するかを確認する。`,
-      expectedWorldImpact: "探索行動から任意の動的クエストが提示され、受諾するかどうかをプレイヤーが選べることを期待する。",
+      inputMode: "free_text",
+      inputText: "ネクサス市内の企業勧誘に応じ、契約候補を確認する。",
+      reason: `${persona.label} は「${persona.evaluationLens}」という観点から、企業勧誘に応じた直後にクエスト発生判断が通常選択肢位置へ出るかを確認する。`,
+      expectedWorldImpact: "企業契約の糸口から任意の動的クエストが提示され、inline の受諾 / 破棄 / 無視をプレイヤーが選べることを期待する。",
     };
   }
 
