@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import re
 from typing import Mapping
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.entities import Actor, NPCProfile, PlayerProfile, Relationship
@@ -342,15 +342,29 @@ def _ensure_seeded_npc(
     location_ids_by_key: Mapping[str, str] | None = None,
 ) -> Actor:
     home_location_id = (location_ids_by_key or {}).get(seed.home_location_key)
+    seed_entity_key = pack_seed_entity_key("npc", seed.display_name)
     npc = db.execute(
         select(Actor).where(
             Actor.world_id == world_id,
             Actor.actor_type == "npc",
-            Actor.display_name == seed.display_name,
+            Actor.entity_key == seed_entity_key,
         )
     ).scalar_one_or_none()
+    if npc is None:
+        npc = db.execute(
+            select(Actor)
+            .where(
+                Actor.world_id == world_id,
+                Actor.actor_type == "npc",
+                Actor.display_name == seed.display_name,
+                or_(Actor.origin_kind == "pack_seed", Actor.origin_kind == "", Actor.origin_kind.is_(None)),
+                or_(Actor.entity_key == seed_entity_key, Actor.entity_key == "", Actor.entity_key.is_(None)),
+            )
+            .order_by(Actor.created_at.asc(), Actor.id.asc())
+            .limit(1)
+        ).scalar_one_or_none()
     if npc is not None:
-        npc.entity_key = npc.entity_key or pack_seed_entity_key("npc", seed.display_name)
+        npc.entity_key = npc.entity_key or seed_entity_key
         npc.origin_kind = npc.origin_kind or "pack_seed"
         npc.origin_ref = npc.origin_ref or seed.display_name
         npc.visibility_scope = npc.visibility_scope or "world"
@@ -395,7 +409,7 @@ def _ensure_seeded_npc(
         actor_type="npc",
         display_name=seed.display_name,
         status="active",
-        entity_key=pack_seed_entity_key("npc", seed.display_name),
+        entity_key=seed_entity_key,
         origin_kind="pack_seed",
         origin_ref=seed.display_name,
         visibility_scope="world",

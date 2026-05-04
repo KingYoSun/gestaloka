@@ -12,6 +12,7 @@ from app.models.entities import (
     Faction,
     Location,
     LocationRoute,
+    NPCProfile,
     QuestAssignment,
     SPLedgerEntry,
     SharedHistoryRecord,
@@ -21,7 +22,7 @@ from app.models.entities import (
 )
 from app.modules.llm_harness.service import PromptExecutionOutcome
 from app.modules.session.service import _canonicalize_next_choices
-from app.modules.world_state.entity_generation import materialize_entity_drafts
+from app.modules.world_state.entity_generation import materialize_entity_drafts, pack_seed_entity_key
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 from app.modules.world_state.service import (
     apply_quest_lifecycle_action,
@@ -93,6 +94,69 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
         world = db.execute(select(World).where(World.id == "gestaloka_world_reference")).scalar_one()
         assert world.state["pack_id"] == "gestaloka_world_reference"
         assert world.state["world_template_id"] == "layered_world_foundation"
+
+
+def test_session_start_uses_pack_seed_npc_entity_key_when_generated_npc_shares_name(client, container, auth_headers):
+    first_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert first_response.status_code == 200
+    seed_entity_key = pack_seed_entity_key("npc", "Historian AI of the Universal Library")
+
+    with container.session_factory() as db:
+        seed_npc = db.execute(
+            select(Actor).where(
+                Actor.world_id == "gestaloka_world_reference",
+                Actor.actor_type == "npc",
+                Actor.entity_key == seed_entity_key,
+            )
+        ).scalar_one()
+        generated_npc = Actor(
+            world_id="gestaloka_world_reference",
+            current_location_id=seed_npc.current_location_id,
+            actor_type="npc",
+            display_name=seed_npc.display_name,
+            status="active",
+            entity_key="npc:test:duplicate_historian_ai",
+            origin_kind="freeform_generated",
+            origin_ref="freeform",
+            visibility_scope="world",
+        )
+        db.add(generated_npc)
+        db.flush()
+        db.add(
+            NPCProfile(
+                actor_id=generated_npc.id,
+                world_id="gestaloka_world_reference",
+                personality="duplicate generated actor used for seed lookup regression coverage",
+                goals={},
+                routine_state={},
+            )
+        )
+        seed_npc_id = seed_npc.id
+        generated_npc_id = generated_npc.id
+        db.commit()
+
+    second_payload = {**gestaloka_session_payload(), "player_display_name": "Second Demo Player"}
+    second_response = client.post("/sessions", json=second_payload, headers=auth_headers)
+
+    assert second_response.status_code == 200
+    with container.session_factory() as db:
+        seed_npc = db.execute(
+            select(Actor).where(
+                Actor.world_id == "gestaloka_world_reference",
+                Actor.actor_type == "npc",
+                Actor.entity_key == seed_entity_key,
+            )
+        ).scalar_one()
+        generated_npc = db.execute(
+            select(Actor).where(
+                Actor.world_id == "gestaloka_world_reference",
+                Actor.actor_type == "npc",
+                Actor.id == generated_npc_id,
+            )
+        ).scalar_one()
+        assert seed_npc.id == seed_npc_id
+        assert seed_npc.origin_kind == "pack_seed"
+        assert generated_npc.origin_kind == "freeform_generated"
 
 
 def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lifecycle_actions(client, auth_headers):
