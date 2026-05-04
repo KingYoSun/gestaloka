@@ -189,11 +189,12 @@ def test_shared_consequence_projection_persists_pack_rule_outputs_and_is_idempot
         ).scalar_one()
         assert primary_standing.standing > 0
 
-        gate = next(
-            location
-            for location in db.execute(select(Location).where(Location.world_id == "gestaloka_world_reference")).scalars()
-            if location.state["key"] == "nexus_city"
-        )
+        gate = db.execute(
+            select(Location).where(
+                Location.world_id == "gestaloka_world_reference",
+                Location.id == session_payload["location_id"],
+            )
+        ).scalar_one()
         assert gate.state["public_state"]["visitor_log_clarity"] == 3
 
         assert db.execute(

@@ -2777,15 +2777,12 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     dominant_branch = dominant_branch_key(route_pressures, world_pack=world_pack)
     dominant_branch_slot = branch_slot_for_key(world_pack, dominant_branch)
     opening_bootstrap = world_pack.get("bootstrap") if isinstance(world_pack.get("bootstrap"), dict) else {}
-    is_initial_opening_state = (
+    is_opening_bootstrap_state = (
         current_location_key == starter_location_key
         and stage_key == starter_stage_key
         and progress == 0
         and not quests
         and not inventory
-        and not recent_consequence_history
-        and not recent_world_beats
-        and not ambient_murmurs
         and not recent_travel_history
     )
 
@@ -3126,7 +3123,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["summary"] = "Explore the situation and widen your understanding."
                     choice["canonical_input_text"] = f"Explore the mood and local concerns around {current_location_name}"
 
-    if is_initial_opening_state:
+    if is_opening_bootstrap_state:
         opening_choices = opening_bootstrap.get("opening_choices_en" if english_play_language else "opening_choices")
         if isinstance(opening_choices, dict):
             for choice in (safe_choice, progress_choice, explore_choice):
@@ -3139,7 +3136,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     if isinstance(value, str) and value.strip():
                         choice[field] = value.strip()
 
-    if leading_consequence or leading_world_beat or leading_murmur:
+    if (leading_consequence or leading_world_beat or leading_murmur) and not is_opening_bootstrap_state:
         signal = leading_consequence or leading_world_beat or leading_murmur
         for choice in (safe_choice, progress_choice, explore_choice):
             if str(choice.get("action_kind") or "narrative") != "narrative":

@@ -444,8 +444,11 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     choices = state.json()["next_choices"]
     assert [item["choice_id"] for item in choices] == ["safe", "progress", "explore"]
     assert choices[0]["label"] == "Check your visitor log as a public Nexus record"
-    assert choices[1]["label"] == "Work with the liaison to register the first visitor log"
-    assert choices[2]["summary"] == "Move toward the official archive to learn how GESTALOKA records world-scale events."
+    assert choices[1]["label"] == "Route your visitor log into a private market contract"
+    assert (
+        choices[2]["summary"]
+        == "Check the official archive before choosing whether the arrival log becomes public record or contract leverage."
+    )
 
     story = client.get(f"/sessions/{session.json()['session_id']}/story?limit=1", headers=auth_headers)
     assert story.status_code == 200
@@ -481,7 +484,7 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     assert payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
     assert any(item["display_name"] == "ネクサス案内担当" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
-    assert payload["next_choices"][2]["label"] == "万象図書館へ向かい、ゲスタロカの正史を調べる"
+    assert payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
     assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
 
     localization_records = [
@@ -583,7 +586,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
     assert payload["current_location"]["name"] == "ネクサス市"
     assert any(item["display_name"] == "ネクサス案内担当" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
-    assert "ゲスタロカの正史" in payload["next_choices"][2]["label"]
+    assert "古い記録と来訪者ログ" in payload["next_choices"][2]["label"]
     assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
     assert_no_player_visible_english_residue(payload)
 

@@ -27,6 +27,7 @@ from app.modules.world_state.shared_consequence import apply_shared_consequence_
 from app.modules.world_state.service import (
     apply_quest_lifecycle_action,
     create_dynamic_quest_offer,
+    default_next_choices,
     quest_offer_repeats_resolution,
     record_quest_resolution_hint,
     _normalize_dynamic_quest_completion_target,
@@ -71,8 +72,8 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
     assert any(item["axis_id"] == "world_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "universal_library" for item in state_payload["nearby_routes"])
     assert state_payload["next_choices"][0]["label"] == "ネクサス市の公開記録として来訪者ログを確認する"
-    assert state_payload["next_choices"][1]["label"] == "案内担当と協力し、来訪者ログの初期登録を進める"
-    assert state_payload["next_choices"][2]["label"] == "万象図書館へ向かい、ゲスタロカの正史を調べる"
+    assert state_payload["next_choices"][1]["label"] == "市場や企業の私的契約として来訪者ログを流通させる"
+    assert state_payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
 
     story = client.get(f"/sessions/{payload['session_id']}/story", headers=auth_headers)
     assert story.status_code == 200
@@ -94,6 +95,66 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
         world = db.execute(select(World).where(World.id == "gestaloka_world_reference")).scalar_one()
         assert world.state["pack_id"] == "gestaloka_world_reference"
         assert world.state["world_template_id"] == "layered_world_foundation"
+
+
+def test_opening_choices_ignore_existing_same_world_beats():
+    state_payload = {
+        "world_pack": {
+            "starter_location_key": "nexus_city",
+            "starter_location_name": "ネクサス市",
+            "lore_location_key": "universal_library",
+            "lore_location_name": "万象図書館",
+            "starter_stage_key": "visitor_log_registration",
+            "followup_branches": {
+                "formal_path": {"branch_key": "public_archive_mandate"},
+                "undercurrent_path": {"branch_key": "edge_market_compact"},
+            },
+            "bootstrap": {
+                "opening_choices": {
+                    "safe": {
+                        "label": "ネクサス市の公開記録として来訪者ログを確認する",
+                        "summary": "安全都市の制度と公開証言を使い、到着ログを世界に読める形へ整える。",
+                        "canonical_input_text": "ネクサス市の公開記録として来訪者ログを確認する",
+                        "action_kind": "narrative",
+                    },
+                    "progress": {
+                        "label": "市場や企業の私的契約として来訪者ログを流通させる",
+                        "summary": "ネクサスの案内担当を介し、到着ログを公開制度ではなく契約と取引の文脈へ渡す。",
+                        "canonical_input_text": "市場や企業の私的契約として来訪者ログを流通させる",
+                        "action_kind": "narrative",
+                    },
+                    "explore": {
+                        "label": "万象図書館へ向かい、古い記録と来訪者ログを照合する",
+                        "summary": "公開や契約へ進む前に、万象図書館でゲスタロカの正史と到着ログの整合を確かめる。",
+                        "canonical_input_text": "万象図書館へ向かう",
+                        "action_kind": "travel",
+                        "travel_target_key": "universal_library",
+                    },
+                },
+            },
+        },
+        "current_location": {"key": "nexus_city", "name": "ネクサス市"},
+        "quests": [],
+        "inventory": [],
+        "recent_world_beats": [
+            "Nexus Guardian Process keeps Nexus City in view, watching how the air settles after the player's move."
+        ],
+        "ambient_murmurs": ["ネクサス市の噂が来訪者ログを巡って揺れている。"],
+        "recent_travel_history": [],
+        "nearby_routes": [
+            {
+                "available": True,
+                "to_location": {"key": "universal_library", "name": "万象図書館"},
+            }
+        ],
+    }
+
+    choices = default_next_choices(state_payload)
+
+    assert choices[0]["label"] == "ネクサス市の公開記録として来訪者ログを確認する"
+    assert choices[1]["label"] == "市場や企業の私的契約として来訪者ログを流通させる"
+    assert choices[2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
+    assert "直前の変化" not in json.dumps(choices, ensure_ascii=False)
 
 
 def test_session_start_uses_pack_seed_npc_entity_key_when_generated_npc_shares_name(client, container, auth_headers):

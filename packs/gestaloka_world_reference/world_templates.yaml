@@ -55,7 +55,7 @@ world_templates:
 
         頭上には昇降塔が雲を貫き、遠くの界壁には企業都市、農業階層、浮遊学術都市、無法地帯ミドルへ続く交通ログが流れている。あなたの到着は、ただの受付ではない。外部から来た新しい情報として、世界の残響に刻まれようとしている。
 
-        ネクサスの案内担当は、あなたの来訪者ログを公開記録にするか、市場や企業の私的契約に流すかで、この先に開く道が変わると告げる。
+        ネクサスの案内担当は、あなたの来訪者ログを公開記録にするか、市場や企業の私的契約に流すか、あるいは万象図書館で古い記録と照合してから扱いを決めるかで、この先に開く道が変わると告げる。
       opening_situation: 基点都市ネクサスは来訪者を守る安全都市であり、到着ログの扱いが世界規模の勢力関係に接続しようとしている。
       opening_pressure: ネクサス、機憶教団、クロノス、リターナーズが、新しい来訪者ログをどう扱うか注視している。
       opening_title_en: Nexus City
@@ -64,7 +64,7 @@ world_templates:
 
         Above you, lift towers cut through the clouds. Along the distant layer walls, route logs point toward corporate cities, agricultural strata, Sophia's floating academy, Middle, and the fading Oblivion Regions. Your arrival is not just intake. It is new outside information entering the world's resonance logs.
 
-        A Nexus entry liaison explains that the first choice is how your visitor log becomes legible: public record, market leverage, or field rumor.
+        A Nexus entry liaison explains that the first choice is how your visitor log becomes legible: public Nexus record, private market contract, or an archive check at the Universal Library before committing it.
       opening_situation_en: Nexus City protects new visitors while their arrival log begins to touch world-scale communities and routes.
       opening_pressure_en: Nexus, the Memory Church, Chronos, and the Returners are all watching how a new visitor log enters the world.
       opening_choices:
@@ -74,13 +74,13 @@ world_templates:
           canonical_input_text: ネクサス市の公開記録として来訪者ログを確認する
           action_kind: narrative
         progress:
-          label: 案内担当と協力し、来訪者ログの初期登録を進める
-          summary: ネクサスの案内担当に協力し、最初のログ登録を実行する。
-          canonical_input_text: 案内担当と協力し、来訪者ログの初期登録を進める
+          label: 市場や企業の私的契約として来訪者ログを流通させる
+          summary: ネクサスの案内担当を介し、到着ログを公開制度ではなく契約と取引の文脈へ渡す。
+          canonical_input_text: 市場や企業の私的契約として来訪者ログを流通させる
           action_kind: narrative
         explore:
-          label: 万象図書館へ向かい、ゲスタロカの正史を調べる
-          summary: 公式記録を確認するため、万象図書館へ移動する。
+          label: 万象図書館へ向かい、古い記録と来訪者ログを照合する
+          summary: 公開や契約へ進む前に、万象図書館でゲスタロカの正史と到着ログの整合を確かめる。
           canonical_input_text: 万象図書館へ向かう
           action_kind: travel
           travel_target_key: universal_library
@@ -91,17 +91,17 @@ world_templates:
           canonical_input_text: Check your visitor log as a public Nexus record
           action_kind: narrative
         progress:
-          label: Work with the liaison to register the first visitor log
-          summary: Help the entry liaison carry the first registration into shared world state.
-          canonical_input_text: Work with the liaison to register the first visitor log
+          label: Route your visitor log into a private market contract
+          summary: Work through the liaison to pass the arrival log into contracts and trade instead of civic record.
+          canonical_input_text: Route your visitor log into a private market contract
           action_kind: narrative
         explore:
-          label: Go to the Universal Library and study official history
-          summary: Move toward the official archive to learn how GESTALOKA records world-scale events.
+          label: Go to the Universal Library and compare old records with your visitor log
+          summary: Check the official archive before choosing whether the arrival log becomes public record or contract leverage.
           canonical_input_text: Travel to the Universal Library
           action_kind: travel
           travel_target_key: universal_library
-      start_consequence_summary: Nexus waits to see whether this visitor log becomes public record, private leverage, or unstable rumor.
+      start_consequence_summary: Nexus waits to see whether this visitor log becomes public record, private leverage, or archive-checked testimony.
       session_started_narrative: >-
         {player_name} entered {starter_location_name} and began a visitor log under the attention of {guide_npc_name}.
       reward_unlock_summary: Visitor Log Seal unlocked a surveyed route toward the Oblivion Regions.
@@ -520,7 +520,7 @@ world_templates:
             membership_definition: "residents, registered visitors, civic custodians"
             entry_barrier: "low under protection protocols"
           NarrativeAndGameUsefulDerivedParameters:
-            current_issue: "whether new visitor logs become public record, corporate leverage, or unstable rumor"
+            current_issue: "whether new visitor logs become public record, corporate leverage, or archive-checked testimony"
         location_keys:
           - nexus_city
           - lift_tower_network

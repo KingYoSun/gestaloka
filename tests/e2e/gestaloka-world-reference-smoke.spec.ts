@@ -161,8 +161,10 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("toggle-free-text").click();
   await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input|SP/);
   await page.getByTestId("toggle-choice-mode").click();
-  await expect(page.getByTestId("choice-progress")).toContainText("Work with the liaison to register the first visitor log");
-  await expect(page.getByTestId("choice-explore")).toContainText("Go to the Universal Library and study official history");
+  await expect(page.getByTestId("choice-progress")).toContainText("Route your visitor log into a private market contract");
+  await expect(page.getByTestId("choice-explore")).toContainText(
+    "Go to the Universal Library and compare old records with your visitor log",
+  );
 
   await page.getByTestId("choice-progress").click();
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
