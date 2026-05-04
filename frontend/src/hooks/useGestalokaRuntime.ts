@@ -283,6 +283,7 @@ export function useGestalokaRuntime() {
   const [storyItems, setStoryItems] = useState<StoryHistoryItem[]>([]);
   const [streamingStoryItem, setStreamingStoryItem] = useState<StoryHistoryItem | null>(null);
   const [streamingTurnId, setStreamingTurnId] = useState("");
+  const [animatedTurnId, setAnimatedTurnId] = useState("");
   const [storyNextBeforeSequence, setStoryNextBeforeSequence] = useState<number | null>(null);
   const [storyLoading, setStoryLoading] = useState(false);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -479,6 +480,7 @@ export function useGestalokaRuntime() {
       setPlayHydrating(false);
       setStreamingStoryItem(null);
       setStreamingTurnId("");
+      setAnimatedTurnId("");
       setSessionState(null);
       setProjectionStatus(null);
       setEmbeddingStatus(null);
@@ -587,6 +589,7 @@ export function useGestalokaRuntime() {
     setLatestReaction(response.npc_reaction);
     setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
     setStoryItems((current) => mergeStoryItems(current, [storyItemFromTurnResponse(response)]));
+    setAnimatedTurnId(response.turn_id);
     setStreamingStoryItem(null);
     setStreamingTurnId("");
     setEvents((current) => mergeEventItems(current, [eventItemFromTurnResponse(response)]));
@@ -638,6 +641,7 @@ export function useGestalokaRuntime() {
     const turnId = typeof rawTurnId === "string" && rawTurnId.trim() ? rawTurnId : streamingTurnId || "pending";
     const final = data.final === true;
     setStreamingTurnId(turnId);
+    setAnimatedTurnId(turnId);
     setTurnNarrativeStreaming(true);
     setStreamingStoryItem((current) => {
       const nextNarrative = final || !current || current.turn_id !== turnId
@@ -661,6 +665,7 @@ export function useGestalokaRuntime() {
         setStoryItems([]);
         setStreamingStoryItem(null);
         setStreamingTurnId("");
+        setAnimatedTurnId("");
         setStoryNextBeforeSequence(null);
         setPlayHydrating(false);
       }
@@ -705,6 +710,7 @@ export function useGestalokaRuntime() {
         setTurnNarrativeStreaming(false);
         setStreamingStoryItem(null);
         setStreamingTurnId("");
+        setAnimatedTurnId("");
       }
       if (parsed.event === "graph.projection.updated") {
         void refreshAdminData(
@@ -1229,6 +1235,7 @@ export function useGestalokaRuntime() {
       setStoryItems([]);
       setStreamingStoryItem(null);
       setStreamingTurnId("");
+      setAnimatedTurnId("");
       setTurnNarrativeStreaming(false);
       setStoryNextBeforeSequence(null);
       setLastRebuild(null);
@@ -1293,6 +1300,7 @@ export function useGestalokaRuntime() {
       setTurnNarrativeStreaming(false);
       setStreamingStoryItem(null);
       setStreamingTurnId("");
+      setAnimatedTurnId("");
       setError("");
       const currentToken = await ensureFreshToken(token);
       setTurnPhase("resolving");
@@ -1315,6 +1323,7 @@ export function useGestalokaRuntime() {
       setTurnNarrativeStreaming(false);
       setStreamingStoryItem(null);
       setStreamingTurnId("");
+      setAnimatedTurnId("");
       await Promise.all([
         refreshWallet(token),
         refreshAdminData(
@@ -1645,6 +1654,7 @@ export function useGestalokaRuntime() {
     storyItems,
     streamingStoryItem,
     streamingTurnId,
+    animatedTurnId,
     storyHasOlder: storyNextBeforeSequence !== null,
     storyLoading,
     events,

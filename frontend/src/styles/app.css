@@ -253,4 +253,38 @@
   .scrollbar-gestaloka::-webkit-scrollbar-thumb:hover {
     background: var(--primary);
   }
+
+  .story-generating-dots::after {
+    animation: gestaloka-generating-dots 1.2s steps(4, end) infinite;
+    content: "";
+    display: inline-block;
+    min-width: 1.5em;
+    text-align: left;
+  }
+
+  @keyframes gestaloka-generating-dots {
+    0% {
+      content: "";
+    }
+
+    25% {
+      content: ".";
+    }
+
+    50% {
+      content: "..";
+    }
+
+    75%,
+    100% {
+      content: "...";
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .story-generating-dots::after {
+      animation: none;
+      content: "...";
+    }
+  }
 }

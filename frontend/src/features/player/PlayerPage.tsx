@@ -54,6 +54,8 @@ const playLanguagePromptNames: Record<PlayLanguagePreset, string> = {
   hi: "Hindi",
 };
 
+const storyRevealCharsPerSecond = 60;
+
 function formatOpsEventSummary(data: Record<string, unknown>): string {
   const keys = [
     "id",
@@ -998,10 +1000,12 @@ function Drawer({
 
 function SceneHeader({ runtime }: PlayerPageProps) {
   const { t } = useTranslation();
+  const [sceneDetailsOpen, setSceneDetailsOpen] = useState(true);
   const { session, sessionState } = runtime;
   const location = sessionState?.current_location ?? sessionState?.location ?? null;
   const chapter = sessionState?.chapter;
   const scene = sessionState?.current_scene;
+  const sceneDetailsId = "scene-details-panel";
 
   return (
     <Card className="grid min-w-0 gap-3 p-5 max-[480px]:p-4" aria-label={t("player.labels.scene")}>
@@ -1015,16 +1019,35 @@ function SceneHeader({ runtime }: PlayerPageProps) {
       <p hidden data-testid="session-location">
         {location?.name ?? t("player.world.startLocation")}
       </p>
-      <details className="group grid min-w-0 overflow-hidden rounded-md border border-border bg-secondary" open>
-        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold leading-5 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80 [&::-webkit-details-marker]:hidden">
+      <div className="grid min-w-0 overflow-hidden rounded-md border border-border bg-secondary">
+        <button
+          type="button"
+          className="flex min-h-10 cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold leading-5 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80"
+          aria-controls={sceneDetailsId}
+          aria-expanded={sceneDetailsOpen}
+          onClick={() => setSceneDetailsOpen((current) => !current)}
+        >
           <span>{t("player.story.sceneDetails")}</span>
-          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
-        </summary>
-        <div className="grid min-w-0 gap-3 border-t border-border bg-card p-3">
-          {chapter?.summary ? <p className="min-w-0 break-words text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
-          {scene?.summary ? <p className="min-w-0 break-words text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
+          <ChevronDown
+            className={cn("size-4 text-muted-foreground transition-transform duration-200 ease-out", sceneDetailsOpen ? "rotate-180" : "")}
+            aria-hidden="true"
+          />
+        </button>
+        <div
+          id={sceneDetailsId}
+          className={cn(
+            "grid min-w-0 transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
+            sceneDetailsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <div className="min-h-0 min-w-0 overflow-hidden">
+            <div className="grid min-w-0 gap-3 border-t border-border bg-card p-3">
+              {chapter?.summary ? <p className="min-w-0 break-words text-lg leading-9 text-foreground" data-testid="current-chapter-summary">{chapter.summary}</p> : null}
+              {scene?.summary ? <p className="min-w-0 break-words text-lg leading-9 text-foreground" data-testid="current-scene-summary">{scene.summary}</p> : null}
+            </div>
+          </div>
         </div>
-      </details>
+      </div>
     </Card>
   );
 }
@@ -1047,6 +1070,11 @@ function StoryHistory({ runtime }: PlayerPageProps) {
       : baseStoryItems;
   const latestStory = storyItems[storyItems.length - 1] ?? null;
   const latestNarrativeLength = latestStory?.narrative.length ?? 0;
+  const latestStoryIsNewTurn = Boolean(latestStory?.turn_id && latestStory.turn_id === runtime.animatedTurnId);
+  const showGeneratingIndicator = runtime.turnPending && !runtime.turnNarrativeStreaming;
+  const latestAnimatedTextLength = Array.from(
+    `${latestStory?.narrative || latestStory?.scene_summary || ""}${latestStory?.reaction ?? ""}${latestStory?.consequence ?? ""}`,
+  ).length;
   const heightClass =
     heightPreset === "small"
       ? "h-[min(42vh,360px)]"
@@ -1068,6 +1096,25 @@ function StoryHistory({ runtime }: PlayerPageProps) {
     }
     scrollNode.scrollTop = scrollNode.scrollHeight;
   }, [isAtBottom, latestNarrativeLength, storyItems.length]);
+
+  useEffect(() => {
+    if (!isAtBottom || !latestStoryIsNewTurn) {
+      return;
+    }
+    const scrollNode = scrollRef.current;
+    if (!scrollNode) {
+      return;
+    }
+    const followDurationMs = Math.max((latestAnimatedTextLength / storyRevealCharsPerSecond) * 1000 + 600, 1000);
+    const interval = window.setInterval(() => {
+      scrollNode.scrollTop = scrollNode.scrollHeight;
+    }, 100);
+    const timeout = window.setTimeout(() => window.clearInterval(interval), followDurationMs);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [isAtBottom, latestAnimatedTextLength, latestStoryIsNewTurn]);
 
   function updateBottomState() {
     const scrollNode = scrollRef.current;
@@ -1131,9 +1178,21 @@ function StoryHistory({ runtime }: PlayerPageProps) {
       >
         <div className="grid gap-4">
           {runtime.storyLoading ? <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{t("common.loading")}</p> : null}
-          {storyItems.map((item) => (
-            <StoryEntry key={item.event_id || item.turn_id || item.occurred_at} item={item} latest={item === latestStory} />
-          ))}
+          {storyItems.map((item) => {
+            const latest = item === latestStory;
+            const animateLatestStory = latest && latestStoryIsNewTurn;
+            return (
+              <StoryEntry
+                key={storyItemKey(item)}
+                item={item}
+                latest={latest}
+                showGeneratingIndicator={latest && showGeneratingIndicator}
+                animateNarrative={animateLatestStory}
+                animateReaction={animateLatestStory}
+                animateConsequence={animateLatestStory}
+              />
+            );
+          })}
         </div>
       </div>
       {!isAtBottom ? (
@@ -1162,39 +1221,138 @@ function StoryHistory({ runtime }: PlayerPageProps) {
   );
 }
 
-function StoryEntry({ item, latest }: { item: StoryHistoryItem; latest: boolean }) {
+function StoryEntry({
+  animateConsequence,
+  animateNarrative,
+  animateReaction,
+  item,
+  latest,
+  showGeneratingIndicator,
+}: {
+  animateConsequence: boolean;
+  animateNarrative: boolean;
+  animateReaction: boolean;
+  item: StoryHistoryItem;
+  latest: boolean;
+  showGeneratingIndicator: boolean;
+}) {
   const { t } = useTranslation();
+  const animationBaseKey = item.turn_id || item.event_id || item.occurred_at;
   return (
     <article className="grid gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
-      <StoryText text={item.narrative || item.scene_summary} testId={latest ? "latest-narrative" : undefined} />
+      <StoryText
+        text={item.narrative || item.scene_summary}
+        testId={latest ? "latest-narrative" : undefined}
+        animate={animateNarrative}
+        animationKey={`${animationBaseKey}:narrative`}
+      />
+      {showGeneratingIndicator ? <GeneratingStoryIndicator /> : null}
       {item.reaction ? (
         <div className="grid gap-2">
           <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.reaction")}</h2>
-          <StoryText text={item.reaction} />
+          <StoryText text={item.reaction} animate={animateReaction} animationKey={`${animationBaseKey}:reaction`} />
         </div>
       ) : null}
       {item.consequence ? (
         <div className="grid gap-2">
           <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.consequence")}</h2>
-          <StoryText text={item.consequence} />
+          <StoryText text={item.consequence} animate={animateConsequence} animationKey={`${animationBaseKey}:consequence`} />
         </div>
       ) : null}
     </article>
   );
 }
 
-function StoryText({ text, testId }: { text: string; testId?: string }) {
-  const paragraphs = text
+function StoryText({ animate, animationKey, text, testId }: { animate: boolean; animationKey: string; text: string; testId?: string }) {
+  const reducedMotion = usePrefersReducedMotion();
+  const textUnits = Array.from(text);
+  const [visibleLength, setVisibleLength] = useState(() => (animate && !reducedMotion ? 0 : textUnits.length));
+  const visibleLengthRef = useRef(visibleLength);
+  const animationKeyRef = useRef(animationKey);
+  const displayText = animate && !reducedMotion ? textUnits.slice(0, visibleLength).join("") : text;
+  const paragraphs = displayText
     .split(/\n{2,}/)
     .map((item) => item.trim())
     .filter(Boolean);
+
+  useEffect(() => {
+    if (!animate || reducedMotion) {
+      animationKeyRef.current = animationKey;
+      visibleLengthRef.current = textUnits.length;
+      setVisibleLength(textUnits.length);
+      return;
+    }
+
+    if (animationKeyRef.current !== animationKey) {
+      animationKeyRef.current = animationKey;
+      visibleLengthRef.current = 0;
+      setVisibleLength(0);
+    } else {
+      visibleLengthRef.current = Math.min(visibleLengthRef.current, textUnits.length);
+      setVisibleLength(visibleLengthRef.current);
+    }
+
+    if (visibleLengthRef.current >= textUnits.length) {
+      return;
+    }
+
+    let frame = 0;
+    let lastTimestamp = performance.now();
+    let pendingChars = 0;
+
+    const tick = (timestamp: number) => {
+      pendingChars += ((timestamp - lastTimestamp) / 1000) * storyRevealCharsPerSecond;
+      lastTimestamp = timestamp;
+      const charsToReveal = Math.floor(pendingChars);
+      if (charsToReveal > 0) {
+        pendingChars -= charsToReveal;
+        visibleLengthRef.current = Math.min(textUnits.length, visibleLengthRef.current + charsToReveal);
+        setVisibleLength(visibleLengthRef.current);
+      }
+      if (visibleLengthRef.current < textUnits.length) {
+        frame = window.requestAnimationFrame(tick);
+      }
+    };
+
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [animate, animationKey, reducedMotion, textUnits.length]);
+
   return (
     <div className="grid gap-3 text-lg leading-9 text-foreground" data-testid={testId}>
-      {(paragraphs.length ? paragraphs : [text]).map((paragraph, index) => (
+      {(paragraphs.length ? paragraphs : [displayText]).map((paragraph, index) => (
         <p key={`${paragraph}-${index}`}>{paragraph}</p>
       ))}
     </div>
   );
+}
+
+function GeneratingStoryIndicator() {
+  const { t } = useTranslation();
+  return (
+    <p className="text-lg leading-9 text-muted-foreground" data-testid="story-generating-indicator" role="status" aria-live="polite">
+      <span>{t("player.story.generating")}</span>
+      <span className="story-generating-dots" aria-hidden="true" />
+    </p>
+  );
+}
+
+function usePrefersReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handleChange = () => setReducedMotion(mediaQuery.matches);
+    handleChange();
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  return reducedMotion;
+}
+
+function storyItemKey(item: StoryHistoryItem): string {
+  return item.turn_id || item.event_id || item.occurred_at;
 }
 
 function fallbackStoryItems(runtime: GestalokaRuntime, fallbackText: string): StoryHistoryItem[] {
