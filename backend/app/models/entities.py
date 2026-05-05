@@ -735,6 +735,34 @@ class Item(Base, TimestampMixin):
     source_quest_assignment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
+class ActorKnowledgeEntry(Base, TimestampMixin):
+    __tablename__ = "actor_knowledge_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "world_id",
+            "actor_id",
+            "entry_kind",
+            "title",
+            name="uq_actor_knowledge_world_actor_kind_title",
+        ),
+        ForeignKeyConstraint(["actor_id", "world_id"], ["actors.id", "actors.world_id"]),
+        ForeignKeyConstraint(["source_event_id", "world_id"], ["events.id", "events.world_id"]),
+        CheckConstraint("entry_kind IN ('known_fact', 'skill')", name="ck_actor_knowledge_entry_kind"),
+        Index("ix_actor_knowledge_world_actor_kind", "world_id", "actor_id", "entry_kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    world_id: Mapped[str] = mapped_column(String(64))
+    actor_id: Mapped[str] = mapped_column(String(36))
+    entry_kind: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(160))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    salience: Mapped[float] = mapped_column(Float, default=0.6)
+    source_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    evidence_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class PlayLocalizedTextCache(Base, TimestampMixin):
     __tablename__ = "play_localized_text_cache"
     __table_args__ = (

@@ -23,6 +23,7 @@ from app.modules.session.progress import emit_turn_event, emit_turn_progress
 from app.modules.world_state.branch import BranchSignal, normalize_branch_signals
 from app.modules.world_state.consequence import ConsequenceTag, OutcomeBand, normalize_consequence_tags
 from app.modules.world_state.rules import WorldTag, infer_world_tags, normalize_world_tags
+from app.modules.world_pack.service import SharedWorldActionTag
 
 
 def _compact_text(value: Any) -> str:
@@ -530,6 +531,8 @@ class CouncilWorldProgressPayload(BaseModel):
     memories: list[MemoryDraft] = Field(min_length=1)
     world_tags: list[WorldTag] = Field(min_length=1)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    shared_action_tag: SharedWorldActionTag = "none"
+    state_drafts: dict[str, Any] = Field(default_factory=dict)
     branch_signals: list[BranchSignal] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     resolution_summary: str = Field(min_length=1)
@@ -575,6 +578,12 @@ class CouncilWorldProgressPayload(BaseModel):
         normalized["consequence_tags"] = normalize_consequence_tags(
             _normalize_live_consequence_tokens(normalized.get("consequence_tags"))
         )
+        shared_action_tag = str(normalized.get("shared_action_tag") or "").strip()
+        if shared_action_tag not in {"help", "harm", "investigate", "trade", "negotiate", "protect", "explore", "restore", "destabilize", "none"}:
+            shared_action_tag = "none"
+        normalized["shared_action_tag"] = shared_action_tag
+        if not isinstance(normalized.get("state_drafts"), dict):
+            normalized["state_drafts"] = {}
         normalized["risk_level"] = _risk_level(normalized.get("risk_level"), normalized.get("outcome_band"), normalized["consequence_tags"])
         game_frame = input_payload.get("game_frame") if isinstance(input_payload.get("game_frame"), dict) else {}
         frame_affordances = game_frame.get("affordances") if isinstance(game_frame.get("affordances"), list) else []
@@ -930,6 +939,8 @@ class GMCouncilService:
             "quests": request.session_state.get("quests") or [],
             "factions": request.session_state.get("factions") or [],
             "inventory": inventory,
+            "known_facts": request.session_state.get("known_facts") or [],
+            "skills": request.session_state.get("skills") or [],
             "usable_reward_items": [item for item in inventory if item.get("usable")],
             "used_reward_items": [item for item in inventory if item.get("status") == "used"],
             "important_inventory_affordances": request.session_state.get("important_inventory_affordances") or [],
@@ -1377,6 +1388,8 @@ class GMCouncilService:
         role_runs: list[CouncilRoleRun] = []
         quests = request.session_state.get("quests") or []
         inventory = request.session_state.get("inventory") or []
+        known_facts = request.session_state.get("known_facts") or []
+        skills = request.session_state.get("skills") or []
         active_quest = self._active_quest(request.session_state)
         usable_reward_items = [item for item in inventory if item.get("usable")]
         used_reward_items = [item for item in inventory if item.get("status") == "used"]
@@ -1529,6 +1542,8 @@ class GMCouncilService:
             "quests": quests,
             "factions": request.session_state.get("factions") or [],
             "inventory": inventory,
+            "known_facts": known_facts,
+            "skills": skills,
             "location": request.session_state.get("location"),
             "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
             "usable_reward_items": usable_reward_items,
@@ -1567,6 +1582,8 @@ class GMCouncilService:
                     ("quests", quests),
                     ("factions", request.session_state.get("factions") or []),
                     ("inventory", inventory),
+                    ("known_facts", known_facts),
+                    ("skills", skills),
                     ("scene", current_scene),
                     ("chapter", current_chapter),
                     ("location", current_location),
@@ -1592,6 +1609,8 @@ class GMCouncilService:
             "recent_world_beats": recent_world_beats,
             "ambient_murmurs": ambient_murmurs,
             "shared_world_context": shared_world_context,
+            "known_facts": known_facts,
+            "skills": skills,
         }
 
         # Prewarm provider initialization before worker threads enter the router.
@@ -1769,6 +1788,8 @@ class GMCouncilService:
             "shared_world_context": shared_world_context,
             "resource_constraints": request.session_state.get("resource_constraints") or [],
             "world_broadcast_constraints": request.session_state.get("world_broadcast_constraints") or [],
+            "known_facts": known_facts,
+            "skills": skills,
         }
         world_progress_result = self.model_router.execute_structured_prompt(
             prompt_id="council.world_progress",
@@ -1841,6 +1862,8 @@ class GMCouncilService:
             "quests": quests,
             "factions": request.session_state.get("factions") or [],
             "inventory": inventory,
+            "known_facts": known_facts,
+            "skills": skills,
             "input_mode": request.input_mode,
             "play_language": play_language,
             "consequence_flags": intent_payload.consequence_flags,
@@ -2131,6 +2154,8 @@ class GMCouncilService:
             next_choices=world_progress_payload.next_choices,
             consequence_summary=intent_payload.consequence_summary,
             consequence_tags=world_progress_payload.consequence_tags,
+            shared_action_tag=world_progress_payload.shared_action_tag,
+            state_drafts=world_progress_payload.state_drafts,
             branch_signals=world_progress_payload.branch_signals,
             outcome_band=world_progress_payload.outcome_band,
             scene_tone=narrative_payload.tone,

@@ -339,6 +339,25 @@ export type InventorySummary = {
   effect_kind: string | null;
 };
 
+export type KnowledgeSummary = {
+  id: string;
+  entry_kind: "known_fact" | "skill";
+  title: string;
+  summary: string;
+  status: string;
+  salience: number;
+  source_event_id: string | null;
+};
+
+export type TradeUpdate = {
+  trade_id: string;
+  counterparty: string;
+  received_summary: string;
+  consideration_kind: string;
+  consideration_summary: string;
+  status: string;
+};
+
 export type RelationshipSummary = {
   actor_id: string;
   display_name: string;
@@ -398,6 +417,8 @@ export type SessionState = {
   quest_display_state: QuestDisplayState;
   factions: FactionSummary[];
   inventory: InventorySummary[];
+  known_facts: KnowledgeSummary[];
+  skills: KnowledgeSummary[];
   chapter: ChapterSummary;
   current_scene: CurrentSceneSummary;
   recent_scene_history: string[];
@@ -455,6 +476,10 @@ export type TurnResponse = {
   quest_updates: Array<QuestSummary & { action?: string; world_tags?: string[]; summary?: string }>;
   faction_updates: Array<FactionSummary & { delta?: number }>;
   inventory_updates: Array<InventorySummary & { action?: string }>;
+  knowledge_updates: Array<KnowledgeSummary & { action?: string }>;
+  skill_updates: Array<KnowledgeSummary & { action?: string }>;
+  trade_updates: TradeUpdate[];
+  blocked_state_drafts: Array<Record<string, unknown>>;
   relationship_updates: Array<RelationshipSummary & { delta?: number }>;
   consequence_updates: Array<ConsequenceThreadSummary & { action?: string }>;
   scene_updates: Array<SceneSummaryValue & { action?: string }>;

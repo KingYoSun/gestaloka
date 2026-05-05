@@ -3,12 +3,14 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.models.entities import (
+    ActorKnowledgeEntry,
     ActorTitleProgress,
     ChapterTrack,
     CharacterSheet,
     Event,
     Faction,
     FactionStanding,
+    Item,
     Location,
     Memory,
     ProjectionRecord,
@@ -611,3 +613,105 @@ def test_consequence_rule_engine_tracks_trust_promises_and_setbacks():
     assert setback.outcome_band == "setback"
     assert setback.thread_type == "scrutiny"
     assert setback.relationship_delta < 0
+
+
+def test_turn_materializes_items_facts_skills_and_trade_terms(client, container, auth_headers):
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    session_payload = session_response.json()
+
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={
+            "input_mode": "free_text",
+            "input_text": "Rikuの取引を受け入れ、万象図書館AIを欺くための偽装ログの断片を入手する。代償として市場で要注意人物として記録される。",
+        },
+    )
+
+    assert turn_payload["shared_action_tag"] == "trade"
+    assert turn_payload["inventory_updates"]
+    assert turn_payload["inventory_updates"][0]["name"] == "偽装ログの断片"
+    assert turn_payload["knowledge_updates"]
+    assert any("万象図書館AI" in item["title"] for item in turn_payload["knowledge_updates"])
+    assert turn_payload["trade_updates"]
+    assert turn_payload["trade_updates"][0]["consideration_kind"] == "reputational_risk"
+
+    with container.session_factory() as db:
+        items = list(
+            db.execute(
+                select(Item).where(
+                    Item.world_id == "gestaloka_world_reference",
+                    Item.owner_actor_id == session_payload["player_actor_id"],
+                )
+            ).scalars()
+        )
+        entries = list(
+            db.execute(
+                select(ActorKnowledgeEntry).where(
+                    ActorKnowledgeEntry.world_id == "gestaloka_world_reference",
+                    ActorKnowledgeEntry.actor_id == session_payload["player_actor_id"],
+                )
+            ).scalars()
+        )
+    assert [item.name for item in items] == ["偽装ログの断片"]
+    assert {entry.entry_kind for entry in entries} == {"known_fact"}
+
+
+def test_turn_separates_learned_skill_from_inventory(client, container, auth_headers):
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    session_payload = session_response.json()
+
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={
+            "input_mode": "free_text",
+            "input_text": "カナタから万象図書館AIを欺くための一時的な偽装ログの生成方法を学ぶ",
+        },
+    )
+
+    assert turn_payload["inventory_updates"] == []
+    assert turn_payload["skill_updates"]
+    assert turn_payload["skill_updates"][0]["entry_kind"] == "skill"
+    assert "偽装ログ生成方法" in turn_payload["skill_updates"][0]["title"]
+
+    with container.session_factory() as db:
+        item_count = db.execute(
+            select(func.count(Item.id)).where(Item.owner_actor_id == session_payload["player_actor_id"])
+        ).scalar_one()
+        skill_count = db.execute(
+            select(func.count(ActorKnowledgeEntry.id)).where(
+                ActorKnowledgeEntry.actor_id == session_payload["player_actor_id"],
+                ActorKnowledgeEntry.entry_kind == "skill",
+            )
+        ).scalar_one()
+    assert item_count == 0
+    assert skill_count == 1
+
+
+def test_market_item_acquisition_without_consideration_is_blocked(client, container, auth_headers):
+    session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    session_payload = session_response.json()
+
+    _, turn_payload, _ = post_turn_and_wait(
+        client,
+        session_id=session_payload["session_id"],
+        auth_headers=auth_headers,
+        payload={
+            "input_mode": "free_text",
+            "input_text": "ネクサス公開市場で対価なしに偽装ログの断片を入手する",
+        },
+    )
+
+    assert turn_payload["inventory_updates"] == []
+    assert turn_payload["blocked_state_drafts"][0]["reason"] == "market_trade_missing_consideration"
+    assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
+    assert "対価" in turn_payload["next_choices"][1]["label"]
+
+    with container.session_factory() as db:
+        item_count = db.execute(
+            select(func.count(Item.id)).where(Item.owner_actor_id == session_payload["player_actor_id"])
+        ).scalar_one()
+    assert item_count == 0

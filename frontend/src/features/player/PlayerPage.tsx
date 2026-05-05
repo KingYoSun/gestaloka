@@ -2070,6 +2070,38 @@ function SideLists({ runtime }: PlayerPageProps) {
           ))}
         </ul>
       </Card>
+
+      <Card className="grid min-w-0 gap-3 p-4">
+        <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.knownFacts")}</h2>
+        <StreamList
+          testId="known-facts-stream"
+          items={sessionState?.known_facts ?? []}
+          empty={t("common.none")}
+          getKey={(item) => item.id}
+          renderItem={(item) => (
+            <>
+              <strong>{item.title}</strong>
+              <span>{item.summary}</span>
+            </>
+          )}
+        />
+      </Card>
+
+      <Card className="grid min-w-0 gap-3 p-4">
+        <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.side.skills")}</h2>
+        <StreamList
+          testId="skills-stream"
+          items={sessionState?.skills ?? []}
+          empty={t("common.none")}
+          getKey={(item) => item.id}
+          renderItem={(item) => (
+            <>
+              <strong>{item.title}</strong>
+              <span>{item.summary}</span>
+            </>
+          )}
+        />
+      </Card>
     </>
   );
 }

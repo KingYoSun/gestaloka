@@ -163,6 +163,24 @@ export function mergeTurnResponseIntoSessionState(current: SessionState | null, 
       inventory.push(update);
     }
   }
+  const knownFacts = [...(current.known_facts ?? [])];
+  for (const update of response.knowledge_updates ?? []) {
+    const index = knownFacts.findIndex((item) => item.id === update.id);
+    if (index >= 0) {
+      knownFacts[index] = { ...knownFacts[index], ...update };
+    } else {
+      knownFacts.push(update);
+    }
+  }
+  const skills = [...(current.skills ?? [])];
+  for (const update of response.skill_updates ?? []) {
+    const index = skills.findIndex((item) => item.id === update.id);
+    if (index >= 0) {
+      skills[index] = { ...skills[index], ...update };
+    } else {
+      skills.push(update);
+    }
+  }
 
   const relationships = [...current.relationships];
   for (const update of response.relationship_updates) {
@@ -243,6 +261,8 @@ export function mergeTurnResponseIntoSessionState(current: SessionState | null, 
     quest_display_state: liveQuest ? { mode: "quest", label: liveQuest.title } : current.quest_display_state,
     factions,
     inventory,
+    known_facts: knownFacts,
+    skills,
     chapter: currentChapter,
     current_scene: currentScene,
     recent_scene_history: recentSceneHistory,

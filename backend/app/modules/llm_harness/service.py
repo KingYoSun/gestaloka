@@ -277,6 +277,7 @@ class TurnResolutionPayload(BaseModel):
     consequence_summary: str = Field(min_length=1)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
     shared_action_tag: SharedWorldActionTag = "none"
+    state_drafts: dict[str, Any] = Field(default_factory=dict)
     branch_signals: list[BranchSignal] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     scene_tone: str = Field(min_length=1)
@@ -908,6 +909,41 @@ class StubModelProvider(BaseModelProvider):
             scene_pressure = "medium"
         branch_signals = normalize_branch_signals([str(item) for item in input_payload.get("branch_signals") or []])
         lower_text = f"{interpreted_intent} {input_text}".lower()
+        full_text = f"{interpreted_intent} {input_text} {input_payload.get('consequence_summary') or ''}"
+        state_drafts: dict[str, Any] = {
+            "acquired_items": [],
+            "known_facts": [],
+            "skills": [],
+            "trade_terms": [],
+        }
+        if any(token in full_text for token in ("生成方法", "学ぶ", "習得", "learn")) and any(
+            token in full_text for token in ("偽装ログ", "ログ", "camouflage", "disguise")
+        ):
+            state_drafts["skills"].append(
+                {
+                    "title": "一時的な偽装ログ生成方法",
+                    "summary": "万象図書館AIの観測を一時的に欺くため、来訪者ログへノイズを編み込む方法。",
+                }
+            )
+        if any(token in full_text for token in ("図書館", "Library", "library")) and any(
+            token in full_text for token in ("AI", "追跡", "観測", "監視", "scrutiny", "tracking")
+        ):
+            state_drafts["known_facts"].append(
+                {
+                    "title": "万象図書館AIは空白ログを追跡する",
+                    "summary": "万象図書館AIは未定義または空白の来訪者ログを異常値として観測し、記録へ固定しようとする。",
+                }
+            )
+        acquired_asset = any(token in full_text for token in ("入手", "受け取", "収集", "手に入", "acquire", "receive"))
+        if acquired_asset and any(token in full_text for token in ("偽装ログ", "ゴーストデータ", "断片", "データ")):
+            state_drafts["acquired_items"].append(
+                {
+                    "template_key": "disguise_log_fragment",
+                    "name": "偽装ログの断片",
+                    "description": "万象図書館AIの観測を一時的に逸らすために使えるデジタル資産。",
+                    "item_kind": "digital_asset",
+                }
+            )
         followup_branches = dict(world_pack.get("followup_branches") or {})
 
         def _branch_tokens(slot: str) -> set[str]:
@@ -941,6 +977,29 @@ class StubModelProvider(BaseModelProvider):
                 branch_signals = normalize_branch_signals([*branch_signals, "formal_trust", "kept_formal_promise"])
             if any(token in lower_text for token in undercurrent_tokens):
                 branch_signals = normalize_branch_signals([*branch_signals, "rumor_curiosity", "street_pull"])
+        shared_action_tag: SharedWorldActionTag = "none"
+        if any(token in full_text for token in ("取引", "trade", "deal")):
+            shared_action_tag = "trade"
+        elif any(token in full_text for token in ("交渉", "negotiate")):
+            shared_action_tag = "negotiate"
+        if shared_action_tag == "none":
+            if "investigate" in world_tags:
+                shared_action_tag = "investigate"
+            elif "promise_followup" in world_tags:
+                shared_action_tag = "protect"
+            elif "aid_local" in world_tags:
+                shared_action_tag = "help"
+        if shared_action_tag in {"trade", "negotiate"} and any(
+            token in full_text for token in ("代償", "要注意人物", "評判", "借り", "危険", "risk", "debt", "reputation")
+        ):
+            state_drafts["trade_terms"].append(
+                {
+                    "counterparty": "公開市場の情報屋",
+                    "received_summary": state_drafts["acquired_items"][0]["name"] if state_drafts["acquired_items"] else interpreted_intent,
+                    "consideration_kind": "reputational_risk",
+                    "consideration_summary": "市場内で要注意人物として記録され、今後の取引や移動に制約が生じる。",
+                }
+            )
         return {
             "event_type": "player.turn.resolved",
             "event_payload": {
@@ -965,6 +1024,8 @@ class StubModelProvider(BaseModelProvider):
             ],
             "world_tags": world_tags,
             "consequence_tags": consequence_tags,
+            "shared_action_tag": shared_action_tag,
+            "state_drafts": state_drafts,
             "branch_signals": branch_signals,
             "outcome_band": outcome_band,
             "resolution_summary": (

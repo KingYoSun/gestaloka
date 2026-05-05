@@ -155,6 +155,10 @@ def _failure_response_content(result, world_context: dict[str, object]) -> dict[
         "quest_updates": [],
         "faction_updates": [],
         "inventory_updates": [],
+        "knowledge_updates": [],
+        "skill_updates": [],
+        "trade_updates": [],
+        "blocked_state_drafts": [],
         "location_updates": [],
         "relationship_updates": [],
         "consequence_updates": [],
@@ -202,6 +206,10 @@ def _success_response_content(result, world_context: dict[str, object]) -> dict[
         "quest_updates": result.quest_updates,
         "faction_updates": result.faction_updates,
         "inventory_updates": result.inventory_updates,
+        "knowledge_updates": result.knowledge_updates,
+        "skill_updates": result.skill_updates,
+        "trade_updates": result.trade_updates,
+        "blocked_state_drafts": result.blocked_state_drafts,
         "location_updates": result.location_updates,
         "entity_updates": result.turn.resolved_output.get("entity_updates", []),
         "relationship_updates": result.relationship_updates,
@@ -333,6 +341,20 @@ async def _emit_turn_result_events(result, world_context: dict[str, object], res
             result.turn.session_id,
             "inventory.changed",
             {"items": response_content.get("inventory_updates", result.inventory_updates)},
+            world_context,
+        )
+    if result.knowledge_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "knowledge.updated",
+            {"items": response_content.get("knowledge_updates", result.knowledge_updates)},
+            world_context,
+        )
+    if result.skill_updates:
+        await realtime_hub.emit_with_world_context(
+            result.turn.session_id,
+            "skills.updated",
+            {"items": response_content.get("skill_updates", result.skill_updates)},
             world_context,
         )
     if result.location_updates:

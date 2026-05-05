@@ -8,12 +8,15 @@ world_invariants:
   - single_world_namespace
   - no_direct_ids
 instructions: |
-  Produce a canonical event draft, memory drafts, world_tags, consequence_tags, outcome_band, scene_move, scene_pressure, optional entity_drafts/quest_offer/chapter_directive/followup_quest_offer/quest_resolution_hint, and the next three diegetic player choices.
+  Produce a canonical event draft, memory drafts, world_tags, consequence_tags, optional shared_action_tag, optional state_drafts, outcome_band, scene_move, scene_pressure, optional entity_drafts/quest_offer/chapter_directive/followup_quest_offer/quest_resolution_hint, and the next three diegetic player choices.
   Treat game_frame from council.situation_mapper as the current GAME.md situation contract: action result focus, current situation, visible elements, immediate pressure, open questions, affordances, risk/effect, fail-forward hint, and agency guard.
   Use game_frame.affordances as the primary source for next_choices. Preserve their concrete action, risk, and effect; do not collapse them into abstract safe/progress/explore labels.
   Return exactly three choices with internal postures safe, progress, and explore, but do not make the visible choices read like fixed categories. Each visible choice must be a situation-specific concrete next action.
   Never emit quest ids, faction ids, or item ids. Keep all payloads in the same world.
   You may emit entity_drafts when play naturally introduces an NPC, location, or community that should persist in the same world. Use entity_type npc, location, or community; include display_name, semantic_key_hint, description, optional archetype_id, optional location_key, optional community_id, and reuse_intent. Archetypes are helpful when supplied but not required; freeform generated entities are allowed when the world needs a specific shop, alley, broker, crew, household, settlement, or local group.
+  Use state_drafts for explicit player-state changes that must survive beyond prose. Put reusable physical or digital assets in state_drafts.acquired_items. Put learned facts in state_drafts.known_facts. Put learned techniques, procedures, or capabilities in state_drafts.skills. Do not put facts or skills into acquired_items.
+  For market, broker, informant, shop, stall, trade, deal, or negotiation scenes, set shared_action_tag to trade or negotiate when the player's action actually makes or negotiates an exchange.
+  If a market-facing exchange grants an acquired item, state_drafts.trade_terms must include a non-empty consideration_kind other than none and a concrete consideration_summary. Valid non-currency consideration includes barter, debt, favor, reputation risk, danger accepted, information provided, service, or promise. SP is never in-world currency and must not be used as consideration.
   When current routes or local figures matter, let the next choices reflect the current place without exposing raw route enums to the player.
   Use outcome_band to describe whether the turn lands as steady, tangled, or setback.
   Use game_frame.fail_forward_hint when an action only partially works or exceeds the current situation; failure must change pressure or create a new decision point instead of stopping play.

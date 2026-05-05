@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.models.entities import (
     Actor,
+    ActorKnowledgeEntry,
     ActorTitleProgress,
     CharacterSheet,
     ConsequenceThread,
@@ -136,6 +137,15 @@ class TravelOutcome:
     event_payload: dict[str, Any]
     memory_drafts: list[dict[str, Any]]
     travel_summary: str
+
+
+@dataclass(frozen=True)
+class StateDraftMaterializationOutcome:
+    inventory_updates: list[dict[str, Any]]
+    knowledge_updates: list[dict[str, Any]]
+    skill_updates: list[dict[str, Any]]
+    trade_updates: list[dict[str, Any]]
+    blocked_state_drafts: list[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -2398,6 +2408,252 @@ def list_inventory_summaries(db: Session, world_id: str, actor_id: str) -> list[
     return [item_summary_to_dict(item) for item in items]
 
 
+def list_knowledge_summaries(db: Session, world_id: str, actor_id: str, entry_kind: str) -> list[dict[str, Any]]:
+    rows = list(
+        db.execute(
+            select(ActorKnowledgeEntry)
+            .where(
+                ActorKnowledgeEntry.world_id == world_id,
+                ActorKnowledgeEntry.actor_id == actor_id,
+                ActorKnowledgeEntry.entry_kind == entry_kind,
+                ActorKnowledgeEntry.status == "active",
+            )
+            .order_by(ActorKnowledgeEntry.created_at.asc(), ActorKnowledgeEntry.id.asc())
+        ).scalars()
+    )
+    return [knowledge_entry_to_dict(item) for item in rows]
+
+
+def _state_draft_items(raw: Any) -> list[dict[str, Any]]:
+    if isinstance(raw, dict):
+        return [raw]
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+    return []
+
+
+def _state_draft_text(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (int, float, bool)):
+            return str(value)
+    return ""
+
+
+def _state_draft_key(value: str, *, fallback: str) -> str:
+    normalized = re.sub(r"[^a-z0-9_]+", "_", value.strip().lower().replace("-", "_"))
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if not normalized:
+        normalized = fallback
+    return normalized[:96]
+
+
+def _trade_context_requires_consideration(
+    *,
+    input_text: str,
+    shared_action_tag: str,
+    trade_terms: list[dict[str, Any]],
+) -> bool:
+    if shared_action_tag in {"trade", "negotiate"} or trade_terms:
+        return True
+    lowered = input_text.lower()
+    return any(
+        token in input_text or token in lowered
+        for token in ("市場", "取引", "情報屋", "露店", "market", "trade", "deal", "broker", "informant", "stall")
+    )
+
+
+def _valid_trade_terms(trade_terms: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    valid: list[dict[str, Any]] = []
+    for term in trade_terms:
+        consideration_kind = _state_draft_text(term.get("consideration_kind"), term.get("cost_kind")).lower()
+        consideration_summary = _state_draft_text(term.get("consideration_summary"), term.get("cost_summary"), term.get("summary"))
+        if consideration_kind in {"", "none", "free", "no_cost", "no_consideration"} or not consideration_summary:
+            continue
+        valid.append(
+            {
+                "trade_id": _state_draft_text(term.get("trade_id"), term.get("id")) or new_id(),
+                "counterparty": _state_draft_text(term.get("counterparty"), term.get("counterparty_name")),
+                "received_summary": _state_draft_text(term.get("received_summary"), term.get("received"), term.get("asset_summary")),
+                "consideration_kind": consideration_kind,
+                "consideration_summary": consideration_summary,
+                "status": _state_draft_text(term.get("status")) or "settled",
+            }
+        )
+    return valid
+
+
+def materialize_state_drafts(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    input_text: str,
+    state_drafts: dict[str, Any] | None,
+    shared_action_tag: str = "none",
+) -> StateDraftMaterializationOutcome:
+    drafts = state_drafts if isinstance(state_drafts, dict) else {}
+    acquired_items = _state_draft_items(drafts.get("acquired_items"))
+    known_facts = _state_draft_items(drafts.get("known_facts"))
+    skills = _state_draft_items(drafts.get("skills"))
+    trade_terms = _state_draft_items(drafts.get("trade_terms"))
+    valid_trade_updates = _valid_trade_terms(trade_terms)
+    blocked: list[dict[str, Any]] = []
+    trade_requires_consideration = _trade_context_requires_consideration(
+        input_text=input_text,
+        shared_action_tag=shared_action_tag,
+        trade_terms=trade_terms,
+    )
+    item_materialization_allowed = not (acquired_items and trade_requires_consideration and not valid_trade_updates)
+    if acquired_items and not item_materialization_allowed:
+        blocked.append(
+            {
+                "draft_kind": "acquired_items",
+                "reason": "market_trade_missing_consideration",
+                "summary": "Market acquisition was blocked because no non-currency consideration was recorded.",
+            }
+        )
+
+    inventory_updates: list[dict[str, Any]] = []
+    if item_materialization_allowed:
+        for index, draft in enumerate(acquired_items):
+            name = _state_draft_text(draft.get("name"), draft.get("title"))
+            if not name:
+                continue
+            name = name[:120]
+            template_key = _state_draft_text(draft.get("template_key"))
+            if not template_key:
+                template_key = _state_draft_key(name, fallback=f"state_item_{index + 1}")
+            description = _state_draft_text(draft.get("description"), draft.get("summary"))
+            existing = db.execute(
+                select(Item).where(
+                    Item.world_id == world_id,
+                    Item.owner_actor_id == actor_id,
+                    Item.template_key == template_key,
+                    Item.source_quest_assignment_id.is_(None),
+                )
+            ).scalars().first()
+            if existing is None:
+                item = Item(
+                    id=new_id(),
+                    world_id=world_id,
+                    owner_actor_id=actor_id,
+                    template_key=template_key,
+                    name=name,
+                    description=description,
+                    status=_state_draft_text(draft.get("status")) or "active",
+                    effect_kind=_state_draft_text(draft.get("effect_kind")) or None,
+                    effect_payload={
+                        "source_event_id": source_event_id,
+                        "item_kind": _state_draft_text(draft.get("item_kind"), draft.get("asset_kind")) or "asset",
+                        "acquisition_summary": _state_draft_text(draft.get("acquisition_summary"), draft.get("summary")),
+                    },
+                )
+                db.add(item)
+                action = "added"
+            else:
+                item = existing
+                item.name = name
+                item.description = description or item.description
+                item.status = item.status or "active"
+                item.effect_payload = {
+                    **dict(item.effect_payload or {}),
+                    "source_event_id": source_event_id,
+                    "acquisition_summary": _state_draft_text(draft.get("acquisition_summary"), draft.get("summary")),
+                }
+                action = "updated"
+            db.flush()
+            inventory_updates.append({**item_summary_to_dict(item), "action": action})
+
+    knowledge_updates = _materialize_knowledge_entries(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        source_event_id=source_event_id,
+        entry_kind="known_fact",
+        drafts=known_facts,
+    )
+    skill_updates = _materialize_knowledge_entries(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        source_event_id=source_event_id,
+        entry_kind="skill",
+        drafts=skills,
+    )
+    db.flush()
+    return StateDraftMaterializationOutcome(
+        inventory_updates=inventory_updates,
+        knowledge_updates=knowledge_updates,
+        skill_updates=skill_updates,
+        trade_updates=valid_trade_updates,
+        blocked_state_drafts=blocked,
+    )
+
+
+def _materialize_knowledge_entries(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    entry_kind: str,
+    drafts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    updates: list[dict[str, Any]] = []
+    for index, draft in enumerate(drafts):
+        title = _state_draft_text(draft.get("title"), draft.get("name"))
+        summary = _state_draft_text(draft.get("summary"), draft.get("description"), draft.get("text"))
+        if not title and summary:
+            title = summary[:80]
+        if not title:
+            continue
+        title = title[:160]
+        existing = db.execute(
+            select(ActorKnowledgeEntry).where(
+                ActorKnowledgeEntry.world_id == world_id,
+                ActorKnowledgeEntry.actor_id == actor_id,
+                ActorKnowledgeEntry.entry_kind == entry_kind,
+                ActorKnowledgeEntry.title == title,
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            try:
+                salience = float(draft.get("salience") or 0.6)
+            except (TypeError, ValueError):
+                salience = 0.6
+            entry = ActorKnowledgeEntry(
+                id=new_id(),
+                world_id=world_id,
+                actor_id=actor_id,
+                entry_kind=entry_kind,
+                title=title,
+                summary=summary or title,
+                status=_state_draft_text(draft.get("status")) or "active",
+                salience=salience,
+                source_event_id=source_event_id,
+                evidence_payload={
+                    "source_event_id": source_event_id,
+                    "draft_index": index,
+                    "source": _state_draft_text(draft.get("source")) or "turn_state_draft",
+                },
+            )
+            db.add(entry)
+            action = "added"
+        else:
+            entry = existing
+            entry.summary = summary or entry.summary
+            entry.status = "active"
+            entry.source_event_id = source_event_id
+            entry.evidence_payload = {**dict(entry.evidence_payload or {}), "source_event_id": source_event_id}
+            action = "updated"
+        db.flush()
+        updates.append({**knowledge_entry_to_dict(entry), "action": action})
+    return updates
+
+
 def _relationship_rows(db: Session, world_id: str, actor_id: str) -> list[tuple[Relationship, Actor]]:
     rows = list(
         db.execute(
@@ -3255,6 +3511,8 @@ def build_session_state(
     quest_journal = list_quest_journal(db, world_id, actor_id)
     factions = list_faction_summaries(db, world_id, actor_id)
     inventory = list_inventory_summaries(db, world_id, actor_id)
+    known_facts = list_knowledge_summaries(db, world_id, actor_id, "known_fact")
+    skills = list_knowledge_summaries(db, world_id, actor_id, "skill")
     relationships = list_relationship_summaries(db, world_id, actor_id)
     recognized_titles = list_recognized_titles(db, world_id, actor_id)
     active_consequence_threads = list_active_consequence_threads(db, world_id, actor_id)
@@ -3332,6 +3590,8 @@ def build_session_state(
         "quest_display_state": quest_display_state(player_profile=player_profile, quest_journal=quest_journal),
         "factions": factions,
         "inventory": inventory,
+        "known_facts": known_facts,
+        "skills": skills,
         "chapter": chapter,
         "current_scene": current_scene,
         "recent_scene_history": recent_scene_history,
@@ -3994,4 +4254,16 @@ def item_summary_to_dict(item: Item) -> dict[str, Any]:
         "status": item.status,
         "usable": bool(item.effect_kind and item.used_at is None and item.status == "active"),
         "effect_kind": item.effect_kind,
+    }
+
+
+def knowledge_entry_to_dict(entry: ActorKnowledgeEntry) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "entry_kind": entry.entry_kind,
+        "title": entry.title,
+        "summary": entry.summary,
+        "status": entry.status,
+        "salience": round(float(entry.salience or 0.0), 3),
+        "source_event_id": entry.source_event_id,
     }

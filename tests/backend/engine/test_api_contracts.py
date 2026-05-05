@@ -868,6 +868,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "quest_display_state",
         "factions",
         "inventory",
+        "known_facts",
+        "skills",
         "chapter",
         "current_scene",
         "recent_scene_history",
@@ -901,6 +903,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["plaza_figures"] == state_response.json()["local_figures"]
     assert state_response.json()["nearby_routes"]
     assert state_response.json()["inventory"] == []
+    assert state_response.json()["known_facts"] == []
+    assert state_response.json()["skills"] == []
     assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["safe", "progress", "explore"]
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
@@ -943,6 +947,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "quest_updates",
             "faction_updates",
             "inventory_updates",
+            "knowledge_updates",
+            "skill_updates",
+            "trade_updates",
+            "blocked_state_drafts",
             "location_updates",
             "current_location",
             "travel_summary",
@@ -1007,9 +1015,10 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "rules_arbiter",
         "safety_guard",
         "narrative",
-        "world_tag_updates",
-        "entity_materialization",
-        "dynamic_quest_offer",
+            "world_tag_updates",
+            "entity_materialization",
+            "state_draft_materialization",
+            "dynamic_quest_offer",
         "quest_resolution_hint",
         "consequence_resolution",
         "scene_framing",

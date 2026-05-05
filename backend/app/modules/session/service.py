@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
@@ -72,6 +72,7 @@ from app.modules.world_state.service import (
     ensure_world_slice_seed,
     get_location_summary,
     get_location_by_key,
+    materialize_state_drafts,
     quest_offer_repeats_resolution,
     record_quest_resolution_hint,
     travel_to_location,
@@ -175,6 +176,10 @@ class TurnResolutionResult:
     recent_offstage_beats: list[str]
     idle_updates: list[dict[str, Any]]
     progress_phases: list[str]
+    knowledge_updates: list[dict[str, Any]] = field(default_factory=list)
+    skill_updates: list[dict[str, Any]] = field(default_factory=list)
+    trade_updates: list[dict[str, Any]] = field(default_factory=list)
+    blocked_state_drafts: list[dict[str, Any]] = field(default_factory=list)
     failure: dict[str, Any] | None = None
     error_detail: str | None = None
     status_code: int = 200
@@ -1471,6 +1476,35 @@ def _resolve_narrative_turn_for_session(
             **event.payload,
             "entity_updates": entity_updates,
         }
+    with _turn_progress_span("state_draft_materialization"):
+        state_draft_updates = materialize_state_drafts(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            input_text=input_text,
+            state_drafts=getattr(payload, "state_drafts", None),
+            shared_action_tag=str(getattr(payload, "shared_action_tag", "none") or "none"),
+        )
+        combined_inventory_updates = [
+            *state_updates["inventory_updates"],
+            *state_draft_updates.inventory_updates,
+        ]
+    if (
+        state_draft_updates.inventory_updates
+        or state_draft_updates.knowledge_updates
+        or state_draft_updates.skill_updates
+        or state_draft_updates.trade_updates
+        or state_draft_updates.blocked_state_drafts
+    ):
+        event.payload = {
+            **event.payload,
+            "inventory_updates": combined_inventory_updates,
+            "knowledge_updates": state_draft_updates.knowledge_updates,
+            "skill_updates": state_draft_updates.skill_updates,
+            "trade_updates": state_draft_updates.trade_updates,
+            "blocked_state_drafts": state_draft_updates.blocked_state_drafts,
+        }
     with _turn_progress_span("dynamic_quest_offer"):
         resolution_summary = str(getattr(payload, "resolution_summary", "") or "")
         suppress_primary_offer = _session_has_live_quest(session_state, statuses={"active", "paused"})
@@ -1628,10 +1662,18 @@ def _resolve_narrative_turn_for_session(
         "next_choices": [],
         "quest_updates": state_updates["quest_updates"],
         "faction_updates": combined_faction_updates,
-        "inventory_updates": state_updates["inventory_updates"],
+        "inventory_updates": combined_inventory_updates,
+        "knowledge_updates": state_draft_updates.knowledge_updates,
+        "skill_updates": state_draft_updates.skill_updates,
+        "trade_updates": state_draft_updates.trade_updates,
+        "blocked_state_drafts": state_draft_updates.blocked_state_drafts,
         "relationship_updates": consequence_result.relationship_updates,
         "consequence_updates": consequence_result.consequence_updates,
         "entity_updates": entity_updates,
+        "knowledge_updates": state_draft_updates.knowledge_updates,
+        "skill_updates": state_draft_updates.skill_updates,
+        "trade_updates": state_draft_updates.trade_updates,
+        "blocked_state_drafts": state_draft_updates.blocked_state_drafts,
         "resource_constraints": resource_constraints,
         "skipped_shared_resources": skipped_resources,
         "scene_move": getattr(payload, "scene_move", None),
@@ -1772,6 +1814,8 @@ def _resolve_narrative_turn_for_session(
                 input_text=input_text,
                 consequence_summary=str(payload.consequence_summary or scene_result["scene_summary"] or ""),
             )
+        if state_draft_updates.blocked_state_drafts:
+            next_choices = _trade_blocked_next_choices()
     turn.resolved_output = {
         **turn.resolved_output,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
@@ -1820,7 +1864,7 @@ def _resolve_narrative_turn_for_session(
         sp_ledger_id=prepared.debit.ledger_entry.id,
         quest_updates=state_updates["quest_updates"],
         faction_updates=combined_faction_updates,
-        inventory_updates=state_updates["inventory_updates"],
+        inventory_updates=combined_inventory_updates,
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
         scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
@@ -1843,6 +1887,7 @@ def _resolve_narrative_turn_for_session(
         idle_updates=[],
         progress_phases=[
             *progress_phases,
+            "state_draft_materialization",
             "dynamic_quest_offer",
             "quest_resolution_hint",
             "consequence_resolution",
@@ -1850,6 +1895,10 @@ def _resolve_narrative_turn_for_session(
             "ambient_world_pass",
             "choice_generation",
         ],
+        knowledge_updates=state_draft_updates.knowledge_updates,
+        skill_updates=state_draft_updates.skill_updates,
+        trade_updates=state_draft_updates.trade_updates,
+        blocked_state_drafts=state_draft_updates.blocked_state_drafts,
     )
 
 
@@ -4012,6 +4061,38 @@ def _contextualize_repeated_choices(
             item["canonical_input_text"] = f"新しい反応がどこへ広がったか調べる: {context}"
         refreshed.append(item)
     return refreshed
+
+
+def _trade_blocked_next_choices() -> list[dict[str, Any]]:
+    return [
+        {
+            "choice_id": "safe",
+            "posture": "safe",
+            "label": "取引条件を聞き直す",
+            "summary": "何を差し出せば成立するのかを確かめる。",
+            "canonical_input_text": "取引条件を聞き直し、必要な対価を確認する",
+            "action_kind": "narrative",
+            "travel_target_key": None,
+        },
+        {
+            "choice_id": "progress",
+            "posture": "progress",
+            "label": "別の対価を提示する",
+            "summary": "情報、借り、評判上のリスクなど通貨以外の対価を差し出す。",
+            "canonical_input_text": "通貨ではなく情報や借りを対価として提示し、取引成立を目指す",
+            "action_kind": "narrative",
+            "travel_target_key": None,
+        },
+        {
+            "choice_id": "explore",
+            "posture": "explore",
+            "label": "取引を保留して周囲を探る",
+            "summary": "すぐには受け取らず、市場の相場や相手の狙いを調べる。",
+            "canonical_input_text": "取引を保留し、市場の相場と相手の狙いを探る",
+            "action_kind": "narrative",
+            "travel_target_key": None,
+        },
+    ]
 
 
 def _select_choice(choices: list[dict[str, Any]], choice_id: str) -> dict[str, Any] | None:

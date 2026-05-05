@@ -182,6 +182,8 @@ const resources = {
           figures: "人物",
           routes: "移動先",
           inventory: "所持品",
+          knownFacts: "既知事実",
+          skills: "技能",
         },
         mobile: {
           actions: "行動",
@@ -396,6 +398,8 @@ const resources = {
           figures: "People",
           routes: "Routes",
           inventory: "Inventory",
+          knownFacts: "Known Facts",
+          skills: "Skills",
         },
         mobile: {
           actions: "Actions",

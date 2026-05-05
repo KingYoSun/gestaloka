@@ -61,6 +61,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "outbox_events",
         "play_localized_text_cache",
         "llm_context_cache_entries",
+        "actor_knowledge_entries",
         "admin_app_users",
         "admin_runtime_configs",
         "admin_prompt_overrides",
@@ -89,6 +90,7 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     broadcast_delivery_columns = {column["name"] for column in inspector.get_columns("world_broadcast_deliveries")}
     play_localization_columns = {column["name"] for column in inspector.get_columns("play_localized_text_cache")}
     llm_context_cache_columns = {column["name"] for column in inspector.get_columns("llm_context_cache_entries")}
+    actor_knowledge_columns = {column["name"] for column in inspector.get_columns("actor_knowledge_entries")}
     assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
     assert {"paid_balance", "bonus_balance"} <= sp_account_columns
     assert {"paid_delta", "bonus_delta", "paid_balance_after", "bonus_balance_after"} <= sp_ledger_columns
@@ -177,6 +179,19 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         unique["name"] for unique in inspector.get_unique_constraints("llm_context_cache_entries")
     }
     assert "uq_llm_context_cache_provider_model_hash" in llm_context_cache_uniques
+    assert {
+        "world_id",
+        "actor_id",
+        "entry_kind",
+        "title",
+        "summary",
+        "status",
+        "salience",
+        "source_event_id",
+        "evidence_payload",
+    } <= actor_knowledge_columns
+    actor_knowledge_indexes = {index["name"] for index in inspector.get_indexes("actor_knowledge_entries")}
+    assert "ix_actor_knowledge_world_actor_kind" in actor_knowledge_indexes
 
 
 def test_alembic_revision_ids_fit_default_version_table():
