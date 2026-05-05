@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.entities import PlayLocalizedTextCache
 from app.modules.llm_harness.service import ModelRouter
-from app.modules.world_pack.service import get_pack_registry, template_world_id
+from app.modules.world_pack.service import get_pack_registry, normalize_language_tag, template_world_id
 
 
 PROMPT_ID = "play.localization"
@@ -114,11 +114,14 @@ def _localization_context(
     actor_id: str,
     play_language: dict[str, Any],
 ) -> dict[str, str] | None:
-    target_language = str(play_language.get("prompt_name") or play_language.get("custom") or "").strip()
+    preset = str(play_language.get("preset") or "").strip()
+    if preset:
+        target_language = _language_key(preset)
+    else:
+        target_language = str(play_language.get("prompt_name") or play_language.get("custom") or "").strip()
     if not world_id or not actor_id or not target_language:
         return None
-    preset = str(play_language.get("preset") or "").strip().lower()
-    if preset == "en" or target_language.lower() == "english":
+    if _language_key(target_language) == "en":
         return None
     return {"world_id": world_id, "actor_id": actor_id, "target_language": target_language}
 
@@ -403,11 +406,17 @@ def _pack_glossary(*, context: dict[str, str]) -> list[dict[str, str]]:
 
 def _language_key(value: str) -> str:
     normalized = value.strip().lower().replace("_", "-")
-    return {
-        "ja": "japanese",
-        "jp": "japanese",
-        "日本語": "japanese",
+    mapped = {
+        "japanese": "ja",
+        "日本語": "ja",
+        "jp": "ja",
+        "english": "en",
+        "英語": "en",
     }.get(normalized, normalized)
+    try:
+        return normalize_language_tag(mapped)
+    except ValueError:
+        return mapped
 
 
 def _collect_session_state_targets(payload: dict[str, Any], targets: list[_TextTarget]) -> None:

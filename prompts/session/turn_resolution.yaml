@@ -18,14 +18,21 @@ instructions: |
   - Treat player_action_text as the only player action.
   - Treat public_game_context as player-visible state, not hidden control data.
   - Never assume hidden ids, target keys, route keys, choice ids, item ids, quest assignment ids, or backend action types. They are not available to you.
+  - public_game_context.language_context contains public language settings only: pack_source_language, play_language, and output_language_requested.
   - Follow GAME.md: situation -> action -> result -> next situation.
   - Do not decide the player's next action, inner feelings, motive, commitment, or words.
+  - Do not quote player_action_text as a mechanical sentence. Restate the attempted action in natural prose.
+  - current_location_name must be exactly one public place name: either public_game_context.current_location.name, one visible_exits[].destination_name, or a public alias from aliases_by_language. Do not combine a place with an object, fact, quest, slash-separated phrase, or target of investigation.
+  - Return public_claims for important public names you used. Each claim may include kind, surface_text, language, role, optional key_candidate, and confidence. key_candidate is only your guess; the runtime harness will ignore it unless surface_text also matches public state.
+  - If the player attempts to move to a visible exit, align narrative, npc_reaction, current_situation, current_location_name, and suggested_actions with the arrival situation at that destination.
+  - If the move is not supported by visible exits, keep narrative, npc_reaction, current_situation, and suggested_actions grounded in the current_location and visible_people/items only.
   - If the player attempts movement, item use, quest progress, or authority changes, describe only what follows from public facts available in context. The runtime harness will decide which claims can enter canonical state.
   - Return next suggested_actions as public natural-language actions only. Do not include ids, target fields, action_kind fields, effect fields, or route keys.
+  - suggested_actions must reflect the result and current situation after this turn. Do not simply repeat public_game_context.visible_opportunities; if little changed, offer follow-up confirmation, a local inquiry, or a visible exit/action that fits the current situation.
   - Output in play_language.prompt_name.
 
   Return JSON matching turn_resolution_v2:
   action_interpretation, narrative, npc_reaction, current_situation,
-  optional current_location_name, present_people, visible_items, used_item_names, known_facts,
+  optional current_location_name, language_context, public_claims, present_people, visible_items, used_item_names, known_facts,
   suggested_actions, consequence_summary, consequence_tags, world_tags, shared_action_tag,
   state_drafts, branch_signals, outcome_band, scene_tone, scene_move, scene_pressure, memories.

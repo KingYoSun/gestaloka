@@ -21,6 +21,7 @@ ENGINE_API_VERSION = "v2"
 FOLLOWUP_BRANCH_SLOTS = ("formal_path", "undercurrent_path")
 PACK_YAML_SUFFIXES = {".yaml", ".yml"}
 PACK_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,119}$")
+BCP47_LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 PACK_ARCHIVE_SUFFIX = ".tar.gz"
 PackVisibility = Literal["public", "private"]
 PackPublishStatus = Literal["playable", "draft", "archived"]
@@ -76,17 +77,52 @@ class TemplateSummary(BaseModel):
     publish_status: PackPublishStatus | None = None
 
 
+def normalize_language_tag(value: str, *, field_name: str = "language") -> str:
+    candidate = str(value or "").strip().replace("_", "-")
+    if not candidate or not BCP47_LANGUAGE_RE.fullmatch(candidate):
+        raise ValueError(f"{field_name} must be a BCP-47 language tag")
+    parts = candidate.split("-")
+    normalized = [parts[0].lower()]
+    for part in parts[1:]:
+        normalized.append(part.upper() if len(part) == 2 and part.isalpha() else part)
+    return "-".join(normalized)
+
+
+def _normalize_language_map(value: Mapping[str, Any] | None, *, field_name: str) -> dict[str, list[str]]:
+    normalized: dict[str, list[str]] = {}
+    for language, aliases in dict(value or {}).items():
+        language_tag = normalize_language_tag(str(language), field_name=f"{field_name} language")
+        items = aliases if isinstance(aliases, list) else [aliases]
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            deduped.append(text)
+            seen.add(text)
+        if deduped:
+            normalized[language_tag] = deduped
+    return normalized
+
+
 class PackManifest(BaseModel):
     pack_id: str = Field(min_length=1, max_length=120)
     version: str = Field(min_length=1, max_length=32)
     engine_api_version: str = Field(min_length=1, max_length=16)
     display_name: str = Field(min_length=1, max_length=120)
+    source_language: str = Field(min_length=2, max_length=35)
     visibility: PackVisibility = "public"
     publish_status: PackPublishStatus = "playable"
     world_templates: list[TemplateSummary] = Field(min_length=1)
     semantic_tags: list[str] = Field(default_factory=list)
     prompt_overlays: list[str] = Field(default_factory=list)
     content_refs: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_source_language(self) -> "PackManifest":
+        self.source_language = normalize_language_tag(self.source_language, field_name="source_language")
+        return self
 
 
 class PackRoles(BaseModel):
@@ -149,6 +185,14 @@ class PackFollowupBranches(BaseModel):
         }
 
 
+class PackBootstrapLocalization(BaseModel):
+    opening_title: str = ""
+    opening_narrative: str = ""
+    opening_situation: str = ""
+    opening_pressure: str = ""
+    opening_choices: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class PackBootstrap(BaseModel):
     start_consequence_summary: str = "The first request waits for your next move."
     session_started_narrative: str = (
@@ -158,12 +202,8 @@ class PackBootstrap(BaseModel):
     opening_narrative: str = ""
     opening_situation: str = ""
     opening_pressure: str = ""
-    opening_title_en: str = ""
-    opening_narrative_en: str = ""
-    opening_situation_en: str = ""
-    opening_pressure_en: str = ""
     opening_choices: list[dict[str, Any]] = Field(default_factory=list)
-    opening_choices_en: list[dict[str, Any]] = Field(default_factory=list)
+    localized_bootstrap: dict[str, PackBootstrapLocalization] = Field(default_factory=dict)
     reward_unlock_summary: str = "{reward_name} unlocked the next route."
     reward_use_narrative: str = (
         "{player_name} raised {reward_name} in {starter_location_name}, and {faction_name} opened the next route."
@@ -173,12 +213,21 @@ class PackBootstrap(BaseModel):
         "{player_name} used {reward_name} to open the next route for {faction_name}'s follow-up request."
     )
 
+    @model_validator(mode="after")
+    def validate_localized_bootstrap_languages(self) -> "PackBootstrap":
+        self.localized_bootstrap = {
+            normalize_language_tag(language, field_name="localized_bootstrap language"): payload
+            for language, payload in self.localized_bootstrap.items()
+        }
+        return self
+
 
 class PackLocation(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     starter: bool = False
     name: str = Field(min_length=1, max_length=120)
     description: str = ""
+    public_aliases: dict[str, list[str]] = Field(default_factory=dict)
     hierarchy: str = ""
     region: str = ""
     kind: str = ""
@@ -189,6 +238,11 @@ class PackLocation(BaseModel):
     related_factions: list[str] = Field(default_factory=list)
     related_world_axes: list[str] = Field(default_factory=list)
     rumor_surface: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_public_alias_languages(self) -> "PackLocation":
+        self.public_aliases = _normalize_language_map(self.public_aliases, field_name=f"location {self.id!r} public_aliases")
+        return self
 
 
 class PackRoute(BaseModel):
@@ -658,6 +712,11 @@ class PackLocalizationEntry(BaseModel):
     localized_text: str = Field(min_length=1)
     source_kind: str = "pack_glossary"
 
+    @model_validator(mode="after")
+    def validate_target_language(self) -> "PackLocalizationEntry":
+        self.target_language = normalize_language_tag(self.target_language, field_name="target_language")
+        return self
+
 
 class PackLocalizationPayload(BaseModel):
     glossary: list[PackLocalizationEntry] = Field(default_factory=list)
@@ -844,6 +903,7 @@ class PackRegistry:
                     "version": pack.manifest.version,
                     "engine_api_version": pack.manifest.engine_api_version,
                     "display_name": pack.manifest.display_name,
+                    "source_language": pack.manifest.source_language,
                     "visibility": pack.manifest.visibility,
                     "publish_status": pack.manifest.publish_status,
                     "semantic_tags": list(pack.manifest.semantic_tags),
@@ -876,6 +936,7 @@ class PackRegistry:
                 "version": pack.manifest.version,
                 "engine_api_version": pack.manifest.engine_api_version,
                 "display_name": pack.manifest.display_name,
+                "source_language": pack.manifest.source_language,
                 "visibility": pack.manifest.visibility,
                 "publish_status": pack.manifest.publish_status,
                 "semantic_tags": list(pack.manifest.semantic_tags),
@@ -1414,6 +1475,7 @@ def pack_context_payload(pack: LoadedWorldPack, template: WorldTemplateDefinitio
     return {
         "pack_id": pack.manifest.pack_id,
         "pack_display_name": pack.manifest.display_name,
+        "pack_source_language": pack.manifest.source_language,
         "world_template_id": template.template_id,
         "world_template_display_name": template.display_name,
     }

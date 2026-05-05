@@ -47,6 +47,7 @@ from app.modules.world_pack.service import (
     WorldPackError,
     branch_labels_from_followup_branches,
     get_pack_registry,
+    normalize_language_tag,
     resolve_world_pack,
     serialize_followup_branches,
 )
@@ -104,6 +105,52 @@ ROUTE_STATUS_OPEN = "open"
 ROUTE_STATUS_LOCKED = "locked"
 MAX_OFFERED_QUESTS = 3
 QUEST_SIMILARITY_THRESHOLD = 0.30
+
+
+def _safe_language_tag(value: Any, *, fallback: str = "en") -> str:
+    try:
+        return normalize_language_tag(str(value or fallback))
+    except ValueError:
+        return fallback
+
+
+def _play_language_code(play_language: dict[str, Any] | None, *, fallback: str = "ja") -> str:
+    payload = play_language if isinstance(play_language, dict) else {}
+    preset = str(payload.get("preset") or "").strip()
+    if preset:
+        return _safe_language_tag(preset, fallback=fallback)
+    custom = str(payload.get("custom") or payload.get("prompt_name") or "").strip()
+    return _safe_language_tag(custom, fallback=fallback)
+
+
+def _normalize_aliases_by_language(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for language, aliases in value.items():
+        language_tag = _safe_language_tag(language, fallback="")
+        if not language_tag:
+            continue
+        items = aliases if isinstance(aliases, list) else [aliases]
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            text = str(item or "").strip()
+            if not text or text in seen:
+                continue
+            deduped.append(text)
+            seen.add(text)
+        if deduped:
+            normalized[language_tag] = deduped
+    return normalized
+
+
+def _bootstrap_for_language(bootstrap: dict[str, Any], *, language: str, source_language: str) -> dict[str, Any]:
+    if language != source_language:
+        localized = (bootstrap.get("localized_bootstrap") or {}).get(language)
+        if isinstance(localized, dict):
+            return localized
+    return bootstrap
 
 
 @dataclass(frozen=True)
@@ -319,6 +366,8 @@ def ensure_seeded_locations(db: Session, world_id: str) -> dict[str, Location]:
             {
                 "kind": "starter" if bool(payload.get("starter")) else "district",
                 "key": location_key,
+                "source_name": str(payload.get("name") or location_key.replace("_", " ").title()),
+                "public_aliases": _normalize_aliases_by_language(payload.get("public_aliases")),
             }
         )
         if location is None:
@@ -956,6 +1005,8 @@ def get_location_summary(db: Session, world_id: str, location_id: str | None) ->
         "id": location.id,
         "name": location.name,
         "description": location.description,
+        "source_name": str((location.state or {}).get("source_name") or location.name),
+        "public_aliases": _normalize_aliases_by_language((location.state or {}).get("public_aliases")),
         "key": str((location.state or {}).get("key") or location_key_for_id(db, world_id, location.id) or ""),
     }
 
@@ -985,6 +1036,8 @@ def _route_summary(route: LocationRoute, to_location: Location) -> dict[str, Any
     available = route.status == ROUTE_STATUS_OPEN
     summary = _route_display_summary(route)
     destination_key = str((to_location.state or {}).get("key") or "")
+    destination_aliases = _normalize_aliases_by_language((to_location.state or {}).get("public_aliases"))
+    destination_source_name = str((to_location.state or {}).get("source_name") or to_location.name)
     if not summary:
         summary = (
             f"{to_location.name}へ抜ける道が開いている。"
@@ -998,11 +1051,15 @@ def _route_summary(route: LocationRoute, to_location: Location) -> dict[str, Any
         "available": available,
         "destination_id": to_location.id,
         "destination_name": to_location.name,
+        "destination_source_name": destination_source_name,
+        "destination_aliases": destination_aliases,
         "destination_key": destination_key,
         "to_location": {
             "id": to_location.id,
             "name": to_location.name,
             "description": to_location.description,
+            "source_name": destination_source_name,
+            "public_aliases": destination_aliases,
             "key": destination_key,
         },
     }
@@ -2917,6 +2974,7 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
     return {
         "pack_id": pack.manifest.pack_id,
         "pack_display_name": pack.manifest.display_name,
+        "source_language": pack.manifest.source_language,
         "world_template_id": template.template_id,
         "world_template_display_name": template.display_name,
         "world_name": world.name if world is not None else str((template.world or {}).get("default_name") or template.display_name),
@@ -2941,12 +2999,11 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
             "opening_narrative": str(bootstrap.opening_narrative or ""),
             "opening_situation": str(bootstrap.opening_situation or ""),
             "opening_pressure": str(bootstrap.opening_pressure or ""),
-            "opening_title_en": str(bootstrap.opening_title_en or ""),
-            "opening_narrative_en": str(bootstrap.opening_narrative_en or ""),
-            "opening_situation_en": str(bootstrap.opening_situation_en or ""),
-            "opening_pressure_en": str(bootstrap.opening_pressure_en or ""),
             "opening_choices": list(bootstrap.opening_choices or []),
-            "opening_choices_en": list(bootstrap.opening_choices_en or []),
+            "localized_bootstrap": {
+                language: payload.model_dump()
+                for language, payload in bootstrap.localized_bootstrap.items()
+            },
         },
     }
 
@@ -3003,8 +3060,10 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     player_profile = session_state.get("player_profile") or {}
     play_language = player_profile.get("play_language") if isinstance(player_profile, dict) else {}
     play_language = play_language if isinstance(play_language, dict) else {}
+    play_language_code = _play_language_code(play_language)
+    source_language = _safe_language_tag(world_pack.get("source_language"), fallback="en")
     english_play_language = (
-        str(play_language.get("preset") or "").strip() == "en"
+        play_language_code == "en"
         or str(play_language.get("prompt_name") or "").strip().lower() == "english"
     )
     starter_location_key = str(world_pack.get("starter_location_key") or "starter")
@@ -3425,7 +3484,12 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["canonical_input_text"] = f"Explore the mood and local concerns around {current_location_name}"
 
     if is_opening_bootstrap_state:
-        opening_choices = opening_bootstrap.get("opening_choices_en" if english_play_language else "opening_choices")
+        opening_payload = _bootstrap_for_language(
+            opening_bootstrap,
+            language=play_language_code,
+            source_language=source_language,
+        )
+        opening_choices = opening_payload.get("opening_choices")
         if isinstance(opening_choices, list):
             for choice, opening_choice in zip((first_choice, second_choice, third_choice), opening_choices):
                 if not isinstance(opening_choice, dict):

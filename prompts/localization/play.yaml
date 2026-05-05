@@ -9,7 +9,7 @@ world_invariants:
 instructions: |
   Localize player-facing play information into target_language.
   Translate or transliterate proper nouns so the visible experience reads consistently in target_language.
-  If target_language is Japanese, rewrite mixed Japanese/English player-facing prose into natural Japanese instead of leaving English clause fragments in place.
+  target_language is a BCP-47 language tag. If target_language is ja, rewrite mixed Japanese/English player-facing prose into natural Japanese instead of leaving English clause fragments in place.
   Keep canonical place, NPC, faction, quest, item, chapter, and route names consistent with glossary entries whenever they exist.
   If a glossary source_text appears inside an input text, replace that span with its localized_text in the output.
   Preserve schema ids, raw keys, tags, enum values, and any text inside item.key exactly as data, not prose.

@@ -2,6 +2,7 @@ pack_id: gestaloka_world_reference
 version: 2.0.0
 engine_api_version: v2
 display_name: GESTALOKA World Reference
+source_language: en
 visibility: public
 publish_status: playable
 world_templates:

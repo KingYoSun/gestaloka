@@ -54,6 +54,25 @@ def _first_text(*values: Any) -> str:
     return ""
 
 
+def _naturalize_turn_action_text(value: str) -> str:
+    text = " ".join(str(value or "").split()).strip("。.")
+    if "。" in text:
+        text = text.split("。", 1)[0].strip()
+    if not text:
+        return "現在の状況を確かめようとした"
+    if text.endswith("する"):
+        return f"{text[:-2]}しようとした"
+    if text.endswith("向かう"):
+        return f"{text[:-1]}おうとした"
+    if text.endswith("戻る"):
+        return f"{text[:-1]}ろうとした"
+    if text.endswith(("見る", "聞く", "探る", "調べる", "確かめる", "進める")):
+        return f"{text}ことにした"
+    if text.endswith(("し", "見", "聞き", "探り", "調べ", "確かめ", "進め", "向かい")):
+        return f"{text}ようとした"
+    return f"{text}を試した"
+
+
 def _memory_list(*values: Any) -> list[str]:
     memories: list[str] = []
     for value in values:
@@ -91,6 +110,46 @@ def _play_language_context(player_profile: Any) -> dict[str, Any]:
         "custom": _compact_text(play_language.get("custom")),
         "prompt_name": prompt_name,
     }
+
+
+def _language_code_from_play_language(play_language: dict[str, Any] | None, *, fallback: str = "ja") -> str:
+    payload = play_language if isinstance(play_language, dict) else {}
+    preset = _compact_text(payload.get("preset"))
+    if preset:
+        return preset.replace("_", "-")
+    custom = _compact_text(payload.get("custom") or payload.get("prompt_name"))
+    return custom.replace("_", "-") if custom else fallback
+
+
+def _aliases_by_language(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for language, aliases in value.items():
+        language_key = _compact_text(language).replace("_", "-")
+        if not language_key:
+            continue
+        items = aliases if isinstance(aliases, list) else [aliases]
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            text = _compact_text(item)
+            if not text or text in seen:
+                continue
+            deduped.append(text)
+            seen.add(text)
+        if deduped:
+            normalized[language_key] = deduped
+    return normalized
+
+
+def _display_name_for_language(source_name: str, aliases_by_language: dict[str, list[str]], *, language: str, source_language: str) -> str:
+    source = _compact_text(source_name)
+    if language != source_language:
+        localized = aliases_by_language.get(language) or []
+        if localized:
+            return localized[0]
+    return source or (next(iter(aliases_by_language.values()), [""])[0])
 
 
 def _normalize_live_consequence_tokens(raw_tags: Any) -> list[str]:
@@ -857,6 +916,13 @@ def _public_profile(player_profile: Any) -> dict[str, Any]:
 def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
     current_location = session_state.get("current_location") or session_state.get("location") or {}
     current_location = current_location if isinstance(current_location, dict) else {}
+    player_profile = session_state.get("player_profile") if isinstance(session_state.get("player_profile"), dict) else {}
+    play_language = _play_language_context(player_profile)
+    play_language_code = _language_code_from_play_language(play_language)
+    world_pack = session_state.get("world_pack") if isinstance(session_state.get("world_pack"), dict) else {}
+    source_language = _compact_text(world_pack.get("source_language")) or "en"
+    current_aliases = _aliases_by_language(current_location.get("public_aliases"))
+    current_source_name = _public_text(current_location.get("source_name") or current_location.get("name"))
     inventory = [item for item in session_state.get("inventory") or [] if isinstance(item, dict)]
     quests = [item for item in session_state.get("quests") or [] if isinstance(item, dict)]
     local_figures = session_state.get("local_figures") or session_state.get("plaza_figures") or []
@@ -864,8 +930,20 @@ def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
     current_scene = session_state.get("current_scene") if isinstance(session_state.get("current_scene"), dict) else {}
     chapter = session_state.get("chapter") if isinstance(session_state.get("chapter"), dict) else {}
     return {
+        "language_context": {
+            "pack_source_language": source_language,
+            "play_language": play_language_code,
+            "output_language_requested": play_language_code,
+        },
         "current_location": {
-            "name": _public_text(current_location.get("name")),
+            "name": _display_name_for_language(
+                current_source_name,
+                current_aliases,
+                language=play_language_code,
+                source_language=source_language,
+            ),
+            "source_name": current_source_name,
+            "aliases_by_language": current_aliases,
             "description": _public_text(current_location.get("description")),
         },
         "current_scene": {
@@ -897,7 +975,20 @@ def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
         ][:8],
         "visible_exits": [
             {
-                "destination_name": _public_text(item.get("destination_name")),
+                "destination_name": _display_name_for_language(
+                    _public_text(item.get("destination_source_name") or item.get("destination_name")),
+                    _aliases_by_language(
+                        item.get("destination_aliases")
+                        or ((item.get("to_location") or {}).get("public_aliases") if isinstance(item.get("to_location"), dict) else {})
+                    ),
+                    language=play_language_code,
+                    source_language=source_language,
+                ),
+                "source_name": _public_text(item.get("destination_source_name") or item.get("destination_name")),
+                "aliases_by_language": _aliases_by_language(
+                    item.get("destination_aliases")
+                    or ((item.get("to_location") or {}).get("public_aliases") if isinstance(item.get("to_location"), dict) else {})
+                ),
                 "summary": _public_text(item.get("summary")),
                 "available": bool(item.get("available")),
             }
@@ -1083,21 +1174,37 @@ class GMCouncilService:
         current_location = public_context.get("current_location") if isinstance(public_context, dict) else {}
         current_location = current_location if isinstance(current_location, dict) else {}
         location_name = _first_text(current_location.get("name"), "現在地")
+        language_context = public_context.get("language_context") if isinstance(public_context, dict) and isinstance(public_context.get("language_context"), dict) else {}
         input_text = request.input_text.strip() or "場の変化を確かめる"
-        suggestions = public_context.get("visible_opportunities") if isinstance(public_context, dict) else []
-        if not isinstance(suggestions, list) or len([item for item in suggestions if isinstance(item, dict)]) < 2:
-            suggestions = [
-                {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
-                {"label": "近くの人物に反応を尋ねる", "summary": "その場にいる相手から、次に判断できる情報を得る。"},
-                {"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"},
-            ]
+        visible_exits = public_context.get("visible_exits") if isinstance(public_context, dict) else []
+        visible_exits = [item for item in visible_exits or [] if isinstance(item, dict)]
+        exit_name = _first_text((visible_exits[0] or {}).get("destination_name")) if visible_exits else ""
+        suggestions = [
+            {"label": "直前の結果を案内役に確認する", "summary": "場面を進める前に、確認できた変化だけを整理する。"},
+            {"label": f"{location_name}で次に見える記録を調べる", "summary": "現在地にある公開情報から次の糸口を探す。"},
+            {
+                "label": f"{exit_name}へ向かう" if exit_name else "別の糸口を探す",
+                "summary": "見えている出口や機会から、次に自然な進み方を選ぶ。",
+            },
+        ]
+        action_phrase = _naturalize_turn_action_text(input_text)
         return PublicGmTurnPayload.model_validate(
             {
                 "action_interpretation": input_text,
-                "narrative": f"{request.player_name}は「{input_text}」と行動した。{location_name}の状況は、確認できる範囲でだけ変化する。",
+                "narrative": f"{request.player_name}は{action_phrase}。{location_name}の状況は、確認できる範囲でだけ変化する。",
                 "npc_reaction": f"{request.npc_name}は、その場で見える変化にだけ反応する。",
                 "current_situation": _first_text(current_location.get("description"), f"{location_name}で次の判断点が見えている。"),
                 "current_location_name": location_name,
+                "language_context": language_context,
+                "public_claims": [
+                    {
+                        "kind": "location",
+                        "surface_text": location_name,
+                        "language": _first_text(language_context.get("output_language_requested"), "unknown"),
+                        "role": "current_location",
+                        "confidence": 0.7,
+                    }
+                ],
                 "suggested_actions": suggestions,
                 "consequence_summary": f"{input_text}が現在の場面に反映された。",
                 "consequence_tags": normalize_consequence_tags(infer_world_tags(input_text)),
@@ -1105,7 +1212,7 @@ class GMCouncilService:
                 "scene_tone": "measured",
                 "scene_move": "deepen",
                 "scene_pressure": "medium",
-                "memories": [{"scope": "world", "text": f"{request.player_name}は「{input_text}」と行動した。", "salience": 0.65}],
+                "memories": [{"scope": "world", "text": f"{request.player_name}は{action_phrase}。", "salience": 0.65}],
             },
             context={"input_payload": input_payload},
         )
@@ -1146,6 +1253,8 @@ class GMCouncilService:
             interpreted_intent={
                 "action_interpretation": public_payload.action_interpretation,
                 "current_location_name": public_payload.current_location_name,
+                "language_context": public_payload.language_context,
+                "public_claims": [item.model_dump() for item in public_payload.public_claims],
                 "present_people": public_payload.present_people,
                 "visible_items": public_payload.visible_items,
                 "used_item_names": public_payload.used_item_names,

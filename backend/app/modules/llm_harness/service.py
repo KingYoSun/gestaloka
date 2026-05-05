@@ -187,6 +187,92 @@ def _memory_drafts(raw_memories: Any, fallback_text: str) -> list[dict[str, Any]
     return drafts
 
 
+def _normalize_public_match_text(value: str) -> str:
+    return re.sub(r"[\s\u3000\"'「」『』（）()\[\]【】、。,.・:：/／|｜-]+", "", value.strip().casefold())
+
+
+def _mentions_public_alias(text: str, aliases: list[str]) -> bool:
+    normalized_text = _normalize_public_match_text(text)
+    if not normalized_text:
+        return False
+    return any(alias and _normalize_public_match_text(alias) in normalized_text for alias in aliases)
+
+
+def _public_movement_intent(text: str) -> bool:
+    return any(token in text for token in ("向か", "行く", "行き", "移る", "移動", "入る", "戻る", "go ", "travel", "head", "enter", "return"))
+
+
+def _naturalize_public_action_text(input_text: str) -> str:
+    text = " ".join(str(input_text or "").split()).strip("。.")
+    if "。" in text:
+        text = text.split("。", 1)[0].strip()
+    if not text:
+        return "現在の状況を確かめようとした"
+    if text.endswith("する"):
+        return f"{text[:-2]}しようとした"
+    if text.endswith("向かう"):
+        return f"{text[:-1]}おうとした"
+    if text.endswith("戻る"):
+        return f"{text[:-1]}ろうとした"
+    if text.endswith(("見る", "聞く", "探る", "調べる", "確かめる", "進める")):
+        return f"{text}ことにした"
+    if text.endswith(("し", "見", "聞き", "探り", "調べ", "確かめ", "進め", "向かい")):
+        return f"{text}ようとした"
+    return f"{text}を試した"
+
+
+def _stub_followup_suggestions(
+    *,
+    current_location_name: str,
+    input_text: str,
+    visible_exits: list[dict[str, Any]],
+    matched_exit: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    aliases_by_language = (matched_exit or {}).get("aliases_by_language")
+    language_aliases: list[Any] = []
+    if isinstance(aliases_by_language, dict):
+        for aliases in aliases_by_language.values():
+            language_aliases.extend(aliases if isinstance(aliases, list) else [aliases])
+    exit_alias_text = " ".join(
+        [
+            current_location_name,
+            str((matched_exit or {}).get("source_name") or ""),
+            *[str(alias or "") for alias in language_aliases],
+        ]
+    )
+    if any(token in exit_alias_text for token in ("万象図書館", "図書館", "Library", "library")):
+        return [
+            {"label": "歴史家AI端末で到着ログを検索する", "summary": "図書館で来訪者ログの記録位置を確かめる。"},
+            {"label": "正史索引と来訪者ログの差分を確認する", "summary": "古い記録と到着ログが食い違う箇所を探す。"},
+            {"label": "確認した記録をカナタに伝えに戻る", "summary": "図書館で得た情報をネクサス市側の案内役へ持ち帰る。"},
+        ]
+    if matched_exit is not None:
+        return [
+            {"label": f"{current_location_name}で到着直後の反応を確認する", "summary": "移動先で見える人物や物の変化を確かめる。"},
+            {"label": f"{current_location_name}の人物に用件を伝える", "summary": "この場所で自然に接触できる相手から情報を得る。"},
+            {"label": "元の場所へ戻る道を確認する", "summary": "戻れる出口と、戻る前に済ませるべき確認を整理する。"},
+        ]
+    if "ログ" in input_text:
+        return [
+            {"label": "到着ログの見える範囲をもう一度確認する", "summary": "現在地で公開されている記録だけを照合する。"},
+            {"label": "案内役に記録の扱いを尋ねる", "summary": "この場にいる相手へ、ログが制度上どう扱われるかを聞く。"},
+            {"label": "別の公開窓口を探す", "summary": "今の場所から見える出口や手続きで次の確認先を選ぶ。"},
+        ]
+    exit_actions = [
+        {
+            "label": f"{str(item.get('destination_name') or '').strip()}へ向かう",
+            "summary": str(item.get("summary") or "見えている出口を使って、場面を移す。"),
+        }
+        for item in visible_exits
+        if str(item.get("destination_name") or "").strip()
+    ][:1]
+    return [
+        {"label": "近くの人物に何が変わったか確認する", "summary": "直前の行動に対する場の反応を聞く。"},
+        {"label": "目の前の未処理項目を一つ確定する", "summary": "今見えている情報を、次の判断に使える形へ整理する。"},
+        *(exit_actions or [{"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"}]),
+    ][:3]
+
+
 class MemoryDraft(BaseModel):
     scope: str = Field(min_length=1)
     text: str = Field(min_length=1)
@@ -230,6 +316,36 @@ class PublicSuggestedActionDraft(BaseModel):
         normalized["summary"] = summary or normalized["label"]
         risk_hint = normalized.get("risk_hint") or normalized.get("risk")
         normalized["risk_hint"] = str(risk_hint).strip() if risk_hint else None
+        return normalized
+
+
+class PublicClaimDraft(BaseModel):
+    kind: Literal["location", "actor", "item", "quest", "fact"]
+    surface_text: str = Field(min_length=1)
+    language: str = "unknown"
+    role: Literal["current_location", "present", "mentioned", "used", "destination", "offered"] = "mentioned"
+    key_candidate: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        surface_text = _first_non_empty_text(
+            normalized.get("surface_text"),
+            normalized.get("text"),
+            normalized.get("name"),
+            normalized.get("claim"),
+        )
+        normalized["surface_text"] = surface_text
+        normalized["language"] = _first_non_empty_text(normalized.get("language"), normalized.get("lang"), "unknown")
+        normalized["key_candidate"] = _first_non_empty_text(
+            normalized.get("key_candidate"),
+            normalized.get("canonical_key_candidate"),
+            normalized.get("handle"),
+        ) or None
         return normalized
 
 
@@ -338,6 +454,8 @@ class PublicGmTurnPayload(BaseModel):
     npc_reaction: str = Field(min_length=1)
     current_situation: str = Field(min_length=1)
     current_location_name: str | None = None
+    language_context: dict[str, Any] = Field(default_factory=dict)
+    public_claims: list[PublicClaimDraft] = Field(default_factory=list)
     present_people: list[str] = Field(default_factory=list)
     visible_items: list[str] = Field(default_factory=list)
     used_item_names: list[str] = Field(default_factory=list)
@@ -401,6 +519,14 @@ class PublicGmTurnPayload(BaseModel):
             normalized.get("current_place"),
             current_location.get("name"),
         ) or None
+        language_context = normalized.get("language_context")
+        if not isinstance(language_context, dict):
+            language_context = public_context.get("language_context") if isinstance(public_context.get("language_context"), dict) else {}
+        normalized["language_context"] = language_context if isinstance(language_context, dict) else {}
+        public_claims = normalized.get("public_claims") or normalized.get("claims") or []
+        if not isinstance(public_claims, list):
+            public_claims = []
+        normalized["public_claims"] = [item for item in public_claims if isinstance(item, dict)]
         normalized["present_people"] = [str(item).strip() for item in normalized.get("present_people") or [] if str(item).strip()]
         normalized["visible_items"] = [str(item).strip() for item in normalized.get("visible_items") or [] if str(item).strip()]
         normalized["used_item_names"] = [str(item).strip() for item in normalized.get("used_item_names") or [] if str(item).strip()]
@@ -568,30 +694,31 @@ class StubModelProvider(BaseModelProvider):
         current_location = public_context.get("current_location") if isinstance(public_context.get("current_location"), dict) else {}
         current_location_name = str(current_location.get("name") or "現在地")
         visible_exits = [item for item in public_context.get("visible_exits") or [] if isinstance(item, dict)]
+        matched_exit: dict[str, Any] | None = None
         for exit_summary in visible_exits:
             destination_name = str(exit_summary.get("destination_name") or "").strip()
-            if destination_name and destination_name in input_text:
-                current_location_name = destination_name
+            aliases_by_language = exit_summary.get("aliases_by_language") if isinstance(exit_summary.get("aliases_by_language"), dict) else {}
+            language_aliases: list[str] = []
+            for aliases in aliases_by_language.values():
+                language_aliases.extend(aliases if isinstance(aliases, list) else [aliases])
+            aliases = [
+                destination_name,
+                str(exit_summary.get("source_name") or "").strip(),
+                *[str(alias or "").strip() for alias in language_aliases if str(alias or "").strip()],
+            ]
+            if aliases and _public_movement_intent(input_text) and _mentions_public_alias(input_text, aliases):
+                current_location_name = next((alias for alias in aliases if alias and alias in input_text), destination_name or aliases[0])
+                matched_exit = exit_summary
                 break
         visible_people = [str(item.get("name") or "") for item in public_context.get("visible_people") or [] if isinstance(item, dict)]
         visible_items = [str(item.get("name") or "") for item in public_context.get("visible_items") or [] if isinstance(item, dict)]
         used_item_names = [name for name in visible_items if name and name in input_text and any(token in input_text for token in ("使", "掲げ", "提示", "use", "present"))]
-        opportunities = [item for item in public_context.get("visible_opportunities") or [] if isinstance(item, dict)]
-        exit_actions = [
-            {
-                "label": f"{str(item.get('destination_name') or '').strip()}へ向かう",
-                "summary": str(item.get("summary") or "見えている出口を使って、場面を移す。"),
-            }
-            for item in visible_exits
-            if str(item.get("destination_name") or "").strip()
-        ]
-        suggested_actions = [*opportunities, *exit_actions]
-        if len(suggested_actions) < 2:
-            suggested_actions = [
-                {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
-                {"label": "近くの人物に反応を尋ねる", "summary": "その場にいる相手から、次に判断できる情報を得る。"},
-                {"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"},
-            ]
+        suggested_actions = _stub_followup_suggestions(
+            current_location_name=current_location_name,
+            input_text=input_text,
+            visible_exits=visible_exits,
+            matched_exit=matched_exit,
+        )
         world_tags = infer_world_tags(input_text)
         consequence_tags = _normalize_live_consequence_tags(world_tags)
         outcome_band = "steady"
@@ -658,21 +785,47 @@ class StubModelProvider(BaseModelProvider):
                     "consideration_summary": "市場内で要注意人物として記録され、今後の取引や移動に制約が生じる。",
                 }
             )
-        consequence_summary = f"{player_name}の行動「{input_text}」により、{current_location_name}の状況が更新された。"
+        action_phrase = _naturalize_public_action_text(input_text)
+        compact_input_text = " ".join(str(input_text or "").split()).strip("。.")
+        action_detail = ""
+        if "。" in compact_input_text:
+            action_detail = compact_input_text.split("。", 1)[1].strip("。.")
+        detail_sentence = f"{action_detail}。" if action_detail else ""
+        consequence_summary = f"{player_name}は{action_phrase}。{detail_sentence}{current_location_name}の状況は確認できる範囲で更新された。"
+        if matched_exit is not None:
+            current_situation = (
+                f"{current_location_name}に着くと、"
+                f"{str(matched_exit.get('summary') or '移動先で見える記録と反応が次の判断点になる。')}"
+            )
+            npc_reaction = f"{npc_name}は移動先で確認できる記録と周囲の反応を示す。"
+        else:
+            current_situation = str(current_location.get("description") or consequence_summary)
+            npc_reaction = f"{npc_name}はその場で確認できる事実にだけ反応する。"
         return {
             "action_interpretation": input_text or "現在の状況を確かめる",
             "narrative": (
-                f"{player_name}は「{input_text}」と行動した。"
+                f"{player_name}は{action_phrase}。"
                 f"{current_location_name}では、その行動に応じて見えている反応だけが変わる。"
             ),
-            "npc_reaction": f"{npc_name}はその場で確認できる事実にだけ反応する。",
-            "current_situation": str(current_location.get("description") or consequence_summary),
+            "npc_reaction": npc_reaction,
+            "current_situation": current_situation,
             "current_location_name": current_location_name,
+            "language_context": public_context.get("language_context") if isinstance(public_context.get("language_context"), dict) else {},
+            "public_claims": [
+                {
+                    "kind": "location",
+                    "surface_text": current_location_name,
+                    "language": str(((public_context.get("language_context") or {}).get("output_language_requested") if isinstance(public_context.get("language_context"), dict) else "") or "unknown"),
+                    "role": "current_location" if matched_exit is None else "destination",
+                    "key_candidate": None,
+                    "confidence": 0.8,
+                }
+            ],
             "present_people": [name for name in visible_people if name],
             "visible_items": [name for name in visible_items if name],
             "used_item_names": used_item_names,
             "known_facts": [],
-            "suggested_actions": suggested_actions[:3],
+            "suggested_actions": suggested_actions,
             "consequence_summary": consequence_summary,
             "consequence_tags": consequence_tags,
             "world_tags": world_tags,

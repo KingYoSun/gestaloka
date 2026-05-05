@@ -49,43 +49,16 @@ world_templates:
             - chronos_communications
             - middle_lawless_zone
     bootstrap:
-      opening_title: ネクサス市
+      opening_title: Nexus City
       opening_narrative: |-
-        基点都市ネクサス。あなたは未知の来訪者として登録され、階層世界ゲスタロカへ接続した最初の記録を与えられた。
-
-        頭上には昇降塔が雲を貫き、公開登録所、企業勧誘窓口、万象図書館へ向かう案内灯が同じ広場に並んでいる。あなたの到着は、ただの受付ではない。外部から来た新しい情報として、世界の残響に刻まれようとしている。
-
-        ネクサス案内担当カナタは、まず街の各所を見てから来訪者ログの扱いを決めてよいと告げる。公開証言、企業契約、古い記録照合のどれも、まだあなたの所属を確定しない。
-      opening_situation: 基点都市ネクサスは来訪者を守る安全都市であり、到着ログの扱いを決める前に街の制度、企業勧誘、記録照合を見て回れる。
-      opening_pressure: ネクサス、機憶教団、クロノス、企業勧誘窓口が、新しい来訪者ログの行き先を静かに待っている。
-      opening_title_en: Nexus City
-      opening_narrative_en: |-
         Nexus City is the protected first city for visitors who connect to the layered world of GESTALOKA. You have been registered as an unknown visitor and given your first arrival log.
 
         Above you, lift towers cut through the clouds. Around the same plaza, guide lights point toward public registry halls, corporate recruitment desks, and the Universal Library. Your arrival is not just intake. It is new outside information entering the world's resonance logs.
 
         Nexus Entry Liaison Kanata explains that you can look around before deciding how the visitor log will be handled. Public witness, corporate contract, and archive comparison are all available without fixing your allegiance yet.
-      opening_situation_en: Nexus City protects new visitors and lets them inspect civic records, corporate recruitment, and archive checks before committing their arrival log.
-      opening_pressure_en: Nexus, the Memory Church, Chronos, and corporate recruiters are quietly waiting to see where the new visitor log goes.
+      opening_situation: Nexus City protects new visitors and lets them inspect civic records, corporate recruitment, and archive checks before committing their arrival log.
+      opening_pressure: Nexus, the Memory Church, Chronos, and corporate recruiters are quietly waiting to see where the new visitor log goes.
       opening_choices:
-        - choice_id: choice_1
-          label: ネクサス公開登録所で到着ログを確認する
-          summary: 公開証言ホールを見て、来訪者ログが街の制度ではどう扱われるかを知る。
-          canonical_input_text: ネクサス公開登録所で到着ログを確認する
-          action_kind: narrative
-        - choice_id: choice_2
-          label: 昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る
-          summary: 所属を決めずに、企業窓口、昇降塔の行き先、契約のリスクを確認する。
-          canonical_input_text: 昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る
-          action_kind: travel
-          travel_target_key: lift_tower_network
-        - choice_id: choice_3
-          label: 万象図書館へ向かい、古い記録と来訪者ログを照合する
-          summary: 公開や契約へ進む前に、ゲスタロカの正史と到着ログの整合を確かめる。
-          canonical_input_text: 万象図書館へ向かう
-          action_kind: travel
-          travel_target_key: universal_library
-      opening_choices_en:
         - choice_id: choice_1
           label: Check your arrival log at the public Nexus registry
           summary: Visit the witness halls and learn how the city records an unknown visitor.
@@ -103,6 +76,35 @@ world_templates:
           canonical_input_text: Travel to the Universal Library
           action_kind: travel
           travel_target_key: universal_library
+      localized_bootstrap:
+        ja:
+          opening_title: ネクサス市
+          opening_narrative: |-
+            基点都市ネクサス。あなたは未知の来訪者として登録され、階層世界ゲスタロカへ接続した最初の記録を与えられた。
+
+            頭上には昇降塔が雲を貫き、公開登録所、企業勧誘窓口、万象図書館へ向かう案内灯が同じ広場に並んでいる。あなたの到着は、ただの受付ではない。外部から来た新しい情報として、世界の残響に刻まれようとしている。
+
+            ネクサス案内担当カナタは、まず街の各所を見てから来訪者ログの扱いを決めてよいと告げる。公開証言、企業契約、古い記録照合のどれも、まだあなたの所属を確定しない。
+          opening_situation: 基点都市ネクサスは来訪者を守る安全都市であり、到着ログの扱いを決める前に街の制度、企業勧誘、記録照合を見て回れる。
+          opening_pressure: ネクサス、機憶教団、クロノス、企業勧誘窓口が、新しい来訪者ログの行き先を静かに待っている。
+          opening_choices:
+            - choice_id: choice_1
+              label: ネクサス公開登録所で到着ログを確認する
+              summary: 公開証言ホールを見て、来訪者ログが街の制度ではどう扱われるかを知る。
+              canonical_input_text: ネクサス公開登録所で到着ログを確認する
+              action_kind: narrative
+            - choice_id: choice_2
+              label: 昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る
+              summary: 所属を決めずに、企業窓口、昇降塔の行き先、契約のリスクを確認する。
+              canonical_input_text: 昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る
+              action_kind: travel
+              travel_target_key: lift_tower_network
+            - choice_id: choice_3
+              label: 万象図書館へ向かい、古い記録と来訪者ログを照合する
+              summary: 公開や契約へ進む前に、ゲスタロカの正史と到着ログの整合を確かめる。
+              canonical_input_text: 万象図書館へ向かう
+              action_kind: travel
+              travel_target_key: universal_library
       start_consequence_summary: Nexus waits while the unknown visitor decides which part of the city to inspect first.
       session_started_narrative: >-
         {player_name} entered {starter_location_name} and began a visitor log under the attention of {guide_npc_name}.
@@ -119,6 +121,17 @@ world_templates:
         starter: true
         name: Nexus City
         description: The protected anchor city where outside visitors first enter GESTALOKA and become legible to the same-world record.
+        public_aliases:
+          en:
+            - Nexus City
+            - Nexus public registry
+            - public registry
+            - witness halls
+          ja:
+            - ネクサス市
+            - ネクサス公開登録所
+            - 公開登録所
+            - 公開証言ホール
         hierarchy: protected_anchor_city
         region: stable_layer
         kind: safe_city
@@ -146,6 +159,17 @@ world_templates:
         id: lift_tower_network
         name: Lift Tower Network
         description: Cloud-piercing transit and communication towers that connect strata, cities, markets, and sealed layer walls.
+        public_aliases:
+          en:
+            - Lift Tower Network
+            - lift towers
+            - corporate recruitment desks
+            - route logs
+          ja:
+            - 昇降塔ネットワーク
+            - 昇降塔
+            - 企業勧誘窓口
+            - 交通ログ
         hierarchy: world_infrastructure
         region: multi_layer
         kind: transit_network
@@ -279,6 +303,17 @@ world_templates:
         id: universal_library
         name: Universal Library
         description: A metaphysical archive managed by a historian AI, where world history becomes official record.
+        public_aliases:
+          en:
+            - Universal Library
+            - Library
+            - old records
+            - official history
+          ja:
+            - 万象図書館
+            - 図書館
+            - 古い記録
+            - 正史
         hierarchy: metaphysical_archive
         region: astral_record
         kind: official_history

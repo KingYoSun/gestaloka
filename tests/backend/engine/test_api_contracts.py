@@ -1402,7 +1402,7 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
     assert not any(item.get("status") == "offered" for item in enterprise_payload["quest_updates"])
 
 
-def test_situation_frame_choice_keeps_explicit_travel_contract(client, container, auth_headers, monkeypatch):
+def test_situation_frame_public_action_moves_by_visible_route_alias(client, container, auth_headers, monkeypatch):
     provider = container.model_router.provider
     original_generate = provider.generate
 
@@ -1460,11 +1460,11 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
         auth_headers,
         {"player_action_text": "万象図書館へ向かう"},
     )
-    assert second_payload["current_location"]["key"] == "nexus_city"
-    assert second_payload["location_updates"] == []
+    assert second_payload["current_location"]["key"] == "universal_library"
+    assert second_payload["location_updates"]
 
 
-def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers):
+def test_public_travel_choice_moves_by_visible_route_text(client, auth_headers):
     session_response = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
 
@@ -1477,8 +1477,8 @@ def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers
 
     assert payload["player_action_text"].startswith("万象図書館")
     assert payload["interpreted_intent"]["source"] == "public_ai_gm"
-    assert payload["current_location"]["key"] == "nexus_city"
-    assert payload["location_updates"] == []
+    assert payload["current_location"]["key"] == "universal_library"
+    assert payload["location_updates"]
 
 
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):

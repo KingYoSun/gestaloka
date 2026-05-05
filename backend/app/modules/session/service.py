@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from app.models.entities import (
     LLMRun,
     Location,
     OutboxEvent,
+    PlayLocalizedTextCache,
     PlayerProfile,
     SceneFrame,
     Session as GameSession,
@@ -25,7 +27,7 @@ from app.models.entities import (
     Turn,
     new_id,
 )
-from app.modules.world_pack.service import resolve_world_pack
+from app.modules.world_pack.service import normalize_language_tag, resolve_world_pack
 from app.modules.actor.service import (
     ensure_relationship,
     get_player_profile,
@@ -198,27 +200,55 @@ class PreparedTurnContext:
     input_mode: str
 
 
-def _profile_prefers_english(profile_payload: dict[str, object]) -> bool:
+def _safe_language_tag(value: Any, *, fallback: str = "en") -> str:
+    try:
+        return normalize_language_tag(str(value or fallback))
+    except ValueError:
+        return fallback
+
+
+def _profile_play_language_code(profile_payload: dict[str, object], *, fallback: str = "ja") -> str:
     play_language = profile_payload.get("play_language") if isinstance(profile_payload, dict) else {}
     play_language = play_language if isinstance(play_language, dict) else {}
-    return (
-        str(play_language.get("preset") or "").strip().lower() == "en"
-        or str(play_language.get("prompt_name") or "").strip().lower() == "english"
-    )
+    preset = str(play_language.get("preset") or "").strip()
+    if preset:
+        return _safe_language_tag(preset, fallback=fallback)
+    return _safe_language_tag(play_language.get("custom") or play_language.get("prompt_name"), fallback=fallback)
 
 
-def _bootstrap_text(template: Any, field: str, *, english: bool) -> str:
+def _profile_prefers_english(profile_payload: dict[str, object]) -> bool:
+    return _profile_play_language_code(profile_payload) == "en"
+
+
+def _bootstrap_text(template: Any, field: str, *, profile_payload: dict[str, object], source_language: str = "en") -> str:
     bootstrap = template.bootstrap
-    if english:
-        localized = str(getattr(bootstrap, f"{field}_en", "") or "").strip()
-        if localized:
-            return localized
+    play_language = _profile_play_language_code(profile_payload)
+    source_language = _safe_language_tag(source_language, fallback="en")
+    if play_language != source_language:
+        localized_bootstrap = getattr(bootstrap, "localized_bootstrap", {}) or {}
+        localized = localized_bootstrap.get(play_language)
+        if localized is not None:
+            value = str(getattr(localized, field, "") or "").strip()
+            if value:
+                return value
     return str(getattr(bootstrap, field, "") or "").strip()
 
 
-def _opening_narrative(template: Any, *, profile_payload: dict[str, object], starter_location: Location, guide_npc: Actor) -> str:
+def _opening_narrative(
+    template: Any,
+    *,
+    profile_payload: dict[str, object],
+    starter_location: Location,
+    guide_npc: Actor,
+    source_language: str = "en",
+) -> str:
     english = _profile_prefers_english(profile_payload)
-    narrative = _bootstrap_text(template, "opening_narrative", english=english)
+    narrative = _bootstrap_text(
+        template,
+        "opening_narrative",
+        profile_payload=profile_payload,
+        source_language=source_language,
+    )
     if narrative:
         return narrative
     if english:
@@ -242,6 +272,7 @@ def _ensure_opening_scene_seed(
     source_event_id: str,
     template: Any,
     profile_payload: dict[str, object],
+    source_language: str = "en",
 ) -> None:
     existing_scene = db.execute(
         select(SceneFrame)
@@ -254,15 +285,29 @@ def _ensure_opening_scene_seed(
         .limit(1)
     ).scalar_one_or_none()
 
-    english = _profile_prefers_english(profile_payload)
     starter_location = template.locations.get(template.roles.starter_location_key)
-    situation = _bootstrap_text(template, "opening_situation", english=english)
+    situation = _bootstrap_text(
+        template,
+        "opening_situation",
+        profile_payload=profile_payload,
+        source_language=source_language,
+    )
     if not situation:
         situation = str(getattr(starter_location, "description", "") or "").strip() or "The first scene is ready."
-    pressure = _bootstrap_text(template, "opening_pressure", english=english)
+    pressure = _bootstrap_text(
+        template,
+        "opening_pressure",
+        profile_payload=profile_payload,
+        source_language=source_language,
+    )
     if not pressure:
         pressure = str(template.bootstrap.start_consequence_summary or "").strip()
-    title = _bootstrap_text(template, "opening_title", english=english)
+    title = _bootstrap_text(
+        template,
+        "opening_title",
+        profile_payload=profile_payload,
+        source_language=source_language,
+    )
     chapter_key = str(template.roles.opening_chapter_key or "")
     now = datetime.now(timezone.utc)
     chapter: ChapterTrack | None = None
@@ -343,7 +388,7 @@ def create_session_for_user(
         world_template_id=world_template_id,
         world_name=world_name,
     )
-    _, template = resolve_world_pack(db, world_id)
+    pack, template = resolve_world_pack(db, world_id)
     starter_location = ensure_starter_location(db, world_id)
     player_row = get_player_profile_for_user(db, world_id, user.sub, player_actor_id)
     if player_row is None:
@@ -520,7 +565,8 @@ def create_session_for_user(
             "title": _bootstrap_text(
                 template,
                 "opening_title",
-                english=_profile_prefers_english(profile_payload),
+                profile_payload=profile_payload,
+                source_language=pack.manifest.source_language,
             ),
         },
         narrative=_opening_narrative(
@@ -528,6 +574,7 @@ def create_session_for_user(
             profile_payload=profile_payload,
             starter_location=starter_location,
             guide_npc=guide_npc,
+            source_language=pack.manifest.source_language,
         ),
     )
     db.add(opening_event)
@@ -550,6 +597,7 @@ def create_session_for_user(
         source_event_id=opening_event.id,
         template=template,
         profile_payload=profile_payload,
+        source_language=pack.manifest.source_language,
     )
     sync_active_broadcast_deliveries(
         db,
@@ -1054,12 +1102,320 @@ def _public_suggested_actions(raw_actions: list[dict[str, Any]] | list[Any]) -> 
     return normalized
 
 
+def _unique_public_aliases(values: list[Any]) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        key = _normalize_public_claim_text(text)
+        if not key or key in seen:
+            continue
+        aliases.append(text)
+        seen.add(key)
+    return aliases
+
+
+def _normalize_public_claim_text(value: str) -> str:
+    return re.sub(r"[\s\u3000\"'「」『』（）()\[\]【】、。,.・:：/／|｜-]+", "", value.strip().casefold())
+
+
+def _text_mentions_public_alias(text: str, aliases: list[str]) -> bool:
+    normalized_text = _normalize_public_claim_text(text)
+    if not normalized_text:
+        return False
+    return any(alias and _normalize_public_claim_text(alias) in normalized_text for alias in aliases)
+
+
+def _flatten_public_aliases(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        aliases: list[Any] = []
+        for item in value.values():
+            aliases.extend(item if isinstance(item, list) else [item])
+        return _unique_public_aliases(aliases)
+    if isinstance(value, list):
+        return _unique_public_aliases(value)
+    return _unique_public_aliases([value])
+
+
+def _normalize_aliases_by_language(value: Any) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for language, aliases in value.items():
+        try:
+            language_tag = normalize_language_tag(str(language))
+        except ValueError:
+            continue
+        flattened = _flatten_public_aliases(aliases)
+        if flattened:
+            normalized[language_tag] = flattened
+    return normalized
+
+
+@dataclass(frozen=True)
+class CanonicalAliasMatch:
+    kind: str
+    canonical_key: str
+    canonical_name: str
+    surface_text: str
+    language: str
+
+
+@dataclass
+class CanonicalPublicAliasIndex:
+    locations: dict[str, list[CanonicalAliasMatch]] = field(default_factory=dict)
+    location_aliases_by_key: dict[str, list[str]] = field(default_factory=dict)
+
+    def add_location_alias(self, *, canonical_key: str, canonical_name: str, surface_text: str, language: str) -> None:
+        text = str(surface_text or "").strip()
+        if not canonical_key or not text:
+            return
+        try:
+            language_tag = normalize_language_tag(str(language or "und"))
+        except ValueError:
+            language_tag = "unknown"
+        match = CanonicalAliasMatch(
+            kind="location",
+            canonical_key=canonical_key,
+            canonical_name=canonical_name,
+            surface_text=text,
+            language=language_tag,
+        )
+        normalized = _normalize_public_claim_text(text)
+        if normalized:
+            self.locations.setdefault(normalized, []).append(match)
+        aliases = self.location_aliases_by_key.setdefault(canonical_key, [])
+        if not _text_mentions_public_alias(text, aliases):
+            aliases.append(text)
+
+    def match_location(self, surface_text: str, *, key_candidate: str | None = None) -> CanonicalAliasMatch | None:
+        normalized_claim = _normalize_public_claim_text(surface_text)
+        if not normalized_claim:
+            return None
+        candidates: list[CanonicalAliasMatch] = []
+        for normalized_alias, matches in self.locations.items():
+            if normalized_alias in normalized_claim or normalized_claim in normalized_alias:
+                candidates.extend(matches)
+        if not candidates:
+            return None
+        deduped: dict[tuple[str, str], CanonicalAliasMatch] = {}
+        for candidate in candidates:
+            deduped[(candidate.canonical_key, candidate.surface_text)] = candidate
+        candidates = list(deduped.values())
+        candidate_key = str(key_candidate or "").strip()
+        if candidate_key:
+            exact = [item for item in candidates if item.canonical_key == candidate_key]
+            if exact:
+                return exact[0]
+        candidates.sort(key=lambda item: len(_normalize_public_claim_text(item.surface_text)), reverse=True)
+        return candidates[0]
+
+    def aliases_for_location(self, canonical_key: str) -> list[str]:
+        return _unique_public_aliases(self.location_aliases_by_key.get(canonical_key) or [])
+
+
 def _name_matches_claim(name: str, claim: str) -> bool:
     name = name.strip()
     claim = claim.strip()
     if not name or not claim:
         return False
     return name == claim or name in claim or claim in name
+
+
+def _public_glossary_aliases_for_text(db: Session, world_id: str, text: str) -> list[tuple[str, str]]:
+    source = str(text or "").strip()
+    if not source:
+        return []
+    aliases: list[tuple[str, str]] = []
+    try:
+        pack, _template = resolve_world_pack(db, world_id)
+    except Exception:
+        pack = None
+    if pack is not None:
+        aliases.append((pack.manifest.source_language, source))
+        for item in pack.localization.glossary:
+            source_text = str(item.source_text or "").strip()
+            localized_text = str(item.localized_text or "").strip()
+            if source_text == source or localized_text == source:
+                aliases.extend(
+                    [
+                        (pack.manifest.source_language, source_text),
+                        (item.target_language, localized_text),
+                    ]
+                )
+    rows = db.execute(
+        select(PlayLocalizedTextCache).where(
+            PlayLocalizedTextCache.world_id == world_id,
+            PlayLocalizedTextCache.source_text == source,
+        )
+    ).scalars()
+    for row in rows:
+        aliases.extend([("unknown", row.source_text), (row.target_language, row.localized_text)])
+    rows = db.execute(
+        select(PlayLocalizedTextCache).where(
+            PlayLocalizedTextCache.world_id == world_id,
+            PlayLocalizedTextCache.localized_text == source,
+        )
+    ).scalars()
+    for row in rows:
+        aliases.extend([("unknown", row.source_text), (row.target_language, row.localized_text)])
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for language, alias in aliases:
+        text = str(alias or "").strip()
+        if not text:
+            continue
+        key = (str(language or "unknown"), _normalize_public_claim_text(text))
+        if key in seen:
+            continue
+        deduped.append((str(language or "unknown"), text))
+        seen.add(key)
+    return deduped
+
+
+def _build_canonical_public_alias_index(db: Session, world_id: str, session_state: dict[str, Any]) -> CanonicalPublicAliasIndex:
+    index = CanonicalPublicAliasIndex()
+    try:
+        pack, template = resolve_world_pack(db, world_id)
+        source_language = pack.manifest.source_language
+    except Exception:
+        pack = None
+        template = None
+        source_language = "en"
+
+    if template is not None:
+        for location_key, pack_location in template.locations.items():
+            location_name = str(pack_location.name or location_key)
+            index.add_location_alias(
+                canonical_key=location_key,
+                canonical_name=location_name,
+                surface_text=location_name,
+                language=source_language,
+            )
+            for language, aliases in _normalize_aliases_by_language(pack_location.public_aliases).items():
+                for alias in aliases:
+                    index.add_location_alias(
+                        canonical_key=location_key,
+                        canonical_name=location_name,
+                        surface_text=alias,
+                        language=language,
+                    )
+            for language, alias in _public_glossary_aliases_for_text(db, world_id, location_name):
+                index.add_location_alias(
+                    canonical_key=location_key,
+                    canonical_name=location_name,
+                    surface_text=alias,
+                    language=language,
+                )
+
+    for route in session_state.get("nearby_routes") or []:
+        if not isinstance(route, dict):
+            continue
+        destination_key = str(route.get("destination_key") or ((route.get("to_location") or {}).get("key") if isinstance(route.get("to_location"), dict) else "") or "").strip()
+        destination_name = str(route.get("destination_source_name") or route.get("destination_name") or "").strip()
+        if not destination_key:
+            continue
+        if destination_name:
+            index.add_location_alias(
+                canonical_key=destination_key,
+                canonical_name=destination_name,
+                surface_text=destination_name,
+                language=source_language,
+            )
+        alias_map = route.get("destination_aliases") or ((route.get("to_location") or {}).get("public_aliases") if isinstance(route.get("to_location"), dict) else {})
+        for language, aliases in _normalize_aliases_by_language(alias_map).items():
+            for alias in aliases:
+                index.add_location_alias(
+                    canonical_key=destination_key,
+                    canonical_name=destination_name,
+                    surface_text=alias,
+                    language=language,
+                )
+
+    for row in db.execute(select(PlayLocalizedTextCache).where(PlayLocalizedTextCache.world_id == world_id)).scalars():
+        for location_key, aliases in list(index.location_aliases_by_key.items()):
+            if _text_mentions_public_alias(row.source_text, aliases):
+                index.add_location_alias(
+                    canonical_key=location_key,
+                    canonical_name=row.source_text,
+                    surface_text=row.localized_text,
+                    language=row.target_language,
+                )
+    return index
+
+
+def _location_public_aliases(db: Session, world_id: str, *, location_key: str, location_name: str) -> list[str]:
+    aliases: list[Any] = [location_name]
+    location = get_location_by_key(db, world_id, location_key) if location_key else None
+    if location is not None:
+        state = dict(location.state or {})
+        aliases.extend([location.name, state.get("source_name"), *_flatten_public_aliases(state.get("public_aliases"))])
+    try:
+        _pack, template = resolve_world_pack(db, world_id)
+    except Exception:
+        template = None
+    if template is not None and location_key in template.locations:
+        pack_location = template.locations[location_key]
+        aliases.extend([pack_location.name, *_flatten_public_aliases(pack_location.public_aliases)])
+    for alias in list(aliases):
+        aliases.extend(alias_text for _language, alias_text in _public_glossary_aliases_for_text(db, world_id, str(alias or "")))
+    return _unique_public_aliases(aliases)
+
+
+def _route_public_aliases(db: Session, world_id: str, route: dict[str, Any]) -> list[str]:
+    destination_key = str(route.get("destination_key") or ((route.get("to_location") or {}).get("key") if isinstance(route.get("to_location"), dict) else "") or "").strip()
+    destination_name = str(route.get("destination_name") or ((route.get("to_location") or {}).get("name") if isinstance(route.get("to_location"), dict) else "") or "").strip()
+    aliases = _location_public_aliases(db, world_id, location_key=destination_key, location_name=destination_name)
+    summary = str(route.get("summary") or "").strip()
+    if summary:
+        aliases.append(summary)
+    return _unique_public_aliases(aliases)
+
+
+def _input_has_movement_intent(input_text: str) -> bool:
+    return any(token in input_text for token in ("向か", "行く", "行き", "移る", "移動", "入る", "戻る", "go ", "travel", "head", "enter", "return"))
+
+
+def _match_visible_route_by_public_text(
+    db: Session,
+    *,
+    world_id: str,
+    session_state: dict[str, Any],
+    claim_text: str,
+    player_action_text: str,
+    alias_index: CanonicalPublicAliasIndex,
+    key_candidate: str | None = None,
+) -> dict[str, Any] | None:
+    if not _input_has_movement_intent(player_action_text):
+        return None
+    for route in session_state.get("nearby_routes") or []:
+        if not isinstance(route, dict) or not bool(route.get("available")):
+            continue
+        destination_key = str(route.get("destination_key") or ((route.get("to_location") or {}).get("key") if isinstance(route.get("to_location"), dict) else "") or "").strip()
+        aliases = alias_index.aliases_for_location(destination_key) or _route_public_aliases(db, world_id, route)
+        if not _text_mentions_public_alias(player_action_text, aliases):
+            continue
+        if not claim_text:
+            return route
+        matched_claim = alias_index.match_location(claim_text, key_candidate=key_candidate)
+        if matched_claim is not None and matched_claim.canonical_key == destination_key:
+            return route
+    return None
+
+
+def _naturalized_action_attempt(input_text: str) -> str:
+    text = " ".join(str(input_text or "").split()).strip("。.")
+    if "。" in text:
+        text = text.split("。", 1)[0].strip()
+    if not text:
+        return "現在の状況を確かめようとした"
+    if any(text.endswith(suffix) for suffix in ("する", "見る", "聞く", "探る", "調べる", "確かめる", "進める", "戻る", "向かう")):
+        return f"{text}ことにした"
+    if text.endswith(("し", "見", "聞き", "探り", "調べ", "確かめ", "進め", "向かい")):
+        return f"{text}ようとした"
+    return f"{text}を試した"
 
 
 def _apply_public_ai_gm_harness(
@@ -1092,15 +1448,83 @@ def _apply_public_ai_gm_harness(
     current_location = session_state.get("current_location") or session_state.get("location") or {}
     current_location_name = str((current_location if isinstance(current_location, dict) else {}).get("name") or "").strip()
     claimed_location_name = str(interpreted.get("current_location_name") or "").strip()
-    if claimed_location_name and current_location_name and not _name_matches_claim(current_location_name, claimed_location_name):
-        matched_route = None
-        for route in session_state.get("nearby_routes") or []:
-            if not isinstance(route, dict) or not bool(route.get("available")):
-                continue
-            destination_name = str(route.get("destination_name") or "").strip()
-            if _name_matches_claim(destination_name, claimed_location_name) and destination_name in text_evidence:
-                matched_route = route
-                break
+    public_claims = [item for item in interpreted.get("public_claims") or [] if isinstance(item, dict)]
+    claimed_location_key_candidate = ""
+    for claim in public_claims:
+        if str(claim.get("kind") or "") != "location":
+            continue
+        role = str(claim.get("role") or "")
+        if role not in {"current_location", "destination", "mentioned"}:
+            continue
+        surface_text = str(claim.get("surface_text") or "").strip()
+        if not surface_text:
+            continue
+        if not claimed_location_name:
+            claimed_location_name = surface_text
+        if surface_text == claimed_location_name:
+            claimed_location_key_candidate = str(claim.get("key_candidate") or "").strip()
+            break
+    current_location_key = str((current_location if isinstance(current_location, dict) else {}).get("key") or "").strip()
+    alias_index = _build_canonical_public_alias_index(db, game_session.world_id, session_state)
+    current_location_aliases = alias_index.aliases_for_location(current_location_key) or _location_public_aliases(
+        db,
+        game_session.world_id,
+        location_key=current_location_key,
+        location_name=current_location_name,
+    )
+
+    def apply_matched_route(route: dict[str, Any], *, claim_name: str) -> None:
+        nonlocal travel_summary
+
+        destination_key = str(route.get("destination_key") or "").strip()
+        destination = get_location_by_key(db, game_session.world_id, destination_key) if destination_key else None
+        if destination is None:
+            rejected.append(
+                {
+                    "claim_kind": "location",
+                    "claim": claim_name,
+                    "reason": "The matched public route could not be resolved internally.",
+                }
+            )
+            return
+        try:
+            outcome = travel_to_location(
+                db,
+                world_id=game_session.world_id,
+                actor=player_actor,
+                destination_location_id=destination.id,
+            )
+        except (LookupError, ValueError) as exc:
+            rejected.append(
+                {
+                    "claim_kind": "location",
+                    "claim": claim_name,
+                    "reason": str(exc),
+                }
+            )
+            return
+        location_updates.extend(outcome.location_updates)
+        memory_drafts.extend(outcome.memory_drafts)
+        travel_summary = outcome.travel_summary
+        accepted.append(
+            {
+                "change_kind": "location",
+                "from": current_location_name,
+                "to": destination.name,
+                "summary": outcome.travel_summary,
+            }
+        )
+
+    if claimed_location_name and current_location_aliases and not _text_mentions_public_alias(claimed_location_name, current_location_aliases):
+        matched_route = _match_visible_route_by_public_text(
+            db,
+            world_id=game_session.world_id,
+            session_state=session_state,
+            claim_text=claimed_location_name,
+            player_action_text=input_text,
+            alias_index=alias_index,
+            key_candidate=claimed_location_key_candidate,
+        )
         if matched_route is None:
             rejected.append(
                 {
@@ -1110,44 +1534,21 @@ def _apply_public_ai_gm_harness(
                 }
             )
         else:
-            destination_key = str(matched_route.get("destination_key") or "").strip()
-            destination = get_location_by_key(db, game_session.world_id, destination_key) if destination_key else None
-            if destination is None:
-                rejected.append(
-                    {
-                        "claim_kind": "location",
-                        "claim": claimed_location_name,
-                        "reason": "The matched public route could not be resolved internally.",
-                    }
-                )
-            else:
-                try:
-                    outcome = travel_to_location(
-                        db,
-                        world_id=game_session.world_id,
-                        actor=player_actor,
-                        destination_location_id=destination.id,
-                    )
-                except (LookupError, ValueError) as exc:
-                    rejected.append(
-                        {
-                            "claim_kind": "location",
-                            "claim": claimed_location_name,
-                            "reason": str(exc),
-                        }
-                    )
-                else:
-                    location_updates.extend(outcome.location_updates)
-                    memory_drafts.extend(outcome.memory_drafts)
-                    travel_summary = outcome.travel_summary
-                    accepted.append(
-                        {
-                            "change_kind": "location",
-                            "from": current_location_name,
-                            "to": destination.name,
-                            "summary": outcome.travel_summary,
-                        }
-                    )
+            apply_matched_route(matched_route, claim_name=claimed_location_name)
+
+    if not any(item.get("change_kind") == "location" for item in accepted) and not any(
+        item.get("claim_kind") == "location" for item in rejected
+    ):
+        matched_route = _match_visible_route_by_public_text(
+            db,
+            world_id=game_session.world_id,
+            session_state=session_state,
+            claim_text="",
+            player_action_text=input_text,
+            alias_index=alias_index,
+        )
+        if matched_route is not None:
+            apply_matched_route(matched_route, claim_name=str(matched_route.get("destination_name") or "visible exit"))
 
     used_item_names = [str(item).strip() for item in interpreted.get("used_item_names") or [] if str(item).strip()]
     for used_item_name in used_item_names:
@@ -1316,12 +1717,35 @@ def _resolve_public_ai_gm_turn_for_session(
     if rejected_claims:
         current_location = get_location_summary(db, game_session.world_id, player_actor.current_location_id or prepared.location_id)
         rejected_summary = " / ".join(str(item.get("claim") or "") for item in rejected_claims if isinstance(item, dict))
-        payload.narrative = (
-            f"{player_actor.display_name}は「{input_text}」を試みた。"
+        current_location_name = str(current_location.get("name") or "現在地")
+        fallback_summary = (
+            f"{player_actor.display_name}は{_naturalized_action_attempt(input_text)}。"
             f"ただし {rejected_summary} は現在の公開状況からは確定できない。"
-            f"現在地は{current_location.get('name') or '現在地'}のまま、場面は確認できる変化だけを受け取る。"
+            f"{current_location_name}で確認できる範囲に場面を留める。"
         )
-        payload.consequence_summary = "AI GM の公開主張のうち、canonical state と照合できない部分は反映されなかった。"
+        payload.narrative = (
+            fallback_summary
+        )
+        payload.npc_reaction = f"{guide_npc.display_name}は、{current_location_name}で見える事実だけを確認する。"
+        payload.consequence_summary = f"{current_location_name}で照合できない主張は状態に反映されず、場面は確認できる範囲に留まった。"
+        payload.event_payload = {
+            **payload.event_payload,
+            "summary": payload.consequence_summary,
+        }
+        payload.memories = [
+            type(payload.memories[0])(
+                scope="world",
+                text=fallback_summary,
+                salience=0.55,
+            )
+        ]
+        payload.state_drafts = {}
+        payload.quest_offer = None
+        payload.followup_quest_offer = None
+        payload.quest_resolution_hint = None
+        payload.chapter_directive = None
+        payload.broadcast_draft = None
+        payload.entity_drafts = []
         payload.world_tags = ["none"]
         payload.consequence_tags = ["careful_observation"]
 
@@ -1496,7 +1920,17 @@ def _resolve_public_ai_gm_turn_for_session(
             include_internal=True,
         )
         public_branch_updates, crossroads_summary = _branch_response_from_state(post_state)
-        suggested_actions = _public_suggested_actions([item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices])
+        payload_choice_dicts = [item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices]
+        suggested_actions = _public_suggested_actions(payload_choice_dicts)
+        previous_actions = _public_suggested_actions(session_state.get("suggested_actions") or [])
+        if _choices_are_effectively_same(suggested_actions, previous_actions):
+            suggested_actions = _public_suggested_actions(
+                _contextualize_repeated_choices(
+                    _canonicalize_next_choices(payload_choice_dicts, payload_choice_dicts),
+                    input_text=input_text,
+                    consequence_summary=payload.consequence_summary,
+                )
+            )
         public_branch_updates = public_branch_updates or branch_result.updates
 
     turn.model_lane = resolution.final_lane

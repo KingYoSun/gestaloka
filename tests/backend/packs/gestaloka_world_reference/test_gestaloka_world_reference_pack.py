@@ -95,6 +95,10 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
     assert state_payload["chapter"] is None
     assert any(item["axis_id"] == "world_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "universal_library" for item in state_payload["nearby_routes"])
+    library_route = next(item for item in state_payload["nearby_routes"] if item["destination_key"] == "universal_library")
+    assert state_payload["world_pack"]["source_language"] == "en"
+    assert "万象図書館" in library_route["destination_aliases"]["ja"]
+    assert "Universal Library" in library_route["destination_aliases"]["en"]
     assert state_payload["suggested_actions"][0]["label"] == "ネクサス公開登録所で到着ログを確認する"
     assert state_payload["suggested_actions"][1]["label"] == "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る"
     assert state_payload["suggested_actions"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
@@ -120,6 +124,13 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
         world = db.execute(select(World).where(World.id == "gestaloka_world_reference")).scalar_one()
         assert world.state["pack_id"] == "gestaloka_world_reference"
         assert world.state["world_template_id"] == "layered_world_foundation"
+        library = next(
+            location
+            for location in db.execute(select(Location).where(Location.world_id == "gestaloka_world_reference")).scalars()
+            if (location.state or {}).get("key") == "universal_library"
+        )
+        assert "万象図書館" in library.state["public_aliases"]["ja"]
+        assert "Universal Library" in library.state["public_aliases"]["en"]
         guide = db.execute(
             select(Actor).where(
                 Actor.world_id == "gestaloka_world_reference",
