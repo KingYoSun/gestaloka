@@ -138,6 +138,17 @@ function FirstView({ runtime }: PlayerPageProps) {
   return (
     <section className="grid min-h-[calc(100vh-5rem)] place-items-center py-8" aria-label={t("player.labels.start")}>
       <div className="grid w-full min-w-0 justify-items-center gap-5 text-center">
+        <div className="grid min-w-0 justify-items-center gap-2">
+          <h1
+            className="text-2xl font-bold lowercase leading-8 tracking-[0.16em] text-foreground max-[480px]:text-xl max-[480px]:leading-7"
+            data-testid="first-view-brand-title"
+          >
+            {t("common.brandWordmark")}
+          </h1>
+          <p className="text-xs font-semibold leading-[18px] tracking-[0.14em] text-muted-foreground" data-testid="first-view-brand-tagline">
+            {t("common.tagline")}
+          </p>
+        </div>
         <img
           className="brand-mark size-36 object-contain max-[480px]:size-28"
           src="/brand/logo.png"
@@ -811,6 +822,9 @@ function PlayingView({ runtime }: PlayerPageProps) {
             </div>
           </Drawer>
         </>
+      ) : null}
+      {runtime.questCompletionNotice ? (
+        <QuestCompletionDialog notice={runtime.questCompletionNotice} onClose={runtime.dismissQuestCompletionNotice} />
       ) : null}
       {runtime.playHydrating ? <ProcessingOverlay label={t("player.story.preparing")} testId="play-hydrating-overlay" /> : null}
     </section>
@@ -1754,6 +1768,174 @@ function QuestBlock({ runtime }: PlayerPageProps) {
 }
 
 type QuestAction = "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest";
+type QuestWithResult = QuestSummary & { summary?: string };
+
+function latestChapterSummary(quest: QuestSummary): string {
+  const chapters = quest.chapters ?? [];
+  const completedChapter = [...chapters].reverse().find((chapter) => chapter.status === "completed" || chapter.chapter_kind === "epilogue");
+  return (completedChapter ?? chapters[chapters.length - 1])?.summary?.trim() ?? "";
+}
+
+function questResultText(quest: QuestWithResult, fallback: string): string {
+  return quest.summary?.trim() || quest.latest_summary.trim() || latestChapterSummary(quest) || quest.description.trim() || fallback;
+}
+
+function QuestCompletionDialog({
+  notice,
+  onClose,
+}: {
+  notice: NonNullable<GestalokaRuntime["questCompletionNotice"]>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const result = questResultText(notice.quest, t("player.quest.emptyResult"));
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-background/70 p-4 max-[640px]:items-end max-[640px]:p-0" role="presentation">
+      <section
+        role="dialog"
+        aria-labelledby="quest-completion-dialog-title"
+        className="grid w-full max-w-md min-w-0 gap-4 rounded-lg border border-border bg-card p-5 text-card-foreground shadow-lg max-[640px]:max-w-none max-[640px]:rounded-b-none max-[640px]:border-b-0"
+        data-testid="quest-completion-dialog"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="grid min-w-0 gap-2">
+            <p className="inline-flex items-center gap-2 text-xs font-semibold leading-[18px] text-primary">
+              <ListChecks className="size-4" aria-hidden="true" />
+              {t("player.quest.completionEyebrow")}
+            </p>
+            <h2 id="quest-completion-dialog-title" className="text-base font-semibold leading-6 text-foreground">
+              {t("player.quest.completionTitle")}
+            </h2>
+          </div>
+          <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label={t("common.close")} data-testid="quest-completion-close-icon">
+            <X aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="grid min-w-0 gap-3">
+          <div className="grid min-w-0 gap-1">
+            <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{t("player.quest.completedQuest")}</p>
+            <p className="min-w-0 break-words text-lg font-bold leading-7 text-foreground">{notice.quest.title}</p>
+          </div>
+          <div className="grid min-w-0 gap-1 rounded-md border border-border bg-secondary p-3">
+            <p className="text-xs font-semibold leading-[18px] text-muted-foreground">{t("player.quest.result")}</p>
+            <p className="min-w-0 break-words text-sm leading-5 text-foreground" data-testid="quest-completion-result">
+              {result}
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button type="button" onClick={onClose} data-testid="quest-completion-close">
+            {t("common.close")}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function QuestDetailAccordion({
+  children,
+  label,
+  testId,
+}: {
+  children: ReactNode;
+  label: string;
+  testId: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="grid min-w-0 border-t border-border/80">
+      <button
+        type="button"
+        className="flex min-h-11 w-full min-w-0 items-center justify-between gap-3 bg-transparent py-2 text-left text-sm font-semibold leading-5 text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/80"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        data-testid={testId}
+      >
+        <span>{label}</span>
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open ? "rotate-180" : "")} aria-hidden="true" />
+      </button>
+      {open ? <div className="grid min-w-0 gap-2 pb-3 text-sm leading-5 text-muted-foreground">{children}</div> : null}
+    </div>
+  );
+}
+
+function QuestDetailContent({ quest }: { quest: QuestWithResult }) {
+  const { t } = useTranslation();
+  const result = questResultText(quest, t("player.quest.emptyResult"));
+  const chapters = quest.chapters ?? [];
+
+  return (
+    <>
+      <div className="grid min-w-0 gap-1">
+        <p className="text-xs font-semibold leading-[18px] text-muted-foreground">
+          {quest.status === "completed" ? t("player.quest.result") : t("player.quest.detail")}
+        </p>
+        <p className="min-w-0 break-words text-foreground">{result}</p>
+      </div>
+      {chapters.length ? (
+        <ul className="grid min-w-0 gap-1">
+          {chapters.slice(-3).map((chapter) => (
+            <li className="min-w-0 break-words" key={chapter.id}>
+              {chapter.summary}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
+function QuestListItem({
+  onQuestAction,
+  quest,
+  turnPending,
+}: {
+  onQuestAction: (action: QuestAction, assignmentId: string) => void;
+  quest: QuestWithResult;
+  turnPending: boolean;
+}) {
+  const { t } = useTranslation();
+  const actions = quest.available_actions ?? [];
+  const detailLabel = quest.status === "completed" ? t("player.quest.result") : t("player.quest.detail");
+
+  return (
+    <li className="grid min-w-0 gap-3 border-b border-border py-3 last:border-b-0" data-testid={`quest-list-item-${quest.assignment_id}`}>
+      <div className="grid min-w-0 gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <p className="min-w-0 break-words font-bold leading-6 text-foreground">{quest.title}</p>
+          <span className="rounded border border-border bg-card px-2 py-0.5 text-xs font-semibold leading-[18px] text-muted-foreground">
+            {t(`player.quest.status.${quest.status}`, { defaultValue: quest.status })}
+          </span>
+        </div>
+        <p className="text-sm leading-5 text-muted-foreground">
+          {quest.progress}/{quest.progress_target}
+        </p>
+      </div>
+      <QuestDetailAccordion label={detailLabel} testId={`quest-detail-toggle-${quest.assignment_id}`}>
+        <QuestDetailContent quest={quest} />
+      </QuestDetailAccordion>
+      {actions.length ? (
+        <div className="flex flex-wrap gap-2">
+          {actions.map((action) => (
+            <Button
+              key={action}
+              type="button"
+              variant={action === "decline_quest" ? "secondary" : "default"}
+              disabled={turnPending}
+              onClick={() => onQuestAction(action as QuestAction, quest.assignment_id)}
+            >
+              <ListChecks aria-hidden="true" />
+              {t(`player.quest.actions.${action}`)}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+}
 
 function QuestListDialog({
   onClose,
@@ -1804,38 +1986,9 @@ function QuestListDialog({
                   <h3 className="text-sm font-semibold leading-5 text-muted-foreground">
                     {t(`player.quest.groups.${group.key}`)}
                   </h3>
-                  <ul className="grid gap-3">
+                  <ul className="grid">
                     {group.quests.map((quest) => (
-                      <li key={quest.assignment_id} className="grid min-w-0 gap-3 rounded-md border border-border bg-secondary p-3" data-testid={`quest-list-item-${quest.assignment_id}`}>
-                        <div className="grid min-w-0 gap-1">
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <p className="min-w-0 break-words font-bold leading-6 text-foreground">{quest.title}</p>
-                            <span className="rounded border border-border bg-card px-2 py-0.5 text-xs font-semibold leading-[18px] text-muted-foreground">
-                              {t(`player.quest.status.${quest.status}`, { defaultValue: quest.status })}
-                            </span>
-                          </div>
-                          <p className="text-sm leading-5 text-muted-foreground">
-                            {quest.progress}/{quest.progress_target}
-                          </p>
-                          {quest.latest_summary ? <p className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{quest.latest_summary}</p> : null}
-                        </div>
-                        {quest.available_actions?.length ? (
-                          <div className="flex flex-wrap gap-2">
-                            {quest.available_actions.map((action) => (
-                              <Button
-                                key={action}
-                                type="button"
-                                variant={action === "decline_quest" ? "secondary" : "default"}
-                                disabled={turnPending}
-                                onClick={() => handleAction(action as QuestAction, quest.assignment_id)}
-                              >
-                                <ListChecks aria-hidden="true" />
-                                {t(`player.quest.actions.${action}`)}
-                              </Button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </li>
+                      <QuestListItem key={quest.assignment_id} quest={quest} turnPending={turnPending} onQuestAction={handleAction} />
                     ))}
                   </ul>
                 </section>

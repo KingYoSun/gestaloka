@@ -64,6 +64,11 @@ import type {
   WorldTickItem,
 } from "../types";
 
+type QuestCompletionNotice = {
+  quest: TurnResponse["quest_updates"][number];
+  turnId: string;
+};
+
 const playLanguagePromptNames: Record<PlayLanguagePreset, string> = {
   ja: "Japanese",
   en: "English",
@@ -280,6 +285,7 @@ export function useGestalokaRuntime() {
   const [latestNarrative, setLatestNarrative] = useState("");
   const [latestReaction, setLatestReaction] = useState("");
   const [latestConsequenceSummary, setLatestConsequenceSummary] = useState("");
+  const [questCompletionNotice, setQuestCompletionNotice] = useState<QuestCompletionNotice | null>(null);
   const [storyItems, setStoryItems] = useState<StoryHistoryItem[]>([]);
   const [streamingStoryItem, setStreamingStoryItem] = useState<StoryHistoryItem | null>(null);
   const [streamingTurnId, setStreamingTurnId] = useState("");
@@ -585,9 +591,13 @@ export function useGestalokaRuntime() {
   }, [opsWorldId, opsPackFilter, opsTemplateFilter, opsWorlds, session?.world_id]);
 
   function applyResolvedTurnResponse(response: TurnResponse) {
+    const completedQuest = [...response.quest_updates].reverse().find((quest) => quest.status === "completed") ?? null;
     setLatestNarrative(response.narrative);
     setLatestReaction(response.npc_reaction);
     setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
+    if (completedQuest) {
+      setQuestCompletionNotice({ quest: completedQuest, turnId: response.turn_id });
+    }
     setStoryItems((current) => mergeStoryItems(current, [storyItemFromTurnResponse(response)]));
     setAnimatedTurnId(response.turn_id);
     setStreamingStoryItem(null);
@@ -1232,6 +1242,7 @@ export function useGestalokaRuntime() {
       setLatestNarrative("");
       setLatestReaction("");
       setLatestConsequenceSummary("");
+      setQuestCompletionNotice(null);
       setStoryItems([]);
       setStreamingStoryItem(null);
       setStreamingTurnId("");
@@ -1357,6 +1368,10 @@ export function useGestalokaRuntime() {
 
   async function handleQuestAction(actionType: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest", questAssignmentId: string) {
     await submitTurnRequest({ action_type: actionType, quest_assignment_id: questAssignmentId });
+  }
+
+  function dismissQuestCompletionNotice() {
+    setQuestCompletionNotice(null);
   }
 
   async function handleRebuildGraph() {
@@ -1651,6 +1666,7 @@ export function useGestalokaRuntime() {
     latestNarrative,
     latestReaction,
     latestConsequenceSummary,
+    questCompletionNotice,
     storyItems,
     streamingStoryItem,
     streamingTurnId,
@@ -1760,6 +1776,7 @@ export function useGestalokaRuntime() {
     handleTurnSubmit,
     handleChoiceSubmit,
     handleQuestAction,
+    dismissQuestCompletionNotice,
     handleLoadOlderStory,
     handleRebuildGraph,
     handleIdlePass,
