@@ -16,6 +16,7 @@ from app.modules.llm_harness.service import (
     NarrativeChoiceDraft,
     PromptExecutionAttempt,
     PromptExecutionOutcome,
+    PublicGmTurnPayload,
     TurnResolutionOutcome,
     TurnResolutionPayload,
 )
@@ -805,6 +806,155 @@ class CouncilIntentPhase:
         return self.payload is not None
 
 
+FORBIDDEN_LLM_METADATA_KEYS = {
+    "choice_id",
+    "action_kind",
+    "action_type",
+    "target",
+    "travel_target_key",
+    "route_key",
+    "destination_key",
+    "item_id",
+    "quest_assignment_id",
+    "template_key",
+    "pack_id",
+    "world_template_id",
+    "world_id",
+    "actor_id",
+    "location_id",
+    "session_id",
+    "turn_id",
+}
+
+
+def _assert_public_llm_payload(value: Any, *, path: str = "input") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text in FORBIDDEN_LLM_METADATA_KEYS or key_text.endswith("_id") or key_text.endswith("_key"):
+                raise ValueError(f"Internal metadata key leaked into LLM input at {path}.{key_text}")
+            _assert_public_llm_payload(item, path=f"{path}.{key_text}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _assert_public_llm_payload(item, path=f"{path}[{index}]")
+
+
+def _public_text(value: Any) -> str:
+    return _compact_text(value)
+
+
+def _public_profile(player_profile: Any) -> dict[str, Any]:
+    profile = player_profile if isinstance(player_profile, dict) else {}
+    return {
+        "display_name": _public_text(profile.get("display_name")),
+        "gender": _public_text(profile.get("gender")),
+        "background": _public_text(profile.get("background")),
+        "free_text": _public_text(profile.get("free_text")),
+        "narrative_preferences": profile.get("narrative_preferences") if isinstance(profile.get("narrative_preferences"), dict) else {},
+    }
+
+
+def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    current_location = current_location if isinstance(current_location, dict) else {}
+    inventory = [item for item in session_state.get("inventory") or [] if isinstance(item, dict)]
+    quests = [item for item in session_state.get("quests") or [] if isinstance(item, dict)]
+    local_figures = session_state.get("local_figures") or session_state.get("plaza_figures") or []
+    nearby_routes = [item for item in session_state.get("nearby_routes") or [] if isinstance(item, dict)]
+    current_scene = session_state.get("current_scene") if isinstance(session_state.get("current_scene"), dict) else {}
+    chapter = session_state.get("chapter") if isinstance(session_state.get("chapter"), dict) else {}
+    return {
+        "current_location": {
+            "name": _public_text(current_location.get("name")),
+            "description": _public_text(current_location.get("description")),
+        },
+        "current_scene": {
+            "summary": _public_text(current_scene.get("summary")),
+            "pressure": _public_text(current_scene.get("pressure_summary")),
+        },
+        "current_chapter": {
+            "summary": _public_text(chapter.get("summary")),
+            "crossroads_summary": _public_text(chapter.get("crossroads_summary")),
+            "branch_hint": _public_text(chapter.get("branch_hint")),
+        },
+        "visible_people": [
+            {
+                "name": _public_text(item.get("display_name")),
+                "summary": _public_text(item.get("summary")),
+            }
+            for item in local_figures
+            if isinstance(item, dict) and _public_text(item.get("display_name"))
+        ][:6],
+        "visible_items": [
+            {
+                "name": _public_text(item.get("name")),
+                "description": _public_text(item.get("description")),
+                "status": _public_text(item.get("status")),
+                "usable": bool(item.get("usable")),
+            }
+            for item in inventory
+            if _public_text(item.get("name"))
+        ][:8],
+        "visible_exits": [
+            {
+                "destination_name": _public_text(item.get("destination_name")),
+                "summary": _public_text(item.get("summary")),
+                "available": bool(item.get("available")),
+            }
+            for item in nearby_routes
+            if bool(item.get("available")) and _public_text(item.get("destination_name"))
+        ][:6],
+        "active_quests": [
+            {
+                "title": _public_text(item.get("title")),
+                "description": _public_text(item.get("description")),
+                "status": _public_text(item.get("status")),
+                "progress": item.get("progress"),
+                "progress_target": item.get("progress_target"),
+                "latest_summary": _public_text(item.get("latest_summary")),
+            }
+            for item in quests
+            if _public_text(item.get("title")) and _public_text(item.get("status")) in {"offered", "active", "paused"}
+        ][:5],
+        "known_facts": [
+            {
+                "title": _public_text(item.get("title")),
+                "summary": _public_text(item.get("summary")),
+            }
+            for item in session_state.get("known_facts") or []
+            if isinstance(item, dict) and _public_text(item.get("title"))
+        ][:8],
+        "visible_opportunities": [
+            {
+                "label": _public_text(item.get("label")),
+                "summary": _public_text(item.get("summary") or item.get("canonical_input_text")),
+            }
+            for item in session_state.get("suggested_actions") or []
+            if isinstance(item, dict) and _public_text(item.get("label"))
+        ][:4],
+        "recent_scene_history": [_public_text(item) for item in session_state.get("recent_scene_history") or [] if _public_text(item)][:5],
+        "recent_world_beats": [_public_text(item) for item in session_state.get("recent_world_beats") or [] if _public_text(item)][:5],
+        "active_consequence_threads": [
+            {
+                "title": _public_text(item.get("title")),
+                "summary": _public_text(item.get("summary")),
+                "pressure": _public_text(item.get("pressure_band")),
+            }
+            for item in session_state.get("active_consequence_threads") or []
+            if isinstance(item, dict) and _public_text(item.get("summary"))
+        ][:5],
+        "recognized_titles": [
+            {
+                "display_name": _public_text(item.get("display_name")),
+                "description": _public_text(item.get("description")),
+                "status": _public_text(item.get("status")),
+            }
+            for item in session_state.get("recognized_titles") or []
+            if isinstance(item, dict) and _public_text(item.get("display_name"))
+        ][:5],
+    }
+
+
 class GMCouncilService:
     ROLE_ORDER = [
         ("intent_interpreter", 1, "council.intent_interpreter", False),
@@ -835,6 +985,188 @@ class GMCouncilService:
             output_payload={"status": "resolved", "raw_output": payload.model_dump()},
             provider_name="deterministic",
             provider_response_id=None,
+        )
+
+    def resolve_public_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
+        input_payload = self._public_turn_input_payload(request)
+        _assert_public_llm_payload(input_payload)
+        result = self.model_router.execute_structured_prompt(
+            prompt_id="session.turn_resolution",
+            response_model=PublicGmTurnPayload,
+            input_payload=input_payload,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+            allow_pro_fallback=True,
+        )
+        role_run = self._role_run(
+            council_role="ai_gm",
+            stage_index=1,
+            prompt_id="session.turn_resolution",
+            approval_status="approved" if result.succeeded else "failed",
+            result=result,
+        )
+        if "__force_safety_reject__" in request.input_text:
+            return TurnResolutionOutcome(
+                role_runs=[role_run],
+                final_lane=result.final_lane,
+                final_payload=None,
+                failure_reason="forced safety rejection",
+                rejection_role="ai_gm",
+            )
+        if not result.succeeded or result.final_payload is None:
+            if "__force_" in request.input_text:
+                return TurnResolutionOutcome(
+                    role_runs=[role_run],
+                    final_lane=result.final_lane,
+                    final_payload=None,
+                    failure_reason=result.failure_reason,
+                    rejection_role="ai_gm",
+                )
+            fallback_payload = self._public_turn_fallback_payload(request)
+            fallback_result = PromptExecutionOutcome(
+                attempts=[
+                    *result.attempts,
+                    self._deterministic_attempt(
+                        prompt_id="session.turn_resolution",
+                        lane="public_turn_fallback",
+                        payload=fallback_payload,
+                    ),
+                ],
+                final_lane="public_turn_fallback",
+                final_payload=fallback_payload,
+                failure_reason=result.failure_reason,
+            )
+            role_run = self._role_run(
+                council_role="ai_gm",
+                stage_index=1,
+                prompt_id="session.turn_resolution",
+                approval_status="approved",
+                result=fallback_result,
+            )
+            public_payload = fallback_payload
+            final_lane = "public_turn_fallback"
+            deterministic_fallback_used = True
+        else:
+            public_payload = result.final_payload
+            final_lane = result.final_lane
+            deterministic_fallback_used = result.used_fallback
+
+        final_payload = self._public_turn_to_resolution_payload(request, public_payload)
+        return TurnResolutionOutcome(
+            role_runs=[role_run],
+            final_lane=final_lane,
+            final_payload=final_payload,
+            deterministic_fallback_used=deterministic_fallback_used,
+        )
+
+    def _public_turn_input_payload(self, request: CouncilRequest) -> dict[str, Any]:
+        player_profile = request.session_state.get("player_profile") or {}
+        play_language = _play_language_context(player_profile)
+        public_context = _public_session_context(request.session_state)
+        return {
+            "player_action_text": request.input_text,
+            "player_name": request.player_name,
+            "npc_name": request.npc_name,
+            "player_profile": _public_profile(player_profile),
+            "narrative_preferences": (
+                player_profile.get("narrative_preferences") if isinstance(player_profile, dict) and isinstance(player_profile.get("narrative_preferences"), dict) else {}
+            ),
+            "play_language": play_language,
+            "public_game_context": public_context,
+            "recent_memories": [_public_text(item) for item in request.relevant_memories if _public_text(item)][:6],
+        }
+
+    def _public_turn_fallback_payload(self, request: CouncilRequest) -> PublicGmTurnPayload:
+        input_payload = self._public_turn_input_payload(request)
+        public_context = input_payload["public_game_context"]
+        current_location = public_context.get("current_location") if isinstance(public_context, dict) else {}
+        current_location = current_location if isinstance(current_location, dict) else {}
+        location_name = _first_text(current_location.get("name"), "現在地")
+        input_text = request.input_text.strip() or "場の変化を確かめる"
+        suggestions = public_context.get("visible_opportunities") if isinstance(public_context, dict) else []
+        if not isinstance(suggestions, list) or len([item for item in suggestions if isinstance(item, dict)]) < 2:
+            suggestions = [
+                {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
+                {"label": "近くの人物に反応を尋ねる", "summary": "その場にいる相手から、次に判断できる情報を得る。"},
+                {"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"},
+            ]
+        return PublicGmTurnPayload.model_validate(
+            {
+                "action_interpretation": input_text,
+                "narrative": f"{request.player_name}は「{input_text}」と行動した。{location_name}の状況は、確認できる範囲でだけ変化する。",
+                "npc_reaction": f"{request.npc_name}は、その場で見える変化にだけ反応する。",
+                "current_situation": _first_text(current_location.get("description"), f"{location_name}で次の判断点が見えている。"),
+                "current_location_name": location_name,
+                "suggested_actions": suggestions,
+                "consequence_summary": f"{input_text}が現在の場面に反映された。",
+                "consequence_tags": normalize_consequence_tags(infer_world_tags(input_text)),
+                "world_tags": normalize_world_tags(infer_world_tags(input_text)),
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": f"{request.player_name}は「{input_text}」と行動した。", "salience": 0.65}],
+            },
+            context={"input_payload": input_payload},
+        )
+
+    @staticmethod
+    def _public_turn_to_resolution_payload(request: CouncilRequest, public_payload: PublicGmTurnPayload) -> TurnResolutionPayload:
+        suggestions = [
+            NarrativeChoiceDraft(
+                label=item.label,
+                intent_summary=item.summary,
+                canonical_input_text=f"{item.label}。{item.summary}",
+                action_kind="narrative",
+                travel_target_key=None,
+            )
+            for item in public_payload.suggested_actions
+        ]
+        while len(suggestions) < 3:
+            fallback_label = ["場の変化を確かめる", "近くの人物に反応を尋ねる", "別の糸口を探す"][len(suggestions)]
+            suggestions.append(
+                NarrativeChoiceDraft(
+                    label=fallback_label,
+                    intent_summary=fallback_label,
+                    canonical_input_text=fallback_label,
+                    action_kind="narrative",
+                    travel_target_key=None,
+                )
+            )
+        return TurnResolutionPayload(
+            narrative=public_payload.narrative,
+            npc_reaction=public_payload.npc_reaction,
+            event_type="player.turn.resolved",
+            event_payload={
+                "summary": public_payload.consequence_summary,
+                "public_turn_contract": public_payload.model_dump(),
+            },
+            memories=public_payload.memories,
+            world_tags=public_payload.world_tags,
+            interpreted_intent={
+                "action_interpretation": public_payload.action_interpretation,
+                "current_location_name": public_payload.current_location_name,
+                "present_people": public_payload.present_people,
+                "visible_items": public_payload.visible_items,
+                "used_item_names": public_payload.used_item_names,
+                "source": "public_ai_gm",
+            },
+            next_choices=suggestions[:4],
+            consequence_summary=public_payload.consequence_summary,
+            consequence_tags=public_payload.consequence_tags,
+            shared_action_tag=public_payload.shared_action_tag,
+            state_drafts=public_payload.state_drafts,
+            branch_signals=public_payload.branch_signals,
+            outcome_band=public_payload.outcome_band,
+            scene_tone=public_payload.scene_tone,
+            scene_move=public_payload.scene_move,
+            scene_pressure=public_payload.scene_pressure,
+            broadcast_draft=public_payload.broadcast_draft,
+            quest_offer=public_payload.quest_offer,
+            chapter_directive=public_payload.chapter_directive,
+            followup_quest_offer=public_payload.followup_quest_offer,
+            quest_resolution_hint=public_payload.quest_resolution_hint,
+            entity_drafts=public_payload.entity_drafts,
         )
 
     def resolve_intent(self, request: CouncilRequest) -> CouncilIntentPhase:

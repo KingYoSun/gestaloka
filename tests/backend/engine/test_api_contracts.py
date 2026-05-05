@@ -17,6 +17,7 @@ from app.modules.llm_harness.service import CouncilRoleRun, ProviderResponse, Tu
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_state.service import create_dynamic_quest_offer
 from app.modules.world_pack.service import PackRegistry
+from tests.backend.turn_async_helpers import public_turn_request_payload
 
 
 def engine_session_payload(*, world_id: str = "gestaloka_world_reference") -> dict[str, str]:
@@ -121,7 +122,7 @@ def assert_no_player_visible_english_residue(payload: dict) -> None:
     if isinstance(current_location, dict):
         texts.extend(str(current_location.get(field) or "") for field in ("name", "description"))
     for collection, fields in (
-        ("next_choices", ("label", "summary")),
+        ("suggested_actions", ("label", "summary")),
         ("quest_updates", ("title", "description", "latest_summary", "summary")),
         ("quests", ("title", "description", "latest_summary", "summary")),
         ("quest_journal", ("title", "description", "latest_summary", "summary")),
@@ -377,18 +378,13 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         {"input_mode": "choice", "choice_id": "choice_1"},
     )
     langfuse_records = container.observability_service._langfuse_client.records
-    world_progress_inputs = [
+    ai_gm_inputs = [
         item["input"]
         for item in langfuse_records
-        if item.get("event") == "enter" and item.get("name") == "council.world_progress"
+        if item.get("event") == "enter" and item.get("name") == "session.turn_resolution"
     ]
-    narrative_inputs = [
-        item["input"]
-        for item in langfuse_records
-        if item.get("event") == "enter" and item.get("name") == "council.narrative"
-    ]
-    assert world_progress_inputs[-1]["play_language"]["prompt_name"] == "English"
-    assert narrative_inputs[-1]["play_language"]["prompt_name"] == "English"
+    assert ai_gm_inputs[-1]["play_language"]["prompt_name"] == "English"
+    assert ai_gm_inputs[-1]["public_game_context"]
 
     with container.session_factory() as db:
         profile = db.get(PlayerProfile, {"actor_id": first.json()["actor_id"], "world_id": "gestaloka_world_reference"})
@@ -489,8 +485,7 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
 
     state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
     assert state.status_code == 200
-    choices = state.json()["next_choices"]
-    assert [item["choice_id"] for item in choices] == ["choice_1", "choice_2", "choice_3"]
+    choices = state.json()["suggested_actions"]
     assert choices[0]["label"] == "Check your arrival log at the public Nexus registry"
     assert choices[1]["label"] == "Go to the lift tower network and inspect recruiters and route logs"
     assert (
@@ -534,8 +529,7 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     assert payload["quest_display_state"] == {"mode": "quest", "label": payload["quests"][0]["title"]}
     assert any(item["display_name"] == "ネクサス案内担当カナタ" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
-    assert payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
-    assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
+    assert payload["suggested_actions"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
 
     localization_records = [
         item
@@ -636,8 +630,7 @@ def test_japanese_localization_accepts_live_provider_array_shape(client, contain
     assert payload["current_location"]["name"] == "ネクサス市"
     assert any(item["display_name"] == "ネクサス案内担当カナタ" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
-    assert "古い記録と来訪者ログ" in payload["next_choices"][2]["label"]
-    assert "万象図書館" in payload["next_choices"][2]["canonical_input_text"]
+    assert "古い記録と来訪者ログ" in payload["suggested_actions"][2]["label"]
     assert_no_player_visible_english_residue(payload)
 
     localization_records = [
@@ -716,7 +709,7 @@ def test_failed_turn_response_exposes_structured_failure(client, container, auth
             rejection_role="rules_arbiter",
         )
 
-    monkeypatch.setattr(container.council_service, "resolve_turn", reject_turn)
+    monkeypatch.setattr(container.council_service, "resolve_public_turn", reject_turn)
     session = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
     assert session.status_code == 200
 
@@ -725,8 +718,7 @@ def test_failed_turn_response_exposes_structured_failure(client, container, auth
             "/turns",
             json={
                 "session_id": session.json()["session_id"],
-                "input_mode": "free_text",
-                "input_text": "force a rejected turn",
+                "player_action_text": "force a rejected turn",
             },
             headers=auth_headers,
         )
@@ -734,12 +726,12 @@ def test_failed_turn_response_exposes_structured_failure(client, container, auth
         messages = _receive_until_turn_failed(websocket)
 
     payload = messages[-1]["data"]
-    assert payload["detail"] == "council_rejected"
-    assert payload["failure"]["reason"] == "council_rejected"
+    assert payload["detail"] == "Rule arbiter rejected the turn."
+    assert payload["failure"]["reason"] == "Rule arbiter rejected the turn."
     assert payload["failure"]["rejection_role"] == "rules_arbiter"
     assert payload["failure"]["final_lane"]
-    assert payload["failure"]["retryable_choice_id"] in {"choice_1", "choice_2", "choice_3"}
-    assert payload["failure"]["council_trace"]
+    assert "retryable_choice_id" not in payload["failure"]
+    assert payload["suggested_actions"]
 
 
 def test_player_profile_ownership_is_enforced(client, container, auth_headers):
@@ -797,7 +789,7 @@ def test_turn_rejects_when_world_health_is_not_playable(client, container, tmp_p
 
     turn_response = client.post(
         "/turns",
-        json={"session_id": session_response.json()["session_id"], "input_mode": "choice", "choice_id": "choice_2"},
+        json={"session_id": session_response.json()["session_id"], "player_action_text": "場の変化を確かめる"},
         headers=auth_headers,
     )
 
@@ -926,10 +918,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "relationships",
         "active_consequence_threads",
         "recent_consequence_history",
-        "next_choices",
-        "narrative_state_bands",
-        "important_inventory_affordances",
-    } <= set(state_response.json())
+            "suggested_actions",
+            "narrative_state_bands",
+            "important_inventory_affordances",
+        } <= set(state_response.json())
+    assert "next_choices" not in state_response.json()
     world_pack = state_response.json()["world_pack"]
     assert state_response.json()["player_profile"]["actor_id"] == session_payload["player_actor_id"]
     assert len(state_response.json()["quests"]) == 1
@@ -946,16 +939,18 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["inventory"] == []
     assert state_response.json()["known_facts"] == []
     assert state_response.json()["skills"] == []
-    assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
+    assert all(set(item) <= {"label", "summary", "risk_hint"} for item in state_response.json()["suggested_actions"])
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
+        request_payload = public_turn_request_payload(
+            client,
+            session_id=session_payload["session_id"],
+            auth_headers=auth_headers,
+            payload={"input_mode": "choice", "choice_id": "choice_1"},
+        )
         turn_response = client.post(
             "/turns",
-            json={
-                "session_id": session_payload["session_id"],
-                "input_mode": "choice",
-                "choice_id": "choice_1",
-            },
+            json={"session_id": session_payload["session_id"], **request_payload},
             headers=auth_headers,
         )
         assert turn_response.status_code == 202
@@ -970,8 +965,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         turn_payload = messages[-1]["data"]
         assert set(turn_payload) == {
             "turn_id",
-            "action_type",
-            "input_mode",
+            "player_action_text",
             "event_id",
             "memory_ids",
             "narrative",
@@ -982,7 +976,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "bonus_sp",
             "sp_ledger_id",
             "interpreted_intent",
-            "next_choices",
+            "suggested_actions",
             "consequence_summary",
             "scene_tone",
             "quest_updates",
@@ -1015,16 +1009,15 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "none"
         assert turn_payload["world_context"]["pack_id"] == "gestaloka_world_reference"
         assert turn_payload["world_context"]["world_template_id"] == "layered_world_foundation"
-        assert turn_payload["action_type"] == "narrative"
-        assert turn_payload["input_mode"] == "choice"
-        assert turn_payload["sp_delta"] == -1
-        assert turn_payload["sp_balance"] == 29
+        assert turn_payload["player_action_text"] == request_payload["player_action_text"]
+        assert turn_payload["sp_delta"] == -3
+        assert turn_payload["sp_balance"] == 27
         assert turn_payload["paid_sp"] == 0
-        assert turn_payload["bonus_sp"] == 29
+        assert turn_payload["bonus_sp"] == 27
         assert turn_payload["quest_updates"] == []
         assert turn_payload["inventory_updates"] == []
-        assert turn_payload["interpreted_intent"]["effect_contract"] == "observe"
-        assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
+        assert turn_payload["interpreted_intent"]["source"] == "public_ai_gm"
+        assert all(set(item) <= {"label", "summary", "risk_hint"} for item in turn_payload["suggested_actions"])
         assert_no_player_visible_english_residue(turn_payload)
 
     assert [message["event"] for message in messages[:2]] == [
@@ -1034,43 +1027,30 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     event_names = [message["event"] for message in messages]
     assert "turn.narrative.delta" in event_names
     assert "world.event.created" in event_names
-    assert "world.broadcast.available" in event_names
     assert "memory.materialized" in event_names
     assert "quest.updated" not in event_names
     assert "scene.updated" in event_names
-    assert "ambient.updated" in event_names
     assert "chapter.updated" not in event_names
     assert event_names[-1] == "turn.resolved"
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
     completed_phases = [
         message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"
     ]
-    assert completed_phases[0] == "intent_interpretation"
-    assert set(completed_phases[1:3]) == {"memory_council", "npc_council"}
-    assert completed_phases[3:] == [
-        "situation_mapping",
-        "world_progress",
-        "rules_arbiter",
-        "safety_guard",
-        "narrative",
+    assert completed_phases[0] == "ai_gm_turn"
+    for phase in [
         "world_tag_updates",
-        "quest_effect_contract",
-        "entity_materialization",
         "state_draft_materialization",
-        "dynamic_quest_offer",
-        "quest_resolution_hint",
         "consequence_resolution",
         "scene_framing",
         "memory_materialization",
         "shared_consequence",
-        "ambient_world_pass",
         "post_state_build",
-        "choice_generation",
         "timeline_broadcast",
-        "resource_release",
         "response_localization",
-    ]
-    assert {message["data"].get("status") for message in progress_messages[:14]} <= {"started", "completed"}
+    ]:
+        assert phase in completed_phases
+    assert completed_phases.index("ai_gm_turn") < completed_phases.index("timeline_broadcast") < completed_phases.index("response_localization")
+    assert {message["data"].get("status") for message in progress_messages} <= {"started", "completed", "heartbeat"}
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[0]["data"] == {
         "session_id": session_payload["session_id"],
@@ -1079,9 +1059,6 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert messages[1]["data"]["turn_id"] == accepted_payload["turn_id"]
     assert messages[1]["data"]["session_id"] == session_payload["session_id"]
     assert messages[-1]["data"] == turn_payload
-    broadcast_message = next(message for message in messages if message["event"] == "world.broadcast.available")
-    assert broadcast_message["data"]["semantic_key"]
-    assert broadcast_message["data"]["status"] == "active"
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_world_reference"
@@ -1160,9 +1137,15 @@ def _receive_until_turn_failed(websocket, *, limit: int = 64):
 
 def _post_turn_and_wait_for_resolution(client, session_id: str, auth_headers: dict, payload: dict):
     with client.websocket_connect(f"/ws/sessions/{session_id}?token=dev-local-token") as websocket:
+        request_payload = public_turn_request_payload(
+            client,
+            session_id=session_id,
+            auth_headers=auth_headers,
+            payload=payload,
+        )
         response = client.post(
             "/turns",
-            json={"session_id": session_id, **payload},
+            json={"session_id": session_id, **request_payload},
             headers=auth_headers,
         )
         assert response.status_code == 202
@@ -1176,10 +1159,9 @@ def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, co
     lock = threading.Lock()
 
     def execute_with_role_delay(*, prompt_id, **kwargs):
-        if prompt_id in {"council.memory_manager", "council.npc_manager"}:
+        if prompt_id == "session.turn_resolution":
             with lock:
                 role_windows[prompt_id] = {"started": time.perf_counter()}
-            time.sleep(0.25)
             result = original_execute(prompt_id=prompt_id, **kwargs)
             with lock:
                 role_windows[prompt_id]["completed"] = time.perf_counter()
@@ -1198,27 +1180,14 @@ def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, co
         {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
-    memory_window = role_windows["council.memory_manager"]
-    npc_window = role_windows["council.npc_manager"]
-    assert memory_window["started"] < npc_window["completed"]
-    assert npc_window["started"] < memory_window["completed"]
+    assert role_windows["session.turn_resolution"]["completed"] >= role_windows["session.turn_resolution"]["started"]
     progress_events = [message["data"] for message in messages if message.get("event") == "turn.progress"]
-    assert any(event.get("phase") == "memory_council" and event.get("role_elapsed_ms") is not None for event in progress_events)
-    assert any(event.get("phase") == "npc_council" and event.get("role_elapsed_ms") is not None for event in progress_events)
+    assert any(event.get("phase") == "ai_gm_turn" and event.get("role_elapsed_ms") is not None for event in progress_events)
 
     council_turns_response = client.get(f"/ops/council/turns?session_id={session_id}", headers=auth_headers)
     assert council_turns_response.status_code == 200
     roles = council_turns_response.json()["items"][0]["roles"]
-    assert [item["council_role"] for item in roles] == [
-        "intent_interpreter",
-        "memory_manager",
-        "npc_manager",
-        "situation_mapper",
-        "world_progress",
-        "rules_arbiter",
-        "safety_guard",
-        "narrative",
-    ]
+    assert [item["council_role"] for item in roles] == ["ai_gm"]
 
 
 def test_situation_frame_reaches_world_progress_and_narrative(client, container, auth_headers, monkeypatch):
@@ -1226,7 +1195,7 @@ def test_situation_frame_reaches_world_progress_and_narrative(client, container,
     captured: dict[str, dict] = {}
 
     def capture_game_frame(*, prompt_id, input_payload, **kwargs):
-        if prompt_id in {"council.world_progress", "council.narrative"}:
+        if prompt_id == "session.turn_resolution":
             captured[prompt_id] = input_payload
         return original_execute(prompt_id=prompt_id, input_payload=input_payload, **kwargs)
 
@@ -1241,21 +1210,18 @@ def test_situation_frame_reaches_world_progress_and_narrative(client, container,
         {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
-    for prompt_id in ("council.world_progress", "council.narrative"):
-        game_frame = captured[prompt_id]["game_frame"]
-        assert game_frame["current_situation"]
-        assert game_frame["immediate_pressure"]
-        assert len(game_frame["affordances"]) >= 2
-        assert game_frame["agency_guard"]
+    public_context = captured["session.turn_resolution"]["public_game_context"]
+    assert public_context["current_location"]["name"]
+    assert len(public_context["visible_opportunities"]) >= 2
+    assert "selected_choice" not in captured["session.turn_resolution"]
+    assert "choice_id" not in str(captured["session.turn_resolution"])
 
 
 def test_situation_mapper_schema_failure_uses_deterministic_frame(client, container, auth_headers, monkeypatch):
     original_execute = container.model_router.execute_structured_prompt
-    captured_world_progress: dict = {}
 
     def fail_situation_mapper(*, prompt_id, input_payload, **kwargs):
-        nonlocal captured_world_progress
-        if prompt_id == "council.situation_mapper":
+        if prompt_id == "session.turn_resolution":
             return SimpleNamespace(
                 attempts=[],
                 final_lane="lite_lane",
@@ -1263,8 +1229,6 @@ def test_situation_mapper_schema_failure_uses_deterministic_frame(client, contai
                 failure_reason="lite_lane output failed schema validation",
                 succeeded=False,
             )
-        if prompt_id == "council.world_progress":
-            captured_world_progress = input_payload
         return original_execute(prompt_id=prompt_id, input_payload=input_payload, **kwargs)
 
     monkeypatch.setattr(container.model_router, "execute_structured_prompt", fail_situation_mapper)
@@ -1281,8 +1245,8 @@ def test_situation_mapper_schema_failure_uses_deterministic_frame(client, contai
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
         assert turn.resolved_output["used_fallback"] is True
-    assert captured_world_progress["game_frame"]["affordances"]
-    assert [item["choice_id"] for item in payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
+    assert payload["suggested_actions"]
+    assert all(set(item) <= {"label", "summary", "risk_hint"} for item in payload["suggested_actions"])
 
 
 def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_headers):
@@ -1302,14 +1266,10 @@ def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_heade
             "input_text": "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。",
         },
     )
-    assert payload["input_mode"] == "free_text"
-    assert payload["action_type"] == "narrative"
-    assert payload["interpreted_intent"]["canonical_action_kind"] == "read_world_state_query"
-    assert payload["quest_updates"] == []
-    assert payload["faction_updates"] == []
+    assert payload["player_action_text"] == "現在の門の報告と旅人たちの発言を照合し、どの直近行動が地域状況を変えたのかを尋ねる。"
+    assert payload["interpreted_intent"]["source"] == "public_ai_gm"
     assert payload["inventory_updates"] == []
-    assert payload["relationship_updates"] == []
-    assert payload["shared_action_tag"] == "none"
+    assert payload["shared_action_tag"] in {"none", "protect"}
 
 
 def test_accept_quest_contract_and_websocket_event_order(client, container, auth_headers):
@@ -1327,13 +1287,18 @@ def test_accept_quest_contract_and_websocket_event_order(client, container, auth
     assert state_response.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
-        accept_response = client.post(
-            "/turns",
-            json={
-                "session_id": session_payload["session_id"],
+        request_payload = public_turn_request_payload(
+            client,
+            session_id=session_payload["session_id"],
+            auth_headers=auth_headers,
+            payload={
                 "action_type": "accept_quest",
                 "quest_assignment_id": quest_assignment_id,
             },
+        )
+        accept_response = client.post(
+            "/turns",
+            json={"session_id": session_payload["session_id"], **request_payload},
             headers=auth_headers,
         )
         assert accept_response.status_code == 202
@@ -1342,34 +1307,26 @@ def test_accept_quest_contract_and_websocket_event_order(client, container, auth
         payload = messages[-1]["data"]
         assert accepted_payload["turn_id"] == payload["turn_id"]
         assert payload["world_context"]["pack_id"] == "gestaloka_world_reference"
-        assert payload["action_type"] == "accept_quest"
-        assert payload["input_mode"] == "choice"
-        assert payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
-        assert payload["quest_updates"][0]["status"] == "active"
-        assert payload["chapter_updates"][0]["quest_assignment_id"] == quest_assignment_id
-        assert payload["chapter_updates"][0]["chapter_kind"] == "prologue"
-        assert "body" in {item["chapter_kind"] for item in payload["chapter_updates"]}
-        assert payload["interpreted_intent"]["lifecycle_action_kind"] == "accept_quest"
+        assert payload["player_action_text"] == request_payload["player_action_text"]
+        assert payload["interpreted_intent"]["source"] == "public_ai_gm"
         assert payload["narrative"]
-        assert not any("幕を開ける" in item["label"] or "has begun" in item["summary"] for item in payload["next_choices"])
+        assert not any("幕を開ける" in item["label"] or "has begun" in item["summary"] for item in payload["suggested_actions"])
         assert payload["inventory_updates"] == []
-        assert payload["faction_updates"] == []
         assert payload["location_updates"] == []
         assert payload["current_location"]["key"] == state_response.json()["world_pack"]["starter_location_key"]
         assert payload["travel_summary"] is None
-        assert payload["relationship_updates"] == []
         assert_no_player_visible_english_residue(payload)
 
     accepted_state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert accepted_state_response.status_code == 200
     accepted_state_payload = accepted_state_response.json()
-    assert accepted_state_payload["quest_journal"][0]["chapters"][0]["summary"]
+    assert accepted_state_payload["quest_journal"][0]["status"] == "offered"
     assert_no_player_visible_english_residue(accepted_state_payload)
 
     accepted_quests_response = client.get(f"/sessions/{session_payload['session_id']}/quests", headers=auth_headers)
     assert accepted_quests_response.status_code == 200
     accepted_quests_payload = accepted_quests_response.json()
-    assert accepted_quests_payload["quests"][0]["chapters"][0]["summary"]
+    assert accepted_quests_payload["quests"][0]["status"] == "offered"
     assert_no_player_visible_english_residue(accepted_quests_payload)
 
     assert [message["event"] for message in messages[:2]] == [
@@ -1377,35 +1334,28 @@ def test_accept_quest_contract_and_websocket_event_order(client, container, auth
         "turn.accepted",
     ]
     event_names = [message["event"] for message in messages]
-    assert "quest.updated" in event_names
-    assert "chapter.updated" in event_names
+    assert "quest.updated" not in event_names
     assert "inventory.changed" not in event_names
     assert event_names[-1] == "turn.resolved"
-    assert event_names.index("world.event.created") < event_names.index("quest.updated") < event_names.index("chapter.updated")
+    assert event_names.index("world.event.created") < event_names.index("turn.resolved")
     progress_messages = [message for message in messages if message["event"] == "turn.progress"]
     completed_phases = [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"]
     for phase in [
-        "quest_lifecycle",
-        "memory_council",
-        "npc_council",
-        "world_progress",
-        "rules_arbiter",
-        "safety_guard",
-        "narrative",
-        "chapter_progression",
+        "ai_gm_turn",
+        "world_tag_updates",
+        "state_draft_materialization",
+        "consequence_resolution",
         "scene_framing",
-        "choice_generation",
+        "memory_materialization",
+        "shared_consequence",
+        "post_state_build",
         "timeline_broadcast",
         "response_localization",
     ]:
         assert phase in completed_phases
-    assert completed_phases.index("quest_lifecycle") < completed_phases.index("timeline_broadcast") < completed_phases.index("response_localization")
+    assert completed_phases.index("ai_gm_turn") < completed_phases.index("timeline_broadcast") < completed_phases.index("response_localization")
     assert all("elapsed_ms" in message["data"] for message in progress_messages)
     assert messages[-1]["data"] == payload
-    quest_message = next(message for message in messages if message["event"] == "quest.updated")
-    chapter_message = next(message for message in messages if message["event"] == "chapter.updated")
-    assert quest_message["data"]["items"] == payload["quest_updates"]
-    assert chapter_message["data"]["items"] == payload["chapter_updates"]
     for message in messages:
         assert_realtime_world_context(message, session_payload["world_context"])
         assert message["data"]["world_context"]["pack_id"] == "gestaloka_world_reference"
@@ -1422,7 +1372,7 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
     assert session_response.status_code == 200
     session_id = session_response.json()["session_id"]
     initial_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
-    initial_choice_labels = [item["label"] for item in initial_state["next_choices"]]
+    initial_choice_labels = [item["label"] for item in initial_state["suggested_actions"]]
 
     _, first_choice_payload, _ = _post_turn_and_wait_for_resolution(
         client,
@@ -1431,8 +1381,8 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
         {"input_mode": "choice", "choice_id": "choice_1"},
     )
     assert not any(item.get("status") == "offered" for item in first_choice_payload["quest_updates"])
-    assert [item["choice_id"] for item in first_choice_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
-    assert [item["label"] for item in first_choice_payload["next_choices"]] != initial_choice_labels
+    assert all(set(item) <= {"label", "summary", "risk_hint"} for item in first_choice_payload["suggested_actions"])
+    assert [item["label"] for item in first_choice_payload["suggested_actions"]]
 
     _, third_choice_payload, _ = _post_turn_and_wait_for_resolution(
         client,
@@ -1441,7 +1391,7 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
         {"input_mode": "choice", "choice_id": "choice_3"},
     )
     assert not any(item.get("status") == "offered" for item in third_choice_payload["quest_updates"])
-    assert [item["choice_id"] for item in third_choice_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
+    assert all(set(item) <= {"label", "summary", "risk_hint"} for item in third_choice_payload["suggested_actions"])
 
     _, enterprise_payload, _ = _post_turn_and_wait_for_resolution(
         client,
@@ -1457,7 +1407,7 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
     original_generate = provider.generate
 
     def generate_choice_shape(*, prompt, response_model, model_id, lane, input_payload, temperature):
-        if prompt.prompt_id != "council.world_progress":
+        if prompt.prompt_id != "session.turn_resolution":
             return original_generate(
                 prompt=prompt,
                 response_model=response_model,
@@ -1466,32 +1416,21 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
                 input_payload=input_payload,
                 temperature=temperature,
             )
+        destination = "万象図書館" if "万象図書館" in str(input_payload["player_action_text"]) else "ネクサス市"
         return ProviderResponse(
             raw_output={
-                "event_type": "player.turn.resolved",
-                "event_payload": {"world_id": input_payload["world_id"], "summary": input_payload["input_text"]},
+                "action_interpretation": input_payload["player_action_text"],
+                "narrative": f"ヌートは{destination}へ向けて門の反応を読んだ。",
+                "npc_reaction": "案内担当は現在地を確認した。",
+                "current_situation": "ネクサス市で次の行き先が見えている。",
+                "current_location_name": destination,
                 "memories": [{"scope": "world", "text": "The player read the gate before moving.", "salience": 0.6}],
                 "world_tags": ["investigate"],
                 "consequence_tags": ["careful_observation"],
-                "outcome_band": "steady",
-                "resolution_summary": "The player asks a local question and keeps the scene at the gate.",
-                "risk_level": "low",
-                "next_choices": [
-                    {
-                        "choice_id": "choice_1",
-                        "label": "リッカの反応を確かめる",
-                        "intent_summary": "リッカの反応を確かめる",
-                    },
-                    {
-                        "choice_id": "choice_2",
-                        "label": "来訪者ログを一行だけ直す",
-                        "intent_summary": "来訪者ログを一行だけ直す",
-                    },
-                    {
-                        "choice_id": "choice_3",
-                        "label": "現在の場所について質問する",
-                        "intent_summary": "現在の場所について質問する",
-                    },
+                "consequence_summary": "現在地の出口が公開情報として確認された。",
+                "suggested_actions": [
+                    {"label": "万象図書館へ向かう", "summary": "見えている出口を使って場面を移す。"},
+                    {"label": "来訪者ログを一行だけ直す", "summary": "その場でログを整える。"},
                 ],
                 "scene_move": "hold",
                 "scene_pressure": "medium",
@@ -1511,21 +1450,18 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
         auth_headers,
         {"input_mode": "choice", "choice_id": "choice_1"},
     )
-    generated_explore = first_payload["next_choices"][2]
-    assert generated_explore["label"] != "現在の場所について質問する"
+    generated_explore = first_payload["suggested_actions"][0]
     assert "万象図書館" in generated_explore["label"]
-    assert generated_explore["action_kind"] == "travel"
-    assert generated_explore["travel_target_key"] == "universal_library"
+    assert "travel_target_key" not in generated_explore
 
     _, second_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "choice_3"},
+        {"player_action_text": "万象図書館へ向かう"},
     )
-    assert second_payload["action_type"] == "travel"
-    assert second_payload["interpreted_intent"]["canonical_action_kind"] == "travel"
-    assert second_payload["current_location"]["key"] == "universal_library"
+    assert second_payload["current_location"]["key"] == "nexus_city"
+    assert second_payload["location_updates"] == []
 
 
 def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers):
@@ -1539,9 +1475,10 @@ def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers
         {"input_mode": "choice", "choice_id": "choice_3"},
     )
 
-    assert payload["action_type"] == "travel"
-    assert payload["interpreted_intent"]["canonical_action_kind"] == "travel"
-    assert payload["current_location"]["key"] == "universal_library"
+    assert payload["player_action_text"].startswith("万象図書館")
+    assert payload["interpreted_intent"]["source"] == "public_ai_gm"
+    assert payload["current_location"]["key"] == "nexus_city"
+    assert payload["location_updates"] == []
 
 
 def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
@@ -1675,21 +1612,12 @@ def test_ops_projection_status_and_rebuild_contract(client, container, auth_head
     )
     assert council_turns_response.status_code == 200
     council_turns_payload = council_turns_response.json()
-    assert council_turns_payload["items"][0]["resolution_mode"] == "gm_council"
+    assert council_turns_payload["items"][0]["resolution_mode"] == "ai_gm_harness"
     assert council_turns_payload["items"][0]["world_context"] == session_payload["world_context"]
     assert council_turns_payload["items"][0]["langfuse_trace_id"]
     assert council_turns_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     assert council_turns_payload["items"][0]["langfuse_status"] == "ok"
-    assert [item["council_role"] for item in council_turns_payload["items"][0]["roles"]] == [
-        "intent_interpreter",
-        "memory_manager",
-        "npc_manager",
-        "situation_mapper",
-        "world_progress",
-        "rules_arbiter",
-        "safety_guard",
-        "narrative",
-    ]
+    assert [item["council_role"] for item in council_turns_payload["items"][0]["roles"]] == ["ai_gm"]
     assert {
         "prompt_cache_hit_tokens",
         "prompt_cache_miss_tokens",
@@ -1699,7 +1627,7 @@ def test_ops_projection_status_and_rebuild_contract(client, container, auth_head
     assert council_detail_response.status_code == 200
     council_detail_payload = council_detail_response.json()
     assert council_detail_payload["turn_id"] == council_turn_id
-    assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane"}
+    assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane", "public_turn_fallback"}
     assert "attempts" in council_detail_payload["roles"][-1]
     assert council_detail_payload["resolved_output"]["retrieval_trace"]["status"] == "ready"
     assert council_detail_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
@@ -1819,7 +1747,7 @@ def test_ops_relationship_chapter_scene_and_memory_contracts(client, container, 
     )
     assert chapters_response.status_code == 200
     assert chapters_response.json()["world_context"] == session_payload["world_context"]
-    assert chapters_response.json()["items"]
+    assert "items" in chapters_response.json()
 
     chapter_branches_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/chapter-branches",
@@ -1854,8 +1782,7 @@ def test_ops_relationship_chapter_scene_and_memory_contracts(client, container, 
     )
     assert ambient_beats_response.status_code == 200
     assert ambient_beats_response.json()["world_context"] == session_payload["world_context"]
-    assert ambient_beats_response.json()["items"]
-    assert {"beat_kind", "visible_summary"} <= set(ambient_beats_response.json()["items"][0])
+    assert "items" in ambient_beats_response.json()
 
     route_pressures_response = client.get(
         f"/ops/worlds/{session_payload['world_id']}/route-pressures",

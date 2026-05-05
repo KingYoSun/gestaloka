@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Literal
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,50 +36,10 @@ EMPTY_SHARED_CONSEQUENCE_UPDATES = {
 
 
 class ResolveTurnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     session_id: str = Field(min_length=1, max_length=36)
-    input_mode: Literal["choice", "free_text"] = "choice"
-    choice_id: str | None = Field(default=None, min_length=1, max_length=120)
-    input_text: str | None = Field(default=None, min_length=1, max_length=2000)
-    action_type: Literal["narrative", "use_reward_item", "accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"] | None = None
-    item_id: str | None = Field(default=None, min_length=1, max_length=36)
-    quest_assignment_id: str | None = Field(default=None, min_length=1, max_length=36)
-
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_payload(cls, payload: object) -> object:
-        if not isinstance(payload, dict):
-            return payload
-        normalized = dict(payload)
-        action_type = normalized.get("action_type")
-        if normalized.get("input_text") and not normalized.get("choice_id") and "input_mode" not in normalized:
-            normalized["input_mode"] = "free_text"
-        if action_type == "narrative" and normalized.get("input_text") and not normalized.get("choice_id"):
-            normalized["input_mode"] = "free_text"
-        elif action_type == "use_reward_item" or action_type in {"accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"}:
-            normalized["input_mode"] = "choice"
-        return normalized
-
-    @model_validator(mode="after")
-    def validate_action_payload(self) -> "ResolveTurnRequest":
-        if self.action_type == "use_reward_item" and not self.item_id:
-            raise ValueError("item_id is required for use_reward_item turns")
-        if self.action_type in {"accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"} and not self.quest_assignment_id:
-            raise ValueError("quest_assignment_id is required for quest lifecycle turns")
-        if self.action_type == "narrative" and self.input_mode != "free_text":
-            self.input_mode = "free_text"
-        if self.action_type not in {"use_reward_item", "accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"} and self.input_mode == "choice" and not self.choice_id:
-            raise ValueError("choice_id is required for choice turns")
-        if self.action_type not in {"use_reward_item", "accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"} and self.input_mode == "free_text" and not self.input_text:
-            raise ValueError("input_text is required for free_text turns")
-        if self.action_type == "use_reward_item" and self.choice_id is not None:
-            self.choice_id = None
-        if self.action_type == "use_reward_item" and self.input_text is None:
-            self.input_text = f"[use_reward_item:{self.item_id}]"
-        if self.action_type in {"accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"}:
-            self.choice_id = None
-            if self.input_text is None:
-                self.input_text = f"[{self.action_type}:{self.quest_assignment_id}]"
-        return self
+    player_action_text: str = Field(min_length=1, max_length=2000)
 
 
 def _world_context_for_session_id(db: Session, session_id: str) -> dict[str, object] | None:
@@ -132,14 +90,6 @@ def _failure_response_content(result, world_context: dict[str, object]) -> dict[
             "final_lane": result.turn.model_lane,
             "used_fallback": bool(resolved_output.get("used_fallback", False)),
             "council_trace": resolved_output.get("council_trace", []),
-            "retryable_choice_id": next(
-                (
-                    str(item.get("choice_id"))
-                    for item in result.next_choices
-                    if isinstance(item, dict) and item.get("choice_id")
-                ),
-                None,
-            ),
         }
     return {
         "detail": result.error_detail,
@@ -166,10 +116,9 @@ def _failure_response_content(result, world_context: dict[str, object]) -> dict[
         "chapter_updates": [],
         "branch_updates": [],
         "ambient_updates": [],
-        "action_type": result.action_type,
-        "input_mode": result.input_mode,
+        "player_action_text": result.turn.input_text,
         "interpreted_intent": result.interpreted_intent,
-        "next_choices": result.next_choices,
+        "suggested_actions": result.next_choices,
         "consequence_summary": result.consequence_summary,
         "scene_tone": result.scene_tone,
         "scene_summary": result.scene_summary,
@@ -188,8 +137,7 @@ def _success_response_content(result, world_context: dict[str, object]) -> dict[
     shared_response = _shared_consequence_response(result.turn.resolved_output or {})
     return {
         "turn_id": result.turn.id,
-        "action_type": result.action_type,
-        "input_mode": result.input_mode,
+        "player_action_text": result.turn.input_text,
         "event_id": result.event.id,
         "memory_ids": result.memory_ids,
         "narrative": result.turn.resolved_output.get("narrative", ""),
@@ -200,7 +148,7 @@ def _success_response_content(result, world_context: dict[str, object]) -> dict[
         "bonus_sp": result.bonus_sp,
         "sp_ledger_id": result.sp_ledger_id,
         "interpreted_intent": result.interpreted_intent,
-        "next_choices": result.next_choices,
+        "suggested_actions": result.next_choices,
         "consequence_summary": result.consequence_summary,
         "scene_tone": result.scene_tone,
         "quest_updates": result.quest_updates,
@@ -413,12 +361,7 @@ async def _resolve_turn_background(
     session_id: str,
     world_id: str,
     user_sub: str,
-    action_type: str | None,
-    input_mode: str,
-    choice_id: str | None,
-    input_text: str | None,
-    item_id: str | None,
-    quest_assignment_id: str | None,
+    player_action_text: str,
     world_context: dict[str, object],
 ) -> None:
     managed = await TurnResolutionManager(
@@ -427,12 +370,7 @@ async def _resolve_turn_background(
         session_id=session_id,
         world_id=world_id,
         user_sub=user_sub,
-        action_type=action_type,
-        input_mode=input_mode,
-        choice_id=choice_id,
-        input_text=input_text,
-        item_id=item_id,
-        quest_assignment_id=quest_assignment_id,
+        player_action_text=player_action_text,
         world_context=world_context,
     ).resolve()
     if managed.error is not None:
@@ -489,12 +427,7 @@ async def _resolve_turn_background(
         await realtime_hub.emit_with_world_context(
             session_id,
             "turn.failed",
-            {
-                "turn_id": turn_id,
-                "detail": result.error_detail,
-                "failure": failure_payload.get("failure", {}),
-                "retryable": True,
-            },
+            {**failure_payload, "retryable": True},
             world_context,
         )
         return
@@ -537,11 +470,6 @@ async def resolve_turn(
     user: UserIdentity = Depends(get_current_user),
 ) -> dict:
     ensure_primary_runtime(container)
-    prepared_input_mode = (
-        "choice"
-        if payload.action_type in {"use_reward_item", "accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"}
-        else payload.input_mode
-    )
     game_session = db.execute(select(GameSession).where(GameSession.id == payload.session_id)).scalar_one_or_none()
     if game_session is not None:
         try:
@@ -549,7 +477,7 @@ async def resolve_turn(
         except WorldAvailabilityError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.diagnostic()) from exc
     try:
-        prepared = prepare_turn_for_session(db, container, user, payload.session_id, input_mode=prepared_input_mode)
+        prepared = prepare_turn_for_session(db, container, user, payload.session_id, input_mode="free_text")
     except HTTPException as exc:
         if exc.status_code == 409 and isinstance(exc.detail, dict):
             world_context = _world_context_for_session_id(db, payload.session_id)
@@ -566,12 +494,7 @@ async def resolve_turn(
             world_id=prepared.session.world_id,
             user_sub=user.sub,
             request_payload={
-                "action_type": payload.action_type,
-                "input_mode": prepared_input_mode,
-                "choice_id": payload.choice_id,
-                "input_text": payload.input_text,
-                "item_id": payload.item_id,
-                "quest_assignment_id": payload.quest_assignment_id,
+                "player_action_text": payload.player_action_text,
             },
             status="accepted",
             result_payload={},
@@ -594,12 +517,7 @@ async def resolve_turn(
             session_id=prepared.session.id,
             world_id=prepared.session.world_id,
             user_sub=user.sub,
-            action_type=payload.action_type,
-            input_mode=prepared_input_mode,
-            choice_id=payload.choice_id,
-            input_text=payload.input_text,
-            item_id=payload.item_id,
-            quest_assignment_id=payload.quest_assignment_id,
+            player_action_text=payload.player_action_text,
             world_context=world_context,
         )
     )

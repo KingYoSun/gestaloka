@@ -168,6 +168,25 @@ def _normalize_live_consequence_tags(raw_tags: Any) -> list[ConsequenceTag]:
     return normalize_consequence_tags(mapped)
 
 
+def _memory_drafts(raw_memories: Any, fallback_text: str) -> list[dict[str, Any]]:
+    items = raw_memories if isinstance(raw_memories, list) else [raw_memories]
+    drafts: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            text = _first_non_empty_text(item.get("text"), item.get("summary"), item.get("memory"), item.get("content"))
+            scope = _first_non_empty_text(item.get("scope"), "world")
+            salience = item.get("salience", 0.6)
+        else:
+            text = _first_non_empty_text(item)
+            scope = "world"
+            salience = 0.6
+        if text:
+            drafts.append({"scope": scope, "text": text, "salience": salience})
+    if not drafts:
+        drafts.append({"scope": "world", "text": fallback_text, "salience": 0.5})
+    return drafts
+
+
 class MemoryDraft(BaseModel):
     scope: str = Field(min_length=1)
     text: str = Field(min_length=1)
@@ -181,6 +200,37 @@ class NarrativeChoiceDraft(BaseModel):
     canonical_input_text: str | None = None
     action_kind: Literal["narrative", "use_reward_item", "travel"] = "narrative"
     travel_target_key: str | None = None
+
+
+class PublicSuggestedActionDraft(BaseModel):
+    label: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    risk_hint: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        label = _first_non_empty_text(
+            normalized.get("label"),
+            normalized.get("action"),
+            normalized.get("text"),
+            normalized.get("summary"),
+        )
+        summary = _first_non_empty_text(
+            normalized.get("summary"),
+            normalized.get("intent"),
+            normalized.get("intent_summary"),
+            normalized.get("effect"),
+            label,
+        )
+        normalized["label"] = label or "場の変化を確かめる"
+        normalized["summary"] = summary or normalized["label"]
+        risk_hint = normalized.get("risk_hint") or normalized.get("risk")
+        normalized["risk_hint"] = str(risk_hint).strip() if risk_hint else None
+        return normalized
 
 
 class CouncilIntentInterpreterPayload(BaseModel):
@@ -282,6 +332,125 @@ class TurnResolutionPayload(BaseModel):
     entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PublicGmTurnPayload(BaseModel):
+    action_interpretation: str = Field(min_length=1)
+    narrative: str = Field(min_length=1)
+    npc_reaction: str = Field(min_length=1)
+    current_situation: str = Field(min_length=1)
+    current_location_name: str | None = None
+    present_people: list[str] = Field(default_factory=list)
+    visible_items: list[str] = Field(default_factory=list)
+    used_item_names: list[str] = Field(default_factory=list)
+    known_facts: list[str] = Field(default_factory=list)
+    suggested_actions: list[PublicSuggestedActionDraft] = Field(min_length=2, max_length=4)
+    consequence_summary: str = Field(min_length=1)
+    consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
+    world_tags: list[WorldTag] = Field(min_length=1)
+    shared_action_tag: SharedWorldActionTag = "none"
+    state_drafts: dict[str, Any] = Field(default_factory=dict)
+    branch_signals: list[BranchSignal] = Field(default_factory=list)
+    outcome_band: OutcomeBand = "steady"
+    scene_tone: str = Field(min_length=1)
+    scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
+    scene_pressure: Literal["low", "medium", "high"] = "medium"
+    memories: list[MemoryDraft] = Field(min_length=1)
+    broadcast_draft: dict[str, Any] | None = None
+    quest_offer: dict[str, Any] | None = None
+    chapter_directive: dict[str, Any] | None = None
+    followup_quest_offer: dict[str, Any] | None = None
+    quest_resolution_hint: dict[str, Any] | None = None
+    entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any, info: ValidationInfo) -> Any:
+        if not isinstance(value, dict):
+            return value
+        input_payload = info.context.get("input_payload", {}) if info.context else {}
+        input_payload = input_payload if isinstance(input_payload, dict) else {}
+        public_context = input_payload.get("public_game_context")
+        public_context = public_context if isinstance(public_context, dict) else {}
+        current_location = public_context.get("current_location")
+        current_location = current_location if isinstance(current_location, dict) else {}
+        input_text = _first_non_empty_text(input_payload.get("player_action_text"), input_payload.get("input_text"))
+        normalized = dict(value)
+        action_interpretation = _first_non_empty_text(
+            normalized.get("action_interpretation"),
+            normalized.get("interpreted_action"),
+            normalized.get("intent_summary"),
+            input_text,
+            "プレイヤーは現在の状況に働きかけた。",
+        )
+        consequence_summary = _first_non_empty_text(
+            normalized.get("consequence_summary"),
+            normalized.get("result_summary"),
+            normalized.get("resolution_summary"),
+            action_interpretation,
+        )
+        normalized["action_interpretation"] = action_interpretation
+        normalized["consequence_summary"] = consequence_summary
+        normalized["current_situation"] = _first_non_empty_text(
+            normalized.get("current_situation"),
+            normalized.get("situation"),
+            current_location.get("description"),
+            consequence_summary,
+        )
+        normalized["current_location_name"] = _first_non_empty_text(
+            normalized.get("current_location_name"),
+            normalized.get("location_name"),
+            normalized.get("current_place"),
+            current_location.get("name"),
+        ) or None
+        normalized["present_people"] = [str(item).strip() for item in normalized.get("present_people") or [] if str(item).strip()]
+        normalized["visible_items"] = [str(item).strip() for item in normalized.get("visible_items") or [] if str(item).strip()]
+        normalized["used_item_names"] = [str(item).strip() for item in normalized.get("used_item_names") or [] if str(item).strip()]
+        normalized["known_facts"] = [str(item).strip() for item in normalized.get("known_facts") or [] if str(item).strip()]
+        suggestions = (
+            normalized.get("suggested_actions")
+            or normalized.get("next_actions")
+            or normalized.get("next_choices")
+            or normalized.get("choices")
+            or []
+        )
+        if not isinstance(suggestions, list):
+            suggestions = []
+        if len([item for item in suggestions if isinstance(item, dict)]) < 2:
+            suggestions = public_context.get("visible_opportunities") or []
+        if len([item for item in suggestions if isinstance(item, dict)]) < 2:
+            suggestions = [
+                {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
+                {"label": "近くの人物に反応を尋ねる", "summary": "その場にいる相手から、次に判断できる情報を得る。"},
+                {"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"},
+            ]
+        normalized["suggested_actions"] = [item for item in suggestions if isinstance(item, dict)][:4]
+        normalized["consequence_tags"] = _normalize_live_consequence_tags(normalized.get("consequence_tags"))
+        normalized["world_tags"] = normalize_world_tags(normalized.get("world_tags") or infer_world_tags(input_text))
+        if not isinstance(normalized.get("state_drafts"), dict):
+            normalized["state_drafts"] = {}
+        if not isinstance(normalized.get("branch_signals"), list):
+            normalized["branch_signals"] = []
+        normalized["branch_signals"] = normalize_branch_signals([str(item) for item in normalized.get("branch_signals") or []])
+        normalized["outcome_band"] = str(normalized.get("outcome_band") or "steady")
+        if normalized["outcome_band"] not in {"steady", "tangled", "setback"}:
+            normalized["outcome_band"] = "steady"
+        normalized["scene_tone"] = _first_non_empty_text(normalized.get("scene_tone"), normalized.get("tone"), "measured")
+        scene_move = str(normalized.get("scene_move") or "hold")
+        normalized["scene_move"] = scene_move if scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
+        scene_pressure = str(normalized.get("scene_pressure") or "medium")
+        normalized["scene_pressure"] = scene_pressure if scene_pressure in {"low", "medium", "high"} else "medium"
+        shared_action_tag = str(normalized.get("shared_action_tag") or "none")
+        if shared_action_tag not in {"help", "harm", "investigate", "trade", "negotiate", "protect", "explore", "restore", "destabilize", "none"}:
+            shared_action_tag = "none"
+        normalized["shared_action_tag"] = shared_action_tag
+        normalized["memories"] = _memory_drafts(normalized.get("memories"), consequence_summary)
+        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint"):
+            if not isinstance(normalized.get(key), dict):
+                normalized[key] = None
+        if not isinstance(normalized.get("entity_drafts"), list):
+            normalized["entity_drafts"] = []
+        return normalized
+
+
 @dataclass(frozen=True)
 class TurnResolutionOutcome:
     role_runs: list[CouncilRoleRun]
@@ -344,21 +513,25 @@ class StubModelProvider(BaseModelProvider):
         )
 
     def _generate_stub_output(self, prompt_id: str, *, lane: str, input_payload: dict[str, Any]) -> dict[str, Any]:
-        if "__force_invalid_all__" in str(input_payload.get("input_text", "")):
+        input_text = f"{input_payload.get('input_text', '')} {input_payload.get('player_action_text', '')}"
+        if "__force_invalid_all__" in input_text:
             return {"status": "invalid"}
         if prompt_id in {
+            "session.turn_resolution",
             "council.rules_arbiter",
             "council.safety_guard",
             "council.narrative",
             "ambient.safety_guard",
         } and lane == "main_lane":
-            if "__force_invalid_main__" in str(input_payload.get("input_text", "")):
+            if "__force_invalid_main__" in input_text:
                 return {"status": "invalid"}
 
         if prompt_id == "council.memory_manager":
             return self._memory_manager_output(input_payload)
         if prompt_id == "council.intent_interpreter":
             return self._intent_interpreter_output(input_payload)
+        if prompt_id == "session.turn_resolution":
+            return self._public_turn_resolution_output(input_payload)
         if prompt_id == "council.npc_manager":
             return self._npc_manager_output(input_payload)
         if prompt_id == "council.situation_mapper":
@@ -386,6 +559,138 @@ class StubModelProvider(BaseModelProvider):
         if prompt_id == "idle.safety_guard":
             return self._ambient_safety_guard_output(input_payload)
         raise KeyError(f"Unsupported stub prompt: {prompt_id}")
+
+    def _public_turn_resolution_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        player_name = str(input_payload.get("player_name") or "Player")
+        npc_name = str(input_payload.get("npc_name") or "NPC")
+        input_text = str(input_payload.get("player_action_text") or input_payload.get("input_text") or "")
+        public_context = input_payload.get("public_game_context") if isinstance(input_payload.get("public_game_context"), dict) else {}
+        current_location = public_context.get("current_location") if isinstance(public_context.get("current_location"), dict) else {}
+        current_location_name = str(current_location.get("name") or "現在地")
+        visible_exits = [item for item in public_context.get("visible_exits") or [] if isinstance(item, dict)]
+        for exit_summary in visible_exits:
+            destination_name = str(exit_summary.get("destination_name") or "").strip()
+            if destination_name and destination_name in input_text:
+                current_location_name = destination_name
+                break
+        visible_people = [str(item.get("name") or "") for item in public_context.get("visible_people") or [] if isinstance(item, dict)]
+        visible_items = [str(item.get("name") or "") for item in public_context.get("visible_items") or [] if isinstance(item, dict)]
+        used_item_names = [name for name in visible_items if name and name in input_text and any(token in input_text for token in ("使", "掲げ", "提示", "use", "present"))]
+        opportunities = [item for item in public_context.get("visible_opportunities") or [] if isinstance(item, dict)]
+        exit_actions = [
+            {
+                "label": f"{str(item.get('destination_name') or '').strip()}へ向かう",
+                "summary": str(item.get("summary") or "見えている出口を使って、場面を移す。"),
+            }
+            for item in visible_exits
+            if str(item.get("destination_name") or "").strip()
+        ]
+        suggested_actions = [*opportunities, *exit_actions]
+        if len(suggested_actions) < 2:
+            suggested_actions = [
+                {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
+                {"label": "近くの人物に反応を尋ねる", "summary": "その場にいる相手から、次に判断できる情報を得る。"},
+                {"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"},
+            ]
+        world_tags = infer_world_tags(input_text)
+        consequence_tags = _normalize_live_consequence_tags(world_tags)
+        outcome_band = "steady"
+        scene_move = "hold"
+        if any(token in input_text for token in ("空を飛んで", "一気に全部", "全部を解決", "solve everything")):
+            world_tags = ["none"]
+            consequence_tags = ["overreach"]
+            outcome_band = "setback"
+        full_text = input_text
+        state_drafts: dict[str, Any] = {
+            "acquired_items": [],
+            "known_facts": [],
+            "skills": [],
+            "trade_terms": [],
+        }
+        if any(token in full_text for token in ("生成方法", "学ぶ", "習得", "learn")) and any(
+            token in full_text for token in ("偽装ログ", "ログ", "camouflage", "disguise")
+        ):
+            state_drafts["skills"].append(
+                {
+                    "title": "一時的な偽装ログ生成方法",
+                    "summary": "万象図書館AIの観測を一時的に欺くため、来訪者ログへノイズを編み込む方法。",
+                }
+            )
+        if any(token in full_text for token in ("図書館", "Library", "library")) and any(
+            token in full_text for token in ("AI", "追跡", "観測", "監視", "scrutiny", "tracking")
+        ):
+            state_drafts["known_facts"].append(
+                {
+                    "title": "万象図書館AIは空白ログを追跡する",
+                    "summary": "万象図書館AIは未定義または空白の来訪者ログを異常値として観測し、記録へ固定しようとする。",
+                }
+            )
+        acquired_asset = any(token in full_text for token in ("入手", "受け取", "収集", "手に入", "acquire", "receive"))
+        if acquired_asset and any(token in full_text for token in ("偽装ログ", "ゴーストデータ", "断片", "データ")):
+            state_drafts["acquired_items"].append(
+                {
+                    "template_key": "disguise_log_fragment",
+                    "name": "偽装ログの断片",
+                    "description": "万象図書館AIの観測を一時的に逸らすために使えるデジタル資産。",
+                    "item_kind": "digital_asset",
+                }
+            )
+        shared_action_tag: SharedWorldActionTag = "none"
+        if any(token in full_text for token in ("取引", "trade", "deal")):
+            shared_action_tag = "trade"
+        elif any(token in full_text for token in ("交渉", "negotiate")):
+            shared_action_tag = "negotiate"
+        if shared_action_tag == "none":
+            if "investigate" in world_tags:
+                shared_action_tag = "investigate"
+            elif "promise_followup" in world_tags:
+                shared_action_tag = "protect"
+            elif "aid_local" in world_tags:
+                shared_action_tag = "help"
+        if shared_action_tag in {"trade", "negotiate"} and any(
+            token in full_text for token in ("代償", "要注意人物", "評判", "借り", "危険", "risk", "debt", "reputation")
+        ):
+            state_drafts["trade_terms"].append(
+                {
+                    "counterparty": "公開市場の情報屋",
+                    "received_summary": state_drafts["acquired_items"][0]["name"] if state_drafts["acquired_items"] else input_text,
+                    "consideration_kind": "reputational_risk",
+                    "consideration_summary": "市場内で要注意人物として記録され、今後の取引や移動に制約が生じる。",
+                }
+            )
+        consequence_summary = f"{player_name}の行動「{input_text}」により、{current_location_name}の状況が更新された。"
+        return {
+            "action_interpretation": input_text or "現在の状況を確かめる",
+            "narrative": (
+                f"{player_name}は「{input_text}」と行動した。"
+                f"{current_location_name}では、その行動に応じて見えている反応だけが変わる。"
+            ),
+            "npc_reaction": f"{npc_name}はその場で確認できる事実にだけ反応する。",
+            "current_situation": str(current_location.get("description") or consequence_summary),
+            "current_location_name": current_location_name,
+            "present_people": [name for name in visible_people if name],
+            "visible_items": [name for name in visible_items if name],
+            "used_item_names": used_item_names,
+            "known_facts": [],
+            "suggested_actions": suggested_actions[:3],
+            "consequence_summary": consequence_summary,
+            "consequence_tags": consequence_tags,
+            "world_tags": world_tags,
+            "shared_action_tag": shared_action_tag,
+            "state_drafts": state_drafts,
+            "branch_signals": [],
+            "outcome_band": outcome_band,
+            "scene_tone": "measured",
+            "scene_move": scene_move,
+            "scene_pressure": "medium",
+            "memories": [
+                {
+                    "scope": "world",
+                    "text": consequence_summary,
+                    "salience": 0.7,
+                }
+            ],
+        }
 
     def _play_localization_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         target_language = str(input_payload.get("target_language") or "")

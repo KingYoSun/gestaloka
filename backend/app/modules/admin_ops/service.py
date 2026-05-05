@@ -964,7 +964,11 @@ def list_council_turns(
     session_id: str | None = None,
     world_id: str | None = None,
 ) -> dict[str, object]:
-    stmt = select(Turn).where(Turn.resolution_mode == "gm_council").order_by(Turn.created_at.desc(), Turn.id.desc())
+    stmt = (
+        select(Turn)
+        .where(Turn.resolution_mode.in_(("gm_council", "ai_gm_harness")))
+        .order_by(Turn.created_at.desc(), Turn.id.desc())
+    )
     if session_id is not None:
         stmt = stmt.where(Turn.session_id == session_id)
     if world_id is not None:
@@ -985,7 +989,7 @@ def _turn_trace(db: Session, turn: Turn, *, include_attempts: bool) -> dict[str,
             .where(
                 LLMRun.turn_id == turn.id,
                 LLMRun.world_id == turn.world_id,
-                LLMRun.workflow_name == "gm_council",
+                LLMRun.workflow_name.in_(("gm_council", "ai_gm")),
             )
             .order_by(LLMRun.stage_index.asc(), LLMRun.created_at.asc(), LLMRun.id.asc())
         ).scalars()

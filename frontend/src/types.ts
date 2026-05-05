@@ -282,13 +282,10 @@ export type CharacterSummary = {
   status_json: Record<string, unknown>;
 };
 
-export type NarrativeChoice = {
-  choice_id: string;
+export type SuggestedAction = {
   label: string;
   summary: string;
-  canonical_input_text: string;
-  action_kind: "narrative" | "use_reward_item" | "travel";
-  travel_target_key?: string | null;
+  risk_hint?: string | null;
 };
 
 export type QuestSummary = {
@@ -434,7 +431,7 @@ export type SessionState = {
   relationships: RelationshipSummary[];
   active_consequence_threads: ConsequenceThreadSummary[];
   recent_consequence_history: string[];
-  next_choices: NarrativeChoice[];
+  suggested_actions: SuggestedAction[];
   narrative_state_bands: Record<string, string>;
   important_inventory_affordances: Array<{
     item_id: string;
@@ -448,8 +445,7 @@ export type SessionState = {
 export type TurnResponse = {
   turn_id: string;
   world_context?: WorldContext;
-  action_type: "narrative" | "use_reward_item" | "travel" | "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest";
-  input_mode: "choice" | "free_text";
+  player_action_text: string;
   event_id: string;
   memory_ids: string[];
   narrative: string;
@@ -460,7 +456,7 @@ export type TurnResponse = {
   bonus_sp: number;
   sp_ledger_id: string;
   interpreted_intent: Record<string, unknown>;
-  next_choices: NarrativeChoice[];
+  suggested_actions: SuggestedAction[];
   consequence_summary: string;
   scene_tone: string;
   scene_summary: string;
@@ -515,7 +511,6 @@ export type TurnResponse = {
     final_lane: string | null;
     used_fallback: boolean;
     council_trace: Array<Record<string, unknown>>;
-    retryable_choice_id: string | null;
   };
 };
 
@@ -531,7 +526,6 @@ export type StoryHistoryItem = {
   turn_id: string | null;
   canonical_sequence: number | null;
   occurred_at: string;
-  input_mode: string;
   narrative: string;
   reaction: string;
   consequence: string;

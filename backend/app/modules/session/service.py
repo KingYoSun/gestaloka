@@ -443,8 +443,7 @@ def create_session_for_user(
         resolved_output={
             "status": "system",
             "action_type": "system",
-            "input_mode": "choice",
-            "next_choices": bootstrap_state["next_choices"],
+            "suggested_actions": _public_suggested_actions(bootstrap_state["next_choices"]),
             "consequence_summary": str(template.bootstrap.start_consequence_summary),
         },
         model_lane="system",
@@ -654,96 +653,35 @@ def resolve_turn_for_session(
     container: AppContainer,
     prepared: PreparedTurnContext,
     *,
-    action_type: str | None = None,
-    input_mode: str = "choice",
-    choice_id: str | None = None,
-    input_text: str | None = None,
-    item_id: str | None = None,
-    quest_assignment_id: str | None = None,
+    player_action_text: str,
 ) -> TurnResolutionResult:
+    input_text = player_action_text.strip()
+    if not input_text:
+        raise ValueError("player_action_text is required")
     trace_context = container.observability_service.langfuse_trace(
         seed_id=prepared.turn_id,
         name="player_turn",
         input_payload={
             "session_id": prepared.session.id,
             "world_id": prepared.session.world_id,
-            "action_type": action_type or "narrative",
-            "input_mode": input_mode,
-            "choice_id": choice_id,
-            "input_text": input_text,
-            "item_id": item_id,
-            "quest_assignment_id": quest_assignment_id,
+            "player_action_text": input_text,
         },
         metadata={
             "world_id": prepared.session.world_id,
             "session_id": prepared.session.id,
             "turn_id": prepared.turn_id,
-            "action_type": action_type or "narrative",
-            "input_mode": input_mode,
         },
         user_id=prepared.player_actor.user_sub,
         session_id=prepared.session.id,
         tags=[container.settings.app_runtime_role],
     )
     with trace_context as trace_link:
-        if action_type in {"accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"}:
-            if quest_assignment_id is None:
-                raise ValueError("quest_assignment_id is required for quest lifecycle turns")
-            result = _resolve_quest_lifecycle_turn_for_session(
-                db,
-                container,
-                prepared,
-                action_type=action_type,
-                quest_assignment_id=quest_assignment_id,
-                input_mode=input_mode,
-            )
-        elif action_type == "use_reward_item":
-            if item_id is None:
-                raise ValueError("item_id is required for use_reward_item")
-            result = _resolve_reward_item_turn_for_session(
-                db,
-                container,
-                prepared,
-                item_id=item_id,
-                input_mode=input_mode,
-            )
-        elif input_mode == "choice":
-            if choice_id is None:
-                raise ValueError("choice_id is required for choice turns")
-            session_state = _session_state_with_latest_choices(
-                db,
-                session_id=prepared.session.id,
-                world_id=prepared.session.world_id,
-                actor_id=prepared.player_actor.id,
-                location_id=prepared.location_id,
-            )
-            selected_choice = _select_choice(session_state.get("next_choices") or [], choice_id)
-            if selected_choice is None:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                    detail=f"Unknown choice_id: {choice_id}",
-                )
-            input_text = str(selected_choice.get("canonical_input_text") or selected_choice.get("label") or "").strip()
-            if not input_text:
-                raise ValueError("Selected choice is missing canonical_input_text")
-            result = _resolve_narrative_turn_for_session(
-                db,
-                container,
-                prepared,
-                input_mode="choice",
-                input_text=input_text,
-                selected_choice=selected_choice,
-            )
-        else:
-            if input_text is None:
-                raise ValueError("input_text is required for free_text turns")
-            result = _resolve_narrative_turn_for_session(
-                db,
-                container,
-                prepared,
-                input_mode=input_mode,
-                input_text=input_text,
-            )
+        result = _resolve_public_ai_gm_turn_for_session(
+            db,
+            container,
+            prepared,
+            input_text=input_text,
+        )
 
     _apply_langfuse_trace_to_turn(result.turn, trace_link)
     return result
@@ -1090,6 +1028,618 @@ def _finalize_event_timeline_and_broadcast(
             payload={"broadcast_event_id": broadcast.id, "semantic_key": broadcast.semantic_key},
         )
     db.flush()
+
+
+def _public_suggested_actions(raw_actions: list[dict[str, Any]] | list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_actions:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or item.get("canonical_input_text") or item.get("intent_summary") or "").strip()
+        if not label or label in seen:
+            continue
+        summary = str(item.get("summary") or item.get("intent_summary") or label).strip()
+        action = {
+            "label": label,
+            "summary": summary,
+        }
+        risk_hint = str(item.get("risk_hint") or "").strip()
+        if risk_hint:
+            action["risk_hint"] = risk_hint
+        normalized.append(action)
+        seen.add(label)
+        if len(normalized) >= 4:
+            break
+    return normalized
+
+
+def _name_matches_claim(name: str, claim: str) -> bool:
+    name = name.strip()
+    claim = claim.strip()
+    if not name or not claim:
+        return False
+    return name == claim or name in claim or claim in name
+
+
+def _apply_public_ai_gm_harness(
+    db: Session,
+    *,
+    game_session: GameSession,
+    player_actor: Actor,
+    prepared_location_id: str,
+    input_text: str,
+    payload: Any,
+    session_state: dict[str, Any],
+) -> dict[str, Any]:
+    interpreted = payload.interpreted_intent if isinstance(payload.interpreted_intent, dict) else {}
+    text_evidence = " ".join(
+        [
+            input_text,
+            str(payload.narrative or ""),
+            str(payload.consequence_summary or ""),
+        ]
+    )
+    accepted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    location_updates: list[dict[str, Any]] = []
+    inventory_updates: list[dict[str, Any]] = []
+    quest_updates: list[dict[str, Any]] = []
+    faction_updates: list[dict[str, Any]] = []
+    memory_drafts: list[dict[str, Any]] = []
+    travel_summary: str | None = None
+
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    current_location_name = str((current_location if isinstance(current_location, dict) else {}).get("name") or "").strip()
+    claimed_location_name = str(interpreted.get("current_location_name") or "").strip()
+    if claimed_location_name and current_location_name and not _name_matches_claim(current_location_name, claimed_location_name):
+        matched_route = None
+        for route in session_state.get("nearby_routes") or []:
+            if not isinstance(route, dict) or not bool(route.get("available")):
+                continue
+            destination_name = str(route.get("destination_name") or "").strip()
+            if _name_matches_claim(destination_name, claimed_location_name) and destination_name in text_evidence:
+                matched_route = route
+                break
+        if matched_route is None:
+            rejected.append(
+                {
+                    "claim_kind": "location",
+                    "claim": claimed_location_name,
+                    "reason": "No visible open route matched the public location claim and player action.",
+                }
+            )
+        else:
+            destination_key = str(matched_route.get("destination_key") or "").strip()
+            destination = get_location_by_key(db, game_session.world_id, destination_key) if destination_key else None
+            if destination is None:
+                rejected.append(
+                    {
+                        "claim_kind": "location",
+                        "claim": claimed_location_name,
+                        "reason": "The matched public route could not be resolved internally.",
+                    }
+                )
+            else:
+                try:
+                    outcome = travel_to_location(
+                        db,
+                        world_id=game_session.world_id,
+                        actor=player_actor,
+                        destination_location_id=destination.id,
+                    )
+                except (LookupError, ValueError) as exc:
+                    rejected.append(
+                        {
+                            "claim_kind": "location",
+                            "claim": claimed_location_name,
+                            "reason": str(exc),
+                        }
+                    )
+                else:
+                    location_updates.extend(outcome.location_updates)
+                    memory_drafts.extend(outcome.memory_drafts)
+                    travel_summary = outcome.travel_summary
+                    accepted.append(
+                        {
+                            "change_kind": "location",
+                            "from": current_location_name,
+                            "to": destination.name,
+                            "summary": outcome.travel_summary,
+                        }
+                    )
+
+    used_item_names = [str(item).strip() for item in interpreted.get("used_item_names") or [] if str(item).strip()]
+    for used_item_name in used_item_names:
+        matched_item = next(
+            (
+                item
+                for item in session_state.get("inventory") or []
+                if isinstance(item, dict)
+                and bool(item.get("usable"))
+                and _name_matches_claim(str(item.get("name") or ""), used_item_name)
+                and str(item.get("name") or "") in text_evidence
+            ),
+            None,
+        )
+        if matched_item is None:
+            rejected.append(
+                {
+                    "claim_kind": "item_use",
+                    "claim": used_item_name,
+                    "reason": "No owned usable visible item matched the public item-use claim.",
+                }
+            )
+            continue
+        try:
+            outcome = use_reward_item(
+                db,
+                world_id=game_session.world_id,
+                actor_id=player_actor.id,
+                actor_name=player_actor.display_name,
+                location_id=player_actor.current_location_id or prepared_location_id,
+                item_id=str(matched_item.get("id")),
+            )
+        except (LookupError, ValueError) as exc:
+            rejected.append(
+                {
+                    "claim_kind": "item_use",
+                    "claim": used_item_name,
+                    "reason": str(exc),
+                }
+            )
+        else:
+            inventory_updates.extend(outcome.inventory_updates)
+            quest_updates.extend(outcome.quest_updates)
+            faction_updates.extend(outcome.faction_updates)
+            memory_drafts.extend(outcome.memory_drafts)
+            accepted.append(
+                {
+                    "change_kind": "item_use",
+                    "item_name": outcome.item.name,
+                    "summary": outcome.event_narrative,
+                }
+            )
+
+    return {
+        "accepted_state_changes": accepted,
+        "rejected_claims": rejected,
+        "location_updates": location_updates,
+        "inventory_updates": inventory_updates,
+        "quest_updates": quest_updates,
+        "faction_updates": faction_updates,
+        "memory_drafts": memory_drafts,
+        "travel_summary": travel_summary,
+    }
+
+
+def _resolve_public_ai_gm_turn_for_session(
+    db: Session,
+    container: AppContainer,
+    prepared: PreparedTurnContext,
+    *,
+    input_text: str,
+) -> TurnResolutionResult:
+    game_session = prepared.session
+    player_actor = prepared.player_actor
+    guide_npc = prepared.guide_npc
+
+    turn = Turn(
+        id=prepared.turn_id,
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        actor_id=player_actor.id,
+        input_text=input_text,
+        resolved_output={"status": "pending"},
+        model_lane="pending",
+        action_type="narrative",
+        resolution_mode="ai_gm_harness",
+    )
+    db.add(turn)
+    db.flush()
+
+    session_state = _session_state_with_latest_choices(
+        db,
+        session_id=game_session.id,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        location_id=prepared.location_id,
+    )
+    retrieval = container.memory_service.search(
+        db,
+        world_id=game_session.world_id,
+        query_text=build_retrieval_query_text(input_text, session_state=session_state, relation_context=[]),
+        actor_id=guide_npc.id,
+        location_id=prepared.location_id,
+    )
+    resolution = container.council_service.resolve_public_turn(
+        CouncilRequest(
+            world_id=game_session.world_id,
+            turn_id=turn.id,
+            player_name=player_actor.display_name,
+            npc_name=guide_npc.display_name,
+            input_text=input_text,
+            input_mode="free_text",
+            selected_choice=None,
+            relevant_memories=[item.text for item in retrieval.memories],
+            relation_context=[],
+            graph_context_status="public_context",
+            session_state=session_state,
+        )
+    )
+    _persist_role_runs(
+        db,
+        world_id=game_session.world_id,
+        turn_id=turn.id,
+        workflow_name="ai_gm",
+        role_runs=resolution.role_runs,
+        graph_context_status="public_context",
+    )
+    progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
+    if not resolution.succeeded or resolution.final_payload is None:
+        failed_result = _build_failed_turn_result(
+            db,
+            container,
+            prepared,
+            turn=turn,
+            action_type="narrative",
+            resolution_mode="ai_gm_harness",
+            action_label=input_text,
+            graph_context_status="public_context",
+            failure_reason=resolution.failure_reason or "AI GM turn resolution failed",
+            model_lane=resolution.final_lane,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            input_mode="free_text",
+            interpreted_intent={},
+            next_choices=session_state.get("suggested_actions") or [],
+            consequence_summary="The attempted line could not be resolved into a coherent public turn.",
+            progress_phases=progress_phases,
+            failure_payload={
+                "failure_reason": resolution.failure_reason,
+                "rejection_role": resolution.rejection_role,
+            },
+        )
+        _finalize_event_timeline_and_broadcast(db, event=failed_result.event)
+        return failed_result
+
+    payload = resolution.final_payload
+    harness_result = _apply_public_ai_gm_harness(
+        db,
+        game_session=game_session,
+        player_actor=player_actor,
+        prepared_location_id=prepared.location_id,
+        input_text=input_text,
+        payload=payload,
+        session_state=session_state,
+    )
+    rejected_claims = harness_result["rejected_claims"]
+    if rejected_claims:
+        current_location = get_location_summary(db, game_session.world_id, player_actor.current_location_id or prepared.location_id)
+        rejected_summary = " / ".join(str(item.get("claim") or "") for item in rejected_claims if isinstance(item, dict))
+        payload.narrative = (
+            f"{player_actor.display_name}は「{input_text}」を試みた。"
+            f"ただし {rejected_summary} は現在の公開状況からは確定できない。"
+            f"現在地は{current_location.get('name') or '現在地'}のまま、場面は確認できる変化だけを受け取る。"
+        )
+        payload.consequence_summary = "AI GM の公開主張のうち、canonical state と照合できない部分は反映されなかった。"
+        payload.world_tags = ["none"]
+        payload.consequence_tags = ["careful_observation"]
+
+    effective_location_id = player_actor.current_location_id or prepared.location_id
+    with _turn_progress_span("world_tag_updates"):
+        state_updates = apply_world_tag_updates(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            world_tags=payload.world_tags,
+        )
+    state_updates["inventory_updates"] = [
+        *state_updates["inventory_updates"],
+        *harness_result["inventory_updates"],
+    ]
+    state_updates["quest_updates"] = [
+        *state_updates["quest_updates"],
+        *harness_result["quest_updates"],
+    ]
+    state_updates["faction_updates"] = [
+        *state_updates["faction_updates"],
+        *harness_result["faction_updates"],
+    ]
+
+    event = Event(
+        world_id=game_session.world_id,
+        session_id=game_session.id,
+        turn_id=turn.id,
+        event_type=payload.event_type,
+        source_actor_id=player_actor.id,
+        location_id=effective_location_id,
+        payload={
+            **payload.event_payload,
+            "player_action_text": input_text,
+            "location_id": effective_location_id,
+            "graph_context_status": "public_context",
+            "world_tags": payload.world_tags,
+            "accepted_state_changes": harness_result["accepted_state_changes"],
+            "rejected_claims": rejected_claims,
+            "quest_updates": state_updates["quest_updates"],
+            "faction_updates": state_updates["faction_updates"],
+            "inventory_updates": state_updates["inventory_updates"],
+            "location_updates": harness_result["location_updates"],
+        },
+        narrative=payload.narrative,
+    )
+    db.add(event)
+    db.flush()
+
+    with _turn_progress_span("state_draft_materialization"):
+        state_draft_updates = materialize_state_drafts(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            input_text=input_text,
+            state_drafts=payload.state_drafts,
+            shared_action_tag=payload.shared_action_tag,
+        )
+    entity_updates = [
+        item.to_update_payload()
+        for item in materialize_entity_drafts(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            session_id=game_session.id,
+            source_event_id=event.id,
+            current_location_id=effective_location_id,
+            drafts=payload.entity_drafts,
+        )
+    ]
+    combined_inventory_updates = [*state_updates["inventory_updates"], *state_draft_updates.inventory_updates]
+
+    with _turn_progress_span("consequence_resolution"):
+        consequence_result = apply_consequence_updates(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            counterpart_actor_id=guide_npc.id,
+            counterpart_name=guide_npc.display_name,
+            location_id=effective_location_id,
+            source_event_id=event.id,
+            world_tags=payload.world_tags,
+            consequence_tags=payload.consequence_tags
+            or fallback_consequence_tags(world_tags=payload.world_tags, action_kind="narrative", fail_forward=False),
+            action_kind="narrative",
+            fail_forward=False,
+        )
+        branch_result = BranchPressureEngine.apply_player_turn(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            location_id=effective_location_id,
+            session_state=session_state,
+            outcome_band=consequence_result.outcome_band,
+            world_tags=payload.world_tags,
+            consequence_tags=payload.consequence_tags,
+            branch_signals=list(payload.branch_signals or []),
+        )
+        dynamic_chapter_updates = apply_dynamic_chapter_progression(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            chapter_directive=payload.chapter_directive,
+        )
+
+    with _turn_progress_span("scene_framing"):
+        pre_scene_state = build_session_state(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=effective_location_id,
+            include_internal=True,
+        )
+        scene_result = apply_scene_updates(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=effective_location_id,
+            focus_actor_id=guide_npc.id,
+            source_event_id=event.id,
+            action_kind="narrative",
+            session_state=pre_scene_state,
+            outcome_band=consequence_result.outcome_band,
+            scene_move=payload.scene_move,
+            scene_pressure=payload.scene_pressure,
+        )
+
+    with _turn_progress_span("memory_materialization"):
+        memories = container.memory_service.materialize_memories(
+            db,
+            world_id=game_session.world_id,
+            source_event_id=event.id,
+            location_id=effective_location_id,
+            drafts=[
+                {
+                    **draft.model_dump(),
+                    "actor_id": guide_npc.id if draft.scope == "actor" else None,
+                }
+                for draft in payload.memories
+            ]
+            + harness_result["memory_drafts"]
+            + consequence_result.additional_memory_drafts,
+        )
+
+    with _turn_progress_span("shared_consequence"):
+        shared_result = apply_shared_consequence_rules(
+            db,
+            memory_service=container.memory_service,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=effective_location_id,
+            source_event_id=event.id,
+            world_tags=payload.world_tags,
+            consequence_tags=payload.consequence_tags,
+            action_kind="narrative",
+            explicit_action_tag=payload.shared_action_tag,
+            interpreted_intent=payload.interpreted_intent,
+            fail_forward=False,
+        )
+    shared_payload = shared_result.payload()
+    combined_faction_updates = [*state_updates["faction_updates"], *consequence_result.faction_updates]
+
+    with _turn_progress_span("post_state_build"):
+        post_state = build_session_state(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            location_id=effective_location_id,
+            include_internal=True,
+        )
+        public_branch_updates, crossroads_summary = _branch_response_from_state(post_state)
+        suggested_actions = _public_suggested_actions([item.model_dump() if hasattr(item, "model_dump") else dict(item) for item in payload.next_choices])
+        public_branch_updates = public_branch_updates or branch_result.updates
+
+    turn.model_lane = resolution.final_lane
+    turn.resolution_mode = "ai_gm_harness"
+    turn.resolved_output = {
+        "status": "resolved",
+        "resolution_mode": "ai_gm_harness",
+        "player_action_text": input_text,
+        "used_fallback": resolution.used_fallback,
+        "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+        "narrative": payload.narrative,
+        "npc_reaction": payload.npc_reaction,
+        "graph_context_status": "public_context",
+        "world_tags": payload.world_tags,
+        "interpreted_intent": payload.interpreted_intent,
+        "consequence_tags": payload.consequence_tags,
+        "outcome_band": consequence_result.outcome_band,
+        "scene_tone": consequence_result.scene_tone,
+        "consequence_summary": consequence_result.consequence_summary,
+        "scene_summary": scene_result["scene_summary"],
+        "scene_updates": scene_result["scene_updates"],
+        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"]],
+        "branch_updates": public_branch_updates,
+        "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
+        "ambient_updates": [],
+        "recent_world_beats": [],
+        "suggested_actions": suggested_actions,
+        "quest_updates": state_updates["quest_updates"],
+        "faction_updates": combined_faction_updates,
+        "inventory_updates": combined_inventory_updates,
+        "knowledge_updates": state_draft_updates.knowledge_updates,
+        "skill_updates": state_draft_updates.skill_updates,
+        "trade_updates": state_draft_updates.trade_updates,
+        "blocked_state_drafts": state_draft_updates.blocked_state_drafts,
+        "relationship_updates": consequence_result.relationship_updates,
+        "consequence_updates": consequence_result.consequence_updates,
+        "entity_updates": entity_updates,
+        "location_updates": harness_result["location_updates"],
+        "accepted_state_changes": harness_result["accepted_state_changes"],
+        "rejected_claims": rejected_claims,
+        "shared_action_tag": shared_result.action_tag,
+        "shared_consequence_updates": shared_payload,
+        "council_trace": [
+            {
+                "role": item.council_role,
+                "approval_status": item.approval_status,
+                "final_lane": item.final_lane,
+            }
+            for item in resolution.role_runs
+        ],
+    }
+    event.payload = {
+        **event.payload,
+        "consequence_tags": payload.consequence_tags,
+        "outcome_band": consequence_result.outcome_band,
+        "scene_tone": consequence_result.scene_tone,
+        "consequence_summary": consequence_result.consequence_summary,
+        "scene_summary": scene_result["scene_summary"],
+        "scene_updates": scene_result["scene_updates"],
+        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"]],
+        "branch_updates": public_branch_updates,
+        "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
+        "faction_updates": combined_faction_updates,
+        "relationship_updates": consequence_result.relationship_updates,
+        "consequence_updates": consequence_result.consequence_updates,
+        "entity_updates": entity_updates,
+        "shared_action_tag": shared_result.action_tag,
+        "shared_consequence_updates": shared_payload,
+    }
+    db.add(
+        OutboxEvent(
+            world_id=game_session.world_id,
+            event_id=event.id,
+            projection_type="world_graph.upsert",
+            payload={
+                "turn_id": turn.id,
+                "outcome": "resolved",
+                "location_id": effective_location_id,
+                "graph_context_status": "public_context",
+            },
+        )
+    )
+    db.flush()
+    with _turn_progress_span("timeline_broadcast"):
+        _finalize_event_timeline_and_broadcast(
+            db,
+            event=event,
+            broadcast_draft=payload.broadcast_draft,
+            shared_action_tag=shared_result.action_tag,
+            relevance_tags=list(payload.consequence_tags or []),
+        )
+
+    return TurnResolutionResult(
+        turn=turn,
+        event=event,
+        memory_ids=[memory.id for memory in [*memories, *shared_result.memories]],
+        event_payload=_event_payload(event),
+        memories_payload=[_memory_payload(memory) for memory in [*memories, *shared_result.memories]],
+        graph_context_status="public_context",
+        sp_delta=prepared.debit.delta,
+        sp_balance=prepared.debit.balance_after,
+        paid_sp=prepared.debit.paid_balance_after,
+        bonus_sp=prepared.debit.bonus_balance_after,
+        sp_ledger_id=prepared.debit.ledger_entry.id,
+        quest_updates=state_updates["quest_updates"],
+        faction_updates=combined_faction_updates,
+        inventory_updates=combined_inventory_updates,
+        relationship_updates=consequence_result.relationship_updates,
+        consequence_updates=consequence_result.consequence_updates,
+        scene_updates=scene_result["scene_updates"],
+        chapter_updates=[*dynamic_chapter_updates, *scene_result["chapter_updates"]],
+        branch_updates=public_branch_updates,
+        ambient_updates=[],
+        location_updates=harness_result["location_updates"],
+        action_type="narrative",
+        input_mode="free_text",
+        interpreted_intent=payload.interpreted_intent,
+        next_choices=suggested_actions,
+        consequence_summary=consequence_result.consequence_summary,
+        scene_tone=consequence_result.scene_tone,
+        scene_summary=scene_result["scene_summary"],
+        crossroads_summary=crossroads_summary or branch_result.crossroads_summary,
+        current_location=post_state.get("current_location"),
+        travel_summary=harness_result["travel_summary"],
+        recent_world_beats=[],
+        recent_offstage_beats=post_state.get("recent_offstage_beats") or [],
+        idle_updates=[],
+        progress_phases=[
+            *progress_phases,
+            "world_tag_updates",
+            "state_draft_materialization",
+            "consequence_resolution",
+            "scene_framing",
+            "memory_materialization",
+            "shared_consequence",
+            "post_state_build",
+            "timeline_broadcast",
+        ],
+        knowledge_updates=state_draft_updates.knowledge_updates,
+        skill_updates=state_draft_updates.skill_updates,
+        trade_updates=state_draft_updates.trade_updates,
+        blocked_state_drafts=state_draft_updates.blocked_state_drafts,
+    )
 
 
 def _resolve_narrative_turn_for_session(
@@ -3588,14 +4138,6 @@ def _build_failed_turn_result(
         "final_lane": model_lane,
         "used_fallback": bool((failure_payload or {}).get("used_fallback", False)),
         "council_trace": (failure_payload or {}).get("council_trace", []),
-        "retryable_choice_id": next(
-            (
-                str(item.get("choice_id"))
-                for item in next_choices
-                if isinstance(item, dict) and item.get("choice_id")
-            ),
-            None,
-        ),
     }
     turn.model_lane = model_lane
     turn.resolved_output = {
@@ -3607,7 +4149,7 @@ def _build_failed_turn_result(
         "graph_context_status": graph_context_status,
         "input_mode": input_mode,
         "interpreted_intent": interpreted_intent,
-        "next_choices": next_choices,
+        "suggested_actions": _public_suggested_actions(next_choices),
         "consequence_summary": consequence_summary,
         "scene_summary": consequence_summary,
         "relationship_updates": [],
@@ -3931,14 +4473,46 @@ def _session_state_with_latest_choices(
         location_id=location_id,
         include_internal=True,
     )
-    fallback_choices = state.get("next_choices") or []
-    state["next_choices"] = _latest_session_choices(db, session_id=session_id, fallback_choices=fallback_choices)
+    fallback_choices = _public_suggested_actions(state.get("next_choices") or [])
+    state["suggested_actions"] = _latest_session_suggested_actions(
+        db,
+        session_id=session_id,
+        fallback_actions=fallback_choices,
+    )
+    state.pop("next_choices", None)
     broadcast_constraints = pending_broadcast_constraints(db, world_id=world_id, session_id=session_id)
     state["world_broadcast_constraints"] = broadcast_constraints
     shared_context = dict(state.get("shared_world_context") or {})
     shared_context["active_broadcast_constraints"] = broadcast_constraints
     state["shared_world_context"] = shared_context
     return state
+
+
+def _latest_session_suggested_actions(
+    db: Session,
+    *,
+    session_id: str,
+    fallback_actions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    turns = list(
+        db.execute(
+            select(Turn)
+            .where(Turn.session_id == session_id)
+            .order_by(Turn.created_at.desc(), Turn.id.desc())
+            .limit(16)
+        ).scalars()
+    )
+    player_turn_seen = False
+    for turn in turns:
+        if turn.action_type != "system":
+            player_turn_seen = True
+        resolved_output = turn.resolved_output or {}
+        raw_actions = resolved_output.get("suggested_actions")
+        if isinstance(raw_actions, list) and raw_actions:
+            return _public_suggested_actions(raw_actions)
+    if player_turn_seen:
+        return []
+    return _public_suggested_actions(fallback_actions)
 
 
 def _latest_session_choices(

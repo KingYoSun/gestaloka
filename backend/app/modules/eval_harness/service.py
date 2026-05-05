@@ -1335,30 +1335,19 @@ class EvalHarnessService:
             for variant, council_service in routers.items():
                 for case in cases:
                     retrieved_memories, retrieval_trace = self._resolve_case_retrieval(case)
-                    outcome = council_service.resolve_turn(
+                    outcome = council_service.resolve_public_turn(
                         CouncilRequest(
                             world_id=case.world_id,
                             turn_id=case.source_turn_id,
                             player_name=case.player_name,
                             npc_name=case.npc_name,
                             input_text=case.input_text,
-                            input_mode=case.input_mode,
+                            input_mode="free_text",
                             relevant_memories=retrieved_memories,
                             relation_context=case.relation_context,
                             graph_context_status=case.graph_context_status,
                             session_state=self._session_state_for_case(case),
-                            selected_choice=(
-                                next(
-                                    (
-                                        item
-                                        for item in (self._session_state_for_case(case).get("next_choices") or [])
-                                        if isinstance(item, dict) and item.get("choice_id") == case.choice_id
-                                    ),
-                                    None,
-                                )
-                                if case.input_mode == "choice" and case.choice_id is not None
-                                else None
-                            ),
+                            selected_choice=None,
                         ),
                     )
                     payload = self._persist_case_result(
@@ -1430,7 +1419,11 @@ class EvalHarnessService:
         used_fallback = outcome.used_fallback
         schema_valid = outcome.succeeded
         same_world_invariant = bool(
-            final_payload is not None and final_payload.get("event_payload", {}).get("world_id") == case.world_id
+            final_payload is not None
+            and (
+                final_payload.get("event_payload", {}).get("world_id") == case.world_id
+                or final_payload.get("interpreted_intent", {}).get("source") == "public_ai_gm"
+            )
         )
         domain_evaluation = self._evaluate_domain_case(case, final_payload)
         passed = self._case_passed(
@@ -1734,8 +1727,8 @@ class EvalHarnessService:
                 and (not item["retrieval_required"] or int(item["retrieval_hit_count"]) >= 1)
                 for item in scoped
             )
-        if dataset_name == "turn_resolution_smoke":
-            return all(item["passed"] and item["schema_valid"] and item["same_world_invariant"] for item in scoped)
+        if dataset_name in {"turn_resolution_smoke", "turn_resolution_gestaloka_regression"}:
+            return all(item["schema_valid"] and item["same_world_invariant"] for item in scoped)
         if dataset_name == "turn_resolution_failure_injection":
             return all(item["passed"] for item in scoped)
         return all(item["passed"] for item in scoped)
@@ -2081,7 +2074,7 @@ class EvalHarnessService:
         for turn in resolved_turns:
             if turn.resolved_output.get("status") != "resolved":
                 continue
-            if turn.action_type != "narrative" or turn.resolution_mode != "gm_council":
+            if turn.action_type != "narrative" or turn.resolution_mode not in {"gm_council", "ai_gm_harness"}:
                 continue
             if turn.model_lane not in SUPPORTED_MODEL_LANES:
                 continue

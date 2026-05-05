@@ -179,7 +179,7 @@ def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, a
 
     turn_response = client.post(
         "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "choice_2"},
+        json={"session_id": session_payload["session_id"], "player_action_text": "場の変化を確かめる"},
         headers=auth_headers,
     )
     assert turn_response.status_code == 409
@@ -189,8 +189,8 @@ def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, a
         "balance": 0,
         "paid_sp": 0,
         "bonus_sp": 0,
-        "required": 1,
-        "turn_cost": 1,
+        "required": 3,
+        "turn_cost": 3,
         "choice_turn_cost": 1,
         "free_text_turn_cost": 3,
         "world_context": error_payload["world_context"],

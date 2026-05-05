@@ -12,7 +12,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { locationRouteSummaries } from "../../domain/runtime";
 import type { GestalokaRuntime } from "../../hooks/useGestalokaRuntime";
 import { cn } from "../../lib/utils";
-import type { NarrativeChoice, PlayLanguagePreset, PlayerProfile, QuestSummary, StoryHistoryItem, WorldContext } from "../../types";
+import type { PlayLanguagePreset, PlayerProfile, QuestSummary, StoryHistoryItem, SuggestedAction, WorldContext } from "../../types";
 
 type PlayerPageProps = {
   runtime: GestalokaRuntime;
@@ -1042,7 +1042,6 @@ function StoryHistory({ runtime }: PlayerPageProps) {
           turn_id: null,
           canonical_sequence: null,
           occurred_at: "story-generating-pending",
-          input_mode: "",
           narrative: "",
           reaction: "",
           consequence: "",
@@ -1346,7 +1345,6 @@ function fallbackStoryItems(runtime: GestalokaRuntime, fallbackText: string): St
       turn_id: null,
       canonical_sequence: null,
       occurred_at: new Date(0).toISOString(),
-      input_mode: "",
       narrative: latestNarrative || fallbackText,
       reaction: latestReaction,
       consequence: latestConsequenceSummary,
@@ -1666,28 +1664,31 @@ function ChoiceList({
   disabled,
   onChoose,
 }: {
-  choices: NarrativeChoice[];
+  choices: SuggestedAction[];
   disabled: boolean;
-  onChoose: (choiceId: NarrativeChoice["choice_id"]) => Promise<void>;
+  onChoose: (actionText: string) => Promise<void>;
 }) {
   const { t } = useTranslation();
   return (
     <ul className="grid gap-3" data-testid="choice-list">
       {choices.length ? (
-        choices.map((choice) => (
-          <li className="min-w-0" key={choice.choice_id}>
+        choices.map((choice, index) => {
+          const actionText = choice.summary && choice.summary !== choice.label ? `${choice.label}。${choice.summary}` : choice.label;
+          return (
+          <li className="min-w-0" key={`${choice.label}-${index}`}>
             <button
               type="button"
               className="grid min-h-0 w-full gap-2 rounded-lg border border-border bg-card p-4 text-left text-foreground shadow-none outline-none transition-colors hover:border-border/80 hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/80 disabled:pointer-events-none disabled:opacity-50"
-              data-testid={`choice-${choice.choice_id}`}
-              onClick={() => void onChoose(choice.choice_id)}
+              data-testid={`suggested-action-${index + 1}`}
+              onClick={() => void onChoose(actionText)}
               disabled={disabled}
             >
               <span className="font-bold leading-6">{choice.label}</span>
               <span className="text-lg font-normal leading-9 text-muted-foreground">{choice.summary}</span>
             </button>
           </li>
-        ))
+        );
+        })
       ) : (
         <li className="text-muted-foreground">{t("player.story.inProgress")}</li>
       )}

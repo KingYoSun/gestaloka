@@ -15,6 +15,7 @@ _turn_progress_callback: ContextVar[TurnProgressCallback | None] = ContextVar(
 
 
 PROMPT_PHASES: dict[str, tuple[str, int]] = {
+    "session.turn_resolution": ("ai_gm_turn", 1),
     "council.intent_interpreter": ("intent_interpretation", 1),
     "council.memory_manager": ("memory_council", 2),
     "council.npc_manager": ("npc_council", 3),

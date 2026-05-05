@@ -39,12 +39,7 @@ class TurnResolutionManager:
         session_id: str,
         world_id: str,
         user_sub: str,
-        action_type: str | None,
-        input_mode: str,
-        choice_id: str | None,
-        input_text: str | None,
-        item_id: str | None,
-        quest_assignment_id: str | None,
+        player_action_text: str,
         world_context: dict[str, object],
     ) -> None:
         self.container = container
@@ -52,12 +47,7 @@ class TurnResolutionManager:
         self.session_id = session_id
         self.world_id = world_id
         self.user_sub = user_sub
-        self.action_type = action_type
-        self.input_mode = input_mode
-        self.choice_id = choice_id
-        self.input_text = input_text
-        self.item_id = item_id
-        self.quest_assignment_id = quest_assignment_id
+        self.player_action_text = player_action_text
         self.world_context = world_context
 
     async def resolve(self) -> ManagedTurnResolution:
@@ -165,19 +155,14 @@ class TurnResolutionManager:
             session_id=self.session_id,
             user_sub=self.user_sub,
             turn_id=self.turn_id,
-            input_mode=self.input_mode,
+            input_mode="free_text",
         )
         with bind_turn_progress(progress_callback):
             result = resolve_turn_for_session(
                 db,
                 self.container,
                 prepared,
-                action_type=self.action_type,  # type: ignore[arg-type]
-                input_mode=self.input_mode,
-                choice_id=self.choice_id,  # type: ignore[arg-type]
-                input_text=self.input_text,
-                item_id=self.item_id,
-                quest_assignment_id=self.quest_assignment_id,
+                player_action_text=self.player_action_text,
             )
         self.container.observability_service.record_turn_resolution(
             duration_seconds=self.container.observability_service.elapsed(started_at),

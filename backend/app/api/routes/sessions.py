@@ -56,7 +56,6 @@ def _story_item(event: Event, turn: Turn | None) -> dict[str, object]:
         "turn_id": event.turn_id,
         "canonical_sequence": event.canonical_sequence,
         "occurred_at": event.occurred_at.isoformat(),
-        "input_mode": str(resolved_output.get("input_mode") or payload.get("input_mode") or ""),
         "narrative": str(resolved_output.get("narrative") or event.narrative or ""),
         "reaction": str(resolved_output.get("npc_reaction") or ""),
         "consequence": str(resolved_output.get("consequence_summary") or payload.get("consequence_summary") or ""),

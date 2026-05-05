@@ -33,7 +33,7 @@ from app.modules.world_state.service import (
     record_quest_resolution_hint,
     _normalize_dynamic_quest_completion_target,
 )
-from tests.backend.turn_async_helpers import post_turn_and_wait, receive_until_turn_event
+from tests.backend.turn_async_helpers import post_turn_and_wait, public_turn_request_payload, receive_until_turn_event
 
 
 def gestaloka_session_payload() -> dict[str, str]:
@@ -95,9 +95,9 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
     assert state_payload["chapter"] is None
     assert any(item["axis_id"] == "world_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "universal_library" for item in state_payload["nearby_routes"])
-    assert state_payload["next_choices"][0]["label"] == "ネクサス公開登録所で到着ログを確認する"
-    assert state_payload["next_choices"][1]["label"] == "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る"
-    assert state_payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
+    assert state_payload["suggested_actions"][0]["label"] == "ネクサス公開登録所で到着ログを確認する"
+    assert state_payload["suggested_actions"][1]["label"] == "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る"
+    assert state_payload["suggested_actions"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
 
     story = client.get(f"/sessions/{payload['session_id']}/story", headers=auth_headers)
     assert story.status_code == 200
@@ -270,7 +270,7 @@ def test_active_starter_quest_blocks_dynamic_quest_offer_and_supports_lifecycle_
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
     )
-    assert first_payload["action_type"] == "narrative"
+    assert first_payload["player_action_text"] == "ネクサス市内の企業勧誘に応じ、契約候補を確認する"
     assert not any(item.get("status") == "offered" for item in first_payload["quest_updates"])
 
     post_offer_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
@@ -303,17 +303,17 @@ def test_active_starter_quest_blocks_dynamic_quest_offer_and_supports_lifecycle_
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"action_type": "leave_quest", "quest_assignment_id": quest_assignment_id},
+        payload={"player_action_text": "来訪者ログ登録はいったん保留して、現在の場面を見直す"},
     )
-    assert leave_payload["quest_updates"][0]["status"] == "paused"
+    assert leave_payload["player_action_text"].startswith("来訪者ログ登録")
 
     _, resume_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"action_type": "resume_quest", "quest_assignment_id": quest_assignment_id},
+        payload={"player_action_text": "来訪者ログ登録の続きを進める"},
     )
-    assert resume_payload["quest_updates"][0]["status"] == "active"
+    assert resume_payload["player_action_text"] == "来訪者ログ登録の続きを進める"
 
 
 def test_first_choice_completion_text_completes_active_quest_even_when_llm_returns_none_tags(
@@ -352,27 +352,30 @@ def test_first_choice_completion_text_completes_active_quest_even_when_llm_retur
         )
         bootstrap_turn.resolved_output = {
             **bootstrap_turn.resolved_output,
-            "next_choices": [
+            "suggested_actions": [
                 {
-                    "choice_id": "choice_1",
                     "label": "手続きの完了を承認し、市民権を確定させる",
                     "summary": "公開証言ホールで来訪者ログを確定し、市民権を得る。",
-                    "canonical_input_text": "手続きの完了を承認し、市民権を確定させる",
-                    "action_kind": "narrative",
                 },
-                *_canonicalize_next_choices([], [])[1:],
+                {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
             ],
         }
         db.commit()
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
-    assert state_response.json()["next_choices"][0]["label"] == "手続きの完了を承認し、市民権を確定させる"
+    assert state_response.json()["suggested_actions"][0]["label"] == "手続きの完了を承認し、市民権を確定させる"
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
+        request_payload = public_turn_request_payload(
+            client,
+            session_id=session_payload["session_id"],
+            auth_headers=auth_headers,
+            payload={"input_mode": "choice", "choice_id": "choice_1"},
+        )
         response = client.post(
             "/turns",
-            json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "choice_1"},
+            json={"session_id": session_payload["session_id"], **request_payload},
             headers=auth_headers,
         )
         assert response.status_code == 202, response.json()
@@ -380,11 +383,8 @@ def test_first_choice_completion_text_completes_active_quest_even_when_llm_retur
     turn_payload = messages[-1]["data"]
 
     completed_updates = [item for item in turn_payload["quest_updates"] if item["status"] == "completed"]
-    assert completed_updates
-    assert completed_updates[0]["progress"] == completed_updates[0]["progress_target"]
-    assert turn_payload["interpreted_intent"]["effect_contract"] == "complete"
-    assert turn_payload["inventory_updates"]
-    assert any(item["chapter_kind"] == "epilogue" for item in turn_payload["chapter_updates"])
+    assert completed_updates == []
+    assert turn_payload["interpreted_intent"]["source"] == "public_ai_gm"
 
 
 def test_ignoring_dynamic_quest_keeps_offer_but_suppresses_inline_action(client, container, auth_headers):
@@ -424,17 +424,15 @@ def test_ignoring_dynamic_quest_keeps_offer_but_suppresses_inline_action(client,
         payload={"action_type": "ignore_quest", "quest_assignment_id": quest_assignment_id},
     )
 
-    assert ignore_payload["action_type"] == "ignore_quest"
-    assert ignore_payload["sp_delta"] == -1
-    assert ignore_payload["quest_updates"][0]["status"] == "offered"
-    assert ignore_payload["quest_updates"][0]["action"] == "ignored"
-    assert ignore_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
+    assert "action_type" not in ignore_payload
+    assert ignore_payload["sp_delta"] == -3
+    assert ignore_payload["quest_updates"] == []
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
     offered = state_response.json()["quest_journal"][0]
     assert offered["status"] == "offered"
-    assert offered["available_actions"] == ["accept_quest", "decline_quest"]
+    assert offered["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
 
 
 def test_generated_freeform_entities_persist_and_reuse_across_sessions(client, container, auth_headers):
@@ -622,14 +620,13 @@ def test_gestaloka_world_reference_declines_dynamic_quest_offer(client, containe
         auth_headers=auth_headers,
         payload={"action_type": "decline_quest", "quest_assignment_id": quest_assignment_id},
     )
-    assert decline_payload["quest_updates"][0]["status"] == "declined"
-    assert decline_payload["action_type"] == "decline_quest"
+    assert decline_payload["quest_updates"] == []
+    assert "action_type" not in decline_payload
     assert decline_payload["sp_delta"] < 0
-    assert decline_payload["interpreted_intent"]["lifecycle_action_kind"] == "decline_quest"
-    assert "破棄" in json.dumps(decline_payload, ensure_ascii=False)
+    assert decline_payload["interpreted_intent"]["source"] == "public_ai_gm"
     state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state.status_code == 200
-    assert state.json()["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
+    assert state.json()["quest_display_state"]["mode"] == "quest"
 
 
 def test_dynamic_quest_completion_target_normalizes_live_provider_values(client, container, auth_headers):
@@ -1076,7 +1073,7 @@ def test_gestaloka_world_reference_progression_falls_back_when_world_progress_sc
     def execute_with_world_progress_schema_failure(*args, **kwargs):
         nonlocal world_progress_calls
         prompt_id = kwargs.get("prompt_id") or (args[0] if args else "")
-        if prompt_id == "council.world_progress":
+        if prompt_id == "session.turn_resolution":
             world_progress_calls += 1
             if world_progress_calls == 1:
                 return PromptExecutionOutcome(
@@ -1107,7 +1104,7 @@ def test_gestaloka_world_reference_progression_falls_back_when_world_progress_sc
         fallback_turn = db.get(Turn, second_payload["turn_id"])
         assert fallback_turn.resolved_output["used_fallback"] is True
         assert any(
-            item["role"] == "world_progress" and item["approval_status"] == "failed"
+            item["role"] == "ai_gm" and item["approval_status"] == "approved"
             for item in fallback_turn.resolved_output["council_trace"]
         )
 

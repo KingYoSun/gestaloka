@@ -1,6 +1,6 @@
 dataset_id: turn_resolution_failure_injection
 prompt_id: session.turn_resolution
-expected_output_schema: council_turn_resolution_v1
+expected_output_schema: turn_resolution_v2
 cases:
   - case_id: fallback-main-to-pro
     world_id: world-alpha

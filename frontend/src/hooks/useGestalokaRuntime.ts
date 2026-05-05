@@ -121,7 +121,6 @@ function storyItemFromTurnResponse(response: TurnResponse): StoryHistoryItem {
     turn_id: response.turn_id,
     canonical_sequence: null,
     occurred_at: new Date().toISOString(),
-    input_mode: response.input_mode,
     narrative: response.narrative,
     reaction: response.npc_reaction,
     consequence: response.consequence_summary || response.scene_summary || "",
@@ -135,7 +134,6 @@ function streamingStoryItemFromDelta(turnId: string, narrative: string): StoryHi
     turn_id: turnId,
     canonical_sequence: null,
     occurred_at: new Date().toISOString(),
-    input_mode: "",
     narrative,
     reaction: "",
     consequence: "",
@@ -151,8 +149,7 @@ function eventItemFromTurnResponse(response: TurnResponse): EventItem {
     event_type: "player.turn.resolved",
     location_id: response.current_location?.id ?? null,
     payload: {
-      action_type: response.action_type,
-      input_mode: response.input_mode,
+      player_action_text: response.player_action_text,
       consequence_summary: response.consequence_summary,
       scene_summary: response.scene_summary,
       quest_updates: response.quest_updates,
@@ -422,7 +419,7 @@ export function useGestalokaRuntime() {
       opsTemplateFilter,
     ),
   );
-  const suggestedChoices = sessionState?.next_choices ?? [];
+  const suggestedChoices = sessionState?.suggested_actions ?? [];
   const latestRetrievalTrace = (councilTurns[0]?.resolved_output?.retrieval_trace ?? null) as
     | {
         status?: string;
@@ -1285,10 +1282,7 @@ export function useGestalokaRuntime() {
   }
 
   async function submitTurnRequest(
-    payload:
-      | { input_mode: "choice"; choice_id: string }
-      | { input_mode: "free_text"; input_text: string }
-      | { action_type: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest"; quest_assignment_id: string },
+    payload: { player_action_text: string },
   ) {
     if (!token || !session) {
       setError(t("errors.startSessionFirst"));
@@ -1359,15 +1353,17 @@ export function useGestalokaRuntime() {
 
   async function handleTurnSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await submitTurnRequest({ input_mode: "free_text", input_text: freeTextInput });
+    await submitTurnRequest({ player_action_text: freeTextInput });
   }
 
-  async function handleChoiceSubmit(choiceId: string) {
-    await submitTurnRequest({ input_mode: "choice", choice_id: choiceId });
+  async function handleChoiceSubmit(actionText: string) {
+    await submitTurnRequest({ player_action_text: actionText });
   }
 
   async function handleQuestAction(actionType: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest", questAssignmentId: string) {
-    await submitTurnRequest({ action_type: actionType, quest_assignment_id: questAssignmentId });
+    const quest = sessionState?.quest_journal.find((item) => item.assignment_id === questAssignmentId);
+    const actionLabel = t(`player.quest.actions.${actionType}`);
+    await submitTurnRequest({ player_action_text: quest ? `${actionLabel}: ${quest.title}` : actionLabel });
   }
 
   function dismissQuestCompletionNotice() {

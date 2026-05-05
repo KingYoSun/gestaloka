@@ -278,7 +278,7 @@ export function mergeTurnResponseIntoSessionState(current: SessionState | null, 
     relationships,
     active_consequence_threads: Array.from(threadMap.values()),
     recent_consequence_history: recentConsequenceHistory,
-    next_choices: response.next_choices.length ? response.next_choices : current.next_choices,
+    suggested_actions: response.suggested_actions.length ? response.suggested_actions : current.suggested_actions,
     important_inventory_affordances: deriveImportantInventoryAffordances(inventory),
   };
 }
