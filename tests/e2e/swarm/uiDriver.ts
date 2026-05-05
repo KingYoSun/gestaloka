@@ -927,19 +927,21 @@ async function playerVisiblePlayInfoTexts(page: Page): Promise<string[]> {
 }
 
 export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapshot> {
-  const [questText, questProgress, chapterText, questActionLabels, inlineQuestActionLabels, inlineQuestText] = await Promise.all([
+  const [questText, questProgress, chapterText, sceneText, questActionLabels, inlineQuestActionLabels, inlineQuestText] = await Promise.all([
     textContent(page, "active-quest"),
     textContent(page, "quest-progress"),
     textContent(page, "current-chapter-summary"),
+    textContent(page, "current-scene-summary"),
     questActionTexts(page),
     inlineQuestActionTexts(page),
     textContent(page, "inline-quest-decision"),
   ]);
   const allQuestActionLabels = uniqueNonEmpty([...questActionLabels, ...inlineQuestActionLabels]);
+  const sceneContextText = chapterText.trim() || sceneText.trim();
   return {
     questText,
     questProgress,
-    chapterText,
+    chapterText: sceneContextText,
     questActionLabels: allQuestActionLabels,
     inlineQuestActionLabels,
     hasExploringLabel: /探索中\.\.\.|Exploring\.\.\./i.test(questText),
@@ -947,7 +949,7 @@ export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapsh
     hasQuestProgress: /\b\d+\s*\/\s*\d+\b/.test(questProgress || questText),
     hasOfferedQuest: allQuestActionLabels.some((label) => /^(受諾|Accept|見送る|Decline|無視|Ignore)$/i.test(label)),
     hasInlineQuestDecision: Boolean(inlineQuestText.trim()) || inlineQuestActionLabels.length > 0,
-    hasChapterSummary: Boolean(chapterText.trim()),
+    hasChapterSummary: Boolean(sceneContextText),
   };
 }
 

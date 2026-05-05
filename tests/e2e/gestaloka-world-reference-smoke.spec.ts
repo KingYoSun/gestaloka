@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:5174";
 const choiceButtonSelector = 'button[data-testid^="choice-"]';
+const sceneContextSummarySelector = '[data-testid="current-chapter-summary"], [data-testid="current-scene-summary"]';
 
 type ProgressPhaseCollector = {
   completedPhases: () => string[];
@@ -187,15 +188,25 @@ function valueAfterKey(text: string, key: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
-async function waitForAnyChoiceEnabled(page: import("@playwright/test").Page, timeout: number): Promise<void> {
-  await expect(page.locator(choiceButtonSelector).first()).toBeEnabled({ timeout });
+async function expectVisibleSceneContextSummary(page: import("@playwright/test").Page, timeout: number): Promise<void> {
+  await expect(page.locator(sceneContextSummarySelector).first()).toContainText(/\S/, { timeout });
 }
 
-async function clickChoiceByText(page: import("@playwright/test").Page, pattern: RegExp): Promise<void> {
-  const choice = page.locator(choiceButtonSelector).filter({ hasText: pattern }).first();
-  await expect(choice).toBeVisible({ timeout: 60_000 });
-  await expect(choice).toBeEnabled({ timeout: 60_000 });
-  await choice.click();
+async function submitFreeTextTurn(page: import("@playwright/test").Page, text: string): Promise<void> {
+  const input = page.getByTestId("turn-input");
+  if (!(await input.isVisible().catch(() => false))) {
+    await page.getByTestId("toggle-free-text").click();
+  }
+  await expect(input).toBeVisible({ timeout: 60_000 });
+  await expect(input).toBeEnabled({ timeout: 60_000 });
+  await input.fill(text);
+  await expect(page.getByTestId("submit-turn")).toBeEnabled({ timeout: 60_000 });
+  await page.getByTestId("submit-turn").click();
+}
+
+async function waitForTurnReady(page: import("@playwright/test").Page, timeout: number): Promise<void> {
+  await expect(page.getByTestId("turn-progress-status")).toContainText("選択待ち", { timeout });
+  await expect(page.getByTestId("toggle-free-text")).toBeEnabled({ timeout });
 }
 
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
@@ -252,25 +263,25 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.locator(choiceButtonSelector).filter({ hasText: /Go to the lift tower network and inspect recruiters and route logs/ })).toBeVisible();
   await expect(page.locator(choiceButtonSelector).filter({ hasText: /Go to the Universal Library and compare old records with your visitor log/ })).toBeVisible();
 
-  await clickChoiceByText(page, /Check your arrival log at the public Nexus registry/);
+  await submitFreeTextTurn(page, "Help Kanata advance Visitor Log Registration by assisting the public witness hall procedure.");
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
-  await waitForAnyChoiceEnabled(page, turnTimeout);
+  await waitForTurnReady(page, turnTimeout);
   await expectSituationMappingBeforeWorldProgress(progressPhases);
   await expectEntityMaterializationAfterWorldTagUpdates(progressPhases);
   await expectResolvedTurnEntityUpdatesArray(progressPhases);
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
+  await expectVisibleSceneContextSummary(page, slowTimeout);
   await expect(page.getByTestId("active-quest")).not.toContainText("Exploring...");
-  await expect(page.getByTestId("quest-progress")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("quest-progress")).toContainText("1/2", { timeout: slowTimeout });
   await expect(page.getByTestId("active-quest")).not.toContainText(/dynamic_quest_|followup_quest_|\bdynamic\b/i);
   await expect(page.getByTestId("quest-stage")).toHaveText("");
   await expect(page.getByTestId("quest-stage")).toHaveAttribute("data-value", /\S/);
   await expect(page.getByTestId("quest-unlock-requirements")).toHaveText("");
   await expect(page.getByTestId("quest-unlock-requirements")).toHaveAttribute("data-value", /\S/);
 
-  await clickChoiceByText(page, /Report what you learned and take the next patrol step|報告|完了|確定/);
+  await submitFreeTextTurn(page, "Complete and confirm Visitor Log Registration at the public witness hall, then report it to Kanata.");
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await expect(page.getByTestId("quest-completion-dialog")).toBeVisible({ timeout: turnTimeout });
-  await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
+  await expectVisibleSceneContextSummary(page, slowTimeout);
   await expect(page.getByTestId("quest-completion-dialog")).toContainText(/Visitor Log|来訪者ログ|Seal|印/, { timeout: slowTimeout });
 });
 
@@ -309,7 +320,8 @@ test("mobile player drawers expose actions and status", async ({ page }) => {
 
   await page.getByRole("button", { name: "情報" }).click();
   await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("active-quest")).toContainText("探索中...", { timeout: 20_000 });
+  await expect(page.getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, { timeout: 20_000 });
+  await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toBeVisible();
   await expect(page.getByTestId("nearby-routes-stream")).toBeVisible();
   await expect(page.getByTestId("inventory-stream")).toBeVisible();
