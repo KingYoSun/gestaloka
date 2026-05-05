@@ -127,7 +127,7 @@ def test_admin_llm_usage_returns_model_timeline(client, container, auth_headers)
         client,
         session_id=session_response.json()["session_id"],
         auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "safe"},
+        payload={"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     now = datetime.now(timezone.utc)

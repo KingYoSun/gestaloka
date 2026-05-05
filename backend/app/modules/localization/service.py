@@ -451,7 +451,7 @@ def _collect_session_state_targets(payload: dict[str, Any], targets: list[_TextT
     _register_list_fields(payload, targets, ("relationships",), "relationship", ("actor_id",), ("display_name", "summary"))
     _register_list_fields(payload, targets, ("active_consequence_threads",), "consequence_thread", ("id",), ("title", "summary", "counterpart_name"))
     _register_list_fields(payload, targets, ("important_inventory_affordances",), "inventory_affordance", ("item_id",), ("name", "summary"))
-    _register_list_fields(payload, targets, ("next_choices",), "choice", ("choice_id", "posture"), ("label", "summary"))
+    _register_list_fields(payload, targets, ("next_choices",), "choice", ("choice_id",), ("label", "summary"))
     for field in (
         "recent_scene_history",
         "recent_branch_echoes",
@@ -475,7 +475,7 @@ def _collect_turn_payload_targets(payload: dict[str, Any], targets: list[_TextTa
         "travel_summary",
     ):
         _register_field(payload, targets, (field,), f"turn.{field}", field)
-    _register_list_fields(payload, targets, ("next_choices",), "choice", ("choice_id", "posture"), ("label", "summary"))
+    _register_list_fields(payload, targets, ("next_choices",), "choice", ("choice_id",), ("label", "summary"))
     _register_object_fields(payload, targets, ("current_location",), "location", ("id", "key"), ("name", "description"))
     _register_list_fields(payload, targets, ("quest_updates",), "quest_update", ("assignment_id", "quest_template_id"), ("title", "description", "latest_summary", "summary"))
     _register_list_fields(payload, targets, ("faction_updates",), "faction_update", ("faction_id",), ("name", "description"))

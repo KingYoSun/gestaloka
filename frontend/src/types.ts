@@ -283,8 +283,7 @@ export type CharacterSummary = {
 };
 
 export type NarrativeChoice = {
-  choice_id: "safe" | "progress" | "explore";
-  posture: "safe" | "progress" | "explore";
+  choice_id: string;
   label: string;
   summary: string;
   canonical_input_text: string;
@@ -516,7 +515,7 @@ export type TurnResponse = {
     final_lane: string | null;
     used_fallback: boolean;
     council_trace: Array<Record<string, unknown>>;
-    retryable_choice_id: "safe" | "progress" | "explore" | null;
+    retryable_choice_id: string | null;
   };
 };
 

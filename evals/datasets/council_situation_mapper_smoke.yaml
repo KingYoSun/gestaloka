@@ -10,7 +10,7 @@ cases:
     npc_name: Nexus Entry Liaison
     input_text: 周囲を観察し、門で何が起きているか確かめる
     input_mode: choice
-    choice_id: safe
+    choice_id: choice_1
     relevant_memories: []
     relation_context:
       - location=Nexus City

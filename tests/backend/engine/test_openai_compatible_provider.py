@@ -491,7 +491,6 @@ def test_live_intent_payload_shape_is_normalized_before_validation():
     payload = CouncilIntentInterpreterPayload.model_validate(
         {
             "label": "到着記録の処理を手伝い、門番の信頼を得る",
-            "posture": "progress",
             "summary": "到着記録を手伝うことで、次の進展を促す。",
             "action_kind": "narrative",
             "consequence_tags": ["trust:minor", "public_scrutiny"],
@@ -504,7 +503,6 @@ def test_live_intent_payload_shape_is_normalized_before_validation():
     assert payload.input_mode == "free_text"
     assert payload.canonical_action_kind == "narrative"
     assert payload.intent_summary == "Nexus Cityで到着記録の処理を手伝う"
-    assert payload.requested_choice_posture == "progress"
     assert payload.consequence_tags == ["earned_trust"]
     assert payload.consequence_summary == "Nexus Entry Liaison acknowledges the help."
 
@@ -616,11 +614,11 @@ def test_live_world_progress_payload_shape_is_normalized_before_validation():
             "scene_pressure": "eval: slight escalation",
             "consequence_tags": ["earned_trust", "quest_progress"],
             "canonical_event_draft": "Rikka acknowledges the help and marks the request forward.",
-            "next_three_diegetic_player_choices": {
-                "safe": {"label": "Observe the gate", "summary": "Keep the flow steady."},
-                "forward_progress": {"label": "Help with the next record", "summary": "Advance the request."},
-                "exploration_relationship": {"label": "Ask Rikka about the gate", "summary": "Learn more."},
-            },
+            "next_three_diegetic_player_choices": [
+                {"choice_id": "choice_1", "label": "Observe the gate", "summary": "Keep the flow steady."},
+                {"choice_id": "choice_2", "label": "Help with the next record", "summary": "Advance the request."},
+                {"choice_id": "choice_3", "label": "Ask Rikka about the gate", "summary": "Learn more."},
+            ],
         },
         context={"input_payload": {"world_id": "gestaloka_world_reference", "input_text": "Nexus Cityで到着記録を助ける"}},
     )
@@ -633,7 +631,7 @@ def test_live_world_progress_payload_shape_is_normalized_before_validation():
     assert payload.risk_level == "low"
     assert payload.scene_move == "deepen"
     assert payload.scene_pressure == "medium"
-    assert [item.posture for item in payload.next_choices] == ["safe", "progress", "explore"]
+    assert [item.choice_id for item in payload.next_choices] == ["choice_1", "choice_2", "choice_3"]
 
 
 def test_llm_run_persistence_keeps_prompt_cache_token_counts(tmp_path):

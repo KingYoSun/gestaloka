@@ -162,8 +162,8 @@ class PackBootstrap(BaseModel):
     opening_narrative_en: str = ""
     opening_situation_en: str = ""
     opening_pressure_en: str = ""
-    opening_choices: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    opening_choices_en: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    opening_choices: list[dict[str, Any]] = Field(default_factory=list)
+    opening_choices_en: list[dict[str, Any]] = Field(default_factory=list)
     reward_unlock_summary: str = "{reward_name} unlocked the next route."
     reward_use_narrative: str = (
         "{player_name} raised {reward_name} in {starter_location_name}, and {faction_name} opened the next route."
@@ -374,6 +374,7 @@ class PackQuest(BaseModel):
     reward_template_key: str = "none"
     reward_name: str = ""
     reward_description: str = ""
+    seed_on_session_start: bool = False
     state: dict[str, Any] = Field(default_factory=dict)
 
 

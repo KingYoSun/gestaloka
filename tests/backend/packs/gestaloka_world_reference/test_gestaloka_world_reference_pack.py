@@ -33,7 +33,7 @@ from app.modules.world_state.service import (
     record_quest_resolution_hint,
     _normalize_dynamic_quest_completion_target,
 )
-from tests.backend.turn_async_helpers import post_turn_and_wait
+from tests.backend.turn_async_helpers import post_turn_and_wait, receive_until_turn_event
 
 
 def gestaloka_session_payload() -> dict[str, str]:
@@ -53,6 +53,19 @@ def post_enterprise_offer_turn(client, session_id: str, auth_headers: dict[str, 
         auth_headers=auth_headers,
         payload={"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"},
     )
+
+
+def complete_live_quests_for_dynamic_offer_test(db, *, actor_id: str) -> None:
+    for assignment in db.execute(
+        select(QuestAssignment).where(
+            QuestAssignment.world_id == "gestaloka_world_reference",
+            QuestAssignment.owner_actor_id == actor_id,
+            QuestAssignment.status.in_(("offered", "active", "paused")),
+        )
+    ).scalars():
+        assignment.status = "completed"
+        assignment.progress = assignment.progress_target
+    db.flush()
 
 
 def test_session_can_start_from_gestaloka_world_reference_pack(client, container, auth_headers):
@@ -75,9 +88,10 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
     assert state_payload["world_pack"]["followup_location_name"] == "Oblivion Regions"
     assert state_payload["world_pack"]["followup_branches"]["formal_path"]["branch_key"] == "public_archive_mandate"
     assert state_payload["world_pack"]["followup_branches"]["undercurrent_path"]["branch_key"] == "edge_market_compact"
-    assert state_payload["quests"] == []
-    assert state_payload["quest_journal"] == []
-    assert state_payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
+    assert len(state_payload["quests"]) == 1
+    assert state_payload["quests"][0]["status"] == "active"
+    assert state_payload["quest_journal"][0]["assignment_id"] == state_payload["quests"][0]["assignment_id"]
+    assert state_payload["quest_display_state"] == {"mode": "quest", "label": state_payload["quests"][0]["title"]}
     assert state_payload["chapter"] is None
     assert any(item["axis_id"] == "world_integrity" for item in state_payload["shared_world_context"]["world_axes"])
     assert any(item["destination_key"] == "universal_library" for item in state_payload["nearby_routes"])
@@ -99,8 +113,8 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
 
     journal = client.get(f"/sessions/{payload['session_id']}/quests", headers=auth_headers)
     assert journal.status_code == 200
-    assert journal.json()["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
-    assert journal.json()["quests"] == []
+    assert journal.json()["quest_display_state"] == {"mode": "quest", "label": journal.json()["quests"][0]["title"]}
+    assert journal.json()["quests"][0]["status"] == "active"
 
     with container.session_factory() as db:
         world = db.execute(select(World).where(World.id == "gestaloka_world_reference")).scalar_one()
@@ -129,28 +143,31 @@ def test_opening_choices_ignore_existing_same_world_beats():
                 "undercurrent_path": {"branch_key": "edge_market_compact"},
             },
             "bootstrap": {
-                "opening_choices": {
-                    "safe": {
+                "opening_choices": [
+                    {
+                        "choice_id": "choice_1",
                         "label": "ネクサス公開登録所で到着ログを確認する",
                         "summary": "公開証言ホールを見て、来訪者ログが街の制度ではどう扱われるかを知る。",
                         "canonical_input_text": "ネクサス公開登録所で到着ログを確認する",
                         "action_kind": "narrative",
                     },
-                    "progress": {
+                    {
+                        "choice_id": "choice_2",
                         "label": "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る",
                         "summary": "所属を決めずに、企業窓口、昇降塔の行き先、契約のリスクを確認する。",
                         "canonical_input_text": "昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る",
                         "action_kind": "travel",
                         "travel_target_key": "lift_tower_network",
                     },
-                    "explore": {
+                    {
+                        "choice_id": "choice_3",
                         "label": "万象図書館へ向かい、古い記録と来訪者ログを照合する",
                         "summary": "公開や契約へ進む前に、万象図書館でゲスタロカの正史と到着ログの整合を確かめる。",
                         "canonical_input_text": "万象図書館へ向かう",
                         "action_kind": "travel",
                         "travel_target_key": "universal_library",
                     },
-                },
+                ],
             },
         },
         "current_location": {"key": "nexus_city", "name": "ネクサス市"},
@@ -240,10 +257,13 @@ def test_session_start_uses_pack_seed_npc_entity_key_when_generated_npc_shares_n
         assert generated_npc.origin_kind == "freeform_generated"
 
 
-def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lifecycle_actions(client, auth_headers):
+def test_active_starter_quest_blocks_dynamic_quest_offer_and_supports_lifecycle_actions(client, auth_headers):
     session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
+    state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state.status_code == 200
+    quest_assignment_id = state.json()["quests"][0]["assignment_id"]
 
     _, first_payload, _ = post_enterprise_offer_turn(
         client,
@@ -251,16 +271,13 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
         auth_headers=auth_headers,
     )
     assert first_payload["action_type"] == "narrative"
-    assert first_payload["quest_updates"][0]["status"] == "offered"
-    assert first_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
-    assert first_payload["chapter_updates"] == []
-    quest_assignment_id = first_payload["quest_updates"][0]["assignment_id"]
+    assert not any(item.get("status") == "offered" for item in first_payload["quest_updates"])
 
     post_offer_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert post_offer_state.status_code == 200
     assert post_offer_state.json()["quest_display_state"]["mode"] == "quest"
     assert post_offer_state.json()["quest_journal"][0]["assignment_id"] == quest_assignment_id
-    assert post_offer_state.json()["quest_journal"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
+    assert post_offer_state.json()["quest_journal"][0]["available_actions"] == ["leave_quest"]
     quest_response = client.get(f"/sessions/{session_payload['session_id']}/quests", headers=auth_headers)
     assert quest_response.status_code == 200
     quest_payload = quest_response.json()
@@ -271,31 +288,16 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
     assert "Visitor Log Registration" not in visible_quest_text
     assert "Nexus City" not in visible_quest_text
 
-    _, accept_payload, _ = post_turn_and_wait(
+    _, advance_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"action_type": "accept_quest", "quest_assignment_id": quest_assignment_id},
+        payload={"input_mode": "free_text", "input_text": "来訪者ログ登録を進めるため、公開証言ホールで手続きを手伝う"},
     )
-    assert accept_payload["action_type"] == "accept_quest"
-    assert accept_payload["sp_delta"] == -1
-    assert accept_payload["quest_updates"][0]["status"] == "active"
-    assert accept_payload["chapter_updates"][0]["chapter_kind"] == "prologue"
-    assert "body" in {item["chapter_kind"] for item in accept_payload["chapter_updates"]}
-    assert accept_payload["interpreted_intent"]["lifecycle_action_kind"] == "accept_quest"
-    assert not any("幕を開ける" in item["label"] for item in accept_payload["next_choices"])
-    assert [item["label"] for item in accept_payload["next_choices"]] == [item["label"] for item in first_payload["next_choices"]]
-
-    _, progress_payload, _ = post_turn_and_wait(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-        payload={"input_mode": "choice", "choice_id": "progress"},
-    )
-    assert progress_payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
-    assert progress_payload["quest_updates"][0]["progress"] > accept_payload["quest_updates"][0]["progress"]
-    assert progress_payload["quest_updates"][0]["world_tags"] != ["none"]
-    assert any(tag in progress_payload["quest_updates"][0]["world_tags"] for tag in ("aid_local", "promise_followup"))
+    assert advance_payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
+    assert advance_payload["quest_updates"][0]["progress"] > 0
+    assert advance_payload["quest_updates"][0]["world_tags"] != ["none"]
+    assert any(tag in advance_payload["quest_updates"][0]["world_tags"] for tag in ("aid_local", "promise_followup"))
 
     _, leave_payload, _ = post_turn_and_wait(
         client,
@@ -314,54 +316,106 @@ def test_gestaloka_world_reference_exploration_turn_offers_dynamic_quest_and_lif
     assert resume_payload["quest_updates"][0]["status"] == "active"
 
 
-def test_non_progress_choices_do_not_promise_quest_stage_completion():
-    choices = _canonicalize_next_choices(
-        [
-            {
-                "posture": "safe",
-                "label": "図書館でログを確認する",
-                "summary": "来訪者ログの登録が完了する。",
-                "canonical_input_text": "安全にcomplete the registration",
-                "action_kind": "narrative",
-            },
-            {
-                "posture": "progress",
-                "label": "未処理項目を確定する",
-                "summary": "次のクエスト段階へ進む。",
-                "canonical_input_text": "未処理項目を確定する",
-                "action_kind": "narrative",
-            },
-            {
-                "posture": "explore",
-                "label": "反応の広がりを調べる",
-                "summary": "advance to the next quest stage by observing.",
-                "canonical_input_text": "move to the next quest stage by observing",
-                "action_kind": "narrative",
-            },
-        ],
-        [],
-    )
+def test_first_choice_completion_text_completes_active_quest_even_when_llm_returns_none_tags(
+    client,
+    container,
+    auth_headers,
+    monkeypatch,
+):
+    original_execute = container.model_router.execute_structured_prompt
 
-    safe, progress, explore = choices
-    assert "登録が完了する" not in safe["summary"]
-    assert "complete the registration" not in safe["canonical_input_text"]
-    assert "次のクエスト段階へ進む" in progress["summary"]
-    assert "advance to the next quest stage" not in explore["summary"]
-    assert "move to the next quest stage" not in explore["canonical_input_text"]
+    def force_world_progress_noop_tags(*, prompt_id, **kwargs):
+        outcome = original_execute(prompt_id=prompt_id, **kwargs)
+        if prompt_id != "council.world_progress" or outcome.final_payload is None:
+            return outcome
+        return PromptExecutionOutcome(
+            attempts=outcome.attempts,
+            final_lane=outcome.final_lane,
+            final_payload=outcome.final_payload.model_copy(update={"world_tags": ["none"]}),
+            failure_reason=outcome.failure_reason,
+        )
 
-
-def test_ignoring_dynamic_quest_keeps_offer_but_suppresses_inline_action(client, auth_headers):
+    monkeypatch.setattr(container.model_router, "execute_structured_prompt", force_world_progress_noop_tags)
     session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    _, offer_payload, _ = post_enterprise_offer_turn(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-    )
-    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
-    assert "ignore_quest" in offer_payload["quest_updates"][0]["available_actions"]
+    with container.session_factory() as db:
+        bootstrap_turn = (
+            db.execute(
+                select(Turn)
+                .where(Turn.session_id == session_payload["session_id"], Turn.action_type == "system")
+                .order_by(Turn.created_at.desc(), Turn.id.desc())
+                .limit(1)
+            )
+            .scalar_one()
+        )
+        bootstrap_turn.resolved_output = {
+            **bootstrap_turn.resolved_output,
+            "next_choices": [
+                {
+                    "choice_id": "choice_1",
+                    "label": "手続きの完了を承認し、市民権を確定させる",
+                    "summary": "公開証言ホールで来訪者ログを確定し、市民権を得る。",
+                    "canonical_input_text": "手続きの完了を承認し、市民権を確定させる",
+                    "action_kind": "narrative",
+                },
+                *_canonicalize_next_choices([], [])[1:],
+            ],
+        }
+        db.commit()
+
+    state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert state_response.status_code == 200
+    assert state_response.json()["next_choices"][0]["label"] == "手続きの完了を承認し、市民権を確定させる"
+
+    with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
+        response = client.post(
+            "/turns",
+            json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "choice_1"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 202, response.json()
+        messages = receive_until_turn_event(websocket, "turn.resolved")
+    turn_payload = messages[-1]["data"]
+
+    completed_updates = [item for item in turn_payload["quest_updates"] if item["status"] == "completed"]
+    assert completed_updates
+    assert completed_updates[0]["progress"] == completed_updates[0]["progress_target"]
+    assert turn_payload["interpreted_intent"]["effect_contract"] == "complete"
+    assert turn_payload["inventory_updates"]
+    assert any(item["chapter_kind"] == "epilogue" for item in turn_payload["chapter_updates"])
+
+
+def test_ignoring_dynamic_quest_keeps_offer_but_suppresses_inline_action(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        offer_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            offer={
+                "title": "企業勧誘の確認",
+                "description": "企業勧誘の条件を確認する。",
+                "offered_summary": "企業勧誘の確認が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        quest_assignment_id = offer_updates[0]["assignment_id"]
+        db.commit()
+    assert "ignore_quest" in offer_updates[0]["available_actions"]
 
     _, ignore_payload, _ = post_turn_and_wait(
         client,
@@ -375,7 +429,6 @@ def test_ignoring_dynamic_quest_keeps_offer_but_suppresses_inline_action(client,
     assert ignore_payload["quest_updates"][0]["status"] == "offered"
     assert ignore_payload["quest_updates"][0]["action"] == "ignored"
     assert ignore_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest"]
-    assert [item["label"] for item in ignore_payload["next_choices"]] == [item["label"] for item in offer_payload["next_choices"]]
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.status_code == 200
@@ -534,17 +587,34 @@ def test_generated_npc_lock_creates_alternate_persistent_actor(client, container
         assert second.origin_kind == "archetype_generated"
 
 
-def test_gestaloka_world_reference_declines_dynamic_quest_offer(client, auth_headers):
+def test_gestaloka_world_reference_declines_dynamic_quest_offer(client, container, auth_headers):
     session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
 
-    _, offer_payload, _ = post_enterprise_offer_turn(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-    )
-    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
+    with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+        offer_updates = create_dynamic_quest_offer(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            offer={
+                "title": "企業契約の確認",
+                "description": "企業契約の行き先を確認する。",
+                "offered_summary": "企業契約の確認が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        quest_assignment_id = offer_updates[0]["assignment_id"]
+        db.commit()
 
     _, decline_payload, _ = post_turn_and_wait(
         client,
@@ -573,6 +643,7 @@ def test_dynamic_quest_completion_target_normalizes_live_provider_values(client,
     session_payload = session_response.json()
 
     with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
         source_event = db.execute(
             select(Event)
             .where(
@@ -610,6 +681,7 @@ def test_dynamic_quest_offer_merges_similar_offered_quest_and_suppresses_distinc
     session_payload = session_response.json()
 
     with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
         first_updates = create_dynamic_quest_offer(
             db,
             world_id="gestaloka_world_reference",
@@ -670,13 +742,7 @@ def test_dynamic_quest_offer_suppresses_new_offer_while_active_quest_exists(clie
     session_payload = session_response.json()
 
     with container.session_factory() as db:
-        source_event = db.execute(
-            select(Event)
-            .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
-            .order_by(Event.created_at.desc(), Event.id.desc())
-            .limit(1)
-        ).scalar_one()
-        first = create_dynamic_quest_offer(
+        blocked_updates = create_dynamic_quest_offer(
             db,
             world_id="gestaloka_world_reference",
             actor_id=session_payload["player_actor_id"],
@@ -685,28 +751,6 @@ def test_dynamic_quest_offer_suppresses_new_offer_while_active_quest_exists(clie
                 "title": "門記録の整理",
                 "description": "門の記録を整理する。",
                 "offered_summary": "門記録の整理が提示された。",
-                "completion_target": 3,
-                "constraints": [],
-            },
-        )[0]
-        apply_quest_lifecycle_action(
-            db,
-            world_id="gestaloka_world_reference",
-            actor_id=session_payload["player_actor_id"],
-            quest_assignment_id=first["assignment_id"],
-            action_type="accept_quest",
-            source_event_id=source_event.id,
-        )
-
-        blocked_updates = create_dynamic_quest_offer(
-            db,
-            world_id="gestaloka_world_reference",
-            actor_id=session_payload["player_actor_id"],
-            source_event_id="active-distinct-suppressed",
-            offer={
-                "title": "別件の星図調査",
-                "description": "門とは別の星図を調査する。",
-                "offered_summary": "別件の星図調査が提示された。",
                 "completion_target": 3,
                 "constraints": [],
             },
@@ -729,6 +773,7 @@ def test_dynamic_followup_offer_requires_completed_source_and_no_live_quest(clie
     session_payload = session_response.json()
 
     with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
         source_event = db.execute(
             select(Event)
             .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
@@ -810,6 +855,7 @@ def test_accepting_or_resuming_quest_keeps_only_one_active_focus(client, contain
     session_payload = session_response.json()
 
     with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
         source_event = db.execute(
             select(Event)
             .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
@@ -902,6 +948,7 @@ def test_paused_quest_resolution_hint_resolves_into_epilogue_on_resume(client, c
     session_payload = session_response.json()
 
     with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
         source_event = db.execute(
             select(Event)
             .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
@@ -961,6 +1008,7 @@ def test_active_quest_resolution_hint_completes_immediately(client, container, a
     session_payload = session_response.json()
 
     with container.session_factory() as db:
+        complete_live_quests_for_dynamic_offer_test(db, actor_id=session_payload["player_actor_id"])
         source_event = db.execute(
             select(Event)
             .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
@@ -1049,11 +1097,11 @@ def test_gestaloka_world_reference_progression_falls_back_when_world_progress_sc
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
     )
-    assert second_payload["quest_updates"][0]["status"] == "offered"
+    assert not any(item.get("status") == "offered" for item in second_payload["quest_updates"])
 
     post_offer_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert post_offer_state.status_code == 200
-    assert post_offer_state.json()["quest_journal"][0]["status"] == "offered"
+    assert post_offer_state.json()["quest_journal"][0]["status"] == "active"
 
     with container.session_factory() as db:
         fallback_turn = db.get(Turn, second_payload["turn_id"])

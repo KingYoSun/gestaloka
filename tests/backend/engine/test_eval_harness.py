@@ -16,6 +16,7 @@ from app.models.entities import (
     Event,
     Memory,
     OutboxEvent,
+    QuestAssignment,
     ReleaseGateReport,
     SPLedgerEntry,
     Turn,
@@ -28,6 +29,7 @@ from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import PromptRouteOverride
 from app.modules.observability.service import CanaryProbeResult
+from app.modules.world_state.service import create_dynamic_quest_offer
 from tests.backend.turn_async_helpers import post_turn_and_wait
 from app.modules.world_pack.service import PackCatalogFailure, PackRegistry
 from app.modules.world_memory.service import MemoryService
@@ -50,6 +52,44 @@ def enterprise_offer_payload() -> dict[str, str]:
 
 def visitor_log_help_payload() -> dict[str, str]:
     return {"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"}
+
+
+def create_offered_dynamic_quest_for_session(container, *, session_payload: dict) -> str:
+    with container.session_factory() as db:
+        for assignment in db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == session_payload["world_id"],
+                QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
+                QuestAssignment.status.in_(("offered", "active", "paused")),
+            )
+        ).scalars():
+            assignment.status = "completed"
+            assignment.progress = assignment.progress_target
+        db.flush()
+        source_event = (
+            db.execute(
+                select(Event)
+                .where(Event.world_id == session_payload["world_id"], Event.session_id == session_payload["session_id"])
+                .order_by(Event.created_at.desc(), Event.id.desc())
+                .limit(1)
+            )
+            .scalar_one()
+        )
+        updates = create_dynamic_quest_offer(
+            db,
+            world_id=session_payload["world_id"],
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            offer={
+                "title": "企業契約の確認",
+                "description": "企業契約の条件を確認する。",
+                "offered_summary": "企業契約の確認が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        db.commit()
+    return updates[0]["assignment_id"]
 
 
 def test_eval_dataset_validation_rejects_duplicate_case_ids(tmp_path: Path):
@@ -383,13 +423,7 @@ def test_shadow_replay_filters_non_council_turns_and_uses_source_event_location(
     )
     session_payload = session_response.json()
 
-    _, offer_payload, _ = post_turn_and_wait(
-        client,
-        session_id=session_payload["session_id"],
-        auth_headers=auth_headers,
-        payload=enterprise_offer_payload(),
-    )
-    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
+    quest_assignment_id = create_offered_dynamic_quest_for_session(container, session_payload=session_payload)
 
     _, accept_payload, _ = post_turn_and_wait(
         client,

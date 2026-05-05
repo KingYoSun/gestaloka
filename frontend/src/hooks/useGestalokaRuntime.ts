@@ -1286,7 +1286,7 @@ export function useGestalokaRuntime() {
 
   async function submitTurnRequest(
     payload:
-      | { input_mode: "choice"; choice_id: "safe" | "progress" | "explore" }
+      | { input_mode: "choice"; choice_id: string }
       | { input_mode: "free_text"; input_text: string }
       | { action_type: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest"; quest_assignment_id: string },
   ) {
@@ -1362,7 +1362,7 @@ export function useGestalokaRuntime() {
     await submitTurnRequest({ input_mode: "free_text", input_text: freeTextInput });
   }
 
-  async function handleChoiceSubmit(choiceId: "safe" | "progress" | "explore") {
+  async function handleChoiceSubmit(choiceId: string) {
     await submitTurnRequest({ input_mode: "choice", choice_id: choiceId });
   }
 

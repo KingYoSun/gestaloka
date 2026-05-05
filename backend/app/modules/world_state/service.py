@@ -733,7 +733,7 @@ def ensure_starter_quest_assignment(
         world_id=world_id,
         owner_actor_id=owner_actor_id,
         quest_template=quest_template,
-        latest_summary=f"Help a local and return with what you learned around {lore_location_name}.",
+        latest_summary=f"{lore_location_name}周辺で得たことを持ち帰り、来訪者ログを読み解く。",
         state_json={"lore_progress": 0, "last_world_tags": [], "unlocked_by_item_id": None},
     )
 
@@ -2945,8 +2945,8 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
             "opening_narrative_en": str(bootstrap.opening_narrative_en or ""),
             "opening_situation_en": str(bootstrap.opening_situation_en or ""),
             "opening_pressure_en": str(bootstrap.opening_pressure_en or ""),
-            "opening_choices": dict(bootstrap.opening_choices or {}),
-            "opening_choices_en": dict(bootstrap.opening_choices_en or {}),
+            "opening_choices": list(bootstrap.opening_choices or []),
+            "opening_choices_en": list(bootstrap.opening_choices_en or []),
         },
     }
 
@@ -3097,7 +3097,6 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         current_location_key == starter_location_key
         and stage_key == starter_stage_key
         and progress == 0
-        and not quests
         and not inventory
         and not recent_travel_history
     )
@@ -3112,25 +3111,22 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             None,
         )
 
-    safe_choice = {
-        "choice_id": "safe",
-        "posture": "safe",
+    first_choice = {
+        "choice_id": "choice_1",
         "label": f"{current_location_name}の気配を乱さず、まず息を整えて見守る",
         "summary": "場の流れを乱さず、まず気配と視線を確かめる。",
         "canonical_input_text": f"{current_location_name}の流れを乱さず、周囲の気配と視線を見守る",
         "action_kind": "narrative",
     }
-    progress_choice = {
-        "choice_id": "progress",
-        "posture": "progress",
+    second_choice = {
+        "choice_id": "choice_2",
         "label": "困っている相手に手を差し伸べ、次の進展を作る",
         "summary": "もっとも前進寄りの行動で、依頼や関係を進める。",
         "canonical_input_text": f"{starter_location_name}で旅人を助け、次の進展を作る",
         "action_kind": "narrative",
     }
-    explore_choice = {
-        "choice_id": "explore",
-        "posture": "explore",
+    third_choice = {
+        "choice_id": "choice_3",
         "label": "噂と視線をたどり、場の裏側を探る",
         "summary": "探索や関係変化に寄せた行動で、状況理解を広げる。",
         "canonical_input_text": f"{current_location_name}の空気や人の事情を探り、何が起きているか確かめる",
@@ -3138,74 +3134,73 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     }
 
     if "promise" in thread_types:
-        safe_choice = {
-            **safe_choice,
+        first_choice = {
+            **first_choice,
             "label": "急がず場を保ちつつ、宙に浮いた約束の手触りを確かめる",
             "summary": "約束を悪化させず、まず場を落ち着かせる。",
             "canonical_input_text": "場を保ちつつ、宙に浮いた約束をどう受け止めるか静かに確かめる",
         }
-        progress_choice = {
-            **progress_choice,
+        second_choice = {
+            **second_choice,
             "label": "まだ宙に浮く約束へきちんと応え、次の進展を作る",
             "summary": "約束の圧力へ正面から応え、関係と依頼を前に進める。",
             "canonical_input_text": "宙に浮いた約束へ応え、見回りの次の段取りをきちんと進める",
         }
-        explore_choice = {
-            **explore_choice,
+        third_choice = {
+            **third_choice,
             "label": "約束がどう噂や視線に残っているかを探る",
             "summary": "物語のしこりの広がり方を探る。",
             "canonical_input_text": f"約束が{current_location_name}の噂や視線にどう残っているかを探る",
         }
     elif "scrutiny" in thread_types:
-        safe_choice = {
-            **safe_choice,
+        first_choice = {
+            **first_choice,
             "label": "見張りの視線を刺激しないよう、慎重に場の空気を読む",
             "summary": "警戒をこれ以上高めずに場を保つ。",
             "canonical_input_text": "見張りの視線を刺激しないよう慎重に場の空気を読む",
         }
-        progress_choice = {
-            **progress_choice,
+        second_choice = {
+            **second_choice,
             "label": "見られていることを受け止めたまま、着実に前へ進む",
             "summary": "警戒下でも進展を作る。",
             "canonical_input_text": "見られていることを受け止めたまま着実に前へ進む",
         }
-        explore_choice = {
-            **explore_choice,
+        third_choice = {
+            **third_choice,
             "label": "誰がどこまで見ているのか、視線の流れを探る",
             "summary": "警戒の源を見極める。",
             "canonical_input_text": "誰がどこまで見ているのか、広場の視線の流れを探る",
         }
     elif relationship_band_name in {"warm", "trusted"}:
-        progress_choice = {
-            **progress_choice,
+        second_choice = {
+            **second_choice,
             "label": "差し出された信頼を受け止め、そのまま次の進展へ踏み込む",
             "summary": "関係の追い風を受けて進める。",
             "canonical_input_text": "差し出された信頼を受け止め、そのまま次の進展へ踏み込む",
         }
 
     if stage_key == starter_stage_key and progress >= 1:
-        progress_choice = {
-            **progress_choice,
+        second_choice = {
+            **second_choice,
             "label": "見聞きをまとめて報告し、次の見回りへ繋げる",
             "summary": f"依頼を締め、{faction_name}から次の信頼を引き出す。",
             "canonical_input_text": f"見聞きを報告し、{current_location_name}で次の段取りを引き受ける",
         }
-        safe_choice = {
-            **safe_choice,
+        first_choice = {
+            **first_choice,
             "label": "急がず相手の落ち着きを確かめ、場の気配を保つ",
             "canonical_input_text": f"急がず相手の落ち着きを確かめ、{current_location_name}の気配を保つ",
         }
-        explore_choice = {
-            **explore_choice,
+        third_choice = {
+            **third_choice,
             "label": "周囲の視線や噂を探り、次の手掛かりを拾う",
             "canonical_input_text": f"{current_location_name}に残る視線や噂を探り、次の手掛かりを拾う",
         }
 
     if usable_item is not None and usable_item.get("effect_kind") == reward_effect_kind:
         if current_location_key == starter_location_key:
-            progress_choice = {
-                "choice_id": "progress",
-                "posture": "progress",
+            second_choice = {
+                "choice_id": "choice_2",
                 "label": f"{reward_name}を掲げ、次の道を正式に開く",
                 "summary": "重要アイテムを使って次の物語段階を解放する。",
                 "canonical_input_text": f"{reward_name}を掲げ、次の道を開く",
@@ -3214,9 +3209,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         else:
             return_route = route_to(starter_location_key)
             if return_route is not None and bool(return_route.get("available")):
-                progress_choice = {
-                    "choice_id": "progress",
-                    "posture": "progress",
+                second_choice = {
+                    "choice_id": "choice_2",
                     "label": f"{reward_name}を使える場所へ戻る",
                     "summary": "重要アイテムを使うため、まず起点の場所へ戻る。",
                     "canonical_input_text": f"{reward_name}を使える場所へ戻る",
@@ -3227,9 +3221,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     if stage_key == followup_stage_key:
         followup_route = route_to(followup_location_key)
         if current_location_key != followup_location_key and followup_route is not None and bool(followup_route.get("available")):
-            progress_choice = {
-                "choice_id": "progress",
-                "posture": "progress",
+            second_choice = {
+                "choice_id": "choice_2",
                 "label": f"開いた{followup_location_name}へ足を向ける",
                 "summary": "follow-up quest の舞台へ実際に移る。",
                 "canonical_input_text": f"{reward_name}で開いた{followup_location_name}へ向かう",
@@ -3237,88 +3230,85 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "travel_target_key": followup_location_key,
             }
         else:
-            progress_choice = {
-                "choice_id": "progress",
-                "posture": "progress",
+            second_choice = {
+                "choice_id": "choice_2",
                 "label": f"開いた{followup_location_name}を辿り、そこで見つかる異変を確かめる",
                 "summary": "follow-up quest を前へ進める選択。",
                 "canonical_input_text": f"{reward_name}で開いた{followup_location_name}の様子を観察する",
                 "action_kind": "narrative",
             }
         if current_location_key == followup_location_key:
-            safe_choice = {
-                "choice_id": "safe",
-                "posture": "safe",
+            first_choice = {
+                "choice_id": "choice_1",
                 "label": f"{followup_location_name}の気配を整え、場を静かに安定させる",
                 "summary": "危険を抑えつつ、場の安定を優先する。",
                 "canonical_input_text": f"開いた{followup_location_name}の気配を整え、場を静かに安定させる",
                 "action_kind": "narrative",
             }
-            explore_choice = {
-                "choice_id": "explore",
-                "posture": "explore",
+            third_choice = {
+                "choice_id": "choice_3",
                 "label": f"{followup_location_name}の痕跡や現地の記憶を集め、関係の糸口を探る",
                 "summary": "探索と関係変化に寄せた選択。",
                 "canonical_input_text": f"{reward_name}で開いた{followup_location_name}の痕跡や現地の記憶を集める",
                 "action_kind": "narrative",
             }
         if current_branch_slot == "formal_path":
-            safe_choice = {
-                **safe_choice,
+            first_choice = {
+                **first_choice,
                 "label": "表に出た秩序を崩さず、今の線を丁寧に保つ",
                 "canonical_input_text": "表に出た秩序を崩さず、今の線を丁寧に保つ",
             }
-            progress_choice = {
-                **progress_choice,
+            second_choice = {
+                **second_choice,
                 "label": f"{formal_branch_label}に沿って前へ進み、正式な信頼を固める",
                 "canonical_input_text": f"{formal_branch_label}に沿って前へ進み、正式な信頼を固める",
             }
-            explore_choice = {
-                **explore_choice,
+            third_choice = {
+                **third_choice,
                 "label": "表の流れの裏でまだ揺れている気配を探る",
                 "canonical_input_text": "表の流れの裏でまだ揺れている気配を探る",
             }
         elif current_branch_slot == "undercurrent_path":
-            safe_choice = {
-                **safe_choice,
+            first_choice = {
+                **first_choice,
                 "label": "広がりすぎた噂を刺激せず、静かな流れを読む",
                 "canonical_input_text": "広がりすぎた噂を刺激せず、静かな流れを読む",
             }
-            progress_choice = {
-                **progress_choice,
+            second_choice = {
+                **second_choice,
                 "label": f"{undercurrent_branch_label}に沿って前へ進み、裏の流れを確かめる",
                 "canonical_input_text": f"{undercurrent_branch_label}に沿って前へ進み、裏の流れを確かめる",
             }
-            explore_choice = {
-                **explore_choice,
+            third_choice = {
+                **third_choice,
                 "label": "静かな流れの外縁に残る別の糸を探る",
                 "canonical_input_text": "静かな流れの外縁に残る別の糸を探る",
             }
         elif crossroads_summary:
-            safe_choice = {
-                **safe_choice,
+            first_choice = {
+                **first_choice,
                 "label": "どちらの道にも決め切らず、場の圧だけを静かに読む",
                 "canonical_input_text": "どちらの道にも決め切らず、場の圧だけを静かに読む",
             }
             if dominant_branch_slot == "formal_path":
-                progress_choice = {
-                    **progress_choice,
+                second_choice = {
+                    **second_choice,
                     "label": f"{formal_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
                     "canonical_input_text": f"{formal_branch_label}の側へ少し踏み込み、表の流れを前へ押す",
                 }
-                explore_choice = {
-                    **explore_choice,
+                third_choice = {
+                    **third_choice,
                     "label": f"{undercurrent_branch_label}の側にまだ残る別の糸を拾う",
                     "canonical_input_text": f"{undercurrent_branch_label}の側にまだ残る別の糸を拾う",
                 }
             elif dominant_branch_slot == "undercurrent_path":
-                progress_choice = {
-                    **progress_choice,
+                second_choice = {
+                    **second_choice,
                     "label": f"{undercurrent_branch_label}の側へ少し踏み込み、その流れを前へ押す",
                     "canonical_input_text": f"{undercurrent_branch_label}の側へ少し踏み込み、その流れを前へ押す",
                 }
-                explore_choice = {
-                    **explore_choice,
+                third_choice = {
+                    **third_choice,
                     "label": f"{formal_branch_label}の側にまだ残る別の糸を拾う",
                     "canonical_input_text": f"{formal_branch_label}の側にまだ残る別の糸を拾う",
                 }
@@ -3326,9 +3316,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     archive_route = route_to(lore_location_key)
     square_route = route_to(starter_location_key)
     if current_location_key == starter_location_key and archive_route is not None and bool(archive_route.get("available")):
-        explore_choice = {
-            "choice_id": "explore",
-            "posture": "explore",
+        third_choice = {
+            "choice_id": "choice_3",
             "label": f"{lore_location_name}へ向かい、古い記録と視線の重なりを確かめる",
             "summary": "場を変えながら探索を進める。",
             "canonical_input_text": f"{lore_location_name}へ向かう",
@@ -3336,18 +3325,16 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             "travel_target_key": lore_location_key,
         }
     if current_location_key == lore_location_key:
-        progress_choice = {
-            "choice_id": "progress",
-            "posture": "progress",
+        second_choice = {
+            "choice_id": "choice_2",
             "label": f"{lore_location_name}で手掛かりを辿り、次の糸口を掴む",
             "summary": f"{lore_location_name}側で状況を前へ進める。",
             "canonical_input_text": f"{lore_location_name}で古い記録と現地の話を辿る",
             "action_kind": "narrative",
         }
         if square_route is not None and bool(square_route.get("available")):
-            safe_choice = {
-                "choice_id": "safe",
-                "posture": "safe",
+            first_choice = {
+                "choice_id": "choice_1",
                 "label": f"いったん{starter_location_name}へ戻り、場の流れを確かめ直す",
                 "summary": "起点へ戻って場の圧力を測り直す。",
                 "canonical_input_text": f"{starter_location_name}へ戻る",
@@ -3355,9 +3342,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 "travel_target_key": starter_location_key,
             }
     if current_location_key == followup_location_key and square_route is not None and bool(square_route.get("available")):
-        safe_choice = {
-            "choice_id": "safe",
-            "posture": "safe",
+        first_choice = {
+            "choice_id": "choice_1",
             "label": f"{followup_location_name}の緊張を抱えたまま、いったん起点へ戻る",
             "summary": "新しい場所の余韻を持ち帰る。",
             "canonical_input_text": f"{starter_location_name}へ戻る",
@@ -3366,8 +3352,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
         }
 
     if english_play_language:
-        for choice in (safe_choice, progress_choice, explore_choice):
-            posture = str(choice.get("posture") or choice.get("choice_id") or "")
+        for choice_index, choice in enumerate((first_choice, second_choice, third_choice)):
             action_kind = str(choice.get("action_kind") or "narrative")
             travel_target_key = str(choice.get("travel_target_key") or "")
             if action_kind == "use_reward_item":
@@ -3387,11 +3372,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 choice["summary"] = "Change places and widen the investigation."
                 choice["canonical_input_text"] = f"Travel to {lore_location_name}"
             elif stage_key == followup_stage_key and current_location_key == followup_location_key:
-                if posture == "safe":
+                if choice_index == 0:
                     choice["label"] = f"Steady the air around {followup_location_name}"
                     choice["summary"] = "Keep danger contained and stabilize the scene."
                     choice["canonical_input_text"] = f"Steady the air around {followup_location_name}"
-                elif posture == "progress":
+                elif choice_index == 1:
                     choice["label"] = f"Read the disturbance inside {followup_location_name}"
                     choice["summary"] = "Advance the follow-up quest inside the breach site."
                     choice["canonical_input_text"] = f"Observe what changed inside {followup_location_name}"
@@ -3400,11 +3385,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["summary"] = "Explore the site and look for relationship leads."
                     choice["canonical_input_text"] = f"Gather traces and local memories in {followup_location_name}"
             elif stage_key == followup_stage_key:
-                if posture == "safe":
+                if choice_index == 0:
                     choice["label"] = "Hold the newly opened route steady"
                     choice["summary"] = "Keep the scene stable before moving on."
                     choice["canonical_input_text"] = f"Hold the route toward {followup_location_name} steady"
-                elif posture == "progress":
+                elif choice_index == 1:
                     choice["label"] = f"Follow the opened path toward {followup_location_name}"
                     choice["summary"] = "Move the follow-up quest forward."
                     choice["canonical_input_text"] = f"Follow the path opened by {reward_name}"
@@ -3413,11 +3398,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["summary"] = "Explore what the opened route has changed."
                     choice["canonical_input_text"] = f"Look for traces around the route to {followup_location_name}"
             elif stage_key == starter_stage_key and progress >= 1:
-                if posture == "safe":
+                if choice_index == 0:
                     choice["label"] = "Keep the scene calm and check that everyone is steady"
                     choice["summary"] = "Avoid rushing and preserve the scene's balance."
                     choice["canonical_input_text"] = f"Keep {current_location_name} calm and check that everyone is steady"
-                elif posture == "progress":
+                elif choice_index == 1:
                     choice["label"] = "Report what you learned and take the next patrol step"
                     choice["summary"] = f"Close the request and earn further trust from {faction_name}."
                     choice["canonical_input_text"] = f"Report what you learned in {current_location_name} and accept the next step"
@@ -3426,11 +3411,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["summary"] = "Explore the looks and rumors left in the scene."
                     choice["canonical_input_text"] = f"Trace the rumors and looks left in {current_location_name}"
             else:
-                if posture == "safe":
+                if choice_index == 0:
                     choice["label"] = f"Watch {current_location_name} without disturbing the flow"
                     choice["summary"] = "Read the room and avoid disrupting the scene."
                     choice["canonical_input_text"] = f"Watch the mood and sightlines around {current_location_name}"
-                elif posture == "progress":
+                elif choice_index == 1:
                     choice["label"] = "Help the person in need and create the next opening"
                     choice["summary"] = "Take the clearest forward action for the current request."
                     choice["canonical_input_text"] = f"Help at {starter_location_name} and create the next opening"
@@ -3441,10 +3426,8 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
 
     if is_opening_bootstrap_state:
         opening_choices = opening_bootstrap.get("opening_choices_en" if english_play_language else "opening_choices")
-        if isinstance(opening_choices, dict):
-            for choice in (safe_choice, progress_choice, explore_choice):
-                choice_id = str(choice.get("choice_id") or "")
-                opening_choice = opening_choices.get(choice_id)
+        if isinstance(opening_choices, list):
+            for choice, opening_choice in zip((first_choice, second_choice, third_choice), opening_choices):
                 if not isinstance(opening_choice, dict):
                     continue
                 for field in ("label", "summary", "canonical_input_text", "action_kind", "travel_target_key"):
@@ -3454,16 +3437,15 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
 
     if (leading_consequence or leading_world_beat or leading_murmur) and not is_opening_bootstrap_state:
         signal = leading_consequence or leading_world_beat or leading_murmur
-        for choice in (safe_choice, progress_choice, explore_choice):
+        for choice_index, choice in enumerate((first_choice, second_choice, third_choice)):
             if str(choice.get("action_kind") or "narrative") != "narrative":
                 continue
-            posture = str(choice.get("posture") or choice.get("choice_id") or "")
             if english_play_language:
-                if posture == "safe":
+                if choice_index == 0:
                     choice["label"] = "Read the change that just settled in the scene"
                     choice["summary"] = f"Pause and judge the latest result: {signal}"
                     choice["canonical_input_text"] = f"Read the latest change around {current_location_name}: {signal}"
-                elif posture == "progress":
+                elif choice_index == 1:
                     choice["label"] = "Act on the opening created by the last result"
                     choice["summary"] = f"Use the latest result to move forward: {signal}"
                     choice["canonical_input_text"] = f"Act on the opening created by the latest result: {signal}"
@@ -3471,11 +3453,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["label"] = "Trace who noticed the latest change"
                     choice["summary"] = f"Explore how the result is spreading: {signal}"
                     choice["canonical_input_text"] = f"Trace who noticed the latest change around {current_location_name}: {signal}"
-            elif posture == "safe":
+            elif choice_index == 0:
                 choice["label"] = "直前の変化を受け止め、場の揺れを静かに読む"
                 choice["summary"] = f"直前の結果を急がず確かめる: {signal}"
                 choice["canonical_input_text"] = f"{current_location_name}で直前の変化を受け止め、場の揺れを静かに読む"
-            elif posture == "progress":
+            elif choice_index == 1:
                 choice["label"] = "直前に生まれた糸口を使い、次の進展へ踏み込む"
                 choice["summary"] = f"直前の結果を足場に前へ進める: {signal}"
                 choice["canonical_input_text"] = "直前に生まれた糸口を使い、次の進展へ踏み込む"
@@ -3484,11 +3466,11 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                 choice["summary"] = f"結果の広がり方を探索する: {signal}"
                 choice["canonical_input_text"] = f"{current_location_name}で直前の変化が誰に届いたかを探る"
 
-    for choice in (safe_choice, progress_choice, explore_choice):
+    for choice in (first_choice, second_choice, third_choice):
         summary = " ".join(str(choice.get("summary") or "").split()).strip()
         choice["summary"] = summary or "次の行動を選ぶ。"
 
-    return [safe_choice, progress_choice, explore_choice]
+    return [first_choice, second_choice, third_choice]
 
 
 def build_session_state(
@@ -3939,6 +3921,135 @@ def _active_progression_quest(
     return None
 
 
+def _issue_quest_reward_if_needed(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    assignment: QuestAssignment,
+    quest_template: QuestTemplate,
+) -> list[dict[str, Any]]:
+    if assignment.reward_item_id is not None:
+        return []
+    if not bool((quest_template.state or {}).get("reward_enabled", True)):
+        return []
+
+    reward_item = db.execute(
+        select(Item).where(
+            Item.world_id == world_id,
+            Item.source_quest_assignment_id == assignment.id,
+        )
+    ).scalar_one_or_none()
+    if reward_item is None:
+        reward_item = Item(
+            id=new_id(),
+            world_id=world_id,
+            owner_actor_id=actor_id,
+            template_key=quest_template.reward_template_key,
+            name=quest_template.reward_name,
+            description=quest_template.reward_description,
+            status="active",
+            effect_kind=(quest_template.state or {}).get("reward_effect_kind"),
+            effect_payload=dict((quest_template.state or {}).get("reward_effect_payload") or {}),
+            source_quest_assignment_id=assignment.id,
+        )
+        db.add(reward_item)
+        db.flush()
+    else:
+        reward_item.status = reward_item.status or "active"
+        reward_item.effect_kind = reward_item.effect_kind or (quest_template.state or {}).get("reward_effect_kind")
+        reward_item.effect_payload = dict(
+            reward_item.effect_payload or (quest_template.state or {}).get("reward_effect_payload") or {}
+        )
+    assignment.reward_item_id = reward_item.id
+    return [{**item_summary_to_dict(reward_item), "action": "added"}]
+
+
+def _quest_row_for_effect_contract(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+) -> tuple[QuestAssignment, QuestTemplate] | None:
+    row = db.execute(
+        select(QuestAssignment, QuestTemplate)
+        .join(
+            QuestTemplate,
+            (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+        )
+        .where(
+            QuestAssignment.world_id == world_id,
+            QuestAssignment.owner_actor_id == actor_id,
+            QuestAssignment.status.in_(("active", "completed")),
+        )
+        .order_by(
+            (QuestAssignment.status == "active").desc(),
+            QuestAssignment.updated_at.desc(),
+            QuestAssignment.id.desc(),
+        )
+    ).first()
+    return row if row is not None else None
+
+
+def apply_quest_effect_contract(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    effect_contract: str,
+    summary: str,
+) -> dict[str, list[dict[str, Any]]]:
+    if effect_contract != "complete":
+        return {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+
+    row = _quest_row_for_effect_contract(db, world_id=world_id, actor_id=actor_id)
+    if row is None:
+        return {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+
+    assignment, quest_template = row
+    assignment.progress_target = max(assignment.progress_target, quest_template.completion_target)
+    assignment.progress = max(assignment.progress, assignment.progress_target)
+    assignment.status = "completed"
+    assignment.latest_summary = summary or f"{quest_template.title} is complete."
+    state_json = dict(assignment.state_json or {})
+    state_json["completed_from_effect_contract_event_id"] = source_event_id
+    state_json["last_effect_contract"] = effect_contract
+    assignment.state_json = state_json
+
+    inventory_updates = _issue_quest_reward_if_needed(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        assignment=assignment,
+        quest_template=quest_template,
+    )
+    chapter_updates = _open_epilogue_chapter_for_assignment(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        source_event_id=source_event_id,
+        assignment=assignment,
+        template=quest_template,
+        summary=assignment.latest_summary,
+    )
+    db.flush()
+    return {
+        "quest_updates": [
+            _quest_update_dict(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                assignment=assignment,
+                template=quest_template,
+                action="completed_from_effect_contract",
+            )
+        ],
+        "inventory_updates": inventory_updates,
+        "chapter_updates": chapter_updates,
+    }
+
+
 def apply_world_tag_updates(
     db: Session,
     *,
@@ -3985,41 +4096,15 @@ def apply_world_tag_updates(
         standing.band = rule.next_band
 
     inventory_updates: list[dict[str, Any]] = []
-    reward_item: Item | None = None
     if rule.should_issue_reward:
-        reward_item = db.execute(
-            select(Item).where(
-                Item.world_id == world_id,
-                Item.source_quest_assignment_id == assignment.id,
-            )
-        ).scalar_one_or_none()
-        if reward_item is None:
-            reward_item = Item(
-                id=new_id(),
+        inventory_updates.extend(
+            _issue_quest_reward_if_needed(
+                db,
                 world_id=world_id,
-                owner_actor_id=actor_id,
-                template_key=quest_template.reward_template_key,
-                name=quest_template.reward_name,
-                description=quest_template.reward_description,
-                status="active",
-                effect_kind=(quest_template.state or {}).get("reward_effect_kind"),
-                effect_payload=dict((quest_template.state or {}).get("reward_effect_payload") or {}),
-                source_quest_assignment_id=assignment.id,
+                actor_id=actor_id,
+                assignment=assignment,
+                quest_template=quest_template,
             )
-            db.add(reward_item)
-            db.flush()
-        else:
-            reward_item.status = reward_item.status or "active"
-            reward_item.effect_kind = reward_item.effect_kind or (quest_template.state or {}).get("reward_effect_kind")
-            reward_item.effect_payload = dict(
-                reward_item.effect_payload or (quest_template.state or {}).get("reward_effect_payload") or {}
-            )
-        assignment.reward_item_id = reward_item.id
-        inventory_updates.append(
-            {
-                **item_summary_to_dict(reward_item),
-                "action": "added",
-            }
         )
 
     db.flush()

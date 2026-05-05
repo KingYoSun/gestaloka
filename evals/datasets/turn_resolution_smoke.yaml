@@ -10,7 +10,7 @@ cases:
     npc_name: Nexus Entry Liaison
     input_text: Nexus Cityで到着記録を助け、最初の依頼を進める
     input_mode: choice
-    choice_id: progress
+    choice_id: choice_2
     relevant_memories: []
     relation_context:
       - location=Nexus City
@@ -46,7 +46,7 @@ cases:
     npc_name: Nexus Entry Liaison
     input_text: 到着記録の手伝いを報告し、次の復元路の約束を果たす
     input_mode: choice
-    choice_id: progress
+    choice_id: choice_2
     relevant_memories:
       - Demo PlayerはNexus Cityで到着記録を助け、Nexus Entry Liaisonへ報告した。
     relation_context:
@@ -66,7 +66,7 @@ cases:
     expect_outcome_band: steady
     expect_scene_move: hold
     expect_consequence_tags:
-      - earned_trust
+      - kept_promise
     expected_world_tags:
       - promise_followup
     quest_context:

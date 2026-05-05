@@ -11,10 +11,11 @@ from sqlalchemy import select
 
 import app.modules.identity.oidc as oidc_module
 from app.core.config import Settings
-from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, PlayLocalizedTextCache, ProjectionRecord, Turn, World
+from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, PlayLocalizedTextCache, ProjectionRecord, QuestAssignment, Turn, World
 from app.modules.identity.oidc import KeycloakOIDCAdapter, UserIdentity
 from app.modules.llm_harness.service import CouncilRoleRun, ProviderResponse, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult
+from app.modules.world_state.service import create_dynamic_quest_offer
 from app.modules.world_pack.service import PackRegistry
 
 
@@ -33,6 +34,44 @@ def post_enterprise_offer_turn(client, session_id: str, auth_headers: dict[str, 
         auth_headers,
         {"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"},
     )
+
+
+def create_offered_dynamic_quest_for_session(container, *, session_payload: dict) -> str:
+    with container.session_factory() as db:
+        for assignment in db.execute(
+            select(QuestAssignment).where(
+                QuestAssignment.world_id == session_payload["world_id"],
+                QuestAssignment.owner_actor_id == session_payload["player_actor_id"],
+                QuestAssignment.status.in_(("offered", "active", "paused")),
+            )
+        ).scalars():
+            assignment.status = "completed"
+            assignment.progress = assignment.progress_target
+        db.flush()
+        source_event = (
+            db.execute(
+                select(Event)
+                .where(Event.world_id == session_payload["world_id"], Event.session_id == session_payload["session_id"])
+                .order_by(Event.created_at.desc(), Event.id.desc())
+                .limit(1)
+            )
+            .scalar_one()
+        )
+        updates = create_dynamic_quest_offer(
+            db,
+            world_id=session_payload["world_id"],
+            actor_id=session_payload["player_actor_id"],
+            source_event_id=source_event.id,
+            offer={
+                "title": "企業契約の確認",
+                "description": "企業契約の条件を確認する。",
+                "offered_summary": "企業契約の確認が提示された。",
+                "completion_target": 3,
+                "constraints": [],
+            },
+        )
+        db.commit()
+    return updates[0]["assignment_id"]
 
 
 REALTIME_WORLD_CONTEXT_KEYS = {
@@ -335,7 +374,7 @@ def test_player_profiles_are_world_scoped_multi_owned_and_materialized_once(clie
         client,
         first_session.json()["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
     langfuse_records = container.observability_service._langfuse_client.records
     world_progress_inputs = [
@@ -393,7 +432,7 @@ def test_start_session_reuses_latest_active_session_and_restores_story(client, a
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
     resumed_session = client.post("/sessions", json=session_payload, headers=auth_headers)
     assert resumed_session.status_code == 200
@@ -451,7 +490,7 @@ def test_english_player_profile_initial_choices_are_english(client, auth_headers
     state = client.get(f"/sessions/{session.json()['session_id']}/state", headers=auth_headers)
     assert state.status_code == 200
     choices = state.json()["next_choices"]
-    assert [item["choice_id"] for item in choices] == ["safe", "progress", "explore"]
+    assert [item["choice_id"] for item in choices] == ["choice_1", "choice_2", "choice_3"]
     assert choices[0]["label"] == "Check your arrival log at the public Nexus registry"
     assert choices[1]["label"] == "Go to the lift tower network and inspect recruiters and route logs"
     assert (
@@ -489,9 +528,10 @@ def test_japanese_player_visible_state_is_localized_and_cached(client, container
     assert first_state.status_code == 200
     payload = first_state.json()
     assert payload["current_location"]["name"] == "ネクサス市"
-    assert payload["quests"] == []
-    assert payload["quest_journal"] == []
-    assert payload["quest_display_state"] == {"mode": "exploration", "label": "探索中..."}
+    assert len(payload["quests"]) == 1
+    assert payload["quests"][0]["status"] == "active"
+    assert payload["quest_journal"][0]["assignment_id"] == payload["quests"][0]["assignment_id"]
+    assert payload["quest_display_state"] == {"mode": "quest", "label": payload["quests"][0]["title"]}
     assert any(item["display_name"] == "ネクサス案内担当カナタ" for item in payload["local_figures"])
     assert any(item["destination_name"] == "万象図書館" for item in payload["nearby_routes"])
     assert payload["next_choices"][2]["label"] == "万象図書館へ向かい、古い記録と来訪者ログを照合する"
@@ -698,7 +738,7 @@ def test_failed_turn_response_exposes_structured_failure(client, container, auth
     assert payload["failure"]["reason"] == "council_rejected"
     assert payload["failure"]["rejection_role"] == "rules_arbiter"
     assert payload["failure"]["final_lane"]
-    assert payload["failure"]["retryable_choice_id"] in {"safe", "progress", "explore"}
+    assert payload["failure"]["retryable_choice_id"] in {"choice_1", "choice_2", "choice_3"}
     assert payload["failure"]["council_trace"]
 
 
@@ -757,7 +797,7 @@ def test_turn_rejects_when_world_health_is_not_playable(client, container, tmp_p
 
     turn_response = client.post(
         "/turns",
-        json={"session_id": session_response.json()["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        json={"session_id": session_response.json()["session_id"], "input_mode": "choice", "choice_id": "choice_2"},
         headers=auth_headers,
     )
 
@@ -892,10 +932,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     } <= set(state_response.json())
     world_pack = state_response.json()["world_pack"]
     assert state_response.json()["player_profile"]["actor_id"] == session_payload["player_actor_id"]
-    assert state_response.json()["quests"] == []
-    assert state_response.json()["quest_journal"] == []
-    assert state_response.json()["quest_display_state"]["mode"] == "exploration"
-    assert state_response.json()["quest_display_state"]["label"] == "探索中..."
+    assert len(state_response.json()["quests"]) == 1
+    assert state_response.json()["quests"][0]["status"] == "active"
+    assert state_response.json()["quest_journal"][0]["assignment_id"] == state_response.json()["quests"][0]["assignment_id"]
+    assert state_response.json()["quest_display_state"]["mode"] == "quest"
+    assert state_response.json()["quest_display_state"]["label"] == state_response.json()["quests"][0]["title"]
     assert state_response.json()["chapter"] is None
     assert "ネクサス" in state_response.json()["current_scene"]["summary"]
     assert state_response.json()["current_location"]["key"] == world_pack["starter_location_key"]
@@ -905,7 +946,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert state_response.json()["inventory"] == []
     assert state_response.json()["known_facts"] == []
     assert state_response.json()["skills"] == []
-    assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["safe", "progress", "explore"]
+    assert [item["choice_id"] for item in state_response.json()["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
 
     with client.websocket_connect(f"/ws/sessions/{session_payload['session_id']}?token=dev-local-token") as websocket:
         turn_response = client.post(
@@ -913,7 +954,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             json={
                 "session_id": session_payload["session_id"],
                 "input_mode": "choice",
-                "choice_id": "safe",
+                "choice_id": "choice_1",
             },
             headers=auth_headers,
         )
@@ -970,10 +1011,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "shared_consequence_updates",
             "entity_updates",
         }
-        assert turn_payload["shared_action_tag"] == "investigate"
-        assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "investigate"
-        assert turn_payload["shared_consequence_updates"]["applied_rule_ids"]
-        assert turn_payload["shared_consequence_updates"]["axis_updates"]
+        assert turn_payload["shared_action_tag"] == "none"
+        assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "none"
         assert turn_payload["world_context"]["pack_id"] == "gestaloka_world_reference"
         assert turn_payload["world_context"]["world_template_id"] == "layered_world_foundation"
         assert turn_payload["action_type"] == "narrative"
@@ -984,8 +1023,8 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         assert turn_payload["bonus_sp"] == 29
         assert turn_payload["quest_updates"] == []
         assert turn_payload["inventory_updates"] == []
-        assert turn_payload["interpreted_intent"]["requested_choice_posture"] == "safe"
-        assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
+        assert turn_payload["interpreted_intent"]["effect_contract"] == "observe"
+        assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
         assert_no_player_visible_english_residue(turn_payload)
 
     assert [message["event"] for message in messages[:2]] == [
@@ -998,7 +1037,6 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     assert "world.broadcast.available" in event_names
     assert "memory.materialized" in event_names
     assert "quest.updated" not in event_names
-    assert "relationship.updated" in event_names
     assert "scene.updated" in event_names
     assert "ambient.updated" in event_names
     assert "chapter.updated" not in event_names
@@ -1015,10 +1053,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
         "rules_arbiter",
         "safety_guard",
         "narrative",
-            "world_tag_updates",
-            "entity_materialization",
-            "state_draft_materialization",
-            "dynamic_quest_offer",
+        "world_tag_updates",
+        "quest_effect_contract",
+        "entity_materialization",
+        "state_draft_materialization",
+        "dynamic_quest_offer",
         "quest_resolution_hint",
         "consequence_resolution",
         "scene_framing",
@@ -1068,13 +1107,13 @@ def test_session_story_history_paginates_and_enforces_owner(client, container):
         client,
         session_id,
         headers_a,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
     _, second_turn, _ = _post_turn_and_wait_for_resolution(
         client,
         session_id,
         headers_a,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     latest = client.get(f"/sessions/{session_id}/story?limit=1", headers=headers_a)
@@ -1156,7 +1195,7 @@ def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, co
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     memory_window = role_windows["council.memory_manager"]
@@ -1199,7 +1238,7 @@ def test_situation_frame_reaches_world_progress_and_narrative(client, container,
         client,
         session_response.json()["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     for prompt_id in ("council.world_progress", "council.narrative"):
@@ -1236,14 +1275,14 @@ def test_situation_mapper_schema_failure_uses_deterministic_frame(client, contai
         client,
         session_response.json()["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
         assert turn.resolved_output["used_fallback"] is True
     assert captured_world_progress["game_frame"]["affordances"]
-    assert [item["choice_id"] for item in payload["next_choices"]] == ["safe", "progress", "explore"]
+    assert [item["choice_id"] for item in payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
 
 
 def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_headers):
@@ -1273,7 +1312,7 @@ def test_free_text_world_state_query_uses_read_only_turn_path(client, auth_heade
     assert payload["shared_action_tag"] == "none"
 
 
-def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
+def test_accept_quest_contract_and_websocket_event_order(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
         json=engine_session_payload(),
@@ -1281,12 +1320,7 @@ def test_accept_quest_contract_and_websocket_event_order(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    _, offer_payload, _ = post_enterprise_offer_turn(
-        client,
-        session_payload["session_id"],
-        auth_headers,
-    )
-    quest_assignment_id = offer_payload["quest_updates"][0]["assignment_id"]
+    quest_assignment_id = create_offered_dynamic_quest_for_session(container, session_payload=session_payload)
 
     state_response = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
     assert state_response.json()["quest_journal"][0]["status"] == "offered"
@@ -1390,33 +1424,32 @@ def test_exploration_updates_choices_without_forcing_quest_offer(client, auth_he
     initial_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
     initial_choice_labels = [item["label"] for item in initial_state["next_choices"]]
 
-    _, safe_payload, _ = _post_turn_and_wait_for_resolution(
+    _, first_choice_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
-    assert safe_payload["quest_updates"] == []
-    assert [item["choice_id"] for item in safe_payload["next_choices"]] == ["safe", "progress", "explore"]
-    assert [item["label"] for item in safe_payload["next_choices"]] != initial_choice_labels
+    assert not any(item.get("status") == "offered" for item in first_choice_payload["quest_updates"])
+    assert [item["choice_id"] for item in first_choice_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
+    assert [item["label"] for item in first_choice_payload["next_choices"]] != initial_choice_labels
 
-    _, explore_payload, _ = _post_turn_and_wait_for_resolution(
+    _, third_choice_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "explore"},
+        {"input_mode": "choice", "choice_id": "choice_3"},
     )
-    assert explore_payload["quest_updates"] == []
-    assert [item["choice_id"] for item in explore_payload["next_choices"]] == ["safe", "progress", "explore"]
+    assert not any(item.get("status") == "offered" for item in third_choice_payload["quest_updates"])
+    assert [item["choice_id"] for item in third_choice_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
 
-    _, progress_payload, _ = _post_turn_and_wait_for_resolution(
+    _, enterprise_payload, _ = _post_turn_and_wait_for_resolution(
         client,
         session_id,
         auth_headers,
         {"input_mode": "free_text", "input_text": "ネクサス市内の企業勧誘に応じ、契約候補を確認する"},
     )
-    assert progress_payload["quest_updates"][0]["status"] == "offered"
-    assert progress_payload["quest_updates"][0]["available_actions"] == ["accept_quest", "decline_quest", "ignore_quest"]
+    assert not any(item.get("status") == "offered" for item in enterprise_payload["quest_updates"])
 
 
 def test_situation_frame_choice_keeps_explicit_travel_contract(client, container, auth_headers, monkeypatch):
@@ -1445,17 +1478,17 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
                 "risk_level": "low",
                 "next_choices": [
                     {
-                        "posture": "safe",
+                        "choice_id": "choice_1",
                         "label": "リッカの反応を確かめる",
                         "intent_summary": "リッカの反応を確かめる",
                     },
                     {
-                        "posture": "progress",
+                        "choice_id": "choice_2",
                         "label": "来訪者ログを一行だけ直す",
                         "intent_summary": "来訪者ログを一行だけ直す",
                     },
                     {
-                        "posture": "explore",
+                        "choice_id": "choice_3",
                         "label": "現在の場所について質問する",
                         "intent_summary": "現在の場所について質問する",
                     },
@@ -1476,7 +1509,7 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
     generated_explore = first_payload["next_choices"][2]
     assert generated_explore["label"] != "現在の場所について質問する"
@@ -1488,7 +1521,7 @@ def test_situation_frame_choice_keeps_explicit_travel_contract(client, container
         client,
         session_id,
         auth_headers,
-        {"input_mode": "choice", "choice_id": "explore"},
+        {"input_mode": "choice", "choice_id": "choice_3"},
     )
     assert second_payload["action_type"] == "travel"
     assert second_payload["interpreted_intent"]["canonical_action_kind"] == "travel"
@@ -1503,7 +1536,7 @@ def test_explicit_travel_choice_still_moves_to_target_route(client, auth_headers
         client,
         session_response.json()["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "explore"},
+        {"input_mode": "choice", "choice_id": "choice_3"},
     )
 
     assert payload["action_type"] == "travel"
@@ -1548,7 +1581,7 @@ def test_idle_pass_websocket_event_keeps_world_context(client, auth_headers):
         assert location_message["data"]["items"] == moved_items
 
 
-def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
+def test_ops_projection_status_and_rebuild_contract(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
         json=engine_session_payload(),
@@ -1556,19 +1589,21 @@ def test_ops_projection_status_and_rebuild_contract(client, auth_headers):
     )
     session_payload = session_response.json()
 
-    _, offer_payload, _ = post_enterprise_offer_turn(
-        client,
-        session_payload["session_id"],
-        auth_headers,
-    )
+    quest_assignment_id = create_offered_dynamic_quest_for_session(container, session_payload=session_payload)
     _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
         {
             "action_type": "accept_quest",
-            "quest_assignment_id": offer_payload["quest_updates"][0]["assignment_id"],
+            "quest_assignment_id": quest_assignment_id,
         },
+    )
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"},
     )
     status_response = client.get("/ops/projection/status", headers=auth_headers)
     assert status_response.status_code == 200
@@ -1698,7 +1733,7 @@ def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(cli
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     with container.session_factory() as db:
@@ -1736,26 +1771,28 @@ def test_ops_projection_retry_failed_reprocesses_only_explicit_failed_outbox(cli
         assert db.execute(select(ProjectionRecord).where(ProjectionRecord.outbox_event_id.in_(failed_ids))).scalars().first()
 
 
-def test_ops_relationship_chapter_scene_and_memory_contracts(client, auth_headers):
+def test_ops_relationship_chapter_scene_and_memory_contracts(client, container, auth_headers):
     session_response = client.post(
         "/sessions",
         json=engine_session_payload(),
         headers=auth_headers,
     )
     session_payload = session_response.json()
-    _, offer_payload, _ = post_enterprise_offer_turn(
-        client,
-        session_payload["session_id"],
-        auth_headers,
-    )
+    quest_assignment_id = create_offered_dynamic_quest_for_session(container, session_payload=session_payload)
     _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
         {
             "action_type": "accept_quest",
-            "quest_assignment_id": offer_payload["quest_updates"][0]["assignment_id"],
+            "quest_assignment_id": quest_assignment_id,
         },
+    )
+    _post_turn_and_wait_for_resolution(
+        client,
+        session_payload["session_id"],
+        auth_headers,
+        {"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"},
     )
 
     relationships_response = client.get(
@@ -1881,13 +1918,13 @@ def test_ops_memory_status_search_and_reindex_contract(client, auth_headers):
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
     _post_turn_and_wait_for_resolution(
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "safe"},
+        {"input_mode": "choice", "choice_id": "choice_1"},
     )
 
     status_response = client.get("/ops/memories/status", headers=auth_headers)
@@ -1928,7 +1965,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         client,
         session_payload["session_id"],
         auth_headers,
-        {"input_mode": "choice", "choice_id": "progress"},
+        {"input_mode": "choice", "choice_id": "choice_2"},
     )
 
     container.observability_service.probe_canary_health = lambda: CanaryProbeResult(  # type: ignore[method-assign]

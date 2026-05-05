@@ -101,8 +101,8 @@ def test_session_seed_is_idempotent_for_character_faction_and_exploration_state(
 
     with container.session_factory() as db:
         assert db.execute(select(func.count(Faction.id))).scalar_one() == 10
-        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 0
-        assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 0
+        assert db.execute(select(func.count(QuestTemplate.id))).scalar_one() == 1
+        assert db.execute(select(func.count(QuestAssignment.id))).scalar_one() == 1
         assert db.execute(select(func.count(CharacterSheet.actor_id))).scalar_one() == 1
         assert db.execute(select(func.count(FactionStanding.actor_id))).scalar_one() == 10
         assert db.execute(select(func.count(ChapterTrack.id))).scalar_one() == 0
@@ -707,7 +707,7 @@ def test_market_item_acquisition_without_consideration_is_blocked(client, contai
 
     assert turn_payload["inventory_updates"] == []
     assert turn_payload["blocked_state_drafts"][0]["reason"] == "market_trade_missing_consideration"
-    assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["safe", "progress", "explore"]
+    assert [item["choice_id"] for item in turn_payload["next_choices"]] == ["choice_1", "choice_2", "choice_3"]
     assert "対価" in turn_payload["next_choices"][1]["label"]
 
     with container.session_factory() as db:

@@ -68,36 +68,36 @@ world_templates:
       opening_situation_en: Nexus City protects new visitors and lets them inspect civic records, corporate recruitment, and archive checks before committing their arrival log.
       opening_pressure_en: Nexus, the Memory Church, Chronos, and corporate recruiters are quietly waiting to see where the new visitor log goes.
       opening_choices:
-        safe:
+        - choice_id: choice_1
           label: ネクサス公開登録所で到着ログを確認する
           summary: 公開証言ホールを見て、来訪者ログが街の制度ではどう扱われるかを知る。
           canonical_input_text: ネクサス公開登録所で到着ログを確認する
           action_kind: narrative
-        progress:
+        - choice_id: choice_2
           label: 昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る
           summary: 所属を決めずに、企業窓口、昇降塔の行き先、契約のリスクを確認する。
           canonical_input_text: 昇降塔ネットワークへ向かい、企業勧誘と交通ログを見る
           action_kind: travel
           travel_target_key: lift_tower_network
-        explore:
+        - choice_id: choice_3
           label: 万象図書館へ向かい、古い記録と来訪者ログを照合する
           summary: 公開や契約へ進む前に、ゲスタロカの正史と到着ログの整合を確かめる。
           canonical_input_text: 万象図書館へ向かう
           action_kind: travel
           travel_target_key: universal_library
       opening_choices_en:
-        safe:
+        - choice_id: choice_1
           label: Check your arrival log at the public Nexus registry
           summary: Visit the witness halls and learn how the city records an unknown visitor.
           canonical_input_text: Check your arrival log at the public Nexus registry
           action_kind: narrative
-        progress:
+        - choice_id: choice_2
           label: Go to the lift tower network and inspect recruiters and route logs
           summary: Read corporate desks, lift destinations, and contract risks before committing to any affiliation.
           canonical_input_text: Travel to the lift tower network and inspect recruiters and route logs
           action_kind: travel
           travel_target_key: lift_tower_network
-        explore:
+        - choice_id: choice_3
           label: Go to the Universal Library and compare old records with your visitor log
           summary: Check the official archive before choosing whether the arrival log becomes public record or contract leverage.
           canonical_input_text: Travel to the Universal Library
@@ -1095,6 +1095,7 @@ world_templates:
       reward_template_key: visitor_log_seal
       reward_name: Visitor Log Seal
       reward_description: A witnessed seal proving the bearer can enter higher-risk routes as a recognized visitor.
+      seed_on_session_start: true
       state:
         reward_enabled: true
         reward_effect_kind: unlock_oblivion_regions_route

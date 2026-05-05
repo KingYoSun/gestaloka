@@ -175,7 +175,7 @@ class MemoryDraft(BaseModel):
 
 
 class NarrativeChoiceDraft(BaseModel):
-    posture: Literal["safe", "progress", "explore"]
+    choice_id: str | None = None
     label: str = Field(min_length=1)
     intent_summary: str = Field(min_length=1)
     canonical_input_text: str | None = None
@@ -188,7 +188,6 @@ class CouncilIntentInterpreterPayload(BaseModel):
     canonical_action_kind: Literal["narrative", "use_reward_item", "travel"]
     intent_summary: str = Field(min_length=1)
     travel_target_key: str | None = None
-    requested_choice_posture: Literal["safe", "progress", "explore", "none"] = "none"
     fail_forward: bool = False
     consequence_flags: list[str] = Field(default_factory=list)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
@@ -241,14 +240,6 @@ class CouncilIntentInterpreterPayload(BaseModel):
             or selected_choice.get("travel_target_key")
         )
 
-        posture = str(
-            normalized.get("requested_choice_posture")
-            or normalized.get("posture")
-            or narrative_intent.get("posture")
-            or selected_choice.get("posture")
-            or "none"
-        )
-        normalized["requested_choice_posture"] = posture if posture in {"safe", "progress", "explore"} else "none"
         normalized["consequence_tags"] = _normalize_live_consequence_tags(normalized.get("consequence_tags"))
         normalized["consequence_summary"] = _first_non_empty_text(
             normalized.get("consequence_summary"),
@@ -487,7 +478,6 @@ class StubModelProvider(BaseModelProvider):
         if not isinstance(selected_choice, dict):
             selected_choice = {}
         input_text = str(input_payload.get("input_text") or "")
-        selected_posture = str(selected_choice.get("posture") or "none")
         action_kind = str(selected_choice.get("action_kind") or "narrative")
         travel_target_key = str(selected_choice.get("travel_target_key") or "").strip() or None
         intent_summary = str(selected_choice.get("intent_summary") or selected_choice.get("canonical_input_text") or input_text)
@@ -548,10 +538,10 @@ class StubModelProvider(BaseModelProvider):
             if action_kind == "travel" and travel_target_key:
                 consequence_tags.append("careful_observation")
                 consequence_summary = "The player follows a route the current scene actually affords."
-            if selected_posture == "progress":
-                consequence_tags.append("earned_trust")
-            elif selected_posture in {"safe", "explore"}:
+            elif any(token in normalized for token in ("探", "確か", "確認", "観察", "様子", "observe", "check")):
                 consequence_tags.append("careful_observation")
+            elif any(token in normalized for token in ("助", "手伝", "進", "完了", "確定", "承認", "help", "advance", "complete", "confirm")):
+                consequence_tags.append("earned_trust")
         if input_mode == "free_text":
             travel_verbs = ("向か", "行く", "進む", "移動", "赴", "go to", "head to", "walk to", "toward", "towards")
             route_target_key = mentioned_target(normalized) if any(token in normalized for token in travel_verbs) else None
@@ -607,7 +597,6 @@ class StubModelProvider(BaseModelProvider):
             "canonical_action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
             "intent_summary": intent_summary,
             "travel_target_key": travel_target_key,
-            "requested_choice_posture": selected_posture if selected_posture in {"safe", "progress", "explore"} else "none",
             "fail_forward": fail_forward,
             "consequence_flags": consequence_flags,
             "consequence_tags": normalize_consequence_tags(consequence_tags),
@@ -844,7 +833,6 @@ class StubModelProvider(BaseModelProvider):
         for index, template in enumerate(default_choice_templates[:3]):
             if not isinstance(template, dict):
                 continue
-            posture = str(template.get("posture") or ("safe", "progress", "explore")[min(index, 2)])
             label = str(template.get("label") or template.get("canonical_input_text") or "Continue through the scene.")
             action_kind = str(template.get("action_kind") or "narrative")
             risk_hint = str(template.get("risk_hint") or "").strip()
@@ -854,7 +842,7 @@ class StubModelProvider(BaseModelProvider):
                 intent_summary = f"{intent_summary} {effect_hint or '状況が進む'} {risk_hint or '大きな危険はない'}"
             next_choices.append(
                 {
-                    "posture": posture if posture in {"safe", "progress", "explore"} else "progress",
+                    "choice_id": str(template.get("choice_id") or f"choice_{index + 1}"),
                     "label": label,
                     "intent_summary": intent_summary,
                     "action_kind": action_kind if action_kind in {"narrative", "use_reward_item", "travel"} else "narrative",
@@ -864,21 +852,21 @@ class StubModelProvider(BaseModelProvider):
         if len(next_choices) < 3:
             next_choices = [
                 {
-                    "posture": "safe",
+                    "choice_id": "choice_1",
                     "label": "一歩退いて場の気配を見守る",
                     "intent_summary": "場の気配を見守り、流れを乱さず状況を確かめる",
                     "action_kind": "narrative",
                     "travel_target_key": None,
                 },
                 {
-                    "posture": "progress",
+                    "choice_id": "choice_2",
                     "label": "困っている相手へ手を差し伸べ、次の進展を作る",
                     "intent_summary": "困っている相手へ手を差し伸べ、次の進展を作る",
                     "action_kind": "narrative",
                     "travel_target_key": None,
                 },
                 {
-                    "posture": "explore",
+                    "choice_id": "choice_3",
                     "label": "周囲の噂や視線を探り、関係の糸口を拾う",
                     "intent_summary": "周囲の噂や視線を探り、関係の糸口を拾う",
                     "action_kind": "narrative",

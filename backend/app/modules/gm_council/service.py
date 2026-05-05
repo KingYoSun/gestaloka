@@ -212,28 +212,20 @@ def _memory_drafts(raw_memories: Any, fallback_text: str) -> list[dict[str, Any]
 def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
     if isinstance(raw_choices, dict):
         source_items = []
-        posture_by_key = {
-            "safe": "safe",
-            "progress": "progress",
-            "forward_progress": "progress",
-            "explore": "explore",
-            "exploration_relationship": "explore",
-        }
         for key, value in raw_choices.items():
             if isinstance(value, dict):
-                source_items.append({"posture": posture_by_key.get(str(key), str(key)), **value})
+                source_items.append({"choice_id": str(value.get("choice_id") or key), **value})
     elif isinstance(raw_choices, list):
         source_items = [item for item in raw_choices if isinstance(item, dict)]
     else:
         source_items = []
 
     drafts: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen_labels: set[str] = set()
     for item in source_items:
-        posture = str(item.get("posture") or "").strip()
-        if posture not in {"safe", "progress", "explore"} or posture in seen:
+        label = _first_text(item.get("label"), item.get("intent_summary"), item.get("summary"))
+        if not label or label in seen_labels:
             continue
-        label = _first_text(item.get("label"), item.get("intent_summary"), item.get("summary"), posture)
         canonical_input_text = _first_text(
             item.get("canonical_input_text"),
             item.get("canonical_text"),
@@ -246,7 +238,7 @@ def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
             action_kind = "narrative"
         drafts.append(
             {
-                "posture": posture,
+                "choice_id": str(item.get("choice_id") or f"choice_{len(drafts) + 1}"),
                 "label": label,
                 "intent_summary": _first_text(
                     item.get("intent_summary"),
@@ -259,25 +251,30 @@ def _choice_drafts(raw_choices: Any) -> list[dict[str, Any]]:
                 "travel_target_key": item.get("travel_target_key"),
             }
         )
-        seen.add(posture)
+        seen_labels.add(label)
+        if len(drafts) >= 3:
+            break
 
-    defaults = {
-        "safe": "Check who reacted first.",
-        "progress": "Help the nearest person.",
-        "explore": "Ask what changed here.",
-    }
-    for posture, label in defaults.items():
-        if posture not in seen:
-            drafts.append(
-                {
-                    "posture": posture,
-                    "label": label,
-                    "intent_summary": label,
-                    "canonical_input_text": label,
-                    "action_kind": "narrative",
-                    "travel_target_key": None,
-                }
-            )
+    defaults = [
+        "Check who reacted first.",
+        "Act on the clearest opening in front of you.",
+        "Trace where the new reaction spreads.",
+    ]
+    for label in defaults:
+        if len(drafts) >= 3:
+            break
+        if label in seen_labels:
+            continue
+        drafts.append(
+            {
+                "choice_id": f"choice_{len(drafts) + 1}",
+                "label": label,
+                "intent_summary": label,
+                "canonical_input_text": label,
+                "action_kind": "narrative",
+                "travel_target_key": None,
+            }
+        )
     return drafts[:3]
 
 
@@ -589,13 +586,12 @@ class CouncilWorldProgressPayload(BaseModel):
         frame_affordances = game_frame.get("affordances") if isinstance(game_frame.get("affordances"), list) else []
         framed_choices: list[dict[str, Any]] = []
         for index, affordance in enumerate(item for item in frame_affordances if isinstance(item, dict)):
-            posture = ("safe", "progress", "explore", "explore")[min(index, 3)]
             risk_hint = _first_text(affordance.get("risk_hint"), "risk is legible")
             effect_hint = _first_text(affordance.get("effect_hint"), "effect is legible")
             intent_summary = _first_text(affordance.get("intent_summary"), affordance.get("label"))
             framed_choices.append(
                 {
-                    "posture": posture,
+                    "choice_id": str(affordance.get("choice_id") or f"choice_{index + 1}"),
                     "label": _first_text(affordance.get("label"), intent_summary),
                     "intent_summary": f"{intent_summary} {effect_hint} {risk_hint}".strip(),
                     "canonical_input_text": intent_summary,
@@ -629,26 +625,8 @@ class CouncilWorldProgressPayload(BaseModel):
         )
         current_chapter = input_payload.get("current_chapter") if isinstance(input_payload.get("current_chapter"), dict) else {}
         in_epilogue = str((current_chapter or {}).get("chapter_kind") or "") == "epilogue"
-        requested_posture = str(input_payload.get("requested_choice_posture") or "").strip()
-        input_text_for_offer = _first_text(input_payload.get("input_text"), input_payload.get("intent_summary"))
-        should_backfill_offer = requested_posture == "progress" or any(
-            token in input_text_for_offer for token in ("企業勧誘", "企業契約", "契約", "corporate recruiter", "corporate contract")
-        )
-        if normalized["quest_offer"] is None and not has_live_quest and not in_epilogue and should_backfill_offer:
-            offer_title = _first_text(normalized.get("quest_title"), input_payload.get("intent_summary"), "A local thread emerges")
-            offer_summary = _first_text(
-                normalized.get("resolution_summary"),
-                normalized.get("event_payload"),
-                input_payload.get("input_text"),
-                "The player's exploration reveals an optional thread worth following.",
-            )
-            normalized["quest_offer"] = {
-                "title": offer_title[:120],
-                "description": offer_summary,
-                "offered_summary": offer_summary,
-                "completion_target": 3,
-                "constraints": [],
-            }
+        if has_live_quest or in_epilogue:
+            normalized["quest_offer"] = None
         return normalized
 
 
@@ -975,33 +953,7 @@ class GMCouncilService:
         action_kind: str,
         raw_world_tags: list[str] | None,
     ) -> list[WorldTag]:
-        normalized = normalize_world_tags(raw_world_tags)
-        if action_kind != "narrative":
-            return normalized
-        posture = str((selected_choice or {}).get("posture") or "")
-        if posture != "progress":
-            return normalized
-
-        active_quest = GMCouncilService._active_quest(session_state)
-        world_pack = session_state.get("world_pack") or {}
-        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
-        followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
-        stage_key = str(active_quest.get("stage_key") or starter_stage_key)
-        progress = int(active_quest.get("progress") or 0)
-        progress_target = int(active_quest.get("progress_target") or 0)
-        if progress_target and progress >= progress_target:
-            return normalized
-
-        if stage_key == starter_stage_key:
-            return ["aid_local"] if progress < 1 else ["promise_followup"]
-        if stage_key == followup_stage_key:
-            return normalize_world_tags([*(tag for tag in normalized if tag != "none"), "promise_followup"])
-        if "threaten_local" in normalized or "collect_reward" in normalized:
-            return normalized
-        if any(tag in {"aid_local", "promise_followup"} for tag in normalized):
-            return normalized
-        progress_tag = "aid_local" if progress < 1 else "promise_followup"
-        return normalize_world_tags([*(tag for tag in normalized if tag != "none"), progress_tag])
+        return normalize_world_tags(raw_world_tags)
 
     @staticmethod
     def _outcome_band_from_tags(consequence_tags: list[str]) -> OutcomeBand:
@@ -1023,17 +975,6 @@ class GMCouncilService:
     ) -> Literal["hold", "deepen", "pivot", "close"]:
         if "overreach" in set(normalize_consequence_tags(consequence_tags)):
             return "deepen"
-        if action_kind != "narrative":
-            return raw_scene_move if raw_scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
-        posture = str((selected_choice or {}).get("posture") or "")
-        if posture != "progress":
-            return raw_scene_move if raw_scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
-        active_quest = GMCouncilService._active_quest(session_state)
-        world_pack = session_state.get("world_pack") or {}
-        starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
-        stage_key = str(active_quest.get("stage_key") or starter_stage_key)
-        if stage_key == starter_stage_key:
-            return "hold"
         return raw_scene_move if raw_scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
 
     @staticmethod
@@ -1063,14 +1004,6 @@ class GMCouncilService:
         normalized_text = input_text.lower()
         canonical = list(normalize_consequence_tags(raw_tags))
 
-        if input_mode == "choice":
-            posture = str((selected_choice or {}).get("posture") or "")
-            if posture == "progress" and "earned_trust" not in canonical:
-                canonical.append("earned_trust")
-            elif posture in {"safe", "explore"} and "careful_observation" not in canonical:
-                canonical.append("careful_observation")
-            return normalize_consequence_tags(canonical)
-
         if any(token in input_text or token in normalized_text for token in ("後で", "あとで", "later", "そのうち", "待って", "今は行かない", "また今度")):
             return ["missed_timing"]
         if any(token in input_text or token in normalized_text for token in ("無理", "impossible", "空を飛", "teleport", "爆破")):
@@ -1094,13 +1027,6 @@ class GMCouncilService:
         failure_reason: str | None,
     ) -> CouncilWorldProgressPayload | None:
         selected_choice = request.selected_choice or {}
-        posture = str(selected_choice.get("posture") or "")
-        if request.input_mode == "choice" and posture not in {"safe", "progress", "explore"}:
-            return None
-        if request.input_mode == "free_text":
-            posture = str(intent_payload.requested_choice_posture or "explore")
-            if posture not in {"safe", "progress", "explore"}:
-                posture = "explore"
         if "__force_council_reject__" in request.input_text:
             return None
 
@@ -1109,7 +1035,7 @@ class GMCouncilService:
         intent_summary = _first_text(intent_payload.intent_summary, request.input_text, "the selected action")
         consequence_summary = _first_text(
             intent_payload.consequence_summary,
-            f"{player_name} follows the selected {posture} line and keeps the scene moving.",
+            f"{player_name} follows the selected action and keeps the scene moving.",
         )
         fallback_reason = _first_text(failure_reason, "world_progress schema fallback")
         default_choice_templates = world_progress_input.get("default_choice_templates") or []
@@ -1153,18 +1079,6 @@ class GMCouncilService:
             for item in quests
         )
         quest_offer = None
-        input_text_for_offer = _first_text(request.input_text, intent_payload.intent_summary)
-        should_backfill_offer = posture == "progress" or any(
-            token in input_text_for_offer for token in ("企業勧誘", "企業契約", "契約", "corporate recruiter", "corporate contract")
-        )
-        if should_backfill_offer and not has_live_quest and intent_payload.canonical_action_kind == "narrative":
-            quest_offer = {
-                "title": intent_summary[:120],
-                "description": consequence_summary,
-                "offered_summary": consequence_summary,
-                "completion_target": 3,
-                "constraints": [],
-            }
         return CouncilWorldProgressPayload(
             event_type="player.turn.resolved",
             event_payload={
@@ -1178,7 +1092,6 @@ class GMCouncilService:
                     "role": "world_progress",
                     "reason": fallback_reason,
                     "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
-                    "requested_choice_posture": posture,
                     "input_mode": request.input_mode,
                 },
             },
@@ -1275,7 +1188,6 @@ class GMCouncilService:
         if action_kind not in {"narrative", "use_reward_item", "travel"}:
             action_kind = "narrative"
         travel_target_key = str(selected_choice.get("travel_target_key") or "").strip() or None
-        posture = str(selected_choice.get("posture") or "none").strip()
         consequence_tags = self._canonical_intent_consequence_tags(
             input_mode="choice",
             input_text=request.input_text,
@@ -1296,7 +1208,6 @@ class GMCouncilService:
                     selected_choice.get("canonical_input_text") or selected_choice.get("label") or request.input_text
                 ).strip(),
                 "travel_target_key": travel_target_key,
-                "requested_choice_posture": posture if posture in {"safe", "progress", "explore"} else "none",
                 "fail_forward": False,
                 "consequence_flags": [],
                 "consequence_tags": consequence_tags,
@@ -1336,11 +1247,6 @@ class GMCouncilService:
         prompt = self.model_router.prompt_registry.get("council.intent_interpreter")
         input_text = request.input_text.strip() or "The player acts within the current scene."
         normalized_text = input_text.lower()
-        posture = "explore"
-        if any(token in input_text or token in normalized_text for token in ("助", "手伝", "届け", "続け", "help", "follow")):
-            posture = "progress"
-        elif any(token in input_text or token in normalized_text for token in ("待", "様子", "見守", "safe")):
-            posture = "safe"
         consequence_tags = self._canonical_intent_consequence_tags(
             input_mode="free_text",
             input_text=input_text,
@@ -1354,7 +1260,6 @@ class GMCouncilService:
                 "canonical_action_kind": "narrative",
                 "intent_summary": input_text,
                 "travel_target_key": None,
-                "requested_choice_posture": posture,
                 "fail_forward": False,
                 "consequence_flags": [],
                 "consequence_tags": consequence_tags,
@@ -1690,7 +1595,6 @@ class GMCouncilService:
             "play_language": play_language,
             "npc_name": request.npc_name,
             "intent_summary": intent_payload.intent_summary,
-            "requested_choice_posture": intent_payload.requested_choice_posture,
             "selected_choice": request.selected_choice or {},
             "fail_forward": intent_payload.fail_forward,
             "consequence_summary": intent_payload.consequence_summary,
@@ -1760,7 +1664,6 @@ class GMCouncilService:
             "reaction_outline": npc_payload.reaction_outline,
             "focus_memories": npc_payload.focus_memories,
             "intent_summary": intent_payload.intent_summary,
-            "requested_choice_posture": intent_payload.requested_choice_posture,
             "selected_choice": request.selected_choice or {},
             "fail_forward": intent_payload.fail_forward,
             "consequence_summary": intent_payload.consequence_summary,
@@ -2082,7 +1985,6 @@ class GMCouncilService:
             "consequence_summary": intent_payload.consequence_summary,
             "game_frame": game_frame,
             "intent_summary": intent_payload.intent_summary,
-            "requested_choice_posture": intent_payload.requested_choice_posture,
             "selected_choice": request.selected_choice or {},
             "consequence_tags": world_progress_payload.consequence_tags,
             "outcome_band": world_progress_payload.outcome_band,

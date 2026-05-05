@@ -179,7 +179,7 @@ def test_insufficient_sp_returns_409_without_turn_artifacts(client, container, a
 
     turn_response = client.post(
         "/turns",
-        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "progress"},
+        json={"session_id": session_payload["session_id"], "input_mode": "choice", "choice_id": "choice_2"},
         headers=auth_headers,
     )
     assert turn_response.status_code == 409

@@ -62,6 +62,7 @@ from app.modules.world_state.timeline import (
 from app.modules.world_state.service import (
     apply_quest_lifecycle_action,
     apply_dynamic_chapter_progression,
+    apply_quest_effect_contract,
     apply_scene_updates,
     apply_consequence_updates,
     apply_world_tag_updates,
@@ -78,9 +79,6 @@ from app.modules.world_state.service import (
     travel_to_location,
     use_reward_item,
 )
-
-CHOICE_ORDER = ("safe", "progress", "explore")
-
 
 def _session_has_live_quest(session_state: dict[str, Any], *, statuses: set[str] | None = None) -> bool:
     target_statuses = statuses or {"offered", "active", "paused"}
@@ -970,11 +968,24 @@ def _pre_intent_action_kind(selected_choice: dict[str, Any] | None, input_mode: 
     return "narrative"
 
 
+def _choice_visible_text(selected_choice: dict[str, Any] | None, input_text: str) -> str:
+    if not selected_choice:
+        return input_text
+    parts = [
+        str(selected_choice.get("label") or "").strip(),
+        str(selected_choice.get("summary") or "").strip(),
+        str(selected_choice.get("canonical_input_text") or "").strip(),
+        input_text.strip(),
+    ]
+    return " ".join(part for part in parts if part)
+
+
 def _pre_intent_consequence_tags(selected_choice: dict[str, Any] | None) -> list[str]:
-    posture = str((selected_choice or {}).get("posture") or "")
-    if posture == "progress":
+    choice_text = _choice_visible_text(selected_choice, "")
+    normalized = choice_text.lower()
+    if any(token in choice_text or token in normalized for token in ("助", "手伝", "進", "完了", "確定", "承認", "help", "advance", "complete", "confirm")):
         return ["earned_trust"]
-    if posture in {"safe", "explore"}:
+    if any(token in choice_text or token in normalized for token in ("探", "確か", "確認", "観察", "様子", "observe", "check")):
         return ["careful_observation"]
     return []
 
@@ -1123,6 +1134,15 @@ def _resolve_narrative_turn_for_session(
             input_text=input_text,
             session_state=session_state,
         )
+    if selected_choice is not None:
+        selected_choice = {
+            **selected_choice,
+            "effect_contract": _infer_choice_effect_contract(
+                session_state=session_state,
+                selected_choice=selected_choice,
+                input_text=input_text,
+            ),
+        }
     intent_phase = container.council_service.resolve_intent(
         CouncilRequest(
             world_id=game_session.world_id,
@@ -1197,7 +1217,7 @@ def _resolve_narrative_turn_for_session(
                         "intent_summary": str(
                             selected_choice.get("canonical_input_text") or selected_choice.get("label") or input_text
                         ).strip(),
-                        "requested_choice_posture": str(selected_choice.get("posture") or "none"),
+                        "effect_contract": "use_item",
                         "fail_forward": False,
                         "consequence_flags": [],
                         "consequence_tags": ["reward_item_respect", "kept_promise"],
@@ -1226,7 +1246,7 @@ def _resolve_narrative_turn_for_session(
                         "intent_summary": str(
                             selected_choice.get("canonical_input_text") or selected_choice.get("label") or input_text
                         ).strip(),
-                        "requested_choice_posture": str(selected_choice.get("posture") or "none"),
+                        "effect_contract": "travel",
                         "fail_forward": False,
                         "consequence_flags": [],
                         "consequence_tags": ["careful_observation"],
@@ -1355,6 +1375,13 @@ def _resolve_narrative_turn_for_session(
             interpreted_intent["intent_summary"] = str(
                 selected_choice.get("canonical_input_text") or selected_choice.get("label") or input_text
             ).strip()
+    effect_contract = _infer_choice_effect_contract(
+        session_state=session_state,
+        selected_choice=selected_choice,
+        input_text=input_text,
+        interpreted_intent=interpreted_intent,
+    )
+    interpreted_intent["effect_contract"] = effect_contract
     if interpreted_intent.get("canonical_action_kind") == "use_reward_item":
         resolved_item_id = _resolve_usable_reward_item_id(session_state)
         if resolved_item_id is not None:
@@ -1425,10 +1452,10 @@ def _resolve_narrative_turn_for_session(
             return redirected
 
     with _turn_progress_span("world_tag_updates"):
-        resolved_world_tags = _coerce_choice_world_tags(
+        resolved_world_tags = _world_tags_for_effect_contract(
             session_state=session_state,
-            selected_choice=selected_choice,
             world_tags=payload.world_tags,
+            effect_contract=effect_contract,
         )
         state_updates = apply_world_tag_updates(
             db,
@@ -1449,6 +1476,7 @@ def _resolve_narrative_turn_for_session(
             "action_type": "narrative",
             "location_id": prepared.location_id,
             "graph_context_status": graph_context.status,
+            "effect_contract": effect_contract,
             "world_tags": resolved_world_tags,
             "quest_updates": state_updates["quest_updates"],
             "faction_updates": state_updates["faction_updates"],
@@ -1458,6 +1486,24 @@ def _resolve_narrative_turn_for_session(
     )
     db.add(event)
     db.flush()
+    with _turn_progress_span("quest_effect_contract"):
+        effect_updates = apply_quest_effect_contract(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            effect_contract=effect_contract,
+            summary=str(getattr(payload, "resolution_summary", "") or interpreted_intent.get("consequence_summary") or ""),
+        )
+    if effect_updates["quest_updates"] or effect_updates["inventory_updates"] or effect_updates["chapter_updates"]:
+        state_updates["quest_updates"] = [*state_updates["quest_updates"], *effect_updates["quest_updates"]]
+        state_updates["inventory_updates"] = [*state_updates["inventory_updates"], *effect_updates["inventory_updates"]]
+        event.payload = {
+            **event.payload,
+            "quest_updates": state_updates["quest_updates"],
+            "inventory_updates": state_updates["inventory_updates"],
+            "chapter_updates": effect_updates["chapter_updates"],
+        }
     with _turn_progress_span("entity_materialization"):
         entity_updates = [
             item.payload()
@@ -1654,7 +1700,7 @@ def _resolve_narrative_turn_for_session(
         "consequence_summary": consequence_result.consequence_summary,
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
-        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"]],
+        "chapter_updates": [*effect_updates["chapter_updates"], *dynamic_chapter_updates, *scene_result["chapter_updates"]],
         "branch_updates": branch_result.updates,
         "crossroads_summary": branch_result.crossroads_summary,
         "ambient_updates": [],
@@ -1695,7 +1741,7 @@ def _resolve_narrative_turn_for_session(
         "consequence_summary": consequence_result.consequence_summary,
         "scene_summary": scene_result["scene_summary"],
         "scene_updates": scene_result["scene_updates"],
-        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"]],
+        "chapter_updates": [*effect_updates["chapter_updates"], *dynamic_chapter_updates, *scene_result["chapter_updates"]],
         "branch_updates": branch_result.updates,
         "crossroads_summary": branch_result.crossroads_summary,
         "ambient_updates": [],
@@ -1820,7 +1866,12 @@ def _resolve_narrative_turn_for_session(
         **turn.resolved_output,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
-        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "chapter_updates": [
+            *effect_updates["chapter_updates"],
+            *dynamic_chapter_updates,
+            *scene_result["chapter_updates"],
+            *ambient_result["chapter_updates"],
+        ],
         "branch_updates": public_branch_updates or branch_result.updates,
         "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
@@ -1831,7 +1882,12 @@ def _resolve_narrative_turn_for_session(
         **event.payload,
         "scene_summary": ambient_result["scene_summary"] or scene_result["scene_summary"],
         "scene_updates": [*scene_result["scene_updates"], *ambient_result["scene_updates"]],
-        "chapter_updates": [*dynamic_chapter_updates, *scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        "chapter_updates": [
+            *effect_updates["chapter_updates"],
+            *dynamic_chapter_updates,
+            *scene_result["chapter_updates"],
+            *ambient_result["chapter_updates"],
+        ],
         "branch_updates": public_branch_updates or branch_result.updates,
         "crossroads_summary": crossroads_summary or branch_result.crossroads_summary,
         "ambient_updates": ambient_result["ambient_updates"],
@@ -1868,7 +1924,12 @@ def _resolve_narrative_turn_for_session(
         relationship_updates=consequence_result.relationship_updates,
         consequence_updates=consequence_result.consequence_updates,
         scene_updates=[*scene_result["scene_updates"], *ambient_result["scene_updates"]],
-        chapter_updates=[*dynamic_chapter_updates, *scene_result["chapter_updates"], *ambient_result["chapter_updates"]],
+        chapter_updates=[
+            *effect_updates["chapter_updates"],
+            *dynamic_chapter_updates,
+            *scene_result["chapter_updates"],
+            *ambient_result["chapter_updates"],
+        ],
         branch_updates=public_branch_updates or branch_result.updates,
         ambient_updates=ambient_result["ambient_updates"],
         location_updates=[],
@@ -1982,10 +2043,9 @@ def _quest_lifecycle_selected_choice(
     session_state: dict[str, Any],
 ) -> dict[str, Any]:
     english = _profile_prefers_english((session_state.get("player_profile") or {}) if isinstance(session_state, dict) else {})
-    posture = "progress" if action_type in {"accept_quest", "resume_quest"} else "safe"
+    effect_contract = "advance" if action_type in {"accept_quest", "resume_quest"} else "observe"
     return {
-        "choice_id": posture,
-        "posture": posture,
+        "choice_id": "quest_lifecycle",
         "label": action_text,
         "summary": _quest_lifecycle_choice_summary(
             action_type=action_type,
@@ -1994,6 +2054,7 @@ def _quest_lifecycle_selected_choice(
         ),
         "canonical_input_text": action_text,
         "action_kind": "narrative",
+        "effect_contract": effect_contract,
         "quest_assignment_id": str((quest_updates[0] if quest_updates else {}).get("assignment_id") or ""),
         "lifecycle_action_kind": action_type,
     }
@@ -2521,7 +2582,7 @@ def _resolve_read_world_state_query_turn(
             "input_mode": "free_text",
             "canonical_action_kind": "read_world_state_query",
             "intent_summary": input_text,
-            "requested_choice_posture": "none",
+            "effect_contract": "observe",
             "fail_forward": False,
             "consequence_flags": [],
             "consequence_tags": ["careful_observation"],
@@ -3906,60 +3967,41 @@ def _canonicalize_next_choices(
     raw_choices: list[dict[str, Any]] | list[Any],
     fallback_choices: list[dict[str, Any]] | list[Any],
 ) -> list[dict[str, Any]]:
-    fallback_by_posture: dict[str, dict[str, Any]] = {}
-    for raw_choice in fallback_choices:
-        if not isinstance(raw_choice, dict):
-            continue
-        posture = str(raw_choice.get("posture") or "")
-        if posture in CHOICE_ORDER:
-            fallback_by_posture[posture] = dict(raw_choice)
-
-    raw_by_posture: dict[str, dict[str, Any]] = {}
-    for raw_choice in raw_choices:
-        if not isinstance(raw_choice, dict):
-            continue
-        posture = str(raw_choice.get("posture") or "")
-        if posture in CHOICE_ORDER:
-            raw_by_posture[posture] = dict(raw_choice)
-
     normalized: list[dict[str, Any]] = []
-    for posture in CHOICE_ORDER:
-        fallback = fallback_by_posture.get(posture, {})
-        has_current = posture in raw_by_posture
-        current = raw_by_posture.get(posture, fallback)
-        fallback_action_kind = str(fallback.get("action_kind") or "narrative")
-        requested_action_kind = str(current.get("action_kind") or ("narrative" if has_current else fallback_action_kind))
+    source_choices = [item for item in raw_choices if isinstance(item, dict)]
+    fallback_iter = [item for item in fallback_choices if isinstance(item, dict)]
+    if len(source_choices) < 3:
+        source_choices = [*source_choices, *fallback_iter]
+    seen_labels: set[str] = set()
+    for current in source_choices:
+        if len(normalized) >= 3:
+            break
+        requested_action_kind = str(current.get("action_kind") or "narrative")
         action_kind = requested_action_kind if requested_action_kind in {"narrative", "use_reward_item", "travel"} else "narrative"
         label = str(
             current.get("label")
-            or (fallback.get("label") if not has_current else "")
-            or (fallback.get("canonical_input_text") if not has_current else "")
-            or posture
+            or current.get("canonical_input_text")
+            or current.get("intent_summary")
+            or f"choice_{len(normalized) + 1}"
         ).strip()
+        if not label or label in seen_labels:
+            continue
         canonical_input_text = str(
             current.get("canonical_input_text")
             or current.get("intent_summary")
-            or (fallback.get("canonical_input_text") if not has_current else "")
             or label
         ).strip()
         summary = str(
             current.get("summary")
             or current.get("intent_summary")
-            or (fallback.get("summary") if not has_current else "")
             or label
         ).strip()
         travel_target_key = None
         if action_kind == "travel":
-            travel_target_key = str(
-                current.get("travel_target_key") or (fallback.get("travel_target_key") if not has_current else "")
-            ).strip() or None
-        label = _sanitize_non_progress_choice_promise(posture=posture, text=label)
-        summary = _sanitize_non_progress_choice_promise(posture=posture, text=summary)
-        canonical_input_text = _sanitize_non_progress_choice_promise(posture=posture, text=canonical_input_text)
+            travel_target_key = str(current.get("travel_target_key") or "").strip() or None
         normalized.append(
             {
-                "choice_id": str(current.get("choice_id") or fallback.get("choice_id") or posture),
-                "posture": posture,
+                "choice_id": str(current.get("choice_id") or f"choice_{len(normalized) + 1}"),
                 "label": label,
                 "summary": summary,
                 "canonical_input_text": canonical_input_text,
@@ -3967,31 +4009,26 @@ def _canonicalize_next_choices(
                 "travel_target_key": travel_target_key,
             }
         )
-    return normalized
-
-
-def _sanitize_non_progress_choice_promise(*, posture: str, text: str) -> str:
-    if posture == "progress" or not text:
-        return text
-    replacements = {
-        "次のクエスト段階へ進む": "次の判断材料が増える",
-        "次の段階へ進む": "次の判断材料が増える",
-        "登録が完了する": "登録内容の問題点が見える",
-        "登録を完了する": "登録内容を確認する",
-        "registration completes": "registration can be checked",
-        "complete the registration": "check the registration",
-        "advance to the next quest stage": "reveal the next decision point",
-        "move to the next quest stage": "reveal the next decision point",
-    }
-    sanitized = text
-    for source, replacement in replacements.items():
-        sanitized = sanitized.replace(source, replacement)
-    return sanitized
+        seen_labels.add(label)
+    while len(normalized) < 3:
+        index = len(normalized) + 1
+        label = ["場の変化を確かめる", "目の前の糸口を使って進める", "反応の広がりを探る"][index - 1]
+        normalized.append(
+            {
+                "choice_id": f"choice_{index}",
+                "label": label,
+                "summary": label,
+                "canonical_input_text": label,
+                "action_kind": "narrative",
+                "travel_target_key": None,
+            }
+        )
+    return normalized[:3]
 
 
 def _choice_signature(choice: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
-        str(choice.get("posture") or choice.get("choice_id") or "").strip(),
+        str(choice.get("choice_id") or "").strip(),
         str(choice.get("label") or "").strip(),
         str(choice.get("travel_target_key") or "").strip(),
         str(choice.get("action_kind") or "narrative").strip(),
@@ -4028,18 +4065,17 @@ def _contextualize_repeated_choices(
         context = "直前の結果"
     english = _choices_look_english(choices)
     refreshed: list[dict[str, Any]] = []
-    for choice in choices:
+    for choice_index, choice in enumerate(choices):
         item = dict(choice)
         if str(item.get("action_kind") or "narrative") != "narrative":
             refreshed.append(item)
             continue
-        posture = str(item.get("posture") or item.get("choice_id") or "")
         if english:
-            if posture == "safe":
+            if choice_index == 0:
                 item["label"] = "Ask the local witness what changed"
                 item["summary"] = f"Confirm the visible result before committing further: {context}"
                 item["canonical_input_text"] = f"Ask the local witness what changed after: {context}"
-            elif posture == "progress":
+            elif choice_index == 1:
                 item["label"] = "Settle one unfinished task in front of you"
                 item["summary"] = f"Turn the visible result into a concrete state change: {context}"
                 item["canonical_input_text"] = f"Settle one unfinished task opened by: {context}"
@@ -4047,11 +4083,11 @@ def _contextualize_repeated_choices(
                 item["label"] = "Trace where the new reaction spreads"
                 item["summary"] = f"Check who or what now reacts differently: {context}"
                 item["canonical_input_text"] = f"Trace where the new reaction spreads after: {context}"
-        elif posture == "safe":
+        elif choice_index == 0:
             item["label"] = "近くの証人に何が変わったか確認する"
             item["summary"] = f"次へ踏み込む前に、見えている結果を確かめる: {context}"
             item["canonical_input_text"] = f"近くの証人に何が変わったか確認する: {context}"
-        elif posture == "progress":
+        elif choice_index == 1:
             item["label"] = "目の前の未処理項目を一つ確定する"
             item["summary"] = f"見えている結果を、状態が変わる具体行動へ移す: {context}"
             item["canonical_input_text"] = f"目の前の未処理項目を一つ確定する: {context}"
@@ -4066,8 +4102,7 @@ def _contextualize_repeated_choices(
 def _trade_blocked_next_choices() -> list[dict[str, Any]]:
     return [
         {
-            "choice_id": "safe",
-            "posture": "safe",
+            "choice_id": "choice_1",
             "label": "取引条件を聞き直す",
             "summary": "何を差し出せば成立するのかを確かめる。",
             "canonical_input_text": "取引条件を聞き直し、必要な対価を確認する",
@@ -4075,8 +4110,7 @@ def _trade_blocked_next_choices() -> list[dict[str, Any]]:
             "travel_target_key": None,
         },
         {
-            "choice_id": "progress",
-            "posture": "progress",
+            "choice_id": "choice_2",
             "label": "別の対価を提示する",
             "summary": "情報、借り、評判上のリスクなど通貨以外の対価を差し出す。",
             "canonical_input_text": "通貨ではなく情報や借りを対価として提示し、取引成立を目指す",
@@ -4084,8 +4118,7 @@ def _trade_blocked_next_choices() -> list[dict[str, Any]]:
             "travel_target_key": None,
         },
         {
-            "choice_id": "explore",
-            "posture": "explore",
+            "choice_id": "choice_3",
             "label": "取引を保留して周囲を探る",
             "summary": "すぐには受け取らず、市場の相場や相手の狙いを調べる。",
             "canonical_input_text": "取引を保留し、市場の相場と相手の狙いを探る",
@@ -4152,40 +4185,79 @@ def _resolve_travel_target_key(
     return None
 
 
-def _coerce_choice_world_tags(
+def _active_quest_from_state(session_state: dict[str, Any]) -> dict[str, Any] | None:
+    return next((item for item in session_state.get("quests") or [] if isinstance(item, dict) and item.get("status") == "active"), None)
+
+
+def _infer_choice_effect_contract(
     *,
     session_state: dict[str, Any],
     selected_choice: dict[str, Any] | None,
+    input_text: str,
+    interpreted_intent: dict[str, Any] | None = None,
+) -> str:
+    action_kind = str((interpreted_intent or {}).get("canonical_action_kind") or (selected_choice or {}).get("action_kind") or "narrative")
+    if action_kind == "travel":
+        return "travel"
+    if action_kind == "use_reward_item":
+        return "use_item"
+    active_quest = _active_quest_from_state(session_state)
+    text = _choice_visible_text(selected_choice, input_text)
+    normalized = text.lower()
+    if active_quest and any(
+        token in text or token in normalized
+        for token in (
+            "完了",
+            "完遂",
+            "確定",
+            "承認",
+            "解決",
+            "終え",
+            "終わ",
+            "締め",
+            "果た",
+            "complete",
+            "finish",
+            "finalize",
+            "resolve",
+            "settle",
+            "approve",
+            "confirm",
+        )
+    ):
+        return "complete"
+    if active_quest and any(
+        token in text or token in normalized
+        for token in ("進", "引き受", "応え", "助", "手伝", "届け", "報告", "続け", "advance", "continue", "help", "report")
+    ):
+        return "advance"
+    return "observe"
+
+
+def _world_tags_for_effect_contract(
+    *,
+    session_state: dict[str, Any],
     world_tags: list[str] | None,
+    effect_contract: str,
 ) -> list[str]:
     normalized = normalize_world_tags(world_tags)
-    if not selected_choice:
+    if effect_contract not in {"advance", "complete"}:
         return normalized
-    if str(selected_choice.get("posture") or "").strip() != "progress":
-        return normalized
-    if any(tag in {"aid_local", "promise_followup", "collect_reward"} for tag in normalized):
+    if any(tag in {"aid_local", "promise_followup", "collect_reward", "threaten_local"} for tag in normalized):
         return normalized
 
-    active_quest = next((item for item in session_state.get("quests") or [] if item.get("status") == "active"), None)
+    active_quest = _active_quest_from_state(session_state)
     if not isinstance(active_quest, dict):
         return normalized
-    stage_key = str(active_quest.get("stage_key") or "").strip()
     progress = int(active_quest.get("progress") or 0)
     progress_target = int(active_quest.get("progress_target") or 0)
     if progress_target and progress >= progress_target:
         return normalized
-    world_pack = session_state.get("world_pack") or {}
-    starter_stage_key = str(world_pack.get("starter_stage_key") or "starter_stage")
-    followup_stage_key = str(world_pack.get("followup_stage_key") or "followup_stage")
-    if "threaten_local" in normalized:
-        return normalized
-    if stage_key == starter_stage_key:
-        progress_tag = "aid_local" if progress < 1 else "promise_followup"
+    if effect_contract == "complete":
+        progress_tag = "promise_followup" if progress > 0 else "aid_local"
     else:
-        progress_tag = "promise_followup"
-    if stage_key in {starter_stage_key, followup_stage_key} or str(active_quest.get("status") or "") == "active":
-        return normalize_world_tags([*(tag for tag in normalized if tag != "none"), progress_tag])
-    return normalized
+        progress_tag = "aid_local" if progress < 1 else "promise_followup"
+    return normalize_world_tags([*(tag for tag in normalized if tag != "none"), progress_tag])
 
 
 def _progress_phases_from_role_runs(role_runs: list[Any]) -> list[str]:

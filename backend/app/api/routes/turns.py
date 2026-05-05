@@ -40,7 +40,7 @@ EMPTY_SHARED_CONSEQUENCE_UPDATES = {
 class ResolveTurnRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=36)
     input_mode: Literal["choice", "free_text"] = "choice"
-    choice_id: Literal["safe", "progress", "explore"] | None = None
+    choice_id: str | None = Field(default=None, min_length=1, max_length=120)
     input_text: str | None = Field(default=None, min_length=1, max_length=2000)
     action_type: Literal["narrative", "use_reward_item", "accept_quest", "decline_quest", "ignore_quest", "leave_quest", "resume_quest"] | None = None
     item_id: str | None = Field(default=None, min_length=1, max_length=36)
@@ -48,7 +48,7 @@ class ResolveTurnRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_legacy_payload(cls, payload: object) -> object:
+    def normalize_payload(cls, payload: object) -> object:
         if not isinstance(payload, dict):
             return payload
         normalized = dict(payload)

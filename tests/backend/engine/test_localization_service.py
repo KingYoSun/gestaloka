@@ -40,8 +40,8 @@ def test_play_localization_payload_keeps_first_duplicate_key() -> None:
     payload = PlayLocalizationPayload.model_validate(
         {
             "items": [
-                {"key": "choice:explore:label:abc123", "text": "最初の訳"},
-                {"key": "choice:explore:label:abc123", "text": "後の訳"},
+                {"key": "choice:choice_3:label:abc123", "text": "最初の訳"},
+                {"key": "choice:choice_3:label:abc123", "text": "後の訳"},
             ]
         }
     )

@@ -15,4 +15,4 @@ instructions: |
   Emit consequence_tags that capture trust, promise pressure, public attention, or overreach.
   For same-intent choice and free-text inputs, keep consequence_tags equivalent so paid bandwidth does not improve outcome quality.
   Required output keys are input_mode, canonical_action_kind, intent_summary, travel_target_key,
-  requested_choice_posture, fail_forward, consequence_flags, consequence_tags, and consequence_summary.
+  fail_forward, consequence_flags, consequence_tags, and consequence_summary.
