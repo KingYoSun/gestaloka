@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
 
 import { profilePayloadForApi, type DerivedPlayerProfile } from "./playerProfiles";
-import type { SwarmDecision } from "./playbook";
+import { decisionActionText, type SwarmDecision } from "./playbook";
 import type { AssignedSwarmUserPersona, SwarmAuthUser } from "./userPersonas";
 
 export const worldId = "gestaloka_world_reference";
@@ -106,17 +106,13 @@ export async function resolveTurn(
   sessionId: string,
   decision: SwarmDecision,
 ): Promise<Record<string, unknown>> {
-  const payload =
-    decision.inputMode === "quest_action"
-      ? { session_id: sessionId, action_type: decision.questAction, quest_assignment_id: decision.questAssignmentId }
-      : decision.inputMode === "choice"
-        ? (() => {
-            throw new Error(
-              `API choice resolution requires the current visible choice id; use executeTurnViaUi for ${decision.scenario}.`,
-            );
-          })()
-        : { session_id: sessionId, input_mode: "free_text", input_text: decision.inputText };
-  return apiPost<Record<string, unknown>>(request, token, "/turns", payload, turnTimeoutMs);
+  return apiPost<Record<string, unknown>>(
+    request,
+    token,
+    "/turns",
+    { session_id: sessionId, player_action_text: decisionActionText(decision) },
+    turnTimeoutMs,
+  );
 }
 
 export async function getSessionState(

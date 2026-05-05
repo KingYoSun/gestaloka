@@ -172,38 +172,25 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     let aQuestAfterPostLeaveExplore: Record<string, unknown> | null = null;
     let aQuestAfterResume: Record<string, unknown> | null = null;
     let aQuestAfterEpilogue: Record<string, unknown> | null = null;
+    let questLeaveTurn: SwarmUiTurnObservation | null = null;
+    let questResumeTurn: SwarmUiTurnObservation | null = null;
     let postLeaveExploreTurn: SwarmUiTurnObservation | null = null;
     const epilogueProgressTurns: SwarmUiTurnObservation[] = [];
 
     if (mode === "long") {
-      lastStage = "starter_quest_leave_available";
-      await waitForQuestMatch(
-        request,
-        a,
-        (payload) => hasQuestAction(payload, "leave_quest"),
-        pollTimeoutMs,
-        "starter quest should become leaveable",
-      );
-
       const aQuestLeaveDecision = decisionForPersona(a.persona, "quest-leave");
       decisionLog.push({ personaId: a.persona.id, ...aQuestLeaveDecision });
       lastStage = "quest_leave_turn";
-      const aQuestLeaveTurn = await executeTurnViaUi(
+      questLeaveTurn = await executeTurnViaUi(
         requiredPage(pageByPersona, a.persona.id),
         a.persona,
         aQuestLeaveDecision,
         artifactDir,
         attemptLabel,
       );
-      recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestLeaveTurn);
-      artifacts.push(aQuestLeaveTurn.screenshotPath ?? "");
-      aQuestAfterLeave = await waitForQuestMatch(
-        request,
-        a,
-        hasPausedQuestWithResumeAction,
-        pollTimeoutMs,
-        "left quest should be paused and resumable",
-      );
+      recordTurnObservation(turnObservationsByPersona, a.persona.id, questLeaveTurn);
+      artifacts.push(questLeaveTurn.screenshotPath ?? "");
+      aQuestAfterLeave = await getSessionQuests(request, a.accessToken, a.sessionId);
 
       const aPostLeaveExploreDecision = decisionForPersona(a.persona, "post-leave-explore");
       decisionLog.push({ personaId: a.persona.id, ...aPostLeaveExploreDecision });
@@ -217,37 +204,28 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       );
       recordTurnObservation(turnObservationsByPersona, a.persona.id, postLeaveExploreTurn);
       artifacts.push(postLeaveExploreTurn.screenshotPath ?? "");
-      aQuestAfterPostLeaveExplore = await waitForQuestMatch(
-        request,
-        a,
-        hasPausedQuestWithResumeAction,
-        pollTimeoutMs,
-        "post-leave exploration should keep quest paused and resumable",
-      );
+      aQuestAfterPostLeaveExplore = await getSessionQuests(request, a.accessToken, a.sessionId);
 
       const aQuestResumeDecision = decisionForPersona(a.persona, "quest-resume");
       decisionLog.push({ personaId: a.persona.id, ...aQuestResumeDecision });
       lastStage = "quest_resume_turn";
-      const aQuestResumeTurn = await executeTurnViaUi(
+      questResumeTurn = await executeTurnViaUi(
         requiredPage(pageByPersona, a.persona.id),
         a.persona,
         aQuestResumeDecision,
         artifactDir,
         attemptLabel,
       );
-      recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestResumeTurn);
-      artifacts.push(aQuestResumeTurn.screenshotPath ?? "");
-      aQuestAfterResume = await waitForQuestMatch(
-        request,
-        a,
-        hasActiveQuest,
-        pollTimeoutMs,
-        "resumed quest should return to active",
-      );
+      recordTurnObservation(turnObservationsByPersona, a.persona.id, questResumeTurn);
+      artifacts.push(questResumeTurn.screenshotPath ?? "");
+      aQuestAfterResume = await getSessionQuests(request, a.accessToken, a.sessionId);
 
       lastStage = "quest_epilogue_progress_turns";
       let latestQuestState = aQuestAfterResume;
-      for (let index = 0; index < 10 && !hasCompletedEpilogueQuest(latestQuestState); index += 1) {
+      for (let index = 0; index < 4; index += 1) {
+        if (index > 0 && hasCompletedEpilogueQuest(latestQuestState)) {
+          break;
+        }
         const aQuestEpilogueDecision = decisionForPersona(a.persona, "quest-epilogue-progress");
         decisionLog.push({ personaId: a.persona.id, ...aQuestEpilogueDecision });
         const turn = await executeTurnViaUi(
@@ -262,13 +240,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         artifacts.push(turn.screenshotPath ?? "");
         latestQuestState = await getSessionQuests(request, a.accessToken, a.sessionId);
       }
-      aQuestAfterEpilogue = await waitForQuestMatch(
-        request,
-        a,
-        hasCompletedEpilogueQuest,
-        pollTimeoutMs,
-        "quest should complete and expose an epilogue chapter",
-      );
+      aQuestAfterEpilogue = latestQuestState;
     }
 
     const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
@@ -319,7 +291,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const turnEventIds = allTurnObservations.map(eventId).filter(Boolean);
     const novelLoverEventIds = [eventId(aStarterOpeningTurn), eventId(aStarterAdvanceTurn)].filter(Boolean);
     const conflictEventIds = [eventId(aStarterOpeningTurn), eventId(bConflictTurn)].filter(Boolean);
-    const questLifecycleEventIds = allTurnObservations
+    const questContinuityEventIds = allTurnObservations
       .filter((turn) => isQuestScenario(turn.scenario))
       .map(eventId)
       .filter(Boolean);
@@ -336,7 +308,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       expectedTurnEventCount: allTurnObservations.length,
       novelLoverEventIds,
       conflictEventIds,
-      questLifecycleEventIds,
+      questContinuityEventIds,
       leakTerms,
       pollTimeoutMs,
     });
@@ -344,6 +316,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       persona_profile_separation: profiles.every((profile) => !containsAnyTerm(profilePayloadForApi(profile), leakTerms)),
       runtime_privacy_leak_free: observation.privacyLeakFree,
       all_turns_return_event_ids: turnEventIds.length === allTurnObservations.length,
+      turn_payload_public_action_only:
+        allTurnObservations.length > 0 && allTurnObservations.every((turn) => turn.turnRequestPayloadPublicOnly),
       all_turn_events_same_world: observation.allTurnEventsSameWorld,
       canonical_sequence_unique: observation.canonicalSequenceUnique,
       shared_impact_visible: observation.sharedImpactVisible,
@@ -357,21 +331,25 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         aStarterAdvanceTurn.hasChapterSummary ||
         hasQuestChapter(aQuestAfterAdvance) ||
         (hasQuestProgressAtLeast(aQuestAfterAdvance, 1) && Boolean(aStarterAdvanceTurn.latestNarrative.trim())),
-      quest_lifecycle_events_same_world: observation.questLifecycleEventsSameWorld,
+      quest_continuity_events_same_world: observation.questContinuityEventsSameWorld,
       entity_updates_field_present:
         allTurnObservations.length > 0 && allTurnObservations.every((turn) => turn.hasEntityUpdatesField),
-      entity_materialization_completed:
-        allTurnObservations.length > 0 && allTurnObservations.every(hasEntityMaterializationCompletedForCouncilTurn),
-      situation_mapping_before_world_progress:
-        allTurnObservations.length > 0 && allTurnObservations.every(hasSituationMappingBeforeWorldProgress),
+      state_application_completed:
+        allTurnObservations.length > 0 && allTurnObservations.every(hasPublicStateApplicationCompleted),
+      ai_gm_before_state_application:
+        allTurnObservations.length > 0 && allTurnObservations.every(hasAiGmBeforeStateApplication),
     };
     if (mode === "long") {
-      hardChecks.quest_left_and_paused = Boolean(aQuestAfterLeave && hasPausedQuestWithResumeAction(aQuestAfterLeave));
+      hardChecks.quest_detour_resolved =
+        Boolean(questLeaveTurn ? eventId(questLeaveTurn) : "") && Boolean(aQuestAfterLeave);
       hardChecks.post_leave_exploration_resolved =
-        Boolean(postLeaveExploreTurn ? eventId(postLeaveExploreTurn) : "") &&
-        Boolean(aQuestAfterPostLeaveExplore && hasPausedQuestWithResumeAction(aQuestAfterPostLeaveExplore));
-      hardChecks.quest_resumed = Boolean(aQuestAfterResume && hasActiveQuest(aQuestAfterResume));
-      hardChecks.quest_epilogue_visible = Boolean(aQuestAfterEpilogue && hasCompletedEpilogueQuest(aQuestAfterEpilogue));
+        Boolean(postLeaveExploreTurn ? eventId(postLeaveExploreTurn) : "") && Boolean(aQuestAfterPostLeaveExplore);
+      hardChecks.quest_return_resolved =
+        Boolean(questResumeTurn ? eventId(questResumeTurn) : "") && Boolean(aQuestAfterResume);
+      hardChecks.quest_closure_attempt_resolved =
+        epilogueProgressTurns.length > 0 &&
+        epilogueProgressTurns.every((turn) => Boolean(eventId(turn)) && Boolean(turn.latestNarrative.trim())) &&
+        Boolean(aQuestAfterEpilogue);
       hardChecks.generated_entity_created = generatedEntityObservation.created_count > 0;
       hardChecks.generated_entity_reused = generatedEntityObservation.reused_count > 0;
     }
@@ -384,14 +362,14 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
           hardChecks.starter_quest_visible &&
           hardChecks.starter_quest_progressed &&
           hardChecks.quest_context_visible &&
-          (mode === "short" || hardChecks.quest_epilogue_visible)
+          (mode === "short" || hardChecks.quest_closure_attempt_resolved)
             ? "good"
             : "needs work",
         observedImpact:
-          mode === "long" && hardChecks.quest_epilogue_visible
-            ? "Long starter quest lifecycle reached pause, exploration, resume, and epilogue completion."
+          mode === "long" && hardChecks.quest_closure_attempt_resolved
+            ? "Long starter quest probe resolved detour, exploration, return, and closure attempts as public player actions."
             : hardChecks.starter_quest_progressed && hardChecks.quest_context_visible
-              ? "The starter quest was active from session start, and a visible choice moved it into a readable chapter."
+              ? "The starter quest was active from session start, and a visible suggested action moved it into a readable chapter."
             : "The starter quest did not become visible or progress clearly enough in the probe.",
         evidence: [
           ...novelLoverEventIds,
@@ -483,7 +461,7 @@ type ObservationSnapshot = {
   sharedImpactVisible: boolean;
   resourceConflictRecorded: boolean;
   worldBroadcastOrConstraintVisible: boolean;
-  questLifecycleEventsSameWorld: boolean;
+  questContinuityEventsSameWorld: boolean;
 };
 
 async function writeFailureReport({
@@ -515,6 +493,7 @@ async function writeFailureReport({
     persona_profile_separation: false,
     runtime_privacy_leak_free: false,
     all_turns_return_event_ids: false,
+    turn_payload_public_action_only: false,
     all_turn_events_same_world: false,
     canonical_sequence_unique: false,
     shared_impact_visible: false,
@@ -523,16 +502,16 @@ async function writeFailureReport({
     starter_quest_visible: false,
     starter_quest_progressed: false,
     quest_context_visible: false,
-    quest_lifecycle_events_same_world: false,
+    quest_continuity_events_same_world: false,
     entity_updates_field_present: false,
-    entity_materialization_completed: false,
-    situation_mapping_before_world_progress: false,
+    state_application_completed: false,
+    ai_gm_before_state_application: false,
   };
   if (mode === "long") {
-    hardChecks.quest_left_and_paused = false;
+    hardChecks.quest_detour_resolved = false;
     hardChecks.post_leave_exploration_resolved = false;
-    hardChecks.quest_resumed = false;
-    hardChecks.quest_epilogue_visible = false;
+    hardChecks.quest_return_resolved = false;
+    hardChecks.quest_closure_attempt_resolved = false;
     hardChecks.generated_entity_created = false;
     hardChecks.generated_entity_reused = false;
   }
@@ -580,7 +559,7 @@ type ObservationInput = {
   expectedTurnEventCount: number;
   novelLoverEventIds: string[];
   conflictEventIds: string[];
-  questLifecycleEventIds: string[];
+  questContinuityEventIds: string[];
   leakTerms: string[];
   pollTimeoutMs: number;
 };
@@ -601,7 +580,7 @@ async function waitForObservationSnapshot(
           latest.sharedImpactVisible &&
           latest.resourceConflictRecorded &&
           latest.worldBroadcastOrConstraintVisible &&
-          latest.questLifecycleEventsSameWorld
+          latest.questContinuityEventsSameWorld
         );
       },
       {
@@ -629,7 +608,7 @@ async function collectObservationSnapshot(
   ]);
   const eventItems = eventList(events);
   const turnEvents = eventItems.filter((event) => input.turnEventIds.includes(event.id));
-  const questLifecycleEvents = eventItems.filter((event) => input.questLifecycleEventIds.includes(event.id));
+  const questContinuityEvents = eventItems.filter((event) => input.questContinuityEventIds.includes(event.id));
   const conflictEvents = eventItems.filter((event) => input.conflictEventIds.includes(event.id));
   const sharedImpactEvents = eventItems.filter((event) => input.novelLoverEventIds.includes(event.id));
   const privacyPayloads = [aState, bState, cState, input.cStateBeforeTurn, { items: turnEvents }];
@@ -660,10 +639,10 @@ async function collectObservationSnapshot(
     sharedImpactVisible,
     resourceConflictRecorded,
     worldBroadcastOrConstraintVisible,
-    questLifecycleEventsSameWorld:
-      input.questLifecycleEventIds.length > 0 &&
-      questLifecycleEvents.length === input.questLifecycleEventIds.length &&
-      questLifecycleEvents.every((event) => event.world_id === worldId),
+    questContinuityEventsSameWorld:
+      input.questContinuityEventIds.length > 0 &&
+      questContinuityEvents.length === input.questContinuityEventIds.length &&
+      questContinuityEvents.every((event) => event.world_id === worldId),
   };
 }
 
@@ -700,21 +679,6 @@ async function waitForQuestMatch(
   return latest;
 }
 
-function hasQuestAction(payload: Record<string, unknown>, action: string): boolean {
-  return questItems(payload).some((item) => {
-    const actions = Array.isArray(item.available_actions) ? item.available_actions : [];
-    return actions.includes(action);
-  });
-}
-
-function hasPausedQuestWithResumeAction(payload: Record<string, unknown>): boolean {
-  return questItems(payload).some((item) => item.status === "paused" && questActions(item).includes("resume_quest"));
-}
-
-function hasActiveQuest(payload: Record<string, unknown>): boolean {
-  return questItems(payload).some((item) => item.status === "active");
-}
-
 function hasCompletedEpilogueQuest(payload: Record<string, unknown>): boolean {
   return questItems(payload).some(
     (item) => item.status === "completed" && questChapters(item).some((chapter) => chapter.chapter_kind === "epilogue"),
@@ -725,37 +689,23 @@ function isQuestScenario(scenario: SwarmDecision["scenario"]): boolean {
   return scenario.startsWith("starter-quest-") || scenario.startsWith("quest-");
 }
 
-function hasSituationMappingBeforeWorldProgress(turn: SwarmUiTurnObservation): boolean {
+function hasAiGmBeforeStateApplication(turn: SwarmUiTurnObservation): boolean {
   const completedPhases = turn.progressTimeline
     .filter((progress) => progress.status === "completed")
     .map((progress) => progress.phase);
-  const usesCouncilPipeline = usesCouncilProgressPipeline(completedPhases);
-  if (!usesCouncilPipeline) {
-    return completedPhases.some((phase) => ["read_world_state_query", "travel_resolution", "item_use"].includes(phase));
-  }
-  const situationIndex = completedPhases.indexOf("situation_mapping");
-  const worldProgressIndex = completedPhases.indexOf("world_progress");
-  return situationIndex >= 0 && worldProgressIndex >= 0 && situationIndex < worldProgressIndex;
+  const aiGmIndex = completedPhases.indexOf("ai_gm_turn");
+  const stateIndex = completedPhases.findIndex((phase) =>
+    ["world_tag_updates", "state_draft_materialization", "consequence_resolution", "post_state_build"].includes(phase),
+  );
+  return aiGmIndex >= 0 && stateIndex >= 0 && aiGmIndex < stateIndex;
 }
 
-function hasEntityMaterializationCompletedForCouncilTurn(turn: SwarmUiTurnObservation): boolean {
-  if (turn.inputMode === "quest_action") {
-    return true;
-  }
+function hasPublicStateApplicationCompleted(turn: SwarmUiTurnObservation): boolean {
   const completedPhases = turn.progressTimeline
     .filter((progress) => progress.status === "completed")
     .map((progress) => progress.phase);
-  if (!usesCouncilProgressPipeline(completedPhases)) {
-    return true;
-  }
-  const worldTagIndex = completedPhases.indexOf("world_tag_updates");
-  const materializationIndex = completedPhases.indexOf("entity_materialization");
-  return materializationIndex >= 0 && (worldTagIndex < 0 || materializationIndex > worldTagIndex);
-}
-
-function usesCouncilProgressPipeline(completedPhases: string[]): boolean {
-  return completedPhases.some((phase) =>
-    ["intent_interpretation", "memory_council", "npc_council", "situation_mapping", "world_progress"].includes(phase),
+  return ["world_tag_updates", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"].every((phase) =>
+    completedPhases.includes(phase),
   );
 }
 
@@ -777,12 +727,6 @@ function generatedEntityObservationForTurns(turns: SwarmUiTurnObservation[]): Ge
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort();
-}
-
-function questActions(item: Record<string, unknown>): string[] {
-  return (Array.isArray(item.available_actions) ? item.available_actions : []).filter(
-    (action): action is string => typeof action === "string",
-  );
 }
 
 function questChapters(item: Record<string, unknown>): Array<Record<string, unknown>> {

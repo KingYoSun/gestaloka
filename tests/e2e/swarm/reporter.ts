@@ -4,7 +4,7 @@ import path from "node:path";
 import type { TestInfo } from "@playwright/test";
 
 import type { DerivedPlayerProfile } from "./playerProfiles";
-import type { SwarmDecision } from "./playbook";
+import { decisionActionText, type SwarmDecision } from "./playbook";
 import type { SwarmExperienceEvaluation, ExperienceDimension } from "./experienceJudge";
 import type { SwarmUiTurnObservation } from "./uiDriver";
 import type { SwarmUserPersona } from "./userPersonas";
@@ -587,16 +587,16 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
     return "starter_quest_progressed";
   }
   if (scenario === "quest-leave") {
-    return "quest_left_and_paused";
+    return "quest_detour_resolved";
   }
   if (scenario === "post-leave-explore") {
     return "post_leave_exploration_resolved";
   }
   if (scenario === "quest-resume") {
-    return "quest_resumed";
+    return "quest_return_resolved";
   }
   if (scenario === "quest-epilogue-progress") {
-    return "quest_epilogue_visible";
+    return "quest_closure_attempt_resolved";
   }
   if (scenario === "resource-conflict") {
     return "resource_conflict_recorded";
@@ -609,10 +609,6 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
 
 function storyObservationText(observation: RunStoryObservation): string {
   return `${observation.personaLabel}: ${ja(observation.scenario)}で${ja(observation.action)}を実行`;
-}
-
-function decisionActionText(decision: SwarmDecision): string {
-  return decision.questAction ?? decision.choiceSelection?.label ?? decision.inputText ?? decision.inputMode;
 }
 
 async function findLatestRunResultFile(runPath: string): Promise<string | null> {
@@ -1122,12 +1118,16 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
     "## ペルソナ別行動ログ",
     "",
     ...report.persona_decision_log.map(
-      (decision) =>
-        `- ${ja(decision.personaId)}: シナリオ=${ja(decision.scenario)}; 入力=${ja(
-          decision.inputMode,
-        )}; 行動=${ja(decisionActionText(decision))}; 理由=${ja(
-          decision.reason,
-        )}; 期待する世界影響=${ja(decision.expectedWorldImpact)}`,
+      (decision) => {
+        const legacy = decision as SwarmDecision & { inputMode?: string };
+        return (
+          `- ${ja(decision.personaId)}: シナリオ=${ja(decision.scenario)}; 入力=${ja(
+            decision.submissionMode ?? legacy.inputMode ?? "",
+          )}; 行動=${ja(decisionActionText(decision))}; 理由=${ja(
+            decision.reason,
+          )}; 期待する世界影響=${ja(decision.expectedWorldImpact)}`
+        );
+      },
     ),
     "",
     "## ペルソナ別体験評価",
@@ -1216,6 +1216,7 @@ const japaneseLabels: Record<string, string> = {
   persona_profile_separation: "ユーザーペルソナとプレイヤープロフィールの分離",
   runtime_privacy_leak_free: "実行時データへのユーザーペルソナ漏えいなし",
   all_turns_return_event_ids: "全ターンが event_id を返す",
+  turn_payload_public_action_only: "/turns payload が session_id と player_action_text のみ",
   all_turn_events_same_world: "全ターンイベントが同一 world_id に属する",
   canonical_sequence_unique: "canonical sequence が一意",
   shared_impact_visible: "共有世界への影響が観測可能",
@@ -1224,13 +1225,14 @@ const japaneseLabels: Record<string, string> = {
   starter_quest_visible: "starter quest が開始時点で観測可能",
   starter_quest_progressed: "starter quest の進行が観測可能",
   quest_context_visible: "クエスト文脈または進行が観測可能",
-  quest_lifecycle_events_same_world: "クエスト lifecycle event が同一 world に属する",
+  quest_continuity_events_same_world: "クエスト継続 event が同一 world に属する",
   entity_updates_field_present: "turn.resolved の entity_updates 配線が観測可能",
-  entity_materialization_completed: "entity_materialization phase が完了",
-  quest_left_and_paused: "クエスト離脱後 paused と再開操作が観測可能",
+  state_application_completed: "AI GM 後の state application phase が完了",
+  ai_gm_before_state_application: "AI GM turn が state application より先に完了",
+  quest_detour_resolved: "自然文のクエスト離脱 turn が解決",
   post_leave_exploration_resolved: "クエスト離脱後の探索 turn が解決",
-  quest_resumed: "クエスト再開が観測可能",
-  quest_epilogue_visible: "クエスト epilogue が観測可能",
+  quest_return_resolved: "自然文のクエスト再開 turn が解決",
+  quest_closure_attempt_resolved: "自然文のクエスト締め turn が解決",
   generated_entity_created: "生成entity作成が観測可能",
   generated_entity_reused: "生成entity再利用が観測可能",
   "shared-impact": "共有影響",
@@ -1247,9 +1249,9 @@ const japaneseLabels: Record<string, string> = {
   gameplay_fun: "ゲームプレイの面白さ",
   story_progression: "ストーリー展開評価",
   overall: "総合体験",
-  choice: "選択肢",
+  suggested_action: "提示行動",
   free_text: "自由入力",
-  quest_action: "クエスト操作",
+  quest_button: "クエストボタン",
   accept_quest: "クエスト受諾",
   decline_quest: "クエスト辞退",
   ignore_quest: "クエスト無視",
@@ -1285,10 +1287,10 @@ const japaneseLabels: Record<string, string> = {
     "遅れて参加した後の追跡行動で、世界イベントまたは broadcast constraint を観測できた。",
   "Late join and follow-up reused a generated living entity in the same world.":
     "遅れて参加した後の追跡行動で、同じ世界内の生成済み生きたentity再利用を観測できた。",
-  "The starter quest was active from session start, and a visible choice moved it into a readable chapter.":
-    "starter quest は session start 時点から active で、表示文面に基づく選択により読める chapter へ進んだ。",
-  "Long starter quest lifecycle reached pause, exploration, resume, and epilogue completion.":
-    "starter quest lifecycle が離脱、探索、再開、epilogue 完了まで到達した。",
+  "The starter quest was active from session start, and a visible suggested action moved it into a readable chapter.":
+    "starter quest は session start 時点から active で、表示文面に基づく提示行動により読める chapter へ進んだ。",
+  "Long starter quest probe resolved detour, exploration, return, and closure attempts as public player actions.":
+    "starter quest の長時間プローブで、離脱、探索、再開、締めの試行が公開プレイヤー行動として解決された。",
   "The starter quest did not become visible or progress clearly enough in the probe.":
     "starter quest の可視性または進行が十分に確認できなかった。",
   "Late join and follow-up did not expose a world event or broadcast constraint.":

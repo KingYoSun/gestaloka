@@ -218,7 +218,7 @@ function buildJudgeEvidence(input: JudgeInput): Record<string, unknown> {
       turns: input.observationsByPersona.get(persona.id) ?? [],
     })),
     rubric: {
-      ux_clarity: "操作開始、turn待機、二重送信防止、choice/free-text切替、stream可読性、回復導線を1-5で評価する。",
+      ux_clarity: "操作開始、turn待機、二重送信防止、提示行動/free-text切替、stream可読性、回復導線を1-5で評価する。",
       gameplay_fun:
         "ペルソナ動機に合う行動選択、意味あるstarter quest進行/探索/競合、待ち時間への納得感を1-5で評価する。",
       story_progression:
