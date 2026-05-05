@@ -110,7 +110,11 @@ export async function resolveTurn(
     decision.inputMode === "quest_action"
       ? { session_id: sessionId, action_type: decision.questAction, quest_assignment_id: decision.questAssignmentId }
       : decision.inputMode === "choice"
-        ? { session_id: sessionId, input_mode: "choice", choice_id: decision.choiceId }
+        ? (() => {
+            throw new Error(
+              `API choice resolution requires the current visible choice id; use executeTurnViaUi for ${decision.scenario}.`,
+            );
+          })()
         : { session_id: sessionId, input_mode: "free_text", input_text: decision.inputText };
   return apiPost<Record<string, unknown>>(request, token, "/turns", payload, turnTimeoutMs);
 }

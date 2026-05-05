@@ -49,6 +49,8 @@ export type SwarmUiTurnObservation = {
   questActionLabels: string[];
   inlineQuestActionLabels: string[];
   hasExploringLabel: boolean;
+  hasStarterQuest: boolean;
+  hasQuestProgress: boolean;
   hasOfferedQuest: boolean;
   hasInlineQuestDecision: boolean;
   hasChapterSummary: boolean;
@@ -80,6 +82,8 @@ export type SwarmUiQuestSnapshot = {
   questActionLabels: string[];
   inlineQuestActionLabels: string[];
   hasExploringLabel: boolean;
+  hasStarterQuest: boolean;
+  hasQuestProgress: boolean;
   hasOfferedQuest: boolean;
   hasInlineQuestDecision: boolean;
   hasChapterSummary: boolean;
@@ -98,6 +102,7 @@ type CapturedResolvedTurn = {
 const capturedProgressByPage = new WeakMap<Page, CapturedProgressEvent[]>();
 const capturedResolvedTurnsByPage = new WeakMap<Page, CapturedResolvedTurn[]>();
 const progressCaptureAttached = new WeakSet<Page>();
+const choiceButtonSelector = 'button[data-testid^="choice-"]';
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
   const worldCard = page.getByTestId("world-card-gestaloka_world_reference");
@@ -210,8 +215,8 @@ async function waitForSessionUiReady(page: Page, personaId: string): Promise<voi
   try {
     await expect(page.getByTestId("story-scroll")).toBeVisible({ timeout: readyTimeoutMs });
     await ensureActionSurface(page);
-    await expect(page.getByTestId("choice-progress")).toBeVisible({ timeout: readyTimeoutMs });
-    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: readyTimeoutMs });
+    await expect(page.locator(choiceButtonSelector).first()).toBeVisible({ timeout: readyTimeoutMs });
+    await expect(page.locator(choiceButtonSelector).first()).toBeEnabled({ timeout: readyTimeoutMs });
     await ensureStatusSurface(page);
     await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: readyTimeoutMs });
   } catch (error) {
@@ -250,10 +255,13 @@ export async function executeTurnViaUi(
   try {
     const turnTimeoutMs = envInt("SWARM_TURN_TIMEOUT_MS", 600_000);
     let response: Response;
+    let submittedAction = "";
     try {
       [response] = await Promise.all([
         waitForTurnResponseOrNetworkFailure(page, persona.id, turnTimeoutMs),
-        submitDecision(page, decision),
+        submitDecision(page, decision).then((action) => {
+          submittedAction = action;
+        }),
       ]);
     } catch (error) {
       throw new Error(
@@ -287,7 +295,7 @@ export async function executeTurnViaUi(
       personaId: persona.id,
       scenario: decision.scenario,
       inputMode: decision.inputMode,
-      action: decision.questAction ?? decision.choiceId ?? decision.inputText ?? decision.inputMode,
+      action: submittedAction || decisionActionSummary(decision),
       startedAt,
       completedAt: new Date(completed).toISOString(),
       durationMs: completed - started,
@@ -607,18 +615,18 @@ async function waitForTurnResponseOrNetworkFailure(
   return Promise.race([responsePromise, requestFailurePromise]);
 }
 
-async function submitDecision(page: Page, decision: SwarmDecision): Promise<void> {
+async function submitDecision(page: Page, decision: SwarmDecision): Promise<string> {
   if (decision.inputMode === "quest_action") {
     await clickQuestAction(page, decision.questAction);
-    return;
+    return decisionActionSummary(decision);
   }
   await ensureActionSurface(page);
   if (decision.inputMode === "choice") {
-    const choice = page.getByTestId(`choice-${decision.choiceId}`);
-    await expect(choice).toBeVisible({ timeout: 60_000 });
-    await expect(choice).toBeEnabled({ timeout: 60_000 });
-    await choice.click();
-    return;
+    const choice = await selectChoiceButton(page, decision);
+    await expect(choice.locator).toBeVisible({ timeout: 60_000 });
+    await expect(choice.locator).toBeEnabled({ timeout: 60_000 });
+    await choice.locator.click();
+    return choice.text || decisionActionSummary(decision);
   }
   const toggle = page.getByTestId("toggle-free-text");
   await expect(toggle).toBeEnabled({ timeout: 60_000 });
@@ -630,6 +638,68 @@ async function submitDecision(page: Page, decision: SwarmDecision): Promise<void
   const submit = page.getByTestId("submit-turn");
   await expect(submit).toBeEnabled({ timeout: 60_000 });
   await submit.click();
+  return decisionActionSummary(decision);
+}
+
+type ChoiceCandidate = {
+  locator: Locator;
+  index: number;
+  testId: string;
+  text: string;
+};
+
+async function selectChoiceButton(page: Page, decision: SwarmDecision): Promise<ChoiceCandidate> {
+  const choices = page.locator(choiceButtonSelector);
+  await expect(choices.first()).toBeVisible({ timeout: 60_000 });
+  const candidates = await choiceCandidates(page);
+  if (!candidates.length) {
+    throw new Error(`No visible choice buttons for ${decision.scenario}; ${await playSurfaceDiagnostics(page)}`);
+  }
+  const selection = decision.choiceSelection;
+  const preferred = candidates.find((candidate) => choiceMatches(candidate.text, selection?.preferredTextPatterns ?? []));
+  if (preferred) {
+    return preferred;
+  }
+  const fallbackIndex = Math.min(Math.max((selection?.fallbackChoiceNumber ?? 1) - 1, 0), candidates.length - 1);
+  return candidates[fallbackIndex];
+}
+
+async function choiceCandidates(page: Page): Promise<ChoiceCandidate[]> {
+  const choices = page.locator(choiceButtonSelector);
+  const count = await choices.count();
+  const candidates: ChoiceCandidate[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const locator = choices.nth(index);
+    const visible = await locatorVisibleByLocator(locator);
+    if (!visible) {
+      continue;
+    }
+    candidates.push({
+      locator,
+      index,
+      testId: (await locator.getAttribute("data-testid")) ?? "",
+      text: normalizeChoiceText((await locator.textContent()) ?? ""),
+    });
+  }
+  return candidates;
+}
+
+function choiceMatches(text: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    try {
+      return new RegExp(pattern, "i").test(text);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function normalizeChoiceText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function decisionActionSummary(decision: SwarmDecision): string {
+  return decision.questAction ?? decision.choiceSelection?.label ?? decision.inputText ?? decision.inputMode;
 }
 
 async function ensureActionSurface(page: Page): Promise<void> {
@@ -666,12 +736,12 @@ async function closeVisibleDrawer(page: Page): Promise<void> {
 }
 
 async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): Promise<string> {
-  const choiceTestId = decision.choiceId ? `choice-${decision.choiceId}` : "";
-  const [errorBanner, progressStatus, choiceEnabled, toggleEnabled, submitEnabled, inputValueText, choiceLabels, questSnapshot] =
+  const [errorBanner, progressStatus, choiceEnabled, choiceButtons, toggleEnabled, submitEnabled, inputValueText, choiceLabels, questSnapshot] =
     await Promise.all([
       textContent(page, "error-banner"),
       textContent(page, "turn-progress-status"),
-      choiceTestId ? locatorEnabled(page, choiceTestId) : Promise.resolve("n/a"),
+      decision.inputMode === "choice" ? firstChoiceEnabled(page) : Promise.resolve("n/a"),
+      choiceButtonSummaries(page),
       locatorEnabled(page, "toggle-free-text"),
       locatorEnabled(page, "submit-turn"),
       inputValue(page, "turn-input"),
@@ -680,7 +750,8 @@ async function turnSubmissionDiagnostics(page: Page, decision: SwarmDecision): P
     ]);
   return [
     `mode=${decision.inputMode}`,
-    `choice=${decision.choiceId ?? "(none)"} enabled=${choiceEnabled}`,
+    `choice_selection=${decision.choiceSelection?.label ?? "(none)"} enabled=${choiceEnabled}`,
+    `choice_buttons=${choiceButtons.join(" | ") || "(empty)"}`,
     `quest_action=${decision.questAction ?? "(none)"}`,
     `quest_actions=${questSnapshot.questActionLabels.join(" | ") || "(empty)"}`,
     `quest=${questSnapshot.questText || "(empty)"}`,
@@ -770,11 +841,11 @@ function questActionLabelPattern(action: SwarmDecision["questAction"]): RegExp {
 
 async function waitForTurnIdle(page: Page): Promise<void> {
   try {
-    await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: 60_000 });
+    await expect(page.locator(choiceButtonSelector).first()).toBeEnabled({ timeout: 60_000 });
     return;
   } catch {
-    // Some fail-forward or late-scene states may settle without a progress
-    // choice. The next action's locator wait will enforce readiness when needed.
+    // Some fail-forward or late-scene states may settle without a normal
+    // choice list. The next action's locator wait will enforce readiness.
   }
   try {
     await expect(page.getByTestId("quest-action-accept_quest")).toBeEnabled({ timeout: 10_000 });
@@ -872,6 +943,8 @@ export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapsh
     questActionLabels: allQuestActionLabels,
     inlineQuestActionLabels,
     hasExploringLabel: /探索中\.\.\.|Exploring\.\.\./i.test(questText),
+    hasStarterQuest: /来訪者ログ登録|Visitor Log Registration/i.test(questText),
+    hasQuestProgress: /\b\d+\s*\/\s*\d+\b/.test(questProgress || questText),
     hasOfferedQuest: allQuestActionLabels.some((label) => /^(受諾|Accept|見送る|Decline|無視|Ignore)$/i.test(label)),
     hasInlineQuestDecision: Boolean(inlineQuestText.trim()) || inlineQuestActionLabels.length > 0,
     hasChapterSummary: Boolean(chapterText.trim()),
@@ -915,6 +988,23 @@ async function locatorEnabled(page: Page, testId: string): Promise<string> {
     return String(await page.getByTestId(testId).isEnabled({ timeout: 1_000 }));
   } catch {
     return "unavailable";
+  }
+}
+
+async function firstChoiceEnabled(page: Page): Promise<string> {
+  try {
+    return String(await page.locator(choiceButtonSelector).first().isEnabled({ timeout: 1_000 }));
+  } catch {
+    return "unavailable";
+  }
+}
+
+async function choiceButtonSummaries(page: Page): Promise<string[]> {
+  try {
+    const candidates = await choiceCandidates(page);
+    return candidates.map((candidate) => `${candidate.index + 1}:${candidate.testId}:${candidate.text}`).slice(0, 6);
+  } catch {
+    return [];
   }
 }
 

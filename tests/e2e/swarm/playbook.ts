@@ -6,15 +6,14 @@ export type SwarmDecision = {
     | "resource-conflict"
     | "world-event"
     | "persistent-entity-revisit"
-    | "quest-offer"
-    | "quest-accept"
-    | "quest-body-progress"
+    | "starter-quest-opening"
+    | "starter-quest-advance"
     | "quest-leave"
     | "post-leave-explore"
     | "quest-resume"
     | "quest-epilogue-progress";
   inputMode: "choice" | "free_text" | "quest_action";
-  choiceId?: "safe" | "progress" | "explore";
+  choiceSelection?: SwarmChoiceSelection;
   inputText?: string;
   questAction?: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest";
   questAssignmentId?: string;
@@ -22,34 +21,39 @@ export type SwarmDecision = {
   expectedWorldImpact: string;
 };
 
+export type SwarmChoiceSelection = {
+  label: string;
+  preferredTextPatterns: string[];
+  fallbackChoiceNumber: 1 | 2 | 3;
+};
+
 export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDecision["scenario"]): SwarmDecision {
-  if (scenario === "quest-offer") {
-    return {
-      scenario,
-      inputMode: "free_text",
-      inputText: "ネクサス市内の企業勧誘に応じ、契約候補を確認する。",
-      reason: `${persona.label} は「${persona.evaluationLens}」という観点から、企業勧誘に応じた直後にクエスト発生判断が通常選択肢位置へ出るかを確認する。`,
-      expectedWorldImpact: "企業契約の糸口から任意の動的クエストが提示され、inline の受諾 / 破棄 / 無視をプレイヤーが選べることを期待する。",
-    };
-  }
-
-  if (scenario === "quest-accept") {
-    return {
-      scenario,
-      inputMode: "quest_action",
-      questAction: "accept_quest",
-      reason: `${persona.label} は提示された物語の糸口を受け入れ、固定導線ではなく自分の選択でクエストへ入る。`,
-      expectedWorldImpact: "クエスト受諾が通常 turn として解決され、prologue chapter が文脈として表示されることを期待する。",
-    };
-  }
-
-  if (scenario === "quest-body-progress") {
+  if (scenario === "starter-quest-opening") {
     return {
       scenario,
       inputMode: "choice",
-      choiceId: "progress",
-      reason: `${persona.label} は受諾したクエストを進め、プレイ内容から chapter が更新されるかを確認する。`,
-      expectedWorldImpact: "受諾後の行動により body chapter が開き、クエストの文脈が journal と scene に残ることを期待する。",
+      choiceSelection: {
+        label: "公開証言ホールで来訪者ログを確認する",
+        preferredTextPatterns: [
+          "公開.*(登録|証言|ログ|市民権)",
+          "来訪者ログ.*(確認|登録|証言|確定)",
+          "到着ログ.*(確認|登録|証言)",
+          "visitor log|witness|public",
+        ],
+        fallbackChoiceNumber: 1,
+      },
+      reason: `${persona.label} は「${persona.evaluationLens}」という観点から、開始時点で提示済みの来訪者ログ登録を文面どおり進める。`,
+      expectedWorldImpact: "starter quest が開始時点から active で表示され、公開ログ確認の行動で章または進捗が前へ進むことを期待する。",
+    };
+  }
+
+  if (scenario === "starter-quest-advance") {
+    return {
+      scenario,
+      inputMode: "free_text",
+      inputText: "来訪者ログ登録を進めるため、公開証言ホールでカナタの手続きを手伝い、確認済みの到着ログを正式な証言へ近づける。",
+      reason: `${persona.label} は active な starter quest を進め、文面が前進や完了を示す行動で chapter が更新されるかを確認する。`,
+      expectedWorldImpact: "来訪者ログ登録の行動により body または epilogue の文脈が journal と scene に残ることを期待する。",
     };
   }
 
@@ -67,7 +71,14 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
     return {
       scenario,
       inputMode: "choice",
-      choiceId: "explore",
+      choiceSelection: {
+        label: "離脱中に周辺の噂と手掛かりを探る",
+        preferredTextPatterns: [
+          "(探|噂|視線|手掛かり|痕跡|記録|万象図書館)",
+          "explore|trace|rumor|lead|record|library",
+        ],
+        fallbackChoiceNumber: 3,
+      },
       reason: `${persona.label} はクエスト離脱後も同じ世界で探索を続け、寄り道が通常 turn として解決されるかを確認する。`,
       expectedWorldImpact: "paused quest を保持したまま探索 turn が解決され、同一 world の event として記録されることを期待する。",
     };
@@ -88,7 +99,7 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
       scenario,
       inputMode: "free_text",
       inputText:
-        "再開した来訪者ログ登録を最後まで手伝い、約束した確認を続け、案内担当へ完了報告を届ける。",
+        "再開した来訪者ログ登録を最後まで手伝い、公開証言ホールで確認済みログを確定し、案内担当へ完了報告を届ける。",
       reason: `${persona.label} は再開したクエストを最後まで進め、結末が epilogue として明示されるかを確認する。`,
       expectedWorldImpact: "クエストが completed になり、epilogue chapter が journal と scene に残ることを期待する。",
     };
@@ -110,7 +121,7 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
     return {
       scenario,
       inputMode: "choice",
-      choiceId: "progress",
+      choiceSelection: forwardChoiceSelection("共有世界に残る前進行動を選ぶ"),
       reason: `${persona.label} は「${persona.evaluationLens}」という観点から、共有記憶になり得る行動を重視する。`,
       expectedWorldImpact: "探索中の局所的な支援行動が、後続の噂、関係性、world beat として現れることを期待する。",
     };
@@ -119,8 +130,9 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
   if (scenario === "resource-conflict") {
     return {
       scenario,
-      inputMode: "choice",
-      choiceId: "progress",
+      inputMode: "free_text",
+      inputText:
+        "ネクサス公開登録所で、同じ案内担当カナタと公開証言ホールの確認枠を使って来訪者ログ登録を急いで進め、他の来訪者と同じ手続き資源に同時に圧をかける。",
       reason: `${persona.label} は「${persona.playStyle}」というプレイスタイルで、同じ世界内の同時行動と共有リソース競合を検証する。`,
       expectedWorldImpact: "同時探索または進行時の競合が公平に解決され、プレイを止めずに resource constraint が記録されることを期待する。",
     };
@@ -133,5 +145,16 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
       "ネクサス市の公開ログ、市場の痕跡、生成された現地NPCや小コミュニティを照合し、どの直近行動が共有世界の状況を変えたのかを尋ねる。",
     reason: `${persona.label} は遅れて参加し、公開された世界イベントに追跡可能な原因があるかを検証する。`,
     expectedWorldImpact: "応答から broadcast、memory、recent history を通じた共有世界の連続性が観測できることを期待する。",
+  };
+}
+
+function forwardChoiceSelection(label: string): SwarmChoiceSelection {
+  return {
+    label,
+    preferredTextPatterns: [
+      "(手伝|進展|前へ|信頼|見聞き|報告|次の段取り|次の進展)",
+      "help|advance|report|next|forward",
+    ],
+    fallbackChoiceNumber: 2,
   };
 }

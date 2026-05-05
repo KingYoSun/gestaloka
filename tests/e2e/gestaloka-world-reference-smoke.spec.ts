@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:5174";
+const choiceButtonSelector = 'button[data-testid^="choice-"]';
 
 type ProgressPhaseCollector = {
   completedPhases: () => string[];
@@ -186,6 +187,17 @@ function valueAfterKey(text: string, key: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
+async function waitForAnyChoiceEnabled(page: import("@playwright/test").Page, timeout: number): Promise<void> {
+  await expect(page.locator(choiceButtonSelector).first()).toBeEnabled({ timeout });
+}
+
+async function clickChoiceByText(page: import("@playwright/test").Page, pattern: RegExp): Promise<void> {
+  const choice = page.locator(choiceButtonSelector).filter({ hasText: pattern }).first();
+  await expect(choice).toBeVisible({ timeout: 60_000 });
+  await expect(choice).toBeEnabled({ timeout: 60_000 });
+  await choice.click();
+}
+
 test("login, select GESTALOKA reference world, and clear the nexus smoke flow", async ({ page }) => {
   test.setTimeout(360_000);
   const worldId = "gestaloka_world_reference";
@@ -226,7 +238,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("ops-stream")).not.toContainText("{");
   await expect(page.getByTestId("npc-routine-stream")).not.toContainText("{");
   await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus City/i, { timeout: 20_000 });
-  await expect(page.getByTestId("active-quest")).toContainText("Exploring...", { timeout: 20_000 });
+  await expect(page.getByTestId("active-quest")).toContainText(/Visitor Log Registration|来訪者ログ登録/, { timeout: 20_000 });
+  await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toContainText(/Nexus Entry Liaison Kanata/i, { timeout: 20_000 });
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Universal Library/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus City/i, { timeout: 20_000 });
@@ -235,34 +248,16 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await page.getByTestId("toggle-free-text").click();
   await expect(page.getByTestId("turn-cost-note")).toContainText(/自由入力|Free input|SP/);
   await page.getByTestId("toggle-choice-mode").click();
-  await expect(page.getByTestId("choice-progress")).toContainText("Go to the lift tower network and inspect recruiters and route logs");
-  await expect(page.getByTestId("choice-explore")).toContainText(
-    "Go to the Universal Library and compare old records with your visitor log",
-  );
+  await expect(page.locator(choiceButtonSelector).filter({ hasText: /Check your arrival log at the public Nexus registry/ })).toBeVisible();
+  await expect(page.locator(choiceButtonSelector).filter({ hasText: /Go to the lift tower network and inspect recruiters and route logs/ })).toBeVisible();
+  await expect(page.locator(choiceButtonSelector).filter({ hasText: /Go to the Universal Library and compare old records with your visitor log/ })).toBeVisible();
 
-  await page.getByTestId("choice-progress").click();
+  await clickChoiceByText(page, /Check your arrival log at the public Nexus registry/);
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
-  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
+  await waitForAnyChoiceEnabled(page, turnTimeout);
   await expectSituationMappingBeforeWorldProgress(progressPhases);
   await expectEntityMaterializationAfterWorldTagUpdates(progressPhases);
   await expectResolvedTurnEntityUpdatesArray(progressPhases);
-  const inlineQuest = page.getByTestId("inline-quest-decision");
-  if (!(await inlineQuest.isVisible({ timeout: 1_000 }).catch(() => false))) {
-    await expect(page.getByTestId("current-place-summary")).toContainText(/Lift Tower Network/i, { timeout: slowTimeout });
-    await expect(page.getByTestId("active-quest")).toContainText(/Exploring|探索中/);
-    return;
-  }
-  await expect(inlineQuest).toContainText(/Accept|受諾/);
-
-  await page.getByTestId("quest-list-open").click();
-  await expect(page.getByTestId("quest-list-dialog")).toBeVisible({ timeout: slowTimeout });
-  await expect(page.getByTestId("quest-list-dialog")).not.toContainText(/dynamic_quest_|followup_quest_|\bdynamic\b/i);
-  await expect(page.getByTestId("quest-list-dialog").getByRole("button", { name: /^(Accept|受諾)$/i })).toBeVisible({
-    timeout: slowTimeout,
-  });
-  await page.getByTestId("quest-list-dialog").getByRole("button", { name: /^(Accept|受諾)$/i }).click();
-  await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
-  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
   await expect(page.getByTestId("active-quest")).not.toContainText("Exploring...");
   await expect(page.getByTestId("quest-progress")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
@@ -272,11 +267,11 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("quest-unlock-requirements")).toHaveText("");
   await expect(page.getByTestId("quest-unlock-requirements")).toHaveAttribute("data-value", /\S/);
 
-  await page.getByTestId("choice-progress").click();
+  await clickChoiceByText(page, /Report what you learned and take the next patrol step|報告|完了|確定/);
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
-  await expect(page.getByTestId("choice-progress")).toBeEnabled({ timeout: turnTimeout });
+  await expect(page.getByTestId("quest-completion-dialog")).toBeVisible({ timeout: turnTimeout });
   await expect(page.getByTestId("current-chapter-summary")).toContainText(/\S/, { timeout: slowTimeout });
-  await expect(page.getByTestId("active-quest")).toContainText(/\d+\/\d+/, { timeout: slowTimeout });
+  await expect(page.getByTestId("quest-completion-dialog")).toContainText(/Visitor Log|来訪者ログ|Seal|印/, { timeout: slowTimeout });
 });
 
 test("mobile player shell does not overflow at 375px", async ({ page }) => {

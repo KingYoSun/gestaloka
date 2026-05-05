@@ -123,10 +123,10 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     lastStage = "ui_session_setup";
     await startRuntimeSessionViaUi(pageByPersona, a);
     await startRuntimeSessionViaUi(pageByPersona, b);
-    await expect(requiredPage(pageByPersona, a.persona.id).getByTestId("active-quest")).toContainText("探索中...", {
+    await expect(requiredPage(pageByPersona, a.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
       timeout: 60_000,
     });
-    await expect(requiredPage(pageByPersona, b.persona.id).getByTestId("active-quest")).toContainText("探索中...", {
+    await expect(requiredPage(pageByPersona, b.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
       timeout: 60_000,
     });
     const initialQuestSnapshots: SwarmUiQuestSnapshot[] = [
@@ -134,54 +134,39 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       await questSnapshotViaUi(requiredPage(pageByPersona, b.persona.id)),
     ];
 
-    const aQuestOfferDecision = decisionForPersona(a.persona, "quest-offer");
-    decisionLog.push({ personaId: a.persona.id, ...aQuestOfferDecision });
-    lastStage = "quest_offer_turn";
-    const aQuestOfferTurn = await executeTurnViaUi(
-      requiredPage(pageByPersona, a.persona.id),
-      a.persona,
-      aQuestOfferDecision,
-      artifactDir,
-      attemptLabel,
-    );
-    recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestOfferTurn);
-    artifacts.push(aQuestOfferTurn.screenshotPath ?? "");
-    const aQuestAfterOffer = await waitForOfferedQuest(request, a, pollTimeoutMs);
-
-    const aQuestAcceptDecision = decisionForPersona(a.persona, "quest-accept");
-    decisionLog.push({ personaId: a.persona.id, ...aQuestAcceptDecision });
-    lastStage = "quest_accept_turn";
-    const aQuestAcceptTurn = await executeTurnViaUi(
-      requiredPage(pageByPersona, a.persona.id),
-      a.persona,
-      aQuestAcceptDecision,
-      artifactDir,
-      attemptLabel,
-    );
-    recordTurnObservation(turnObservationsByPersona, a.persona.id, aQuestAcceptTurn);
-    artifacts.push(aQuestAcceptTurn.screenshotPath ?? "");
-    const aQuestAfterAccept = await waitForQuestMatch(
-      request,
-      a,
-      (payload) => hasChapterKind(payload, "prologue"),
-      pollTimeoutMs,
-      "accepted quest should expose a prologue chapter",
-    );
-
-    const aBodyProgressDecision = decisionForPersona(a.persona, "quest-body-progress");
-    decisionLog.push({ personaId: a.persona.id, ...aBodyProgressDecision });
+    const aStarterOpeningDecision = decisionForPersona(a.persona, "starter-quest-opening");
+    decisionLog.push({ personaId: a.persona.id, ...aStarterOpeningDecision });
     const bConflictDecision = decisionForPersona(b.persona, "resource-conflict");
     decisionLog.push({ personaId: b.persona.id, ...bConflictDecision });
 
     lastStage = "resource_conflict_turns";
-    const [aBodyProgressTurn, bConflictTurn] = await Promise.all([
-      executeTurnViaUi(requiredPage(pageByPersona, a.persona.id), a.persona, aBodyProgressDecision, artifactDir, attemptLabel),
+    const [aStarterOpeningTurn, bConflictTurn] = await Promise.all([
+      executeTurnViaUi(requiredPage(pageByPersona, a.persona.id), a.persona, aStarterOpeningDecision, artifactDir, attemptLabel),
       executeTurnViaUi(requiredPage(pageByPersona, b.persona.id), b.persona, bConflictDecision, artifactDir, attemptLabel),
     ]);
-    recordTurnObservation(turnObservationsByPersona, a.persona.id, aBodyProgressTurn);
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aStarterOpeningTurn);
     recordTurnObservation(turnObservationsByPersona, b.persona.id, bConflictTurn);
-    artifacts.push(aBodyProgressTurn.screenshotPath ?? "", bConflictTurn.screenshotPath ?? "");
-    const aQuestAfterBody = await getSessionQuests(request, a.accessToken, a.sessionId);
+    artifacts.push(aStarterOpeningTurn.screenshotPath ?? "", bConflictTurn.screenshotPath ?? "");
+
+    const aStarterAdvanceDecision = decisionForPersona(a.persona, "starter-quest-advance");
+    decisionLog.push({ personaId: a.persona.id, ...aStarterAdvanceDecision });
+    lastStage = "starter_quest_advance_turn";
+    const aStarterAdvanceTurn = await executeTurnViaUi(
+      requiredPage(pageByPersona, a.persona.id),
+      a.persona,
+      aStarterAdvanceDecision,
+      artifactDir,
+      attemptLabel,
+    );
+    recordTurnObservation(turnObservationsByPersona, a.persona.id, aStarterAdvanceTurn);
+    artifacts.push(aStarterAdvanceTurn.screenshotPath ?? "");
+    const aQuestAfterAdvance = await waitForQuestMatch(
+      request,
+      a,
+      (payload) => hasQuestProgressAtLeast(payload, 1),
+      pollTimeoutMs,
+      "starter quest should progress from an explicit visible action",
+    );
 
     let aQuestAfterLeave: Record<string, unknown> | null = null;
     let aQuestAfterPostLeaveExplore: Record<string, unknown> | null = null;
@@ -191,13 +176,13 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const epilogueProgressTurns: SwarmUiTurnObservation[] = [];
 
     if (mode === "long") {
-      lastStage = "quest_body_leave_available";
+      lastStage = "starter_quest_leave_available";
       await waitForQuestMatch(
         request,
         a,
         (payload) => hasQuestAction(payload, "leave_quest"),
         pollTimeoutMs,
-        "body quest should become leaveable",
+        "starter quest should become leaveable",
       );
 
       const aQuestLeaveDecision = decisionForPersona(a.persona, "quest-leave");
@@ -289,7 +274,7 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_session_setup";
     await startRuntimeSessionViaUi(pageByPersona, cBase);
-    await expect(requiredPage(pageByPersona, cBase.persona.id).getByTestId("active-quest")).toContainText("探索中...", {
+    await expect(requiredPage(pageByPersona, cBase.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
       timeout: 60_000,
     });
     initialQuestSnapshots.push(await questSnapshotViaUi(requiredPage(pageByPersona, cBase.persona.id)));
@@ -332,10 +317,10 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const allTurnObservations = Array.from(turnObservationsByPersona.values()).flat();
     const generatedEntityObservation = generatedEntityObservationForTurns(allTurnObservations);
     const turnEventIds = allTurnObservations.map(eventId).filter(Boolean);
-    const novelLoverEventIds = [eventId(aQuestOfferTurn), eventId(aBodyProgressTurn)].filter(Boolean);
-    const conflictEventIds = [eventId(aBodyProgressTurn), eventId(bConflictTurn)].filter(Boolean);
+    const novelLoverEventIds = [eventId(aStarterOpeningTurn), eventId(aStarterAdvanceTurn)].filter(Boolean);
+    const conflictEventIds = [eventId(aStarterOpeningTurn), eventId(bConflictTurn)].filter(Boolean);
     const questLifecycleEventIds = allTurnObservations
-      .filter((turn) => turn.inputMode === "quest_action")
+      .filter((turn) => isQuestScenario(turn.scenario))
       .map(eventId)
       .filter(Boolean);
     const leakTerms = personaLeakTerms(activePersonas);
@@ -365,11 +350,13 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       resource_conflict_recorded: observation.resourceConflictRecorded,
       world_broadcast_or_constraint_visible:
         observation.worldBroadcastOrConstraintVisible,
-      exploration_label_visible: initialQuestSnapshots.every((snapshot) => snapshot.hasExploringLabel),
-      inline_quest_decision_visible: aQuestOfferTurn.hasInlineQuestDecision,
-      dynamic_quest_offered: aQuestOfferTurn.hasOfferedQuest || hasOfferedQuest(aQuestAfterOffer),
-      quest_accept_turn_resolved: Boolean(eventId(aQuestAcceptTurn)),
-      quest_chapter_visible: aQuestAcceptTurn.hasChapterSummary || aBodyProgressTurn.hasChapterSummary || hasQuestChapter(aQuestAfterBody),
+      starter_quest_visible: initialQuestSnapshots.every((snapshot) => snapshot.hasStarterQuest && snapshot.hasQuestProgress),
+      starter_quest_progressed: hasQuestProgressAtLeast(aQuestAfterAdvance, 1),
+      quest_context_visible:
+        aStarterOpeningTurn.hasChapterSummary ||
+        aStarterAdvanceTurn.hasChapterSummary ||
+        hasQuestChapter(aQuestAfterAdvance) ||
+        (hasQuestProgressAtLeast(aQuestAfterAdvance, 1) && Boolean(aStarterAdvanceTurn.latestNarrative.trim())),
       quest_lifecycle_events_same_world: observation.questLifecycleEventsSameWorld,
       entity_updates_field_present:
         allTurnObservations.length > 0 && allTurnObservations.every((turn) => turn.hasEntityUpdatesField),
@@ -379,7 +366,6 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         allTurnObservations.length > 0 && allTurnObservations.every(hasSituationMappingBeforeWorldProgress),
     };
     if (mode === "long") {
-      hardChecks.quest_prologue_visible = hasChapterKind(aQuestAfterAccept, "prologue");
       hardChecks.quest_left_and_paused = Boolean(aQuestAfterLeave && hasPausedQuestWithResumeAction(aQuestAfterLeave));
       hardChecks.post_leave_exploration_resolved =
         Boolean(postLeaveExploreTurn ? eventId(postLeaveExploreTurn) : "") &&
@@ -395,17 +381,18 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         personaId: a.persona.id,
         rating:
           hardChecks.shared_impact_visible &&
-          hardChecks.dynamic_quest_offered &&
-          hardChecks.quest_chapter_visible &&
+          hardChecks.starter_quest_visible &&
+          hardChecks.starter_quest_progressed &&
+          hardChecks.quest_context_visible &&
           (mode === "short" || hardChecks.quest_epilogue_visible)
             ? "good"
             : "needs work",
         observedImpact:
           mode === "long" && hardChecks.quest_epilogue_visible
-            ? "Long quest lifecycle reached pause, exploration, resume, and epilogue completion."
-            : hardChecks.dynamic_quest_offered && hardChecks.quest_chapter_visible
-              ? "Exploration produced an optional quest, and accepting it opened a chapter that remained visible."
-            : "The dynamic quest offer or accepted chapter was not visible enough in the probe.",
+            ? "Long starter quest lifecycle reached pause, exploration, resume, and epilogue completion."
+            : hardChecks.starter_quest_progressed && hardChecks.quest_context_visible
+              ? "The starter quest was active from session start, and a visible choice moved it into a readable chapter."
+            : "The starter quest did not become visible or progress clearly enough in the probe.",
         evidence: [
           ...novelLoverEventIds,
           ...epilogueProgressTurns.map(eventId).filter(Boolean),
@@ -533,18 +520,15 @@ async function writeFailureReport({
     shared_impact_visible: false,
     resource_conflict_recorded: false,
     world_broadcast_or_constraint_visible: false,
-    exploration_label_visible: false,
-    dynamic_quest_offered: false,
-    inline_quest_decision_visible: false,
-    quest_accept_turn_resolved: false,
-    quest_chapter_visible: false,
+    starter_quest_visible: false,
+    starter_quest_progressed: false,
+    quest_context_visible: false,
     quest_lifecycle_events_same_world: false,
     entity_updates_field_present: false,
     entity_materialization_completed: false,
     situation_mapping_before_world_progress: false,
   };
   if (mode === "long") {
-    hardChecks.quest_prologue_visible = false;
     hardChecks.quest_left_and_paused = false;
     hardChecks.post_leave_exploration_resolved = false;
     hardChecks.quest_resumed = false;
@@ -683,38 +667,17 @@ async function collectObservationSnapshot(
   };
 }
 
-async function waitForOfferedQuest(
-  request: APIRequestContext,
-  runtime: PlayerRuntime,
-  timeout: number,
-): Promise<Record<string, unknown>> {
-  let latest = await getSessionQuests(request, runtime.accessToken, runtime.sessionId);
-  await expect
-    .poll(
-      async () => {
-        latest = await getSessionQuests(request, runtime.accessToken, runtime.sessionId);
-        return hasOfferedQuest(latest);
-      },
-      { timeout, intervals: [2_000, 5_000, 10_000], message: "dynamic quest offer should appear in journal" },
-    )
-    .toBe(true);
-  return latest;
-}
-
 function questItems(payload: Record<string, unknown>): Record<string, unknown>[] {
   const rawItems = Array.isArray(payload.quests) ? payload.quests : Array.isArray(payload.items) ? payload.items : [];
   return rawItems.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
 }
 
-function hasOfferedQuest(payload: Record<string, unknown>): boolean {
-  return questItems(payload).some((item) => {
-    const actions = Array.isArray(item.available_actions) ? item.available_actions : [];
-    return item.status === "offered" && actions.includes("accept_quest");
-  });
-}
-
 function hasQuestChapter(payload: Record<string, unknown>): boolean {
   return questItems(payload).some((item) => Array.isArray(item.chapters) && item.chapters.length > 0);
+}
+
+function hasQuestProgressAtLeast(payload: Record<string, unknown>, minimum: number): boolean {
+  return questItems(payload).some((item) => Number(item.progress) >= minimum);
 }
 
 async function waitForQuestMatch(
@@ -744,12 +707,6 @@ function hasQuestAction(payload: Record<string, unknown>, action: string): boole
   });
 }
 
-function hasChapterKind(payload: Record<string, unknown>, chapterKind: string): boolean {
-  return questItems(payload).some((item) =>
-    questChapters(item).some((chapter) => chapter.chapter_kind === chapterKind),
-  );
-}
-
 function hasPausedQuestWithResumeAction(payload: Record<string, unknown>): boolean {
   return questItems(payload).some((item) => item.status === "paused" && questActions(item).includes("resume_quest"));
 }
@@ -762,6 +719,10 @@ function hasCompletedEpilogueQuest(payload: Record<string, unknown>): boolean {
   return questItems(payload).some(
     (item) => item.status === "completed" && questChapters(item).some((chapter) => chapter.chapter_kind === "epilogue"),
   );
+}
+
+function isQuestScenario(scenario: SwarmDecision["scenario"]): boolean {
+  return scenario.startsWith("starter-quest-") || scenario.startsWith("quest-");
 }
 
 function hasSituationMappingBeforeWorldProgress(turn: SwarmUiTurnObservation): boolean {

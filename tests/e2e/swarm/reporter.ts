@@ -541,9 +541,8 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
   const evaluationByScenario = new Map<SwarmDecision["scenario"], PersonaEvaluation>();
   for (const [scenario, evaluation] of [
     ["shared-impact", report.persona_experience_evaluation[0]],
-    ["quest-offer", report.persona_experience_evaluation[0]],
-    ["quest-accept", report.persona_experience_evaluation[0]],
-    ["quest-body-progress", report.persona_experience_evaluation[0]],
+    ["starter-quest-opening", report.persona_experience_evaluation[0]],
+    ["starter-quest-advance", report.persona_experience_evaluation[0]],
     ["quest-leave", report.persona_experience_evaluation[0]],
     ["post-leave-explore", report.persona_experience_evaluation[0]],
     ["quest-resume", report.persona_experience_evaluation[0]],
@@ -566,7 +565,7 @@ function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
       personaId: decision.personaId,
       personaLabel: personaById.get(decision.personaId)?.label ?? ja(decision.personaId),
       scenario: decision.scenario,
-      action: decision.questAction ?? decision.choiceId ?? decision.inputText ?? decision.inputMode,
+      action: decisionActionText(decision),
       expectedWorldImpact: decision.expectedWorldImpact,
       observedImpact: evaluation?.observedImpact ?? null,
       rating: evaluation?.rating ?? null,
@@ -581,14 +580,11 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
   if (scenario === "shared-impact") {
     return "shared_impact_visible";
   }
-  if (scenario === "quest-offer") {
-    return "dynamic_quest_offered";
+  if (scenario === "starter-quest-opening") {
+    return "starter_quest_visible";
   }
-  if (scenario === "quest-accept") {
-    return "quest_accept_turn_resolved";
-  }
-  if (scenario === "quest-body-progress") {
-    return "quest_chapter_visible";
+  if (scenario === "starter-quest-advance") {
+    return "starter_quest_progressed";
   }
   if (scenario === "quest-leave") {
     return "quest_left_and_paused";
@@ -613,6 +609,10 @@ function hardCheckForScenario(scenario: SwarmDecision["scenario"]): string {
 
 function storyObservationText(observation: RunStoryObservation): string {
   return `${observation.personaLabel}: ${ja(observation.scenario)}で${ja(observation.action)}を実行`;
+}
+
+function decisionActionText(decision: SwarmDecision): string {
+  return decision.questAction ?? decision.choiceSelection?.label ?? decision.inputText ?? decision.inputMode;
 }
 
 async function findLatestRunResultFile(runPath: string): Promise<string | null> {
@@ -1125,7 +1125,7 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
       (decision) =>
         `- ${ja(decision.personaId)}: シナリオ=${ja(decision.scenario)}; 入力=${ja(
           decision.inputMode,
-        )}; 行動=${ja(decision.questAction ?? decision.choiceId ?? decision.inputText ?? "")}; 理由=${ja(
+        )}; 行動=${ja(decisionActionText(decision))}; 理由=${ja(
           decision.reason,
         )}; 期待する世界影響=${ja(decision.expectedWorldImpact)}`,
     ),
@@ -1221,14 +1221,12 @@ const japaneseLabels: Record<string, string> = {
   shared_impact_visible: "共有世界への影響が観測可能",
   resource_conflict_recorded: "リソース競合が記録される",
   world_broadcast_or_constraint_visible: "世界イベントまたは制約が観測可能",
-  exploration_label_visible: "探索中表示が観測可能",
-  dynamic_quest_offered: "動的クエスト提示が観測可能",
-  quest_accept_turn_resolved: "クエスト受諾 turn が解決",
-  quest_chapter_visible: "クエスト chapter が観測可能",
+  starter_quest_visible: "starter quest が開始時点で観測可能",
+  starter_quest_progressed: "starter quest の進行が観測可能",
+  quest_context_visible: "クエスト文脈または進行が観測可能",
   quest_lifecycle_events_same_world: "クエスト lifecycle event が同一 world に属する",
   entity_updates_field_present: "turn.resolved の entity_updates 配線が観測可能",
   entity_materialization_completed: "entity_materialization phase が完了",
-  quest_prologue_visible: "クエスト prologue が観測可能",
   quest_left_and_paused: "クエスト離脱後 paused と再開操作が観測可能",
   post_leave_exploration_resolved: "クエスト離脱後の探索 turn が解決",
   quest_resumed: "クエスト再開が観測可能",
@@ -1236,9 +1234,8 @@ const japaneseLabels: Record<string, string> = {
   generated_entity_created: "生成entity作成が観測可能",
   generated_entity_reused: "生成entity再利用が観測可能",
   "shared-impact": "共有影響",
-  "quest-offer": "クエスト提示",
-  "quest-accept": "クエスト受諾",
-  "quest-body-progress": "クエスト進行",
+  "starter-quest-opening": "starter quest 初回行動",
+  "starter-quest-advance": "starter quest 進行",
   "quest-leave": "クエスト離脱",
   "post-leave-explore": "離脱後探索",
   "quest-resume": "クエスト再開",
@@ -1258,9 +1255,6 @@ const japaneseLabels: Record<string, string> = {
   ignore_quest: "クエスト無視",
   leave_quest: "クエスト離脱",
   resume_quest: "クエスト再開",
-  progress: "進行",
-  safe: "安全",
-  explore: "探索",
   good: "良好",
   acceptable: "許容",
   "needs work": "要改善",
@@ -1291,12 +1285,12 @@ const japaneseLabels: Record<string, string> = {
     "遅れて参加した後の追跡行動で、世界イベントまたは broadcast constraint を観測できた。",
   "Late join and follow-up reused a generated living entity in the same world.":
     "遅れて参加した後の追跡行動で、同じ世界内の生成済み生きたentity再利用を観測できた。",
-  "Exploration produced an optional quest, and accepting it opened a chapter that remained visible.":
-    "探索から任意クエストが提示され、受諾後の chapter が見える形で残った。",
-  "Long quest lifecycle reached pause, exploration, resume, and epilogue completion.":
-    "クエスト lifecycle が離脱、探索、再開、epilogue 完了まで到達した。",
-  "The dynamic quest offer or accepted chapter was not visible enough in the probe.":
-    "動的クエスト提示または受諾後 chapter の可視性が十分に確認できなかった。",
+  "The starter quest was active from session start, and a visible choice moved it into a readable chapter.":
+    "starter quest は session start 時点から active で、表示文面に基づく選択により読める chapter へ進んだ。",
+  "Long starter quest lifecycle reached pause, exploration, resume, and epilogue completion.":
+    "starter quest lifecycle が離脱、探索、再開、epilogue 完了まで到達した。",
+  "The starter quest did not become visible or progress clearly enough in the probe.":
+    "starter quest の可視性または進行が十分に確認できなかった。",
   "Late join and follow-up did not expose a world event or broadcast constraint.":
     "遅れて参加した後の追跡行動では、世界イベントまたは broadcast constraint を観測できなかった。",
 };

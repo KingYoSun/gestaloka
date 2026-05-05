@@ -65,7 +65,7 @@ Player UI:
 - `current-place-summary`, `current-chapter-summary`, `current-scene-summary`: 現在地と narrative 状態を確認する。
 - `active-quest`, `quest-progress`, `quest-stage`: quest 状態を確認する。
 - `local-figures-stream`, `nearby-routes-stream`, `recent-travel-history`: 移動と周辺情報を確認する。
-- `choice-list`, `choice-safe`, `choice-progress`, `choice-explore`: choice mode の操作対象。
+- `choice-list`: choice mode の選択肢一覧。各選択肢 button は `choice-<opaque id>` の `data-testid` を持つが、操作対象は固定IDではなく表示文面で選ぶ。
 - `toggle-free-text`, `turn-input`, `submit-turn`: free text mode の操作対象。
 - `inventory-stream`, `relationship-summary`, `recent-world-beats`, `recent-scene-history`: turn 結果の反映を確認する。
 - `ops-stream`: `session.connected`, `idle.updated`, world pack 名、不要な context 表示がないことを確認する。
@@ -111,7 +111,7 @@ Admin の通常画面では raw JSON dump、raw trace stream、低レベル proj
 7. `sp-purchase-button` を押し、`sp-purchase-dialog` に現在の有償SP / 無償SP、5段階の購入SP選択肢、購入ボタン、キャンセル、右上の閉じるボタンがあることを確認する。
 8. `sp-purchase-option-5` を選び購入ボタンを押す。mock購入完了後、`sp-purchase-complete` が表示され、`paid-sp-balance` が購入前より 5 増え、`bonus-sp-balance` は変わらないことを確認する。Dialog を閉じた後も行動入力欄の `sp-bucket-balance` が更新後の値を表示することを確認する。
 9. `toggle-free-text` を押し、`turn-cost-note` が自由入力の消費予定SPに切り替わること、補足が tooltip に留まることを確認する。その後 `toggle-choice-mode` で choice mode に戻す。
-10. `quest-progress` が `2/2` になるまで `choice-progress` を最大 4 回実行し、`Visitor Log Seal`、route unlock effect、Visitor Log Seal / Oblivion Regions / survey 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
+10. `quest-progress` が `2/2` になるまで、表示文面が「報告」「完了」「確定」「次へ進む」などの進行を示す選択肢を最大 4 回実行し、`Visitor Log Seal`、route unlock effect、Visitor Log Seal / Oblivion Regions / survey 系 choice を確認する。live provider testplay では生成揺れを前提に、固定クリック数ではなく状態到達で判断する。
 11. `Breach Restoration` または `oblivion_survey` が表示されるまで、到達済み choice を最大 3 回選び、used 表示と `Oblivion Regions` route を確認する。
 12. `Oblivion Regions` への travel history または current location 更新が観測できるまで、移動 affordance のある choice を最大 3 回実行し、Shared World Core の反映、faction / relationship / world beats のいずれかの更新を確認する。公式 smoke 判定は引き続き stub E2E を正とし、live provider の手動観測は到達状態と揺れを併記する。
 
