@@ -138,25 +138,25 @@ function FirstView({ runtime }: PlayerPageProps) {
   return (
     <section className="grid min-h-[calc(100vh-5rem)] place-items-center py-8" aria-label={t("player.labels.start")}>
       <div className="grid w-full min-w-0 justify-items-center gap-5 text-center">
-        <div className="grid min-w-0 justify-items-center gap-2">
-          <h1
-            className="text-2xl font-bold lowercase leading-8 tracking-[0.16em] text-foreground max-[480px]:text-xl max-[480px]:leading-7"
-            data-testid="first-view-brand-title"
-          >
-            {t("common.brandWordmark")}
-          </h1>
-          <p className="text-xs font-semibold leading-[18px] tracking-[0.14em] text-muted-foreground" data-testid="first-view-brand-tagline">
-            {t("common.tagline")}
-          </p>
-        </div>
         <img
           className="brand-mark size-36 object-contain max-[480px]:size-28"
           src="/brand/logo.png"
           alt=""
           aria-hidden="true"
         />
-        <div className="grid min-w-0 justify-items-center gap-3">
-          <div className="h-0.5 w-10 rounded-full bg-primary" aria-hidden="true" />
+        <div className="grid min-w-0 justify-items-center gap-5">
+          <h1
+            className="text-4xl font-bold lowercase leading-8 tracking-[0.16em] text-foreground max-[480px]:text-xl max-[480px]:leading-7"
+            data-testid="first-view-brand-title"
+          >
+            {t("common.brandWordmark")}
+          </h1>
+          <div className="grid min-w-0 justify-items-center gap-3">
+            <div className="h-0.5 w-10 rounded-full bg-primary" aria-hidden="true" />
+          </div>
+          <p className="text-xl font-semibold leading-[18px] tracking-[0.14em] text-muted-foreground" data-testid="first-view-brand-tagline">
+            {t("common.tagline")}
+          </p>
         </div>
         <div className="mt-3 grid w-full max-w-sm min-w-0 gap-3 max-[480px]:max-w-none">
           <Button data-testid="sign-in" onClick={runtime.handleLogin} disabled={!runtime.ready}>
