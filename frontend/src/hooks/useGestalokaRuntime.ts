@@ -123,8 +123,8 @@ function storyItemFromTurnResponse(response: TurnResponse): StoryHistoryItem {
     canonical_sequence: null,
     occurred_at: new Date().toISOString(),
     narrative: response.narrative,
-    reaction: response.npc_reaction,
-    consequence: response.consequence_summary || response.scene_summary || "",
+    reaction: "",
+    consequence: "",
     scene_summary: response.scene_summary,
   };
 }
@@ -590,11 +590,11 @@ export function useGestalokaRuntime() {
     }
   }, [opsWorldId, opsPackFilter, opsTemplateFilter, opsWorlds, session?.world_id]);
 
-  function applyResolvedTurnResponse(response: TurnResponse) {
+function applyResolvedTurnResponse(response: TurnResponse) {
     const completedQuest = [...response.quest_updates].reverse().find((quest) => quest.status === "completed") ?? null;
     setLatestNarrative(response.narrative);
-    setLatestReaction(response.npc_reaction);
-    setLatestConsequenceSummary(response.consequence_summary || response.scene_summary || "");
+    setLatestReaction("");
+    setLatestConsequenceSummary("");
     if (completedQuest) {
       setQuestCompletionNotice({ quest: completedQuest, turnId: response.turn_id });
     }
@@ -711,8 +711,28 @@ export function useGestalokaRuntime() {
         }
       }
       if (parsed.event === "turn.failed") {
-        const detail = typeof parsed.data.detail === "string" ? parsed.data.detail : t("errors.turnFailed");
+        const detail =
+          typeof parsed.data.system_message === "string"
+            ? parsed.data.system_message
+            : typeof parsed.data.detail === "string"
+              ? parsed.data.detail
+              : t("errors.turnFailed");
         setError(detail);
+        const balance = typeof parsed.data.sp_balance === "number" ? parsed.data.sp_balance : null;
+        const paidSp = typeof parsed.data.paid_sp === "number" ? parsed.data.paid_sp : null;
+        const bonusSp = typeof parsed.data.bonus_sp === "number" ? parsed.data.bonus_sp : null;
+        if (balance !== null && paidSp !== null && bonusSp !== null) {
+          setWallet((current) =>
+            current
+              ? {
+                  ...current,
+                  balance,
+                  paid_sp: paidSp,
+                  bonus_sp: bonusSp,
+                }
+              : current,
+          );
+        }
         setTurnPending(false);
         setTurnProgressPhase("idle");
         setTurnProgressStartedAt(null);

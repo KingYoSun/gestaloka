@@ -47,7 +47,14 @@ def _receive_until(websocket, event_name: str, *, limit: int = 64) -> list[dict[
     raise AssertionError(f"{event_name} was not received")
 
 
-def _post_turn_and_wait(client, session_id: str, auth_headers: dict[str, str], player_action_text: str) -> dict[str, Any]:
+def _post_turn_and_wait(
+    client,
+    session_id: str,
+    auth_headers: dict[str, str],
+    player_action_text: str,
+    *,
+    expected_event: str = "turn.resolved",
+) -> dict[str, Any]:
     with client.websocket_connect(f"/ws/sessions/{session_id}?token=dev-local-token") as websocket:
         response = client.post(
             "/turns",
@@ -63,7 +70,7 @@ def _post_turn_and_wait(client, session_id: str, auth_headers: dict[str, str], p
                 break
         else:
             raise AssertionError("turn.resolved or turn.failed was not received")
-    assert messages[-1]["event"] == "turn.resolved", messages[-1]
+    assert messages[-1]["event"] == expected_event, messages[-1]
     return messages[-1]["data"]
 
 
@@ -154,6 +161,9 @@ def test_public_ai_gm_prompt_input_does_not_leak_internal_metadata(client, conta
     assert library_exit["source_name"] == "Universal Library"
     assert "Universal Library" in library_exit["aliases_by_language"]["en"]
     assert "万象図書館" in library_exit["aliases_by_language"]["ja"]
+    assert "historian AI" in library_exit["destination_description"]
+    assert any("歴史家AI" in item["name"] for item in library_exit["arrival_people"])
+    assert any("visitor log" in item.lower() or "来訪者ログ" in item for item in library_exit["related_memory_snippets"])
 
 
 def test_library_opening_action_moves_by_public_alias_without_mechanical_fallback(client, container, auth_headers):
@@ -167,15 +177,14 @@ def test_library_opening_action_moves_by_public_alias_without_mechanical_fallbac
             raw_output={
                 "action_interpretation": "ヌートは万象図書館で古い記録と来訪者ログを照合しようとしている。",
                 "narrative": "ヌートは万象図書館へ向かい、古い記録と来訪者ログを照合しようとした。",
-                "npc_reaction": "図書館の司書たちは、来訪者が正史と到着ログの整合を確かめる手続きを静かに見守る。",
                 "current_situation": "万象図書館では、古い記録と来訪者ログの照合端末が使える状態で開いている。",
                 "current_location_name": "万象図書館 / 来訪者ログ",
                 "suggested_actions": [
-                    {"label": "歴史家AI端末で到着ログを検索する", "summary": "図書館で来訪者ログの記録位置を確かめる。"},
-                    {"label": "正史索引と来訪者ログの差分を確認する", "summary": "古い記録と到着ログが食い違う箇所を探す。"},
+                    "歴史家AI端末で到着ログを検索する",
+                    "正史索引と来訪者ログの差分を確認する",
                     {"label": "確認した記録をカナタに伝えに戻る", "summary": "図書館で得た情報をネクサス市側の案内役へ持ち帰る。"},
                 ],
-                "consequence_summary": "ヌートは万象図書館に到着し、記録照合の入口を確認した。",
+                "internal_summary": "ヌートは万象図書館に到着し、記録照合の入口を確認した。",
                 "world_tags": ["investigate"],
                 "consequence_tags": ["careful_observation"],
                 "scene_tone": "measured",
@@ -192,11 +201,12 @@ def test_library_opening_action_moves_by_public_alias_without_mechanical_fallbac
                         "kind": "location",
                         "surface_text": "万象図書館 / 来訪者ログ",
                         "language": "ja",
-                        "role": "destination",
+                        "role": "archive",
                         "key_candidate": "universal_library",
                         "confidence": 0.8,
                     }
                 ],
+                "present_people": [{"name": "万象図書館の歴史家AI"}],
             },
             provider_name="test",
             provider_response_id=None,
@@ -221,7 +231,7 @@ def test_library_opening_action_moves_by_public_alias_without_mechanical_fallbac
     assert [item["label"] for item in payload["suggested_actions"]] != opening_labels
     assert "は「" not in payload["narrative"]
     assert "を試みた" not in payload["narrative"]
-    assert "図書館" in payload["npc_reaction"]
+    assert payload["npc_reaction"] == ""
 
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
@@ -235,6 +245,8 @@ def test_library_opening_action_moves_by_public_alias_without_mechanical_fallbac
         assert location.state["key"] == "universal_library"
         assert turn.resolved_output["interpreted_intent"]["language_context"]["play_language"] == "ja"
         assert turn.resolved_output["interpreted_intent"]["public_claims"][0]["surface_text"] == "万象図書館 / 来訪者ログ"
+        assert turn.resolved_output["interpreted_intent"]["public_claims"][0]["role"] == "mentioned"
+        assert "string suggested_action was normalized to object" in turn.resolved_output["interpreted_intent"]["normalization_warnings"]
 
 
 def test_public_claim_key_candidate_cannot_move_without_matching_surface_text(client, container, auth_headers):
@@ -242,7 +254,7 @@ def test_public_claim_key_candidate_cannot_move_without_matching_surface_text(cl
 
     def bad_candidate_generate(**kwargs):
         prompt = kwargs["prompt"]
-        if prompt.prompt_id != "session.turn_resolution":
+        if prompt.prompt_id not in {"session.turn_resolution", "session.turn_resolution_repair"}:
             return original_generate(**kwargs)
         return ProviderResponse(
             raw_output={
@@ -287,7 +299,13 @@ def test_public_claim_key_candidate_cannot_move_without_matching_surface_text(cl
         assert session_response.status_code == 200
         session_id = session_response.json()["session_id"]
         before_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
-        payload = _post_turn_and_wait(client, session_id, auth_headers, "虚無領域へ向かう")
+        payload = _post_turn_and_wait(
+            client,
+            session_id,
+            auth_headers,
+            "虚無領域へ向かう",
+            expected_event="turn.failed",
+        )
         after_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
     finally:
         container.model_router.provider.generate = original_generate
@@ -296,13 +314,81 @@ def test_public_claim_key_candidate_cannot_move_without_matching_surface_text(cl
     assert payload["current_location"]["key"] == "nexus_city"
     assert after_state["current_location"]["key"] == "nexus_city"
     assert payload["location_updates"] == []
-    assert "虚無領域の案内人" not in payload["npc_reaction"]
+    assert payload["system_message"] == "アクションに失敗しました。SPは返却されました。"
+    assert payload["failure"]["reason"] == "repair_failed"
+    assert payload["refund_ledger_id"]
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
         assert turn is not None
-        assert turn.resolved_output["accepted_state_changes"] == []
+        assert turn.resolved_output["status"] == "failed"
         assert turn.resolved_output["rejected_claims"]
-        assert turn.resolved_output["interpreted_intent"]["public_claims"][0]["key_candidate"] == "universal_library"
+
+
+def test_public_visible_item_reference_is_not_unowned_item_use_failure(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+
+    def visible_record_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id != "session.turn_resolution":
+            return original_generate(**kwargs)
+        return ProviderResponse(
+            raw_output={
+                "action_interpretation": "ヌートは来訪者ログ登録を最後まで進めようとしている。",
+                "narrative": "ヌートは公開証言ホールで確認済みの来訪者ログを確定し、案内担当へ完了報告を届けた。",
+                "current_situation": "ネクサス市の公開証言ホールでは、到着ログの確認結果が登録手続きに反映されている。",
+                "current_location_name": "ネクサス市",
+                "suggested_actions": [
+                    {"label": "カナタに登録結果を確認する", "summary": "登録がどの制度へ接続されたかを尋ねる。"},
+                    {"label": "万象図書館へ記録を照合しに行く", "summary": "公開された登録結果と正史の整合を見る。"},
+                ],
+                "internal_summary": "ヌートは公開証言ホールで来訪者ログ登録を進めた。",
+                "world_tags": ["aid_local"],
+                "consequence_tags": ["trust_gain"],
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": "ヌートは来訪者ログ登録の確認結果をまとめた。", "salience": 0.7}],
+                "language_context": {
+                    "pack_source_language": "en",
+                    "play_language": "ja",
+                    "output_language_requested": "ja",
+                },
+                "public_claims": [
+                    {"kind": "item", "surface_text": "来訪者ログ", "language": "ja", "role": "used"},
+                    {"kind": "actor", "surface_text": "ネクサス案内担当カナタ", "language": "ja", "role": "present"},
+                ],
+                "present_people": ["ネクサス案内担当カナタ"],
+                "visible_items": ["来訪者ログ"],
+                "used_item_names": ["来訪者ログ"],
+            },
+            provider_name="test",
+            provider_response_id=None,
+        )
+
+    container.model_router.provider.generate = visible_record_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        payload = _post_turn_and_wait(
+            client,
+            session_response.json()["session_id"],
+            auth_headers,
+            "再開した来訪者ログ登録を最後まで手伝い、公開証言ホールで確認済みログを確定し、案内担当へ完了報告を届ける。",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    assert payload["event_id"]
+    assert payload.get("system_message") is None
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert not [
+            item
+            for item in turn.resolved_output["rejected_claims"]
+            if item.get("claim_kind") == "item_use" and item.get("claim") == "来訪者ログ"
+        ]
 
 
 def test_harness_rejects_unavailable_location_claim_without_moving_player(client, container, auth_headers):
@@ -310,7 +396,7 @@ def test_harness_rejects_unavailable_location_claim_without_moving_player(client
 
     def impossible_location_generate(**kwargs):
         prompt = kwargs["prompt"]
-        if prompt.prompt_id != "session.turn_resolution":
+        if prompt.prompt_id not in {"session.turn_resolution", "session.turn_resolution_repair"}:
             return original_generate(**kwargs)
         return ProviderResponse(
             raw_output={
@@ -342,7 +428,13 @@ def test_harness_rejects_unavailable_location_claim_without_moving_player(client
         session_id = session_response.json()["session_id"]
 
         before_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
-        payload = _post_turn_and_wait(client, session_id, auth_headers, "周囲を確認する")
+        payload = _post_turn_and_wait(
+            client,
+            session_id,
+            auth_headers,
+            "周囲を確認する",
+            expected_event="turn.failed",
+        )
         after_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
     finally:
         container.model_router.provider.generate = original_generate
@@ -350,16 +442,13 @@ def test_harness_rejects_unavailable_location_claim_without_moving_player(client
     assert payload["current_location"]["name"] == before_state["current_location"]["name"]
     assert after_state["current_location"]["name"] == before_state["current_location"]["name"]
     assert payload["location_updates"] == []
-    assert payload["interpreted_intent"]["source"] == "public_ai_gm"
-    assert "は「" not in payload["narrative"]
-    assert "を試みた" not in payload["narrative"]
-    assert "番人" not in payload["npc_reaction"]
-    assert "Oblivion Regionsにいる" not in payload["npc_reaction"]
+    assert payload["system_message"] == "アクションに失敗しました。SPは返却されました。"
+    assert payload["failure"]["reason"] == "repair_failed"
 
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
         memories = db.execute(select(Memory).where(Memory.source_event_id == payload["event_id"])).scalars().all()
         assert turn is not None
+        assert turn.resolved_output["status"] == "failed"
         assert turn.resolved_output["rejected_claims"]
-        assert turn.resolved_output["accepted_state_changes"] == []
         assert all("番人" not in memory.text for memory in memories)

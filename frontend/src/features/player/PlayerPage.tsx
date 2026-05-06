@@ -1052,9 +1052,7 @@ function StoryHistory({ runtime }: PlayerPageProps) {
   const latestStory = storyItems[storyItems.length - 1] ?? null;
   const latestNarrativeLength = latestStory?.narrative.length ?? 0;
   const latestStoryIsNewTurn = Boolean(latestStory?.turn_id && latestStory.turn_id === runtime.animatedTurnId);
-  const latestAnimatedTextLength = Array.from(
-    `${latestStory?.narrative || latestStory?.scene_summary || ""}${latestStory?.reaction ?? ""}${latestStory?.consequence ?? ""}`,
-  ).length;
+  const latestAnimatedTextLength = Array.from(latestStory?.narrative || latestStory?.scene_summary || "").length;
   const heightClass =
     heightPreset === "small"
       ? "h-[min(42vh,360px)]"
@@ -1168,8 +1166,6 @@ function StoryHistory({ runtime }: PlayerPageProps) {
                 latest={latest}
                 showGeneratingIndicator={item.event_id === "story-generating-pending"}
                 animateNarrative={animateLatestStory}
-                animateReaction={animateLatestStory}
-                animateConsequence={animateLatestStory}
               />
             );
           })}
@@ -1202,21 +1198,16 @@ function StoryHistory({ runtime }: PlayerPageProps) {
 }
 
 function StoryEntry({
-  animateConsequence,
   animateNarrative,
-  animateReaction,
   item,
   latest,
   showGeneratingIndicator,
 }: {
-  animateConsequence: boolean;
   animateNarrative: boolean;
-  animateReaction: boolean;
   item: StoryHistoryItem;
   latest: boolean;
   showGeneratingIndicator: boolean;
 }) {
-  const { t } = useTranslation();
   const animationBaseKey = item.turn_id || item.event_id || item.occurred_at;
   return (
     <article className="grid gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
@@ -1229,18 +1220,6 @@ function StoryEntry({
         />
       ) : null}
       {showGeneratingIndicator ? <GeneratingStoryIndicator /> : null}
-      {item.reaction ? (
-        <div className="grid gap-2">
-          <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.reaction")}</h2>
-          <StoryText text={item.reaction} animate={animateReaction} animationKey={`${animationBaseKey}:reaction`} />
-        </div>
-      ) : null}
-      {item.consequence ? (
-        <div className="grid gap-2">
-          <h2 className="text-base font-semibold leading-6 text-foreground">{t("player.story.consequence")}</h2>
-          <StoryText text={item.consequence} animate={animateConsequence} animationKey={`${animationBaseKey}:consequence`} />
-        </div>
-      ) : null}
     </article>
   );
 }

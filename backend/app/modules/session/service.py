@@ -5,7 +5,7 @@ import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -18,6 +18,8 @@ from app.models.entities import (
     Event,
     LLMRun,
     Location,
+    Memory,
+    NPCProfile,
     OutboxEvent,
     PlayLocalizedTextCache,
     PlayerProfile,
@@ -28,6 +30,7 @@ from app.models.entities import (
     new_id,
 )
 from app.modules.world_pack.service import normalize_language_tag, resolve_world_pack
+from app.modules.world_state.ambient import list_local_figures
 from app.modules.actor.service import (
     ensure_relationship,
     get_player_profile,
@@ -75,6 +78,7 @@ from app.modules.world_state.service import (
     ensure_world_slice_seed,
     get_location_summary,
     get_location_by_key,
+    list_nearby_routes,
     materialize_state_drafts,
     quest_offer_repeats_resolution,
     record_quest_resolution_hint,
@@ -1128,6 +1132,39 @@ def _text_mentions_public_alias(text: str, aliases: list[str]) -> bool:
     return any(alias and _normalize_public_claim_text(alias) in normalized_text for alias in aliases)
 
 
+_HARD_ITEM_USE_MARKERS = (
+    "使う",
+    "使った",
+    "使用",
+    "起動",
+    "消費",
+    "装備",
+    "取り出",
+    "掲げ",
+    "アイテム",
+    "道具",
+    "所持",
+    "手持ち",
+    "activate",
+    "activated",
+    "consume",
+    "consumed",
+    "equip",
+    "equipped",
+    "inventory",
+    "item",
+    "use",
+    "used",
+)
+
+
+def _requires_owned_item_for_public_use_claim(item_name: str, text_evidence: str) -> bool:
+    if not item_name or not _text_mentions_public_alias(text_evidence, [item_name]):
+        return False
+    evidence = str(text_evidence or "").casefold()
+    return any(marker in evidence for marker in _HARD_ITEM_USE_MARKERS)
+
+
 def _flatten_public_aliases(value: Any) -> list[str]:
     if isinstance(value, dict):
         aliases: list[Any] = []
@@ -1405,6 +1442,256 @@ def _match_visible_route_by_public_text(
     return None
 
 
+def _visible_route_destination_id(route: dict[str, Any]) -> str:
+    return str(route.get("destination_id") or ((route.get("to_location") or {}).get("id") if isinstance(route.get("to_location"), dict) else "") or "").strip()
+
+
+def _preprocessed_memory_snippets_for_location(
+    db: Session,
+    *,
+    world_id: str,
+    location_id: str,
+    limit: int = 3,
+) -> list[str]:
+    rows = db.execute(
+        select(Memory)
+        .where(
+            Memory.world_id == world_id,
+            Memory.location_id == location_id,
+            Memory.embedding_status == "ready",
+        )
+        .order_by(Memory.salience.desc(), Memory.created_at.asc(), Memory.id.asc())
+        .limit(limit)
+    ).scalars()
+    snippets: list[str] = []
+    for memory in rows:
+        text = " ".join(str(memory.text or "").split()).strip()
+        if text:
+            snippets.append(text[:700])
+    return snippets
+
+
+def _public_actor_memory_snippets_for_location(
+    db: Session,
+    *,
+    world_id: str,
+    location_id: str,
+    limit: int = 2,
+) -> list[str]:
+    rows = db.execute(
+        select(Actor, NPCProfile)
+        .join(NPCProfile, (NPCProfile.actor_id == Actor.id) & (NPCProfile.world_id == Actor.world_id))
+        .where(
+            Actor.world_id == world_id,
+            Actor.actor_type == "npc",
+            Actor.current_location_id == location_id,
+        )
+        .order_by(Actor.created_at.asc(), Actor.id.asc())
+        .limit(limit)
+    ).all()
+    snippets: list[str] = []
+    for actor, profile in rows:
+        goals = profile.goals if isinstance(profile.goals, dict) else {}
+        goal_text = "; ".join(f"{key}: {value}" for key, value in goals.items() if str(value).strip())
+        text = f"NPC {actor.display_name}: {profile.personality}."
+        if goal_text:
+            text = f"{text} Goals: {goal_text}"
+        snippets.append(" ".join(text.split())[:700])
+    return snippets
+
+
+def _destination_opportunities_for_route(db: Session, *, world_id: str, destination_id: str) -> list[dict[str, str]]:
+    actions: list[dict[str, str]] = []
+    for route in list_nearby_routes(db, world_id, destination_id):
+        if not isinstance(route, dict) or not bool(route.get("available")):
+            continue
+        destination_name = str(route.get("destination_name") or "").strip()
+        if not destination_name:
+            continue
+        actions.append(
+            {
+                "label": f"{destination_name}へ向かう",
+                "summary": str(route.get("summary") or "見えている出口を使って次の場所へ移る。").strip(),
+            }
+        )
+        if len(actions) >= 3:
+            break
+    return actions
+
+
+def _public_alias_map_for_text(db: Session, world_id: str, text: str) -> dict[str, list[str]]:
+    aliases_by_language: dict[str, list[str]] = {}
+    for language, alias in _public_glossary_aliases_for_text(db, world_id, text):
+        alias_text = str(alias or "").strip()
+        language_key = str(language or "unknown").strip() or "unknown"
+        if not alias_text:
+            continue
+        bucket = aliases_by_language.setdefault(language_key, [])
+        if alias_text not in bucket:
+            bucket.append(alias_text)
+    return aliases_by_language
+
+
+def _enrich_public_figures_with_aliases(
+    db: Session,
+    *,
+    world_id: str,
+    figures: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    enriched_figures: list[dict[str, Any]] = []
+    for figure in figures:
+        if not isinstance(figure, dict):
+            continue
+        source_name = str(figure.get("source_name") or figure.get("display_name") or figure.get("name") or "").strip()
+        if not source_name:
+            enriched_figures.append(dict(figure))
+            continue
+        aliases = _public_alias_map_for_text(db, world_id, source_name)
+        enriched_figures.append(
+            {
+                **figure,
+                "source_name": source_name,
+                "public_aliases": aliases,
+            }
+        )
+    return enriched_figures
+
+
+def _enrich_public_turn_session_state(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    session_state: dict[str, Any],
+) -> dict[str, Any]:
+    local_figures = _enrich_public_figures_with_aliases(
+        db,
+        world_id=world_id,
+        figures=session_state.get("local_figures") or session_state.get("plaza_figures") or [],
+    )
+    enriched_routes: list[dict[str, Any]] = []
+    for route in session_state.get("nearby_routes") or []:
+        if not isinstance(route, dict):
+            continue
+        enriched = dict(route)
+        destination_id = _visible_route_destination_id(route)
+        destination = db.execute(
+            select(Location).where(Location.world_id == world_id, Location.id == destination_id)
+        ).scalar_one_or_none() if destination_id else None
+        if destination is not None:
+            enriched["destination_description"] = destination.description
+            arrival_people = _enrich_public_figures_with_aliases(
+                db,
+                world_id=world_id,
+                figures=list_local_figures(db, world_id, actor_id, destination.id),
+            )
+            enriched["arrival_people"] = arrival_people
+            enriched["arrival_items"] = []
+            enriched["destination_opportunities"] = _destination_opportunities_for_route(
+                db,
+                world_id=world_id,
+                destination_id=destination.id,
+            )
+            related_memory_snippets = _preprocessed_memory_snippets_for_location(
+                db,
+                world_id=world_id,
+                location_id=destination.id,
+            )
+            if not related_memory_snippets:
+                related_memory_snippets = _public_actor_memory_snippets_for_location(
+                    db,
+                    world_id=world_id,
+                    location_id=destination.id,
+                )
+            enriched["related_memory_snippets"] = related_memory_snippets
+        enriched_routes.append(enriched)
+    return {**session_state, "local_figures": local_figures, "plaza_figures": local_figures, "nearby_routes": enriched_routes}
+
+
+def _retrieval_query_for_public_turn(
+    *,
+    input_text: str,
+    session_state: dict[str, Any],
+    detected_route: dict[str, Any] | None,
+) -> str:
+    lines = [input_text.strip()]
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    if isinstance(current_location, dict):
+        name = str(current_location.get("name") or "").strip()
+        description = str(current_location.get("description") or "").strip()
+        if name:
+            lines.append(f"Current location: {name}")
+        if description:
+            lines.append(description)
+    for quest in (session_state.get("quests") or [])[:2]:
+        if not isinstance(quest, dict):
+            continue
+        title = str(quest.get("title") or "").strip()
+        summary = str(quest.get("description") or quest.get("latest_summary") or "").strip()
+        status_text = str(quest.get("status") or "").strip()
+        if title and status_text in {"offered", "active", "paused"}:
+            lines.append(f"Active objective: {title}. {summary}".strip())
+    route = detected_route if isinstance(detected_route, dict) else {}
+    if route:
+        destination = str(route.get("destination_name") or "").strip()
+        source_name = str(route.get("destination_source_name") or "").strip()
+        summary = str(route.get("summary") or "").strip()
+        aliases = _flatten_public_aliases(route.get("destination_aliases"))
+        if destination:
+            lines.append(f"Intended visible destination: {destination}")
+        if source_name:
+            lines.append(source_name)
+        if aliases:
+            lines.append("Destination aliases: " + ", ".join(aliases[:6]))
+        if summary:
+            lines.append(summary)
+        for snippet in route.get("related_memory_snippets") or []:
+            if str(snippet).strip():
+                lines.append(str(snippet).strip())
+    return "\n".join(line for line in lines if line)
+
+
+FORBIDDEN_PLAYER_TEXT_TOKENS = {
+    "choice_id",
+    "action_kind",
+    "action_type",
+    "target",
+    "travel_target_key",
+    "route_key",
+    "destination_key",
+    "item_id",
+    "quest_assignment_id",
+    "template_key",
+    "pack_id",
+    "world_template_id",
+    "actor_id",
+    "location_id",
+    "session_id",
+    "turn_id",
+}
+
+
+def _player_facing_metadata_violations(payload: Any) -> list[dict[str, str]]:
+    text_parts = [
+        str(getattr(payload, "narrative", "") or ""),
+        str(getattr(payload, "current_situation", "") or ""),
+        " ".join(str(getattr(item, "label", "") or "") for item in getattr(payload, "next_choices", []) or []),
+    ]
+    text = "\n".join(text_parts)
+    lowered = text.lower()
+    violations = []
+    for token in sorted(FORBIDDEN_PLAYER_TEXT_TOKENS):
+        if token.lower() in lowered:
+            violations.append(
+                {
+                    "claim_kind": "metadata_leak",
+                    "claim": token,
+                    "reason": "Player-facing text exposed an internal metadata term.",
+                }
+            )
+    return violations
+
+
 def _naturalized_action_attempt(input_text: str) -> str:
     text = " ".join(str(input_text or "").split()).strip("。.")
     if "。" in text:
@@ -1427,6 +1714,7 @@ def _apply_public_ai_gm_harness(
     input_text: str,
     payload: Any,
     session_state: dict[str, Any],
+    apply_changes: bool = True,
 ) -> dict[str, Any]:
     interpreted = payload.interpreted_intent if isinstance(payload.interpreted_intent, dict) else {}
     text_evidence = " ".join(
@@ -1444,6 +1732,7 @@ def _apply_public_ai_gm_harness(
     faction_updates: list[dict[str, Any]] = []
     memory_drafts: list[dict[str, Any]] = []
     travel_summary: str | None = None
+    effective_location_id = player_actor.current_location_id or prepared_location_id
 
     current_location = session_state.get("current_location") or session_state.get("location") or {}
     current_location_name = str((current_location if isinstance(current_location, dict) else {}).get("name") or "").strip()
@@ -1472,9 +1761,10 @@ def _apply_public_ai_gm_harness(
         location_key=current_location_key,
         location_name=current_location_name,
     )
+    rejected.extend(_player_facing_metadata_violations(payload))
 
     def apply_matched_route(route: dict[str, Any], *, claim_name: str) -> None:
-        nonlocal travel_summary
+        nonlocal travel_summary, effective_location_id
 
         destination_key = str(route.get("destination_key") or "").strip()
         destination = get_location_by_key(db, game_session.world_id, destination_key) if destination_key else None
@@ -1484,6 +1774,36 @@ def _apply_public_ai_gm_harness(
                     "claim_kind": "location",
                     "claim": claim_name,
                     "reason": "The matched public route could not be resolved internally.",
+                }
+            )
+            return
+        if not bool(route.get("available", True)):
+            rejected.append(
+                {
+                    "claim_kind": "location",
+                    "claim": claim_name,
+                    "reason": "The matched public route is not currently open.",
+                }
+            )
+            return
+        if not apply_changes:
+            summary = str(route.get("summary") or f"{destination.name}へ移動する。").strip()
+            location_updates.append(
+                {
+                    "from_location": get_location_summary(db, game_session.world_id, prepared_location_id),
+                    "to_location": get_location_summary(db, game_session.world_id, destination.id),
+                    "summary": summary,
+                    "action": "arrived",
+                }
+            )
+            travel_summary = summary
+            effective_location_id = destination.id
+            accepted.append(
+                {
+                    "change_kind": "location",
+                    "from": current_location_name,
+                    "to": destination.name,
+                    "summary": summary,
                 }
             )
             return
@@ -1514,6 +1834,7 @@ def _apply_public_ai_gm_harness(
                 "summary": outcome.travel_summary,
             }
         )
+        effective_location_id = destination.id
 
     if claimed_location_name and current_location_aliases and not _text_mentions_public_alias(claimed_location_name, current_location_aliases):
         matched_route = _match_visible_route_by_public_text(
@@ -1564,11 +1885,22 @@ def _apply_public_ai_gm_harness(
             None,
         )
         if matched_item is None:
+            if not _requires_owned_item_for_public_use_claim(used_item_name, text_evidence):
+                continue
             rejected.append(
                 {
                     "claim_kind": "item_use",
                     "claim": used_item_name,
                     "reason": "No owned usable visible item matched the public item-use claim.",
+                }
+            )
+            continue
+        if not apply_changes:
+            accepted.append(
+                {
+                    "change_kind": "item_use",
+                    "item_name": str(matched_item.get("name") or used_item_name),
+                    "summary": f"{matched_item.get('name') or used_item_name} can be used from the visible inventory.",
                 }
             )
             continue
@@ -1602,6 +1934,47 @@ def _apply_public_ai_gm_harness(
                 }
             )
 
+    visible_people_at_effective_location = _enrich_public_figures_with_aliases(
+        db,
+        world_id=game_session.world_id,
+        figures=list_local_figures(
+            db,
+            game_session.world_id,
+            player_actor.id,
+            effective_location_id,
+        ),
+    )
+    visible_people_names: list[str] = []
+    for item in visible_people_at_effective_location:
+        if not isinstance(item, dict):
+            continue
+        visible_people_names.extend(
+            _unique_public_aliases(
+                [
+                    item.get("source_name"),
+                    item.get("display_name"),
+                    item.get("name"),
+                    *_flatten_public_aliases(item.get("public_aliases")),
+                ]
+            )
+        )
+    present_people = [str(item).strip() for item in interpreted.get("present_people") or [] if str(item).strip()]
+    for claim in public_claims:
+        if str(claim.get("kind") or "") == "actor" and str(claim.get("role") or "") == "present":
+            surface_text = str(claim.get("surface_text") or "").strip()
+            if surface_text:
+                present_people.append(surface_text)
+    for person_name in _unique_public_aliases(present_people):
+        if visible_people_names and any(_name_matches_claim(visible_name, person_name) for visible_name in visible_people_names):
+            continue
+        rejected.append(
+            {
+                "claim_kind": "actor",
+                "claim": person_name,
+                "reason": "The claimed present person is not visible at the canonical turn location.",
+            }
+        )
+
     return {
         "accepted_state_changes": accepted,
         "rejected_claims": rejected,
@@ -1611,6 +1984,7 @@ def _apply_public_ai_gm_harness(
         "faction_updates": faction_updates,
         "memory_drafts": memory_drafts,
         "travel_summary": travel_summary,
+        "effective_location_id": effective_location_id,
     }
 
 
@@ -1646,38 +2020,57 @@ def _resolve_public_ai_gm_turn_for_session(
         actor_id=player_actor.id,
         location_id=prepared.location_id,
     )
+    session_state = _enrich_public_turn_session_state(
+        db,
+        world_id=game_session.world_id,
+        actor_id=player_actor.id,
+        session_state=session_state,
+    )
+    alias_index = _build_canonical_public_alias_index(db, game_session.world_id, session_state)
+    detected_route = _match_visible_route_by_public_text(
+        db,
+        world_id=game_session.world_id,
+        session_state=session_state,
+        claim_text="",
+        player_action_text=input_text,
+        alias_index=alias_index,
+    )
+    retrieval_location_id = _visible_route_destination_id(detected_route or {}) or prepared.location_id
     retrieval = container.memory_service.search(
         db,
         world_id=game_session.world_id,
-        query_text=build_retrieval_query_text(input_text, session_state=session_state, relation_context=[]),
-        actor_id=guide_npc.id,
-        location_id=prepared.location_id,
-    )
-    resolution = container.council_service.resolve_public_turn(
-        CouncilRequest(
-            world_id=game_session.world_id,
-            turn_id=turn.id,
-            player_name=player_actor.display_name,
-            npc_name=guide_npc.display_name,
+        query_text=_retrieval_query_for_public_turn(
             input_text=input_text,
-            input_mode="free_text",
-            selected_choice=None,
-            relevant_memories=[item.text for item in retrieval.memories],
-            relation_context=[],
-            graph_context_status="public_context",
             session_state=session_state,
-        )
+            detected_route=detected_route,
+        ),
+        actor_id=None,
+        location_id=retrieval_location_id,
     )
-    _persist_role_runs(
-        db,
+    council_request = CouncilRequest(
         world_id=game_session.world_id,
         turn_id=turn.id,
-        workflow_name="ai_gm",
-        role_runs=resolution.role_runs,
+        player_name=player_actor.display_name,
+        npc_name=guide_npc.display_name,
+        input_text=input_text,
+        input_mode="free_text",
+        selected_choice=None,
+        relevant_memories=[item.text for item in retrieval.memories],
+        relation_context=[],
         graph_context_status="public_context",
+        session_state=session_state,
     )
+    resolution = container.council_service.resolve_public_turn(council_request)
     progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
     if not resolution.succeeded or resolution.final_payload is None:
+        _persist_role_runs(
+            db,
+            world_id=game_session.world_id,
+            turn_id=turn.id,
+            workflow_name="ai_gm",
+            role_runs=resolution.role_runs,
+            graph_context_status="public_context",
+        )
         failed_result = _build_failed_turn_result(
             db,
             container,
@@ -1696,14 +2089,155 @@ def _resolve_public_ai_gm_turn_for_session(
             consequence_summary="The attempted line could not be resolved into a coherent public turn.",
             progress_phases=progress_phases,
             failure_payload={
-                "failure_reason": resolution.failure_reason,
+                "failure_reason": resolution.failure_reason or "repair_failed",
+                "failure_reason_code": resolution.failure_reason or "repair_failed",
                 "rejection_role": resolution.rejection_role,
+                "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+                "council_trace": [
+                    {
+                        "role": item.council_role,
+                        "approval_status": item.approval_status,
+                        "final_lane": item.final_lane,
+                    }
+                    for item in resolution.role_runs
+                ],
             },
         )
-        _finalize_event_timeline_and_broadcast(db, event=failed_result.event)
         return failed_result
 
     payload = resolution.final_payload
+    dry_run_harness_result = _apply_public_ai_gm_harness(
+        db,
+        game_session=game_session,
+        player_actor=player_actor,
+        prepared_location_id=prepared.location_id,
+        input_text=input_text,
+        payload=payload,
+        session_state=session_state,
+        apply_changes=False,
+    )
+    if dry_run_harness_result["rejected_claims"]:
+        repair_resolution = container.council_service.repair_public_turn(
+            council_request,
+            validation_feedback=[
+                {
+                    "reason": "consistency_failed",
+                    "claim": str(item.get("claim") or ""),
+                    "message": str(item.get("reason") or "The output contradicted canonical public state."),
+                }
+                for item in dry_run_harness_result["rejected_claims"]
+                if isinstance(item, dict)
+            ],
+            previous_role_runs=resolution.role_runs,
+            original_failure_reason="consistency_failed",
+        )
+        resolution = repair_resolution
+        progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
+        if not resolution.succeeded or resolution.final_payload is None:
+            _persist_role_runs(
+                db,
+                world_id=game_session.world_id,
+                turn_id=turn.id,
+                workflow_name="ai_gm",
+                role_runs=resolution.role_runs,
+                graph_context_status="public_context",
+            )
+            failed_result = _build_failed_turn_result(
+                db,
+                container,
+                prepared,
+                turn=turn,
+                action_type="narrative",
+                resolution_mode="ai_gm_harness",
+                action_label=input_text,
+                graph_context_status="public_context",
+                failure_reason="repair_failed",
+                model_lane=resolution.final_lane,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                input_mode="free_text",
+                interpreted_intent={},
+                next_choices=session_state.get("suggested_actions") or [],
+                consequence_summary="アクションに失敗しました。SPは返却されました。",
+                progress_phases=progress_phases,
+                failure_payload={
+                    "failure_reason": "repair_failed",
+                    "failure_reason_code": "repair_failed",
+                    "rejected_claims": dry_run_harness_result["rejected_claims"],
+                    "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+                    "council_trace": [
+                        {
+                            "role": item.council_role,
+                            "approval_status": item.approval_status,
+                            "final_lane": item.final_lane,
+                        }
+                        for item in resolution.role_runs
+                    ],
+                },
+            )
+            return failed_result
+        payload = resolution.final_payload
+        dry_run_harness_result = _apply_public_ai_gm_harness(
+            db,
+            game_session=game_session,
+            player_actor=player_actor,
+            prepared_location_id=prepared.location_id,
+            input_text=input_text,
+            payload=payload,
+            session_state=session_state,
+            apply_changes=False,
+        )
+        if dry_run_harness_result["rejected_claims"]:
+            _persist_role_runs(
+                db,
+                world_id=game_session.world_id,
+                turn_id=turn.id,
+                workflow_name="ai_gm",
+                role_runs=resolution.role_runs,
+                graph_context_status="public_context",
+            )
+            failed_result = _build_failed_turn_result(
+                db,
+                container,
+                prepared,
+                turn=turn,
+                action_type="narrative",
+                resolution_mode="ai_gm_harness",
+                action_label=input_text,
+                graph_context_status="public_context",
+                failure_reason="repair_failed",
+                model_lane=resolution.final_lane,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                input_mode="free_text",
+                interpreted_intent=payload.interpreted_intent,
+                next_choices=session_state.get("suggested_actions") or [],
+                consequence_summary="アクションに失敗しました。SPは返却されました。",
+                progress_phases=progress_phases,
+                failure_payload={
+                    "failure_reason": "repair_failed",
+                    "failure_reason_code": "repair_failed",
+                    "rejected_claims": dry_run_harness_result["rejected_claims"],
+                    "normalization_warnings": payload.interpreted_intent.get("normalization_warnings", []),
+                    "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
+                    "council_trace": [
+                        {
+                            "role": item.council_role,
+                            "approval_status": item.approval_status,
+                            "final_lane": item.final_lane,
+                        }
+                        for item in resolution.role_runs
+                    ],
+                },
+            )
+            return failed_result
+
+    _persist_role_runs(
+        db,
+        world_id=game_session.world_id,
+        turn_id=turn.id,
+        workflow_name="ai_gm",
+        role_runs=resolution.role_runs,
+        graph_context_status="public_context",
+    )
     harness_result = _apply_public_ai_gm_harness(
         db,
         game_session=game_session,
@@ -1712,50 +2246,28 @@ def _resolve_public_ai_gm_turn_for_session(
         input_text=input_text,
         payload=payload,
         session_state=session_state,
+        apply_changes=True,
     )
     rejected_claims = harness_result["rejected_claims"]
-    if rejected_claims:
-        current_location = get_location_summary(db, game_session.world_id, player_actor.current_location_id or prepared.location_id)
-        rejected_summary = " / ".join(str(item.get("claim") or "") for item in rejected_claims if isinstance(item, dict))
-        current_location_name = str(current_location.get("name") or "現在地")
-        fallback_summary = (
-            f"{player_actor.display_name}は{_naturalized_action_attempt(input_text)}。"
-            f"ただし {rejected_summary} は現在の公開状況からは確定できない。"
-            f"{current_location_name}で確認できる範囲に場面を留める。"
-        )
-        payload.narrative = (
-            fallback_summary
-        )
-        payload.npc_reaction = f"{guide_npc.display_name}は、{current_location_name}で見える事実だけを確認する。"
-        payload.consequence_summary = f"{current_location_name}で照合できない主張は状態に反映されず、場面は確認できる範囲に留まった。"
-        payload.event_payload = {
-            **payload.event_payload,
-            "summary": payload.consequence_summary,
-        }
-        payload.memories = [
-            type(payload.memories[0])(
-                scope="world",
-                text=fallback_summary,
-                salience=0.55,
-            )
-        ]
-        payload.state_drafts = {}
-        payload.quest_offer = None
-        payload.followup_quest_offer = None
-        payload.quest_resolution_hint = None
-        payload.chapter_directive = None
-        payload.broadcast_draft = None
-        payload.entity_drafts = []
-        payload.world_tags = ["none"]
-        payload.consequence_tags = ["careful_observation"]
 
     effective_location_id = player_actor.current_location_id or prepared.location_id
+    effect_contract = _infer_choice_effect_contract(
+        session_state=session_state,
+        selected_choice=None,
+        input_text=input_text,
+        interpreted_intent=payload.interpreted_intent,
+    )
     with _turn_progress_span("world_tag_updates"):
+        resolved_world_tags = _world_tags_for_effect_contract(
+            session_state=session_state,
+            world_tags=payload.world_tags,
+            effect_contract=effect_contract,
+        )
         state_updates = apply_world_tag_updates(
             db,
             world_id=game_session.world_id,
             actor_id=player_actor.id,
-            world_tags=payload.world_tags,
+            world_tags=resolved_world_tags,
         )
     state_updates["inventory_updates"] = [
         *state_updates["inventory_updates"],
@@ -1782,7 +2294,8 @@ def _resolve_public_ai_gm_turn_for_session(
             "player_action_text": input_text,
             "location_id": effective_location_id,
             "graph_context_status": "public_context",
-            "world_tags": payload.world_tags,
+            "effect_contract": effect_contract,
+            "world_tags": resolved_world_tags,
             "accepted_state_changes": harness_result["accepted_state_changes"],
             "rejected_claims": rejected_claims,
             "quest_updates": state_updates["quest_updates"],
@@ -1794,6 +2307,25 @@ def _resolve_public_ai_gm_turn_for_session(
     )
     db.add(event)
     db.flush()
+
+    with _turn_progress_span("quest_effect_contract"):
+        effect_updates = apply_quest_effect_contract(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            effect_contract=effect_contract,
+            summary=payload.consequence_summary,
+        )
+    if effect_updates["quest_updates"] or effect_updates["inventory_updates"] or effect_updates["chapter_updates"]:
+        state_updates["quest_updates"] = [*state_updates["quest_updates"], *effect_updates["quest_updates"]]
+        state_updates["inventory_updates"] = [*state_updates["inventory_updates"], *effect_updates["inventory_updates"]]
+        event.payload = {
+            **event.payload,
+            "quest_updates": state_updates["quest_updates"],
+            "inventory_updates": state_updates["inventory_updates"],
+            "chapter_updates": effect_updates["chapter_updates"],
+        }
 
     with _turn_progress_span("state_draft_materialization"):
         state_draft_updates = materialize_state_drafts(
@@ -1828,9 +2360,9 @@ def _resolve_public_ai_gm_turn_for_session(
             counterpart_name=guide_npc.display_name,
             location_id=effective_location_id,
             source_event_id=event.id,
-            world_tags=payload.world_tags,
+            world_tags=resolved_world_tags,
             consequence_tags=payload.consequence_tags
-            or fallback_consequence_tags(world_tags=payload.world_tags, action_kind="narrative", fail_forward=False),
+            or fallback_consequence_tags(world_tags=resolved_world_tags, action_kind="narrative", fail_forward=False),
             action_kind="narrative",
             fail_forward=False,
         )
@@ -1842,7 +2374,7 @@ def _resolve_public_ai_gm_turn_for_session(
             location_id=effective_location_id,
             session_state=session_state,
             outcome_band=consequence_result.outcome_band,
-            world_tags=payload.world_tags,
+            world_tags=resolved_world_tags,
             consequence_tags=payload.consequence_tags,
             branch_signals=list(payload.branch_signals or []),
         )
@@ -1901,7 +2433,7 @@ def _resolve_public_ai_gm_turn_for_session(
             actor_id=player_actor.id,
             location_id=effective_location_id,
             source_event_id=event.id,
-            world_tags=payload.world_tags,
+            world_tags=resolved_world_tags,
             consequence_tags=payload.consequence_tags,
             action_kind="narrative",
             explicit_action_tag=payload.shared_action_tag,
@@ -1944,7 +2476,7 @@ def _resolve_public_ai_gm_turn_for_session(
         "narrative": payload.narrative,
         "npc_reaction": payload.npc_reaction,
         "graph_context_status": "public_context",
-        "world_tags": payload.world_tags,
+        "world_tags": resolved_world_tags,
         "interpreted_intent": payload.interpreted_intent,
         "consequence_tags": payload.consequence_tags,
         "outcome_band": consequence_result.outcome_band,
@@ -2061,6 +2593,7 @@ def _resolve_public_ai_gm_turn_for_session(
         progress_phases=[
             *progress_phases,
             "world_tag_updates",
+            "quest_effect_contract",
             "state_draft_materialization",
             "consequence_resolution",
             "scene_framing",
@@ -4568,6 +5101,7 @@ def _build_failed_turn_result(
 
     failure = {
         "reason": failure_reason,
+        "failure_reason_code": (failure_payload or {}).get("failure_reason_code") or failure_reason,
         "rejection_role": (failure_payload or {}).get("rejection_role"),
         "final_lane": model_lane,
         "used_fallback": bool((failure_payload or {}).get("used_fallback", False)),
@@ -4579,6 +5113,7 @@ def _build_failed_turn_result(
         "action_type": action_type,
         "resolution_mode": resolution_mode,
         "error_detail": failure_reason,
+        "system_message": "アクションに失敗しました。SPは返却されました。",
         "failure": failure,
         "graph_context_status": graph_context_status,
         "input_mode": input_mode,
@@ -4626,7 +5161,7 @@ def _build_failed_turn_result(
             "graph_context_status": graph_context_status,
             **(failure_payload or {}),
         },
-        narrative=f"{player_actor.display_name}の行動『{action_label}』は監査対象として記録された。",
+        narrative="アクションに失敗しました。SPは返却されました。",
     )
     db.add(failure_event)
     db.flush()
@@ -4647,8 +5182,21 @@ def _build_failed_turn_result(
         note=failure_reason,
         cost=abs(prepared.debit.delta),
     )
+    failure["refund_ledger_id"] = refund.ledger_entry.id
+    failure["debit_ledger_id"] = prepared.debit.ledger_entry.id
+    failure_event.payload = {
+        **dict(failure_event.payload or {}),
+        "system_message": "アクションに失敗しました。SPは返却されました。",
+        "refund_ledger_id": refund.ledger_entry.id,
+        "debit_ledger_id": prepared.debit.ledger_entry.id,
+    }
+    turn.resolved_output = {
+        **turn.resolved_output,
+        "failure": failure,
+        "refund_ledger_id": refund.ledger_entry.id,
+        "debit_ledger_id": prepared.debit.ledger_entry.id,
+    }
     db.flush()
-    _finalize_event_timeline_and_broadcast(db, event=failure_event)
     return TurnResolutionResult(
         turn=turn,
         event=failure_event,
@@ -4660,7 +5208,7 @@ def _build_failed_turn_result(
         sp_balance=refund.balance_after,
         paid_sp=refund.paid_balance_after,
         bonus_sp=refund.bonus_balance_after,
-        sp_ledger_id=prepared.debit.ledger_entry.id,
+        sp_ledger_id=refund.ledger_entry.id,
         quest_updates=[],
         faction_updates=[],
         inventory_updates=[],

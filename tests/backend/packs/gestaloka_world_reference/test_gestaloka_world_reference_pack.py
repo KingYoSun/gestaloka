@@ -394,7 +394,8 @@ def test_first_choice_completion_text_completes_active_quest_even_when_llm_retur
     turn_payload = messages[-1]["data"]
 
     completed_updates = [item for item in turn_payload["quest_updates"] if item["status"] == "completed"]
-    assert completed_updates == []
+    assert completed_updates
+    assert completed_updates[0]["action"] == "completed_from_effect_contract"
     assert turn_payload["interpreted_intent"]["source"] == "public_ai_gm"
 
 
@@ -1072,7 +1073,7 @@ def test_active_quest_resolution_hint_completes_immediately(client, container, a
     assert chapters
 
 
-def test_gestaloka_world_reference_progression_falls_back_when_world_progress_schema_fails(
+def test_gestaloka_world_reference_progression_repairs_when_ai_gm_schema_fails(
     client,
     container,
     auth_headers,
@@ -1112,11 +1113,13 @@ def test_gestaloka_world_reference_progression_falls_back_when_world_progress_sc
     assert post_offer_state.json()["quest_journal"][0]["status"] == "active"
 
     with container.session_factory() as db:
-        fallback_turn = db.get(Turn, second_payload["turn_id"])
-        assert fallback_turn.resolved_output["used_fallback"] is True
+        repaired_turn = db.get(Turn, second_payload["turn_id"])
+        event = db.get(Event, second_payload["event_id"])
+        assert repaired_turn.resolved_output["used_fallback"] is False
+        assert event.payload["repair"]["original_failure_reason"] == "schema_hard_invalid"
         assert any(
-            item["role"] == "ai_gm" and item["approval_status"] == "approved"
-            for item in fallback_turn.resolved_output["council_trace"]
+            item["role"] == "ai_gm_repair" and item["approval_status"] == "approved"
+            for item in repaired_turn.resolved_output["council_trace"]
         )
 
 

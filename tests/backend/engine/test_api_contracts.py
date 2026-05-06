@@ -1217,7 +1217,7 @@ def test_situation_frame_reaches_world_progress_and_narrative(client, container,
     assert "choice_id" not in str(captured["session.turn_resolution"])
 
 
-def test_situation_mapper_schema_failure_uses_deterministic_frame(client, container, auth_headers, monkeypatch):
+def test_public_ai_gm_schema_failure_repairs_once(client, container, auth_headers, monkeypatch):
     original_execute = container.model_router.execute_structured_prompt
 
     def fail_situation_mapper(*, prompt_id, input_payload, **kwargs):
@@ -1244,7 +1244,9 @@ def test_situation_mapper_schema_failure_uses_deterministic_frame(client, contai
 
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
-        assert turn.resolved_output["used_fallback"] is True
+        event = db.get(Event, payload["event_id"])
+        assert turn.resolved_output["used_fallback"] is False
+        assert event.payload["repair"]["original_failure_reason"] == "schema_hard_invalid"
     assert payload["suggested_actions"]
     assert all(set(item) <= {"label", "summary", "risk_hint"} for item in payload["suggested_actions"])
 
@@ -1627,7 +1629,7 @@ def test_ops_projection_status_and_rebuild_contract(client, container, auth_head
     assert council_detail_response.status_code == 200
     council_detail_payload = council_detail_response.json()
     assert council_detail_payload["turn_id"] == council_turn_id
-    assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane", "public_turn_fallback"}
+    assert council_detail_payload["roles"][-1]["model_lane"] in {"main_lane", "pro_lane"}
     assert "attempts" in council_detail_payload["roles"][-1]
     assert council_detail_payload["resolved_output"]["retrieval_trace"]["status"] == "ready"
     assert council_detail_payload["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")

@@ -2,7 +2,7 @@ dataset_id: turn_resolution_failure_injection
 prompt_id: session.turn_resolution
 expected_output_schema: turn_resolution_v2
 cases:
-  - case_id: fallback-main-to-pro
+  - case_id: invalid-main-and-repair-failed
     world_id: world-alpha
     pack_id: gestaloka_world_reference
     world_template_id: layered_world_foundation
@@ -16,10 +16,10 @@ cases:
       - location=Nexus City
       - active_quest=Visitor Log Registration [active 0/2]
     graph_context_status: ready
-    expect_success: true
-    expect_final_lane: pro_lane
-    expect_fallback: true
-    expect_failure_reason: null
+    expect_success: false
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: repair_failed
   - case_id: council-rejected-422
     world_id: world-alpha
     pack_id: gestaloka_world_reference

@@ -152,6 +152,27 @@ def _display_name_for_language(source_name: str, aliases_by_language: dict[str, 
     return source or (next(iter(aliases_by_language.values()), [""])[0])
 
 
+def _public_person_summary(
+    item: dict[str, Any],
+    *,
+    language: str,
+    source_language: str,
+) -> dict[str, Any]:
+    aliases = _aliases_by_language(item.get("public_aliases") or item.get("aliases_by_language"))
+    source_name = _public_text(item.get("source_name") or item.get("display_name") or item.get("name"))
+    return {
+        "name": _display_name_for_language(
+            source_name,
+            aliases,
+            language=language,
+            source_language=source_language,
+        ),
+        "source_name": source_name,
+        "aliases_by_language": aliases,
+        "summary": _public_text(item.get("summary")),
+    }
+
+
 def _normalize_live_consequence_tokens(raw_tags: Any) -> list[str]:
     tokens = _memory_list(raw_tags)
     mapped: list[str] = []
@@ -898,6 +919,39 @@ def _assert_public_llm_payload(value: Any, *, path: str = "input") -> None:
             _assert_public_llm_payload(item, path=f"{path}[{index}]")
 
 
+def _public_turn_failure_kind(result: Any) -> str:
+    attempts = list(getattr(result, "attempts", []) or [])
+    if any(getattr(attempt, "status", "") == "provider_error" for attempt in attempts):
+        return "provider_error"
+    if any(getattr(attempt, "output_schema_status", "") == "invalid" for attempt in attempts):
+        return "schema_hard_invalid"
+    failure_reason = str(getattr(result, "failure_reason", None) or "").strip()
+    lowered = failure_reason.lower()
+    if "schema" in lowered or "validation" in lowered or "invalid" in lowered:
+        return "schema_hard_invalid"
+    if "provider" in lowered:
+        return "provider_error"
+    return failure_reason or "schema_hard_invalid"
+
+
+def _public_validation_feedback(items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    feedback: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        reason = _compact_text(item.get("reason")) or "consistency_failed"
+        message = _compact_text(item.get("message") or item.get("summary"))
+        claim = _compact_text(item.get("claim"))
+        if claim:
+            message = f"{message} Claim: {claim}".strip()
+        if not message:
+            message = "The output must be repaired to match visible public state."
+        feedback.append({"reason": reason, "message": message[:600]})
+        if len(feedback) >= 6:
+            break
+    return feedback or [{"reason": "consistency_failed", "message": "The output must be repaired to match visible public state."}]
+
+
 def _public_text(value: Any) -> str:
     return _compact_text(value)
 
@@ -956,12 +1010,10 @@ def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
             "branch_hint": _public_text(chapter.get("branch_hint")),
         },
         "visible_people": [
-            {
-                "name": _public_text(item.get("display_name")),
-                "summary": _public_text(item.get("summary")),
-            }
+            _public_person_summary(item, language=play_language_code, source_language=source_language)
             for item in local_figures
-            if isinstance(item, dict) and _public_text(item.get("display_name"))
+            if isinstance(item, dict)
+            and _public_text(item.get("source_name") or item.get("display_name") or item.get("name"))
         ][:6],
         "visible_items": [
             {
@@ -991,6 +1043,37 @@ def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
                 ),
                 "summary": _public_text(item.get("summary")),
                 "available": bool(item.get("available")),
+                "destination_description": _public_text(
+                    item.get("destination_description")
+                    or ((item.get("to_location") or {}).get("description") if isinstance(item.get("to_location"), dict) else "")
+                ),
+                "arrival_people": [
+                    _public_person_summary(person, language=play_language_code, source_language=source_language)
+                    for person in (item.get("arrival_people") or [])
+                    if isinstance(person, dict)
+                    and _public_text(person.get("source_name") or person.get("display_name") or person.get("name"))
+                ][:4],
+                "arrival_items": [
+                    {
+                        "name": _public_text(thing.get("name")),
+                        "description": _public_text(thing.get("description")),
+                    }
+                    for thing in (item.get("arrival_items") or [])
+                    if isinstance(thing, dict) and _public_text(thing.get("name"))
+                ][:4],
+                "destination_opportunities": [
+                    {
+                        "label": _public_text(action.get("label")),
+                        "summary": _public_text(action.get("summary")),
+                    }
+                    for action in (item.get("destination_opportunities") or [])
+                    if isinstance(action, dict) and _public_text(action.get("label"))
+                ][:4],
+                "related_memory_snippets": [
+                    _public_text(snippet)
+                    for snippet in (item.get("related_memory_snippets") or [])
+                    if _public_text(snippet)
+                ][:3],
             }
             for item in nearby_routes
             if bool(item.get("available")) and _public_text(item.get("destination_name"))
@@ -1088,7 +1171,7 @@ class GMCouncilService:
             world_id=request.world_id,
             turn_id=request.turn_id,
             graph_context_status=request.graph_context_status,
-            allow_pro_fallback=True,
+            allow_pro_fallback=False,
         )
         role_run = self._role_run(
             council_role="ai_gm",
@@ -1106,49 +1189,76 @@ class GMCouncilService:
                 rejection_role="ai_gm",
             )
         if not result.succeeded or result.final_payload is None:
-            if "__force_" in request.input_text:
-                return TurnResolutionOutcome(
-                    role_runs=[role_run],
-                    final_lane=result.final_lane,
-                    final_payload=None,
-                    failure_reason=result.failure_reason,
-                    rejection_role="ai_gm",
-                )
-            fallback_payload = self._public_turn_fallback_payload(request)
-            fallback_result = PromptExecutionOutcome(
-                attempts=[
-                    *result.attempts,
-                    self._deterministic_attempt(
-                        prompt_id="session.turn_resolution",
-                        lane="public_turn_fallback",
-                        payload=fallback_payload,
-                    ),
+            return self.repair_public_turn(
+                request,
+                validation_feedback=[
+                    {
+                        "reason": _public_turn_failure_kind(result),
+                        "message": "The first AI GM output could not be used as a coherent public turn.",
+                    }
                 ],
-                final_lane="public_turn_fallback",
-                final_payload=fallback_payload,
-                failure_reason=result.failure_reason,
+                previous_role_runs=[role_run],
+                original_failure_reason=_public_turn_failure_kind(result),
             )
-            role_run = self._role_run(
-                council_role="ai_gm",
-                stage_index=1,
-                prompt_id="session.turn_resolution",
-                approval_status="approved",
-                result=fallback_result,
-            )
-            public_payload = fallback_payload
-            final_lane = "public_turn_fallback"
-            deterministic_fallback_used = True
-        else:
-            public_payload = result.final_payload
-            final_lane = result.final_lane
-            deterministic_fallback_used = result.used_fallback
 
+        public_payload = result.final_payload
         final_payload = self._public_turn_to_resolution_payload(request, public_payload)
         return TurnResolutionOutcome(
             role_runs=[role_run],
-            final_lane=final_lane,
+            final_lane=result.final_lane,
             final_payload=final_payload,
-            deterministic_fallback_used=deterministic_fallback_used,
+            deterministic_fallback_used=False,
+        )
+
+    def repair_public_turn(
+        self,
+        request: CouncilRequest,
+        *,
+        validation_feedback: list[dict[str, Any]],
+        previous_role_runs: list[CouncilRoleRun] | None = None,
+        original_failure_reason: str | None = None,
+    ) -> TurnResolutionOutcome:
+        input_payload = self._public_turn_input_payload(request)
+        input_payload["validation_feedback"] = _public_validation_feedback(validation_feedback)
+        _assert_public_llm_payload(input_payload)
+        result = self.model_router.execute_structured_prompt(
+            prompt_id="session.turn_resolution_repair",
+            response_model=PublicGmTurnPayload,
+            input_payload=input_payload,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+            allow_pro_fallback=False,
+        )
+        role_run = self._role_run(
+            council_role="ai_gm_repair",
+            stage_index=2,
+            prompt_id="session.turn_resolution_repair",
+            approval_status="approved" if result.succeeded else "failed",
+            result=result,
+        )
+        role_runs = [*(previous_role_runs or []), role_run]
+        if not result.succeeded or result.final_payload is None:
+            return TurnResolutionOutcome(
+                role_runs=role_runs,
+                final_lane=result.final_lane,
+                final_payload=None,
+                failure_reason="repair_failed",
+                rejection_role="ai_gm_repair",
+            )
+        final_payload = self._public_turn_to_resolution_payload(request, result.final_payload)
+        final_payload.event_payload = {
+            **final_payload.event_payload,
+            "repair": {
+                "original_failure_reason": original_failure_reason,
+                "validation_feedback": input_payload["validation_feedback"],
+            },
+        }
+        return TurnResolutionOutcome(
+            role_runs=role_runs,
+            final_lane=result.final_lane,
+            final_payload=final_payload,
+            deterministic_fallback_used=False,
         )
 
     def _public_turn_input_payload(self, request: CouncilRequest) -> dict[str, Any]:
@@ -1158,7 +1268,6 @@ class GMCouncilService:
         return {
             "player_action_text": request.input_text,
             "player_name": request.player_name,
-            "npc_name": request.npc_name,
             "player_profile": _public_profile(player_profile),
             "narrative_preferences": (
                 player_profile.get("narrative_preferences") if isinstance(player_profile, dict) and isinstance(player_profile.get("narrative_preferences"), dict) else {}
@@ -1245,8 +1354,9 @@ class GMCouncilService:
             npc_reaction=public_payload.npc_reaction,
             event_type="player.turn.resolved",
             event_payload={
-                "summary": public_payload.consequence_summary,
+                "summary": public_payload.internal_summary or public_payload.consequence_summary,
                 "public_turn_contract": public_payload.model_dump(),
+                "normalization_warnings": public_payload.normalization_warnings,
             },
             memories=public_payload.memories,
             world_tags=public_payload.world_tags,
@@ -1258,10 +1368,11 @@ class GMCouncilService:
                 "present_people": public_payload.present_people,
                 "visible_items": public_payload.visible_items,
                 "used_item_names": public_payload.used_item_names,
+                "normalization_warnings": public_payload.normalization_warnings,
                 "source": "public_ai_gm",
             },
             next_choices=suggestions[:4],
-            consequence_summary=public_payload.consequence_summary,
+            consequence_summary=public_payload.internal_summary or public_payload.consequence_summary or public_payload.action_interpretation,
             consequence_tags=public_payload.consequence_tags,
             shared_action_tag=public_payload.shared_action_tag,
             state_drafts=public_payload.state_drafts,

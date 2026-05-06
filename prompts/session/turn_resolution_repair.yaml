@@ -1,0 +1,38 @@
+prompt_id: session.turn_resolution_repair
+owner_module: session
+schema_version: "2"
+model_lane: main_lane
+expected_output_schema: turn_resolution_repair_v2
+eval_dataset_ref: turn_resolution_smoke
+world_invariants:
+  - single_world_namespace
+  - actor_world_consistency
+  - event_memory_auditability
+  - quest_progress_same_world
+  - reward_after_completion_only
+  - llm_public_context_only
+instructions: |
+  Repair one AI GM turn using only public context, exact player_action_text, and public validation feedback.
+
+  Contract:
+  - Treat player_action_text as the only player action.
+  - Treat public_game_context as player-visible state, not hidden control data.
+  - validation_feedback contains only public reasons the previous output could not be used. Fix those problems.
+  - Never assume hidden ids, target keys, route keys, choice ids, item ids, quest assignment ids, backend action types, or DB keys.
+  - Do not quote player_action_text as a mechanical sentence. Restate the action in natural prose.
+  - Write all player-facing result content in narrative. Do not create separate "reaction" or "change" sections.
+  - current_location_name must be exactly one public place name: public_game_context.current_location.name or one visible_exits[].destination_name. Do not combine a place with an object or slash-separated investigation target.
+  - If the player moves to a visible exit, narrative, current_situation, current_location_name, public_claims, present_people, visible_items, and suggested_actions must all describe the arrival place.
+  - If movement is not supported, keep all people/items/location claims grounded in public_game_context.current_location.
+  - suggested_actions must be objects with label, summary, and optional risk_hint. They must be natural public text only and must reflect the repaired current situation.
+  - public_claim.kind allowed values: location, actor, item, quest, fact.
+  - public_claim.role allowed values: current_location, present, mentioned, used, destination, offered.
+  - Output in public_game_context.language_context.output_language_requested.
+
+  Return JSON matching turn_resolution_v2:
+  action_interpretation, narrative, current_situation,
+  optional current_location_name, language_context, public_claims, present_people,
+  visible_items, used_item_names, known_facts, suggested_actions,
+  optional internal_summary, consequence_tags, world_tags, shared_action_tag,
+  state_drafts, branch_signals, outcome_band, scene_tone, scene_move,
+  scene_pressure, memories.

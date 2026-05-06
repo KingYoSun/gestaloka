@@ -480,7 +480,7 @@ export type TurnResponse = {
   event_id: string;
   memory_ids: string[];
   narrative: string;
-  npc_reaction: string;
+  npc_reaction?: string;
   sp_delta: number;
   sp_balance: number;
   paid_sp: number;
@@ -488,7 +488,9 @@ export type TurnResponse = {
   sp_ledger_id: string;
   interpreted_intent: Record<string, unknown>;
   suggested_actions: SuggestedAction[];
-  consequence_summary: string;
+  consequence_summary?: string;
+  system_message?: string;
+  refund_ledger_id?: string;
   scene_tone: string;
   scene_summary: string;
   location_updates: Array<{

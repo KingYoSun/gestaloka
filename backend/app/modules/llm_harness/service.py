@@ -296,6 +296,9 @@ class PublicSuggestedActionDraft(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            text = value.strip()
+            return {"label": text, "summary": text}
         if not isinstance(value, dict):
             return value
         normalized = dict(value)
@@ -341,6 +344,12 @@ class PublicClaimDraft(BaseModel):
         )
         normalized["surface_text"] = surface_text
         normalized["language"] = _first_non_empty_text(normalized.get("language"), normalized.get("lang"), "unknown")
+        kind = str(normalized.get("kind") or "").strip().lower()
+        if kind in {"npc", "person", "people", "character"}:
+            kind = "actor"
+        normalized["kind"] = kind if kind in {"location", "actor", "item", "quest", "fact"} else "fact"
+        role = str(normalized.get("role") or "").strip().lower()
+        normalized["role"] = role if role in {"current_location", "present", "mentioned", "used", "destination", "offered"} else "mentioned"
         normalized["key_candidate"] = _first_non_empty_text(
             normalized.get("key_candidate"),
             normalized.get("canonical_key_candidate"),
@@ -424,7 +433,7 @@ class CouncilIntentInterpreterPayload(BaseModel):
 
 class TurnResolutionPayload(BaseModel):
     narrative: str = Field(min_length=1)
-    npc_reaction: str = Field(min_length=1)
+    npc_reaction: str = ""
     event_type: str = Field(min_length=1)
     event_payload: dict[str, Any]
     memories: list[MemoryDraft] = Field(min_length=1)
@@ -451,7 +460,7 @@ class TurnResolutionPayload(BaseModel):
 class PublicGmTurnPayload(BaseModel):
     action_interpretation: str = Field(min_length=1)
     narrative: str = Field(min_length=1)
-    npc_reaction: str = Field(min_length=1)
+    npc_reaction: str = ""
     current_situation: str = Field(min_length=1)
     current_location_name: str | None = None
     language_context: dict[str, Any] = Field(default_factory=dict)
@@ -461,7 +470,9 @@ class PublicGmTurnPayload(BaseModel):
     used_item_names: list[str] = Field(default_factory=list)
     known_facts: list[str] = Field(default_factory=list)
     suggested_actions: list[PublicSuggestedActionDraft] = Field(min_length=2, max_length=4)
-    consequence_summary: str = Field(min_length=1)
+    consequence_summary: str = ""
+    internal_summary: str = ""
+    normalization_warnings: list[str] = Field(default_factory=list)
     consequence_tags: list[ConsequenceTag] = Field(default_factory=list)
     world_tags: list[WorldTag] = Field(min_length=1)
     shared_action_tag: SharedWorldActionTag = "none"
@@ -492,6 +503,7 @@ class PublicGmTurnPayload(BaseModel):
         current_location = current_location if isinstance(current_location, dict) else {}
         input_text = _first_non_empty_text(input_payload.get("player_action_text"), input_payload.get("input_text"))
         normalized = dict(value)
+        warnings: list[str] = []
         action_interpretation = _first_non_empty_text(
             normalized.get("action_interpretation"),
             normalized.get("interpreted_action"),
@@ -501,12 +513,15 @@ class PublicGmTurnPayload(BaseModel):
         )
         consequence_summary = _first_non_empty_text(
             normalized.get("consequence_summary"),
+            normalized.get("internal_summary"),
             normalized.get("result_summary"),
             normalized.get("resolution_summary"),
             action_interpretation,
         )
         normalized["action_interpretation"] = action_interpretation
         normalized["consequence_summary"] = consequence_summary
+        normalized["internal_summary"] = _first_non_empty_text(normalized.get("internal_summary"), consequence_summary)
+        normalized["npc_reaction"] = _first_non_empty_text(normalized.get("npc_reaction"), normalized.get("reaction"), "")
         normalized["current_situation"] = _first_non_empty_text(
             normalized.get("current_situation"),
             normalized.get("situation"),
@@ -526,9 +541,32 @@ class PublicGmTurnPayload(BaseModel):
         public_claims = normalized.get("public_claims") or normalized.get("claims") or []
         if not isinstance(public_claims, list):
             public_claims = []
+            warnings.append("public_claims was not a list and was dropped")
         normalized["public_claims"] = [item for item in public_claims if isinstance(item, dict)]
-        normalized["present_people"] = [str(item).strip() for item in normalized.get("present_people") or [] if str(item).strip()]
-        normalized["visible_items"] = [str(item).strip() for item in normalized.get("visible_items") or [] if str(item).strip()]
+        present_people: list[str] = []
+        for item in normalized.get("present_people") or []:
+            if isinstance(item, dict):
+                name = _first_non_empty_text(item.get("name"), item.get("display_name"), item.get("surface_text"))
+                if name:
+                    present_people.append(name)
+                    warnings.append("present_people object was normalized to name")
+                continue
+            text = str(item).strip()
+            if text:
+                present_people.append(text)
+        visible_items: list[str] = []
+        for item in normalized.get("visible_items") or []:
+            if isinstance(item, dict):
+                name = _first_non_empty_text(item.get("name"), item.get("display_name"), item.get("surface_text"))
+                if name:
+                    visible_items.append(name)
+                    warnings.append("visible_items object was normalized to name")
+                continue
+            text = str(item).strip()
+            if text:
+                visible_items.append(text)
+        normalized["present_people"] = present_people
+        normalized["visible_items"] = visible_items
         normalized["used_item_names"] = [str(item).strip() for item in normalized.get("used_item_names") or [] if str(item).strip()]
         normalized["known_facts"] = [str(item).strip() for item in normalized.get("known_facts") or [] if str(item).strip()]
         suggestions = (
@@ -540,15 +578,27 @@ class PublicGmTurnPayload(BaseModel):
         )
         if not isinstance(suggestions, list):
             suggestions = []
-        if len([item for item in suggestions if isinstance(item, dict)]) < 2:
+            warnings.append("suggested_actions was not a list and was replaced")
+        normalized_suggestions: list[Any] = []
+        for item in suggestions:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    normalized_suggestions.append({"label": text, "summary": text})
+                    warnings.append("string suggested_action was normalized to object")
+            elif isinstance(item, dict):
+                normalized_suggestions.append(item)
+        if len(normalized_suggestions) < 2:
             suggestions = public_context.get("visible_opportunities") or []
-        if len([item for item in suggestions if isinstance(item, dict)]) < 2:
+            normalized_suggestions = [item for item in suggestions if isinstance(item, dict)]
+        if len(normalized_suggestions) < 2:
             suggestions = [
                 {"label": "場の変化を確かめる", "summary": "直前の行動で何が変わったかを確認する。"},
                 {"label": "近くの人物に反応を尋ねる", "summary": "その場にいる相手から、次に判断できる情報を得る。"},
                 {"label": "別の糸口を探す", "summary": "見えている物や出口から、別の進み方を探る。"},
             ]
-        normalized["suggested_actions"] = [item for item in suggestions if isinstance(item, dict)][:4]
+            normalized_suggestions = suggestions
+        normalized["suggested_actions"] = normalized_suggestions[:4]
         normalized["consequence_tags"] = _normalize_live_consequence_tags(normalized.get("consequence_tags"))
         normalized["world_tags"] = normalize_world_tags(normalized.get("world_tags") or infer_world_tags(input_text))
         if not isinstance(normalized.get("state_drafts"), dict):
@@ -564,6 +614,8 @@ class PublicGmTurnPayload(BaseModel):
         normalized["scene_move"] = scene_move if scene_move in {"hold", "deepen", "pivot", "close"} else "hold"
         scene_pressure = str(normalized.get("scene_pressure") or "medium")
         normalized["scene_pressure"] = scene_pressure if scene_pressure in {"low", "medium", "high"} else "medium"
+        if scene_pressure and scene_pressure not in {"low", "medium", "high"}:
+            warnings.append("invalid scene_pressure was defaulted")
         shared_action_tag = str(normalized.get("shared_action_tag") or "none")
         if shared_action_tag not in {"help", "harm", "investigate", "trade", "negotiate", "protect", "explore", "restore", "destabilize", "none"}:
             shared_action_tag = "none"
@@ -574,6 +626,11 @@ class PublicGmTurnPayload(BaseModel):
                 normalized[key] = None
         if not isinstance(normalized.get("entity_drafts"), list):
             normalized["entity_drafts"] = []
+        normalized["normalization_warnings"] = [
+            str(item)
+            for item in [*(normalized.get("normalization_warnings") or []), *warnings]
+            if str(item).strip()
+        ][:12]
         return normalized
 
 
@@ -644,6 +701,7 @@ class StubModelProvider(BaseModelProvider):
             return {"status": "invalid"}
         if prompt_id in {
             "session.turn_resolution",
+            "session.turn_resolution_repair",
             "council.rules_arbiter",
             "council.safety_guard",
             "council.narrative",
@@ -656,7 +714,7 @@ class StubModelProvider(BaseModelProvider):
             return self._memory_manager_output(input_payload)
         if prompt_id == "council.intent_interpreter":
             return self._intent_interpreter_output(input_payload)
-        if prompt_id == "session.turn_resolution":
+        if prompt_id in {"session.turn_resolution", "session.turn_resolution_repair"}:
             return self._public_turn_resolution_output(input_payload)
         if prompt_id == "council.npc_manager":
             return self._npc_manager_output(input_payload)
@@ -712,6 +770,17 @@ class StubModelProvider(BaseModelProvider):
                 break
         visible_people = [str(item.get("name") or "") for item in public_context.get("visible_people") or [] if isinstance(item, dict)]
         visible_items = [str(item.get("name") or "") for item in public_context.get("visible_items") or [] if isinstance(item, dict)]
+        if matched_exit is not None:
+            visible_people = [
+                str(item.get("name") or "")
+                for item in matched_exit.get("arrival_people") or []
+                if isinstance(item, dict) and str(item.get("name") or "")
+            ]
+            visible_items = [
+                str(item.get("name") or "")
+                for item in matched_exit.get("arrival_items") or []
+                if isinstance(item, dict) and str(item.get("name") or "")
+            ]
         used_item_names = [name for name in visible_items if name and name in input_text and any(token in input_text for token in ("使", "掲げ", "提示", "use", "present"))]
         suggested_actions = _stub_followup_suggestions(
             current_location_name=current_location_name,
@@ -935,7 +1004,7 @@ class StubModelProvider(BaseModelProvider):
         selected_choice = input_payload.get("selected_choice") or {}
         if not isinstance(selected_choice, dict):
             selected_choice = {}
-        input_text = str(input_payload.get("input_text") or "")
+        input_text = str(input_payload.get("input_text") or input_payload.get("player_action_text") or "")
         action_kind = str(selected_choice.get("action_kind") or "narrative")
         travel_target_key = str(selected_choice.get("travel_target_key") or "").strip() or None
         intent_summary = str(selected_choice.get("intent_summary") or selected_choice.get("canonical_input_text") or input_text)

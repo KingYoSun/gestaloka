@@ -5,6 +5,7 @@ import { decisionActionText, type SwarmDecision } from "./playbook";
 import type { AssignedSwarmUserPersona, SwarmAuthUser } from "./userPersonas";
 
 export const worldId = "gestaloka_world_reference";
+export const worldTemplateId = "layered_world_foundation";
 export const apiBaseURL = process.env.SWARM_API_BASE_URL ?? "http://localhost:8000";
 export const keycloakTokenURL =
   process.env.SWARM_KEYCLOAK_TOKEN_URL ??
@@ -74,6 +75,20 @@ export async function getAccessToken(
 
 export function createTokenProvider(request: APIRequestContext, user: SwarmAuthUser): TokenProvider {
   return () => getAccessToken(request, user);
+}
+
+export async function ensurePackPreprocessed(request: APIRequestContext, token: TokenSource): Promise<Record<string, unknown>> {
+  const payload = await apiPost<Record<string, unknown>>(
+    request,
+    token,
+    `/admin/packs/${worldId}/templates/${worldTemplateId}/preprocess`,
+    {},
+    apiTimeoutMs,
+  );
+  if (payload.status !== "ready") {
+    throw new Error(`pack preprocess did not become ready: ${JSON.stringify(payload)}`);
+  }
+  return payload;
 }
 
 export async function ensurePlayerProfile(

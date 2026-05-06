@@ -14,6 +14,7 @@ import {
   getWorldEvents,
   getWorldMemories,
   worldId,
+  ensurePackPreprocessed,
   ensurePlayerProfile,
   type PlayerRuntime,
 } from "./swarm/playerDriver";
@@ -81,6 +82,9 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     accessTokens.set(persona.id, createTokenProvider(request, persona.user));
   }
   const opsToken = createTokenProvider(request, { username: "swarm-ops", password: "swarm-password" });
+
+  lastStage = "pack_preprocess";
+  await ensurePackPreprocessed(request, opsToken);
 
   lastStage = "profile_setup";
   for (const persona of activePersonas) {

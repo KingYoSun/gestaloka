@@ -93,7 +93,10 @@ def _failure_response_content(result, world_context: dict[str, object]) -> dict[
         }
     return {
         "detail": result.error_detail,
+        "system_message": resolved_output.get("system_message") or "アクションに失敗しました。SPは返却されました。",
         "failure": failure,
+        "rejected_claims": resolved_output.get("rejected_claims", []),
+        "normalization_warnings": resolved_output.get("normalization_warnings", []),
         "turn_id": result.turn.id,
         "event_id": result.event.id,
         "memory_ids": [],
@@ -102,6 +105,7 @@ def _failure_response_content(result, world_context: dict[str, object]) -> dict[
         "paid_sp": result.paid_sp,
         "bonus_sp": result.bonus_sp,
         "sp_ledger_id": result.sp_ledger_id,
+        "refund_ledger_id": resolved_output.get("refund_ledger_id") or failure.get("refund_ledger_id"),
         "quest_updates": [],
         "faction_updates": [],
         "inventory_updates": [],
@@ -266,8 +270,8 @@ async def _emit_turn_result_events(result, world_context: dict[str, object], res
             world_context,
         )
 
-    await realtime_hub.emit_with_world_context(result.turn.session_id, "world.event.created", result.event_payload, world_context)
-    await _emit_broadcast_available(result, world_context)
+        await realtime_hub.emit_with_world_context(result.turn.session_id, "world.event.created", result.event_payload, world_context)
+        await _emit_broadcast_available(result, world_context)
     if result.memories_payload:
         await realtime_hub.emit_with_world_context(
             result.turn.session_id,
