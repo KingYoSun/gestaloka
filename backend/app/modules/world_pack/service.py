@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -14,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.models.entities import World
+from app.models.entities import PackPreprocessRun, World
 
 
 ENGINE_API_VERSION = "v2"
@@ -1400,6 +1402,114 @@ def template_world_id(template: WorldTemplateDefinition) -> str:
     return str((template.world or {}).get("world_id") or template.template_id).strip()
 
 
+def pack_content_hash(pack: LoadedWorldPack, template_id: str) -> str:
+    template = pack.template(template_id)
+    payload = {
+        "manifest": {
+            "pack_id": pack.manifest.pack_id,
+            "version": pack.manifest.version,
+            "engine_api_version": pack.manifest.engine_api_version,
+            "display_name": pack.manifest.display_name,
+            "source_language": pack.manifest.source_language,
+            "semantic_tags": list(pack.manifest.semantic_tags),
+            "content_refs": dict(pack.manifest.content_refs),
+        },
+        "template_id": template.template_id,
+        "template": template.model_dump(mode="json", by_alias=True),
+        "npcs": [npc.model_dump(mode="json") for npc in pack.npcs],
+        "prompt_overlays": pack.prompt_overlays.model_dump(mode="json"),
+        "localization": pack.localization.model_dump(mode="json"),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def pack_preprocess_run_to_dict(run: PackPreprocessRun | None) -> dict[str, Any] | None:
+    if run is None:
+        return None
+    return {
+        "id": run.id,
+        "pack_id": run.pack_id,
+        "world_template_id": run.world_template_id,
+        "world_id": run.world_id,
+        "pack_content_hash": run.pack_content_hash,
+        "status": run.status,
+        "counts": run.counts,
+        "error": run.error,
+        "triggered_by_sub": run.triggered_by_sub,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "created_at": run.created_at.isoformat(),
+        "updated_at": run.updated_at.isoformat(),
+    }
+
+
+def latest_pack_preprocess_run(
+    db: Session,
+    *,
+    pack_id: str,
+    world_template_id: str,
+) -> PackPreprocessRun | None:
+    return db.execute(
+        select(PackPreprocessRun)
+        .where(
+            PackPreprocessRun.pack_id == pack_id,
+            PackPreprocessRun.world_template_id == world_template_id,
+        )
+        .order_by(PackPreprocessRun.created_at.desc(), PackPreprocessRun.id.desc())
+    ).scalars().first()
+
+
+def pack_preprocess_status(
+    db: Session,
+    pack: LoadedWorldPack,
+    template: WorldTemplateDefinition,
+) -> dict[str, Any]:
+    expected_hash = pack_content_hash(pack, template.template_id)
+    latest_run = latest_pack_preprocess_run(
+        db,
+        pack_id=pack.manifest.pack_id,
+        world_template_id=template.template_id,
+    )
+    if latest_run is None:
+        status_value = "required"
+    elif latest_run.pack_content_hash != expected_hash:
+        status_value = "stale"
+    else:
+        status_value = latest_run.status
+    return {
+        "status": status_value,
+        "ready": status_value == "ready",
+        "pack_content_hash": expected_hash,
+        "latest_run": pack_preprocess_run_to_dict(latest_run),
+    }
+
+
+def require_pack_preprocess_ready(
+    db: Session,
+    pack: LoadedWorldPack,
+    template: WorldTemplateDefinition,
+) -> dict[str, Any]:
+    status_payload = pack_preprocess_status(db, pack, template)
+    if status_payload["ready"]:
+        return status_payload
+    status_value = str(status_payload["status"])
+    code_by_status = {
+        "required": "pack_preprocess_required",
+        "pending": "pack_preprocess_running",
+        "running": "pack_preprocess_running",
+        "failed": "pack_preprocess_failed",
+        "stale": "pack_preprocess_stale",
+    }
+    raise WorldAvailabilityError(
+        f"Pack {pack.manifest.pack_id!r} template {template.template_id!r} preprocess status is {status_value!r}",
+        status_code=503,
+        code=code_by_status.get(status_value, "pack_preprocess_required"),
+        pack_id=pack.manifest.pack_id,
+        path=pack.root_dir,
+    )
+
+
 def _pack_has_failures(registry: PackRegistry, pack_id: str) -> bool:
     return any(failure.pack_id == pack_id for failure in registry.failures)
 
@@ -1481,9 +1591,12 @@ def pack_context_payload(pack: LoadedWorldPack, template: WorldTemplateDefinitio
     }
 
 
-def playable_world_catalog(registry: PackRegistry) -> dict[str, Any]:
+def playable_world_catalog(db: Session, registry: PackRegistry) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for pack, template in _public_world_catalog_entries(registry):
+        preprocess = pack_preprocess_status(db, pack, template)
+        if not preprocess["ready"]:
+            continue
         world_id = template_world_id(template)
         items.append(
             {
@@ -1493,6 +1606,7 @@ def playable_world_catalog(registry: PackRegistry) -> dict[str, Any]:
                 "health_url": f"/worlds/{world_id}/health",
                 "status": "playable",
                 "pack_context": pack_context_payload(pack, template),
+                "preprocess": preprocess,
             }
         )
     return {
@@ -1500,6 +1614,44 @@ def playable_world_catalog(registry: PackRegistry) -> dict[str, Any]:
         "engine_api_version": ENGINE_API_VERSION,
         "world_count": len(items),
         "items": sorted(items, key=lambda item: (item["display_name"], item["world_id"])),
+    }
+
+
+def public_world_pack_catalog(db: Session, registry: PackRegistry) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for pack in registry.list_packs():
+        template_summaries: list[dict[str, Any]] = []
+        for template_summary in pack.manifest.world_templates:
+            if not _template_is_public_playable(registry, pack, template_summary.template_id):
+                continue
+            template = pack.template(template_summary.template_id)
+            preprocess = pack_preprocess_status(db, pack, template)
+            if not preprocess["ready"]:
+                continue
+            template_summaries.append({**_template_summary_payload(pack, template_summary), "preprocess": preprocess})
+        if not template_summaries:
+            continue
+        items.append(
+            {
+                "pack_id": pack.manifest.pack_id,
+                "version": pack.manifest.version,
+                "engine_api_version": pack.manifest.engine_api_version,
+                "display_name": pack.manifest.display_name,
+                "source_language": pack.manifest.source_language,
+                "visibility": pack.manifest.visibility,
+                "publish_status": pack.manifest.publish_status,
+                "semantic_tags": list(pack.manifest.semantic_tags),
+                "content_refs": dict(pack.manifest.content_refs),
+                "world_templates": template_summaries,
+            }
+        )
+    template_count = sum(len(item["world_templates"]) for item in items)
+    return {
+        "status": "ready" if template_count else "error",
+        "engine_api_version": ENGINE_API_VERSION,
+        "pack_count": len(items),
+        "template_count": template_count,
+        "items": items,
     }
 
 
@@ -1544,6 +1696,8 @@ def world_health(db: Session, registry: PackRegistry, world_id: str) -> dict[str
             pack_id=pack.manifest.pack_id,
         )
 
+    preprocess = require_pack_preprocess_ready(db, pack, template)
+
     world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
     if world is not None:
         try:
@@ -1568,6 +1722,7 @@ def world_health(db: Session, registry: PackRegistry, world_id: str) -> dict[str
         "display_name": str((template.world or {}).get("default_name") or template.display_name),
         "summary": template.summary,
         "pack_context": pack_context_payload(pack, template),
+        "preprocess": preprocess,
     }
 
 

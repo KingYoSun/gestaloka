@@ -12,6 +12,8 @@ from app.core.container import build_container
 from app.core.config import Settings
 from app.main import create_app
 from app.models.base import Base
+from app.models.entities import PackPreprocessRun
+from app.modules.world_pack.service import pack_content_hash, template_world_id
 import app.modules.observability.service as observability_module
 
 
@@ -193,6 +195,27 @@ def container(test_settings: Settings):
     built.observability_service._clear_langfuse_error()
     engine = built.session_factory.kw["bind"]
     Base.metadata.create_all(bind=engine)
+    with built.session_factory() as db:
+        for pack in built.pack_registry.list_packs():
+            for summary in pack.manifest.world_templates:
+                visibility = summary.visibility or pack.manifest.visibility
+                publish_status = summary.publish_status or pack.manifest.publish_status
+                if visibility != "public" or publish_status != "playable":
+                    continue
+                template = pack.template(summary.template_id)
+                db.add(
+                    PackPreprocessRun(
+                        pack_id=pack.manifest.pack_id,
+                        world_template_id=template.template_id,
+                        world_id=template_world_id(template),
+                        pack_content_hash=pack_content_hash(pack, template.template_id),
+                        status="ready",
+                        counts={"test_fixture": True},
+                        error={},
+                        triggered_by_sub="test-fixture",
+                    )
+                )
+        db.commit()
     return built
 
 

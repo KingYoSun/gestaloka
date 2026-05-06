@@ -24,6 +24,7 @@ from app.modules.world_pack.service import (
     WorldPackError,
     ensure_requested_world_is_playable,
     playable_world_catalog,
+    public_world_pack_catalog,
     world_health,
 )
 from app.modules.world_memory.service import list_world_memories
@@ -219,23 +220,25 @@ def update_player_profile(
 
 @router.get("/packs")
 def list_world_packs(
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, object]:
     del user
     try:
-        return container.pack_registry.public_catalog()
+        return public_world_pack_catalog(db, container.pack_registry)
     except WorldPackError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=exc.diagnostic()) from exc
 
 
 @router.get("/playable")
 def list_playable_worlds(
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_user),
 ) -> dict[str, object]:
     del user
-    return playable_world_catalog(container.pack_registry)
+    return playable_world_catalog(db, container.pack_registry)
 
 
 @router.get("/{world_id}/health")

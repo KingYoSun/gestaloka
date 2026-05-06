@@ -11,12 +11,13 @@ from typing import Callable
 import pytest
 import yaml
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from app.core.container import build_container
 from app.core.config import Settings
 from app.main import create_app
 from app.models.base import Base
-from app.models.entities import World
+from app.models.entities import Memory, PackPreprocessRun, ProjectionRecord, World
 from app.modules.world_pack.cli import main as world_pack_main
 from app.modules.world_pack.service import (
     PackRegistry,
@@ -25,6 +26,8 @@ from app.modules.world_pack.service import (
     export_pack_archive,
     import_pack_archive,
     load_pack_from_dir,
+    pack_content_hash,
+    template_world_id,
     world_pack_metadata,
 )
 
@@ -67,7 +70,15 @@ def _settings_for_pack_dir(tmp_path: Path, pack_dir: Path) -> Settings:
         eval_dataset_dir=REPO_ROOT / "evals" / "datasets",
         release_config_dir=REPO_ROOT / "config" / "release",
         oidc_dev_mode=True,
+        graph_projection_backend="recording",
+        model_provider="stub",
+        embedding_provider="stub",
+        model_lite_id="test-lite-model",
+        model_main_id="test-main-model",
+        model_pro_id="test-pro-model",
+        otel_exporter_otlp_endpoint="",
         otel_metrics_port=0,
+        langfuse_enabled=False,
     )
 
 
@@ -79,9 +90,31 @@ def _only_failure(registry: PackRegistry) -> dict[str, object]:
     return diagnostic["failures"][0]
 
 
-def _build_client_for_pack_dir(tmp_path: Path, pack_dir: Path) -> tuple[TestClient, object]:
+def _build_client_for_pack_dir(tmp_path: Path, pack_dir: Path, *, preprocess_ready: bool = True) -> tuple[TestClient, object]:
     container = build_container(_settings_for_pack_dir(tmp_path, pack_dir))
     Base.metadata.create_all(bind=container.session_factory.kw["bind"])
+    if preprocess_ready:
+        with container.session_factory() as db:
+            for pack in container.pack_registry.list_packs():
+                for summary in pack.manifest.world_templates:
+                    if (summary.visibility or pack.manifest.visibility) != "public":
+                        continue
+                    if (summary.publish_status or pack.manifest.publish_status) != "playable":
+                        continue
+                    template = pack.template(summary.template_id)
+                    db.add(
+                        PackPreprocessRun(
+                            pack_id=pack.manifest.pack_id,
+                            world_template_id=template.template_id,
+                            world_id=template_world_id(template),
+                            pack_content_hash=pack_content_hash(pack, template.template_id),
+                            status="ready",
+                            counts={"test_fixture": True},
+                            error={},
+                            triggered_by_sub="test-fixture",
+                        )
+                    )
+            db.commit()
     return TestClient(create_app(container)), container
 
 
@@ -536,6 +569,105 @@ def test_public_catalog_hides_private_packs_and_ops_catalog_keeps_them(tmp_path:
 
     assert session_response.status_code == 503
     assert session_response.json()["detail"]["error"] == "world_unavailable"
+
+
+def test_playable_world_requires_pack_preprocess_ready(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+    test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir, preprocess_ready=False)
+    try:
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        health_response = test_client.get("/worlds/gestaloka_world_reference/health", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "gestaloka_world_reference",
+                "pack_id": "gestaloka_world_reference",
+                "world_template_id": "layered_world_foundation",
+                "world_name": "Unprocessed World",
+                "player_display_name": "Demo Player",
+            },
+            headers=auth_headers,
+        )
+    finally:
+        test_client.close()
+
+    assert playable_response.status_code == 200
+    assert playable_response.json()["world_count"] == 0
+    assert health_response.status_code == 503
+    assert health_response.json()["detail"]["error"] == "pack_preprocess_required"
+    assert session_response.status_code == 503
+    assert session_response.json()["detail"]["error"] == "pack_preprocess_required"
+
+
+def test_admin_pack_preprocess_materializes_runtime_indexes(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+    test_client, container = _build_client_for_pack_dir(tmp_path, pack_dir, preprocess_ready=False)
+    try:
+        run_response = test_client.post(
+            "/admin/packs/gestaloka_world_reference/templates/layered_world_foundation/preprocess",
+            headers=auth_headers,
+        )
+        rerun_response = test_client.post(
+            "/admin/packs/gestaloka_world_reference/templates/layered_world_foundation/preprocess",
+            headers=auth_headers,
+        )
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        status_response = test_client.get("/admin/packs/preprocess-status", headers=auth_headers)
+        with container.session_factory() as db:
+            memory_count = db.execute(select(func.count(Memory.id))).scalar_one()
+            ready_memory_count = db.execute(
+                select(func.count(Memory.id)).where(Memory.embedding_status == "ready")
+            ).scalar_one()
+            projection_count = db.execute(select(func.count(ProjectionRecord.id))).scalar_one()
+    finally:
+        test_client.close()
+
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["status"] == "ready"
+    assert rerun_response.status_code == 200
+    assert rerun_response.json()["status"] == "ready"
+    assert run_payload["run"]["counts"]["locations"] >= 3
+    assert run_payload["run"]["counts"]["memories"] >= 3
+    assert run_payload["run"]["counts"]["projection_records"] >= 1
+    assert memory_count == ready_memory_count
+    assert projection_count >= run_payload["run"]["counts"]["projection_records"]
+    assert playable_response.json()["world_count"] == 1
+    assert status_response.json()["items"][0]["status"] == "ready"
+
+
+def test_admin_publish_requires_ready_pack_preprocess(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["world_templates"][0]["publish_status"] = "draft"  # type: ignore[index]
+
+    _rewrite_pack_manifest(pack_dir, "gestaloka_world_reference", mutate)
+    test_client, _ = _build_client_for_pack_dir(tmp_path, pack_dir, preprocess_ready=False)
+    try:
+        blocked_response = test_client.patch(
+            "/admin/world-templates/gestaloka_world_reference/layered_world_foundation",
+            headers=auth_headers,
+            json={"publish_status": "playable"},
+        )
+        preprocess_response = test_client.post(
+            "/admin/packs/gestaloka_world_reference/templates/layered_world_foundation/preprocess",
+            headers=auth_headers,
+        )
+        allowed_response = test_client.patch(
+            "/admin/world-templates/gestaloka_world_reference/layered_world_foundation",
+            headers=auth_headers,
+            json={"publish_status": "playable"},
+        )
+    finally:
+        test_client.close()
+
+    assert blocked_response.status_code == 409
+    assert blocked_response.json()["detail"]["error"] == "pack_preprocess_required"
+    assert preprocess_response.status_code == 200
+    assert preprocess_response.json()["status"] == "ready"
+    assert allowed_response.status_code == 200
+    assert allowed_response.json()["items"][0]["effective_publish_status"] == "playable"
 
 
 @pytest.mark.parametrize("publish_status", ["draft", "archived"])

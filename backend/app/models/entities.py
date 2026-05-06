@@ -58,6 +58,36 @@ class World(Base, TimestampMixin):
     state: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class PackPreprocessRun(Base, TimestampMixin):
+    __tablename__ = "pack_preprocess_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'ready', 'failed', 'stale')",
+            name="ck_pack_preprocess_runs_status",
+        ),
+        Index(
+            "ix_pack_preprocess_runs_scope_hash",
+            "pack_id",
+            "world_template_id",
+            "pack_content_hash",
+            "status",
+        ),
+        Index("ix_pack_preprocess_runs_world_status", "world_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    pack_id: Mapped[str] = mapped_column(String(120))
+    world_template_id: Mapped[str] = mapped_column(String(120))
+    world_id: Mapped[str] = mapped_column(String(64))
+    pack_content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    counts: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[dict] = mapped_column(JSON, default=dict)
+    triggered_by_sub: Mapped[str] = mapped_column(String(128), default="")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AdminAppUser(Base, TimestampMixin):
     __tablename__ = "admin_app_users"
 

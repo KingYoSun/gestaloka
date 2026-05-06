@@ -2115,6 +2115,7 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
     health,
     latestConsequenceSummary,
     locationOps,
+    lastPackPreprocessRun,
     memories,
     npcRoutineOps,
     opsState,
@@ -2126,6 +2127,7 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
     travelLogOps,
     wallet,
     worldCatalogStatus,
+    opsPackCatalog,
   } = runtime;
   const choiceCost =
     wallet?.choice_turn_cost ?? health?.sp?.choice_turn_cost ?? wallet?.turn_cost ?? health?.sp?.turn_cost ?? "?";
@@ -2149,6 +2151,14 @@ function PlayerTestSurface({ runtime }: PlayerPageProps) {
           : ""}
       </p>
       <p data-testid="ops-status">Ops access: {opsState}</p>
+      <p data-testid="pack-preprocess-status">
+        {(opsPackCatalog?.preprocess_statuses ?? [])
+          .map((item) => `${item.pack_id ?? "pack"}/${item.world_template_id ?? "template"}:${item.status}`)
+          .join(" | ") || "No pack preprocess status."}
+      </p>
+      <p data-testid="last-pack-preprocess-run">
+        {lastPackPreprocessRun ? `${lastPackPreprocessRun.world_id}:${lastPackPreprocessRun.status}` : "No pack preprocess run."}
+      </p>
       <p data-testid="last-consequence-summary">{latestConsequenceSummary || "The scene is waiting for your next line."}</p>
       <StreamList
         testId="events-stream"

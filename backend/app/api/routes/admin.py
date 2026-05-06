@@ -17,7 +17,16 @@ from app.models.entities import AdminAppUser, AdminPromptOverride, AdminRuntimeC
 from app.modules.admin_ops.service import llm_usage_timeline, projection_status, sp_overview
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
-from app.modules.world_pack.service import ENGINE_API_VERSION, PackRegistry, WorldPackError, configure_pack_registry, import_pack_archive, load_pack_from_dir
+from app.modules.world_pack.preprocess import list_pack_preprocess_statuses, run_pack_preprocess
+from app.modules.world_pack.service import (
+    ENGINE_API_VERSION,
+    PackRegistry,
+    WorldPackError,
+    configure_pack_registry,
+    import_pack_archive,
+    load_pack_from_dir,
+    pack_preprocess_status,
+)
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -167,6 +176,46 @@ def _world_template_items(container: AppContainer) -> list[dict[str, object]]:
     return items
 
 
+def _ensure_publish_gate_allows_manifest_change(
+    db: Session,
+    container: AppContainer,
+    manifest: dict[str, object],
+    *,
+    pack_id: str,
+) -> None:
+    pack = container.pack_registry.get_pack(pack_id)
+    manifest_visibility = str(manifest.get("visibility") or pack.manifest.visibility)
+    manifest_publish_status = str(manifest.get("publish_status") or pack.manifest.publish_status)
+    templates = manifest.get("world_templates")
+    if not isinstance(templates, list):
+        return
+    blocked: list[str] = []
+    for item in templates:
+        if not isinstance(item, dict):
+            continue
+        template_id = str(item.get("template_id") or "").strip()
+        if not template_id:
+            continue
+        effective_visibility = str(item.get("visibility") or manifest_visibility)
+        effective_publish_status = str(item.get("publish_status") or manifest_publish_status)
+        if effective_visibility != "public" or effective_publish_status != "playable":
+            continue
+        template = pack.template(template_id)
+        status_payload = pack_preprocess_status(db, pack, template)
+        if not status_payload["ready"]:
+            blocked.append(f"{template_id}:{status_payload['status']}")
+    if blocked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "pack_preprocess_required",
+                "message": "Run pack preprocess before publishing playable public templates.",
+                "pack_id": pack_id,
+                "blocked_templates": blocked,
+            },
+        )
+
+
 def _scaffold_pack_payload(payload: CreatePackRequest) -> tuple[dict[str, object], dict[str, object], dict[str, object], dict[str, object]]:
     pack_yaml = {
         "pack_id": payload.pack_id,
@@ -311,6 +360,40 @@ def get_admin_packs(
     return _pack_payload(container)
 
 
+@router.get("/packs/preprocess-status")
+def get_admin_pack_preprocess_status(
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    del user
+    return list_pack_preprocess_statuses(db, container.pack_registry)
+
+
+@router.post("/packs/{pack_id}/templates/{template_id}/preprocess")
+def post_admin_pack_preprocess(
+    pack_id: str,
+    template_id: str,
+    db: Session = Depends(get_db),
+    container: AppContainer = Depends(get_container),
+    user: UserIdentity = Depends(get_current_ops_user),
+) -> dict[str, object]:
+    try:
+        result = run_pack_preprocess(
+            db,
+            registry=container.pack_registry,
+            memory_service=container.memory_service,
+            projection_service=container.projection_service,
+            pack_id=pack_id,
+            world_template_id=template_id,
+            triggered_by_sub=user.sub,
+        )
+    except WorldPackError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.diagnostic()) from exc
+    db.commit()
+    return result
+
+
 @router.post("/packs", status_code=status.HTTP_201_CREATED)
 def post_admin_pack(
     payload: CreatePackRequest,
@@ -371,6 +454,7 @@ def post_admin_pack_import(
 def patch_admin_pack(
     pack_id: str,
     payload: PatchPackRequest,
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
@@ -381,6 +465,7 @@ def patch_admin_pack(
         value = getattr(payload, key)
         if value is not None:
             manifest[key] = value
+    _ensure_publish_gate_allows_manifest_change(db, container, manifest, pack_id=pack_id)
     _write_yaml(manifest_path, manifest)
     try:
         load_pack_from_dir(container.settings.pack_dir, pack_id)
@@ -404,6 +489,7 @@ def patch_admin_world_template(
     pack_id: str,
     template_id: str,
     payload: PatchTemplateRequest,
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
@@ -424,6 +510,7 @@ def patch_admin_world_template(
             break
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="World template not found")
+    _ensure_publish_gate_allows_manifest_change(db, container, manifest, pack_id=pack_id)
     _write_yaml(manifest_path, manifest)
     try:
         load_pack_from_dir(container.settings.pack_dir, pack_id)

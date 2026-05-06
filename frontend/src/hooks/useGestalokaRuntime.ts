@@ -38,6 +38,7 @@ import type {
   ObservabilitySummary,
   OpsWorldItem,
   OpsWorldPackCatalog,
+  PackPreprocessRun,
   PlayableWorldCatalog,
   PlayableWorldItem,
   PlayLanguage,
@@ -324,6 +325,7 @@ export function useGestalokaRuntime() {
   const [lastRebuild, setLastRebuild] = useState<RebuildSummary | null>(null);
   const [lastMemoryReindex, setLastMemoryReindex] = useState<MemoryReindexResult | null>(null);
   const [lastAdjustment, setLastAdjustment] = useState<SPAdjustmentResponse | null>(null);
+  const [lastPackPreprocessRun, setLastPackPreprocessRun] = useState<PackPreprocessRun | null>(null);
   const [memorySearchQuery, setMemorySearchQuery] = useState(() => t("player.defaults.memorySearchQuery"));
   const [memorySearchResult, setMemorySearchResult] = useState<MemorySearchResponse | null>(null);
   const [ledgerUserFilter, setLedgerUserFilter] = useState("");
@@ -347,6 +349,7 @@ export function useGestalokaRuntime() {
   const [memorySearchPending, setMemorySearchPending] = useState(false);
   const [memoryReindexPending, setMemoryReindexPending] = useState(false);
   const [adjustPending, setAdjustPending] = useState(false);
+  const [packPreprocessPending, setPackPreprocessPending] = useState(false);
   const [evalPending, setEvalPending] = useState(false);
   const [checklistPending, setChecklistPending] = useState(false);
   const [idlePassPending, setIdlePassPending] = useState(false);
@@ -802,6 +805,18 @@ export function useGestalokaRuntime() {
       setWalletError(t("errors.walletUnavailable"));
       throw requestError;
     }
+  }
+
+  async function refreshWorldCatalog(currentToken: string) {
+    currentToken = await ensureFreshToken(currentToken);
+    const worldPayload = await apiFetch<PlayableWorldCatalog>("/worlds/playable", currentToken);
+    setPlayableWorlds(worldPayload.items);
+    setWorldCatalogStatus(worldPayload.status);
+    const firstPlayableWorld = worldPayload.items.find((item) => item.status === "playable") ?? worldPayload.items[0];
+    setWorldId((current) =>
+      worldPayload.items.some((item) => item.world_id === current) ? current : (firstPlayableWorld?.world_id ?? ""),
+    );
+    return worldPayload;
   }
 
   async function handleWalletRetry() {
@@ -1502,6 +1517,33 @@ export function useGestalokaRuntime() {
     }
   }
 
+  async function handlePackPreprocess(packId: string, templateId: string) {
+    if (!token) {
+      setError(t("errors.signInBeforeAdminOps"));
+      return;
+    }
+    try {
+      setPackPreprocessPending(true);
+      setError("");
+      const currentToken = await ensureFreshToken(token);
+      const response = await apiFetch<{ status: string; run: PackPreprocessRun }>(
+        `/admin/packs/${encodeURIComponent(packId)}/templates/${encodeURIComponent(templateId)}/preprocess`,
+        currentToken,
+        { method: "POST" },
+      );
+      setLastPackPreprocessRun(response.run);
+      await Promise.all([
+        refreshAdminData(currentToken, activeWorldId, ledgerUserFilter, ledgerWorldFilter || activeWorldId, session?.session_id),
+        refreshWorldCatalog(currentToken),
+        refreshHealth(),
+      ]);
+    } catch (requestError) {
+      showRequestError(requestError);
+    } finally {
+      setPackPreprocessPending(false);
+    }
+  }
+
   async function handleAdjustmentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) {
@@ -1705,6 +1747,7 @@ export function useGestalokaRuntime() {
     lastRebuild,
     lastMemoryReindex,
     lastAdjustment,
+    lastPackPreprocessRun,
     memorySearchQuery,
     setMemorySearchQuery,
     memorySearchResult,
@@ -1736,6 +1779,7 @@ export function useGestalokaRuntime() {
     memorySearchPending,
     memoryReindexPending,
     adjustPending,
+    packPreprocessPending,
     evalPending,
     checklistPending,
     idlePassPending,
@@ -1778,6 +1822,7 @@ export function useGestalokaRuntime() {
     handleIdlePass,
     handleMemorySearch,
     handleMemoryReindex,
+    handlePackPreprocess,
     handleLedgerRefresh,
     handleAdjustmentSubmit,
     handleMockSpPurchase,

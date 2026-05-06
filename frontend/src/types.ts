@@ -165,6 +165,7 @@ export type WorldPackItem = {
     publish_status?: "playable" | "draft" | "archived" | null;
     effective_visibility: "public" | "private";
     effective_publish_status: "playable" | "draft" | "archived";
+    preprocess?: PackPreprocessStatus;
   }>;
 };
 
@@ -183,6 +184,7 @@ export type PlayableWorldItem = {
   health_url: string;
   status: string;
   pack_context: PackScope;
+  preprocess?: PackPreprocessStatus;
 };
 
 export type PlayableWorldCatalog = {
@@ -213,6 +215,35 @@ export type OpsWorldPackCatalog = {
   failure_count: number;
   failures: OpsWorldPackFailure[];
   items: OpsWorldPackItem[];
+  preprocess_statuses?: PackPreprocessStatus[];
+};
+
+export type PackPreprocessRun = {
+  id: string;
+  pack_id: string;
+  world_template_id: string;
+  world_id: string;
+  pack_content_hash: string;
+  status: "pending" | "running" | "ready" | "failed" | "stale";
+  counts: Record<string, number | string | boolean>;
+  error: Record<string, unknown>;
+  triggered_by_sub: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PackPreprocessStatus = {
+  pack_id?: string;
+  pack_display_name?: string;
+  world_template_id?: string;
+  world_template_display_name?: string;
+  world_id?: string;
+  status: "required" | "pending" | "running" | "ready" | "failed" | "stale";
+  ready: boolean;
+  pack_content_hash: string;
+  latest_run: PackPreprocessRun | null;
 };
 
 export type WorldContext = {
