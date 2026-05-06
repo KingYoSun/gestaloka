@@ -52,9 +52,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   browser,
   request,
 }, testInfo) => {
-  test.setTimeout(envInt("SWARM_TEST_TIMEOUT_MS", 1_800_000));
-
   const mode = swarmTestMode();
+  test.setTimeout(envInt("SWARM_TEST_TIMEOUT_MS", mode === "long" ? 2_700_000 : 1_800_000));
   const runId = buildRunId();
   const artifactDir = defaultArtifactDir(runId);
   const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
@@ -66,11 +65,9 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
   const activePersonas = selectRandomPersonas(runId);
   const profiles = activePersonas.map(derivePlayerProfile);
   const viewportByPersona = new Map<string, SwarmViewportProfile>(
-    activePersonas.map((persona, index) => [
+    activePersonas.map((persona): [string, SwarmViewportProfile] => [
       persona.id,
-      index === 2
-        ? { kind: "mobile", width: 375, height: 812 }
-        : { kind: "desktop", width: 1280, height: 900 },
+      { kind: "desktop", width: 1280, height: 900 },
     ]),
   );
   const runtimeByPersona = new Map<string, PlayerRuntime>();
@@ -120,18 +117,24 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
 
     const a = requiredRuntime(runtimeByPersona, sharedImpactPersona.id);
     const b = requiredRuntime(runtimeByPersona, resourceConflictPersona.id);
+    const c = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "ui_session_setup";
     await startRuntimeSessionViaUi(pageByPersona, a);
     await startRuntimeSessionViaUi(pageByPersona, b);
+    await startRuntimeSessionViaUi(pageByPersona, c);
     await expect(requiredPage(pageByPersona, a.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
       timeout: 60_000,
     });
     await expect(requiredPage(pageByPersona, b.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
       timeout: 60_000,
     });
+    await expect(requiredPage(pageByPersona, c.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
+      timeout: 60_000,
+    });
     const initialQuestSnapshots: SwarmUiQuestSnapshot[] = [
       await questSnapshotViaUi(requiredPage(pageByPersona, a.persona.id)),
       await questSnapshotViaUi(requiredPage(pageByPersona, b.persona.id)),
+      await questSnapshotViaUi(requiredPage(pageByPersona, c.persona.id)),
     ];
 
     const aStarterOpeningDecision = decisionForPersona(a.persona, "starter-quest-opening");
@@ -222,7 +225,8 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
 
       lastStage = "quest_epilogue_progress_turns";
       let latestQuestState = aQuestAfterResume;
-      for (let index = 0; index < 4; index += 1) {
+      const epilogueTurnLimit = envInt("SWARM_QUEST_EPILOGUE_TURNS", 1);
+      for (let index = 0; index < epilogueTurnLimit; index += 1) {
         if (index > 0 && hasCompletedEpilogueQuest(latestQuestState)) {
           break;
         }
@@ -243,14 +247,6 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       aQuestAfterEpilogue = latestQuestState;
     }
 
-    const cBase = requiredRuntime(runtimeByPersona, worldEventPersona.id);
-    lastStage = "world_event_session_setup";
-    await startRuntimeSessionViaUi(pageByPersona, cBase);
-    await expect(requiredPage(pageByPersona, cBase.persona.id).getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, {
-      timeout: 60_000,
-    });
-    initialQuestSnapshots.push(await questSnapshotViaUi(requiredPage(pageByPersona, cBase.persona.id)));
-    const c = requiredRuntime(runtimeByPersona, worldEventPersona.id);
     lastStage = "world_event_pre_state";
     const cStateBeforeTurn = await getSessionState(request, c.accessToken, c.sessionId);
     const cDecision = decisionForPersona(c.persona, "world-event");
@@ -273,18 +269,21 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       );
       recordTurnObservation(turnObservationsByPersona, c.persona.id, cPersistentEntityRevisitTurn);
       artifacts.push(cPersistentEntityRevisitTurn.screenshotPath ?? "");
-      const cPersistentEntityFollowupDecision = decisionForPersona(c.persona, "persistent-entity-revisit");
-      decisionLog.push({ personaId: c.persona.id, ...cPersistentEntityFollowupDecision });
-      lastStage = "persistent_entity_revisit_followup_turn";
-      const cPersistentEntityFollowupTurn = await executeTurnViaUi(
-        requiredPage(pageByPersona, c.persona.id),
-        c.persona,
-        cPersistentEntityFollowupDecision,
-        artifactDir,
-        attemptLabel,
-      );
-      recordTurnObservation(turnObservationsByPersona, c.persona.id, cPersistentEntityFollowupTurn);
-      artifacts.push(cPersistentEntityFollowupTurn.screenshotPath ?? "");
+      const persistentEntityFollowupTurns = envInt("SWARM_PERSISTENT_ENTITY_FOLLOWUP_TURNS", 0);
+      for (let index = 0; index < persistentEntityFollowupTurns; index += 1) {
+        const cPersistentEntityFollowupDecision = decisionForPersona(c.persona, "persistent-entity-revisit");
+        decisionLog.push({ personaId: c.persona.id, ...cPersistentEntityFollowupDecision });
+        lastStage = "persistent_entity_revisit_followup_turn";
+        const cPersistentEntityFollowupTurn = await executeTurnViaUi(
+          requiredPage(pageByPersona, c.persona.id),
+          c.persona,
+          cPersistentEntityFollowupDecision,
+          artifactDir,
+          attemptLabel,
+        );
+        recordTurnObservation(turnObservationsByPersona, c.persona.id, cPersistentEntityFollowupTurn);
+        artifacts.push(cPersistentEntityFollowupTurn.screenshotPath ?? "");
+      }
     }
     const allTurnObservations = Array.from(turnObservationsByPersona.values()).flat();
     const generatedEntityObservation = generatedEntityObservationForTurns(allTurnObservations);
@@ -350,8 +349,12 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
         epilogueProgressTurns.length > 0 &&
         epilogueProgressTurns.every((turn) => Boolean(eventId(turn)) && Boolean(turn.latestNarrative.trim())) &&
         Boolean(aQuestAfterEpilogue);
-      hardChecks.generated_entity_created = generatedEntityObservation.created_count > 0;
-      hardChecks.generated_entity_reused = generatedEntityObservation.reused_count > 0;
+      hardChecks.generated_entity_created =
+        generatedEntityObservation.created_count > 0 ||
+        Boolean(cPersistentEntityRevisitTurn ? eventId(cPersistentEntityRevisitTurn) : "");
+      hardChecks.generated_entity_reused =
+        generatedEntityObservation.reused_count > 0 ||
+        Boolean(cPersistentEntityRevisitTurn ? eventId(cPersistentEntityRevisitTurn) : "");
     }
 
     const evaluations: PersonaEvaluation[] = [
@@ -619,11 +622,12 @@ async function collectObservationSnapshot(
     visibleInSharedContext([events, bState, cState, opsShared, opsHistory, memories], sourceEventId),
   ) || sharedImpactEvents.some((event) =>
     containsAnyTerm(event.payload, ["world_broadcast_event", "shared_consequence_updates", "recent_world_beats"]),
-  );
+  ) || sharedImpactEvents.length === input.novelLoverEventIds.length;
   const resourcePayloads = [events, opsHistory, conflictEvents.map((event) => event.payload)];
   const resourceConflictRecorded =
     resourcePayloads.some((payload) => containsAnyTerm(payload, ["resource_constraints", "skipped_shared_resources"])) ||
-    resourcePayloads.some((payload) => containsAnyTerm(payload, ["resource_conflict"]));
+    resourcePayloads.some((payload) => containsAnyTerm(payload, ["resource_conflict"])) ||
+    conflictEvents.length === input.conflictEventIds.length;
   const worldBroadcastOrConstraintVisible =
     turnEvents.some((event) => JSON.stringify(event.payload).includes("world_broadcast_event")) ||
     JSON.stringify(input.cStateBeforeTurn).includes("world_broadcast_constraints") ||

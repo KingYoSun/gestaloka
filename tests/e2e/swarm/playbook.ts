@@ -69,15 +69,8 @@ export function decisionForPersona(persona: SwarmUserPersona, scenario: SwarmDec
   if (scenario === "post-leave-explore") {
     return {
       scenario,
-      submissionMode: "suggested_action",
-      suggestedActionSelection: {
-        label: "離脱中に周辺の噂と手掛かりを探る",
-        preferredTextPatterns: [
-          "(探|噂|視線|手掛かり|痕跡|記録|万象図書館)",
-          "explore|trace|rumor|lead|record|library",
-        ],
-        fallbackActionNumber: 3,
-      },
+      submissionMode: "free_text",
+      inputText: "離脱中にネクサス市の周辺で噂、視線、手掛かり、記録の痕跡を探り、戻る前に何が見えるかを確かめる。",
       reason: `${persona.label} はクエスト離脱後も同じ世界で探索を続け、寄り道が通常 turn として解決されるかを確認する。`,
       expectedWorldImpact: "寄り道の自然文 turn が解決され、同一 world の event として記録され、戻れる文脈が scene に残ることを期待する。",
     };

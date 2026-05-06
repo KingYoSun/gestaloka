@@ -5,7 +5,7 @@ import type { TestInfo } from "@playwright/test";
 
 import type { DerivedPlayerProfile } from "./playerProfiles";
 import { decisionActionText, type SwarmDecision } from "./playbook";
-import type { SwarmExperienceEvaluation, ExperienceDimension } from "./experienceJudge";
+import type { SwarmExperienceEvaluation, ExperienceDimension, ExperienceScore } from "./experienceJudge";
 import type { SwarmUiTurnObservation } from "./uiDriver";
 import type { SwarmUserPersona } from "./userPersonas";
 
@@ -476,17 +476,17 @@ function buildExperienceSummary(runs: RunGroupRun[]): RunGroupAggregateReport["e
     dimensions: Object.fromEntries(
       experienceDimensions.map((dimension) => {
         const scores = evaluations
-          .map((evaluation) => evaluation[dimension].score)
+          .map((evaluation) => scoreForDimension(evaluation, dimension).score)
           .filter((score): score is number => typeof score === "number");
         return [
           dimension,
           {
             average_score: scores.length ? roundScore(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
             ratings: {
-              good: evaluations.filter((evaluation) => evaluation[dimension].rating === "good").length,
-              acceptable: evaluations.filter((evaluation) => evaluation[dimension].rating === "acceptable").length,
-              "needs work": evaluations.filter((evaluation) => evaluation[dimension].rating === "needs work").length,
-              blocked: evaluations.filter((evaluation) => evaluation[dimension].rating === "blocked").length,
+              good: evaluations.filter((evaluation) => scoreForDimension(evaluation, dimension).rating === "good").length,
+              acceptable: evaluations.filter((evaluation) => scoreForDimension(evaluation, dimension).rating === "acceptable").length,
+              "needs work": evaluations.filter((evaluation) => scoreForDimension(evaluation, dimension).rating === "needs work").length,
+              blocked: evaluations.filter((evaluation) => scoreForDimension(evaluation, dimension).rating === "blocked").length,
             },
           },
         ];
@@ -514,10 +514,14 @@ export function experienceWarnings(evaluations: SwarmExperienceEvaluation[]): st
     ...evaluation.warnings.map((warning) => `${evaluation.personaId}: ${warning}`),
     ...experienceDimensions
       .filter((dimension) => {
-        const score = evaluation[dimension].score;
-        return typeof score !== "number" || score < experienceWarningThreshold() || evaluation[dimension].rating === "needs work";
+        const dimensionScore = scoreForDimension(evaluation, dimension);
+        const score = dimensionScore.score;
+        return typeof score !== "number" || score < experienceWarningThreshold() || dimensionScore.rating === "needs work";
       })
-      .map((dimension) => `${evaluation.personaId}: ${dimension}=${scoreLabel(evaluation[dimension].score)} (${evaluation[dimension].rating})`),
+      .map((dimension) => {
+        const dimensionScore = scoreForDimension(evaluation, dimension);
+        return `${evaluation.personaId}: ${dimension}=${scoreLabel(dimensionScore.score)} (${dimensionScore.rating})`;
+      }),
   ]);
 }
 
@@ -526,10 +530,29 @@ function experienceEvaluationHasWarning(evaluation: SwarmExperienceEvaluation): 
     evaluation.judge.status === "blocked" ||
     evaluation.warnings.length > 0 ||
     experienceDimensions.some((dimension) => {
-      const score = evaluation[dimension].score;
-      return typeof score !== "number" || score < experienceWarningThreshold() || evaluation[dimension].rating === "needs work";
+      const dimensionScore = scoreForDimension(evaluation, dimension);
+      const score = dimensionScore.score;
+      return typeof score !== "number" || score < experienceWarningThreshold() || dimensionScore.rating === "needs work";
     })
   );
+}
+
+function scoreForDimension(evaluation: SwarmExperienceEvaluation, dimension: ExperienceDimension): ExperienceScore {
+  const score = evaluation[dimension] as ExperienceScore | undefined;
+  if (
+    score &&
+    typeof score === "object" &&
+    (typeof score.score === "number" || score.score === null) &&
+    typeof score.rating === "string" &&
+    typeof score.rationale === "string"
+  ) {
+    return score;
+  }
+  return {
+    score: null,
+    rating: "blocked",
+    rationale: `${dimension} はこの swarm-test result に含まれていません。`,
+  };
 }
 
 function buildStoryObservations(report: SwarmReport): RunStoryObservation[] {
@@ -654,7 +677,15 @@ function durationLabel(value: number | null): string {
   return typeof value === "number" ? `${Math.round(value)}ms` : "-";
 }
 
-const experienceDimensions: ExperienceDimension[] = ["ux_clarity", "gameplay_fun", "story_progression", "overall"];
+const experienceDimensions: ExperienceDimension[] = [
+  "ux_clarity",
+  "gameplay_fun",
+  "story_progression",
+  "action_reflection",
+  "world_consistency",
+  "suggested_action_fit",
+  "overall",
+];
 
 function runGroupAggregateMarkdownReport(report: RunGroupAggregateReport): string {
   const lines = [
@@ -1150,6 +1181,9 @@ function markdownReport(report: SwarmReport, attemptLabel: string): string {
       `- UX 評価: score=${scoreLabel(evaluation.ux_clarity.score)}; 評価=${ja(evaluation.ux_clarity.rating)}; 理由=${ja(evaluation.ux_clarity.rationale)}`,
       `- ゲームプレイの面白さ: score=${scoreLabel(evaluation.gameplay_fun.score)}; 評価=${ja(evaluation.gameplay_fun.rating)}; 理由=${ja(evaluation.gameplay_fun.rationale)}`,
       `- ストーリー展開評価: score=${scoreLabel(evaluation.story_progression.score)}; 評価=${ja(evaluation.story_progression.rating)}; 理由=${ja(evaluation.story_progression.rationale)}`,
+      `- 選択反映評価: score=${scoreLabel(evaluation.action_reflection.score)}; 評価=${ja(evaluation.action_reflection.rating)}; 理由=${ja(evaluation.action_reflection.rationale)}`,
+      `- 場所・人・モノ整合性: score=${scoreLabel(evaluation.world_consistency.score)}; 評価=${ja(evaluation.world_consistency.rating)}; 理由=${ja(evaluation.world_consistency.rationale)}`,
+      `- 次行動候補評価: score=${scoreLabel(evaluation.suggested_action_fit.score)}; 評価=${ja(evaluation.suggested_action_fit.rating)}; 理由=${ja(evaluation.suggested_action_fit.rationale)}`,
       `- overall: score=${scoreLabel(evaluation.overall.score)}; 評価=${ja(evaluation.overall.rating)}; 理由=${ja(evaluation.overall.rationale)}`,
       `- warnings: ${evaluation.warnings.length ? evaluation.warnings.map(ja).join(" | ") : "なし"}`,
       `- suggestions: ${evaluation.suggestions.length ? evaluation.suggestions.map(ja).join(" | ") : "なし"}`,
@@ -1248,6 +1282,9 @@ const japaneseLabels: Record<string, string> = {
   ux_clarity: "UX 評価",
   gameplay_fun: "ゲームプレイの面白さ",
   story_progression: "ストーリー展開評価",
+  action_reflection: "選択反映評価",
+  world_consistency: "場所・人・モノ整合性",
+  suggested_action_fit: "次行動候補評価",
   overall: "総合体験",
   suggested_action: "提示行動",
   free_text: "自由入力",

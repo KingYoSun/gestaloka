@@ -5,7 +5,14 @@ import type { SwarmDecision } from "./playbook";
 import type { SwarmUiTurnObservation, SwarmViewportProfile } from "./uiDriver";
 import type { AssignedSwarmUserPersona } from "./userPersonas";
 
-export type ExperienceDimension = "ux_clarity" | "gameplay_fun" | "story_progression" | "overall";
+export type ExperienceDimension =
+  | "ux_clarity"
+  | "gameplay_fun"
+  | "story_progression"
+  | "action_reflection"
+  | "world_consistency"
+  | "suggested_action_fit"
+  | "overall";
 export type ExperienceRating = "good" | "acceptable" | "needs work" | "blocked";
 
 export type ExperienceScore = {
@@ -42,6 +49,9 @@ type JudgeResponse = {
     ux_clarity: ExperienceScore;
     gameplay_fun: ExperienceScore;
     story_progression: ExperienceScore;
+    action_reflection: ExperienceScore;
+    world_consistency: ExperienceScore;
+    suggested_action_fit: ExperienceScore;
     overall: ExperienceScore;
     suggestions: string[];
     warnings?: string[];
@@ -95,6 +105,9 @@ export function parseJudgeResponse(payload: unknown): JudgeResponse {
         ux_clarity: parseScore(raw.ux_clarity, "ux_clarity"),
         gameplay_fun: parseScore(raw.gameplay_fun, "gameplay_fun"),
         story_progression: parseScore(raw.story_progression, "story_progression"),
+        action_reflection: parseScore(raw.action_reflection, "action_reflection"),
+        world_consistency: parseScore(raw.world_consistency, "world_consistency"),
+        suggested_action_fit: parseScore(raw.suggested_action_fit, "suggested_action_fit"),
         overall: parseScore(raw.overall, "overall"),
         suggestions: parseStringList(raw.suggestions),
         warnings: parseStringList(raw.warnings),
@@ -134,6 +147,9 @@ function normalizeJudgeEvaluations(
       ux_clarity: judged.ux_clarity,
       gameplay_fun: judged.gameplay_fun,
       story_progression: judged.story_progression,
+      action_reflection: judged.action_reflection,
+      world_consistency: judged.world_consistency,
+      suggested_action_fit: judged.suggested_action_fit,
       overall: judged.overall,
       suggestions: judged.suggestions,
       warnings: judged.warnings ?? [],
@@ -159,6 +175,9 @@ function blockedEvaluationForPersona(
     ux_clarity: blocked,
     gameplay_fun: blocked,
     story_progression: blocked,
+    action_reflection: blocked,
+    world_consistency: blocked,
+    suggested_action_fit: blocked,
     overall: blocked,
     suggestions: [],
     warnings: [message],
@@ -223,6 +242,12 @@ function buildJudgeEvidence(input: JudgeInput): Record<string, unknown> {
         "ペルソナ動機に合う行動選択、意味あるstarter quest進行/探索/競合、待ち時間への納得感を1-5で評価する。",
       story_progression:
         "starter questが開始時点から文脈として読めるか、表示文面に沿って進行したか、他プレイヤー痕跡とworld beat連続性を1-5で評価する。",
+      action_reflection:
+        "ユーザーの選択や自由入力が narrative / reaction / consequence / 次の状況に具体的に反映されたかを1-5で評価する。",
+      world_consistency:
+        "場所・人・モノの整合性を1-5で評価する。急な場所移動、その場にいない人物、未所持アイテムや未獲得権利の扱いを減点する。",
+      suggested_action_fit:
+        "提示された次の行動候補が直前の結果と現在状況に沿っているか、初期候補の不自然な再掲や場違いな選択肢がないかを1-5で評価する。",
     },
   };
 }
@@ -312,4 +337,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const dimensions: ExperienceDimension[] = ["ux_clarity", "gameplay_fun", "story_progression", "overall"];
+const dimensions: ExperienceDimension[] = [
+  "ux_clarity",
+  "gameplay_fun",
+  "story_progression",
+  "action_reflection",
+  "world_consistency",
+  "suggested_action_fit",
+  "overall",
+];

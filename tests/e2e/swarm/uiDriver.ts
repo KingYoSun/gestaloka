@@ -39,6 +39,11 @@ export type SwarmUiTurnObservation = {
   latestNarrative: string;
   latestReaction: string;
   latestConsequence: string;
+  currentPlaceText: string;
+  currentSceneText: string;
+  localFigureTexts: string[];
+  nearbyRouteTexts: string[];
+  inventoryTexts: string[];
   recentSceneHistory: string[];
   recentConsequenceHistory: string[];
   recentWorldBeats: string[];
@@ -114,9 +119,15 @@ const forbiddenTurnRequestKeys = new Set([
   "effect_kind",
   "input_mode",
   "item_id",
+  "destination_key",
+  "pack_id",
   "quest_assignment_id",
   "route_key",
+  "session_key",
   "target",
+  "travel_target_key",
+  "world_id",
+  "world_template_id",
 ]);
 
 export async function preparePlayerUiForSession(page: Page, profile: DerivedPlayerProfile): Promise<void> {
@@ -269,19 +280,29 @@ export async function executeTurnViaUi(
 
   try {
     const turnTimeoutMs = envInt("SWARM_TURN_TIMEOUT_MS", 600_000);
+    const submitResponseTimeoutMs = envInt("SWARM_TURN_SUBMIT_RESPONSE_TIMEOUT_MS", 120_000);
     let response: Response;
     let submittedAction = "";
     try {
-      [response] = await Promise.all([
-        waitForTurnResponseOrNetworkFailure(page, persona.id, turnTimeoutMs),
-        submitDecision(page, decision).then((action) => {
-          submittedAction = action;
-        }),
-      ]);
+      const submitted = await submitDecisionAndWaitForResponse(page, persona.id, decision, submitResponseTimeoutMs);
+      response = submitted.response;
+      submittedAction = submitted.action;
     } catch (error) {
-      throw new Error(
-        `UI turn did not observe /turns for ${persona.id}/${decision.scenario}: ${errorMessage(error)}; ${await turnSubmissionDiagnostics(page, decision)}`,
-      );
+      if (decision.submissionMode !== "suggested_action") {
+        throw new Error(
+          `UI turn did not observe /turns for ${persona.id}/${decision.scenario}: ${errorMessage(error)}; ${await turnSubmissionDiagnostics(page, decision)}`,
+        );
+      }
+      const fallbackAction = submittedAction || decisionActionText(decision);
+      const status = await textContent(page, "turn-progress-status");
+      if (status && !/^(選択待ち|Waiting)$/i.test(status.trim())) {
+        throw new Error(
+          `UI turn did not observe /turns for ${persona.id}/${decision.scenario} after suggested action click while status=${status}: ${errorMessage(error)}; ${await turnSubmissionDiagnostics(page, decision)}`,
+        );
+      }
+      response = (
+        await submitFreeTextActionAndWaitForResponse(page, persona.id, fallbackAction, submitResponseTimeoutMs)
+      ).response;
     }
     const responseText = await response.text();
     const payload = parseJsonObject(responseText);
@@ -304,6 +325,7 @@ export async function executeTurnViaUi(
     const nonEmptyWaitStatusSamples = uniqueNonEmpty(waitStatusSamples);
     const opsStream = await listText(page, "ops-stream");
     const playInfoTexts = await playerVisiblePlayInfoTexts(page);
+    const reviewSnapshot = await playSurfaceReviewSnapshot(page);
     const englishResidueAllowlist = playerNameResidueAllowlist(persona);
     const questSnapshot = await questSnapshotViaUi(page);
     const eventsStream = await waitForEventsStreamForTurn(page, acceptedTurnId);
@@ -332,6 +354,7 @@ export async function executeTurnViaUi(
       latestNarrative: await textContent(page, "latest-narrative"),
       latestReaction: await textContent(page, "latest-reaction"),
       latestConsequence: await textContent(page, "last-consequence-summary"),
+      ...reviewSnapshot,
       recentSceneHistory: await listText(page, "recent-scene-history"),
       recentConsequenceHistory: await listText(page, "recent-consequence-history"),
       recentWorldBeats: await listText(page, "recent-world-beats"),
@@ -348,6 +371,41 @@ export async function executeTurnViaUi(
     };
   } finally {
     clearInterval(sampleTimer);
+  }
+}
+
+async function submitDecisionAndWaitForResponse(
+  page: Page,
+  personaId: string,
+  decision: SwarmDecision,
+  timeout: number,
+): Promise<{ response: Response; action: string }> {
+  const responsePromise = waitForTurnResponseOrNetworkFailure(page, personaId, timeout);
+  responsePromise.catch(() => undefined);
+  try {
+    const action = await submitDecision(page, decision);
+    const response = await responsePromise;
+    return { response, action };
+  } catch (error) {
+    responsePromise.catch(() => undefined);
+    throw error;
+  }
+}
+
+async function submitFreeTextActionAndWaitForResponse(
+  page: Page,
+  personaId: string,
+  actionText: string,
+  timeout: number,
+): Promise<{ response: Response }> {
+  const responsePromise = waitForTurnResponseOrNetworkFailure(page, personaId, timeout);
+  responsePromise.catch(() => undefined);
+  try {
+    await submitFreeTextAction(page, actionText);
+    return { response: await responsePromise };
+  } catch (error) {
+    responsePromise.catch(() => undefined);
+    throw error;
   }
 }
 
@@ -651,16 +709,46 @@ async function submitDecision(page: Page, decision: SwarmDecision): Promise<stri
     return action.text || decisionActionText(decision);
   }
   const toggle = page.getByTestId("toggle-free-text");
+  await submitFreeTextAction(page, decision.inputText ?? "");
+  return decisionActionText(decision);
+}
+
+async function submitFreeTextAction(page: Page, actionText: string): Promise<void> {
+  await ensureActionSurface(page);
+  const toggle = page.getByTestId("toggle-free-text");
   await expect(toggle).toBeEnabled({ timeout: 60_000 });
-  await toggle.click();
+  await activateFreeTextMode(page);
   const input = page.getByTestId("turn-input");
   await expect(input).toBeVisible({ timeout: 60_000 });
   await expect(input).toBeEnabled({ timeout: 60_000 });
-  await input.fill(decision.inputText ?? "");
+  await input.fill(actionText);
   const submit = page.getByTestId("submit-turn");
   await expect(submit).toBeEnabled({ timeout: 60_000 });
   await submit.click();
-  return decisionActionText(decision);
+}
+
+async function activateFreeTextMode(page: Page): Promise<void> {
+  const input = page.getByTestId("turn-input");
+  if (await input.isVisible({ timeout: 500 }).catch(() => false)) {
+    return;
+  }
+  const toggle = page.getByTestId("toggle-free-text");
+  await toggle.click({ timeout: 10_000 }).catch(async () => {
+    await toggle.evaluate((element) => {
+      if (element instanceof HTMLElement) {
+        element.click();
+      }
+    });
+  });
+  if (await input.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    return;
+  }
+  await toggle.evaluate((element) => {
+    if (element instanceof HTMLElement) {
+      element.click();
+    }
+  });
+  await expect(input).toBeVisible({ timeout: 20_000 });
 }
 
 type SuggestedActionCandidate = {
@@ -727,6 +815,7 @@ function normalizeActionText(value: string): string {
 }
 
 async function ensureActionSurface(page: Page): Promise<void> {
+  await closeVisibleOverlay(page);
   if (await locatorVisible(page, "toggle-free-text")) {
     return;
   }
@@ -740,6 +829,7 @@ async function ensureActionSurface(page: Page): Promise<void> {
 }
 
 async function ensureStatusSurface(page: Page): Promise<void> {
+  await closeVisibleOverlay(page);
   if (await locatorVisible(page, "active-quest")) {
     return;
   }
@@ -753,9 +843,23 @@ async function ensureStatusSurface(page: Page): Promise<void> {
 }
 
 async function closeVisibleDrawer(page: Page): Promise<void> {
-  const closeButton = page.getByRole("button", { name: /^(閉じる|Close)$/i }).first();
-  if (await roleVisible(closeButton)) {
-    await closeButton.click();
+  await closeVisibleOverlay(page);
+}
+
+async function closeVisibleOverlay(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const closeButton = page.getByRole("button", { name: /^(閉じる|Close)$/i }).first();
+    if (!(await roleVisible(closeButton))) {
+      return;
+    }
+    await closeButton.click({ timeout: 5_000 }).catch(async () => {
+      await closeButton.evaluate((element) => {
+        if (element instanceof HTMLElement) {
+          element.click();
+        }
+      });
+    });
+    await page.waitForTimeout(250);
   }
 }
 
@@ -948,6 +1052,25 @@ async function playerVisiblePlayInfoTexts(page: Page): Promise<string[]> {
   return uniqueNonEmpty(
     groups.flatMap((item) => (Array.isArray(item) ? item : [item])).map((item) => item.trim()),
   ).slice(0, 32);
+}
+
+async function playSurfaceReviewSnapshot(
+  page: Page,
+): Promise<Pick<SwarmUiTurnObservation, "currentPlaceText" | "currentSceneText" | "localFigureTexts" | "nearbyRouteTexts" | "inventoryTexts">> {
+  const [currentPlaceText, currentSceneText, localFigureTexts, nearbyRouteTexts, inventoryTexts] = await Promise.all([
+    textContent(page, "current-place-summary"),
+    textContent(page, "current-scene-summary"),
+    listText(page, "local-figures-stream"),
+    listText(page, "nearby-routes-stream"),
+    listText(page, "inventory-stream"),
+  ]);
+  return {
+    currentPlaceText,
+    currentSceneText,
+    localFigureTexts,
+    nearbyRouteTexts,
+    inventoryTexts,
+  };
 }
 
 export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapshot> {
