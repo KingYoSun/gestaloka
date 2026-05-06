@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const adminBaseURL = process.env.ADMIN_PLAYWRIGHT_BASE_URL ?? "http://localhost:5174";
-const choiceButtonSelector = 'button[data-testid^="choice-"]';
+const choiceButtonSelector = 'button[data-testid^="suggested-action-"]';
 const sceneContextSummarySelector = '[data-testid="current-chapter-summary"], [data-testid="current-scene-summary"]';
 
 type ProgressPhaseCollector = {
@@ -68,54 +68,54 @@ function collectTurnProgressAndResolved(page: import("@playwright/test").Page): 
   };
 }
 
-async function expectSituationMappingBeforeWorldProgress(collector: ProgressPhaseCollector): Promise<void> {
+const stateApplicationPhases = [
+  "world_tag_updates",
+  "state_draft_materialization",
+  "consequence_resolution",
+  "scene_framing",
+  "memory_materialization",
+  "shared_consequence",
+  "post_state_build",
+];
+
+async function expectAiGmBeforeStateApplication(collector: ProgressPhaseCollector): Promise<void> {
   let completedPhases: string[] = [];
   await expect
     .poll(
       async () => {
         completedPhases = findCompletedPhaseSequence(
           await collector.completedPhaseSequences(),
-          hasSituationMappingBeforeWorldProgress,
+          hasAiGmBeforeStateApplication,
         );
         return completedPhases.length > 0;
       },
-      { timeout: 30_000, message: "situation_mapping should complete before world_progress" },
+      { timeout: 30_000, message: "ai_gm_turn should complete before state application" },
     )
     .toBe(true);
-  if (usesCouncilProgressPipeline(completedPhases)) {
-    expect(completedPhases).toContain("situation_mapping");
-    expect(completedPhases).toContain("world_progress");
-    expect(completedPhases.indexOf("situation_mapping")).toBeLessThan(completedPhases.indexOf("world_progress"));
-  } else {
-    expect(completedPhases.some((phase) => ["read_world_state_query", "travel_resolution", "item_use"].includes(phase))).toBe(
-      true,
-    );
-  }
+  const aiGmIndex = completedPhases.indexOf("ai_gm_turn");
+  const firstStateIndex = completedPhases.findIndex((phase) => stateApplicationPhases.includes(phase));
+  expect(aiGmIndex).toBeGreaterThanOrEqual(0);
+  expect(firstStateIndex).toBeGreaterThan(aiGmIndex);
 }
 
-async function expectEntityMaterializationAfterWorldTagUpdates(collector: ProgressPhaseCollector): Promise<void> {
+async function expectPublicStateApplicationCompleted(collector: ProgressPhaseCollector): Promise<void> {
   let completedPhases: string[] = [];
   await expect
     .poll(
       async () => {
         completedPhases = findCompletedPhaseSequence(
           await collector.completedPhaseSequences(),
-          hasEntityMaterializationAfterWorldTagUpdates,
+          hasPublicStateApplicationCompleted,
         );
         return completedPhases.length > 0;
       },
-      { timeout: 30_000, message: "entity_materialization should complete after world_tag_updates" },
+      { timeout: 30_000, message: "public state application phases should complete" },
     )
     .toBe(true);
-  if (!usesCouncilProgressPipeline(completedPhases)) {
-    return;
+  for (const phase of ["world_tag_updates", "state_draft_materialization", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"]) {
+    expect(completedPhases).toContain(phase);
   }
-  const materializationIndex = completedPhases.indexOf("entity_materialization");
-  expect(materializationIndex).toBeGreaterThan(completedPhases.indexOf("world_tag_updates"));
-  const laterQuestOrConsequenceIndex = completedPhases.findIndex((phase) =>
-    ["dynamic_quest_offer", "quest_resolution_hint", "consequence_resolution", "scene_framing"].includes(phase),
-  );
-  expect(laterQuestOrConsequenceIndex).toBeGreaterThan(materializationIndex);
+  expect(completedPhases.indexOf("world_tag_updates")).toBeLessThan(completedPhases.indexOf("post_state_build"));
 }
 
 async function expectResolvedTurnEntityUpdatesArray(collector: ProgressPhaseCollector): Promise<void> {
@@ -131,27 +131,15 @@ async function expectResolvedTurnEntityUpdatesArray(collector: ProgressPhaseColl
     .toBe(true);
 }
 
-function hasSituationMappingBeforeWorldProgress(completedPhases: string[]): boolean {
-  if (!usesCouncilProgressPipeline(completedPhases)) {
-    return completedPhases.some((phase) => ["read_world_state_query", "travel_resolution", "item_use"].includes(phase));
-  }
-  const situationIndex = completedPhases.indexOf("situation_mapping");
-  const worldProgressIndex = completedPhases.indexOf("world_progress");
-  return situationIndex >= 0 && worldProgressIndex >= 0 && situationIndex < worldProgressIndex;
+function hasAiGmBeforeStateApplication(completedPhases: string[]): boolean {
+  const aiGmIndex = completedPhases.indexOf("ai_gm_turn");
+  const firstStateIndex = completedPhases.findIndex((phase) => stateApplicationPhases.includes(phase));
+  return aiGmIndex >= 0 && firstStateIndex > aiGmIndex;
 }
 
-function hasEntityMaterializationAfterWorldTagUpdates(completedPhases: string[]): boolean {
-  if (!usesCouncilProgressPipeline(completedPhases)) {
-    return completedPhases.some((phase) => ["read_world_state_query", "travel_resolution", "item_use"].includes(phase));
-  }
-  const worldTagIndex = completedPhases.indexOf("world_tag_updates");
-  const materializationIndex = completedPhases.indexOf("entity_materialization");
-  return worldTagIndex >= 0 && materializationIndex > worldTagIndex;
-}
-
-function usesCouncilProgressPipeline(completedPhases: string[]): boolean {
-  return completedPhases.some((phase) =>
-    ["situation_mapping", "world_progress", "world_tag_updates", "entity_materialization"].includes(phase),
+function hasPublicStateApplicationCompleted(completedPhases: string[]): boolean {
+  return ["world_tag_updates", "state_draft_materialization", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"].every(
+    (phase) => completedPhases.includes(phase),
   );
 }
 
@@ -266,8 +254,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await submitFreeTextTurn(page, "Help Kanata advance Visitor Log Registration by assisting the public witness hall procedure.");
   await expect(page.getByTestId("turn-progress-status")).toContainText("進行中", { timeout: 5_000 });
   await waitForTurnReady(page, turnTimeout);
-  await expectSituationMappingBeforeWorldProgress(progressPhases);
-  await expectEntityMaterializationAfterWorldTagUpdates(progressPhases);
+  await expectAiGmBeforeStateApplication(progressPhases);
+  await expectPublicStateApplicationCompleted(progressPhases);
   await expectResolvedTurnEntityUpdatesArray(progressPhases);
   await expectVisibleSceneContextSummary(page, slowTimeout);
   await expect(page.getByTestId("active-quest")).not.toContainText("Exploring...");

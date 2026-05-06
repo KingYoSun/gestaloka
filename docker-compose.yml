@@ -858,6 +858,7 @@ services:
           wait_for http://127.0.0.1:5173 player-frontend
           wait_for http://127.0.0.1:5174 admin-frontend
           wait_for http://127.0.0.1:8080/realms/gestaloka/.well-known/openid-configuration keycloak
+          node /workspace/tests/e2e/setupPackPreprocess.mjs
           if [ -n "$${E2E_SPEC:-}" ]; then
             npx playwright test "$$E2E_SPEC" --reporter=line
           else
