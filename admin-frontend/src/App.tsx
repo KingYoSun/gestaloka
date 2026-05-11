@@ -410,18 +410,26 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
     <div className="grid grid-cols-4 gap-3 max-[900px]:grid-cols-1" data-testid="admin-packs">
       <Panel title={t("packs.catalog")}>
         <div className="grid gap-2">
-          {(state.packs?.items ?? []).map((pack) => (
-            <article key={pack.pack_id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
-              <div className="grid min-w-0 gap-0.5">
-                <strong className="truncate text-sm font-semibold text-foreground">{pack.display_name}</strong>
-                <span className="truncate text-xs leading-5 text-muted-foreground">{pack.pack_id} / {pack.version}</span>
-              </div>
-              <Status value={`${pack.effective_visibility} / ${pack.effective_publish_status}`} />
-              <Button variant="secondary" onClick={() => void patchPack(pack.pack_id, pack.effective_publish_status === "playable" ? "draft" : "playable")}>
-                {pack.effective_publish_status === "playable" ? "Draft" : "Playable"}
-              </Button>
-            </article>
-          ))}
+          {(state.packs?.items ?? []).map((pack) => {
+            const nextPublishStatus = pack.effective_publish_status === "playable" ? "draft" : "playable";
+            return (
+              <article key={pack.pack_id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
+                <div className="grid min-w-0 gap-0.5">
+                  <strong className="truncate text-sm font-semibold text-foreground">{pack.display_name}</strong>
+                  <span className="truncate text-xs leading-5 text-muted-foreground">{pack.pack_id} / {pack.version}</span>
+                </div>
+                <Status
+                  value={t("common.currentPublication", {
+                    visibility: pack.effective_visibility,
+                    status: pack.effective_publish_status,
+                  })}
+                />
+                <Button variant="secondary" onClick={() => void patchPack(pack.pack_id, nextPublishStatus)}>
+                  {nextPublishStatus === "draft" ? t("common.setDraft") : t("common.setPlayable")}
+                </Button>
+              </article>
+            );
+          })}
         </div>
       </Panel>
       <Panel title={t("packs.create")}>
@@ -507,6 +515,7 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
           const key = preprocessKey(template);
           const operation = preprocessOps[key];
           const operationRunning = operation?.status === "running";
+          const nextPublishStatus = template.effective_publish_status === "playable" ? "draft" : "playable";
           const latestRun = operation?.run ?? template.preprocess?.latest_run ?? null;
           const preprocessStatus = operationRunning ? "running" : (operation?.status ?? template.preprocess?.status ?? "unknown");
           const canRunPreprocess = ["required", "stale", "failed", "error"].includes(preprocessStatus);
@@ -527,7 +536,12 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
                 <span className="truncate text-xs leading-5 text-muted-foreground">{template.pack_display_name} / {template.template_id}</span>
               </div>
               <div className="grid justify-items-end gap-1 text-right max-[900px]:justify-items-start max-[900px]:text-left">
-                <Status value={`${template.effective_visibility} / ${template.effective_publish_status}`} />
+                <Status
+                  value={t("common.currentPublication", {
+                    visibility: template.effective_visibility,
+                    status: template.effective_publish_status,
+                  })}
+                />
                 <span className="text-xs leading-5 text-muted-foreground" role="status" aria-live="polite">
                   {t("common.preprocessStatus", { status: preprocessStatus })}
                 </span>
@@ -545,8 +559,8 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
                     {operationRunning ? t("common.preprocessing") : t("common.preprocess")}
                   </Button>
                 ) : null}
-                <Button variant="secondary" onClick={() => void patchTemplate(template, template.effective_publish_status === "playable" ? "draft" : "playable")}>
-                  {template.effective_publish_status === "playable" ? "Draft" : "Playable"}
+                <Button variant="secondary" onClick={() => void patchTemplate(template, nextPublishStatus)}>
+                  {nextPublishStatus === "draft" ? t("common.setDraft") : t("common.setPlayable")}
                 </Button>
               </div>
             </article>
