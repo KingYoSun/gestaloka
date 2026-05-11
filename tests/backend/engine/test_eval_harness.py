@@ -27,7 +27,7 @@ from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
 from app.modules.eval_harness.service import EvalCaseInput, EvalHarnessService, ReleaseConfig
 from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
-from app.modules.llm_harness.service import PromptRouteOverride
+from app.modules.llm_harness.service import BaseModelProvider, ModelRouter, PromptRouteOverride
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_state.service import create_dynamic_quest_offer
 from tests.backend.turn_async_helpers import post_turn_and_wait
@@ -265,6 +265,34 @@ def test_failure_injection_control_cases_do_not_call_live_provider(container):
         ]
         assert attempts
         assert {attempt["provider_name"] for attempt in attempts} <= {"eval_control", "stub"}
+
+
+def test_failure_injection_dataset_is_fully_deterministic(container, monkeypatch: pytest.MonkeyPatch):
+    calls: list[str] = []
+
+    class UnexpectedProvider(BaseModelProvider):
+        provider_name = "unexpected_live_provider"
+
+        def generate(self, *, prompt, response_model, model_id, lane, input_payload, temperature):  # type: ignore[no-untyped-def]
+            del response_model, model_id, input_payload, temperature
+            calls.append(f"{prompt.prompt_id}:{lane}")
+            raise RuntimeError("failure injection should be handled by eval_control")
+
+    monkeypatch.setattr(ModelRouter, "_build_provider", lambda self: UnexpectedProvider())
+
+    with container.session_factory() as db:
+        payload = container.eval_service.run_dataset(db, "turn_resolution_failure_injection")
+        db.commit()
+
+    assert calls == []
+    assert payload["summary"]["variants"]["candidate"]["gate_passed"] is True
+    assert all(item["passed"] for item in payload["results"])
+    assert {
+        attempt["provider_name"]
+        for item in payload["results"]
+        for role_run in item["raw_output"]["role_runs"]
+        for attempt in role_run["attempts"]
+    } == {"eval_control"}
 
 
 def test_gestaloka_pack_regression_dataset_runs(container):

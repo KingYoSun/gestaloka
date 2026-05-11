@@ -2738,15 +2738,26 @@ class ModelRouter:
         lane: str,
         input_payload: dict[str, Any],
     ) -> ProviderResponse | None:
-        input_text = str(input_payload.get("input_text") or "")
+        input_text = " ".join(
+            text
+            for text in (
+                str(input_payload.get("input_text") or ""),
+                str(input_payload.get("player_action_text") or ""),
+            )
+            if text
+        )
         normalized = input_text.lower()
         force_invalid_prompts = {
+            "session.turn_resolution",
+            "session.turn_resolution_repair",
             "council.rules_arbiter",
             "council.safety_guard",
             "council.narrative",
             "ambient.safety_guard",
         }
         eval_control_early_prompts = {
+            "session.turn_resolution",
+            "session.turn_resolution_repair",
             "council.intent_interpreter",
             "council.memory_manager",
             "council.npc_manager",
@@ -2827,6 +2838,12 @@ class ModelRouter:
         is_overreach = any(
             token in input_text or token in normalized for token in ("無理", "impossible", "空を飛", "teleport", "爆破")
         )
+        if is_overreach and prompt_id in {"session.turn_resolution", "session.turn_resolution_repair"}:
+            return ProviderResponse(
+                raw_output=StubModelProvider()._generate_stub_output(prompt_id, lane=lane, input_payload=input_payload),
+                provider_name="eval_control",
+                provider_response_id=None,
+            )
         if is_overreach and prompt_id == "council.rules_arbiter":
             return ProviderResponse(
                 raw_output={
@@ -2855,19 +2872,30 @@ class ModelRouter:
     @staticmethod
     def _provider_input_payload(input_payload: dict[str, Any]) -> dict[str, Any]:
         input_text = str(input_payload.get("input_text") or "")
-        sanitized_text = input_text
-        for token in (
-            "__force_invalid_all__",
-            "__force_invalid_main__",
-            "__force_safety_reject__",
-            "__force_council_reject__",
-            "__force_rules_reject__",
-        ):
-            sanitized_text = sanitized_text.replace(token, "")
-        sanitized_text = " ".join(sanitized_text.split())
-        if sanitized_text == input_text:
+        player_action_text = str(input_payload.get("player_action_text") or "")
+
+        def sanitize(text: str) -> str:
+            sanitized = text
+            for token in (
+                "__force_invalid_all__",
+                "__force_invalid_main__",
+                "__force_safety_reject__",
+                "__force_council_reject__",
+                "__force_rules_reject__",
+            ):
+                sanitized = sanitized.replace(token, "")
+            return " ".join(sanitized.split())
+
+        sanitized_text = sanitize(input_text)
+        sanitized_player_action_text = sanitize(player_action_text)
+        if sanitized_text == input_text and sanitized_player_action_text == player_action_text:
             return input_payload
-        return {**input_payload, "input_text": sanitized_text}
+        payload = dict(input_payload)
+        if "input_text" in payload:
+            payload["input_text"] = sanitized_text
+        if "player_action_text" in payload:
+            payload["player_action_text"] = sanitized_player_action_text
+        return payload
 
     def _model_id_for_lane(self, lane: str, route: PromptRouteOverride | None) -> str:
         if route is not None and lane in route.model_ids:

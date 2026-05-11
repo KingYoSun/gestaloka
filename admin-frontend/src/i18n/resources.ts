@@ -9,6 +9,7 @@ const resources = {
         loadingAdminSession: "管理セッションを読み込み中",
         logout: "ログアウト",
         preprocess: "前処理",
+        preprocessing: "前処理中",
         preprocessStatus: "前処理: {{status}}",
         refresh: "更新",
         relogin: "再ログイン",
@@ -61,6 +62,10 @@ const resources = {
         templateName: "テンプレート名",
         summary: "概要",
         archivePath: "アーカイブパス",
+      },
+      templates: {
+        latestPreprocessRun: "最終実行: {{status}}",
+        preprocessFailed: "前処理に失敗しました",
       },
       users: {
         users: "ユーザー",
@@ -150,6 +155,7 @@ const resources = {
         loadingAdminSession: "Loading admin session",
         logout: "Log out",
         preprocess: "Preprocess",
+        preprocessing: "Preprocessing",
         preprocessStatus: "Preprocess: {{status}}",
         refresh: "Refresh",
         relogin: "Sign in again",
@@ -202,6 +208,10 @@ const resources = {
         templateName: "Template Name",
         summary: "Summary",
         archivePath: "Archive Path",
+      },
+      templates: {
+        latestPreprocessRun: "Latest run: {{status}}",
+        preprocessFailed: "Preprocess failed",
       },
       users: {
         users: "Users",

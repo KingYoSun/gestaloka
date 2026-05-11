@@ -34,6 +34,7 @@ import type {
   ModelLanes,
   Overview,
   PackCatalog,
+  PackPreprocessRun,
   PromptDetail,
   PromptListItem,
   ReleaseProgress,
@@ -445,17 +446,46 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
 
 function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
   const { t } = useTranslation();
+  const [preprocessOps, setPreprocessOps] = useState<
+    Record<string, { status: "running" | "ready" | "failed" | "error"; run?: PackPreprocessRun | null; message?: string }>
+  >({});
+
+  function preprocessKey(template: TemplateItem): string {
+    return `${template.pack_id ?? "pack"}/${template.template_id}`;
+  }
+
   async function runPreprocess(template: TemplateItem) {
     if (!template.pack_id) {
       return;
     }
+    const key = preprocessKey(template);
     try {
-      await apiFetch(`/admin/packs/${encodeURIComponent(template.pack_id)}/templates/${encodeURIComponent(template.template_id)}/preprocess`, token, {
-        method: "POST",
-      });
+      setError("");
+      setPreprocessOps((current) => ({ ...current, [key]: { status: "running" } }));
+      const response = await apiFetch<{ status: string; run: PackPreprocessRun }>(
+        `/admin/packs/${encodeURIComponent(template.pack_id)}/templates/${encodeURIComponent(template.template_id)}/preprocess`,
+        token,
+        { method: "POST" },
+      );
+      const errorMessage =
+        typeof response.run?.error?.message === "string"
+          ? response.run.error.message
+          : response.status === "ready"
+            ? ""
+            : t("templates.preprocessFailed");
+      setPreprocessOps((current) => ({
+        ...current,
+        [key]: {
+          status: response.status === "ready" ? "ready" : "failed",
+          run: response.run,
+          message: errorMessage,
+        },
+      }));
       await refreshAll();
     } catch (requestError) {
-      setError(formatError(requestError));
+      const message = formatError(requestError);
+      setPreprocessOps((current) => ({ ...current, [key]: { status: "error", message } }));
+      setError(message);
     }
   }
 
@@ -474,22 +504,45 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
     <Panel title={t("nav.templates")}>
       <div className="grid gap-2" data-testid="admin-world-templates">
         {state.templates.map((template) => {
-          const preprocessStatus = template.preprocess?.status ?? "unknown";
-          const canRunPreprocess = ["required", "stale", "failed"].includes(preprocessStatus);
+          const key = preprocessKey(template);
+          const operation = preprocessOps[key];
+          const operationRunning = operation?.status === "running";
+          const latestRun = operation?.run ?? template.preprocess?.latest_run ?? null;
+          const preprocessStatus = operationRunning ? "running" : (operation?.status ?? template.preprocess?.status ?? "unknown");
+          const canRunPreprocess = ["required", "stale", "failed", "error"].includes(preprocessStatus);
+          const countsSummary = latestRun?.counts
+            ? Object.entries(latestRun.counts)
+                .slice(0, 4)
+                .map(([name, value]) => `${name}: ${String(value)}`)
+                .join(" / ")
+            : "";
+          const runMessage =
+            operation?.message ||
+            (typeof latestRun?.error?.message === "string" ? latestRun.error.message : "") ||
+            (latestRun ? t("templates.latestPreprocessRun", { status: latestRun.status }) : "");
           return (
             <article key={`${template.pack_id}-${template.template_id}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
               <div className="grid min-w-0 gap-0.5">
                 <strong className="truncate text-sm font-semibold text-foreground">{template.display_name}</strong>
                 <span className="truncate text-xs leading-5 text-muted-foreground">{template.pack_display_name} / {template.template_id}</span>
               </div>
-              <div className="grid justify-items-end gap-1 max-[900px]:justify-items-start">
+              <div className="grid justify-items-end gap-1 text-right max-[900px]:justify-items-start max-[900px]:text-left">
                 <Status value={`${template.effective_visibility} / ${template.effective_publish_status}`} />
-                <span className="text-xs leading-5 text-muted-foreground">{t("common.preprocessStatus", { status: preprocessStatus })}</span>
+                <span className="text-xs leading-5 text-muted-foreground" role="status" aria-live="polite">
+                  {t("common.preprocessStatus", { status: preprocessStatus })}
+                </span>
+                {runMessage ? <span className="max-w-[320px] text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{runMessage}</span> : null}
+                {countsSummary ? <span className="max-w-[320px] text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{countsSummary}</span> : null}
               </div>
               <div className="flex flex-wrap justify-end gap-2 max-[900px]:justify-start">
-                {canRunPreprocess ? (
-                  <Button variant="secondary" onClick={() => void runPreprocess(template)}>
-                    {t("common.preprocess")}
+                {canRunPreprocess || operationRunning ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => void runPreprocess(template)}
+                    disabled={operationRunning}
+                    data-testid={`template-preprocess-${template.template_id}`}
+                  >
+                    {operationRunning ? t("common.preprocessing") : t("common.preprocess")}
                   </Button>
                 ) : null}
                 <Button variant="secondary" onClick={() => void patchTemplate(template, template.effective_publish_status === "playable" ? "draft" : "playable")}>
