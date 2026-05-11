@@ -13,7 +13,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_container, get_current_ops_user, get_db
 from app.core.container import AppContainer
 from app.core.prompts import SUPPORTED_MODEL_LANES
-from app.models.entities import AdminAppUser, AdminPromptOverride, AdminRuntimeConfig, World
+from app.models.entities import (
+    AdminAppUser,
+    AdminPackPublicationOverride,
+    AdminPromptOverride,
+    AdminRuntimeConfig,
+    AdminWorldTemplatePublicationOverride,
+    World,
+)
 from app.modules.admin_ops.service import llm_usage_timeline, projection_status, sp_overview
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
@@ -25,6 +32,8 @@ from app.modules.world_pack.service import (
     configure_pack_registry,
     import_pack_archive,
     load_pack_from_dir,
+    pack_catalog_diagnostic,
+    pack_catalog_health_summary,
     pack_preprocess_status,
 )
 
@@ -49,14 +58,11 @@ class ImportPackRequest(BaseModel):
 
 
 class PatchPackRequest(BaseModel):
-    display_name: str | None = Field(default=None, min_length=1, max_length=120)
     visibility: Literal["public", "private"] | None = None
     publish_status: Literal["playable", "draft", "archived"] | None = None
 
 
 class PatchTemplateRequest(BaseModel):
-    display_name: str | None = Field(default=None, min_length=1, max_length=120)
-    summary: str | None = Field(default=None, max_length=500)
     visibility: Literal["public", "private"] | None = None
     publish_status: Literal["playable", "draft", "archived"] | None = None
 
@@ -134,76 +140,127 @@ def _refresh_pack_registry(container: AppContainer) -> None:
     container.ambient_world_service.model_router.pack_registry = registry
 
 
-def _pack_payload(container: AppContainer) -> dict[str, object]:
-    return container.pack_registry.catalog_diagnostic(include_paths=True)
-
-
-def _manifest_path(container: AppContainer, pack_id: str) -> Path:
-    return Path(container.settings.pack_dir).resolve() / pack_id / "pack.yaml"
-
-
-def _load_yaml(path: Path) -> dict[str, object]:
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except OSError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    if not isinstance(raw, dict):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="YAML root must be a mapping")
-    return raw
+def _pack_payload(db: Session, container: AppContainer) -> dict[str, object]:
+    return pack_catalog_diagnostic(db, container.pack_registry, include_paths=True)
 
 
 def _write_yaml(path: Path, payload: dict[str, object]) -> None:
     path.write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
-def _world_template_items(container: AppContainer) -> list[dict[str, object]]:
-    items: list[dict[str, object]] = []
-    for pack in container.pack_registry.list_packs():
-        for template in pack.manifest.world_templates:
-            items.append(
-                {
-                    "pack_id": pack.manifest.pack_id,
-                    "pack_display_name": pack.manifest.display_name,
-                    "template_id": template.template_id,
-                    "display_name": template.display_name,
-                    "summary": template.summary,
-                    "visibility": template.visibility,
-                    "publish_status": template.publish_status,
-                    "effective_visibility": template.visibility or pack.manifest.visibility,
-                    "effective_publish_status": template.publish_status or pack.manifest.publish_status,
-                }
-            )
-    return items
+def _override_payload(row: AdminPackPublicationOverride | AdminWorldTemplatePublicationOverride | None) -> dict[str, object] | None:
+    if row is None:
+        return None
+    return {
+        "visibility": row.visibility,
+        "publish_status": row.publish_status,
+        "updated_by_sub": row.updated_by_sub,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
-def _ensure_publish_gate_allows_manifest_change(
+def _pack_override(db: Session, pack_id: str) -> AdminPackPublicationOverride | None:
+    return db.execute(
+        select(AdminPackPublicationOverride).where(AdminPackPublicationOverride.pack_id == pack_id)
+    ).scalar_one_or_none()
+
+
+def _template_override(
     db: Session,
-    container: AppContainer,
-    manifest: dict[str, object],
     *,
     pack_id: str,
+    template_id: str,
+) -> AdminWorldTemplatePublicationOverride | None:
+    return db.execute(
+        select(AdminWorldTemplatePublicationOverride).where(
+            AdminWorldTemplatePublicationOverride.pack_id == pack_id,
+            AdminWorldTemplatePublicationOverride.world_template_id == template_id,
+        )
+    ).scalar_one_or_none()
+
+
+def _effective_pack_values(
+    pack,
+    *,
+    visibility_override: str | None,
+    publish_status_override: str | None,
+) -> tuple[str, str]:
+    return (
+        visibility_override or pack.manifest.visibility,
+        publish_status_override or pack.manifest.publish_status,
+    )
+
+
+def _effective_template_values(
+    template,
+    *,
+    pack_visibility: str,
+    pack_publish_status: str,
+    visibility_override: str | None,
+    publish_status_override: str | None,
+) -> tuple[str, str]:
+    return (
+        visibility_override or template.visibility or pack_visibility,
+        publish_status_override or template.publish_status or pack_publish_status,
+    )
+
+
+def _pack_override_value(source_value: str, requested_value: str | None, existing_value: str | None) -> str | None:
+    if requested_value is None:
+        return existing_value
+    return None if requested_value == source_value else requested_value
+
+
+def _template_override_value(source_effective_value: str, requested_value: str | None, existing_value: str | None) -> str | None:
+    if requested_value is None:
+        return existing_value
+    return None if requested_value == source_effective_value else requested_value
+
+
+def _upsert_pack_override(
+    db: Session,
+    *,
+    pack_id: str,
+    visibility: str | None,
+    publish_status: str | None,
+    updated_by_sub: str,
 ) -> None:
-    pack = container.pack_registry.get_pack(pack_id)
-    manifest_visibility = str(manifest.get("visibility") or pack.manifest.visibility)
-    manifest_publish_status = str(manifest.get("publish_status") or pack.manifest.publish_status)
-    templates = manifest.get("world_templates")
-    if not isinstance(templates, list):
+    row = _pack_override(db, pack_id)
+    if visibility is None and publish_status is None:
+        if row is not None:
+            db.delete(row)
         return
-    blocked: list[str] = []
-    for item in templates:
-        if not isinstance(item, dict):
-            continue
-        template_id = str(item.get("template_id") or "").strip()
-        if not template_id:
-            continue
-        effective_visibility = str(item.get("visibility") or manifest_visibility)
-        effective_publish_status = str(item.get("publish_status") or manifest_publish_status)
-        if effective_visibility != "public" or effective_publish_status != "playable":
-            continue
-        template = pack.template(template_id)
-        status_payload = pack_preprocess_status(db, pack, template)
-        if not status_payload["ready"]:
-            blocked.append(f"{template_id}:{status_payload['status']}")
+    if row is None:
+        row = AdminPackPublicationOverride(pack_id=pack_id)
+        db.add(row)
+    row.visibility = visibility
+    row.publish_status = publish_status
+    row.updated_by_sub = updated_by_sub
+
+
+def _upsert_template_override(
+    db: Session,
+    *,
+    pack_id: str,
+    template_id: str,
+    visibility: str | None,
+    publish_status: str | None,
+    updated_by_sub: str,
+) -> None:
+    row = _template_override(db, pack_id=pack_id, template_id=template_id)
+    if visibility is None and publish_status is None:
+        if row is not None:
+            db.delete(row)
+        return
+    if row is None:
+        row = AdminWorldTemplatePublicationOverride(pack_id=pack_id, world_template_id=template_id)
+        db.add(row)
+    row.visibility = visibility
+    row.publish_status = publish_status
+    row.updated_by_sub = updated_by_sub
+
+
+def _raise_preprocess_gate(pack_id: str, blocked: list[str]) -> None:
     if blocked:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -214,6 +271,130 @@ def _ensure_publish_gate_allows_manifest_change(
                 "blocked_templates": blocked,
             },
         )
+
+
+def _ensure_publish_gate_allows_pack_override(
+    db: Session,
+    container: AppContainer,
+    *,
+    pack_id: str,
+    visibility_override: str | None,
+    publish_status_override: str | None,
+) -> None:
+    pack = container.pack_registry.get_pack(pack_id)
+    template_overrides = {
+        row.world_template_id: row
+        for row in db.execute(
+            select(AdminWorldTemplatePublicationOverride).where(
+                AdminWorldTemplatePublicationOverride.pack_id == pack_id
+            )
+        ).scalars()
+    }
+    pack_visibility, pack_publish_status = _effective_pack_values(
+        pack,
+        visibility_override=visibility_override,
+        publish_status_override=publish_status_override,
+    )
+    blocked: list[str] = []
+    for template_summary in pack.manifest.world_templates:
+        override = template_overrides.get(template_summary.template_id)
+        effective_visibility, effective_publish_status = _effective_template_values(
+            template_summary,
+            pack_visibility=pack_visibility,
+            pack_publish_status=pack_publish_status,
+            visibility_override=override.visibility if override else None,
+            publish_status_override=override.publish_status if override else None,
+        )
+        if effective_visibility != "public" or effective_publish_status != "playable":
+            continue
+        template = pack.template(template_summary.template_id)
+        status_payload = pack_preprocess_status(db, pack, template)
+        if not status_payload["ready"]:
+            blocked.append(f"{template_summary.template_id}:{status_payload['status']}")
+    _raise_preprocess_gate(pack_id, blocked)
+
+
+def _ensure_publish_gate_allows_template_override(
+    db: Session,
+    container: AppContainer,
+    *,
+    pack_id: str,
+    template_id: str,
+    visibility_override: str | None,
+    publish_status_override: str | None,
+) -> None:
+    pack = container.pack_registry.get_pack(pack_id)
+    pack_override = _pack_override(db, pack_id)
+    pack_visibility, pack_publish_status = _effective_pack_values(
+        pack,
+        visibility_override=pack_override.visibility if pack_override else None,
+        publish_status_override=pack_override.publish_status if pack_override else None,
+    )
+    template_summary = next(
+        (item for item in pack.manifest.world_templates if item.template_id == template_id),
+        None,
+    )
+    if template_summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="World template not found")
+    effective_visibility, effective_publish_status = _effective_template_values(
+        template_summary,
+        pack_visibility=pack_visibility,
+        pack_publish_status=pack_publish_status,
+        visibility_override=visibility_override,
+        publish_status_override=publish_status_override,
+    )
+    blocked: list[str] = []
+    if effective_visibility == "public" and effective_publish_status == "playable":
+        template = pack.template(template_id)
+        status_payload = pack_preprocess_status(db, pack, template)
+        if not status_payload["ready"]:
+            blocked.append(f"{template_id}:{status_payload['status']}")
+    _raise_preprocess_gate(pack_id, blocked)
+
+
+def _world_template_items(db: Session, container: AppContainer) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    pack_overrides = {
+        row.pack_id: row
+        for row in db.execute(select(AdminPackPublicationOverride)).scalars()
+    }
+    template_overrides = {
+        (row.pack_id, row.world_template_id): row
+        for row in db.execute(select(AdminWorldTemplatePublicationOverride)).scalars()
+    }
+    for pack in container.pack_registry.list_packs():
+        pack_override = pack_overrides.get(pack.manifest.pack_id)
+        pack_visibility, pack_publish_status = _effective_pack_values(
+            pack,
+            visibility_override=pack_override.visibility if pack_override else None,
+            publish_status_override=pack_override.publish_status if pack_override else None,
+        )
+        for template in pack.manifest.world_templates:
+            override = template_overrides.get((pack.manifest.pack_id, template.template_id))
+            effective_visibility, effective_publish_status = _effective_template_values(
+                template,
+                pack_visibility=pack_visibility,
+                pack_publish_status=pack_publish_status,
+                visibility_override=override.visibility if override else None,
+                publish_status_override=override.publish_status if override else None,
+            )
+            definition = pack.template(template.template_id)
+            items.append(
+                {
+                    "pack_id": pack.manifest.pack_id,
+                    "pack_display_name": pack.manifest.display_name,
+                    "template_id": template.template_id,
+                    "display_name": template.display_name,
+                    "summary": template.summary,
+                    "visibility": template.visibility,
+                    "publish_status": template.publish_status,
+                    "effective_visibility": effective_visibility,
+                    "effective_publish_status": effective_publish_status,
+                    "publication_override": _override_payload(override),
+                    "preprocess": pack_preprocess_status(db, pack, definition),
+                }
+            )
+    return items
 
 
 def _scaffold_pack_payload(payload: CreatePackRequest) -> tuple[dict[str, object], dict[str, object], dict[str, object], dict[str, object]]:
@@ -323,7 +504,7 @@ def get_admin_overview(
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    pack_catalog = container.pack_registry.health_summary()
+    pack_catalog = pack_catalog_health_summary(db, container.pack_registry)
     projection = projection_status(db, container.settings, container.projection_service)
     release = container.eval_service.latest_release_checklist(db)
     sp = sp_overview(db, container.economy_service)
@@ -353,11 +534,12 @@ def get_admin_overview(
 
 @router.get("/packs")
 def get_admin_packs(
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return _pack_payload(container)
+    return _pack_payload(db, container)
 
 
 @router.get("/packs/preprocess-status")
@@ -397,6 +579,7 @@ def post_admin_pack_preprocess(
 @router.post("/packs", status_code=status.HTTP_201_CREATED)
 def post_admin_pack(
     payload: CreatePackRequest,
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
@@ -432,7 +615,7 @@ def post_admin_pack(
     except WorldPackError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.diagnostic()) from exc
     _refresh_pack_registry(container)
-    return {"status": "created", "pack_id": payload.pack_id, "catalog": _pack_payload(container)}
+    return {"status": "created", "pack_id": payload.pack_id, "catalog": _pack_payload(db, container)}
 
 
 @router.post("/packs/import")
@@ -458,30 +641,48 @@ def patch_admin_pack(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
-    del user
-    manifest_path = _manifest_path(container, pack_id)
-    manifest = _load_yaml(manifest_path)
-    for key in ("display_name", "visibility", "publish_status"):
-        value = getattr(payload, key)
-        if value is not None:
-            manifest[key] = value
-    _ensure_publish_gate_allows_manifest_change(db, container, manifest, pack_id=pack_id)
-    _write_yaml(manifest_path, manifest)
     try:
-        load_pack_from_dir(container.settings.pack_dir, pack_id)
+        pack = container.pack_registry.get_pack(pack_id)
     except WorldPackError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.diagnostic()) from exc
-    _refresh_pack_registry(container)
-    return {"status": "updated", "pack_id": pack_id, "catalog": _pack_payload(container)}
+    existing = _pack_override(db, pack_id)
+    visibility_override = _pack_override_value(
+        pack.manifest.visibility,
+        payload.visibility,
+        existing.visibility if existing else None,
+    )
+    publish_status_override = _pack_override_value(
+        pack.manifest.publish_status,
+        payload.publish_status,
+        existing.publish_status if existing else None,
+    )
+    if payload.visibility == "public" or payload.publish_status == "playable":
+        _ensure_publish_gate_allows_pack_override(
+            db,
+            container,
+            pack_id=pack_id,
+            visibility_override=visibility_override,
+            publish_status_override=publish_status_override,
+        )
+    _upsert_pack_override(
+        db,
+        pack_id=pack_id,
+        visibility=visibility_override,
+        publish_status=publish_status_override,
+        updated_by_sub=user.sub,
+    )
+    db.commit()
+    return {"status": "updated", "pack_id": pack_id, "catalog": _pack_payload(db, container)}
 
 
 @router.get("/world-templates")
 def get_admin_world_templates(
+    db: Session = Depends(get_db),
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    return {"items": _world_template_items(container)}
+    return {"items": _world_template_items(db, container)}
 
 
 @router.patch("/world-templates/{pack_id}/{template_id}")
@@ -493,31 +694,61 @@ def patch_admin_world_template(
     container: AppContainer = Depends(get_container),
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
-    del user
-    manifest_path = _manifest_path(container, pack_id)
-    manifest = _load_yaml(manifest_path)
-    templates = manifest.get("world_templates")
-    if not isinstance(templates, list):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="pack manifest has no world_templates list")
-    updated = False
-    for item in templates:
-        if isinstance(item, dict) and item.get("template_id") == template_id:
-            for key in ("display_name", "summary", "visibility", "publish_status"):
-                value = getattr(payload, key)
-                if value is not None:
-                    item[key] = value
-            updated = True
-            break
-    if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="World template not found")
-    _ensure_publish_gate_allows_manifest_change(db, container, manifest, pack_id=pack_id)
-    _write_yaml(manifest_path, manifest)
     try:
-        load_pack_from_dir(container.settings.pack_dir, pack_id)
+        pack = container.pack_registry.get_pack(pack_id)
+        template_summary = next(
+            (item for item in pack.manifest.world_templates if item.template_id == template_id),
+            None,
+        )
+        if template_summary is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="World template not found")
     except WorldPackError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.diagnostic()) from exc
-    _refresh_pack_registry(container)
-    return {"status": "updated", "items": _world_template_items(container)}
+    existing = _template_override(db, pack_id=pack_id, template_id=template_id)
+    pack_override = _pack_override(db, pack_id)
+    pack_visibility, pack_publish_status = _effective_pack_values(
+        pack,
+        visibility_override=pack_override.visibility if pack_override else None,
+        publish_status_override=pack_override.publish_status if pack_override else None,
+    )
+    inherited_visibility, inherited_publish_status = _effective_template_values(
+        template_summary,
+        pack_visibility=pack_visibility,
+        pack_publish_status=pack_publish_status,
+        visibility_override=None,
+        publish_status_override=None,
+    )
+    visibility_override = _template_override_value(
+        inherited_visibility,
+        payload.visibility,
+        existing.visibility if existing else None,
+    )
+    publish_status_override = _template_override_value(
+        inherited_publish_status,
+        payload.publish_status,
+        existing.publish_status if existing else None,
+    )
+    if payload.visibility is None and payload.publish_status is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="No publication override fields provided")
+    if payload.visibility == "public" or payload.publish_status == "playable":
+        _ensure_publish_gate_allows_template_override(
+            db,
+            container,
+            pack_id=pack_id,
+            template_id=template_id,
+            visibility_override=visibility_override,
+            publish_status_override=publish_status_override,
+        )
+    _upsert_template_override(
+        db,
+        pack_id=pack_id,
+        template_id=template_id,
+        visibility=visibility_override,
+        publish_status=publish_status_override,
+        updated_by_sub=user.sub,
+    )
+    db.commit()
+    return {"status": "updated", "items": _world_template_items(db, container)}
 
 
 @router.get("/users")

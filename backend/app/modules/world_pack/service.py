@@ -16,7 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
-from app.models.entities import PackPreprocessRun, World
+from app.models.entities import (
+    AdminPackPublicationOverride,
+    AdminWorldTemplatePublicationOverride,
+    PackPreprocessRun,
+    World,
+)
 
 
 ENGINE_API_VERSION = "v2"
@@ -1510,19 +1515,83 @@ def require_pack_preprocess_ready(
     )
 
 
+def _publication_override_maps(
+    db: Session,
+) -> tuple[
+    dict[str, AdminPackPublicationOverride],
+    dict[tuple[str, str], AdminWorldTemplatePublicationOverride],
+]:
+    pack_overrides = {
+        row.pack_id: row
+        for row in db.execute(select(AdminPackPublicationOverride)).scalars()
+    }
+    template_overrides = {
+        (row.pack_id, row.world_template_id): row
+        for row in db.execute(select(AdminWorldTemplatePublicationOverride)).scalars()
+    }
+    return pack_overrides, template_overrides
+
+
+def _publication_override_payload(
+    row: AdminPackPublicationOverride | AdminWorldTemplatePublicationOverride | None,
+) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "visibility": row.visibility,
+        "publish_status": row.publish_status,
+        "updated_by_sub": row.updated_by_sub,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _effective_pack_visibility(
+    pack: LoadedWorldPack,
+    pack_override: AdminPackPublicationOverride | None = None,
+) -> PackVisibility:
+    return (pack_override.visibility if pack_override and pack_override.visibility else pack.manifest.visibility)  # type: ignore[return-value]
+
+
+def _effective_pack_publish_status(
+    pack: LoadedWorldPack,
+    pack_override: AdminPackPublicationOverride | None = None,
+) -> PackPublishStatus:
+    return (pack_override.publish_status if pack_override and pack_override.publish_status else pack.manifest.publish_status)  # type: ignore[return-value]
+
+
 def _pack_has_failures(registry: PackRegistry, pack_id: str) -> bool:
     return any(failure.pack_id == pack_id for failure in registry.failures)
 
 
-def _effective_template_visibility(pack: LoadedWorldPack, template_summary: TemplateSummary) -> PackVisibility:
-    return template_summary.visibility or pack.manifest.visibility
+def _effective_template_visibility(
+    pack: LoadedWorldPack,
+    template_summary: TemplateSummary,
+    pack_override: AdminPackPublicationOverride | None = None,
+    template_override: AdminWorldTemplatePublicationOverride | None = None,
+) -> PackVisibility:
+    if template_override is not None and template_override.visibility:
+        return template_override.visibility  # type: ignore[return-value]
+    return template_summary.visibility or _effective_pack_visibility(pack, pack_override)
 
 
-def _effective_template_publish_status(pack: LoadedWorldPack, template_summary: TemplateSummary) -> PackPublishStatus:
-    return template_summary.publish_status or pack.manifest.publish_status
+def _effective_template_publish_status(
+    pack: LoadedWorldPack,
+    template_summary: TemplateSummary,
+    pack_override: AdminPackPublicationOverride | None = None,
+    template_override: AdminWorldTemplatePublicationOverride | None = None,
+) -> PackPublishStatus:
+    if template_override is not None and template_override.publish_status:
+        return template_override.publish_status  # type: ignore[return-value]
+    return template_summary.publish_status or _effective_pack_publish_status(pack, pack_override)
 
 
-def _template_is_public_playable(registry: PackRegistry, pack: LoadedWorldPack, template_id: str) -> bool:
+def _template_is_public_playable(
+    registry: PackRegistry,
+    pack: LoadedWorldPack,
+    template_id: str,
+    pack_override: AdminPackPublicationOverride | None = None,
+    template_override: AdminWorldTemplatePublicationOverride | None = None,
+) -> bool:
     template_summary = next(
         (item for item in pack.manifest.world_templates if item.template_id == template_id),
         None,
@@ -1530,18 +1599,54 @@ def _template_is_public_playable(registry: PackRegistry, pack: LoadedWorldPack, 
     if template_summary is None:
         return False
     return (
-        _effective_template_visibility(pack, template_summary) == "public"
-        and _effective_template_publish_status(pack, template_summary) == "playable"
+        _effective_template_visibility(pack, template_summary, pack_override, template_override) == "public"
+        and _effective_template_publish_status(pack, template_summary, pack_override, template_override) == "playable"
         and not _pack_has_failures(registry, pack.manifest.pack_id)
     )
 
 
-def _template_summary_payload(pack: LoadedWorldPack, template_summary: TemplateSummary) -> dict[str, Any]:
-    return {
+def _template_summary_payload(
+    pack: LoadedWorldPack,
+    template_summary: TemplateSummary,
+    pack_override: AdminPackPublicationOverride | None = None,
+    template_override: AdminWorldTemplatePublicationOverride | None = None,
+    *,
+    include_publication_override: bool = False,
+) -> dict[str, Any]:
+    payload = {
         **template_summary.model_dump(),
-        "effective_visibility": _effective_template_visibility(pack, template_summary),
-        "effective_publish_status": _effective_template_publish_status(pack, template_summary),
+        "effective_visibility": _effective_template_visibility(pack, template_summary, pack_override, template_override),
+        "effective_publish_status": _effective_template_publish_status(pack, template_summary, pack_override, template_override),
     }
+    if include_publication_override:
+        payload["publication_override"] = _publication_override_payload(template_override)
+    return payload
+
+
+def _pack_summary_payload(
+    pack: LoadedWorldPack,
+    pack_override: AdminPackPublicationOverride | None = None,
+    *,
+    include_content_refs: bool = True,
+    include_publication_override: bool = False,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "pack_id": pack.manifest.pack_id,
+        "version": pack.manifest.version,
+        "engine_api_version": pack.manifest.engine_api_version,
+        "display_name": pack.manifest.display_name,
+        "source_language": pack.manifest.source_language,
+        "visibility": pack.manifest.visibility,
+        "publish_status": pack.manifest.publish_status,
+        "effective_visibility": _effective_pack_visibility(pack, pack_override),
+        "effective_publish_status": _effective_pack_publish_status(pack, pack_override),
+        "semantic_tags": list(pack.manifest.semantic_tags),
+    }
+    if include_content_refs:
+        payload["content_refs"] = dict(pack.manifest.content_refs)
+    if include_publication_override:
+        payload["publication_override"] = _publication_override_payload(pack_override)
+    return payload
 
 
 def _world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack, WorldTemplateDefinition]]:
@@ -1552,18 +1657,25 @@ def _world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack
     return entries
 
 
-def _public_world_catalog_entries(registry: PackRegistry) -> list[tuple[LoadedWorldPack, WorldTemplateDefinition]]:
+def _public_world_catalog_entries(db: Session, registry: PackRegistry) -> list[tuple[LoadedWorldPack, WorldTemplateDefinition]]:
+    pack_overrides, template_overrides = _publication_override_maps(db)
     return [
         (pack, template)
         for pack, template in _world_catalog_entries(registry)
-        if _template_is_public_playable(registry, pack, template.template_id)
+        if _template_is_public_playable(
+            registry,
+            pack,
+            template.template_id,
+            pack_overrides.get(pack.manifest.pack_id),
+            template_overrides.get((pack.manifest.pack_id, template.template_id)),
+        )
     ]
 
 
-def resolve_catalog_world(registry: PackRegistry, world_id: str) -> tuple[LoadedWorldPack, WorldTemplateDefinition]:
+def resolve_catalog_world(db: Session, registry: PackRegistry, world_id: str) -> tuple[LoadedWorldPack, WorldTemplateDefinition]:
     matches = [
         (pack, template)
-        for pack, template in _public_world_catalog_entries(registry)
+        for pack, template in _public_world_catalog_entries(db, registry)
         if template_world_id(template) == world_id
     ]
     if not matches:
@@ -1593,7 +1705,7 @@ def pack_context_payload(pack: LoadedWorldPack, template: WorldTemplateDefinitio
 
 def playable_world_catalog(db: Session, registry: PackRegistry) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
-    for pack, template in _public_world_catalog_entries(registry):
+    for pack, template in _public_world_catalog_entries(db, registry):
         preprocess = pack_preprocess_status(db, pack, template)
         if not preprocess["ready"]:
             continue
@@ -1619,32 +1731,33 @@ def playable_world_catalog(db: Session, registry: PackRegistry) -> dict[str, Any
 
 def public_world_pack_catalog(db: Session, registry: PackRegistry) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
+    pack_overrides, template_overrides = _publication_override_maps(db)
     for pack in registry.list_packs():
+        pack_override = pack_overrides.get(pack.manifest.pack_id)
         template_summaries: list[dict[str, Any]] = []
         for template_summary in pack.manifest.world_templates:
-            if not _template_is_public_playable(registry, pack, template_summary.template_id):
+            template_override = template_overrides.get((pack.manifest.pack_id, template_summary.template_id))
+            if not _template_is_public_playable(
+                registry,
+                pack,
+                template_summary.template_id,
+                pack_override,
+                template_override,
+            ):
                 continue
             template = pack.template(template_summary.template_id)
             preprocess = pack_preprocess_status(db, pack, template)
             if not preprocess["ready"]:
                 continue
-            template_summaries.append({**_template_summary_payload(pack, template_summary), "preprocess": preprocess})
+            template_summaries.append(
+                {
+                    **_template_summary_payload(pack, template_summary, pack_override, template_override),
+                    "preprocess": preprocess,
+                }
+            )
         if not template_summaries:
             continue
-        items.append(
-            {
-                "pack_id": pack.manifest.pack_id,
-                "version": pack.manifest.version,
-                "engine_api_version": pack.manifest.engine_api_version,
-                "display_name": pack.manifest.display_name,
-                "source_language": pack.manifest.source_language,
-                "visibility": pack.manifest.visibility,
-                "publish_status": pack.manifest.publish_status,
-                "semantic_tags": list(pack.manifest.semantic_tags),
-                "content_refs": dict(pack.manifest.content_refs),
-                "world_templates": template_summaries,
-            }
-        )
+        items.append({**_pack_summary_payload(pack, pack_override), "world_templates": template_summaries})
     template_count = sum(len(item["world_templates"]) for item in items)
     return {
         "status": "ready" if template_count else "error",
@@ -1655,9 +1768,61 @@ def public_world_pack_catalog(db: Session, registry: PackRegistry) -> dict[str, 
     }
 
 
+def pack_catalog_diagnostic(db: Session, registry: PackRegistry, *, include_paths: bool = True) -> dict[str, Any]:
+    pack_overrides, template_overrides = _publication_override_maps(db)
+    packs = registry.list_packs()
+    items: list[dict[str, Any]] = []
+    for pack in packs:
+        pack_override = pack_overrides.get(pack.manifest.pack_id)
+        item = {
+            **_pack_summary_payload(
+                pack,
+                pack_override,
+                include_content_refs=False,
+                include_publication_override=True,
+            ),
+            "world_templates": [
+                _template_summary_payload(
+                    pack,
+                    template,
+                    pack_override,
+                    template_overrides.get((pack.manifest.pack_id, template.template_id)),
+                    include_publication_override=True,
+                )
+                for template in pack.manifest.world_templates
+            ],
+        }
+        if include_paths:
+            item["root_dir"] = str(pack.root_dir)
+        items.append(item)
+    payload: dict[str, Any] = {
+        "status": registry.status,
+        "engine_api_version": ENGINE_API_VERSION,
+        "pack_count": len(packs),
+        "template_count": sum(len(pack.manifest.world_templates) for pack in packs),
+        "failure_count": registry.failure_count,
+        "failures": [failure.diagnostic(include_path=include_paths) for failure in registry.failures],
+        "items": items,
+    }
+    if include_paths:
+        payload["pack_dir"] = str(registry.pack_dir)
+    return payload
+
+
+def pack_catalog_health_summary(db: Session, registry: PackRegistry) -> dict[str, Any]:
+    diagnostic = pack_catalog_diagnostic(db, registry, include_paths=False)
+    return {
+        "status": diagnostic["status"],
+        "engine_api_version": diagnostic["engine_api_version"],
+        "pack_count": diagnostic["pack_count"],
+        "template_count": diagnostic["template_count"],
+        "failure_count": diagnostic["failure_count"],
+    }
+
+
 def world_health(db: Session, registry: PackRegistry, world_id: str) -> dict[str, Any]:
     try:
-        pack, template = resolve_catalog_world(registry, world_id)
+        pack, template = resolve_catalog_world(db, registry, world_id)
     except WorldAvailabilityError:
         world = db.execute(select(World).where(World.id == world_id)).scalar_one_or_none()
         if world is None:

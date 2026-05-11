@@ -88,6 +88,45 @@ class PackPreprocessRun(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AdminPackPublicationOverride(Base, TimestampMixin):
+    __tablename__ = "admin_pack_publication_overrides"
+    __table_args__ = (
+        CheckConstraint(
+            "visibility IS NULL OR visibility IN ('public', 'private')",
+            name="ck_admin_pack_publication_overrides_visibility",
+        ),
+        CheckConstraint(
+            "publish_status IS NULL OR publish_status IN ('playable', 'draft', 'archived')",
+            name="ck_admin_pack_publication_overrides_publish_status",
+        ),
+    )
+
+    pack_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    visibility: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    publish_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_by_sub: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class AdminWorldTemplatePublicationOverride(Base, TimestampMixin):
+    __tablename__ = "admin_world_template_publication_overrides"
+    __table_args__ = (
+        CheckConstraint(
+            "visibility IS NULL OR visibility IN ('public', 'private')",
+            name="ck_admin_world_template_publication_overrides_visibility",
+        ),
+        CheckConstraint(
+            "publish_status IS NULL OR publish_status IN ('playable', 'draft', 'archived')",
+            name="ck_admin_world_template_publication_overrides_publish_status",
+        ),
+    )
+
+    pack_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    world_template_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    visibility: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    publish_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_by_sub: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class AdminAppUser(Base, TimestampMixin):
     __tablename__ = "admin_app_users"
 

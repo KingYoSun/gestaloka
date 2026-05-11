@@ -47,7 +47,7 @@ from app.modules.admin_ops.service import (
 )
 from app.modules.economy_sp.service import InsufficientSPError
 from app.modules.identity.oidc import UserIdentity
-from app.modules.world_pack.service import world_context_for_world
+from app.modules.world_pack.service import pack_catalog_diagnostic, world_context_for_world
 from app.modules.world_pack.preprocess import list_pack_preprocess_statuses
 
 
@@ -108,7 +108,7 @@ def get_ops_world_packs(
     user: UserIdentity = Depends(get_current_ops_user),
 ) -> dict[str, object]:
     del user
-    payload = container.pack_registry.catalog_diagnostic(include_paths=True)
+    payload = pack_catalog_diagnostic(db, container.pack_registry, include_paths=True)
     payload["preprocess_statuses"] = list_pack_preprocess_statuses(db, container.pack_registry)["items"]
     return payload
 

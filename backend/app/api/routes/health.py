@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_container, get_db
 from app.core.container import AppContainer
 from app.modules.admin_ops.service import memory_status, observability_summary, runtime_snapshot
+from app.modules.world_pack.service import pack_catalog_health_summary
 
 
 router = APIRouter()
@@ -62,7 +63,7 @@ def health(
             "failed_count": embedding["failed_count"],
             "runtime_status": embedding["runtime_status"],
         },
-        "world_packs": container.pack_registry.health_summary(),
+        "world_packs": pack_catalog_health_summary(db, container.pack_registry),
         "observability": {
             "runtime_role": container.settings.app_runtime_role,
             "projection_lag_seconds": snapshot["projection_lag_seconds"],

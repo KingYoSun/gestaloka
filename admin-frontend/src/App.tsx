@@ -415,9 +415,9 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
                 <strong className="truncate text-sm font-semibold text-foreground">{pack.display_name}</strong>
                 <span className="truncate text-xs leading-5 text-muted-foreground">{pack.pack_id} / {pack.version}</span>
               </div>
-              <Status value={`${pack.visibility} / ${pack.publish_status}`} />
-              <Button variant="secondary" onClick={() => void patchPack(pack.pack_id, pack.publish_status === "playable" ? "draft" : "playable")}>
-                {pack.publish_status === "playable" ? "Draft" : "Playable"}
+              <Status value={`${pack.effective_visibility} / ${pack.effective_publish_status}`} />
+              <Button variant="secondary" onClick={() => void patchPack(pack.pack_id, pack.effective_publish_status === "playable" ? "draft" : "playable")}>
+                {pack.effective_publish_status === "playable" ? "Draft" : "Playable"}
               </Button>
             </article>
           ))}
@@ -445,6 +445,20 @@ function PacksPage({ state, token, setError, refreshAll }: PageProps) {
 
 function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
   const { t } = useTranslation();
+  async function runPreprocess(template: TemplateItem) {
+    if (!template.pack_id) {
+      return;
+    }
+    try {
+      await apiFetch(`/admin/packs/${encodeURIComponent(template.pack_id)}/templates/${encodeURIComponent(template.template_id)}/preprocess`, token, {
+        method: "POST",
+      });
+      await refreshAll();
+    } catch (requestError) {
+      setError(formatError(requestError));
+    }
+  }
+
   async function patchTemplate(template: TemplateItem, publishStatus: string) {
     try {
       await apiFetch(`/admin/world-templates/${template.pack_id}/${template.template_id}`, token, {
@@ -459,18 +473,32 @@ function TemplatesPage({ state, token, setError, refreshAll }: PageProps) {
   return (
     <Panel title={t("nav.templates")}>
       <div className="grid gap-2" data-testid="admin-world-templates">
-        {state.templates.map((template) => (
-          <article key={`${template.pack_id}-${template.template_id}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
-            <div className="grid min-w-0 gap-0.5">
-              <strong className="truncate text-sm font-semibold text-foreground">{template.display_name}</strong>
-              <span className="truncate text-xs leading-5 text-muted-foreground">{template.pack_display_name} / {template.template_id}</span>
-            </div>
-            <Status value={`${template.effective_visibility} / ${template.effective_publish_status}`} />
-            <Button variant="secondary" onClick={() => void patchTemplate(template, template.effective_publish_status === "playable" ? "draft" : "playable")}>
-              {template.effective_publish_status === "playable" ? "Draft" : "Playable"}
-            </Button>
-          </article>
-        ))}
+        {state.templates.map((template) => {
+          const preprocessStatus = template.preprocess?.status ?? "unknown";
+          const canRunPreprocess = ["required", "stale", "failed"].includes(preprocessStatus);
+          return (
+            <article key={`${template.pack_id}-${template.template_id}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg border border-border p-3 max-[900px]:grid-cols-1">
+              <div className="grid min-w-0 gap-0.5">
+                <strong className="truncate text-sm font-semibold text-foreground">{template.display_name}</strong>
+                <span className="truncate text-xs leading-5 text-muted-foreground">{template.pack_display_name} / {template.template_id}</span>
+              </div>
+              <div className="grid justify-items-end gap-1 max-[900px]:justify-items-start">
+                <Status value={`${template.effective_visibility} / ${template.effective_publish_status}`} />
+                <span className="text-xs leading-5 text-muted-foreground">{t("common.preprocessStatus", { status: preprocessStatus })}</span>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 max-[900px]:justify-start">
+                {canRunPreprocess ? (
+                  <Button variant="secondary" onClick={() => void runPreprocess(template)}>
+                    {t("common.preprocess")}
+                  </Button>
+                ) : null}
+                <Button variant="secondary" onClick={() => void patchTemplate(template, template.effective_publish_status === "playable" ? "draft" : "playable")}>
+                  {template.effective_publish_status === "playable" ? "Draft" : "Playable"}
+                </Button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </Panel>
   );

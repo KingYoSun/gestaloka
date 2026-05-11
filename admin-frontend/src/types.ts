@@ -5,9 +5,42 @@ export type PackItem = {
   display_name: string;
   visibility: "public" | "private";
   publish_status: "playable" | "draft" | "archived";
+  effective_visibility: "public" | "private";
+  effective_publish_status: "playable" | "draft" | "archived";
+  publication_override: PublicationOverride | null;
   semantic_tags: string[];
   root_dir?: string;
   world_templates: TemplateItem[];
+};
+
+export type PublicationOverride = {
+  visibility?: "public" | "private" | null;
+  publish_status?: "playable" | "draft" | "archived" | null;
+  updated_by_sub?: string | null;
+  updated_at?: string | null;
+};
+
+export type PackPreprocessRun = {
+  id: string;
+  pack_id: string;
+  world_template_id: string;
+  world_id: string;
+  pack_content_hash: string;
+  status: string;
+  counts: Record<string, unknown>;
+  error: Record<string, unknown>;
+  triggered_by_sub: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PackPreprocessStatus = {
+  status: string;
+  ready: boolean;
+  pack_content_hash: string;
+  latest_run: PackPreprocessRun | null;
 };
 
 export type TemplateItem = {
@@ -20,6 +53,8 @@ export type TemplateItem = {
   publish_status?: "playable" | "draft" | "archived" | null;
   effective_visibility: "public" | "private";
   effective_publish_status: "playable" | "draft" | "archived";
+  publication_override?: PublicationOverride | null;
+  preprocess?: PackPreprocessStatus;
 };
 
 export type PackCatalog = {

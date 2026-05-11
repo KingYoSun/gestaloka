@@ -17,7 +17,14 @@ from app.core.container import build_container
 from app.core.config import Settings
 from app.main import create_app
 from app.models.base import Base
-from app.models.entities import Memory, PackPreprocessRun, ProjectionRecord, World
+from app.models.entities import (
+    AdminPackPublicationOverride,
+    AdminWorldTemplatePublicationOverride,
+    Memory,
+    PackPreprocessRun,
+    ProjectionRecord,
+    World,
+)
 from app.modules.world_pack.cli import main as world_pack_main
 from app.modules.world_pack.service import (
     PackRegistry,
@@ -668,6 +675,93 @@ def test_admin_publish_requires_ready_pack_preprocess(tmp_path: Path, auth_heade
     assert preprocess_response.json()["status"] == "ready"
     assert allowed_response.status_code == 200
     assert allowed_response.json()["items"][0]["effective_publish_status"] == "playable"
+
+
+def test_admin_template_publish_override_does_not_rewrite_pack_manifest(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+    manifest_path = pack_dir / "gestaloka_world_reference" / "pack.yaml"
+    original_manifest = manifest_path.read_text(encoding="utf-8")
+    test_client, container = _build_client_for_pack_dir(tmp_path, pack_dir)
+    try:
+        draft_response = test_client.patch(
+            "/admin/world-templates/gestaloka_world_reference/layered_world_foundation",
+            headers=auth_headers,
+            json={"publish_status": "draft"},
+        )
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        session_response = test_client.post(
+            "/sessions",
+            json={
+                "world_id": "gestaloka_world_reference",
+                "pack_id": "gestaloka_world_reference",
+                "world_template_id": "layered_world_foundation",
+                "world_name": "Template Override Draft",
+                "player_display_name": "Demo Player",
+            },
+            headers=auth_headers,
+        )
+        with container.session_factory() as db:
+            draft_override = db.execute(select(AdminWorldTemplatePublicationOverride)).scalar_one()
+        playable_again_response = test_client.patch(
+            "/admin/world-templates/gestaloka_world_reference/layered_world_foundation",
+            headers=auth_headers,
+            json={"publish_status": "playable"},
+        )
+        with container.session_factory() as db:
+            remaining_override = db.execute(select(AdminWorldTemplatePublicationOverride)).scalar_one_or_none()
+    finally:
+        test_client.close()
+
+    assert draft_response.status_code == 200
+    assert draft_response.json()["items"][0]["effective_publish_status"] == "draft"
+    assert playable_response.json()["items"] == []
+    assert session_response.status_code == 503
+    assert session_response.json()["detail"]["error"] == "world_unavailable"
+    assert draft_override.publish_status == "draft"
+    assert playable_again_response.status_code == 200
+    assert playable_again_response.json()["items"][0]["publication_override"] is None
+    assert remaining_override is None
+    assert manifest_path.read_text(encoding="utf-8") == original_manifest
+
+
+def test_admin_pack_publish_override_controls_inheriting_templates_without_rewriting_manifest(tmp_path: Path, auth_headers):
+    pack_dir = _copy_pack_dir(tmp_path)
+
+    def mutate(payload: dict[str, object]) -> None:
+        payload["world_templates"][0].pop("publish_status", None)  # type: ignore[index]
+
+    _rewrite_pack_manifest(pack_dir, "gestaloka_world_reference", mutate)
+    manifest_path = pack_dir / "gestaloka_world_reference" / "pack.yaml"
+    original_manifest = manifest_path.read_text(encoding="utf-8")
+    test_client, container = _build_client_for_pack_dir(tmp_path, pack_dir)
+    try:
+        draft_response = test_client.patch(
+            "/admin/packs/gestaloka_world_reference",
+            headers=auth_headers,
+            json={"publish_status": "draft"},
+        )
+        playable_response = test_client.get("/worlds/playable", headers=auth_headers)
+        with container.session_factory() as db:
+            draft_override = db.execute(select(AdminPackPublicationOverride)).scalar_one()
+        playable_again_response = test_client.patch(
+            "/admin/packs/gestaloka_world_reference",
+            headers=auth_headers,
+            json={"publish_status": "playable"},
+        )
+        final_catalog_response = test_client.get("/worlds/playable", headers=auth_headers)
+        with container.session_factory() as db:
+            remaining_override = db.execute(select(AdminPackPublicationOverride)).scalar_one_or_none()
+    finally:
+        test_client.close()
+
+    assert draft_response.status_code == 200
+    assert draft_response.json()["catalog"]["items"][0]["effective_publish_status"] == "draft"
+    assert playable_response.json()["items"] == []
+    assert draft_override.publish_status == "draft"
+    assert playable_again_response.status_code == 200
+    assert remaining_override is None
+    assert final_catalog_response.json()["world_count"] == 1
+    assert manifest_path.read_text(encoding="utf-8") == original_manifest
 
 
 @pytest.mark.parametrize("publish_status", ["draft", "archived"])

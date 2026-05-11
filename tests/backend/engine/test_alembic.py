@@ -63,6 +63,8 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "llm_context_cache_entries",
         "actor_knowledge_entries",
         "pack_preprocess_runs",
+        "admin_pack_publication_overrides",
+        "admin_world_template_publication_overrides",
         "admin_app_users",
         "admin_runtime_configs",
         "admin_prompt_overrides",
@@ -93,6 +95,12 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
     llm_context_cache_columns = {column["name"] for column in inspector.get_columns("llm_context_cache_entries")}
     actor_knowledge_columns = {column["name"] for column in inspector.get_columns("actor_knowledge_entries")}
     pack_preprocess_columns = {column["name"] for column in inspector.get_columns("pack_preprocess_runs")}
+    pack_publication_override_columns = {
+        column["name"] for column in inspector.get_columns("admin_pack_publication_overrides")
+    }
+    template_publication_override_columns = {
+        column["name"] for column in inspector.get_columns("admin_world_template_publication_overrides")
+    }
     assert {"canonical_sequence", "canonical_status", "timeline_entry_id"} <= event_columns
     assert {"paid_balance", "bonus_balance"} <= sp_account_columns
     assert {"paid_delta", "bonus_delta", "paid_balance_after", "bonus_balance_after"} <= sp_ledger_columns
@@ -211,6 +219,14 @@ def test_alembic_upgrade_creates_v2_tables(monkeypatch, tmp_path: Path):
         "ix_pack_preprocess_runs_scope_hash",
         "ix_pack_preprocess_runs_world_status",
     } <= pack_preprocess_indexes
+    assert {"pack_id", "visibility", "publish_status", "updated_by_sub"} <= pack_publication_override_columns
+    assert {
+        "pack_id",
+        "world_template_id",
+        "visibility",
+        "publish_status",
+        "updated_by_sub",
+    } <= template_publication_override_columns
 
 
 def test_alembic_revision_ids_fit_default_version_table():
