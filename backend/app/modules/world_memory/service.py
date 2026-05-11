@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 import httpx
-from sqlalchemy import case, or_, select
+from sqlalchemy import case, or_, select, type_coerce
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -21,6 +21,11 @@ try:
 except ImportError:  # pragma: no cover - dependency is installed in runtime image
     genai = None
     genai_types = None
+
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:  # pragma: no cover - dependency is available in PostgreSQL runtime image
+    Vector = None
 
 
 TOKEN_PATTERN = re.compile(r"\w+", re.UNICODE)
@@ -721,6 +726,8 @@ class MemoryService:
         if not ready_memories:
             return [] if not candidate_memories else None
         if db.bind is not None and db.bind.dialect.name == "postgresql":
+            if Vector is None:
+                return None
             return self._postgres_semantic_hits(
                 db,
                 candidate_ids=[memory.id for memory in candidate_memories],
@@ -754,7 +761,8 @@ class MemoryService:
         limit: int,
         min_score: float,
     ) -> list[MemorySearchHit]:
-        score_expr = (1 - Memory.embedding.cosine_distance(query_embedding)).label("score")
+        embedding_expr = type_coerce(Memory.embedding, Vector(self.settings.memory_embedding_dim))
+        score_expr = (1 - embedding_expr.cosine_distance(query_embedding)).label("score")
         location_rank_expr = case(
             (Memory.location_id == location_id, 2),
             (Memory.location_id.is_(None), 1),

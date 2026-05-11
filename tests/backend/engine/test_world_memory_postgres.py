@@ -125,7 +125,10 @@ def test_postgres_pgvector_search_uses_hnsw_and_respects_world_filter():
             limit=4,
         )
         assert result.trace.status == "ready"
+        assert result.trace.used_fallback is False
         assert result.trace.retrieved_memory_ids
+        assert result.trace.top_scores
+        assert result.trace.top_scores[0] > 0
         assert all(hit.id in result.trace.retrieved_memory_ids for hit in result.hits)
         assert all("別の門" not in hit.text for hit in result.hits)
         assert "旅人を助け" in result.hits[0].text

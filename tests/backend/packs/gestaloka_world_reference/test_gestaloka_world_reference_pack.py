@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -14,6 +15,7 @@ from app.models.entities import (
     Location,
     LocationRoute,
     NPCProfile,
+    PlayLocalizedTextCache,
     QuestAssignment,
     SPLedgerEntry,
     SharedHistoryRecord,
@@ -22,11 +24,17 @@ from app.models.entities import (
     WorldResourceLock,
 )
 from app.modules.llm_harness.service import PromptExecutionOutcome
-from app.modules.session.service import _canonicalize_next_choices
+from app.modules.session.service import (
+    _build_canonical_public_alias_index,
+    _canonicalize_next_choices,
+    _enrich_public_turn_session_state,
+    _match_visible_route_by_public_text,
+)
 from app.modules.world_state.entity_generation import materialize_entity_drafts, pack_seed_entity_key
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 from app.modules.world_state.service import (
     apply_quest_lifecycle_action,
+    build_session_state,
     create_dynamic_quest_offer,
     default_next_choices,
     quest_offer_repeats_resolution,
@@ -139,6 +147,71 @@ def test_session_can_start_from_gestaloka_world_reference_pack(client, container
             )
         ).scalar_one()
         assert guide.display_name == "Nexus Entry Liaison Kanata"
+
+
+def test_visible_route_alias_matching_ignores_long_localization_cache(client, container, auth_headers):
+    response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert response.status_code == 200
+
+    long_text = (
+        "ヌートはネクサス市の案内担当であるカナタに歩み寄り、この街の主要な施設について尋ねた。"
+        "カナタは、昇降塔ネットワークは各階層や企業領土への物理的な移動を担い、"
+        "万象図書館は世界の正史を記録するアーカイブとして機能していると説明した。"
+    )
+    with container.session_factory() as db:
+        actor = db.execute(
+            select(Actor).where(
+                Actor.world_id == "gestaloka_world_reference",
+                Actor.actor_type == "player",
+            )
+        ).scalar_one()
+        db.add(
+            PlayLocalizedTextCache(
+                world_id="gestaloka_world_reference",
+                actor_id_scope=actor.id,
+                target_language="ja",
+                source_kind="turn_narrative",
+                source_key="long-location-bearing-narrative",
+                source_hash=hashlib.sha256(long_text.encode("utf-8")).hexdigest(),
+                source_text=long_text,
+                localized_text=long_text,
+                model_id="test-model",
+                prompt_id="test-prompt",
+            )
+        )
+        db.flush()
+
+        state = build_session_state(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=actor.id,
+            location_id=actor.current_location_id,
+            include_internal=True,
+        )
+        state.pop("next_choices", None)
+        state = _enrich_public_turn_session_state(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=actor.id,
+            session_state=state,
+        )
+        alias_index = _build_canonical_public_alias_index(db, "gestaloka_world_reference", state)
+
+        location_match = alias_index.match_location("昇降塔ネットワーク")
+        assert location_match is not None
+        assert location_match.canonical_key == "lift_tower_network"
+        assert long_text not in alias_index.aliases_for_location("nexus_city")
+
+        route = _match_visible_route_by_public_text(
+            db,
+            world_id="gestaloka_world_reference",
+            session_state=state,
+            claim_text="昇降塔ネットワーク",
+            player_action_text="昇降塔ネットワークへ向かう",
+            alias_index=alias_index,
+        )
+        assert route is not None
+        assert route["destination_key"] == "lift_tower_network"
 
 
 def test_opening_choices_ignore_existing_same_world_beats():

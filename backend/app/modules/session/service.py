@@ -1371,15 +1371,6 @@ def _build_canonical_public_alias_index(db: Session, world_id: str, session_stat
                     language=language,
                 )
 
-    for row in db.execute(select(PlayLocalizedTextCache).where(PlayLocalizedTextCache.world_id == world_id)).scalars():
-        for location_key, aliases in list(index.location_aliases_by_key.items()):
-            if _text_mentions_public_alias(row.source_text, aliases):
-                index.add_location_alias(
-                    canonical_key=location_key,
-                    canonical_name=row.source_text,
-                    surface_text=row.localized_text,
-                    language=row.target_language,
-                )
     return index
 
 
