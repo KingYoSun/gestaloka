@@ -1,0 +1,1214 @@
+world_templates:
+  ashlight_frontier_foundation:
+    template_id: ashlight_frontier_foundation
+    display_name: Ashlight Frontier Foundation
+    summary: A low-context first-play fantasy frontier where the player's attention dynamically instantiates the first local situation.
+    world:
+      world_id: ashlight_frontier
+      default_name: "灰灯の辺境: Ashlight Frontier"
+      situation_grammar:
+        pressure_sources:
+          - lamp instability
+          - mist uncertainty
+          - trade disruption
+          - local memory conflict
+          - institutional distrust
+          - frontier resource shortage
+          - route ambiguity
+          - witness disagreement
+          - old record contradiction
+          - personal request from an unknown local
+        affected_domains:
+          - road
+          - forest
+          - well
+          - mine
+          - church record
+          - market rumor
+          - town gate
+          - farmstead
+          - abandoned shrine
+          - caravan stop
+          - guild board
+          - family household
+          - old boundary marker
+        human_stakes:
+          - someone needs help
+          - someone is hiding information
+          - two witnesses disagree
+          - a route may be unsafe
+          - a local custom conflicts with guild procedure
+          - a resource is running low
+          - an old record contradicts current memory
+          - someone asks for discretion
+          - a public authority wants delay
+          - a private person wants immediate action
+        uncertainty_modes:
+          - rumor may be false
+          - report may be exaggerated
+          - witness may be mistaken
+          - cause is misattributed
+          - problem is real but location is wrong
+          - visible problem is a symptom, not the cause
+          - multiple factions interpret the same sign differently
+          - the player's first assumption may be incomplete
+        situation_shapes:
+          - investigation
+          - rescue
+          - escort
+          - negotiation
+          - recovery
+          - boundary survey
+          - rumor verification
+          - record comparison
+          - mediation
+          - containment
+          - route finding
+        tone_modifiers:
+          - cozy frontier
+          - quiet unease
+          - fairy-tale strangeness
+          - grounded guild work
+          - local human trouble
+          - low-stakes first job
+          - gradually widening mystery
+      rumor_grammar:
+        rumor_source_types:
+          - guild receptionist
+          - tired traveler
+          - merchant clerk
+          - church novice
+          - gate guard
+          - local child
+          - old resident
+          - caravan driver
+          - apprentice adventurer
+          - quiet craftsman
+        rumor_certainty_levels:
+          - hearsay
+          - repeated concern
+          - first-hand report
+          - conflicting testimonies
+          - official note awaiting confirmation
+          - private request
+          - suppressed report
+        rumor_presentation_rules:
+          - Before confirmation, never state the rumor as fact.
+          - Use uncertain phrasing.
+          - Attach at least one reason the rumor may be incomplete.
+          - Avoid making the rumor immediately solvable.
+          - Let player attention decide which rumor becomes concrete.
+      quest_emergence_policy:
+        require_player_attention_basis: true
+        require_uncertainty: true
+        require_first_step: true
+        reject_opening_fixed_incident: true
+      quest_generation_constraints:
+        must_arise_from_player_attention: true
+        must_include_uncertainty_at_first: true
+        must_specify_first_actionable_step: true
+        must_have_two_plausible_interpretations: true
+        avoid_revealing_true_cause_immediately: true
+        keep_first_session_small_but_expandable: true
+        reject_named_npc_predetermined_harm: true
+        may_reference_location_faction_or_archetype_only_after_attention: true
+    roles:
+      starter_location_key: lieber_lampfort
+      lore_location_key: lantern_church_archive
+      followup_location_key: mistbound_frontier
+      guide_npc_name: ""
+      guide_archetype_id: guild_receptionist
+      starter_stage_key: first_attention
+      followup_stage_key: mistbound_survey
+      opening_chapter_key:
+      followup_chapter_key:
+      reward_effect_kind: unlock_mistbound_frontier_route
+      followup_branches:
+        formal_path:
+          branch_key: lantern_guild_mandate
+          label: Lantern Guild Mandate
+          summary: The player's early attention is shaped through guild procedure, public trust, lamp stewardship, and institutional responsibility.
+          committed_summary: The next route treats the player as a recognized frontier adventurer trusted with public-facing stabilization work.
+          player_hint: Public trust, careful confirmation, rescue, and lamp stewardship shape the next stage.
+          signal_weights:
+            frontier_trust: 0.12
+            guild_authority: 0.1
+            careful_observation: 0.08
+            rumor_curiosity: -0.02
+          anchor_npcs:
+            - guild_receptionist
+            - lamp_warden
+            - lantern_church
+        undercurrent_path:
+          branch_key: mist_witch_compact
+          label: Mist Witch Compact
+          summary: The player's early attention follows rumors, local intuition, hidden paths, and people who understand the night mist outside official procedure.
+          committed_summary: The next route follows local rumors, hidden paths, negotiated trust, and uncertain discoveries beyond official records.
+          player_hint: Curiosity, unofficial trust, and mist-side discoveries shape the next stage.
+          signal_weights:
+            rumor_curiosity: 0.12
+            trade_pressure: 0.06
+            church_influence: -0.02
+            guild_authority: -0.02
+          anchor_npcs:
+            - mist_witch
+            - free_merchants
+            - mistbound_frontier
+    bootstrap:
+      opening_title: Lieber Lampfort
+      opening_narrative: |-
+        You are a newly registered adventurer in Lieber Lampfort, a frontier town protected by a white lamp tower.
+
+        The adventurers' guild hall is busy with travelers, scouts, merchants, and local messengers. The board does not present a neat list of fixed quests. It is a living surface of notes, requests, rumors, witness fragments, route warnings, and unfinished reports.
+
+        Guild Receptionist Elna explains that new adventurers are not forced into a single request. You can first ask what kinds of concerns are gathering, inspect the board, visit town facilities, speak with non-guild locals, describe the kind of work you are suited for, or choose a direction beyond the lamps.
+
+        Outside the windows, thin night mist waits beyond the town lights. It looks less like an immediate attack than a reminder that the frontier still has places no one has fully checked.
+      opening_situation: Lieber Lampfort is a frontier town stabilized by a white lamp tower. The player has just registered at the adventurers' guild and can decide what kind of concern, place, person, institution, or frontier direction to attend to first.
+      opening_pressure: The guild, church, merchants, frontier authorities, and local residents all carry partial concerns. The new adventurer's first attention may decide which local situation becomes concrete.
+      opening_choices:
+        - choice_id: choice_1
+          label: Ask the guild receptionist what kinds of concerns are gathering
+          summary: Ask Elna to organize recent concern categories and rumors without naming a fixed request.
+          canonical_input_text: Ask the guild receptionist what kinds of concerns are gathering
+          action_kind: narrative
+        - choice_id: choice_2
+          label: Inspect the board for the direction that interests you
+          summary: Look across partial notes, witness fragments, and requests to choose a direction of attention rather than a fixed quest.
+          canonical_input_text: Inspect the board for the direction that interests you
+          action_kind: narrative
+        - choice_id: choice_3
+          label: View the boundary between lamplight and night mist
+          summary: Go near the gate and see what the outside of Lieber Lampfort feels like without assuming a specific road incident.
+          canonical_input_text: View the boundary between lamplight and night mist
+          action_kind: travel
+          travel_target_key: lampfort_outer_gate
+        - choice_id: choice_4
+          label: Ask people outside the guild about recent concerns
+          summary: Speak with market people, church staff, guards, travelers, and residents about anxieties that are not yet formal requests.
+          canonical_input_text: Ask people outside the guild about recent concerns
+          action_kind: narrative
+        - choice_id: choice_5
+          label: Ask Elna what first work would fit you
+          summary: Let your strengths, temperament, and desired play style help shape the first local situation dynamically.
+          canonical_input_text: Ask Elna what first work would fit you
+          action_kind: narrative
+      localized_bootstrap:
+        ja:
+          opening_title: リーベル灯砦
+          opening_narrative: |-
+            あなたは、王国西端の町「リーベル灯砦」に着いたばかりの新米冒険者です。
+
+            町の中央には、白い炎をともす灯柱が立っています。その灯りが届く範囲では、道も建物も昨日と同じ形を保ちます。
+
+            冒険者ギルドの広間には、旅人、斥候、商人、町の使いが出入りしています。掲示板には、整理済みの依頼だけでなく、相談、噂、目撃談、経路の注意書き、まだ真偽の分からない報告が重なっています。
+
+            受付係エルナは、あなたに言います。
+
+            「最初の仕事は、ここで決め打ちするものではありません。まずは話を聞いてもいいし、掲示板を眺めてもいい。町を歩いて、人に会って、自分に向いている仕事を探してもかまいません。この辺境では、どこへ目を向けるかで、最初に立ち上がる問題が変わります」
+
+            窓の外では、町の灯りの向こうに薄い夜霧が見えています。それは今すぐ襲ってくる脅威というより、辺境の外側にはまだ確かめられていない場所がある、という印のように見えます。
+          opening_situation: リーベル灯砦は白い灯柱に守られた辺境都市であり、プレイヤーは冒険者ギルドに登録したばかりである。最初にどの種類の相談、場所、人物、施設、辺境の方向へ関心を向けるかは、まだ決まっていない。
+          opening_pressure: ギルド、教会、商人、辺境伯側、住民たちは、それぞれ断片的な相談や気がかりを抱えている。新米冒険者が最初にどこへ関心を向けるかによって、どの地域の状況が具体化するかが変わる。
+          opening_choices:
+            - choice_id: choice_1
+              label: ギルド受付に、いま多い相談の傾向を聞く
+              summary: 受付係エルナから、特定の依頼名ではなく、最近どの種類の相談や噂が増えているのかを整理してもらう。
+              canonical_input_text: ギルド受付に、いま多い相談の傾向を聞く
+              action_kind: narrative
+            - choice_id: choice_2
+              label: 掲示板を眺め、自分が気になる問題の方向を探す
+              summary: 固定された依頼リストではなく、掲示板上の断片的な相談や目撃談から、自分が関わりたい方向を探す。
+              canonical_input_text: 掲示板を眺め、自分が気になる問題の方向を探す
+              action_kind: narrative
+            - choice_id: choice_3
+              label: 町の外縁から、灯りと夜霧の境界を見る
+              summary: 町の門や外壁近くへ行き、リーベル灯砦の外側がどのような雰囲気なのかを自分の目で確かめる。
+              canonical_input_text: 町の外縁から、灯りと夜霧の境界を見る
+              action_kind: travel
+              travel_target_key: lampfort_outer_gate
+            - choice_id: choice_4
+              label: ギルド外の人々に、最近の気がかりを聞く
+              summary: 市場、教会、門番、旅人、住民などから、公式依頼になる前の不安や噂を聞いてみる。
+              canonical_input_text: ギルド外の人々に、最近の気がかりを聞く
+              action_kind: narrative
+            - choice_id: choice_5
+              label: 自分に向いた最初の仕事をエルナに相談する
+              summary: プレイヤーの得意分野、性格、望む遊び方に応じて、最初の状況が動的に立ち上がるよう相談する。
+              canonical_input_text: 自分に向いた最初の仕事をエルナに相談する
+              action_kind: narrative
+      start_consequence_summary: Lieber Lampfort waits while the new adventurer chooses a first direction of attention.
+      session_started_narrative: >-
+        {player_name} arrived in {starter_location_name} as a newly registered adventurer and began choosing a first thread of attention with {guide_npc_name}.
+      reward_unlock_summary: Provisional Lamp Badge unlocked a surveyed route toward the Mistbound Frontier.
+      reward_use_narrative: >-
+        {player_name} presented {reward_name} at {starter_location_name}, and {faction_name} acknowledged a route toward deeper frontier work.
+      reward_location_memory: >-
+        {reward_name} marked that {player_name} had chosen a first local thread and could approach the Mistbound Frontier.
+      reward_world_memory: >-
+        {player_name} used {reward_name} to move from first attention into broader frontier survey work.
+    locations:
+      lieber_lampfort:
+        id: lieber_lampfort
+        starter: true
+        name: Lieber Lampfort
+        description: A safe frontier town stabilized by a white lamp tower, with a guild, inn, smithy, market, chapel, and stables.
+        public_aliases:
+          en: [Lieber Lampfort, Lampfort, the safe town, white lamp town]
+          ja: [リーベル灯砦, 灯砦, 町, 白い灯柱の町]
+        hierarchy: frontier_anchor_town
+        region: western_frontier
+        kind: safe_city
+        danger_level: low
+        facilities: [adventurers guild, inn, smithy, market, chapel, stables, white lamp tower]
+        public_state:
+          civic_safety: 2
+          first_attention_open: true
+          fixed_incident_confirmed: false
+        related_factions: [adventurers_guild, lantern_church, frontier_lord, free_merchants]
+        related_world_axes: [lamp_stability, mist_encroachment, frontier_trust, rumor_volatility]
+        rumor_surface: [unstructured concerns, conflicting witness fragments, lamp maintenance concerns, frontier work categories]
+      adventurers_guild_hall:
+        id: adventurers_guild_hall
+        name: Adventurers Guild Hall
+        description: The guild hall inside Lieber Lampfort, where a living board gathers notes, requests, rumors, witness fragments, and unfinished reports.
+        public_aliases:
+          en: [Adventurers Guild Hall, guild hall, guild board, reception desk]
+          ja: [冒険者ギルド広間, ギルド広間, 掲示板, 受付]
+        hierarchy: town_facility
+        region: lieber_lampfort
+        kind: guild_hall
+        danger_level: low
+        facilities: [request board, reception, reward counter, adventurer tables]
+        public_state:
+          board_is_unstructured: true
+          verified_requests: 0
+        related_factions: [adventurers_guild]
+        related_world_axes: [frontier_trust, guild_authority, rumor_volatility, personal_fit_signal]
+        rumor_surface: [concern categories, witness fragments, work suitability, unfinished reports]
+      lampfort_outer_gate:
+        id: lampfort_outer_gate
+        name: Lampfort Outer Gate
+        description: The gate and outer wall where town lamplight meets the night mist beyond the stable streets.
+        public_aliases:
+          en: [Lampfort Outer Gate, outer gate, town gate, lamplight boundary]
+          ja: [灯砦外門, 外門, 町の門, 灯りと夜霧の境界]
+        hierarchy: town_boundary
+        region: lieber_lampfort
+        kind: boundary_gate
+        danger_level: low
+        facilities: [gatehouse, wall walk, lamp markers, guard post]
+        public_state:
+          boundary_observable: true
+          confirmed_breach: false
+        related_factions: [frontier_lord, adventurers_guild, lantern_church]
+        related_world_axes: [lamp_stability, mist_encroachment, frontier_trust]
+        rumor_surface: [boundary observations, safe route questions, lamp stewardship, watch reports]
+      blue_deer_forest:
+        id: blue_deer_forest
+        name: Blue Deer Forest
+        description: A forest of herbs, game trails, old paving stones, and pale deer folklore where situations may emerge from player attention.
+        public_aliases:
+          en: [Blue Deer Forest, blue deer woods, forest paths, herb woods]
+          ja: [青鹿の森, 青鹿の林, 森の小道, 薬草の森]
+        hierarchy: frontier_wilds
+        region: western_frontier
+        kind: forest
+        danger_level: medium
+        facilities: [game trails, herb patches, old paving stones, boundary markers]
+        public_state:
+          route_clarity: 1
+          local_folklore_density: 2
+        related_factions: [adventurers_guild, mist_witches, lantern_church]
+        related_world_axes: [mist_encroachment, rumor_volatility, frontier_trust]
+        rumor_surface: [forest gathering concerns, route uncertainty, animal signs, old memory traces]
+      starfall_road:
+        id: starfall_road
+        name: Starfall Road
+        description: A frontier road of lamp markers, caravans, guards, travelers, and delayed information.
+        public_aliases:
+          en: [Starfall Road, starfall route, frontier road, caravan road]
+          ja: [星降り街道, 星降り道, 辺境街道, 隊商路]
+        hierarchy: frontier_route
+        region: western_frontier
+        kind: road
+        danger_level: medium
+        facilities: [lamp markers, caravan stops, patrol posts, road shrines]
+        public_state:
+          route_reliability: 1
+          traffic_noise: 2
+        related_factions: [free_merchants, frontier_lord, adventurers_guild]
+        related_world_axes: [lamp_stability, trade_pressure, rumor_volatility]
+        rumor_surface: [route uncertainty, trade unease, escort demand, information delay]
+      old_town_well:
+        id: old_town_well
+        name: Old Town Well
+        description: An old-town well, drainage access, and domestic memory site where water, records, and local unease may become relevant.
+        public_aliases:
+          en: [Old Town Well, old well, old-town waterworks, well square]
+          ja: [古井戸, 旧市街の井戸, 古い水場, 井戸広場]
+        hierarchy: town_old_quarter
+        region: lieber_lampfort
+        kind: old_infrastructure
+        danger_level: low
+        facilities: [well stones, drainage grates, old household markers]
+        public_state:
+          public_access: 1
+          old_memory_presence: 1
+        related_factions: [lantern_church, adventurers_guild, frontier_lord]
+        related_world_axes: [rumor_volatility, church_influence, mist_encroachment]
+        rumor_surface: [old memory traces, water concerns, resident unease, record mismatch]
+      lantern_church_archive:
+        id: lantern_church_archive
+        name: Lantern Church Archive
+        description: A Lantern Church record room where lamps, night mist, old disasters, village records, and rituals can be researched.
+        public_aliases:
+          en: [Lantern Church Archive, church archive, record room, old records]
+          ja: [灯火教会の記録室, 教会記録室, 記録室, 古い記録]
+        hierarchy: town_lore_facility
+        region: lieber_lampfort
+        kind: archive
+        danger_level: low
+        facilities: [lamp records, village ledgers, ritual notes, memorial shelves]
+        public_state:
+          record_access: 1
+          confirmed_relevance: false
+        related_factions: [lantern_church]
+        related_world_axes: [church_influence, lamp_stability, rumor_volatility]
+        rumor_surface: [old record contradiction, ritual interpretation, memorial concerns, incomplete ledgers]
+      market_and_caravan_yard:
+        id: market_and_caravan_yard
+        name: Market and Caravan Yard
+        description: A market and wagon yard where merchants, travelers, goods, road information, and price pressure gather.
+        public_aliases:
+          en: [Market and Caravan Yard, market, caravan yard, merchant yard]
+          ja: [市場と隊商広場, 市場, 隊商広場, 商人広場]
+        hierarchy: town_trade_facility
+        region: lieber_lampfort
+        kind: market
+        danger_level: low
+        facilities: [stalls, wagon lines, merchant clerks, stable sheds]
+        public_state:
+          trade_noise: 2
+          public_anxiety: 1
+        related_factions: [free_merchants, adventurers_guild, frontier_lord]
+        related_world_axes: [trade_pressure, rumor_volatility, frontier_trust]
+        rumor_surface: [trade unease, price shifts, escort talk, route gossip]
+      mistbound_frontier:
+        id: mistbound_frontier
+        name: Mistbound Frontier
+        description: The unstable frontier beyond reliable lamplight, opened as a next-stage field after the first local thread becomes concrete.
+        public_aliases:
+          en: [Mistbound Frontier, mistbound edge, beyond the lamps, night-mist frontier]
+          ja: [夜霧の辺境, 夜霧の奥, 灯りの外, 夜霧の外縁]
+        hierarchy: unstable_frontier
+        region: beyond_lamps
+        kind: followup_frontier
+        danger_level: high
+        facilities: [fading paths, temporary markers, local guide points]
+        public_state:
+          unlocked_for_player: false
+          instability: 2
+        related_factions: [mist_witches, adventurers_guild, lantern_church, free_merchants]
+        related_world_axes: [mist_encroachment, lamp_stability, frontier_trust, rumor_volatility]
+        rumor_surface: [mist-side local customs, hidden paths, boundary survey, uncertain discoveries]
+      blacksilver_mine:
+        id: blacksilver_mine
+        name: Blacksilver Mine
+        description: A lamp-crystal mining site where labor, resources, underground risk, merchants, and frontier authority may come into tension.
+        public_aliases:
+          en: [Blacksilver Mine, blacksilver pit, lamp-crystal mine, mine road]
+          ja: [黒銀鉱山, 黒銀坑, 灯晶鉱山, 鉱山道]
+        hierarchy: frontier_resource_site
+        region: western_frontier
+        kind: mine
+        danger_level: medium
+        facilities: [mine entrance, lamp-crystal stores, worker sheds, lift frames]
+        public_state:
+          resource_pressure: 1
+          labor_tension: 1
+        related_factions: [frontier_lord, free_merchants, lantern_church, adventurers_guild]
+        related_world_axes: [trade_pressure, guild_authority, church_influence, lamp_stability]
+        rumor_surface: [resource shortage, labor unease, underground uncertainty, stewardship disputes]
+      sunken_village:
+        id: sunken_village
+        name: Sunken Village
+        description: A possible mist-touched village site whose existence and condition should become clear only through play.
+        public_aliases:
+          en: [Sunken Village, sunken hamlet, old village records, mist-touched village]
+          ja: [沈み村, 沈んだ村, 古い村の記録, 夜霧に触れた村]
+        hierarchy: uncertain_frontier_site
+        region: beyond_lamps
+        kind: uncertain_village
+        danger_level: high
+        facilities: [old boundary stones, broken ledgers, half-remembered paths]
+        public_state:
+          existence_confirmed: false
+          record_conflict: 2
+        related_factions: [lantern_church, mist_witches, adventurers_guild]
+        related_world_axes: [mist_encroachment, church_influence, rumor_volatility]
+        rumor_surface: [record contradiction, recovery hopes, memory unease, restoration talk]
+    routes:
+      - route_key: lampfort_to_guild_hall
+        from: lieber_lampfort
+        to: adventurers_guild_hall
+        status: open
+        travel_summary: Streets inside Lieber Lampfort lead safely to the Adventurers Guild Hall.
+        unlock_requirements: {}
+      - route_key: guild_hall_to_lampfort
+        from: adventurers_guild_hall
+        to: lieber_lampfort
+        status: open
+        travel_summary: The guild hall doors return to the protected streets of Lieber Lampfort.
+        unlock_requirements: {}
+      - route_key: lampfort_to_outer_gate
+        from: lieber_lampfort
+        to: lampfort_outer_gate
+        status: open
+        travel_summary: Main streets lead to the outer gate and the visible edge of lamplight.
+        unlock_requirements: {}
+      - route_key: outer_gate_to_lampfort
+        from: lampfort_outer_gate
+        to: lieber_lampfort
+        status: open
+        travel_summary: The gate road returns to Lieber Lampfort's stable streets.
+        unlock_requirements: {}
+      - route_key: lampfort_to_blue_deer_forest
+        from: lieber_lampfort
+        to: blue_deer_forest
+        status: open
+        travel_summary: Marked paths leave town toward Blue Deer Forest when an adventurer chooses that direction.
+        unlock_requirements: {}
+      - route_key: blue_deer_forest_to_lampfort
+        from: blue_deer_forest
+        to: lieber_lampfort
+        status: open
+        travel_summary: The forest path returns to Lieber Lampfort's lamps.
+        unlock_requirements: {}
+      - route_key: lampfort_to_starfall_road
+        from: lieber_lampfort
+        to: starfall_road
+        status: open
+        travel_summary: The town road joins Starfall Road and its public travel markers.
+        unlock_requirements: {}
+      - route_key: starfall_road_to_lampfort
+        from: starfall_road
+        to: lieber_lampfort
+        status: open
+        travel_summary: Starfall Road returns to the town gates.
+        unlock_requirements: {}
+      - route_key: lampfort_to_old_town_well
+        from: lieber_lampfort
+        to: old_town_well
+        status: open
+        travel_summary: Old streets lead to the well square without implying any confirmed incident.
+        unlock_requirements: {}
+      - route_key: old_town_well_to_lampfort
+        from: old_town_well
+        to: lieber_lampfort
+        status: open
+        travel_summary: The old quarter returns to the main streets of Lieber Lampfort.
+        unlock_requirements: {}
+      - route_key: lampfort_to_church_archive
+        from: lieber_lampfort
+        to: lantern_church_archive
+        status: open
+        travel_summary: Chapel paths lead to the Lantern Church Archive.
+        unlock_requirements: {}
+      - route_key: church_archive_to_lampfort
+        from: lantern_church_archive
+        to: lieber_lampfort
+        status: open
+        travel_summary: Archive steps return to Lieber Lampfort's streets.
+        unlock_requirements: {}
+      - route_key: lampfort_to_market_yard
+        from: lieber_lampfort
+        to: market_and_caravan_yard
+        status: open
+        travel_summary: Market streets lead to the caravan yard and merchant stalls.
+        unlock_requirements: {}
+      - route_key: market_yard_to_lampfort
+        from: market_and_caravan_yard
+        to: lieber_lampfort
+        status: open
+        travel_summary: The caravan yard opens back into Lieber Lampfort.
+        unlock_requirements: {}
+      - route_key: lampfort_to_blacksilver_mine
+        from: lieber_lampfort
+        to: blacksilver_mine
+        status: open
+        travel_summary: A supervised mine road leads toward Blacksilver Mine when that work becomes relevant.
+        unlock_requirements: {}
+      - route_key: blacksilver_mine_to_lampfort
+        from: blacksilver_mine
+        to: lieber_lampfort
+        status: open
+        travel_summary: The mine road returns to the town lamps.
+        unlock_requirements: {}
+      - route_key: blue_deer_forest_to_mistbound_frontier
+        from: blue_deer_forest
+        to: mistbound_frontier
+        status: locked
+        travel_summary: A deeper forest route can open after a first local concern is confirmed.
+        locked_travel_summary: The guild will not send a new adventurer deeper until they have chosen and confirmed a first local thread.
+        unlocked_travel_summary: A first confirmed observation gives the adventurer a surveyed route toward the Mistbound Frontier.
+        unlock_requirements:
+          starter_item_effect: unlock_mistbound_frontier_route
+      - route_key: starfall_road_to_mistbound_frontier
+        from: starfall_road
+        to: mistbound_frontier
+        status: locked
+        travel_summary: A road-edge route can open after provisional trust and a first thread of attention.
+        locked_travel_summary: The road-edge route waits for provisional guild trust and a confirmed first concern.
+        unlocked_travel_summary: Provisional trust opens a road-edge survey toward the Mistbound Frontier.
+        unlock_requirements:
+          starter_item_effect: unlock_mistbound_frontier_route
+      - route_key: church_archive_to_mistbound_frontier
+        from: lantern_church_archive
+        to: mistbound_frontier
+        status: locked
+        travel_summary: Archive-backed survey access can open after the player establishes a confirmed first observation.
+        locked_travel_summary: The archive route waits until the player has a first confirmed observation beyond safe-town assumptions.
+        unlocked_travel_summary: The archive recognizes a first confirmed observation and supports a survey into mistbound territory.
+        unlock_requirements:
+          starter_item_effect: unlock_mistbound_frontier_route
+      - route_key: mistbound_frontier_to_lampfort
+        from: mistbound_frontier
+        to: lieber_lampfort
+        status: locked
+        travel_summary: Survey markers return from the Mistbound Frontier to Lieber Lampfort.
+        locked_travel_summary: The return survey route is not established until the first frontier thread opens.
+        unlocked_travel_summary: Survey markers guide the adventurer back toward Lieber Lampfort.
+        unlock_requirements:
+          starter_item_effect: unlock_mistbound_frontier_route
+    faction:
+      id: adventurers_guild
+      name: Adventurers Guild
+      description: The public institution that turns unstructured concerns into confirmable work without forcing a single opening incident.
+      state:
+        doctrine: confirm rumors through fieldwork, protect public trust, and train new adventurers through accountable first steps
+    world_axes:
+      - id: lamp_stability
+        display_name: Lamp Stability
+        description: How strongly lamps stabilize towns, roads, and remembered geography.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.62
+        expose_to_session_context: true
+        thresholds:
+          - key: wavering
+            label: Wavering Light
+            value: 0.3
+            description: Boundaries and routes become easier to misread.
+          - key: steady
+            label: Steady Light
+            value: 0.7
+            description: Safe places and known roads hold their shape reliably.
+      - id: mist_encroachment
+        display_name: Mist Encroachment
+        description: How much night mist pressure shapes unstable terrain and memory phenomena.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.32
+        expose_to_session_context: true
+        thresholds:
+          - key: quiet
+            label: Quiet Mist
+            value: 0.25
+            description: Mist-side signs remain subtle and mostly distant.
+          - key: pressing
+            label: Pressing Mist
+            value: 0.7
+            description: Unstable paths and memory conflicts become more frequent.
+      - id: frontier_trust
+        display_name: Frontier Trust
+        description: How much local residents, guild staff, and town institutions trust the player.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.2
+        expose_to_session_context: true
+        thresholds:
+          - key: unproven
+            label: Unproven
+            value: 0.2
+            description: People share surface concerns but little private context.
+          - key: trusted
+            label: Trusted
+            value: 0.65
+            description: Private details and sensitive requests become easier to access.
+      - id: guild_authority
+        display_name: Guild Authority
+        description: How strongly the guild can formalize concerns into public requests.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.5
+        expose_to_session_context: true
+        thresholds:
+          - key: informal
+            label: Informal Work
+            value: 0.3
+            description: Resident concerns and unofficial favors grow more common.
+          - key: formal
+            label: Formal Mandate
+            value: 0.7
+            description: Confirmed concerns become official guild work more easily.
+      - id: church_influence
+        display_name: Church Influence
+        description: How strongly records, rites, mourning, and taboos shape local interpretation.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.45
+        expose_to_session_context: true
+        thresholds:
+          - key: practical
+            label: Practical Readings
+            value: 0.3
+            description: Field reports outweigh ritual readings.
+          - key: interpretive
+            label: Interpretive Records
+            value: 0.7
+            description: Records and rites heavily shape how concerns are understood.
+      - id: trade_pressure
+        display_name: Trade Pressure
+        description: Pressure around caravans, lamp crystals, road economy, contracts, and information sale.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.4
+        expose_to_session_context: true
+        thresholds:
+          - key: calm
+            label: Calm Trade
+            value: 0.25
+            description: Merchant concerns stay small and negotiable.
+          - key: strained
+            label: Strained Trade
+            value: 0.7
+            description: Routes, prices, escorts, and rumors become urgent to merchants.
+      - id: rumor_volatility
+        display_name: Rumor Volatility
+        description: How tangled unconfirmed information is before the player confirms a local situation.
+        min_value: 0
+        max_value: 1
+        initial_value: 0.5
+        expose_to_session_context: true
+        thresholds:
+          - key: clear
+            label: Clear Reports
+            value: 0.25
+            description: Concerns arrive with relatively clear first steps.
+          - key: tangled
+            label: Tangled Rumors
+            value: 0.75
+            description: Exaggeration, error, and witness disagreement are common.
+      - id: personal_fit_signal
+        display_name: Personal Fit Signal
+        description: How strongly the player's self-description and first choices shape what kind of first situation emerges.
+        min_value: 0
+        max_value: 1
+        initial_value: 0
+        expose_to_session_context: true
+        thresholds:
+          - key: unexpressed
+            label: Unexpressed Fit
+            value: 0.1
+            description: The player has not yet described a preferred style of work.
+          - key: clear
+            label: Clear Fit
+            value: 0.6
+            description: The first local situation should reflect the player's stated strengths or interests.
+    factions:
+      - id: adventurers_guild
+        name: Adventurers Guild
+        description: The guild manages requests, trains adventurers, preserves frontier safety, and converts unstructured concerns into confirmable work.
+        policy: confirm first, formalize second, protect public trust
+        influence_scope: [lieber_lampfort, adventurers_guild_hall, frontier routes]
+        initial_standing: 0.1
+        relationships:
+          lantern_church: 0.25
+          frontier_lord: 0.2
+          free_merchants: 0.15
+          mist_witches: -0.1
+        world_axis_interests:
+          frontier_trust: 1.0
+          guild_authority: 0.9
+          rumor_volatility: -0.4
+        location_keys: [lieber_lampfort, adventurers_guild_hall, lampfort_outer_gate]
+        npc_names: [Guild Receptionist Elna]
+      - id: lantern_church
+        name: Lantern Church
+        description: A church that treats lamplight as sacred and preserves records, mourning rites, memories, and cautious interpretations of night-mist phenomena.
+        policy: preserve records, comfort communities, and avoid reckless lamp-crystal use
+        influence_scope: [lieber_lampfort, lantern_church_archive]
+        initial_standing: 0
+        relationships:
+          adventurers_guild: 0.25
+          frontier_lord: 0.1
+          free_merchants: -0.05
+          mist_witches: -0.25
+        world_axis_interests:
+          church_influence: 1.0
+          lamp_stability: 0.7
+          rumor_volatility: -0.2
+        location_keys: [lieber_lampfort, lantern_church_archive, old_town_well, sunken_village]
+        npc_names: [Sister Liora]
+      - id: frontier_lord
+        name: Frontier Lord
+        description: The frontier authority that values order, taxes, road safety, and control over guild activity.
+        policy: preserve order and public confidence, sometimes delaying sensitive disclosures
+        influence_scope: [lieber_lampfort, lampfort_outer_gate, starfall_road, blacksilver_mine]
+        initial_standing: 0
+        relationships:
+          adventurers_guild: 0.2
+          lantern_church: 0.1
+          free_merchants: 0.05
+          mist_witches: -0.35
+        world_axis_interests:
+          guild_authority: 0.4
+          trade_pressure: -0.2
+          frontier_trust: 0.5
+        location_keys: [lieber_lampfort, lampfort_outer_gate, starfall_road, blacksilver_mine]
+      - id: free_merchants
+        name: Free Merchants
+        description: A trade network focused on roads, lamp-crystal exchange, escort contracts, and information brokerage.
+        policy: keep goods moving and rumors profitable while avoiding total route panic
+        influence_scope: [market_and_caravan_yard, starfall_road, blacksilver_mine]
+        initial_standing: 0
+        relationships:
+          adventurers_guild: 0.15
+          lantern_church: -0.05
+          frontier_lord: 0.05
+          mist_witches: 0.15
+        world_axis_interests:
+          trade_pressure: 1.0
+          rumor_volatility: 0.4
+          lamp_stability: 0.3
+        location_keys: [market_and_caravan_yard, starfall_road, blacksilver_mine]
+        npc_names: [Rook the Free Merchant]
+      - id: mist_witches
+        name: Mist Witches
+        description: Unofficial guides and local specialists who know night mist, old paths, and practical signs outside formal records.
+        policy: trust local experience and negotiated discretion more than public procedure
+        influence_scope: [blue_deer_forest, mistbound_frontier, sunken_village]
+        initial_standing: -0.05
+        relationships:
+          adventurers_guild: -0.1
+          lantern_church: -0.25
+          frontier_lord: -0.35
+          free_merchants: 0.15
+        world_axis_interests:
+          mist_encroachment: 0.6
+          rumor_volatility: -0.1
+          frontier_trust: 0.3
+        location_keys: [lieber_lampfort, blue_deer_forest, mistbound_frontier, sunken_village]
+        npc_names: [Old Nera]
+    communities:
+      - id: lantern_church
+        name: Lantern Church
+        description: Record keepers, priests, novices, and memorial caretakers centered on sacred lamplight.
+        profile:
+          CultureAndValues:
+            shared_values: preservation, reassurance, caution, and memory
+          NarrativeAndGameUsefulDerivedParameters:
+            useful_tension: records may guide play but should not reveal a fixed truth at opening
+        location_keys: [lieber_lampfort, lantern_church_archive]
+        world_axis_interests:
+          church_influence: 1.0
+          lamp_stability: 0.7
+        relationships:
+          adventurers_guild: 0.25
+          mist_witches: -0.25
+      - id: free_merchants
+        name: Free Merchants
+        description: Caravan drivers, clerks, stall owners, and contract brokers who turn route uncertainty into business pressure.
+        profile:
+          EconomyAndResources:
+            revenue_sources: trade, escort contracts, lamp crystal exchange, and route information
+          NarrativeAndGameUsefulDerivedParameters:
+            useful_tension: merchant talk is fast and useful but often interest-shaped
+        location_keys: [market_and_caravan_yard, starfall_road]
+        world_axis_interests:
+          trade_pressure: 1.0
+          rumor_volatility: 0.4
+        relationships:
+          adventurers_guild: 0.15
+          mist_witches: 0.15
+      - id: mist_witches
+        name: Mist Witches
+        description: Mist-wise locals, unofficial guides, and old-path interpreters who are mistrusted by authorities but not inherently hostile.
+        profile:
+          CultureAndValues:
+            shared_values: discretion, local signs, old paths, and lived experience
+          NarrativeAndGameUsefulDerivedParameters:
+            useful_tension: unofficial help may conflict with guild and church procedure
+        location_keys: [lieber_lampfort, blue_deer_forest, mistbound_frontier, sunken_village]
+        world_axis_interests:
+          mist_encroachment: 0.6
+          frontier_trust: 0.3
+        relationships:
+          adventurers_guild: -0.1
+          lantern_church: -0.25
+    npc_archetypes:
+      - id: guild_receptionist
+        entity_type: npc
+        display_name: Guild Receptionist
+        description: A guild staff member who turns unstructured concerns into first actionable steps without fixing a quest list.
+        generation_policy: on_demand
+        reuse_policy: world_reusable
+        uniqueness_scope: location
+        default_location_key: adventurers_guild_hall
+        default_community_id: adventurers_guild
+        traits: {routine_role: guild_receptionist, tension_band: low}
+      - id: veteran_adventurer
+        entity_type: npc
+        display_name: Veteran Adventurer
+        description: A returning adventurer who can frame risks as experience rather than certainty.
+        default_location_key: adventurers_guild_hall
+        default_community_id: adventurers_guild
+      - id: lamp_warden
+        entity_type: npc
+        display_name: Lamp Warden
+        description: A lamp maintenance specialist who explains boundaries and safe routes without implying a fixed failure.
+        default_location_key: lampfort_outer_gate
+        default_community_id: frontier_lord
+      - id: local_gatherer
+        entity_type: npc
+        display_name: Local Gatherer
+        description: A forest or field worker generated only when gathering concerns become relevant.
+        default_location_key: blue_deer_forest
+        default_community_id: adventurers_guild
+      - id: mist_witch
+        entity_type: npc
+        display_name: Mist Witch
+        description: An unofficial guide or interpreter of night-mist signs, generated from player attention.
+        default_location_key: lieber_lampfort
+        default_community_id: mist_witches
+      - id: frontier_guard
+        entity_type: npc
+        display_name: Frontier Guard
+        description: A gate, road, or town guard who can provide public observations and institutional limits.
+        default_location_key: lampfort_outer_gate
+        default_community_id: frontier_lord
+      - id: lantern_priest
+        entity_type: npc
+        display_name: Lantern Priest
+        description: A church figure who interprets records, rites, and public reassurance.
+        default_location_key: lantern_church_archive
+        default_community_id: lantern_church
+      - id: free_merchant
+        entity_type: npc
+        display_name: Free Merchant
+        description: A merchant or clerk who provides trade-side concern categories and route talk.
+        default_location_key: market_and_caravan_yard
+        default_community_id: free_merchants
+      - id: road_worker
+        entity_type: npc
+        display_name: Road Worker
+        description: A worker tied to route maintenance, generated only when road work becomes relevant.
+        default_location_key: starfall_road
+        default_community_id: frontier_lord
+      - id: caravan_driver
+        entity_type: npc
+        display_name: Caravan Driver
+        description: A traveler who can provide partial route reports and merchant concerns.
+        default_location_key: market_and_caravan_yard
+        default_community_id: free_merchants
+      - id: worried_townsfolk
+        entity_type: npc
+        display_name: Worried Townsfolk
+        description: A local resident whose private concern becomes concrete only through play.
+        default_location_key: lieber_lampfort
+        default_community_id: adventurers_guild
+      - id: local_child
+        entity_type: npc
+        display_name: Local Child
+        description: A young local witness or rumor carrier generated only when the session needs one.
+        default_location_key: lieber_lampfort
+        default_community_id: adventurers_guild
+      - id: mine_worker
+        entity_type: npc
+        display_name: Mine Worker
+        description: A worker connected to lamp-crystal mining, labor, and underground uncertainty.
+        default_location_key: blacksilver_mine
+        default_community_id: frontier_lord
+      - id: quiet_witness
+        entity_type: npc
+        display_name: Quiet Witness
+        description: A person with incomplete or hesitant observations.
+        default_location_key: lieber_lampfort
+        default_community_id: adventurers_guild
+      - id: rumor_broker
+        entity_type: npc
+        display_name: Rumor Broker
+        description: A broker who trades in partial information without making it automatically true.
+        default_location_key: market_and_caravan_yard
+        default_community_id: free_merchants
+      - id: mist_beast
+        entity_type: npc
+        display_name: Mist Beast
+        description: A creature or sign from unstable frontier conditions, used only after play establishes danger.
+        generation_policy: on_demand
+        reuse_policy: always_new
+        uniqueness_scope: scene
+        default_location_key: mistbound_frontier
+    npc_memory_policy:
+      remember_player_interactions: true
+      remember_local_public_events: true
+      remember_faction_events: true
+      remember_history_events: true
+      remember_relationship_changes: true
+      expose_recent_limit: 8
+    history_rules:
+      - id: attention_choice_record
+        level: local_rumor
+        description: The player's first direction of attention becomes locally noticed without fixing an incident.
+        trigger_tags: [first_attention, careful_observation]
+        world_axis_refs: [frontier_trust, personal_fit_signal]
+        faction_refs: [adventurers_guild]
+        location_refs: [lieber_lampfort, adventurers_guild_hall]
+        npc_refs: [guild_receptionist]
+        minimum_salience: 0.25
+      - id: first_confirmed_concern_record
+        level: regional_record
+        description: A player-confirmed local concern can become a regional record after the session supplies concrete details.
+        trigger_tags: [confirmed_concern, careful_observation]
+        world_axis_refs: [rumor_volatility, frontier_trust]
+        faction_refs: [adventurers_guild]
+        location_refs: [lieber_lampfort]
+        npc_refs: [guild_receptionist]
+        minimum_salience: 0.45
+      - id: boundary_observation_record
+        level: local_rumor
+        description: A careful boundary observation becomes useful local talk without deciding what lies beyond.
+        trigger_tags: [boundary_observed]
+        world_axis_refs: [lamp_stability, mist_encroachment]
+        faction_refs: [frontier_lord, lantern_church]
+        location_refs: [lampfort_outer_gate]
+        npc_refs: [lamp_warden, frontier_guard]
+        minimum_salience: 0.3
+      - id: rumor_confirmation_record
+        level: faction_record
+        description: A rumor becomes faction-relevant only after play confirms what was actually observed.
+        trigger_tags: [confirmed_concern, record_checked]
+        world_axis_refs: [rumor_volatility]
+        faction_refs: [adventurers_guild, lantern_church, free_merchants]
+        location_refs: [adventurers_guild_hall, lantern_church_archive, market_and_caravan_yard]
+        npc_refs: [guild_receptionist, lantern_priest, free_merchant]
+        minimum_salience: 0.5
+      - id: local_trust_record
+        level: regional_record
+        description: Helping local people can become a trust record without naming a predetermined person or incident.
+        trigger_tags: [public_help, earned_trust]
+        world_axis_refs: [frontier_trust]
+        faction_refs: [adventurers_guild, frontier_lord]
+        location_refs: [lieber_lampfort]
+        npc_refs: [worried_townsfolk]
+        minimum_salience: 0.45
+      - id: institutional_interpretation_record
+        level: faction_record
+        description: Mediation between guild, church, merchants, residents, and authority becomes a faction record after concrete play.
+        trigger_tags: [mediated_interpretation, record_checked]
+        world_axis_refs: [guild_authority, church_influence, trade_pressure]
+        faction_refs: [adventurers_guild, lantern_church, free_merchants, frontier_lord]
+        location_refs: [lieber_lampfort]
+        npc_refs: [guild_receptionist, lantern_priest, free_merchant, frontier_guard]
+        minimum_salience: 0.5
+    title_rules:
+      - id: careful_rumor_listener
+        display_name: Careful Rumor Listener
+        description: Known for separating reports, rumors, and confirmed facts.
+        action_tags: [investigate]
+        world_axis_refs: [rumor_volatility]
+        faction_refs: [adventurers_guild]
+        location_refs: [adventurers_guild_hall]
+        npc_refs: [guild_receptionist]
+        progress_target: 2
+      - id: rookie_lampbearer
+        display_name: Rookie Lampbearer
+        description: Recognized for a first responsible step under the town lamps.
+        action_tags: [help, protect, restore]
+        world_axis_refs: [frontier_trust, lamp_stability]
+        faction_refs: [adventurers_guild, lantern_church]
+        location_refs: [lieber_lampfort, lampfort_outer_gate]
+        npc_refs: [guild_receptionist, lamp_warden]
+        progress_target: 2
+      - id: boundary_witness
+        display_name: Boundary Witness
+        description: Recognized for careful observation at the edge of lamplight and night mist.
+        action_tags: [investigate, explore]
+        world_axis_refs: [lamp_stability, mist_encroachment]
+        faction_refs: [frontier_lord, lantern_church]
+        location_refs: [lampfort_outer_gate, mistbound_frontier]
+        npc_refs: [lamp_warden, frontier_guard]
+        progress_target: 2
+      - id: trusted_guild_adventurer
+        display_name: Trusted Guild Adventurer
+        description: Trusted for turning small local concerns into accountable work.
+        action_tags: [help, investigate, protect]
+        world_axis_refs: [frontier_trust, guild_authority]
+        faction_refs: [adventurers_guild]
+        location_refs: [adventurers_guild_hall, lieber_lampfort]
+        npc_refs: [guild_receptionist]
+        progress_target: 3
+      - id: mist_pathfinder
+        display_name: Mist Pathfinder
+        description: Known for cautious movement through uncertain mist-side routes.
+        action_tags: [explore, restore]
+        world_axis_refs: [mist_encroachment, lamp_stability]
+        faction_refs: [mist_witches, adventurers_guild]
+        location_refs: [blue_deer_forest, mistbound_frontier]
+        npc_refs: [mist_witch]
+        progress_target: 3
+      - id: local_mediator
+        display_name: Local Mediator
+        description: Known for balancing guild, church, merchant, authority, and resident interpretations.
+        action_tags: [negotiate, help]
+        world_axis_refs: [frontier_trust, guild_authority, church_influence, trade_pressure]
+        faction_refs: [adventurers_guild, lantern_church, free_merchants, frontier_lord]
+        location_refs: [lieber_lampfort, market_and_caravan_yard, lantern_church_archive]
+        npc_refs: [guild_receptionist, lantern_priest, free_merchant]
+        progress_target: 3
+    consequence_rules:
+      - id: choose_first_attention
+        action_tag: investigate
+        outcome_tags: [first_attention, careful_observation]
+        world_axis_deltas:
+          frontier_trust: 0.03
+          personal_fit_signal: 0.1
+        faction_standing_deltas:
+          adventurers_guild: 0.03
+        location_public_state_deltas:
+          adventurers_guild_hall:
+            attention_threads_started: 1
+        npc_memory_drafts:
+          - npc_name: guild_receptionist
+            scope: actor
+            summary: The player chose a first direction of attention without demanding a fixed quest list.
+        rumor_draft: The guild notices that a new adventurer is sorting concern categories before treating rumors as facts.
+        history_candidate_level: local_rumor
+        history_rule_id: attention_choice_record
+        title_progress_deltas:
+          careful_rumor_listener: 1
+      - id: confirm_local_concern
+        action_tag: investigate
+        outcome_tags: [confirmed_concern, careful_observation]
+        world_axis_deltas:
+          rumor_volatility: -0.04
+          frontier_trust: 0.03
+        faction_standing_deltas:
+          adventurers_guild: 0.03
+        npc_memory_drafts: []
+        rumor_draft: A vague local concern becomes clearer after the adventurer checks it directly.
+        history_candidate_level: regional_record
+        history_rule_id: first_confirmed_concern_record
+        title_progress_deltas:
+          careful_rumor_listener: 1
+          trusted_guild_adventurer: 1
+      - id: help_local_person
+        action_tag: help
+        outcome_tags: [public_help, earned_trust]
+        world_axis_deltas:
+          frontier_trust: 0.06
+        faction_standing_deltas:
+          adventurers_guild: 0.04
+        npc_memory_drafts: []
+        rumor_draft: Locals say the new adventurer helped someone without making the story larger than the facts.
+        history_candidate_level: regional_record
+        history_rule_id: local_trust_record
+        title_progress_deltas:
+          rookie_lampbearer: 1
+          trusted_guild_adventurer: 1
+      - id: restore_stability
+        action_tag: restore
+        outcome_tags: [restored_boundary, public_help]
+        world_axis_deltas:
+          lamp_stability: 0.04
+          mist_encroachment: -0.02
+          frontier_trust: 0.03
+        faction_standing_deltas:
+          adventurers_guild: 0.03
+          lantern_church: 0.02
+        npc_memory_drafts: []
+        rumor_draft: People describe a small piece of the frontier as steadier after the adventurer's work.
+        history_candidate_level: regional_record
+        history_rule_id: boundary_observation_record
+        title_progress_deltas:
+          rookie_lampbearer: 1
+          mist_pathfinder: 1
+      - id: negotiate_local_interpretation
+        action_tag: negotiate
+        outcome_tags: [mediated_interpretation, earned_trust]
+        world_axis_deltas:
+          frontier_trust: 0.04
+          rumor_volatility: -0.02
+        faction_standing_deltas:
+          adventurers_guild: 0.02
+          lantern_church: 0.02
+          free_merchants: 0.02
+          frontier_lord: 0.01
+        npc_memory_drafts: []
+        rumor_draft: Several local groups say the adventurer helped keep different interpretations from turning into panic.
+        history_candidate_level: faction_record
+        history_rule_id: institutional_interpretation_record
+        title_progress_deltas:
+          local_mediator: 1
+      - id: destabilize_boundary
+        action_tag: destabilize
+        outcome_tags: [overreach, public_attention]
+        world_axis_deltas:
+          mist_encroachment: 0.04
+          lamp_stability: -0.03
+          rumor_volatility: 0.03
+        faction_standing_deltas:
+          adventurers_guild: -0.03
+          frontier_lord: -0.02
+        npc_memory_drafts: []
+        rumor_draft: Locals warn that careless handling of uncertainty made a boundary concern harder to read.
+        history_candidate_level: local_rumor
+        history_rule_id: boundary_observation_record
+    quest:
+      id: first_attention
+      title: Choose a First Thread
+      description: Choose a first direction of attention so the guild can help turn a broad concern into one actionable local situation.
+      stage_key: first_attention
+      unlock_requirements: {}
+      completion_target: 1
+      reward_template_key: provisional_lamp_badge
+      reward_name: Provisional Lamp Badge
+      reward_description: A temporary guild badge proving that the bearer has chosen a first direction of attention and can take responsibility for a small local situation.
+      seed_on_session_start: true
+      state:
+        reward_enabled: true
+        reward_effect_kind: unlock_mistbound_frontier_route
+        reward_effect_payload:
+          unlock_stage_key: mistbound_survey
+        localized:
+          ja:
+            title: 最初の糸口を選ぶ
+            reward_name: 仮灯章
+            reward_description: 最初に関心を向ける方向を選び、小さな状況に責任を持って関わることを示す仮のギルド証。
+    followup_quest:
+      id: mistbound_frontier_survey
+      title: Mistbound Frontier Survey
+      description: Permission to engage deeper instability beyond the stable lamps after the first local thread is established.
+      stage_key: mistbound_survey
+      unlock_requirements:
+        starter_item_effect: unlock_mistbound_frontier_route
+      completion_target: 2
+      reward_template_key: frontier_charter
+      reward_name: Frontier Charter
+      reward_description: Permission to take higher-risk requests beyond the stable lamps.
+      seed_on_session_start: false
+      state:
+        reward_enabled: false
+        localized:
+          ja:
+            title: 夜霧の辺境調査
+            reward_name: 辺境調査許可証
+            reward_description: 安定した灯りの外側で、より危険な調査や対応を引き受ける許可。
+    character:
+      rank: Rookie Adventurer
+      hp: 10
+      focus: 5
+      status_json:
+        origin: ashlight_frontier
+        onboarding: first_play_pack

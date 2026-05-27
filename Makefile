@@ -27,7 +27,7 @@ backend-test-engine:
 	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/engine
 
 backend-test-packs:
-	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/packs/gestaloka_world_reference
+	$(HOST_VERIFY_ENV) PYTHONPATH=backend python -m pytest tests/backend/packs
 
 pack-list:
 	$(HOST_PATH_ENV) PYTHONPATH=backend python -m app.modules.world_pack list

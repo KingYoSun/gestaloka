@@ -1,0 +1,87 @@
+npcs:
+  - display_name: Guild Receptionist Elna
+    personality: calm, practical, kind but not overprotective, careful to separate confirmed facts from rumors
+    goals:
+      duty: help new adventurers choose a first direction of attention without turning rumors into facts too early
+      concern: guide unstructured concerns into actionable first steps while protecting guild trust
+    home_location_key: adventurers_guild_hall
+    is_guide: true
+    routine_state:
+      routine_role: guild_receptionist
+      beat_state: receive_new_adventurers
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: concern categories, guild board patterns, and first-work fit
+      tension_band: low
+      public_aliases:
+        ja:
+          - ギルド受付係エルナ
+  - display_name: Lamp Warden Orwin
+    personality: patient, weathered, observant, and precise about what lamp signs do and do not prove
+    goals:
+      duty: explain lamps, boundaries, and safe routes without implying that any specific lamp has failed
+      concern: keep new adventurers from mistaking rumor categories for confirmed danger
+    home_location_key: lampfort_outer_gate
+    routine_state:
+      routine_role: lamp_warden
+      beat_state: inspect_boundaries
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: lamp maintenance categories and boundary observations
+      tension_band: low
+      public_aliases:
+        ja:
+          - 灯標守オーウィン
+  - display_name: Sister Liora
+    personality: gentle, exacting, record-minded, and cautious about premature certainty
+    goals:
+      duty: provide church records and ritual interpretations when players investigate lore
+      concern: avoid presenting any old record as already relevant before the session establishes a concern
+    home_location_key: lantern_church_archive
+    routine_state:
+      routine_role: church_archivist
+      beat_state: maintain_records
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: old records, lamps, memory, and community reassurance
+      tension_band: low
+      public_aliases:
+        ja:
+          - 修道女リオラ
+  - display_name: Rook the Free Merchant
+    personality: quick, sociable, profit-aware, and willing to admit when a story is only market talk
+    goals:
+      duty: bring trade-side concerns, route talk, and merchant interpretations into play
+      concern: avoid starting play with a fixed caravan incident
+    home_location_key: market_and_caravan_yard
+    routine_state:
+      routine_role: free_merchant
+      beat_state: gather_route_talk
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: trade unease, route uncertainty, and price talk
+      tension_band: medium
+      public_aliases:
+        ja:
+          - 自由商人ルーク
+  - display_name: Old Nera
+    personality: quiet, local, mist-wise, and skeptical of official certainty
+    goals:
+      duty: interpret boundary phenomena when the player seeks unofficial local knowledge
+      concern: keep mist-side experience useful without implying a fixed opening incident
+    home_location_key: lieber_lampfort
+    routine_state:
+      routine_role: mist_wise_local
+      beat_state: watch_edges
+      attention_target_actor_id: null
+      last_ambient_turn_id: null
+      last_idle_tick_id: null
+      rumor_focus: mist-side customs, old paths, and local intuition
+      tension_band: medium
+      public_aliases:
+        ja:
+          - 老いた霧導きネラ

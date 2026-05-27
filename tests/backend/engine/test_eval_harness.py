@@ -24,7 +24,7 @@ from app.models.entities import (
 )
 from app.modules.eval_harness.cli import main as eval_cli_main
 from app.modules.eval_harness.scheduler import run_once, seconds_until_next_run
-from app.modules.eval_harness.service import EvalCaseInput, EvalHarnessService, ReleaseConfig
+from app.modules.eval_harness.service import EvalCaseInput, EvalHarnessService, PACK_REGRESSION_DATASETS, ReleaseConfig
 from app.modules.gm_council.service import GMCouncilService
 from app.modules.graph_projection.service import ProjectionService
 from app.modules.llm_harness.service import BaseModelProvider, ModelRouter, PromptRouteOverride
@@ -382,7 +382,7 @@ def test_eval_cli_runs_pack_regressions_summary(monkeypatch: pytest.MonkeyPatch,
 
     eval_cli_main()
 
-    assert calls == ["turn_resolution_gestaloka_regression"]
+    assert calls == PACK_REGRESSION_DATASETS
     output = capsys.readouterr().out
     assert '"status": "passed"' in output
     assert "turn_resolution_gestaloka_regression" in output
@@ -537,7 +537,7 @@ def test_release_gate_reports_latest_smoke_failure_and_shadow_runs(client, conta
         "turn_resolution_failure_injection",
         "shadow_replay",
         "shared_world_health",
-        "turn_resolution_gestaloka_regression",
+        *PACK_REGRESSION_DATASETS,
     ]
     assert gate["runbook"]["canary_up"] == "make canary-up"
     assert gate["runbook"]["canary_probe"] == "make canary-probe"
@@ -716,9 +716,9 @@ def test_release_gate_blocks_when_canary_is_unhealthy(container):
     assert gate["cutover_status"]["promote_ready"] is False
     assert gate["cutover_status"]["missing_or_failed_checks"] == []
     assert gate["cutover_status"]["blocked_reasons"] == ["canary health != healthy"]
-    assert set(gate["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
+    assert set(gate["checks"]["pack_regressions"]) == set(PACK_REGRESSION_DATASETS)
     assert all(item["current_passed"] and item["candidate_passed"] for item in gate["checks"]["pack_regressions"].values())
-    assert set(gate["runs"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
+    assert set(gate["runs"]["pack_regressions"]) == set(PACK_REGRESSION_DATASETS)
 
 
 def test_release_gate_blocks_when_pack_catalog_is_degraded(container):
@@ -939,7 +939,7 @@ def test_scheduler_helpers_only_persist_eval_and_release_tables(client, containe
 
     assert payload["trigger_type"] == "nightly"
     assert before == {key: after[key] for key in before}
-    assert after["eval_runs"] == 4
+    assert after["eval_runs"] == 3 + len(PACK_REGRESSION_DATASETS)
     assert after["release_gate_reports"] == 1
     assert seconds_until_next_run("0 3 * * *") >= 0.0
 

@@ -107,8 +107,11 @@ def test_admin_pack_and_template_lists_are_available(client, auth_headers):
     assert packs.status_code == 200
     assert templates.status_code == 200
     assert users.status_code == 200
-    assert packs.json()["items"][0]["pack_id"] == "gestaloka_world_reference"
-    assert templates.json()["items"][0]["template_id"] == "layered_world_foundation"
+    assert {item["pack_id"] for item in packs.json()["items"]} >= {"gestaloka_world_reference", "ashlight_frontier"}
+    assert {item["template_id"] for item in templates.json()["items"]} >= {
+        "layered_world_foundation",
+        "ashlight_frontier_foundation",
+    }
     assert all("raw" not in item for item in templates.json()["items"])
 
 

@@ -1,0 +1,356 @@
+dataset_id: turn_resolution_ashlight_frontier_regression
+prompt_id: session.turn_resolution
+expected_output_schema: turn_resolution_v2
+cases:
+  - case_id: ashlight-ask-guild-concern-categories
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Guild Receptionist Elna
+    input_text: ギルド受付に、いま多い相談の傾向を聞く
+    input_mode: choice
+    choice_id: choice_1
+    relevant_memories: []
+    relation_context:
+      - location=Lieber Lampfort
+      - relationship=Guild Receptionist Elna KNOWS Demo Player (0.30)
+      - active_quest=Choose a First Thread [active 0/1]
+      - faction=Adventurers Guild standing=0.10 (neutral)
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-inspect-board-for-direction
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Guild Receptionist Elna
+    input_text: 掲示板を眺め、自分が気になる問題の方向を探す
+    input_mode: choice
+    choice_id: choice_2
+    relevant_memories: []
+    relation_context:
+      - location=Adventurers Guild Hall
+      - active_quest=Choose a First Thread [active 0/1]
+      - world_axis=rumor_volatility 0.50
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-view-lamplight-mist-boundary
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Lamp Warden Orwin
+    input_text: 町の外縁から、灯りと夜霧の境界を見る
+    input_mode: choice
+    choice_id: choice_3
+    relevant_memories: []
+    relation_context:
+      - location=Lampfort Outer Gate
+      - route=Lieber Lampfort -> Lampfort Outer Gate
+      - world_axis=lamp_stability 0.62
+      - world_axis=mist_encroachment 0.32
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: travel
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-ask-non-guild-locals
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Guild Receptionist Elna
+    input_text: ギルド外の人々に、最近の気がかりを聞く
+    input_mode: choice
+    choice_id: choice_4
+    relevant_memories: []
+    relation_context:
+      - location=Lieber Lampfort
+      - faction=Lantern Church standing=0.00 (neutral)
+      - faction=Free Merchants standing=0.00 (neutral)
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-ask-elna-for-fit
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Guild Receptionist Elna
+    input_text: 自分に向いた最初の仕事をエルナに相談する
+    input_mode: choice
+    choice_id: choice_5
+    relevant_memories: []
+    relation_context:
+      - location=Adventurers Guild Hall
+      - world_axis=personal_fit_signal 0.00
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-player-wants-helping-work
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Guild Receptionist Elna
+    input_text: 人助けがしたい
+    input_mode: free_text
+    relevant_memories:
+      - Demo Playerはリーベル灯砦で最初の仕事の方向を探している。
+    relation_context:
+      - location=Adventurers Guild Hall
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 1
+    expect_retrieval_hit_substring: 最初の仕事
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - earned_trust
+    expected_world_tags:
+      - aid_local
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-player-prefers-investigation
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Guild Receptionist Elna
+    input_text: 戦闘より調査がしたい
+    input_mode: free_text
+    relevant_memories: []
+    relation_context:
+      - location=Adventurers Guild Hall
+      - world_axis=rumor_volatility 0.50
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-player-cares-about-road-trade
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Rook the Free Merchant
+    input_text: 商人や街道の問題が気になる
+    input_mode: free_text
+    relevant_memories: []
+    relation_context:
+      - location=Market and Caravan Yard
+      - faction=Free Merchants standing=0.00 (neutral)
+      - world_axis=trade_pressure 0.40
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-player-studies-night-mist
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Old Nera
+    input_text: 夜霧そのものを調べたい
+    input_mode: free_text
+    relevant_memories: []
+    relation_context:
+      - location=Lampfort Outer Gate
+      - faction=Mist Witches standing=-0.05 (wary)
+      - world_axis=mist_encroachment 0.32
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25
+  - case_id: ashlight-player-checks-church-records
+    world_id: eval-ashlight-regression
+    pack_id: ashlight_frontier
+    world_template_id: ashlight_frontier_foundation
+    player_name: Demo Player
+    npc_name: Sister Liora
+    input_text: 教会の記録や古い話が気になる
+    input_mode: free_text
+    relevant_memories: []
+    relation_context:
+      - location=Lantern Church Archive
+      - faction=Lantern Church standing=0.00 (neutral)
+      - world_axis=church_influence 0.45
+      - active_quest=Choose a First Thread [active 0/1]
+    graph_context_status: ready
+    expect_success: true
+    expect_final_lane: main_lane
+    expect_fallback: false
+    expect_failure_reason: null
+    expect_retrieval_status: ready
+    expect_retrieval_min_hits: 0
+    expect_outcome_band: steady
+    expect_scene_move: hold
+    expect_consequence_tags:
+      - careful_observation
+    expected_world_tags:
+      - investigate
+    quest_context:
+      current_progress: 0
+      progress_target: 1
+      current_standing: 0.1
+      reward_already_issued: false
+    expect_progress_after: 1
+    expect_reward_issued: true
+    expect_standing_after: 0.25

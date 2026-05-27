@@ -154,7 +154,7 @@ def test_world_pack_registry_lists_reference_pack(client, auth_headers):
     assert "failures" not in payload
     assert "pack_dir" not in payload
     items = payload["items"]
-    assert {item["pack_id"] for item in items} == {"gestaloka_world_reference"}
+    assert {item["pack_id"] for item in items} == {"gestaloka_world_reference", "ashlight_frontier"}
     reference = next(item for item in items if item["pack_id"] == "gestaloka_world_reference")
     assert "root_dir" not in reference
     assert reference["visibility"] == "public"
@@ -226,8 +226,8 @@ def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):
     payload = response.json()
     assert payload["status"] == "ready"
     assert payload["pack_dir"].endswith("/packs")
-    assert payload["pack_count"] == 1
-    assert payload["template_count"] == 1
+    assert payload["pack_count"] == 2
+    assert payload["template_count"] == 2
     reference = next(item for item in payload["items"] if item["pack_id"] == "gestaloka_world_reference")
     assert reference["root_dir"].endswith("/packs/gestaloka_world_reference")
     assert reference["visibility"] == "public"

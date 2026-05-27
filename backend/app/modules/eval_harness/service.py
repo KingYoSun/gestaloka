@@ -54,9 +54,22 @@ from app.modules.world_state.service import default_next_choices, important_inve
 from app.modules.world_state.health import shared_world_health
 
 
-PACK_REGRESSION_DATASETS = [
-    "turn_resolution_gestaloka_regression",
-]
+def _bundled_pack_regression_datasets() -> list[str]:
+    repo_root = next(
+        (
+            parent
+            for parent in Path(__file__).resolve().parents
+            if (parent / "AGENTS.md").exists() and (parent / "evals" / "datasets").is_dir()
+        ),
+        Path.cwd(),
+    )
+    dataset_dir = repo_root / "evals" / "datasets"
+    discovered = sorted(path.stem for path in dataset_dir.glob("turn_resolution_*_regression.yaml"))
+    preferred = ["turn_resolution_gestaloka_regression"]
+    return [*preferred, *[dataset_id for dataset_id in discovered if dataset_id not in preferred]]
+
+
+PACK_REGRESSION_DATASETS = _bundled_pack_regression_datasets()
 PRODUCT_CUTOVER_REQUIRED_CHECKS = [
     "turn_resolution_smoke",
     "turn_resolution_failure_injection",
@@ -1727,7 +1740,7 @@ class EvalHarnessService:
                 and (not item["retrieval_required"] or int(item["retrieval_hit_count"]) >= 1)
                 for item in scoped
             )
-        if dataset_name in {"turn_resolution_smoke", "turn_resolution_gestaloka_regression"}:
+        if dataset_name == "turn_resolution_smoke" or dataset_name in PACK_REGRESSION_DATASETS:
             return all(item["schema_valid"] and item["same_world_invariant"] for item in scoped)
         if dataset_name == "turn_resolution_failure_injection":
             return all(item["passed"] for item in scoped)

@@ -1,0 +1,29 @@
+pack_id: ashlight_frontier
+version: 1.0.0
+engine_api_version: v2
+display_name: Ashlight Frontier
+source_language: en
+visibility: public
+publish_status: playable
+world_templates:
+  - template_id: ashlight_frontier_foundation
+    display_name: Ashlight Frontier Foundation
+    summary: A low-context first-play fantasy frontier where the player's attention dynamically instantiates the first local situation.
+    visibility: public
+    publish_status: playable
+semantic_tags:
+  - first-play
+  - fantasy
+  - adventurers-guild
+  - low-context-onboarding
+  - situation-first
+  - dynamic-narrative
+  - generative-world-grammar
+  - frontier
+prompt_overlays:
+  - prompt_overlays
+content_refs:
+  world_templates: world_templates.yaml
+  npcs: npcs.yaml
+  prompt_overlays: prompts.yaml
+  localization: localization.yaml

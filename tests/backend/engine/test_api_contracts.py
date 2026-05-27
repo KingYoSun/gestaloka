@@ -13,6 +13,7 @@ import app.modules.identity.oidc as oidc_module
 from app.core.config import Settings
 from app.models.entities import Event, Memory, ObservabilitySnapshot, OutboxEvent, PlayerProfile, PlayLocalizedTextCache, ProjectionRecord, QuestAssignment, Turn, World
 from app.modules.identity.oidc import KeycloakOIDCAdapter, UserIdentity
+from app.modules.eval_harness.service import PACK_REGRESSION_DATASETS
 from app.modules.llm_harness.service import CouncilRoleRun, ProviderResponse, TurnResolutionOutcome
 from app.modules.observability.service import CanaryProbeResult
 from app.modules.world_state.service import create_dynamic_quest_offer
@@ -160,8 +161,8 @@ def test_health_reports_database_projection_and_oidc(client):
     assert payload["world_packs"] == {
         "status": "ready",
         "engine_api_version": "v2",
-        "pack_count": 1,
-        "template_count": 1,
+        "pack_count": 2,
+        "template_count": 2,
         "failure_count": 0,
     }
     assert "pack_dir" not in payload["world_packs"]
@@ -2041,7 +2042,7 @@ def test_ops_eval_contracts(client, container, auth_headers):
         "langfuse_status",
         "langfuse_delivery",
     } <= set(checklist_payload)
-    assert set(checklist_payload["checks"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
+    assert set(checklist_payload["checks"]["pack_regressions"]) == set(PACK_REGRESSION_DATASETS)
     assert checklist_payload["checks"]["pack_regressions"]["turn_resolution_gestaloka_regression"]["pack_scope"] == [
         {
             "pack_id": "gestaloka_world_reference",
@@ -2051,11 +2052,9 @@ def test_ops_eval_contracts(client, container, auth_headers):
         }
     ]
     assert checklist_payload["checks"]["shared_world_health"]["status"] == "ready"
-    assert set(checklist_payload["runs"]["pack_regressions"]) == {"turn_resolution_gestaloka_regression"}
+    assert set(checklist_payload["runs"]["pack_regressions"]) == set(PACK_REGRESSION_DATASETS)
     assert checklist_payload["cutover_status"]["promote_ready"] is True
-    assert checklist_payload["cutover_status"]["bundled_pack_regressions"] == [
-        "turn_resolution_gestaloka_regression",
-    ]
+    assert checklist_payload["cutover_status"]["bundled_pack_regressions"] == PACK_REGRESSION_DATASETS
     assert checklist_payload["runbook"]["canary_up"] == "make canary-up"
     assert checklist_payload["runbook"]["canary_probe"] == "make canary-probe"
     assert checklist_payload["runbook"]["pre_promote_checklist"] == "make release-checklist"
