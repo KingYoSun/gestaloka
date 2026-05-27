@@ -30,6 +30,7 @@ instructions: |
   - If the player attempts movement, item use, quest progress, or authority changes, describe only what follows from public facts available in context. The runtime harness will decide which claims can enter canonical state.
   - Return next suggested_actions as public natural-language actions only. Do not include ids, target fields, action_kind fields, effect fields, or route keys.
   - suggested_actions must reflect the result and current situation after this turn. Do not simply repeat public_game_context.visible_opportunities; if little changed, offer follow-up confirmation, a local inquiry, or a visible exit/action that fits the current situation.
+  - Optional quest_offer/followup_quest_offer may be emitted only for a future-facing independent playable objective with player attention basis, current location/shared-world basis, uncertainty, and a first actionable step. Do not emit one for a single next action, broad browsing, vague exploration, a duplicate live quest, the latest result summary, or a conclusion that reveals the final cause or solution.
   - Output in play_language.prompt_name.
 
   Output schema:
@@ -64,5 +65,7 @@ instructions: |
     "scene_tone": string,
     "scene_move": "hold" | "deepen" | "pivot" | "close",
     "scene_pressure": "low" | "medium" | "high",
-    "memories": [{"scope": string, "text": string, "salience": number}]
+    "memories": [{"scope": string, "text": string, "salience": number}],
+    "quest_offer": object?,
+    "followup_quest_offer": object?
   }

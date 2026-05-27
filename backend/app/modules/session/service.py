@@ -76,6 +76,7 @@ from app.modules.world_state.service import (
     ensure_starter_location,
     ensure_world,
     ensure_world_slice_seed,
+    evaluate_quest_emergence_gate,
     get_location_summary,
     get_location_by_key,
     list_nearby_routes,
@@ -107,6 +108,79 @@ def _filter_dynamic_quest_offer_for_turn(
     if quest_offer_repeats_resolution(offer=offer, resolution_summary=resolution_summary):
         return None
     return offer
+
+
+def _evaluate_and_create_dynamic_quest_offers(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    session_state: dict[str, Any],
+    primary_offer: dict[str, Any] | None,
+    followup_offer: dict[str, Any] | None,
+    player_action_text: str,
+    resolution_summary: str | None,
+    followup_of_assignment_id: str | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    pack_generation_context = (
+        session_state.get("pack_generation_context")
+        if isinstance(session_state.get("pack_generation_context"), dict)
+        else {}
+    )
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    shared_world_context = session_state.get("shared_world_context") or {}
+    primary_gate = evaluate_quest_emergence_gate(
+        session_state=session_state,
+        offer=primary_offer,
+        player_action_text=player_action_text,
+        resolution_summary=resolution_summary,
+        is_followup=False,
+        has_live_primary_quest=_session_has_live_quest(session_state, statuses={"active", "paused"}),
+        followup_of_assignment_id=None,
+        pack_generation_context=pack_generation_context,
+        current_location=current_location if isinstance(current_location, dict) else None,
+        shared_world_context=shared_world_context if isinstance(shared_world_context, dict) else None,
+    )
+    followup_gate = evaluate_quest_emergence_gate(
+        session_state=session_state,
+        offer=followup_offer,
+        player_action_text=player_action_text,
+        resolution_summary=resolution_summary,
+        is_followup=True,
+        has_live_primary_quest=False,
+        followup_of_assignment_id=followup_of_assignment_id,
+        pack_generation_context=pack_generation_context,
+        current_location=current_location if isinstance(current_location, dict) else None,
+        shared_world_context=shared_world_context if isinstance(shared_world_context, dict) else None,
+    )
+    gate_payload = {
+        "primary": primary_gate,
+        "followup": followup_gate,
+    }
+    updates: list[dict[str, Any]] = []
+    if primary_gate["allowed"]:
+        updates.extend(
+            create_dynamic_quest_offer(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                source_event_id=source_event_id,
+                offer=primary_offer,
+            )
+        )
+    if followup_gate["allowed"]:
+        updates.extend(
+            create_dynamic_quest_offer(
+                db,
+                world_id=world_id,
+                actor_id=actor_id,
+                source_event_id=source_event_id,
+                offer=followup_offer,
+                followup_of_assignment_id=followup_of_assignment_id,
+            )
+        )
+    return updates, gate_payload
 
 
 @contextmanager
@@ -2342,6 +2416,28 @@ def _resolve_public_ai_gm_turn_for_session(
     ]
     combined_inventory_updates = [*state_updates["inventory_updates"], *state_draft_updates.inventory_updates]
 
+    with _turn_progress_span("dynamic_quest_offer"):
+        followup_of_assignment_id = str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None
+        dynamic_quest_updates, quest_emergence_gate = _evaluate_and_create_dynamic_quest_offers(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            session_state=session_state,
+            primary_offer=payload.quest_offer,
+            followup_offer=payload.followup_quest_offer,
+            player_action_text=input_text,
+            resolution_summary=payload.consequence_summary,
+            followup_of_assignment_id=followup_of_assignment_id,
+        )
+    if dynamic_quest_updates:
+        state_updates["quest_updates"] = [*state_updates["quest_updates"], *dynamic_quest_updates]
+    event.payload = {
+        **event.payload,
+        "quest_updates": state_updates["quest_updates"],
+        "quest_emergence_gate": quest_emergence_gate,
+    }
+
     with _turn_progress_span("consequence_resolution"):
         consequence_result = apply_consequence_updates(
             db,
@@ -2482,6 +2578,7 @@ def _resolve_public_ai_gm_turn_for_session(
         "recent_world_beats": [],
         "suggested_actions": suggested_actions,
         "quest_updates": state_updates["quest_updates"],
+        "quest_emergence_gate": quest_emergence_gate,
         "faction_updates": combined_faction_updates,
         "inventory_updates": combined_inventory_updates,
         "knowledge_updates": state_draft_updates.knowledge_updates,
@@ -2586,6 +2683,7 @@ def _resolve_public_ai_gm_turn_for_session(
             "world_tag_updates",
             "quest_effect_contract",
             "state_draft_materialization",
+            "dynamic_quest_offer",
             "consequence_resolution",
             "scene_framing",
             "memory_materialization",
@@ -3061,33 +3159,23 @@ def _resolve_narrative_turn_for_session(
         }
     with _turn_progress_span("dynamic_quest_offer"):
         resolution_summary = str(getattr(payload, "resolution_summary", "") or "")
-        suppress_primary_offer = _session_has_live_quest(session_state, statuses={"active", "paused"})
-        quest_offer = _filter_dynamic_quest_offer_for_turn(
-            getattr(payload, "quest_offer", None),
+        followup_of_assignment_id = str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None
+        dynamic_quest_updates, quest_emergence_gate = _evaluate_and_create_dynamic_quest_offers(
+            db,
+            world_id=game_session.world_id,
+            actor_id=player_actor.id,
+            source_event_id=event.id,
+            session_state=session_state,
+            primary_offer=getattr(payload, "quest_offer", None),
+            followup_offer=getattr(payload, "followup_quest_offer", None),
+            player_action_text=input_text,
             resolution_summary=resolution_summary,
-            suppress_for_active_focus=suppress_primary_offer,
+            followup_of_assignment_id=followup_of_assignment_id,
         )
-        followup_quest_offer = _filter_dynamic_quest_offer_for_turn(
-            getattr(payload, "followup_quest_offer", None),
-            resolution_summary=resolution_summary,
-        )
-        dynamic_quest_updates = [
-            *create_dynamic_quest_offer(
-                db,
-                world_id=game_session.world_id,
-                actor_id=player_actor.id,
-                source_event_id=event.id,
-                offer=quest_offer,
-            ),
-            *create_dynamic_quest_offer(
-                db,
-                world_id=game_session.world_id,
-                actor_id=player_actor.id,
-                source_event_id=event.id,
-                offer=followup_quest_offer,
-                followup_of_assignment_id=str((session_state.get("chapter") or {}).get("quest_assignment_id") or "") or None,
-            ),
-        ]
+    event.payload = {
+        **event.payload,
+        "quest_emergence_gate": quest_emergence_gate,
+    }
     if dynamic_quest_updates:
         state_updates["quest_updates"] = [*state_updates["quest_updates"], *dynamic_quest_updates]
         event.payload = {

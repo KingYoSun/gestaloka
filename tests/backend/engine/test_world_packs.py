@@ -37,6 +37,7 @@ from app.modules.world_pack.service import (
     template_world_id,
     world_pack_metadata,
 )
+from app.modules.world_state.service import build_session_state
 
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists() and (parent / "backend").is_dir())
@@ -161,6 +162,61 @@ def test_world_pack_registry_lists_reference_pack(client, auth_headers):
     assert reference["world_templates"][0]["template_id"] == "layered_world_foundation"
     assert reference["world_templates"][0]["effective_visibility"] == "public"
     assert reference["world_templates"][0]["effective_publish_status"] == "playable"
+
+
+def test_session_state_exposes_pack_generation_context_internally_and_redacts_public_state(
+    tmp_path: Path,
+    auth_headers,
+):
+    pack_dir = _copy_pack_dir(tmp_path)
+    _rewrite_world_template(
+        pack_dir,
+        "gestaloka_world_reference",
+        lambda payload: payload["world_templates"]["layered_world_foundation"]["world"].update(
+            {
+                "quest_emergence_policy": {
+                    "require_player_attention_basis": True,
+                    "require_uncertainty": True,
+                    "require_first_step": True,
+                },
+                "quest_generation_constraints": {
+                    "reject_single_action_quests": True,
+                },
+            }
+        ),
+    )
+    client, container = _build_client_for_pack_dir(tmp_path, pack_dir)
+
+    session_response = client.post(
+        "/sessions",
+        json={
+            "world_id": "gestaloka_world_reference",
+            "world_name": "GESTALOKA: Layered World Foundation",
+            "player_display_name": "Demo Player",
+        },
+        headers=auth_headers,
+    )
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+
+    with container.session_factory() as db:
+        internal_state = build_session_state(
+            db,
+            world_id=session_payload["world_id"],
+            actor_id=session_payload["player_actor_id"],
+            location_id=session_payload["location_id"],
+            include_internal=True,
+        )
+
+    assert internal_state["pack_generation_context"]["quest_emergence_policy"]["require_first_step"] is True
+    assert internal_state["pack_generation_context"]["quest_generation_constraints"]["reject_single_action_quests"] is True
+    assert internal_state["world_pack"]["pack_generation_context"]["quest_emergence_policy"]["require_uncertainty"] is True
+
+    public_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert public_state.status_code == 200
+    public_payload = public_state.json()
+    assert "pack_generation_context" not in public_payload
+    assert "pack_generation_context" not in public_payload["world_pack"]
 
 
 def test_ops_world_pack_catalog_reports_paths_for_admin(client, auth_headers):

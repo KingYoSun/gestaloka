@@ -158,6 +158,11 @@ def get_session_state(
     user: UserIdentity = Depends(get_current_user),
 ) -> dict:
     state = get_session_state_for_user(db, user=user, session_id=session_id)
+    state = dict(state)
+    state.pop("pack_generation_context", None)
+    world_pack = dict(state.get("world_pack") or {})
+    world_pack.pop("pack_generation_context", None)
+    state["world_pack"] = world_pack
     cache_db = container.session_factory()
     try:
         return localize_session_state(cache_db, container.model_router, state)

@@ -2228,6 +2228,7 @@ class GMCouncilService:
             "recent_consequence_history": recent_consequence_history,
             "active_quest_stage": active_quest.get("stage_key") if isinstance(active_quest, dict) else None,
             "world_pack": request.session_state.get("world_pack") or {},
+            "pack_generation_context": request.session_state.get("pack_generation_context") or {},
             "current_scene": current_scene,
             "current_chapter": current_chapter,
             "recent_scene_history": recent_scene_history,

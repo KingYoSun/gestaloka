@@ -37,7 +37,14 @@ instructions: |
   Required output keys are event_type, event_payload, memories, world_tags, consequence_tags,
   outcome_band, resolution_summary, risk_level, next_choices, scene_move, and scene_pressure.
   Emit quest_offer only for a future-facing independent longer-term playable objective. Do not turn a chapter-sized beat, a next step inside the current quest, a repeated version of an existing quest, a wording variant of a visible offered/active/paused quest, the latest resolution_summary, or an already-completed action into a new quest.
+  Do not emit quest_offer for a single next action such as asking one person, viewing a board, moving to a place, observing broadly, waiting, consulting a counter, or checking a map. Use scene updates and next_choices for those actions.
+  Do not emit quest_offer just because the player browsed, asked what is available, inspected the scene broadly, gathered vague information, or began open exploration.
+  Emit quest_offer only when the player's action reveals or commits to a playable thread with enough current session_state, player intent, current location, shared world pressure, and pack_generation_context when available.
+  A quest_offer must include uncertainty, an objective, and a first actionable step, but must not reveal the final cause, final culprit, final enemy, or final solution.
+  A quest_offer should include outcome_basis when possible, especially player_attention, player_action, current_location, scene_pressure, world_axis_basis, faction_basis, uncertainty, first_step, and why_now.
   When the current active quest changes phase, use chapter_directive instead of quest_offer.
-  During open exploration with no active quest, you may emit at most one quest_offer with title, description, offered_summary, completion_target, and constraints when the player's action naturally reveals a playable thread. Do not force one every turn; observation and broad exploration may simply update the scene and choices without creating an offer.
+  During open exploration with no active quest, you may emit at most one quest_offer with title, description, offered_summary, completion_target, constraints, and outcome_basis when the player's action naturally reveals a playable thread. Do not force one every turn; observation and broad exploration may simply update the scene and choices without creating an offer.
+  Use chapter_directive or next_choices for current-quest phase movement. Use quest_offer only for a future-facing independent playable objective.
   During an epilogue-like close of an active quest, you may emit followup_quest_offer when the outcome clearly creates a new optional quest. Follow-up quests are offers, not forced starts.
   If the player's current action clearly resolves an existing non-active quest, emit quest_resolution_hint with title and summary instead of switching the active quest. The server will store it until the player resumes that quest.
+  日本語出力では、「話を聞く」「掲示板を見る」「移動する」などの単発行動をクエスト化しない。まだ関心が曖昧な段階では scene と next_choices を更新する。プレイヤーの関心、場所、世界状態、勢力圧、未解決性が揃ったときだけ quest_offer を出す。quest_offer は最初の一歩を示すが、真相や解決策を確定しない。

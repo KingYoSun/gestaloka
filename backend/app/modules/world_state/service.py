@@ -105,6 +105,22 @@ ROUTE_STATUS_OPEN = "open"
 ROUTE_STATUS_LOCKED = "locked"
 MAX_OFFERED_QUESTS = 3
 QUEST_SIMILARITY_THRESHOLD = 0.30
+PACK_GENERATION_CONTEXT_KEYS = (
+    "situation_grammar",
+    "rumor_grammar",
+    "quest_generation_constraints",
+    "dynamic_narrative_policy",
+    "quest_emergence_policy",
+    "quest_offer_policy",
+    "scene_generation_policy",
+)
+QUEST_EMERGENCE_DEFAULT_POLICY = {
+    "require_player_attention_basis": True,
+    "require_uncertainty": True,
+    "require_first_step": True,
+    "reject_single_action_quests": True,
+    "suppress_primary_offer_when_live_quest_exists": True,
+}
 
 
 def _safe_language_tag(value: Any, *, fallback: str = "en") -> str:
@@ -121,6 +137,18 @@ def _play_language_code(play_language: dict[str, Any] | None, *, fallback: str =
         return _safe_language_tag(preset, fallback=fallback)
     custom = str(payload.get("custom") or payload.get("prompt_name") or "").strip()
     return _safe_language_tag(custom, fallback=fallback)
+
+
+def _pack_generation_context_from_world(world: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(world, dict):
+        return {}
+    context: dict[str, Any] = {}
+    for key in PACK_GENERATION_CONTEXT_KEYS:
+        value = world.get(key)
+        if value in (None, "", [], {}):
+            continue
+        context[key] = value
+    return context
 
 
 def _normalize_aliases_by_language(value: Any) -> dict[str, list[str]]:
@@ -1518,6 +1546,425 @@ def quest_offer_repeats_resolution(*, offer: dict[str, Any] | None, resolution_s
             return True
     combined = _quest_similarity_text(*fields)
     return bool(combined and _quest_text_similarity(combined, resolution) >= 0.75)
+
+
+def _quest_gate_result(
+    *,
+    allowed: bool,
+    reason_code: str,
+    reason: str,
+    basis: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "allowed": allowed,
+        "reason_code": reason_code,
+        "reason": reason,
+        "basis": basis or {},
+        "warnings": warnings or [],
+    }
+
+
+def _text_from_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return " ".join(value.split())
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, dict):
+        return " ".join(_text_from_value(item) for item in value.values() if _text_from_value(item))
+    if isinstance(value, list):
+        return " ".join(_text_from_value(item) for item in value if _text_from_value(item))
+    return " ".join(str(value).split())
+
+
+def _quest_offer_text(offer: dict[str, Any]) -> str:
+    return _text_from_value(
+        [
+            offer.get("title"),
+            offer.get("description"),
+            offer.get("summary"),
+            offer.get("offered_summary"),
+            offer.get("completion_target"),
+            offer.get("constraints"),
+            offer.get("outcome_basis"),
+            offer.get("first_step"),
+            offer.get("uncertainty"),
+            offer.get("why_now"),
+        ]
+    )
+
+
+def _quest_gate_policy(pack_generation_context: dict[str, Any] | None) -> dict[str, Any]:
+    policy = dict(QUEST_EMERGENCE_DEFAULT_POLICY)
+    context = pack_generation_context if isinstance(pack_generation_context, dict) else {}
+    for key in ("quest_generation_constraints", "quest_emergence_policy", "quest_offer_policy"):
+        value = context.get(key)
+        if isinstance(value, dict):
+            for policy_key in QUEST_EMERGENCE_DEFAULT_POLICY:
+                if policy_key in value and isinstance(value[policy_key], bool):
+                    policy[policy_key] = value[policy_key]
+    return policy
+
+
+def _has_basis_key(offer: dict[str, Any], key: str) -> bool:
+    value = offer.get(key)
+    if value not in (None, "", [], {}):
+        return True
+    outcome_basis = offer.get("outcome_basis")
+    if isinstance(outcome_basis, dict):
+        return outcome_basis.get(key) not in (None, "", [], {})
+    if isinstance(outcome_basis, list):
+        return any(key in str(item) for item in outcome_basis)
+    if isinstance(outcome_basis, str):
+        return key in outcome_basis
+    return False
+
+
+def _text_has_any(text: str, fragments: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    return any(fragment.lower() in lowered for fragment in fragments)
+
+
+def _word_overlap(left: str, right: str) -> float:
+    left_normalized = _quest_similarity_text(left)
+    right_normalized = _quest_similarity_text(right)
+    if not left_normalized or not right_normalized:
+        return 0.0
+    return _quest_text_similarity(left_normalized, right_normalized)
+
+
+def _offer_has_player_attention_basis(
+    offer: dict[str, Any],
+    *,
+    player_action_text: str,
+    session_state: dict[str, Any],
+) -> bool:
+    if any(_has_basis_key(offer, key) for key in ("player_attention", "player_action", "why_now")):
+        return True
+    selected_choice = session_state.get("selected_choice") if isinstance(session_state, dict) else None
+    selected_text = _text_from_value(selected_choice if isinstance(selected_choice, dict) else {})
+    action_text = _text_from_value([player_action_text, selected_text])
+    offer_text = _quest_offer_text(offer)
+    if action_text and _word_overlap(action_text, offer_text) >= 0.18:
+        return True
+    intent_text = _text_from_value((session_state.get("interpreted_intent") or {}) if isinstance(session_state, dict) else {})
+    return bool(intent_text and _word_overlap(intent_text, offer_text) >= 0.22)
+
+
+def _offer_has_context_basis(
+    offer: dict[str, Any],
+    *,
+    current_location: dict[str, Any] | None,
+    shared_world_context: dict[str, Any] | None,
+) -> bool:
+    if any(_has_basis_key(offer, key) for key in ("current_location", "scene_pressure", "world_axis_basis", "faction_basis")):
+        return True
+    offer_text = _quest_offer_text(offer)
+    location_text = _text_from_value(current_location or {})
+    if location_text and _word_overlap(location_text, offer_text) >= 0.12:
+        return True
+    context_text = _text_from_value(shared_world_context or {})
+    return bool(context_text and _word_overlap(context_text, offer_text) >= 0.16)
+
+
+def _offer_has_uncertainty(offer: dict[str, Any]) -> bool:
+    if _has_basis_key(offer, "uncertainty"):
+        return True
+    text = _quest_offer_text(offer)
+    return _text_has_any(
+        text,
+        (
+            "uncertain",
+            "unknown",
+            "unresolved",
+            "investigate",
+            "trace",
+            "clue",
+            "未解決",
+            "不明",
+            "曖昧",
+            "疑い",
+            "手がかり",
+            "調査",
+            "探る",
+            "確かめる",
+        ),
+    )
+
+
+def _offer_has_first_step(offer: dict[str, Any]) -> bool:
+    if any(_has_basis_key(offer, key) for key in ("first_step", "actionable_first_step")):
+        return True
+    text = _quest_offer_text(offer)
+    return _text_has_any(
+        text,
+        (
+            "first step",
+            "begin by",
+            "start by",
+            "meet",
+            "ask",
+            "inspect",
+            "follow",
+            "まず",
+            "最初",
+            "会う",
+            "聞く",
+            "調べる",
+            "確認する",
+            "向かう",
+            "追う",
+        ),
+    )
+
+
+def _offer_is_single_next_action(offer: dict[str, Any]) -> bool:
+    title = str(offer.get("title") or "").strip()
+    description = str(offer.get("description") or offer.get("summary") or "").strip()
+    text = _quest_offer_text(offer)
+    single_action_phrases = (
+        "話を聞く",
+        "掲示板を見る",
+        "向かう",
+        "周囲を観察",
+        "もう一度確認",
+        "受付で相談",
+        "地図を見る",
+        "wait",
+        "look around",
+        "check the board",
+        "ask someone",
+        "go to",
+        "talk to",
+    )
+    if not _text_has_any(text, single_action_phrases):
+        return False
+    has_thread_basis = _offer_has_uncertainty(offer) and (
+        _has_basis_key(offer, "objective") or _has_basis_key(offer, "why_now") or len(description) >= 40
+    )
+    return not has_thread_basis or len(_quest_similarity_text(title, description)) < 28
+
+
+def _offer_is_too_abstract(offer: dict[str, Any]) -> bool:
+    text = _quest_offer_text(offer)
+    compact = _quest_similarity_text(text)
+    if len(compact) < 18:
+        return True
+    broad_phrases = (
+        "世界を探索",
+        "冒険を始め",
+        "情報を集め",
+        "問題を探",
+        "町を見て回",
+        "explore the world",
+        "start an adventure",
+        "gather information",
+        "find something to do",
+    )
+    return _text_has_any(text, broad_phrases) and not (_offer_has_uncertainty(offer) and _offer_has_first_step(offer))
+
+
+def _offer_is_too_conclusive(offer: dict[str, Any]) -> bool:
+    text = _quest_offer_text(offer)
+    conclusive_phrases = (
+        "true culprit",
+        "final culprit",
+        "final cause",
+        "final solution",
+        "defeat the final",
+        "真犯人",
+        "原因が確定",
+        "真の原因",
+        "解決方法が確定",
+        "最終敵",
+        "黒幕",
+        "すべて解決",
+    )
+    return _text_has_any(text, conclusive_phrases)
+
+
+def _offer_similar_to_existing_live_quest(offer: dict[str, Any], session_state: dict[str, Any]) -> bool:
+    title = str(offer.get("title") or "").strip()
+    description = str(offer.get("description") or offer.get("summary") or "").strip()
+    if not title or not description:
+        return False
+    for quest in [*(session_state.get("quests") or []), *(session_state.get("quest_journal") or [])]:
+        if not isinstance(quest, dict):
+            continue
+        if str(quest.get("status") or "") not in {"offered", "active", "paused"}:
+            continue
+        existing_title = str(quest.get("title") or "").strip()
+        existing_description = str(
+            quest.get("description")
+            or quest.get("summary")
+            or quest.get("latest_summary")
+            or quest.get("offered_summary")
+            or ""
+        ).strip()
+        existing_text = _quest_similarity_text(existing_title, existing_description)
+        incoming_text = _quest_similarity_text(title, description)
+        if existing_title and title and _quest_similarity_text(existing_title) == _quest_similarity_text(title):
+            return True
+        if existing_text and incoming_text and _quest_text_similarity(existing_text, incoming_text) >= 0.60:
+            return True
+    return False
+
+
+def evaluate_quest_emergence_gate(
+    *,
+    session_state: dict[str, Any],
+    offer: dict[str, Any] | None,
+    player_action_text: str,
+    resolution_summary: str | None,
+    is_followup: bool = False,
+    has_live_primary_quest: bool = False,
+    followup_of_assignment_id: str | None = None,
+    pack_generation_context: dict[str, Any] | None = None,
+    current_location: dict[str, Any] | None = None,
+    shared_world_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(offer, dict) or not offer:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="no_offer",
+            reason="No quest offer was emitted.",
+        )
+
+    title = str(offer.get("title") or "").strip()
+    description = str(offer.get("description") or offer.get("summary") or "").strip()
+    if not title or not description:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="missing_title_or_description",
+            reason="Quest offer requires title and description or summary.",
+            basis={"title_present": bool(title), "description_present": bool(description)},
+        )
+
+    context = pack_generation_context if isinstance(pack_generation_context, dict) else {}
+    if not context and isinstance(session_state, dict):
+        context = session_state.get("pack_generation_context") if isinstance(session_state.get("pack_generation_context"), dict) else {}
+    policy = _quest_gate_policy(context)
+    current_location = current_location or (session_state.get("current_location") if isinstance(session_state, dict) else None)
+    shared_world_context = shared_world_context or (
+        session_state.get("shared_world_context") if isinstance(session_state, dict) else None
+    )
+    basis = {
+        "policy": policy,
+        "player_attention": _offer_has_player_attention_basis(
+            offer,
+            player_action_text=player_action_text,
+            session_state=session_state,
+        ),
+        "current_context": _offer_has_context_basis(
+            offer,
+            current_location=current_location if isinstance(current_location, dict) else None,
+            shared_world_context=shared_world_context if isinstance(shared_world_context, dict) else None,
+        ),
+        "uncertainty": _offer_has_uncertainty(offer),
+        "first_step": _offer_has_first_step(offer),
+        "similar_to_existing_live_quest": _offer_similar_to_existing_live_quest(offer, session_state),
+        "repeats_resolution": quest_offer_repeats_resolution(offer=offer, resolution_summary=resolution_summary),
+        "is_followup": is_followup,
+        "followup_of_assignment_id": followup_of_assignment_id,
+    }
+    warnings: list[str] = []
+
+    if is_followup and not followup_of_assignment_id:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="followup_source_missing",
+            reason="Follow-up quest offer requires a source assignment.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if (
+        not is_followup
+        and bool(policy.get("suppress_primary_offer_when_live_quest_exists"))
+        and has_live_primary_quest
+    ):
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="live_primary_quest_exists",
+            reason="A live primary quest already occupies the current quest focus.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if basis["repeats_resolution"]:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="repeats_resolution",
+            reason="Quest offer repeats the latest resolution summary.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if basis["similar_to_existing_live_quest"]:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="similar_to_existing_live_quest",
+            reason="Quest offer is too similar to an existing offered, active, or paused quest.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if bool(policy.get("reject_single_action_quests")) and _offer_is_single_next_action(offer):
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="too_early_broad_observation",
+            reason="Offer describes a single scene action rather than a playable quest thread.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if _offer_is_too_abstract(offer):
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="too_abstract",
+            reason="Offer is too broad or abstract to become a quest.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if _offer_is_too_conclusive(offer):
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="too_conclusive",
+            reason="Offer reveals or settles too much of the final cause, culprit, or solution.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if bool(policy.get("require_player_attention_basis")) and not basis["player_attention"]:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="lacks_player_attention_basis",
+            reason="Offer lacks a clear basis in the player's action or attention.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if not basis["current_context"]:
+        warnings.append("Offer has weak current location or shared world context basis.")
+    if bool(policy.get("require_uncertainty")) and not basis["uncertainty"]:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="not_enough_context",
+            reason="Offer lacks unresolved uncertainty.",
+            basis=basis,
+            warnings=warnings,
+        )
+    if bool(policy.get("require_first_step")) and not basis["first_step"]:
+        return _quest_gate_result(
+            allowed=False,
+            reason_code="lacks_actionable_first_step",
+            reason="Offer lacks a first actionable step.",
+            basis=basis,
+            warnings=warnings,
+        )
+
+    return _quest_gate_result(
+        allowed=True,
+        reason_code="allowed_followup" if is_followup else "allowed",
+        reason="Quest offer has enough player attention, context, uncertainty, and first-step basis.",
+        basis=basis,
+        warnings=warnings,
+    )
 
 
 def _merge_dynamic_quest_offer(
@@ -2965,6 +3412,7 @@ def list_travel_log_debug(db: Session, world_id: str) -> list[dict[str, Any]]:
 def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
     world = _world_row(db, world_id)
     pack, template = resolve_world_pack(db, world_id)
+    pack_generation_context = _pack_generation_context_from_world(dict(template.world or {}))
     locations = ensure_seeded_locations(db, world_id)
     starter_key = _starter_location_key(db, world_id)
     lore_key = _lore_location_key(db, world_id)
@@ -3005,6 +3453,7 @@ def _world_pack_state(db: Session, world_id: str) -> dict[str, Any]:
                 for language, payload in bootstrap.localized_bootstrap.items()
             },
         },
+        "pack_generation_context": pack_generation_context,
     }
 
 
@@ -3627,6 +4076,7 @@ def build_session_state(
     state = {
         "world_id": world_id,
         "world_pack": world_info,
+        "pack_generation_context": world_info.get("pack_generation_context") or {},
         "location": current_location,
         "current_location": current_location,
         "character": character,
