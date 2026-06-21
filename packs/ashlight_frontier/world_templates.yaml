@@ -273,8 +273,8 @@ world_templates:
         name: Adventurers Guild Hall
         description: The guild hall inside Lieber Lampfort, where a living board gathers notes, requests, rumors, witness fragments, and unfinished reports.
         public_aliases:
-          en: [Adventurers Guild Hall, guild hall, guild board, reception desk]
-          ja: [冒険者ギルド広間, ギルド広間, 掲示板, 受付]
+          en: [Adventurers Guild Hall, Adventurers Guild, guild hall, guild board, reception desk]
+          ja: [冒険者ギルド広間, 冒険者ギルド, ギルド広間, 掲示板, 受付]
         hierarchy: town_facility
         region: lieber_lampfort
         kind: guild_hall

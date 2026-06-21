@@ -1479,6 +1479,14 @@ def _input_has_movement_intent(input_text: str) -> bool:
     return any(token in input_text for token in ("向か", "行く", "行き", "移る", "移動", "入る", "戻る", "go ", "travel", "head", "enter", "return"))
 
 
+def _route_destination_key(route: dict[str, Any]) -> str:
+    return str(
+        route.get("destination_key")
+        or ((route.get("to_location") or {}).get("key") if isinstance(route.get("to_location"), dict) else "")
+        or ""
+    ).strip()
+
+
 def _match_visible_route_by_public_text(
     db: Session,
     *,
@@ -1489,12 +1497,35 @@ def _match_visible_route_by_public_text(
     alias_index: CanonicalPublicAliasIndex,
     key_candidate: str | None = None,
 ) -> dict[str, Any] | None:
+    available_routes = [
+        route
+        for route in session_state.get("nearby_routes") or []
+        if isinstance(route, dict) and bool(route.get("available"))
+    ]
+    if not available_routes:
+        return None
+
+    # When the AI GM asserts the scene is at a place reachable by an open,
+    # one-hop adjacent route, the location claim itself is the movement signal:
+    # the player is narrated as already standing at that currently-open
+    # destination, so resolve the implicit travel regardless of explicit
+    # movement verbs. This keeps in-town facilities consistent with the hub
+    # starter location (e.g. the guild hall a freshly registered adventurer is
+    # described inside) without weakening protection against non-adjacent or
+    # locked destinations, which never appear among the available routes.
+    if claim_text:
+        matched_claim = alias_index.match_location(claim_text, key_candidate=key_candidate)
+        if matched_claim is not None:
+            for route in available_routes:
+                if _route_destination_key(route) == matched_claim.canonical_key:
+                    return route
+
+    # Free-text detection: only treat the action itself as travel when it
+    # expresses movement intent and names the destination by a public alias.
     if not _input_has_movement_intent(player_action_text):
         return None
-    for route in session_state.get("nearby_routes") or []:
-        if not isinstance(route, dict) or not bool(route.get("available")):
-            continue
-        destination_key = str(route.get("destination_key") or ((route.get("to_location") or {}).get("key") if isinstance(route.get("to_location"), dict) else "") or "").strip()
+    for route in available_routes:
+        destination_key = _route_destination_key(route)
         aliases = alias_index.aliases_for_location(destination_key) or _route_public_aliases(db, world_id, route)
         if not _text_mentions_public_alias(player_action_text, aliases):
             continue
