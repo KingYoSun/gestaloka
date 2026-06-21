@@ -401,3 +401,6 @@ cypress/videos/
 
 # Claude configuration
 .claude/
+
+.codegraph
+AGENTS.local.md
