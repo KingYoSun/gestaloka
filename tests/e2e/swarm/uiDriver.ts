@@ -1076,7 +1076,7 @@ async function playSurfaceReviewSnapshot(
 export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapshot> {
   const [questText, questProgress, chapterText, sceneText, questActionLabels, inlineQuestActionLabels, inlineQuestText] = await Promise.all([
     textContent(page, "active-quest"),
-    textContent(page, "quest-progress"),
+    textContent(page, "quest-status"),
     textContent(page, "current-chapter-summary"),
     textContent(page, "current-scene-summary"),
     questActionTexts(page),
@@ -1093,7 +1093,8 @@ export async function questSnapshotViaUi(page: Page): Promise<SwarmUiQuestSnapsh
     inlineQuestActionLabels,
     hasExploringLabel: /探索中\.\.\.|Exploring\.\.\./i.test(questText),
     hasStarterQuest: /来訪者ログ登録|Visitor Log Registration/i.test(questText),
-    hasQuestProgress: /\b\d+\s*\/\s*\d+\b/.test(questProgress || questText),
+    // ADR-003: quest UI shows a status label (active -> completed), not an N/N counter.
+    hasQuestProgress: /(進行中|完了|提示中|保留中|離脱中|Active|Completed|Offered|Paused)/i.test(questProgress || questText),
     hasOfferedQuest: allQuestActionLabels.some((label) => /^(受諾|Accept|見送る|Decline|無視|Ignore)$/i.test(label)),
     hasInlineQuestDecision: Boolean(inlineQuestText.trim()) || inlineQuestActionLabels.length > 0,
     hasChapterSummary: Boolean(sceneContextText),

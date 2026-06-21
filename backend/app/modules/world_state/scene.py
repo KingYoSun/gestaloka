@@ -117,11 +117,7 @@ def chapter_summary_for_state(chapter_key: str, chapter_status: ChapterStatus, s
     if not chapter_key:
         return str((state.get("current_scene") or {}).get("summary") or "The world is open, and no quest has been accepted yet.")
     active_quest_title = str(active_quest.get("title") or "the opening request")
-    progress = int(active_quest.get("progress") or 0)
-    if progress >= 1:
-        base = f"The opening chapter of {world_name} now turns on whether {active_quest_title} will be carried through."
-    else:
-        base = f"The opening chapter of {world_name} is still gathering momentum around {active_quest_title}."
+    base = f"The opening chapter of {world_name} is still gathering momentum around {active_quest_title}."
     if chapter_status == "cooling":
         return f"{base} It has started to cool into its next shape."
     if chapter_status == "resolved":
@@ -140,7 +136,6 @@ def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
     current_branch = str(chapter_state.get("current_branch") or "")
     current_branch_slot = branch_slot_for_key(world_pack, current_branch)
     active_quest = _active_quest(state)
-    progress = int(active_quest.get("progress") or 0)
     if followup_chapter_key and chapter_key == followup_chapter_key:
         if current_branch_slot in {"formal_path", "undercurrent_path"}:
             summary = _branch_summary_for_slot(world_pack, current_branch_slot)
@@ -154,9 +149,6 @@ def _stakes_summary_for_state(chapter_key: str, state: dict[str, Any]) -> str:
         return f"The newly opened route toward {followup_location_name} is asking to be read carefully."
     if not chapter_key:
         return f"{location_name} is open to exploration, with no accepted quest shaping the scene yet."
-    if progress >= 1:
-        quest_title = str(active_quest.get("title") or "the opening request")
-        return f"{location_name} is waiting to see whether {quest_title} will be honored."
     quest_title = str(active_quest.get("title") or "the current request")
     return f"{location_name} is still establishing who can be trusted with {quest_title}."
 

@@ -170,9 +170,9 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
     const aQuestAfterAdvance = await waitForQuestMatch(
       request,
       a,
-      (payload) => hasQuestProgressAtLeast(payload, 1),
+      (payload) => hasTrackedQuest(payload),
       pollTimeoutMs,
-      "starter quest should progress from an explicit visible action",
+      "starter quest should remain tracked after an explicit visible action",
     );
 
     let aQuestAfterLeave: Record<string, unknown> | null = null;
@@ -328,12 +328,12 @@ test("swarm-test: persona-derived players exercise shared impact, resource conte
       world_broadcast_or_constraint_visible:
         observation.worldBroadcastOrConstraintVisible,
       starter_quest_visible: initialQuestSnapshots.every((snapshot) => snapshot.hasStarterQuest && snapshot.hasQuestProgress),
-      starter_quest_progressed: hasQuestProgressAtLeast(aQuestAfterAdvance, 1),
+      starter_quest_progressed: hasTrackedQuest(aQuestAfterAdvance),
       quest_context_visible:
         aStarterOpeningTurn.hasChapterSummary ||
         aStarterAdvanceTurn.hasChapterSummary ||
         hasQuestChapter(aQuestAfterAdvance) ||
-        (hasQuestProgressAtLeast(aQuestAfterAdvance, 1) && Boolean(aStarterAdvanceTurn.latestNarrative.trim())),
+        (hasTrackedQuest(aQuestAfterAdvance) && Boolean(aStarterAdvanceTurn.latestNarrative.trim())),
       quest_continuity_events_same_world: observation.questContinuityEventsSameWorld,
       entity_updates_field_present:
         allTurnObservations.length > 0 && allTurnObservations.every((turn) => turn.hasEntityUpdatesField),
@@ -663,8 +663,10 @@ function hasQuestChapter(payload: Record<string, unknown>): boolean {
   return questItems(payload).some((item) => Array.isArray(item.chapters) && item.chapters.length > 0);
 }
 
-function hasQuestProgressAtLeast(payload: Record<string, unknown>, minimum: number): boolean {
-  return questItems(payload).some((item) => Number(item.progress) >= minimum);
+// ADR-003: quests have no numeric counter; they are active -> completed by AI GM judgment.
+// A quest is "tracked" once it is live or resolved.
+function hasTrackedQuest(payload: Record<string, unknown>): boolean {
+  return questItems(payload).some((item) => ["active", "completed", "paused"].includes(String(item.status)));
 }
 
 async function waitForQuestMatch(
@@ -703,7 +705,7 @@ function hasAiGmBeforeStateApplication(turn: SwarmUiTurnObservation): boolean {
     .map((progress) => progress.phase);
   const aiGmIndex = completedPhases.indexOf("ai_gm_turn");
   const stateIndex = completedPhases.findIndex((phase) =>
-    ["world_tag_updates", "state_draft_materialization", "consequence_resolution", "post_state_build"].includes(phase),
+    ["active_quest_resolution", "state_draft_materialization", "consequence_resolution", "post_state_build"].includes(phase),
   );
   return aiGmIndex >= 0 && stateIndex >= 0 && aiGmIndex < stateIndex;
 }
@@ -712,7 +714,7 @@ function hasPublicStateApplicationCompleted(turn: SwarmUiTurnObservation): boole
   const completedPhases = turn.progressTimeline
     .filter((progress) => progress.status === "completed")
     .map((progress) => progress.phase);
-  return ["world_tag_updates", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"].every((phase) =>
+  return ["active_quest_resolution", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"].every((phase) =>
     completedPhases.includes(phase),
   );
 }

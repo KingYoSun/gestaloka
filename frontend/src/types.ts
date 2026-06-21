@@ -327,8 +327,6 @@ export type QuestSummary = {
   status: string;
   stage_key: string;
   unlock_requirements: Record<string, unknown>;
-  progress: number;
-  progress_target: number;
   latest_summary: string;
   reward_item_id: string | null;
   state_json: Record<string, unknown>;

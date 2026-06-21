@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -654,7 +653,6 @@ def _ensure_seeded_quest_template(
     default_id: str,
     default_title: str,
     default_description: str,
-    default_completion_target: int,
     default_reward_template_key: str,
     default_reward_name: str,
     default_reward_description: str,
@@ -678,9 +676,6 @@ def _ensure_seeded_quest_template(
         quest_template.unlock_requirements = dict(
             quest_seed.get("unlock_requirements") or quest_template.unlock_requirements or default_unlock_requirements or {}
         )
-        quest_template.completion_target = int(
-            quest_seed.get("completion_target") or quest_template.completion_target or default_completion_target
-        )
         quest_template.reward_template_key = str(
             quest_seed.get("reward_template_key") or quest_template.reward_template_key or default_reward_template_key
         )
@@ -700,7 +695,6 @@ def _ensure_seeded_quest_template(
         status=str(quest_seed.get("status") or "active"),
         stage_key=str(quest_seed.get("stage_key") or default_stage_key),
         unlock_requirements=dict(quest_seed.get("unlock_requirements") or default_unlock_requirements or {}),
-        completion_target=int(quest_seed.get("completion_target") or default_completion_target),
         reward_template_key=str(quest_seed.get("reward_template_key") or default_reward_template_key),
         reward_name=str(quest_seed.get("reward_name") or default_reward_name),
         reward_description=str(quest_seed.get("reward_description") or default_reward_description),
@@ -720,7 +714,6 @@ def ensure_starter_quest_template(db: Session, world_id: str) -> QuestTemplate:
         default_id="starter_quest_request",
         default_title="Starter Request",
         default_description="Help a local, report back what you learned, and earn enough trust to unlock the next route.",
-        default_completion_target=2,
         default_reward_template_key="starter_reward",
         default_reward_name=str((template.quest.reward_name if template.quest is not None else "") or "World Seal"),
         default_reward_description=str(
@@ -749,12 +742,11 @@ def ensure_followup_quest_template(db: Session, world_id: str) -> QuestTemplate:
             (template.followup_quest.description if template.followup_quest is not None else "")
             or "Carry earned trust into the next route."
         ),
-        default_completion_target=1,
         default_reward_template_key="none",
         default_reward_name="",
         default_reward_description="",
         default_stage_key=_followup_stage_key(db, world_id),
-        default_unlock_requirements={"starter_item_effect": _reward_effect_kind(db, world_id)},
+        default_unlock_requirements={"requires_resolved_stage": _starter_stage_key(db, world_id)},
         default_state={"reward_enabled": False},
     )
 
@@ -784,8 +776,6 @@ def _ensure_quest_assignment(
         owner_actor_id=owner_actor_id,
         quest_template_id=quest_template.id,
         status=status,
-        progress=0,
-        progress_target=quest_template.completion_target,
         latest_summary=latest_summary,
         state_json=state_json or {},
     )
@@ -1603,7 +1593,6 @@ def _quest_offer_text(offer: dict[str, Any]) -> str:
             offer.get("description"),
             offer.get("summary"),
             offer.get("offered_summary"),
-            offer.get("completion_target"),
             offer.get("constraints"),
             offer.get("outcome_basis"),
             offer.get("first_step"),
@@ -2135,7 +2124,6 @@ def create_dynamic_quest_offer(
     template_id = f"dynamic_quest_{source_event_id.replace('-', '')[:20]}"
     if followup_of_assignment_id:
         template_id = f"followup_quest_{source_event_id.replace('-', '')[:19]}"
-    completion_target = _normalize_dynamic_quest_completion_target(offer.get("completion_target"))
     template = QuestTemplate(
         id=template_id,
         world_id=world_id,
@@ -2144,7 +2132,6 @@ def create_dynamic_quest_offer(
         status="active",
         stage_key=str(offer.get("stage_key") or template_id)[:96],
         unlock_requirements=dict(offer.get("unlock_requirements") or {}),
-        completion_target=completion_target,
         reward_template_key=str(offer.get("reward_template_key") or "none")[:96],
         reward_name=str(offer.get("reward_name") or "")[:120],
         reward_description=str(offer.get("reward_description") or ""),
@@ -2163,8 +2150,6 @@ def create_dynamic_quest_offer(
         owner_actor_id=actor_id,
         quest_template_id=template.id,
         status="offered",
-        progress=0,
-        progress_target=template.completion_target,
         latest_summary=str(offer.get("offered_summary") or description),
         state_json={
             "dynamic": True,
@@ -2185,28 +2170,6 @@ def create_dynamic_quest_offer(
             "chapters": [],
         }
     ]
-
-
-def _normalize_dynamic_quest_completion_target(value: Any) -> int:
-    if isinstance(value, bool):
-        return 3
-    if isinstance(value, int):
-        parsed = value
-    elif isinstance(value, float):
-        if not math.isfinite(value):
-            return 3
-        parsed = int(value)
-    elif isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return 3
-        try:
-            parsed = int(float(text))
-        except (OverflowError, ValueError):
-            return 3
-    else:
-        return 3
-    return max(1, min(parsed, 8))
 
 
 def _pause_other_active_quests(
@@ -2349,7 +2312,6 @@ def record_quest_resolution_hint(
             state_json["resolution_hint"] = dict(hint)
             assignment.state_json = state_json
             assignment.status = "completed"
-            assignment.progress = max(assignment.progress, assignment.progress_target)
             assignment.latest_summary = summary or f"{template.title} is complete."
             _open_epilogue_chapter_for_assignment(
                 db,
@@ -2521,7 +2483,6 @@ def apply_quest_lifecycle_action(
             state_json["resolved_from_pending_event_id"] = pending_resolution.get("source_event_id")
             assignment.state_json = state_json
             assignment.status = "completed"
-            assignment.progress = max(assignment.progress, assignment.progress_target)
             assignment.latest_summary = summary
             chapter_updates.extend(
                 _open_epilogue_chapter_for_assignment(
@@ -3562,7 +3523,6 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     recent_travel_history = session_state.get("recent_travel_history") or []
     active_quest = next((item for item in quests if item.get("status") == "active"), quests[0] if quests else {})
     stage_key = str(active_quest.get("stage_key") or starter_stage_key)
-    progress = int(active_quest.get("progress") or 0)
     usable_item = next((item for item in inventory if item.get("usable")), None)
     primary_relationship = relationships[0] if relationships else {}
     relationship_band_name = str(primary_relationship.get("band") or "neutral")
@@ -3621,7 +3581,6 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
     is_opening_bootstrap_state = (
         current_location_key == starter_location_key
         and stage_key == starter_stage_key
-        and progress == 0
         and not inventory
         and not recent_travel_history
     )
@@ -3704,7 +3663,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
             "canonical_input_text": "差し出された信頼を受け止め、そのまま次の進展へ踏み込む",
         }
 
-    if stage_key == starter_stage_key and progress >= 1:
+    if stage_key == starter_stage_key and not is_opening_bootstrap_state:
         second_choice = {
             **second_choice,
             "label": "見聞きをまとめて報告し、次の見回りへ繋げる",
@@ -3922,7 +3881,7 @@ def default_next_choices(session_state: dict[str, Any]) -> list[dict[str, Any]]:
                     choice["label"] = "Look for traces around the opened route"
                     choice["summary"] = "Explore what the opened route has changed."
                     choice["canonical_input_text"] = f"Look for traces around the route to {followup_location_name}"
-            elif stage_key == starter_stage_key and progress >= 1:
+            elif stage_key == starter_stage_key and not is_opening_bootstrap_state:
                 if choice_index == 0:
                     choice["label"] = "Keep the scene calm and check that everyone is steady"
                     choice["summary"] = "Avoid rushing and preserve the scene's balance."
@@ -4526,7 +4485,6 @@ def apply_active_quest_resolution(
         or (summary or "").strip()
         or f"{quest_template.title} is resolved."
     )
-    assignment.progress = assignment.progress_target
     assignment.status = "completed"
     assignment.latest_summary = resolution_summary
     state_json = dict(assignment.state_json or {})
@@ -4701,8 +4659,6 @@ def quest_summary_to_dict(assignment: QuestAssignment, template: QuestTemplate) 
         "status": assignment.status,
         "stage_key": template.stage_key,
         "unlock_requirements": template.unlock_requirements,
-        "progress": assignment.progress,
-        "progress_target": assignment.progress_target,
         "latest_summary": assignment.latest_summary,
         "reward_item_id": assignment.reward_item_id,
         "state_json": assignment.state_json,

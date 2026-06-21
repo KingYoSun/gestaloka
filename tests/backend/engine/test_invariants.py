@@ -128,7 +128,6 @@ def test_quest_assignment_cannot_reference_template_from_another_world(container
             title="Quest B",
             description="desc",
             status="active",
-            completion_target=2,
             reward_template_key="reward",
             reward_name="Reward",
             reward_description="desc",
@@ -142,8 +141,6 @@ def test_quest_assignment_cannot_reference_template_from_another_world(container
                 owner_actor_id=actor.id,
                 quest_template_id=template.id,
                 status="active",
-                progress=0,
-                progress_target=2,
                 latest_summary="bad",
                 state_json={},
             )

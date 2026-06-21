@@ -1084,8 +1084,6 @@ def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
                 "title": _public_text(item.get("title")),
                 "description": _public_text(item.get("description")),
                 "status": _public_text(item.get("status")),
-                "progress": item.get("progress"),
-                "progress_target": item.get("progress_target"),
                 "latest_summary": _public_text(item.get("latest_summary")),
             }
             for item in quests

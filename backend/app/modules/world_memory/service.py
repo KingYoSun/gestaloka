@@ -266,8 +266,7 @@ def build_retrieval_query_text(
         if isinstance(quest, dict):
             lines.append(
                 "quest="
-                f"{quest.get('title', '')} {quest.get('status', '')} "
-                f"{quest.get('progress', 0)}/{quest.get('progress_target', 0)}"
+                f"{quest.get('title', '')} {quest.get('status', '')}"
             )
     for faction in (state.get("factions") or [])[:2]:
         if isinstance(faction, dict):

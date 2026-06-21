@@ -88,7 +88,7 @@ class GraphRelationContext:
         for item in self.active_quests[:1]:
             lines.append(
                 "active_quest="
-                f"{item['title']} [{item['status']} {item['progress']}/{item['progress_target']}]"
+                f"{item['title']} [{item['status']}]"
             )
         for item in self.faction_standings[:2]:
             lines.append(f"faction={item['name']} standing={item['standing']:.2f} ({item['band']})")
@@ -226,8 +226,6 @@ class RecordingWorldGraphRepository:
                             "quest_template_id": template.id,
                             "title": template.title,
                             "status": assignment.status,
-                            "progress": assignment.progress,
-                            "progress_target": assignment.progress_target,
                             "latest_summary": assignment.latest_summary,
                         },
                     },
@@ -407,8 +405,6 @@ class RecordingWorldGraphRepository:
                         "properties": {
                             "world_id": bundle.world_id,
                             "status": assignment.status,
-                            "progress": assignment.progress,
-                            "progress_target": assignment.progress_target,
                             "title": template.title,
                         },
                     },
@@ -684,8 +680,6 @@ class RecordingWorldGraphRepository:
                 "assignment_id": assignment.id,
                 "title": template.title,
                 "status": assignment.status,
-                "progress": assignment.progress,
-                "progress_target": assignment.progress_target,
                 "latest_summary": assignment.latest_summary,
             }
             for assignment, template in db.execute(

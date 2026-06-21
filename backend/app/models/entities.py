@@ -750,7 +750,6 @@ class QuestTemplate(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(32), default="active")
     stage_key: Mapped[str] = mapped_column(String(96), default="starter")
     unlock_requirements: Mapped[dict] = mapped_column(JSON, default=dict)
-    completion_target: Mapped[int] = mapped_column(Integer, default=2)
     reward_template_key: Mapped[str] = mapped_column(String(96))
     reward_name: Mapped[str] = mapped_column(String(120))
     reward_description: Mapped[str] = mapped_column(Text, default="")
@@ -764,8 +763,6 @@ class QuestAssignment(Base, TimestampMixin):
         UniqueConstraint("world_id", "owner_actor_id", "quest_template_id", name="uq_quest_assignments_owner_template"),
         ForeignKeyConstraint(["owner_actor_id", "world_id"], ["actors.id", "actors.world_id"]),
         ForeignKeyConstraint(["quest_template_id", "world_id"], ["quest_templates.id", "quest_templates.world_id"]),
-        CheckConstraint("progress >= 0", name="ck_quest_assignments_progress_nonnegative"),
-        CheckConstraint("progress_target >= 1", name="ck_quest_assignments_progress_target_positive"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -773,8 +770,6 @@ class QuestAssignment(Base, TimestampMixin):
     owner_actor_id: Mapped[str] = mapped_column(String(36))
     quest_template_id: Mapped[str] = mapped_column(String(96))
     status: Mapped[str] = mapped_column(String(32), default="active")
-    progress: Mapped[int] = mapped_column(Integer, default=0)
-    progress_target: Mapped[int] = mapped_column(Integer, default=2)
     latest_summary: Mapped[str] = mapped_column(Text, default="")
     reward_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     state_json: Mapped[dict] = mapped_column(JSON, default=dict)

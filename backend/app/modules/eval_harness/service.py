@@ -2165,8 +2165,6 @@ class EvalHarnessService:
             raise KeyError(f"Unknown eval dataset: {dataset_name}") from exc
 
     def _session_state_for_case(self, case: EvalCaseInput) -> dict[str, object]:
-        quest_progress = int((case.quest_context or {}).get("current_progress", 0))
-        progress_target = int((case.quest_context or {}).get("progress_target", 2))
         current_standing = float((case.quest_context or {}).get("current_standing", 0.0))
         if not case.pack_id or not case.world_template_id:
             raise ValueError(f"Eval case {case.case_id} is missing pack_id/world_template_id")
@@ -2196,12 +2194,7 @@ class EvalHarnessService:
         inventory_items = list((case.quest_context or {}).get("inventory_items") or [])
         current_location_key = str((case.quest_context or {}).get("current_location_key") or "").strip()
         if not current_location_key:
-            if stage_key == followup_stage_key and any(str(item.get("status") or "") == "used" for item in inventory_items):
-                current_location_key = starter_location_key
-            elif stage_key == followup_stage_key and quest_progress > 0:
-                current_location_key = followup_location_key
-            else:
-                current_location_key = starter_location_key
+            current_location_key = followup_location_key if stage_key == followup_stage_key else starter_location_key
         current_location = dict(locations.get(current_location_key) or starter_location)
         world_name = str(
             world_pack_overrides.get("world_name")
@@ -2294,8 +2287,6 @@ class EvalHarnessService:
                     "status": str((case.quest_context or {}).get("status") or "active"),
                     "stage_key": stage_key,
                     "unlock_requirements": dict((case.quest_context or {}).get("unlock_requirements") or {}),
-                    "progress": quest_progress,
-                    "progress_target": progress_target,
                     "latest_summary": "",
                     "reward_item_id": (case.quest_context or {}).get("reward_item_id"),
                     "state_json": {},

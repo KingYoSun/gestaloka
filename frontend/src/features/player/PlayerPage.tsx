@@ -1696,8 +1696,8 @@ function QuestBlock({ runtime }: PlayerPageProps) {
       {primaryQuest ? (
         <div className="grid min-w-0 gap-3">
           <p className="min-w-0 break-words font-bold leading-6 text-foreground">{primaryQuest.title}</p>
-          <p className="text-sm leading-5 text-muted-foreground" data-testid="quest-progress">
-            {primaryQuest.progress}/{primaryQuest.progress_target}
+          <p className="text-sm leading-5 text-muted-foreground" data-testid="quest-status">
+            {t(`player.quest.status.${primaryQuest.status}`, { defaultValue: primaryQuest.status })}
           </p>
           {primaryQuest.latest_summary ? <p className="min-w-0 break-words text-sm leading-5 text-muted-foreground">{primaryQuest.latest_summary}</p> : null}
           {primaryQuest.chapters?.length ? (
@@ -1890,9 +1890,6 @@ function QuestListItem({
             {t(`player.quest.status.${quest.status}`, { defaultValue: quest.status })}
           </span>
         </div>
-        <p className="text-sm leading-5 text-muted-foreground">
-          {quest.progress}/{quest.progress_target}
-        </p>
       </div>
       <QuestDetailAccordion label={detailLabel} testId={`quest-detail-toggle-${quest.assignment_id}`}>
         <QuestDetailContent quest={quest} />

@@ -64,7 +64,6 @@ def create_offered_dynamic_quest_for_session(container, *, session_payload: dict
             )
         ).scalars():
             assignment.status = "completed"
-            assignment.progress = assignment.progress_target
         db.flush()
         source_event = (
             db.execute(
