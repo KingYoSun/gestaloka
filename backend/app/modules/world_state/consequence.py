@@ -250,7 +250,7 @@ class ConsequenceRuleEngine:
             return ConsequenceRuleOutcome(
                 outcome_band="steady",
                 relationship_delta=0.08,
-                faction_delta=0.0,
+                faction_delta=0.04,
                 thread_action=thread_action,
                 thread_type=thread_type,
                 thread_status=thread_status,
@@ -263,7 +263,7 @@ class ConsequenceRuleEngine:
             return ConsequenceRuleOutcome(
                 outcome_band="steady",
                 relationship_delta=0.08,
-                faction_delta=0.0,
+                faction_delta=0.05,
                 thread_action="none",
                 thread_type=None,
                 thread_status=None,

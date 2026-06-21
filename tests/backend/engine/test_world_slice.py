@@ -26,10 +26,9 @@ from app.models.entities import (
 )
 from app.modules.identity.oidc import UserIdentity
 from app.modules.world_state.consequence import ConsequenceRuleEngine, ConsequenceRuleInput, ConsequenceThreadSnapshot
-from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 from tests.backend.turn_async_helpers import post_turn_and_wait
-from app.modules.world_state.service import ensure_starter_faction, ensure_world
+from app.modules.world_state.service import apply_active_quest_resolution, ensure_starter_faction, ensure_world
 
 
 def engine_session_payload() -> dict[str, str]:
@@ -44,44 +43,92 @@ def visitor_log_help_payload() -> dict[str, str]:
     return {"input_mode": "free_text", "input_text": "ネクサス案内担当の来訪者ログ整理を手伝う"}
 
 
-def test_quest_rule_engine_progresses_and_issues_reward_only_on_completion():
-    first = QuestRuleEngine.evaluate(
-        QuestRuleInput(
-            world_tags=["aid_local"],
-            current_progress=0,
-            progress_target=2,
-            current_standing=0.25,
-            reward_already_issued=False,
-        )
-    )
-    second = QuestRuleEngine.evaluate(
-        QuestRuleInput(
-            world_tags=["investigate", "promise_followup"],
-            current_progress=1,
-            progress_target=2,
-            current_standing=0.4,
-            reward_already_issued=False,
-        )
-    )
+def test_active_quest_resolution_is_ai_judged_not_deterministic(client, container, auth_headers):
+    """ADR-003: the active quest completes only when the AI GM judges it resolved.
 
-    assert first.next_progress == 1
-    assert first.should_issue_reward is False
-    assert second.next_progress == 2
-    assert second.should_issue_reward is True
-    assert second.next_standing > 0.4
+    Deterministic code validates (an active quest must exist) and applies the canonical
+    effect; it never advances a quest from tag counting.
+    """
+    created = client.post("/sessions", json=engine_session_payload(), headers=auth_headers)
+    assert created.status_code == 200
+    payload = created.json()
+    actor_id = payload["player_actor_id"]
+    world_id = payload["world_id"]
 
-    followup = QuestRuleEngine.evaluate(
-        QuestRuleInput(
-            world_tags=["promise_followup"],
-            current_progress=0,
-            progress_target=1,
-            current_standing=0.55,
-            reward_already_issued=False,
-            reward_enabled=False,
+    with container.session_factory() as db:
+        active_before = (
+            db.execute(
+                select(QuestAssignment).where(
+                    QuestAssignment.world_id == world_id,
+                    QuestAssignment.owner_actor_id == actor_id,
+                    QuestAssignment.status == "active",
+                )
+            )
+            .scalars()
+            .all()
         )
-    )
-    assert followup.next_progress == 1
-    assert followup.should_issue_reward is False
+        assert active_before, "gestaloka seeds an active starter quest on session start"
+        source_event = (
+            db.execute(
+                select(Event)
+                .where(Event.world_id == world_id, Event.session_id == payload["session_id"])
+                .order_by(Event.created_at.asc(), Event.id.asc())
+            )
+            .scalars()
+            .first()
+        )
+        assert source_event is not None
+
+        # A non-resolution signal must not complete anything.
+        noop = apply_active_quest_resolution(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            source_event_id=source_event.id,
+            resolution={"resolved": False},
+            summary="",
+        )
+        assert noop["quest_updates"] == []
+
+        # The AI GM's resolution judgment completes the single active quest.
+        updates = apply_active_quest_resolution(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            source_event_id=source_event.id,
+            resolution={"resolved": True, "summary": "The opening thread resolves.", "outcome_basis": ["player_action"]},
+            summary="fallback summary",
+        )
+        db.commit()
+
+        assert updates["quest_updates"], "resolution should complete the active quest"
+        assert updates["quest_updates"][0]["status"] == "completed"
+        assert updates["quest_updates"][0]["action"] == "resolved_by_ai_gm"
+
+        completed = (
+            db.execute(
+                select(QuestAssignment).where(
+                    QuestAssignment.world_id == world_id,
+                    QuestAssignment.owner_actor_id == actor_id,
+                    QuestAssignment.status == "completed",
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert completed
+        assert (completed[0].state_json or {}).get("resolved_from_ai_gm_event_id") == source_event.id
+
+        # Idempotent: with no remaining active quest, a repeat resolution is a no-op.
+        repeat = apply_active_quest_resolution(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            source_event_id=source_event.id,
+            resolution={"resolved": True, "summary": "again"},
+            summary="",
+        )
+        assert repeat["quest_updates"] == []
 
 
 def test_session_seed_is_idempotent_for_character_faction_and_exploration_state(client, container, auth_headers):

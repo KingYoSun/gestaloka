@@ -1039,7 +1039,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     ]
     assert completed_phases[0] == "ai_gm_turn"
     for phase in [
-        "world_tag_updates",
+        "active_quest_resolution",
         "state_draft_materialization",
         "consequence_resolution",
         "scene_framing",
@@ -1345,7 +1345,7 @@ def test_accept_quest_contract_and_websocket_event_order(client, container, auth
     completed_phases = [message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"]
     for phase in [
         "ai_gm_turn",
-        "world_tag_updates",
+        "active_quest_resolution",
         "state_draft_materialization",
         "consequence_resolution",
         "scene_framing",

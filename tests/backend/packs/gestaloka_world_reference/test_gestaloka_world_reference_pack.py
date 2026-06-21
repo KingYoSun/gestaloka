@@ -378,10 +378,16 @@ def test_active_starter_quest_blocks_dynamic_quest_offer_and_supports_lifecycle_
         auth_headers=auth_headers,
         payload={"input_mode": "free_text", "input_text": "来訪者ログ登録を進めるため、公開証言ホールで手続きを手伝う"},
     )
-    assert advance_payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
-    assert advance_payload["quest_updates"][0]["progress"] > 0
-    assert advance_payload["quest_updates"][0]["world_tags"] != ["none"]
-    assert any(tag in advance_payload["quest_updates"][0]["world_tags"] for tag in ("aid_local", "promise_followup"))
+    # ADR-003: an advancing (non-resolving) action keeps the quest ongoing. There is no
+    # numeric progress counter, so the turn does not emit a quest progress update and does
+    # not complete the quest; resolution is the AI GM's explicit judgment, not tag counting.
+    assert not any(item.get("status") == "completed" for item in advance_payload["quest_updates"])
+    advance_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert advance_state.status_code == 200
+    assert any(
+        quest["assignment_id"] == quest_assignment_id and quest["status"] == "active"
+        for quest in advance_state.json()["quest_journal"]
+    )
 
     _, leave_payload, _ = post_turn_and_wait(
         client,
@@ -468,7 +474,7 @@ def test_first_choice_completion_text_completes_active_quest_even_when_llm_retur
 
     completed_updates = [item for item in turn_payload["quest_updates"] if item["status"] == "completed"]
     assert completed_updates
-    assert completed_updates[0]["action"] == "completed_from_effect_contract"
+    assert completed_updates[0]["action"] == "resolved_by_ai_gm"
     assert turn_payload["interpreted_intent"]["source"] == "public_ai_gm"
 
 

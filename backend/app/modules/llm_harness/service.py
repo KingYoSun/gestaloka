@@ -454,6 +454,7 @@ class TurnResolutionPayload(BaseModel):
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
+    active_quest_resolution: dict[str, Any] | None = None
     entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -488,6 +489,7 @@ class PublicGmTurnPayload(BaseModel):
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
+    active_quest_resolution: dict[str, Any] | None = None
     entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -621,7 +623,7 @@ class PublicGmTurnPayload(BaseModel):
             shared_action_tag = "none"
         normalized["shared_action_tag"] = shared_action_tag
         normalized["memories"] = _memory_drafts(normalized.get("memories"), consequence_summary)
-        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint"):
+        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint", "active_quest_resolution"):
             if not isinstance(normalized.get(key), dict):
                 normalized[key] = None
         if not isinstance(normalized.get("entity_drafts"), list):
@@ -870,6 +872,22 @@ class StubModelProvider(BaseModelProvider):
         else:
             current_situation = str(current_location.get("description") or consequence_summary)
             npc_reaction = f"{npc_name}はその場で確認できる事実にだけ反応する。"
+        # Offline stub stands in for the AI GM's narrative judgment (ADR-003): when the
+        # player's action commits to finishing the current situation, signal resolution.
+        # The server applies it only when a single active quest actually exists.
+        active_quest_resolution: dict[str, Any] | None = None
+        if any(
+            token in input_text
+            for token in (
+                "完了", "完遂", "確定", "承認", "解決", "終え", "終わ", "締め", "果た",
+                "complete", "finish", "finalize", "resolve", "settle", "approve", "confirm",
+            )
+        ):
+            active_quest_resolution = {
+                "resolved": True,
+                "summary": consequence_summary,
+                "outcome_basis": ["player_action"],
+            }
         return {
             "action_interpretation": input_text or "現在の状況を確かめる",
             "narrative": (
@@ -905,6 +923,7 @@ class StubModelProvider(BaseModelProvider):
             "scene_tone": "measured",
             "scene_move": scene_move,
             "scene_pressure": "medium",
+            "active_quest_resolution": active_quest_resolution,
             "memories": [
                 {
                     "scope": "world",

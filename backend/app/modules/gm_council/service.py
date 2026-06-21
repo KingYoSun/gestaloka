@@ -623,6 +623,7 @@ class CouncilWorldProgressPayload(BaseModel):
     chapter_directive: dict[str, Any] | None = None
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
+    active_quest_resolution: dict[str, Any] | None = None
     entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -689,7 +690,7 @@ class CouncilWorldProgressPayload(BaseModel):
         )
         normalized["scene_move"] = _scene_move(normalized.get("scene_move"))
         normalized["scene_pressure"] = _scene_pressure(normalized.get("scene_pressure"))
-        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint"):
+        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint", "active_quest_resolution"):
             if not isinstance(normalized.get(key), dict):
                 normalized[key] = None
         entity_drafts = normalized.get("entity_drafts")
@@ -1386,6 +1387,7 @@ class GMCouncilService:
             chapter_directive=public_payload.chapter_directive,
             followup_quest_offer=public_payload.followup_quest_offer,
             quest_resolution_hint=public_payload.quest_resolution_hint,
+            active_quest_resolution=public_payload.active_quest_resolution,
             entity_drafts=public_payload.entity_drafts,
         )
 
@@ -2621,6 +2623,7 @@ class GMCouncilService:
             chapter_directive=world_progress_payload.chapter_directive,
             followup_quest_offer=world_progress_payload.followup_quest_offer,
             quest_resolution_hint=world_progress_payload.quest_resolution_hint,
+            active_quest_resolution=world_progress_payload.active_quest_resolution,
             entity_drafts=world_progress_payload.entity_drafts,
         )
         return TurnResolutionOutcome(

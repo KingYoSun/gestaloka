@@ -97,7 +97,7 @@ from app.modules.world_state.scene import (
     list_scene_frames_debug,
 )
 from app.modules.world_state.shared_consequence import ensure_shared_world_seed, pack_scoped_entity_id
-from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, WorldTag, standing_band
+from app.modules.world_state.rules import WorldTag, standing_band
 
 
 FOLLOWUP_STANDING_DELTA = 0.10
@@ -4479,56 +4479,44 @@ def _issue_quest_reward_if_needed(
     return [{**item_summary_to_dict(reward_item), "action": "added"}]
 
 
-def _quest_row_for_effect_contract(
-    db: Session,
-    *,
-    world_id: str,
-    actor_id: str,
-) -> tuple[QuestAssignment, QuestTemplate] | None:
-    row = db.execute(
-        select(QuestAssignment, QuestTemplate)
-        .join(
-            QuestTemplate,
-            (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
-        )
-        .where(
-            QuestAssignment.world_id == world_id,
-            QuestAssignment.owner_actor_id == actor_id,
-            QuestAssignment.status.in_(("active", "completed")),
-        )
-        .order_by(
-            (QuestAssignment.status == "active").desc(),
-            QuestAssignment.updated_at.desc(),
-            QuestAssignment.id.desc(),
-        )
-    ).first()
-    return row if row is not None else None
-
-
-def apply_quest_effect_contract(
+def apply_active_quest_resolution(
     db: Session,
     *,
     world_id: str,
     actor_id: str,
     source_event_id: str,
-    effect_contract: str,
+    resolution: dict[str, Any] | None,
     summary: str,
 ) -> dict[str, list[dict[str, Any]]]:
-    if effect_contract != "complete":
-        return {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+    """Apply the AI GM's judgment that the active quest's situation is resolved.
 
-    row = _quest_row_for_effect_contract(db, world_id=world_id, actor_id=actor_id)
-    if row is None:
-        return {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+    Quest progression is the AI GM's narrative judgment, not a deterministic counter
+    (see ADR-003). Deterministic code only validates that a single active quest exists
+    and applies the canonical effect (completion, reward, epilogue). It never decides
+    whether a quest advanced or resolved.
+    """
+    empty: dict[str, list[dict[str, Any]]] = {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+    if not isinstance(resolution, dict) or not bool(resolution.get("resolved")):
+        return empty
 
-    assignment, quest_template = row
-    assignment.progress_target = max(assignment.progress_target, quest_template.completion_target)
-    assignment.progress = max(assignment.progress, assignment.progress_target)
+    active = _active_progression_quest(db, world_id=world_id, actor_id=actor_id)
+    if active is None:
+        return empty
+
+    assignment, quest_template = active
+    resolution_summary = (
+        str(resolution.get("summary") or "").strip()
+        or (summary or "").strip()
+        or f"{quest_template.title} is resolved."
+    )
+    assignment.progress = assignment.progress_target
     assignment.status = "completed"
-    assignment.latest_summary = summary or f"{quest_template.title} is complete."
+    assignment.latest_summary = resolution_summary
     state_json = dict(assignment.state_json or {})
-    state_json["completed_from_effect_contract_event_id"] = source_event_id
-    state_json["last_effect_contract"] = effect_contract
+    state_json["resolved_from_ai_gm_event_id"] = source_event_id
+    outcome_basis = [str(item) for item in (resolution.get("outcome_basis") or []) if str(item).strip()]
+    if outcome_basis:
+        state_json["resolution_outcome_basis"] = outcome_basis
     assignment.state_json = state_json
 
     inventory_updates = _issue_quest_reward_if_needed(
@@ -4556,96 +4544,11 @@ def apply_quest_effect_contract(
                 actor_id=actor_id,
                 assignment=assignment,
                 template=quest_template,
-                action="completed_from_effect_contract",
+                action="resolved_by_ai_gm",
             )
         ],
         "inventory_updates": inventory_updates,
         "chapter_updates": chapter_updates,
-    }
-
-
-def apply_world_tag_updates(
-    db: Session,
-    *,
-    world_id: str,
-    actor_id: str,
-    world_tags: list[WorldTag],
-) -> dict[str, list[dict[str, Any]]]:
-    active = _active_progression_quest(db, world_id=world_id, actor_id=actor_id)
-    if active is None:
-        return {
-            "quest_updates": [],
-            "faction_updates": [],
-            "inventory_updates": [],
-        }
-
-    assignment, quest_template = active
-    faction = ensure_starter_faction(db, world_id)
-    standing = ensure_faction_standing(db, world_id=world_id, actor_id=actor_id, faction_id=faction.id)
-
-    rule = QuestRuleEngine.evaluate(
-        QuestRuleInput(
-            world_tags=world_tags,
-            current_progress=assignment.progress,
-            progress_target=max(assignment.progress_target, quest_template.completion_target),
-            current_standing=standing.standing,
-            reward_already_issued=assignment.reward_item_id is not None,
-            reward_enabled=bool((quest_template.state or {}).get("reward_enabled", True)),
-        )
-    )
-
-    state_json = dict(assignment.state_json or {})
-    state_json["lore_progress"] = int(state_json.get("lore_progress", 0)) + rule.lore_progress_delta
-    state_json["last_world_tags"] = rule.world_tags
-
-    assignment.progress_target = max(assignment.progress_target, quest_template.completion_target)
-    assignment.progress = rule.next_progress
-    assignment.state_json = state_json
-    assignment.status = "completed" if rule.completed else "active"
-    assignment.latest_summary = f"{quest_template.title}: {assignment.progress}/{assignment.progress_target}."
-
-    standing_changed = rule.standing_delta != 0.0
-    if standing_changed:
-        standing.standing = rule.next_standing
-        standing.band = rule.next_band
-
-    inventory_updates: list[dict[str, Any]] = []
-    if rule.should_issue_reward:
-        inventory_updates.extend(
-            _issue_quest_reward_if_needed(
-                db,
-                world_id=world_id,
-                actor_id=actor_id,
-                assignment=assignment,
-                quest_template=quest_template,
-            )
-        )
-
-    db.flush()
-
-    quest_updates = []
-    if rule.world_tags != ["none"] or rule.quest_progress_delta or rule.lore_progress_delta or rule.should_issue_reward:
-        quest_updates.append(
-            {
-                **quest_summary_to_dict(assignment, quest_template),
-                "world_tags": rule.world_tags,
-                "summary": rule.summary,
-            }
-        )
-
-    faction_updates = []
-    if standing_changed:
-        faction_updates.append(
-            {
-                **faction_summary_to_dict(standing, faction),
-                "delta": rule.standing_delta,
-            }
-        )
-
-    return {
-        "quest_updates": quest_updates,
-        "faction_updates": faction_updates,
-        "inventory_updates": inventory_updates,
     }
 
 

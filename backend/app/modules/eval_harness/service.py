@@ -49,7 +49,7 @@ from app.modules.world_memory.service import (
     retrieval_trace_to_dict,
 )
 from app.modules.world_state.consequence import normalize_consequence_tags
-from app.modules.world_state.rules import QuestRuleEngine, QuestRuleInput, normalize_world_tags
+from app.modules.world_state.rules import normalize_world_tags
 from app.modules.world_state.service import default_next_choices, important_inventory_affordances, narrative_state_bands
 from app.modules.world_state.health import shared_world_health
 
@@ -100,9 +100,6 @@ class EvalCaseInput:
     choice_id: str | None = None
     expected_world_tags: list[str] | None = None
     quest_context: dict[str, object] | None = None
-    expect_progress_after: int | None = None
-    expect_reward_issued: bool | None = None
-    expect_standing_after: float | None = None
     expect_retrieval_status: str | None = None
     expect_retrieval_hit_substring: str | None = None
     expect_retrieval_min_hits: int | None = None
@@ -1607,40 +1604,9 @@ class EvalHarnessService:
         if case.expected_world_tags is not None:
             checks["world_tags_match"] = world_tags == normalize_world_tags(case.expected_world_tags)
 
-        rule_outcome_payload: dict[str, object] | None = None
-        if case.quest_context is not None:
-            progress_target = int(case.quest_context.get("progress_target", 2))
-            rule_outcome = QuestRuleEngine.evaluate(
-                QuestRuleInput(
-                    world_tags=world_tags,
-                    current_progress=int(case.quest_context.get("current_progress", 0)),
-                    progress_target=progress_target,
-                    current_standing=float(case.quest_context.get("current_standing", 0.0)),
-                    reward_already_issued=bool(case.quest_context.get("reward_already_issued", False)),
-                    reward_enabled=bool(case.quest_context.get("reward_enabled", True)),
-                )
-            )
-            rule_outcome_payload = {
-                "world_tags": rule_outcome.world_tags,
-                "quest_progress_delta": rule_outcome.quest_progress_delta,
-                "next_progress": rule_outcome.next_progress,
-                "standing_delta": rule_outcome.standing_delta,
-                "next_standing": rule_outcome.next_standing,
-                "completed": rule_outcome.completed,
-                "should_issue_reward": rule_outcome.should_issue_reward,
-                "summary": rule_outcome.summary,
-            }
-            if case.expect_progress_after is not None:
-                checks["quest_progress_after"] = rule_outcome.next_progress == case.expect_progress_after
-            if case.expect_reward_issued is not None:
-                checks["reward_after_completion_only"] = rule_outcome.should_issue_reward == case.expect_reward_issued
-            if case.expect_standing_after is not None:
-                checks["standing_after"] = abs(rule_outcome.next_standing - case.expect_standing_after) < 1e-6
-            current_progress = int(case.quest_context.get("current_progress", 0))
-            reward_precondition = current_progress + rule_outcome.quest_progress_delta >= progress_target
-            if not reward_precondition:
-                checks["no_premature_reward"] = not rule_outcome.should_issue_reward
-
+        # Quest progression is the AI GM's narrative judgment (ADR-003), not a
+        # deterministic tag counter, so the domain eval no longer asserts numeric
+        # progress/standing outcomes. quest_context still seeds the session_state fixture.
         if case.expect_outcome_band is not None:
             checks["outcome_band_match"] = str(final_payload.get("outcome_band") or "") == case.expect_outcome_band
 
@@ -1654,7 +1620,7 @@ class EvalHarnessService:
         return {
             "passed": all(checks.values()) if checks else True,
             "checks": checks,
-            "rule_outcome": rule_outcome_payload,
+            "rule_outcome": None,
             "actual_consequence_tags": actual_consequence_tags,
         }
 
@@ -2015,21 +1981,6 @@ class EvalHarnessService:
                     ),
                     expected_world_tags=[str(item) for item in raw_case.get("expected_world_tags") or []] or None,
                     quest_context=dict(raw_case.get("quest_context") or {}) or None,
-                    expect_progress_after=(
-                        int(raw_case.get("expect_progress_after"))
-                        if raw_case.get("expect_progress_after") is not None
-                        else None
-                    ),
-                    expect_reward_issued=(
-                        bool(raw_case.get("expect_reward_issued"))
-                        if raw_case.get("expect_reward_issued") is not None
-                        else None
-                    ),
-                    expect_standing_after=(
-                        float(raw_case.get("expect_standing_after"))
-                        if raw_case.get("expect_standing_after") is not None
-                        else None
-                    ),
                     expect_retrieval_status=(
                         str(raw_case.get("expect_retrieval_status")).strip()
                         if raw_case.get("expect_retrieval_status") is not None
