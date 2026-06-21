@@ -69,7 +69,7 @@ function collectTurnProgressAndResolved(page: import("@playwright/test").Page): 
 }
 
 const stateApplicationPhases = [
-  "world_tag_updates",
+  "active_quest_resolution",
   "state_draft_materialization",
   "consequence_resolution",
   "scene_framing",
@@ -112,10 +112,10 @@ async function expectPublicStateApplicationCompleted(collector: ProgressPhaseCol
       { timeout: 30_000, message: "public state application phases should complete" },
     )
     .toBe(true);
-  for (const phase of ["world_tag_updates", "state_draft_materialization", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"]) {
+  for (const phase of ["active_quest_resolution", "state_draft_materialization", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"]) {
     expect(completedPhases).toContain(phase);
   }
-  expect(completedPhases.indexOf("world_tag_updates")).toBeLessThan(completedPhases.indexOf("post_state_build"));
+  expect(completedPhases.indexOf("active_quest_resolution")).toBeLessThan(completedPhases.indexOf("post_state_build"));
 }
 
 async function expectResolvedTurnEntityUpdatesArray(collector: ProgressPhaseCollector): Promise<void> {
@@ -138,7 +138,7 @@ function hasAiGmBeforeStateApplication(completedPhases: string[]): boolean {
 }
 
 function hasPublicStateApplicationCompleted(completedPhases: string[]): boolean {
-  return ["world_tag_updates", "state_draft_materialization", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"].every(
+  return ["active_quest_resolution", "state_draft_materialization", "consequence_resolution", "scene_framing", "memory_materialization", "post_state_build"].every(
     (phase) => completedPhases.includes(phase),
   );
 }
