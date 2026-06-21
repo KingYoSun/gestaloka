@@ -815,43 +815,6 @@ def ensure_starter_quest_assignment(
     )
 
 
-def ensure_followup_quest_assignment(
-    db: Session,
-    *,
-    world_id: str,
-    owner_actor_id: str,
-    followup_template: QuestTemplate,
-    unlocked_by_item_id: str,
-) -> QuestAssignment:
-    existing = db.execute(
-        select(QuestAssignment).where(
-            QuestAssignment.world_id == world_id,
-            QuestAssignment.owner_actor_id == owner_actor_id,
-            QuestAssignment.quest_template_id == followup_template.id,
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return existing
-
-    template = resolve_world_pack(db, world_id)[1]
-    return _ensure_quest_assignment(
-        db,
-        world_id=world_id,
-        owner_actor_id=owner_actor_id,
-        quest_template=followup_template,
-        latest_summary=_bootstrap_copy(db, world_id).get(
-            "reward_unlock_summary",
-            f"{(template.quest.reward_name if template.quest is not None else 'A discovered key')} opened a follow-up route.",
-        ),
-        state_json={
-            "lore_progress": 0,
-            "last_world_tags": [],
-            "unlocked_by_item_id": unlocked_by_item_id,
-            "unlock_source": "reward_item",
-        },
-    )
-
-
 def ensure_membership_relationship(
     db: Session,
     *,
@@ -1060,8 +1023,74 @@ def get_location_route(
     ).scalar_one_or_none()
 
 
-def _route_summary(route: LocationRoute, to_location: Location) -> dict[str, Any]:
-    available = route.status == ROUTE_STATUS_OPEN
+def _route_requirements_met(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str | None,
+    requirements: dict[str, Any] | None,
+) -> bool:
+    """Evaluate emergent route-unlock conditions against current world state (ADR-003).
+
+    A locked route opens when the world has moved, not when a fixed key item is used.
+    Conditions are OR-ed paths so several playstyles can reach the same area:
+    - ``world_axis_min``: a mapping of axis_id -> minimum value (all must be met).
+    - ``requires_resolved_stage``: the player has resolved a quest with this stage_key.
+    """
+    if not isinstance(requirements, dict) or not requirements:
+        return False
+
+    axis_min = requirements.get("world_axis_min")
+    if isinstance(axis_min, dict) and axis_min:
+        axis_values = {
+            str(state.axis_id): float(state.current_value)
+            for state in db.execute(
+                select(WorldAxisState).where(WorldAxisState.world_id == world_id)
+            ).scalars()
+        }
+        if all(axis_values.get(str(axis_id), float("-inf")) >= float(threshold) for axis_id, threshold in axis_min.items()):
+            return True
+
+    resolved_stage = str(requirements.get("requires_resolved_stage") or "").strip()
+    if resolved_stage and actor_id is not None:
+        resolved = db.execute(
+            select(QuestAssignment.id)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == actor_id,
+                QuestAssignment.status == "completed",
+                QuestTemplate.stage_key == resolved_stage,
+            )
+        ).first()
+        if resolved is not None:
+            return True
+
+    return False
+
+
+def _route_accessible(
+    db: Session,
+    *,
+    world_id: str,
+    route: LocationRoute,
+    actor_id: str | None = None,
+) -> bool:
+    if route.status == ROUTE_STATUS_OPEN:
+        return True
+    return _route_requirements_met(
+        db,
+        world_id=world_id,
+        actor_id=actor_id,
+        requirements=route.unlock_requirements_json,
+    )
+
+
+def _route_summary(route: LocationRoute, to_location: Location, *, unlocked: bool) -> dict[str, Any]:
+    available = unlocked
     summary = _route_display_summary(route)
     destination_key = str((to_location.state or {}).get("key") or "")
     destination_aliases = _normalize_aliases_by_language((to_location.state or {}).get("public_aliases"))
@@ -1093,7 +1122,9 @@ def _route_summary(route: LocationRoute, to_location: Location) -> dict[str, Any
     }
 
 
-def list_nearby_routes(db: Session, world_id: str, location_id: str | None) -> list[dict[str, Any]]:
+def list_nearby_routes(
+    db: Session, world_id: str, location_id: str | None, *, actor_id: str | None = None
+) -> list[dict[str, Any]]:
     if location_id is None:
         return []
     routes = list(
@@ -1107,7 +1138,14 @@ def list_nearby_routes(db: Session, world_id: str, location_id: str | None) -> l
             .order_by(Location.name.asc(), LocationRoute.route_key.asc())
         ).all()
     )
-    return [_route_summary(route, location) for route, location in routes]
+    return [
+        _route_summary(
+            route,
+            location,
+            unlocked=_route_accessible(db, world_id=world_id, route=route, actor_id=actor_id),
+        )
+        for route, location in routes
+    ]
 
 
 def list_location_summaries(db: Session, world_id: str) -> list[dict[str, Any]]:
@@ -1149,27 +1187,6 @@ def list_recent_travel_history(db: Session, world_id: str, actor_id: str, *, lim
     return history
 
 
-def unlock_followup_routes(db: Session, world_id: str) -> list[LocationRoute]:
-    locations = ensure_seeded_locations(db, world_id)
-    starter = locations[_starter_location_key(db, world_id)]
-    followup = locations[_followup_location_key(db, world_id)]
-    routes = [
-        route
-        for route in (
-            get_location_route(db, world_id=world_id, from_location_id=starter.id, to_location_id=followup.id),
-            get_location_route(db, world_id=world_id, from_location_id=followup.id, to_location_id=starter.id),
-        )
-        if route is not None
-    ]
-    updated: list[LocationRoute] = []
-    for route in routes:
-        if route.status != ROUTE_STATUS_OPEN:
-            route.status = ROUTE_STATUS_OPEN
-            updated.append(route)
-    db.flush()
-    return routes
-
-
 def travel_to_location(
     db: Session,
     *,
@@ -1193,7 +1210,7 @@ def travel_to_location(
     )
     if route is None:
         raise LookupError("Travel route not found")
-    if route.status != ROUTE_STATUS_OPEN:
+    if not _route_accessible(db, world_id=world_id, route=route, actor_id=actor.id):
         raise ValueError("Travel route is not open")
 
     actor.current_location_id = destination.id
@@ -4023,7 +4040,7 @@ def build_session_state(
     npc_locations = list_npc_locations(db, world_id)
     recent_offstage_beats = list_recent_offstage_beats(db, world_id, location_id)
     offstage_murmurs = list_offstage_murmurs(db, world_id, location_id)
-    nearby_routes = list_nearby_routes(db, world_id, location_id)
+    nearby_routes = list_nearby_routes(db, world_id, location_id, actor_id=actor_id)
     recent_travel_history = list_recent_travel_history(db, world_id, actor_id)
     shared_world_context = build_shared_world_context(
         db,
@@ -4561,6 +4578,10 @@ def use_reward_item(
     location_id: str,
     item_id: str,
 ) -> RewardItemUseOutcome:
+    # ADR-003: the reward item is a recognition artifact, not an unlock key. Area access
+    # emerges from world state (see _route_accessible) and follow-up threads emerge through
+    # the quest-offer system. Using the item only records the recognition and a small local
+    # standing bump; it never unlocks routes or seeds a fixed follow-up quest.
     world_info = _world_pack_state(db, world_id)
     starter_location = ensure_starter_location(db, world_id)
     item = db.execute(
@@ -4572,37 +4593,6 @@ def use_reward_item(
         raise ValueError("Reward item has already been used")
     if item.effect_kind != str(world_info.get("reward_effect_kind") or ""):
         raise ValueError("Reward item is not usable in the current progression slice")
-    if location_id != starter_location.id:
-        raise ValueError("Reward item can only be used at the starter location")
-
-    starter_template = ensure_starter_quest_template(db, world_id)
-    starter_assignment = ensure_starter_quest_assignment(
-        db,
-        world_id=world_id,
-        owner_actor_id=actor_id,
-        quest_template_id=starter_template.id,
-    )
-    if starter_assignment.status != "completed":
-        raise ValueError("Starter quest must be completed before using this reward item")
-
-    followup_template = ensure_followup_quest_template(db, world_id)
-    existing_followup = db.execute(
-        select(QuestAssignment).where(
-            QuestAssignment.world_id == world_id,
-            QuestAssignment.owner_actor_id == actor_id,
-            QuestAssignment.quest_template_id == followup_template.id,
-        )
-    ).scalar_one_or_none()
-    if existing_followup is not None:
-        raise ValueError("Follow-up quest is already unlocked")
-
-    followup_assignment = ensure_followup_quest_assignment(
-        db,
-        world_id=world_id,
-        owner_actor_id=actor_id,
-        followup_template=followup_template,
-        unlocked_by_item_id=item.id,
-    )
 
     faction = ensure_starter_faction(db, world_id)
     standing = ensure_faction_standing(db, world_id=world_id, actor_id=actor_id, faction_id=faction.id)
@@ -4613,19 +4603,7 @@ def use_reward_item(
     item.status = "used"
     item.used_at = datetime.now(timezone.utc)
     item.effect_payload = dict(item.effect_payload or {})
-    item.effect_payload["followup_quest_assignment_id"] = followup_assignment.id
-    unlock_followup_routes(db, world_id)
 
-    quest_updates = [
-        {
-            **quest_summary_to_dict(followup_assignment, followup_template),
-            "summary": _bootstrap_copy(db, world_id).get(
-                "reward_unlock_summary",
-                f"{item.name} unlocked the next route.",
-            ),
-            "world_tags": ["collect_reward"],
-        }
-    ]
     faction_updates = [
         {
             **faction_summary_to_dict(standing, faction),
@@ -4646,45 +4624,34 @@ def use_reward_item(
         "effect_kind": item.effect_kind,
         "effect_payload": item.effect_payload,
         "location_id": location_id,
-        "followup_assignment_id": followup_assignment.id,
-        "followup_stage_key": followup_template.stage_key,
         "faction_id": faction.id,
         "standing_delta": FOLLOWUP_STANDING_DELTA,
     }
     bootstrap_copy = _bootstrap_copy(db, world_id)
+    followup_location_name = str(world_info.get("followup_location_name") or "")
+    format_kwargs = {
+        "player_name": actor_name,
+        "reward_name": item.name,
+        "faction_name": faction.name,
+        "starter_location_name": starter_location.name,
+        "followup_location_name": followup_location_name,
+    }
     event_narrative = str(
         bootstrap_copy.get(
             "reward_use_narrative",
-            "{player_name} used {reward_name} to open the next route.",
+            "{player_name} presented {reward_name}, and {faction_name} acknowledged the thread they had resolved.",
         )
-    ).format(
-        player_name=actor_name,
-        reward_name=item.name,
-        faction_name=faction.name,
-        starter_location_name=starter_location.name,
-        followup_location_name=str(world_info.get("followup_location_name") or ""),
-    )
+    ).format(**format_kwargs)
     memory_drafts = [
         {
             "scope": "location",
             "text": str(
                 bootstrap_copy.get(
                     "reward_location_memory",
-                    "{starter_location_name} remembers {reward_name} opening the next route.",
+                    "{starter_location_name} remembers {player_name} presenting {reward_name}.",
                 )
-            ).format(
-                starter_location_name=starter_location.name,
-                reward_name=item.name,
-                followup_location_name=str(world_info.get("followup_location_name") or ""),
-            ),
-            "salience": 0.95,
-            "location_id": location_id,
-            "actor_id": None,
-        },
-        {
-            "scope": "location",
-            "text": f"{item.name}で開いた{world_info.get('followup_location_name') or '次の道'}の気配が、{starter_location.name}にはっきり残っている。",
-            "salience": 0.98,
+            ).format(**format_kwargs),
+            "salience": 0.85,
             "location_id": location_id,
             "actor_id": None,
         },
@@ -4693,15 +4660,10 @@ def use_reward_item(
             "text": str(
                 bootstrap_copy.get(
                     "reward_world_memory",
-                    "{player_name} used {reward_name} to open the next route for {faction_name}.",
+                    "{player_name} is recognized by {faction_name} for the thread they resolved.",
                 )
-            ).format(
-                player_name=actor_name,
-                reward_name=item.name,
-                faction_name=faction.name,
-                followup_location_name=str(world_info.get("followup_location_name") or ""),
-            ),
-            "salience": 0.9,
+            ).format(**format_kwargs),
+            "salience": 0.85,
             "location_id": location_id,
             "actor_id": None,
         },
@@ -4710,7 +4672,7 @@ def use_reward_item(
     db.flush()
     return RewardItemUseOutcome(
         item=item,
-        quest_updates=quest_updates,
+        quest_updates=[],
         faction_updates=faction_updates,
         inventory_updates=inventory_updates,
         event_type="item.used",

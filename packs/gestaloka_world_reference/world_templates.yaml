@@ -420,7 +420,7 @@ world_templates:
         locked_travel_summary: Nexus will not send new visitors into the Oblivion Regions until their visitor log is sealed.
         unlocked_travel_summary: Visitor Log Seal opens a surveyed route toward the Oblivion Regions.
         unlock_requirements:
-          starter_item_effect: unlock_oblivion_regions_route
+          requires_resolved_stage: visitor_log_registration
       - route_key: oblivion_to_nexus
         from: oblivion_regions
         to: nexus_city
@@ -429,7 +429,7 @@ world_templates:
         locked_travel_summary: The return route waits for a sealed visitor log.
         unlocked_travel_summary: The sealed survey route returns from the Oblivion Regions to Nexus.
         unlock_requirements:
-          starter_item_effect: unlock_oblivion_regions_route
+          requires_resolved_stage: visitor_log_registration
     faction:
       id: nexus_city
       name: Nexus City
@@ -1142,7 +1142,7 @@ world_templates:
       description: Carry the Visitor Log Seal into the fading strata and decide whether to restore, exploit, study, or avoid the world's damaged context.
       stage_key: oblivion_survey
       unlock_requirements:
-        starter_item_effect: unlock_oblivion_regions_route
+        requires_resolved_stage: visitor_log_registration
       completion_target: 1
       reward_template_key: none
       reward_name: ""
