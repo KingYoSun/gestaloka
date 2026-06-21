@@ -238,7 +238,7 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expect(page.getByTestId("npc-routine-stream")).not.toContainText("{");
   await expect(page.getByTestId("current-place-summary")).toContainText(/Nexus City/i, { timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText(/Visitor Log Registration|来訪者ログ登録/, { timeout: 20_000 });
-  await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
+  await expect(page.getByTestId("quest-status")).toContainText(/進行中|Active/i, { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toContainText(/Nexus Entry Liaison Kanata/i, { timeout: 20_000 });
   await expect(page.getByTestId("nearby-routes-stream")).toContainText(/Universal Library/i, { timeout: 20_000 });
   await expect(page.getByTestId("faction-standing")).toContainText(/Nexus City/i, { timeout: 20_000 });
@@ -259,7 +259,8 @@ test("login, select GESTALOKA reference world, and clear the nexus smoke flow", 
   await expectResolvedTurnEntityUpdatesArray(progressPhases);
   await expectVisibleSceneContextSummary(page, slowTimeout);
   await expect(page.getByTestId("active-quest")).not.toContainText("Exploring...");
-  await expect(page.getByTestId("quest-progress")).toContainText("1/2", { timeout: slowTimeout });
+  // ADR-003: an advancing (non-resolving) action keeps the quest active; there is no N/N counter.
+  await expect(page.getByTestId("quest-status")).toContainText(/進行中|Active/i, { timeout: slowTimeout });
   await expect(page.getByTestId("active-quest")).not.toContainText(/dynamic_quest_|followup_quest_|\bdynamic\b/i);
   await expect(page.getByTestId("quest-stage")).toHaveText("");
   await expect(page.getByTestId("quest-stage")).toHaveAttribute("data-value", /\S/);
@@ -309,7 +310,7 @@ test("mobile player drawers expose actions and status", async ({ page }) => {
   await page.getByRole("button", { name: "情報" }).click();
   await expect(page.getByTestId("active-quest")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("active-quest")).toContainText(/来訪者ログ登録|Visitor Log Registration/, { timeout: 20_000 });
-  await expect(page.getByTestId("quest-progress")).toContainText("0/2", { timeout: 20_000 });
+  await expect(page.getByTestId("quest-status")).toContainText(/進行中|Active/i, { timeout: 20_000 });
   await expect(page.getByTestId("local-figures-stream")).toBeVisible();
   await expect(page.getByTestId("nearby-routes-stream")).toBeVisible();
   await expect(page.getByTestId("inventory-stream")).toBeVisible();
