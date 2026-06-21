@@ -3,7 +3,7 @@
 このファイルはポインタです。詳細な背景説明は書かず、実装判断に必要な最小限の事実だけを置きます。
 
 ## Read First
-- AGENTS.local.md
+- `AGENTS.local.md`
 
 ## Source Of Truth
 
