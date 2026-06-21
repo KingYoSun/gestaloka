@@ -553,7 +553,7 @@ world_templates:
         locked_travel_summary: The guild will not send a new adventurer deeper until they have chosen and confirmed a first local thread.
         unlocked_travel_summary: A first confirmed observation gives the adventurer a surveyed route toward the Mistbound Frontier.
         unlock_requirements:
-          starter_item_effect: unlock_mistbound_frontier_route
+          requires_resolved_stage: first_attention
       - route_key: starfall_road_to_mistbound_frontier
         from: starfall_road
         to: mistbound_frontier
@@ -562,7 +562,7 @@ world_templates:
         locked_travel_summary: The road-edge route waits for provisional guild trust and a confirmed first concern.
         unlocked_travel_summary: Provisional trust opens a road-edge survey toward the Mistbound Frontier.
         unlock_requirements:
-          starter_item_effect: unlock_mistbound_frontier_route
+          requires_resolved_stage: first_attention
       - route_key: church_archive_to_mistbound_frontier
         from: lantern_church_archive
         to: mistbound_frontier
@@ -571,7 +571,7 @@ world_templates:
         locked_travel_summary: The archive route waits until the player has a first confirmed observation beyond safe-town assumptions.
         unlocked_travel_summary: The archive recognizes a first confirmed observation and supports a survey into mistbound territory.
         unlock_requirements:
-          starter_item_effect: unlock_mistbound_frontier_route
+          requires_resolved_stage: first_attention
       - route_key: mistbound_frontier_to_lampfort
         from: mistbound_frontier
         to: lieber_lampfort
@@ -580,7 +580,7 @@ world_templates:
         locked_travel_summary: The return survey route is not established until the first frontier thread opens.
         unlocked_travel_summary: Survey markers guide the adventurer back toward Lieber Lampfort.
         unlock_requirements:
-          starter_item_effect: unlock_mistbound_frontier_route
+          requires_resolved_stage: first_attention
     faction:
       id: adventurers_guild
       name: Adventurers Guild
@@ -1192,7 +1192,7 @@ world_templates:
       description: Permission to engage deeper instability beyond the stable lamps after the first local thread is established.
       stage_key: mistbound_survey
       unlock_requirements:
-        starter_item_effect: unlock_mistbound_frontier_route
+        requires_resolved_stage: first_attention
       completion_target: 2
       reward_template_key: frontier_charter
       reward_name: Frontier Charter

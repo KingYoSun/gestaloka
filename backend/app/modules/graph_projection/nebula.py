@@ -74,8 +74,6 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                       quest_template_id string,
                       title string,
                       status string,
-                      progress int,
-                      progress_target int,
                       latest_summary string
                     );
                     CREATE TAG IF NOT EXISTS Item(
@@ -127,8 +125,6 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                     CREATE EDGE IF NOT EXISTS PURSUES(
                       world_id string,
                       status string,
-                      progress int,
-                      progress_target int,
                       title string
                     );
                     CREATE EDGE IF NOT EXISTS OWNS(world_id string);
@@ -300,9 +296,7 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             "GO FROM "
             f"{self._quote(state_actor_vid)} OVER PURSUES "
             "YIELD dst(edge) AS quest_vid, "
-            "properties(edge).status AS status, "
-            "properties(edge).progress AS progress, "
-            "properties(edge).progress_target AS progress_target"
+            "properties(edge).status AS status"
         )
         quest_vertex_rows = self._fetch_quest_rows(
             [row["quest_vid"] for row in quest_rows if row.get("quest_vid")],
@@ -319,8 +313,6 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
                     "assignment_id": quest["quest_id"],
                     "title": quest["title"],
                     "status": row.get("status") or quest.get("status"),
-                    "progress": int(row.get("progress") or quest.get("progress") or 0),
-                    "progress_target": int(row.get("progress_target") or quest.get("progress_target") or 0),
                     "latest_summary": quest.get("latest_summary"),
                 }
             )
@@ -435,8 +427,6 @@ class NebulaWorldGraphRepository(WorldGraphRepository):
             "properties(vertex).quest_id AS quest_id, "
             "properties(vertex).title AS title, "
             "properties(vertex).status AS status, "
-            "properties(vertex).progress AS progress, "
-            "properties(vertex).progress_target AS progress_target, "
             "properties(vertex).latest_summary AS latest_summary"
         )
         rows.sort(key=lambda item: (str(item.get("title")), str(item.get("quest_id"))))

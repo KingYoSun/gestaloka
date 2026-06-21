@@ -39,7 +39,6 @@ from app.modules.world_state.service import (
     default_next_choices,
     quest_offer_repeats_resolution,
     record_quest_resolution_hint,
-    _normalize_dynamic_quest_completion_target,
 )
 from tests.backend.turn_async_helpers import post_turn_and_wait, public_turn_request_payload, receive_until_turn_event
 
@@ -72,7 +71,6 @@ def complete_live_quests_for_dynamic_offer_test(db, *, actor_id: str) -> None:
         )
     ).scalars():
         assignment.status = "completed"
-        assignment.progress = assignment.progress_target
     db.flush()
 
 
@@ -378,10 +376,16 @@ def test_active_starter_quest_blocks_dynamic_quest_offer_and_supports_lifecycle_
         auth_headers=auth_headers,
         payload={"input_mode": "free_text", "input_text": "来訪者ログ登録を進めるため、公開証言ホールで手続きを手伝う"},
     )
-    assert advance_payload["quest_updates"][0]["assignment_id"] == quest_assignment_id
-    assert advance_payload["quest_updates"][0]["progress"] > 0
-    assert advance_payload["quest_updates"][0]["world_tags"] != ["none"]
-    assert any(tag in advance_payload["quest_updates"][0]["world_tags"] for tag in ("aid_local", "promise_followup"))
+    # ADR-003: an advancing (non-resolving) action keeps the quest ongoing. There is no
+    # numeric progress counter, so the turn does not emit a quest progress update and does
+    # not complete the quest; resolution is the AI GM's explicit judgment, not tag counting.
+    assert not any(item.get("status") == "completed" for item in advance_payload["quest_updates"])
+    advance_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers)
+    assert advance_state.status_code == 200
+    assert any(
+        quest["assignment_id"] == quest_assignment_id and quest["status"] == "active"
+        for quest in advance_state.json()["quest_journal"]
+    )
 
     _, leave_payload, _ = post_turn_and_wait(
         client,
@@ -468,7 +472,7 @@ def test_first_choice_completion_text_completes_active_quest_even_when_llm_retur
 
     completed_updates = [item for item in turn_payload["quest_updates"] if item["status"] == "completed"]
     assert completed_updates
-    assert completed_updates[0]["action"] == "completed_from_effect_contract"
+    assert completed_updates[0]["action"] == "resolved_by_ai_gm"
     assert turn_payload["interpreted_intent"]["source"] == "public_ai_gm"
 
 
@@ -714,12 +718,9 @@ def test_gestaloka_world_reference_declines_dynamic_quest_offer(client, containe
     assert state.json()["quest_display_state"]["mode"] == "quest"
 
 
-def test_dynamic_quest_completion_target_normalizes_live_provider_values(client, container, auth_headers):
-    assert _normalize_dynamic_quest_completion_target("5") == 5
-    assert _normalize_dynamic_quest_completion_target(99) == 8
-    assert _normalize_dynamic_quest_completion_target(0) == 1
-    assert _normalize_dynamic_quest_completion_target(True) == 3
-
+def test_dynamic_quest_offer_ignores_legacy_completion_target(client, container, auth_headers):
+    # ADR-003: quests have no numeric counter; a malformed/legacy completion_target field
+    # in a live provider offer must simply be ignored, never crash offer creation.
     session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200
     session_payload = session_response.json()
@@ -750,7 +751,8 @@ def test_dynamic_quest_completion_target_normalizes_live_provider_values(client,
             },
         )
 
-    assert updates[0]["progress_target"] == 3
+    assert updates[0]["status"] == "offered"
+    assert "progress_target" not in updates[0]
 
 
 def test_dynamic_quest_offer_merges_similar_offered_quest_and_suppresses_distinct_live_offers(
@@ -896,7 +898,6 @@ def test_dynamic_followup_offer_requires_completed_source_and_no_live_quest(clie
             )
         ).scalar_one()
         assignment.status = "completed"
-        assignment.progress = assignment.progress_target
         db.flush()
         followup_updates = create_dynamic_quest_offer(
             db,
@@ -1080,7 +1081,6 @@ def test_paused_quest_resolution_hint_resolves_into_epilogue_on_resume(client, c
 
     assert hint_updates[0]["action"] == "deferred_resolution_recorded"
     assert resume_updates[0]["status"] == "completed"
-    assert resume_updates[0]["progress"] == resume_updates[0]["progress_target"]
     assert chapter_updates[0]["chapter_kind"] == "epilogue"
 
 
@@ -1142,7 +1142,6 @@ def test_active_quest_resolution_hint_completes_immediately(client, container, a
 
     assert hint_updates[0]["action"] == "completed_from_resolution_hint"
     assert hint_updates[0]["status"] == "completed"
-    assert hint_updates[0]["progress"] == hint_updates[0]["progress_target"]
     assert chapters
 
 

@@ -229,7 +229,6 @@ def test_public_turn_persists_only_gate_allowed_dynamic_quest_offer(client, cont
             )
         ).scalars():
             assignment.status = "completed"
-            assignment.progress = assignment.progress_target
         db.commit()
 
     _, turn_payload, _ = post_turn_and_wait(

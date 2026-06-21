@@ -464,7 +464,6 @@ def _scaffold_pack_payload(payload: CreatePackRequest) -> tuple[dict[str, object
                     "title": "Starter Request",
                     "description": "Scaffold starter request.",
                     "stage_key": "starter_stage",
-                    "completion_target": 1,
                     "reward_template_key": "starter_reward",
                     "reward_name": "Starter Writ",
                     "reward_description": "Opens the follow-up route.",
@@ -475,7 +474,6 @@ def _scaffold_pack_payload(payload: CreatePackRequest) -> tuple[dict[str, object
                     "title": "Follow-up Request",
                     "description": "Scaffold follow-up request.",
                     "stage_key": "followup_stage",
-                    "completion_target": 1,
                     "reward_template_key": "none",
                 },
             }

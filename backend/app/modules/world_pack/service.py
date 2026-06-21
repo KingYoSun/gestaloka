@@ -431,7 +431,6 @@ class PackQuest(BaseModel):
     description: str = ""
     stage_key: str = Field(min_length=1, max_length=120)
     unlock_requirements: dict[str, Any] = Field(default_factory=dict)
-    completion_target: int = Field(default=1, ge=1)
     reward_template_key: str = "none"
     reward_name: str = ""
     reward_description: str = ""
