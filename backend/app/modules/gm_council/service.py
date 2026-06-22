@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
 from app.core.config import Settings
 from app.modules.llm_harness.service import (
+    CouncilContextPlannerPayload,
     CouncilIntentInterpreterPayload,
     CouncilRoleRun,
     MemoryDraft,
@@ -881,6 +882,7 @@ class CouncilRequest:
     selected_choice: dict[str, Any] | None = None
     prepared_intent_payload: CouncilIntentInterpreterPayload | None = None
     prepared_intent_role_run: CouncilRoleRun | None = None
+    referenced_context: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -893,6 +895,24 @@ class CouncilIntentPhase:
     @property
     def succeeded(self) -> bool:
         return self.payload is not None
+
+
+@dataclass(frozen=True)
+class ContextPlanPhase:
+    role_run: CouncilRoleRun
+    payload: CouncilContextPlannerPayload | None
+    final_lane: str
+    failure_reason: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.payload is not None
+
+    @property
+    def references(self) -> list[dict[str, Any]]:
+        if self.payload is None:
+            return []
+        return [reference.model_dump() for reference in self.payload.references]
 
 
 FORBIDDEN_LLM_METADATA_KEYS = {
@@ -993,6 +1013,37 @@ def _public_profile(player_profile: Any) -> dict[str, Any]:
         "free_text": _public_text(profile.get("free_text")),
         "narrative_preferences": profile.get("narrative_preferences") if isinstance(profile.get("narrative_preferences"), dict) else {},
     }
+
+
+_REFERENCED_CONTEXT_CATEGORIES = {"person", "place", "thing", "faction", "event"}
+
+
+def _public_referenced_context(referenced_context: Any) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for item in referenced_context or []:
+        if not isinstance(item, dict):
+            continue
+        name = _public_text(item.get("name"))
+        if not name:
+            continue
+        category = str(item.get("category") or "").strip().lower()
+        category = category if category in _REFERENCED_CONTEXT_CATEGORIES else "person"
+        related_memories = [
+            _public_text(memory)
+            for memory in item.get("related_memories") or []
+            if _public_text(memory)
+        ][:4]
+        entries.append(
+            {
+                "name": name,
+                "category": category,
+                "public_summary": _public_text(item.get("public_summary")),
+                "related_memories": related_memories,
+            }
+        )
+        if len(entries) >= 6:
+            break
+    return entries
 
 
 def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
@@ -1202,6 +1253,65 @@ class GMCouncilService:
             provider_response_id=None,
         )
 
+    def plan_context(self, request: CouncilRequest, *, world_directory: list[dict[str, Any]]) -> ContextPlanPhase:
+        input_payload = self._context_planner_input_payload(request, world_directory=world_directory)
+        _assert_public_llm_payload(input_payload)
+        result = self.model_router.execute_structured_prompt(
+            prompt_id="council.context_planner",
+            response_model=CouncilContextPlannerPayload,
+            input_payload=input_payload,
+            world_id=request.world_id,
+            turn_id=request.turn_id,
+            graph_context_status=request.graph_context_status,
+        )
+        role_run = self._role_run(
+            council_role="context_planner",
+            stage_index=0,
+            prompt_id="council.context_planner",
+            approval_status="prepared" if result.succeeded else "failed",
+            result=result,
+        )
+        return ContextPlanPhase(
+            role_run=role_run,
+            payload=result.final_payload,
+            final_lane=result.final_lane,
+            failure_reason=result.failure_reason,
+        )
+
+    def _context_planner_input_payload(
+        self, request: CouncilRequest, *, world_directory: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        player_profile = request.session_state.get("player_profile") or {}
+        play_language = _play_language_context(player_profile)
+        public_context = _public_session_context(request.session_state)
+        sanitized_directory: list[dict[str, Any]] = []
+        for entry in world_directory or []:
+            if not isinstance(entry, dict):
+                continue
+            name = _public_text(entry.get("name"))
+            if not name:
+                continue
+            category = str(entry.get("category") or "").strip().lower()
+            category = category if category in _REFERENCED_CONTEXT_CATEGORIES else "person"
+            aliases = [_public_text(alias) for alias in entry.get("aliases") or [] if _public_text(alias)]
+            unique_aliases = list(dict.fromkeys(alias for alias in [name, *aliases] if alias))
+            sanitized_directory.append(
+                {
+                    "name": name,
+                    "category": category,
+                    "aliases": unique_aliases,
+                    "summary": _public_text(entry.get("summary")),
+                }
+            )
+        return {
+            "player_action_text": request.input_text,
+            "player_name": request.player_name,
+            "player_profile": _public_profile(player_profile),
+            "play_language": play_language,
+            "public_game_context": public_context,
+            "world_directory": sanitized_directory[:60],
+        }
+
     def resolve_public_turn(self, request: CouncilRequest) -> TurnResolutionOutcome:
         input_payload = self._public_turn_input_payload(request)
         _assert_public_llm_payload(input_payload)
@@ -1353,7 +1463,10 @@ class GMCouncilService:
                 player_profile.get("narrative_preferences") if isinstance(player_profile, dict) and isinstance(player_profile.get("narrative_preferences"), dict) else {}
             ),
             "play_language": play_language,
-            "public_game_context": public_context,
+            "public_game_context": {
+                **public_context,
+                "referenced_context": _public_referenced_context(request.referenced_context),
+            },
             "recent_memories": [_public_text(item) for item in request.relevant_memories if _public_text(item)][:6],
         }
 

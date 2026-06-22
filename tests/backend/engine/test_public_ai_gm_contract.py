@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.models.entities import Event, Location, Memory, Turn
+from app.models.entities import Actor, Event, Location, Memory, Turn
 from app.modules.llm_harness.service import ProviderResponse
 
 
@@ -168,10 +168,20 @@ def test_public_ai_gm_prompt_input_does_not_leak_internal_metadata(client, conta
 
     assert payload["suggested_actions"]
     assert "session.turn_resolution" in captured_prompt_ids
-    assert not any(prompt_id.startswith("council.") for prompt_id in captured_prompt_ids)
+    # The legacy multi-agent council roles must not run for public turns. The
+    # context_planner (ADR-005) is the only council-namespaced prompt allowed here.
+    legacy_council_prompt_ids = {
+        prompt_id
+        for prompt_id in captured_prompt_ids
+        if prompt_id.startswith("council.") and prompt_id != "council.context_planner"
+    }
+    assert not legacy_council_prompt_ids
+    assert "council.context_planner" in captured_prompt_ids
     assert len(captured_inputs) == 1
     _assert_no_forbidden_keys(captured_inputs[0])
     public_context = captured_inputs[0]["public_game_context"]
+    assert "referenced_context" in public_context
+    _assert_no_forbidden_keys(public_context["referenced_context"], path="referenced_context")
     assert public_context["language_context"] == {
         "pack_source_language": "en",
         "play_language": "ja",
@@ -1106,3 +1116,140 @@ def test_outcome_band_reflects_ai_gm_narrative_risk(client, container, auth_head
         # AI GM judged a setback even though no deterministic social tag forced one.
         assert turn.resolved_output["outcome_band"] == "setback"
         assert turn.resolved_output["scene_tone"] != "steady"
+
+
+def _seed_offscene_npc_memory(container, *, world_id: str, npc_display_name: str, memory_text: str) -> str:
+    """Attach a canonical memory to an off-scene NPC and make it retrievable.
+
+    Returns the resolved canonical NPC display name."""
+    with container.session_factory() as db:
+        npc = db.execute(
+            select(Actor).where(
+                Actor.world_id == world_id,
+                Actor.actor_type == "npc",
+                Actor.display_name == npc_display_name,
+            )
+        ).scalar_one()
+        event = db.execute(
+            select(Event).where(Event.world_id == world_id).order_by(Event.created_at.asc())
+        ).scalars().first()
+        assert event is not None
+        memory = Memory(
+            world_id=world_id,
+            source_event_id=event.id,
+            actor_id=npc.id,
+            location_id=npc.current_location_id,
+            scope="actor",
+            text=memory_text,
+            salience=0.9,
+            embedding=None,
+            embedding_status="pending",
+        )
+        db.add(memory)
+        db.commit()
+        container.memory_service.reindex(db, world_id=world_id)
+        db.commit()
+        return npc.display_name
+
+
+def test_public_turn_injects_referenced_context_for_offscene_reference(client, container, auth_headers):
+    """Issue #20: when the player brings a not-in-scene entity into the turn (here an
+    NPC who lives in a different location), the deterministic context planner must
+    resolve it and inject its canonical card plus target memories into the AI GM input,
+    so the turn stays consistent even though the entity was never in the conversation."""
+    captured_inputs: list[dict[str, Any]] = []
+    captured_prompt_ids: list[str] = []
+    original_generate = container.model_router.provider.generate
+
+    def capturing_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        captured_prompt_ids.append(prompt.prompt_id)
+        if prompt.prompt_id == "session.turn_resolution":
+            captured_inputs.append(dict(kwargs["input_payload"]))
+        return original_generate(**kwargs)
+
+    session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+    world_id = _session_payload()["world_id"]
+
+    memory_text = "万象図書館の歴史家AIは、空白の来訪者ログを異常値として固定しようとする。"
+    _seed_offscene_npc_memory(
+        container,
+        world_id=world_id,
+        npc_display_name="Historian AI of the Universal Library",
+        memory_text=memory_text,
+    )
+
+    container.model_router.provider.generate = capturing_generate
+    try:
+        payload = _post_turn_and_wait(
+            client,
+            session_id,
+            auth_headers,
+            "ところで、万象図書館の歴史家AIについて知っていることを教えて",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    assert payload["suggested_actions"]
+    assert "council.context_planner" in captured_prompt_ids
+    assert len(captured_inputs) == 1
+    public_context = captured_inputs[0]["public_game_context"]
+    referenced = public_context["referenced_context"]
+    # The off-scene historian was resolved and injected as canonical context.
+    historian = next(
+        (
+            entry
+            for entry in referenced
+            if "Historian" in entry["name"] or "歴史家AI" in entry["name"]
+        ),
+        None,
+    )
+    assert historian is not None, referenced
+    assert historian["category"] == "person"
+    # The memory tied to that specific NPC was target-retrieved into related_memories.
+    assert any(memory_text in memory for memory in historian["related_memories"]), historian
+    # Public-only contract: no internal ids leak through referenced_context.
+    _assert_no_forbidden_keys(referenced, path="referenced_context")
+
+
+def test_public_turn_referenced_context_is_fail_open_when_planner_fails(client, container, auth_headers):
+    """Planner failure must degrade to baseline-only context (ADR-005 fail-open):
+    referenced_context is empty and the turn still resolves normally."""
+    captured_inputs: list[dict[str, Any]] = []
+    original_generate = container.model_router.provider.generate
+
+    def failing_planner_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id == "council.context_planner":
+            raise RuntimeError("planner provider exploded")
+        if prompt.prompt_id == "session.turn_resolution":
+            captured_inputs.append(dict(kwargs["input_payload"]))
+        return original_generate(**kwargs)
+
+    session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    container.model_router.provider.generate = failing_planner_generate
+    try:
+        payload = _post_turn_and_wait(
+            client,
+            session_id,
+            auth_headers,
+            "万象図書館の歴史家AIについて尋ねる",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    # The turn still resolves despite the planner failure.
+    assert payload["suggested_actions"]
+    assert payload.get("failure") is None
+    assert len(captured_inputs) == 1
+    public_context = captured_inputs[0]["public_game_context"]
+    assert public_context["referenced_context"] == []
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"

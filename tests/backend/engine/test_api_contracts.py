@@ -1037,7 +1037,11 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
     completed_phases = [
         message["data"]["phase"] for message in progress_messages if message["data"].get("status") == "completed"
     ]
-    assert completed_phases[0] == "ai_gm_turn"
+    # The context planner (ADR-005) runs first to gather after-the-fact reference
+    # context, then the AI GM turn resolves. Both precede post-processing phases.
+    assert completed_phases[0] == "context_planning"
+    assert completed_phases[1] == "ai_gm_turn"
+    assert completed_phases.index("context_planning") < completed_phases.index("ai_gm_turn")
     for phase in [
         "active_quest_resolution",
         "state_draft_materialization",
@@ -1188,7 +1192,7 @@ def test_memory_and_npc_roles_run_in_parallel_and_persist_stage_order(client, co
     council_turns_response = client.get(f"/ops/council/turns?session_id={session_id}", headers=auth_headers)
     assert council_turns_response.status_code == 200
     roles = council_turns_response.json()["items"][0]["roles"]
-    assert [item["council_role"] for item in roles] == ["ai_gm"]
+    assert [item["council_role"] for item in roles] == ["context_planner", "ai_gm"]
 
 
 def test_situation_frame_reaches_world_progress_and_narrative(client, container, auth_headers, monkeypatch):
@@ -1620,7 +1624,10 @@ def test_ops_projection_status_and_rebuild_contract(client, container, auth_head
     assert council_turns_payload["items"][0]["langfuse_trace_id"]
     assert council_turns_payload["items"][0]["langfuse_trace_url"].startswith("http://langfuse.test/project/gestaloka-v2/traces/")
     assert council_turns_payload["items"][0]["langfuse_status"] == "ok"
-    assert [item["council_role"] for item in council_turns_payload["items"][0]["roles"]] == ["ai_gm"]
+    assert [item["council_role"] for item in council_turns_payload["items"][0]["roles"]] == [
+        "context_planner",
+        "ai_gm",
+    ]
     assert {
         "prompt_cache_hit_tokens",
         "prompt_cache_miss_tokens",

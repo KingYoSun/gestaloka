@@ -465,6 +465,75 @@ class CouncilIntentInterpreterPayload(BaseModel):
         return normalized
 
 
+class ContextReferenceDraft(BaseModel):
+    name: str = Field(min_length=1)
+    category: Literal["person", "place", "thing", "faction", "event"] = "person"
+    search_focus: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        normalized["name"] = _first_non_empty_text(
+            normalized.get("name"),
+            normalized.get("surface_text"),
+            normalized.get("reference"),
+            normalized.get("entity"),
+            normalized.get("display_name"),
+        )
+        category = str(normalized.get("category") or normalized.get("kind") or "person").strip().lower()
+        category_aliases = {
+            "person": "person",
+            "people": "person",
+            "npc": "person",
+            "actor": "person",
+            "place": "place",
+            "location": "place",
+            "thing": "thing",
+            "item": "thing",
+            "object": "thing",
+            "faction": "faction",
+            "group": "faction",
+            "organization": "faction",
+            "event": "event",
+            "incident": "event",
+            "history": "event",
+        }
+        normalized["category"] = category_aliases.get(category, "person")
+        normalized["search_focus"] = _first_non_empty_text(
+            normalized.get("search_focus"),
+            normalized.get("focus"),
+            normalized.get("query"),
+            normalized.get("summary"),
+            normalized.get("name"),
+        )
+        return normalized
+
+
+class CouncilContextPlannerPayload(BaseModel):
+    references: list[ContextReferenceDraft] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        raw_references = (
+            normalized.get("references")
+            if isinstance(normalized.get("references"), list)
+            else normalized.get("referenced_entities")
+            if isinstance(normalized.get("referenced_entities"), list)
+            else normalized.get("entities")
+            if isinstance(normalized.get("entities"), list)
+            else []
+        )
+        normalized["references"] = [item for item in raw_references if isinstance(item, dict)]
+        return normalized
+
+
 class TurnResolutionPayload(BaseModel):
     narrative: str = Field(min_length=1)
     npc_reaction: str = ""
@@ -778,6 +847,8 @@ class StubModelProvider(BaseModelProvider):
             return self._memory_manager_output(input_payload)
         if prompt_id == "council.intent_interpreter":
             return self._intent_interpreter_output(input_payload)
+        if prompt_id == "council.context_planner":
+            return self._context_planner_output(input_payload)
         if prompt_id in {"session.turn_resolution", "session.turn_resolution_repair"}:
             return self._public_turn_resolution_output(input_payload)
         if prompt_id == "council.npc_manager":
@@ -1090,6 +1161,51 @@ class StubModelProvider(BaseModelProvider):
                 if str(item.get("key") or "")
             ]
         }
+
+    def _context_planner_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
+        input_text = str(input_payload.get("player_action_text") or input_payload.get("input_text") or "")
+        public_context = input_payload.get("public_game_context") if isinstance(input_payload.get("public_game_context"), dict) else {}
+        scene_names: set[str] = set()
+        for item in public_context.get("visible_people") or []:
+            if isinstance(item, dict):
+                for key in ("name", "source_name"):
+                    text = str(item.get(key) or "").strip()
+                    if text:
+                        scene_names.add(text)
+        for item in public_context.get("visible_items") or []:
+            if isinstance(item, dict) and str(item.get("name") or "").strip():
+                scene_names.add(str(item.get("name")).strip())
+        for item in public_context.get("visible_exits") or []:
+            if isinstance(item, dict):
+                for key in ("destination_name", "source_name"):
+                    text = str(item.get(key) or "").strip()
+                    if text:
+                        scene_names.add(text)
+
+        references: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for entry in input_payload.get("world_directory") or []:
+            if not isinstance(entry, dict):
+                continue
+            category = str(entry.get("category") or "person").strip().lower()
+            for alias in entry.get("aliases") or []:
+                alias_text = str(alias or "").strip()
+                if not alias_text or alias_text in scene_names:
+                    continue
+                if alias_text in input_text:
+                    canonical = str(entry.get("name") or alias_text).strip()
+                    if canonical in seen:
+                        break
+                    seen.add(canonical)
+                    references.append(
+                        {
+                            "name": canonical,
+                            "category": category if category in {"person", "place", "thing", "faction", "event"} else "person",
+                            "search_focus": f"{canonical}に関する公開情報と直近の関わり",
+                        }
+                    )
+                    break
+        return {"references": references}
 
     def _intent_interpreter_output(self, input_payload: dict[str, Any]) -> dict[str, Any]:
         input_mode = str(input_payload.get("input_mode") or "choice")

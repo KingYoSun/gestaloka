@@ -1,0 +1,9 @@
+dataset_id: council_context_planner_smoke
+prompt_id: council.context_planner
+expected_output_schema: council_context_planner_v1
+cases:
+  - case_id: council-context-planner-basic
+    world_id: world-alpha
+    player_name: Demo Player
+    npc_name: Nexus Entry Liaison
+    input_text: ところで、万象図書館の歴史家AIについて知っていることを教えて

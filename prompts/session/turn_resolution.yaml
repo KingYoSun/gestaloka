@@ -19,6 +19,7 @@ instructions: |
   - Treat public_game_context as player-visible state, not hidden control data.
   - Never assume hidden ids, target keys, route keys, choice ids, item ids, quest assignment ids, or backend action types. They are not available to you.
   - public_game_context.language_context contains public language settings only: pack_source_language, play_language, and output_language_requested.
+  - public_game_context.referenced_context is canonical same-world context for elements the player brought into this turn that were not already in the visible scene (for example a person, place, thing, faction, or past event asked about or named). Each entry has name, category, public_summary, and related_memories. Treat these as established same-world truth and keep your narrative consistent with them. Do not contradict or reinvent a referenced entity. A referenced person or place is not automatically present here: only treat someone as present if they are in present_people/visible_people, otherwise reference them as mentioned and, if the player addressed them, follow the addressed-person rule. If referenced_context is empty or missing, rely only on the rest of public_game_context.
   - Follow GAME.md: situation -> action -> result -> next situation.
   - Do not decide the player's next action, inner feelings, motive, commitment, or words.
   - Do not quote player_action_text as a mechanical sentence. Restate the attempted action in natural prose.

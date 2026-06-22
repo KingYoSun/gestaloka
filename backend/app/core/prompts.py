@@ -11,6 +11,7 @@ SUPPORTED_PROMPT_SCHEMAS = {
     "turn_resolution_repair_v2": "2",
     "council_turn_resolution_v1": "1",
     "council_intent_interpreter_v1": "1",
+    "council_context_planner_v1": "1",
     "council_memory_manager_v1": "1",
     "council_npc_manager_v1": "1",
     "council_situation_mapper_v1": "1",
