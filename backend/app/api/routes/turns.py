@@ -164,6 +164,7 @@ def _success_response_content(result, world_context: dict[str, object]) -> dict[
         "blocked_state_drafts": result.blocked_state_drafts,
         "location_updates": result.location_updates,
         "entity_updates": result.turn.resolved_output.get("entity_updates", []),
+        "unconfirmed_self_claims": result.turn.resolved_output.get("unconfirmed_self_claims", []),
         "relationship_updates": result.relationship_updates,
         "consequence_updates": result.consequence_updates,
         "scene_updates": result.scene_updates,

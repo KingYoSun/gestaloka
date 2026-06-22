@@ -358,6 +358,40 @@ class PublicClaimDraft(BaseModel):
         return normalized
 
 
+class SelfStateClaimDraft(BaseModel):
+    kind: Literal["vitality", "ability", "other"] = "other"
+    surface_text: str = Field(min_length=1)
+    persistence: Literal["subjective", "canonical"] = "subjective"
+    backing: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_live_provider_shape(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        normalized["surface_text"] = _first_non_empty_text(
+            normalized.get("surface_text"),
+            normalized.get("text"),
+            normalized.get("claim"),
+            normalized.get("summary"),
+        )
+        kind = str(normalized.get("kind") or "").strip().lower()
+        if kind in {"vitality", "health", "hp", "death", "revival", "life"}:
+            kind = "vitality"
+        elif kind in {"ability", "skill", "power", "capability"}:
+            kind = "ability"
+        normalized["kind"] = kind if kind in {"vitality", "ability", "other"} else "other"
+        persistence = str(normalized.get("persistence") or "").strip().lower()
+        if persistence in {"canonical", "canon", "permanent", "persistent"}:
+            persistence = "canonical"
+        else:
+            persistence = "subjective"
+        normalized["persistence"] = persistence
+        normalized["backing"] = _first_non_empty_text(normalized.get("backing"), normalized.get("backing_ref")) or None
+        return normalized
+
+
 class CouncilIntentInterpreterPayload(BaseModel):
     input_mode: Literal["choice", "free_text"]
     canonical_action_kind: Literal["narrative", "use_reward_item", "travel"]
@@ -445,6 +479,7 @@ class TurnResolutionPayload(BaseModel):
     shared_action_tag: SharedWorldActionTag = "none"
     state_drafts: dict[str, Any] = Field(default_factory=dict)
     branch_signals: list[BranchSignal] = Field(default_factory=list)
+    self_state_claims: list[SelfStateClaimDraft] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     scene_tone: str = Field(min_length=1)
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
@@ -481,6 +516,7 @@ class PublicGmTurnPayload(BaseModel):
     shared_action_tag: SharedWorldActionTag = "none"
     state_drafts: dict[str, Any] = Field(default_factory=dict)
     branch_signals: list[BranchSignal] = Field(default_factory=list)
+    self_state_claims: list[SelfStateClaimDraft] = Field(default_factory=list)
     outcome_band: OutcomeBand = "steady"
     scene_tone: str = Field(min_length=1)
     scene_move: Literal["hold", "deepen", "pivot", "close"] = "hold"
@@ -623,6 +659,10 @@ class PublicGmTurnPayload(BaseModel):
         if not isinstance(normalized.get("branch_signals"), list):
             normalized["branch_signals"] = []
         normalized["branch_signals"] = normalize_branch_signals([str(item) for item in normalized.get("branch_signals") or []])
+        self_state_claims = normalized.get("self_state_claims")
+        if not isinstance(self_state_claims, list):
+            self_state_claims = []
+        normalized["self_state_claims"] = [item for item in self_state_claims if isinstance(item, dict)]
         normalized["outcome_band"] = str(normalized.get("outcome_band") or "steady")
         if normalized["outcome_band"] not in {"steady", "tangled", "setback"}:
             normalized["outcome_band"] = "steady"

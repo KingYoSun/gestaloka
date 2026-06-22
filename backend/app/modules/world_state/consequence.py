@@ -63,6 +63,26 @@ def relationship_band(strength: float) -> RelationshipBand:
     return "trusted"
 
 
+_OUTCOME_BAND_SEVERITY: dict[str, int] = {"steady": 0, "tangled": 1, "setback": 2}
+
+
+def max_outcome_band(*bands: str | None) -> OutcomeBand:
+    """Return the most severe of the supplied outcome bands (steady < tangled < setback).
+
+    The deterministic consequence engine derives a band from social tags, while the
+    AI GM judges the narrative stakes. Reconciling by max severity keeps both the
+    AI GM's narrative-risk read (Issue #8 / I6) and the engine's tag-driven setbacks.
+    """
+    best = "steady"
+    best_rank = 0
+    for band in bands:
+        rank = _OUTCOME_BAND_SEVERITY.get(str(band or ""), 0)
+        if rank > best_rank:
+            best_rank = rank
+            best = str(band)
+    return best  # type: ignore[return-value]
+
+
 def scene_tone_for_band(outcome_band: OutcomeBand) -> str:
     if outcome_band == "steady":
         return "steady"

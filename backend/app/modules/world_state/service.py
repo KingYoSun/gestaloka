@@ -78,6 +78,7 @@ from app.modules.world_state.consequence import (
     ThreadStatus,
     ThreadType,
     fallback_consequence_tags,
+    max_outcome_band,
     normalize_consequence_tags,
     relationship_band,
     relationship_summary,
@@ -4294,6 +4295,7 @@ def apply_consequence_updates(
     consequence_tags: list[str] | None,
     action_kind: str,
     fail_forward: bool = False,
+    model_outcome_band: str | None = None,
 ) -> ConsequenceApplicationOutcome:
     relationship_updates: list[dict[str, Any]] = []
     consequence_updates: list[dict[str, Any]] = []
@@ -4444,13 +4446,15 @@ def apply_consequence_updates(
         )
 
     db.flush()
+    reconciled_band = max_outcome_band(outcome.outcome_band, model_outcome_band)
+    reconciled_tone = outcome.scene_tone if reconciled_band == outcome.outcome_band else scene_tone_for_band(reconciled_band)
     return ConsequenceApplicationOutcome(
         relationship_updates=relationship_updates,
         consequence_updates=consequence_updates,
         faction_updates=faction_updates,
         additional_memory_drafts=additional_memory_drafts,
-        outcome_band=outcome.outcome_band,
-        scene_tone=outcome.scene_tone,
+        outcome_band=reconciled_band,
+        scene_tone=reconciled_tone,
         consequence_summary=consequence_summary_text,
     )
 

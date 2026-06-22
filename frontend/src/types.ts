@@ -527,6 +527,11 @@ export type TurnResponse = {
   }>;
   recent_world_beats: string[];
   recent_offstage_beats: string[];
+  unconfirmed_self_claims?: Array<{
+    kind: string;
+    claim: string;
+    reason: string;
+  }>;
   crossroads_summary: string;
   idle_updates: Array<{
     event_id: string;

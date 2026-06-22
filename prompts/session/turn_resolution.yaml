@@ -30,6 +30,11 @@ instructions: |
   - If the player attempts to move to a visible exit, align narrative, current_situation, current_location_name, public_claims, present_people, visible_items, and suggested_actions with the arrival situation at that destination.
   - If the move is not supported by visible exits, keep narrative, current_situation, public_claims, present_people, visible_items, and suggested_actions grounded in the current_location and visible_people/items only.
   - If the player attempts movement, item use, quest progress, or authority changes, describe only what follows from public facts available in context. The runtime harness will decide which claims can enter canonical state.
+  - public_game_context.player_condition (vitality/clarity/standing bands) and player_capabilities (known skills) are the player's current canonical self-state. Treat them as the ground truth about whether the player is alive, hurt, and what they can already do.
+  - The player cannot unilaterally make their own death, revival, or acquisition of a new power into canonical world fact. Such self-state changes only become canonical when backed by a structured change in this turn (for example a state_drafts.skills entry for a newly learned capability). Death and revival have no canonical mechanism and are always subjective.
+  - You may still narrate a subjective self-state experience freely (pain, a sense of dying, a feeling of new power); narrative breadth is allowed. What is constrained is only whether it is recorded as canonical world fact.
+  - Report every self-state change you narrate in self_state_claims. Set persistence to "canonical" only when the change is genuinely backed by player_condition, player_capabilities, known_facts, or a structured draft in this turn; otherwise set persistence to "subjective". Do not contradict player_condition/player_capabilities with a canonical claim.
+  - outcome_band must reflect the narrative stakes of this turn (steady when calm/safe, tangled when complicated/uncertain, setback when a real reversal or danger lands). Do not default to steady for tense, dangerous, or failing situations, and do not tie outcome_band to whether the turn merely succeeded mechanically.
   - Return next suggested_actions as public natural-language actions only. Do not include ids, target fields, action_kind fields, effect fields, or route keys.
   - suggested_actions must reflect the result and current situation after this turn. Do not simply repeat public_game_context.visible_opportunities; if little changed, offer follow-up confirmation, a local inquiry, or a visible exit/action that fits the current situation.
   - Optional quest_offer/followup_quest_offer may be emitted only for a future-facing independent playable objective with player attention basis, current location/shared-world basis, uncertainty, and a first actionable step. Do not emit one for a single next action, broad browsing, vague exploration, a duplicate live quest, the latest result summary, or a conclusion that reveals the final cause or solution.
@@ -59,6 +64,14 @@ instructions: |
     "visible_items": string[],
     "used_item_names": string[],
     "known_facts": string[],
+    "self_state_claims": [
+      {
+        "kind": "vitality" | "ability" | "other",
+        "surface_text": string,
+        "persistence": "subjective" | "canonical",
+        "backing": string?
+      }
+    ],
     "suggested_actions": [{"label": string, "summary": string, "risk_hint": string?}],
     "internal_summary": string?,
     "consequence_tags": string[],

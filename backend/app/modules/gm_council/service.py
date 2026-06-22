@@ -1011,12 +1011,27 @@ def _public_session_context(session_state: dict[str, Any]) -> dict[str, Any]:
     nearby_routes = [item for item in session_state.get("nearby_routes") or [] if isinstance(item, dict)]
     current_scene = session_state.get("current_scene") if isinstance(session_state.get("current_scene"), dict) else {}
     chapter = session_state.get("chapter") if isinstance(session_state.get("chapter"), dict) else {}
+    skills = [item for item in session_state.get("skills") or [] if isinstance(item, dict)]
+    state_bands = session_state.get("narrative_state_bands") if isinstance(session_state.get("narrative_state_bands"), dict) else {}
     return {
         "language_context": {
             "pack_source_language": source_language,
             "play_language": play_language_code,
             "output_language_requested": play_language_code,
         },
+        "player_condition": {
+            "vitality": _public_text(state_bands.get("vitality")) or "steady",
+            "clarity": _public_text(state_bands.get("clarity")) or "steady",
+            "standing": _public_text(state_bands.get("standing")) or "unknown",
+        },
+        "player_capabilities": [
+            {
+                "title": _public_text(item.get("title")),
+                "summary": _public_text(item.get("summary")),
+            }
+            for item in skills
+            if _public_text(item.get("title"))
+        ][:8],
         "current_location": {
             "name": _display_name_for_language(
                 current_source_name,
@@ -1456,6 +1471,7 @@ class GMCouncilService:
             shared_action_tag=public_payload.shared_action_tag,
             state_drafts=public_payload.state_drafts,
             branch_signals=public_payload.branch_signals,
+            self_state_claims=public_payload.self_state_claims,
             outcome_band=public_payload.outcome_band,
             scene_tone=public_payload.scene_tone,
             scene_move=public_payload.scene_move,
