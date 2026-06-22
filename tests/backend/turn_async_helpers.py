@@ -43,6 +43,25 @@ def public_turn_request_payload(
             return {"player_action_text": _action_text(str(action.get("label") or ""), str(action.get("summary") or ""))}
 
     action_type = str(payload.get("action_type") or "").strip()
+    if action_type in {"leave_quest", "resume_quest"}:
+        # Quest journal actions are conveyed as display-body player_action_text only (AGENTS.md):
+        # the AI GM emits the canonical quest_lifecycle_directive. Mirror the frontend label so the
+        # offline stub recognizes the intent. No hidden action metadata is sent to /turns.
+        assignment_id = str(payload.get("quest_assignment_id") or "")
+        quest = next(
+            (
+                item
+                for item in [*(state.get("quests") or []), *(state.get("quest_journal") or [])]
+                if isinstance(item, dict) and str(item.get("assignment_id") or "") == assignment_id
+            ),
+            None,
+        )
+        title = str((quest or {}).get("title") or "提示された依頼").strip()
+        labels = {
+            "leave_quest": f"クエストから離脱: {title}",
+            "resume_quest": f"再開: {title}",
+        }
+        return {"player_action_text": labels[action_type]}
     if action_type in {"accept_quest", "decline_quest", "ignore_quest"}:
         assignment_id = str(payload.get("quest_assignment_id") or "")
         quest = next(
