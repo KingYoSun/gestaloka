@@ -1391,6 +1391,7 @@ class GMCouncilService:
                         "confidence": 0.7,
                     }
                 ],
+                "addressed_people": [],
                 "suggested_actions": suggestions,
                 "consequence_summary": f"{input_text}が現在の場面に反映された。",
                 "consequence_tags": normalize_consequence_tags(infer_world_tags(input_text)),
@@ -1443,6 +1444,7 @@ class GMCouncilService:
                 "language_context": public_payload.language_context,
                 "public_claims": [item.model_dump() for item in public_payload.public_claims],
                 "present_people": public_payload.present_people,
+                "addressed_people": public_payload.addressed_people,
                 "visible_items": public_payload.visible_items,
                 "used_item_names": public_payload.used_item_names,
                 "normalization_warnings": public_payload.normalization_warnings,

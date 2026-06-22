@@ -30,7 +30,7 @@ from app.models.entities import (
     new_id,
 )
 from app.modules.world_pack.service import normalize_language_tag, resolve_world_pack
-from app.modules.world_state.ambient import list_local_figures
+from app.modules.world_state.ambient import list_local_figures, list_npc_locations
 from app.modules.actor.service import (
     ensure_relationship,
     get_player_profile,
@@ -1334,6 +1334,85 @@ def _name_matches_claim(name: str, claim: str) -> bool:
     return name == claim or name in claim or claim in name
 
 
+def _public_name_matches_claim(name: str, claim: str) -> bool:
+    normalized_name = _normalize_public_claim_text(name)
+    normalized_claim = _normalize_public_claim_text(claim)
+    return _name_matches_claim(name, claim) or _name_matches_claim(normalized_name, normalized_claim)
+
+
+def _public_figure_aliases(figure: dict[str, Any]) -> list[str]:
+    return _unique_public_aliases(
+        [
+            figure.get("source_name"),
+            figure.get("display_name"),
+            figure.get("name"),
+            *_flatten_public_aliases(figure.get("public_aliases")),
+        ]
+    )
+
+
+_ABSENT_PERSON_MARKERS = (
+    "ここにいない",
+    "ここにはいない",
+    "この場にいない",
+    "この場にはいない",
+    "姿は見当たらない",
+    "姿が見当たらない",
+    "見当たらない",
+    "不在",
+    "別の場所",
+    "移動が必要",
+    "会えない",
+    "not here",
+    "not present",
+    "is not here",
+    "isn't here",
+    "absent",
+    "elsewhere",
+    "cannot be reached",
+    "must be reached",
+)
+
+
+def _text_marks_public_person_absent(text: str, person_name: str) -> bool:
+    if not _text_mentions_public_alias(text, [person_name]):
+        return False
+    normalized_text = _normalize_public_claim_text(text)
+    return any(_normalize_public_claim_text(marker) in normalized_text for marker in _ABSENT_PERSON_MARKERS)
+
+
+def _absent_public_npc_candidates(
+    db: Session,
+    *,
+    world_id: str,
+    effective_location_id: str | None,
+) -> list[dict[str, Any]]:
+    candidates = [
+        npc
+        for npc in list_npc_locations(db, world_id)
+        if isinstance(npc, dict)
+        and not (effective_location_id and str(npc.get("location_id") or "") == effective_location_id)
+    ]
+    return _enrich_public_figures_with_aliases(db, world_id=world_id, figures=candidates)
+
+
+def _match_absent_public_npc_claim(
+    candidates: list[dict[str, Any]],
+    *,
+    addressed_name: str,
+) -> dict[str, Any] | None:
+    for npc in candidates:
+        if not isinstance(npc, dict):
+            continue
+        aliases = _public_figure_aliases(npc)
+        if not any(_public_name_matches_claim(alias, addressed_name) for alias in aliases):
+            continue
+        return {
+            "canonical_name": str(npc.get("source_name") or npc.get("display_name") or addressed_name).strip(),
+        }
+    return None
+
+
 def _public_glossary_aliases_for_text(db: Session, world_id: str, text: str) -> list[tuple[str, str]]:
     source = str(text or "").strip()
     if not source:
@@ -2043,30 +2122,67 @@ def _apply_public_ai_gm_harness(
     for item in visible_people_at_effective_location:
         if not isinstance(item, dict):
             continue
-        visible_people_names.extend(
-            _unique_public_aliases(
-                [
-                    item.get("source_name"),
-                    item.get("display_name"),
-                    item.get("name"),
-                    *_flatten_public_aliases(item.get("public_aliases")),
-                ]
-            )
-        )
+        visible_people_names.extend(_public_figure_aliases(item))
     present_people = [str(item).strip() for item in interpreted.get("present_people") or [] if str(item).strip()]
     for claim in public_claims:
         if str(claim.get("kind") or "") == "actor" and str(claim.get("role") or "") == "present":
             surface_text = str(claim.get("surface_text") or "").strip()
             if surface_text:
                 present_people.append(surface_text)
-    for person_name in _unique_public_aliases(present_people):
-        if visible_people_names and any(_name_matches_claim(visible_name, person_name) for visible_name in visible_people_names):
+    normalized_present_people = _unique_public_aliases(present_people)
+    for person_name in normalized_present_people:
+        if visible_people_names and any(_public_name_matches_claim(visible_name, person_name) for visible_name in visible_people_names):
             continue
         rejected.append(
             {
                 "claim_kind": "actor",
                 "claim": person_name,
                 "reason": "The claimed present person is not visible at the canonical turn location.",
+            }
+        )
+
+    addressed_people = [str(item).strip() for item in interpreted.get("addressed_people") or [] if str(item).strip()]
+    for claim in public_claims:
+        if str(claim.get("kind") or "") == "actor" and str(claim.get("role") or "") == "addressed":
+            surface_text = str(claim.get("surface_text") or "").strip()
+            if surface_text:
+                addressed_people.append(surface_text)
+    addressed_absence_evidence = " ".join(
+        [
+            str(payload.narrative or ""),
+            str(payload.npc_reaction or ""),
+            str(payload.consequence_summary or ""),
+            str(interpreted.get("action_interpretation") or ""),
+            str(interpreted.get("current_situation") or ""),
+        ]
+    )
+    absent_npc_candidates: list[dict[str, Any]] | None = None
+    for person_name in _unique_public_aliases(addressed_people):
+        if visible_people_names and any(_public_name_matches_claim(visible_name, person_name) for visible_name in visible_people_names):
+            continue
+        if normalized_present_people and any(_public_name_matches_claim(present_name, person_name) for present_name in normalized_present_people):
+            continue
+        if _text_marks_public_person_absent(addressed_absence_evidence, person_name):
+            continue
+        if absent_npc_candidates is None:
+            absent_npc_candidates = _absent_public_npc_candidates(
+                db,
+                world_id=game_session.world_id,
+                effective_location_id=effective_location_id,
+            )
+        matched_absent_npc = _match_absent_public_npc_claim(
+            absent_npc_candidates,
+            addressed_name=person_name,
+        )
+        if matched_absent_npc is None:
+            continue
+        rejected.append(
+            {
+                "claim_kind": "actor",
+                "claim": person_name,
+                "reason": "addressed_absent",
+                "detail": "The addressed person is a real NPC who is not present at the canonical turn location.",
+                "canonical_name": matched_absent_npc.get("canonical_name"),
             }
         )
 
@@ -2081,6 +2197,57 @@ def _apply_public_ai_gm_harness(
         "travel_summary": travel_summary,
         "effective_location_id": effective_location_id,
     }
+
+
+def _public_validation_feedback_for_rejected_claim(item: dict[str, Any]) -> dict[str, str]:
+    claim = str(item.get("claim") or "")
+    if item.get("reason") == "addressed_absent":
+        message = (
+            f"The addressed person '{claim}' is not present at public_game_context.current_location. "
+            "Do NOT silently substitute a different person who happens to be here. "
+            f"Resolve the turn at the current location and make the narrative state, in-world, that '{claim}' is not here or must be reached elsewhere."
+        ).strip()
+    else:
+        message = (
+            f"{item.get('reason') or 'The output contradicted canonical public state.'} "
+            f"Do NOT name '{claim}' again. It is not reachable/present from the current "
+            "location. Either resolve the turn at public_game_context.current_location, or, if the player "
+            "moves, name only a place in public_game_context.visible_exits."
+        ).strip()
+    return {"reason": "consistency_failed", "claim": claim, "message": message}
+
+
+def _addressed_absent_rejected_claims(rejected_claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in rejected_claims:
+        if not isinstance(item, dict) or item.get("reason") != "addressed_absent":
+            continue
+        claim = str(item.get("claim") or "").strip()
+        key = _normalize_public_claim_text(claim)
+        if not claim or key in seen:
+            continue
+        claims.append(dict(item))
+        seen.add(key)
+    return claims
+
+
+def _consistency_interventions_from_addressed_absent(
+    rejected_claims: list[dict[str, Any]],
+    *,
+    resolved_by: str,
+) -> list[dict[str, Any]]:
+    interventions: list[dict[str, Any]] = []
+    for item in _addressed_absent_rejected_claims(rejected_claims):
+        interventions.append(
+            {
+                "kind": "addressed_absent",
+                "claim": str(item.get("claim") or ""),
+                "canonical_name": str(item.get("canonical_name") or ""),
+                "resolved_by": resolved_by,
+            }
+        )
+    return interventions
 
 
 def _resolve_public_ai_gm_turn_for_session(
@@ -2211,20 +2378,12 @@ def _resolve_public_ai_gm_turn_for_session(
         session_state=session_state,
         apply_changes=False,
     )
+    initial_addressed_absent_claims = _addressed_absent_rejected_claims(dry_run_harness_result["rejected_claims"])
     if dry_run_harness_result["rejected_claims"]:
         repair_resolution = container.council_service.repair_public_turn(
             council_request,
             validation_feedback=[
-                {
-                    "reason": "consistency_failed",
-                    "claim": str(item.get("claim") or ""),
-                    "message": (
-                        f"{item.get('reason') or 'The output contradicted canonical public state.'} "
-                        f"Do NOT name '{item.get('claim') or ''}' again. It is not reachable/present from the current "
-                        "location. Either resolve the turn at public_game_context.current_location, or, if the player "
-                        "moves, name only a place in public_game_context.visible_exits."
-                    ).strip(),
-                }
+                _public_validation_feedback_for_rejected_claim(item)
                 for item in dry_run_harness_result["rejected_claims"]
                 if isinstance(item, dict)
             ],
@@ -2286,6 +2445,10 @@ def _resolve_public_ai_gm_turn_for_session(
             session_state=session_state,
             apply_changes=False,
         )
+        initial_addressed_absent_claims = [
+            *initial_addressed_absent_claims,
+            *_addressed_absent_rejected_claims(dry_run_harness_result["rejected_claims"]),
+        ]
         if dry_run_harness_result["rejected_claims"]:
             # Issue #5 (I3): repair still hallucinated unreachable places / absent
             # people. Rather than failing the whole turn (and re-producing the same
@@ -2320,6 +2483,10 @@ def _resolve_public_ai_gm_turn_for_session(
         apply_changes=True,
     )
     rejected_claims = harness_result["rejected_claims"]
+    consistency_interventions = _consistency_interventions_from_addressed_absent(
+        initial_addressed_absent_claims,
+        resolved_by="fallback" if resolution.deterministic_fallback_used else "repair",
+    )
 
     effective_location_id = player_actor.current_location_id or prepared.location_id
     resolved_world_tags = normalize_world_tags(payload.world_tags)
@@ -2344,6 +2511,7 @@ def _resolve_public_ai_gm_turn_for_session(
             "world_tags": resolved_world_tags,
             "accepted_state_changes": harness_result["accepted_state_changes"],
             "rejected_claims": rejected_claims,
+            "consistency_interventions": consistency_interventions,
             "quest_updates": state_updates["quest_updates"],
             "faction_updates": state_updates["faction_updates"],
             "inventory_updates": state_updates["inventory_updates"],
@@ -2588,6 +2756,7 @@ def _resolve_public_ai_gm_turn_for_session(
         "location_updates": harness_result["location_updates"],
         "accepted_state_changes": harness_result["accepted_state_changes"],
         "rejected_claims": rejected_claims,
+        "consistency_interventions": consistency_interventions,
         "shared_action_tag": shared_result.action_tag,
         "shared_consequence_updates": shared_payload,
         "council_trace": [
