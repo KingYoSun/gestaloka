@@ -1866,6 +1866,69 @@ def _player_facing_metadata_violations(payload: Any) -> list[dict[str, str]]:
     return violations
 
 
+def _self_state_draft_count(state_drafts: Any, key: str) -> int:
+    if not isinstance(state_drafts, dict):
+        return 0
+    raw = state_drafts.get(key)
+    if isinstance(raw, dict):
+        return 1
+    if isinstance(raw, list):
+        return len([item for item in raw if isinstance(item, dict)])
+    return 0
+
+
+def _claim_attr(claim: Any, name: str) -> Any:
+    if isinstance(claim, dict):
+        return claim.get(name)
+    return getattr(claim, name, None)
+
+
+def _unconfirmed_self_state_claims(payload: Any) -> list[dict[str, Any]]:
+    """Reconcile structured AI GM self-state claims against their backing.
+
+    A canonical player self-state change (death, revival, a new power) only
+    enters canonical world fact when it is genuinely backed by a structured
+    change this turn. Death/revival have no canonical mechanism (CharacterSheet
+    HP is not mutated by turns), so they are always subjective. Ability claims
+    require a backing state_drafts.skills entry. Unbacked canonical claims are
+    downgraded to subjective and returned as audit records; the turn still
+    resolves and the narrative is preserved (Issue #8 / I6). This inspects only
+    the structured claim list, never the prose."""
+    claims = getattr(payload, "self_state_claims", None) or []
+    state_drafts = getattr(payload, "state_drafts", None)
+    skill_backing = _self_state_draft_count(state_drafts, "skills")
+    other_backing = (
+        skill_backing
+        + _self_state_draft_count(state_drafts, "acquired_items")
+        + _self_state_draft_count(state_drafts, "known_facts")
+    )
+    unconfirmed: list[dict[str, Any]] = []
+    for claim in claims:
+        if str(_claim_attr(claim, "persistence") or "subjective") != "canonical":
+            continue
+        kind = str(_claim_attr(claim, "kind") or "other")
+        surface_text = str(_claim_attr(claim, "surface_text") or "").strip()
+        if kind == "vitality":
+            backed = False
+            reason = "Player death or revival has no canonical mechanism; recorded as unconfirmed subjective experience."
+        elif kind == "ability":
+            backed = skill_backing > 0
+            reason = "A newly claimed ability had no backing skill state; recorded as unconfirmed subjective experience."
+        else:
+            backed = other_backing > 0
+            reason = "A self-state change had no backing structured state; recorded as unconfirmed subjective experience."
+        if backed:
+            continue
+        unconfirmed.append(
+            {
+                "kind": kind,
+                "claim": surface_text,
+                "reason": reason,
+            }
+        )
+    return unconfirmed
+
+
 def _naturalized_action_attempt(input_text: str) -> str:
     text = " ".join(str(input_text or "").split()).strip("。.")
     if "。" in text:
@@ -2487,6 +2550,7 @@ def _resolve_public_ai_gm_turn_for_session(
         initial_addressed_absent_claims,
         resolved_by="fallback" if resolution.deterministic_fallback_used else "repair",
     )
+    unconfirmed_self_claims = _unconfirmed_self_state_claims(payload)
 
     effective_location_id = player_actor.current_location_id or prepared.location_id
     resolved_world_tags = normalize_world_tags(payload.world_tags)
@@ -2512,6 +2576,7 @@ def _resolve_public_ai_gm_turn_for_session(
             "accepted_state_changes": harness_result["accepted_state_changes"],
             "rejected_claims": rejected_claims,
             "consistency_interventions": consistency_interventions,
+            "unconfirmed_self_claims": unconfirmed_self_claims,
             "quest_updates": state_updates["quest_updates"],
             "faction_updates": state_updates["faction_updates"],
             "inventory_updates": state_updates["inventory_updates"],
@@ -2617,6 +2682,7 @@ def _resolve_public_ai_gm_turn_for_session(
             or fallback_consequence_tags(world_tags=resolved_world_tags, action_kind="narrative", fail_forward=False),
             action_kind="narrative",
             fail_forward=False,
+            model_outcome_band=payload.outcome_band,
         )
         branch_result = BranchPressureEngine.apply_player_turn(
             db,
@@ -2661,18 +2727,26 @@ def _resolve_public_ai_gm_turn_for_session(
         )
 
     with _turn_progress_span("memory_materialization"):
+        # When the AI GM's structured self_state_claims include an unbacked
+        # canonical self-state change (death/revival/new power), do not let that
+        # turn's free-form world memory drafts assert the subjective experience as
+        # canonical world fact (Issue #8 / I6). Deterministic/grounded drafts from
+        # the harness and consequence engine are still materialized.
+        suppress_world_self_claim_memory = bool(unconfirmed_self_claims)
+        player_memory_drafts = [
+            {
+                **draft.model_dump(),
+                "actor_id": guide_npc.id if draft.scope == "actor" else None,
+            }
+            for draft in payload.memories
+            if not (suppress_world_self_claim_memory and draft.scope == "world")
+        ]
         memories = container.memory_service.materialize_memories(
             db,
             world_id=game_session.world_id,
             source_event_id=event.id,
             location_id=effective_location_id,
-            drafts=[
-                {
-                    **draft.model_dump(),
-                    "actor_id": guide_npc.id if draft.scope == "actor" else None,
-                }
-                for draft in payload.memories
-            ]
+            drafts=player_memory_drafts
             + harness_result["memory_drafts"]
             + consequence_result.additional_memory_drafts,
         )
@@ -2757,6 +2831,7 @@ def _resolve_public_ai_gm_turn_for_session(
         "accepted_state_changes": harness_result["accepted_state_changes"],
         "rejected_claims": rejected_claims,
         "consistency_interventions": consistency_interventions,
+        "unconfirmed_self_claims": unconfirmed_self_claims,
         "shared_action_tag": shared_result.action_tag,
         "shared_consequence_updates": shared_payload,
         "council_trace": [
@@ -4886,6 +4961,7 @@ def _build_failed_turn_result(
         },
         "scene_tone": scene_tone_for_band("setback"),
         "outcome_band": "setback",
+        "failure_band": True,
         **(failure_payload or {}),
     }
     failure_event = Event(

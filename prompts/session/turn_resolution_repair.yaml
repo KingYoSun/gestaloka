@@ -31,6 +31,8 @@ instructions: |
   - suggested_actions must be objects with label, summary, and optional risk_hint. They must be natural public text only and must reflect the repaired current situation.
   - public_claim.kind allowed values: location, actor, item, quest, fact.
   - public_claim.role allowed values: current_location, present, addressed, mentioned, used, destination, offered.
+  - public_game_context.player_condition and player_capabilities are the player's current canonical self-state. The player cannot unilaterally make their own death, revival, or new power into canonical world fact; such changes are canonical only when backed by a structured change this turn. Death and revival are always subjective. Narrate subjective self-state freely, but report each self-state change in self_state_claims with persistence "subjective" unless genuinely backed.
+  - outcome_band must reflect the narrative stakes (steady/tangled/setback), not whether the turn merely succeeded mechanically.
   - Output in public_game_context.language_context.output_language_requested.
 
   Return JSON matching turn_resolution_v2:
@@ -38,5 +40,5 @@ instructions: |
   optional current_location_name, language_context, public_claims, present_people,
   addressed_people, visible_items, used_item_names, known_facts, suggested_actions,
   optional internal_summary, consequence_tags, world_tags, shared_action_tag,
-  state_drafts, branch_signals, outcome_band, scene_tone, scene_move,
+  state_drafts, branch_signals, self_state_claims, outcome_band, scene_tone, scene_move,
   scene_pressure, memories.

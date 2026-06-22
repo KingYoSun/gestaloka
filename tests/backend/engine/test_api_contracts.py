@@ -1004,6 +1004,7 @@ def test_session_and_turn_contract_and_websocket_event_order(client, auth_header
             "shared_action_tag",
             "shared_consequence_updates",
             "entity_updates",
+            "unconfirmed_self_claims",
         }
         assert turn_payload["shared_action_tag"] == "none"
         assert turn_payload["shared_consequence_updates"]["shared_action_tag"] == "none"

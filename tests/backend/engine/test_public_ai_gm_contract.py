@@ -926,3 +926,183 @@ def test_present_addressed_npc_passes_without_intervention(client, container, au
         assert turn.resolved_output["rejected_claims"] == []
         assert turn.resolved_output["consistency_interventions"] == []
         assert captured["visible"] in turn.resolved_output["narrative"]
+
+
+def _self_state_turn_generate(original_generate, *, self_state_claims, state_drafts=None, outcome_band="steady", scene_pressure="medium", world_memory_text="ヌートは現在地で次の手がかりを確かめた。"):
+    def generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id not in {"session.turn_resolution", "session.turn_resolution_repair"}:
+            return original_generate(**kwargs)
+        public_context = kwargs["input_payload"]["public_game_context"]
+        current_location = public_context["current_location"]["name"]
+        raw: dict[str, Any] = {
+            "action_interpretation": "ヌートは強い衝動に駆られて行動した。",
+            "narrative": f"{current_location}で、ヌートは激しい痛みと新たな感覚に襲われた。",
+            "current_situation": f"{current_location}で、ヌートは自分の身に起きた変化を確かめている。",
+            "current_location_name": current_location,
+            "suggested_actions": [
+                {"label": "案内役に今の状態を伝える", "summary": "起きた変化を言葉にして共有する。"},
+                {"label": "周囲の反応を確かめる", "summary": "現在地で見える範囲の変化だけを確認する。"},
+            ],
+            "consequence_summary": "ヌートは自分の状態の変化を主張した。",
+            "world_tags": ["investigate"],
+            "consequence_tags": ["careful_observation"],
+            "self_state_claims": self_state_claims,
+            "outcome_band": outcome_band,
+            "scene_tone": "measured",
+            "scene_move": "deepen",
+            "scene_pressure": scene_pressure,
+            "memories": [{"scope": "world", "text": world_memory_text, "salience": 0.7}],
+            "language_context": {
+                "pack_source_language": "en",
+                "play_language": "ja",
+                "output_language_requested": "ja",
+            },
+            "present_people": [],
+            "public_claims": [
+                {"kind": "location", "surface_text": current_location, "language": "ja", "role": "current_location"},
+            ],
+        }
+        if state_drafts is not None:
+            raw["state_drafts"] = state_drafts
+        return ProviderResponse(raw_output=raw, provider_name="test", provider_response_id=None)
+
+    return generate
+
+
+def test_public_ai_gm_input_includes_player_self_state(client, container, auth_headers):
+    captured_inputs: list[dict[str, Any]] = []
+    original_generate = container.model_router.provider.generate
+
+    def capturing_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id == "session.turn_resolution":
+            captured_inputs.append(dict(kwargs["input_payload"]))
+        return original_generate(**kwargs)
+
+    container.model_router.provider.generate = capturing_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        _post_turn_and_wait(
+            client,
+            session_response.json()["session_id"],
+            auth_headers,
+            "周囲の様子を確かめる",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    assert captured_inputs
+    _assert_no_forbidden_keys(captured_inputs[0])
+    public_context = captured_inputs[0]["public_game_context"]
+    condition = public_context["player_condition"]
+    assert set(condition) == {"vitality", "clarity", "standing"}
+    assert all(isinstance(value, str) and value for value in condition.values())
+    assert isinstance(public_context["player_capabilities"], list)
+    for capability in public_context["player_capabilities"]:
+        assert set(capability) <= {"title", "summary"}
+
+
+def test_unbacked_canonical_self_state_claim_stays_subjective(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    generate = _self_state_turn_generate(
+        original_generate,
+        self_state_claims=[
+            {"kind": "vitality", "surface_text": "死んで蘇った", "persistence": "canonical"},
+            {"kind": "ability", "surface_text": "新たな力を得た", "persistence": "canonical"},
+        ],
+        world_memory_text="ヌートは死から蘇り新たな力を得た。",
+    )
+    container.model_router.provider.generate = generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        payload = _post_turn_and_wait(
+            client,
+            session_response.json()["session_id"],
+            auth_headers,
+            "死の淵から蘇り新たな力を得た",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    assert payload.get("failure") is None
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        event = db.get(Event, payload["event_id"])
+        memories = db.execute(select(Memory).where(Memory.source_event_id == payload["event_id"])).scalars().all()
+        assert turn is not None and event is not None
+        assert turn.resolved_output["status"] == "resolved"
+        unconfirmed = turn.resolved_output["unconfirmed_self_claims"]
+        assert {item["kind"] for item in unconfirmed} == {"vitality", "ability"}
+        assert event.payload["unconfirmed_self_claims"] == unconfirmed
+        assert not turn.resolved_output["skill_updates"]
+        # The unbacked subjective experience must not become canonical world fact.
+        assert all("蘇り新たな力" not in memory.text for memory in memories if memory.scope == "world")
+
+
+def test_backed_ability_self_state_claim_materializes_skill(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    generate = _self_state_turn_generate(
+        original_generate,
+        self_state_claims=[
+            {"kind": "ability", "surface_text": "偽装ログ生成の技法", "persistence": "canonical", "backing": "skills"},
+        ],
+        state_drafts={
+            "skills": [
+                {"title": "偽装ログ生成の技法", "summary": "観測を一時的に逸らすため来訪者ログへノイズを編む方法。"}
+            ]
+        },
+    )
+    container.model_router.provider.generate = generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        payload = _post_turn_and_wait(
+            client,
+            session_response.json()["session_id"],
+            auth_headers,
+            "偽装ログの生成方法を習得する",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["unconfirmed_self_claims"] == []
+        assert turn.resolved_output["skill_updates"]
+        assert any("偽装ログ" in str(item.get("title")) for item in turn.resolved_output["skill_updates"])
+
+
+def test_outcome_band_reflects_ai_gm_narrative_risk(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    generate = _self_state_turn_generate(
+        original_generate,
+        self_state_claims=[],
+        outcome_band="setback",
+        scene_pressure="high",
+        world_memory_text="ヌートは危険な賭けに出て手痛い反動を受けた。",
+    )
+    container.model_router.provider.generate = generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        payload = _post_turn_and_wait(
+            client,
+            session_response.json()["session_id"],
+            auth_headers,
+            "危険を承知で霧の奥へ全力で踏み込む",
+        )
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"
+        # AI GM judged a setback even though no deterministic social tag forced one.
+        assert turn.resolved_output["outcome_band"] == "setback"
+        assert turn.resolved_output["scene_tone"] != "steady"
