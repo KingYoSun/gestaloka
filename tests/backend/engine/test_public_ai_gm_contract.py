@@ -584,3 +584,345 @@ def test_harness_repeated_absent_npc_hallucination_falls_back_in_place(client, c
         fallback = event.payload["deterministic_fallback"]
         assert fallback["reason"] == "consistency_failed"
         assert any(item.get("claim") == absent_npc_name for item in fallback["rejected_claims"])
+
+
+def test_addressed_absent_npc_repair_can_resolve_with_absence_notice(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    captured: dict[str, str] = {}
+
+    def repaired_address_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id not in {"session.turn_resolution", "session.turn_resolution_repair"}:
+            return original_generate(**kwargs)
+        public_context = kwargs["input_payload"]["public_game_context"]
+        current_location = public_context["current_location"]["name"]
+        substitute_person = public_context["visible_people"][0]["name"]
+        target_person = next(
+            person["name"]
+            for route in public_context["visible_exits"]
+            for person in route.get("arrival_people") or []
+        )
+        captured["target"] = target_person
+        captured["substitute"] = substitute_person
+        if prompt.prompt_id == "session.turn_resolution_repair":
+            return ProviderResponse(
+                raw_output={
+                    "action_interpretation": f"ヌートは{target_person}に尋ねようとしたが、この場にはいないことを確認する。",
+                    "narrative": f"{target_person}の姿は、この場には見当たらない。{current_location}で確認できる範囲では、会うには別の場所へ向かう必要がある。",
+                    "npc_reaction": "案内役は、現在地で確認できることだけを整理する。",
+                    "current_situation": f"{current_location}では、指名した人物は同席していない。",
+                    "current_location_name": current_location,
+                    "suggested_actions": [
+                        {"label": "行き先を確認する", "summary": "見えている出口から会いに行けるか確かめる。"},
+                        {"label": "この場で聞き込みを続ける", "summary": "現在地で得られる公開情報だけを集める。"},
+                    ],
+                    "consequence_summary": f"{target_person}はこの場にはいないと確認された。",
+                    "world_tags": ["investigate"],
+                    "consequence_tags": ["careful_observation"],
+                    "scene_tone": "measured",
+                    "scene_move": "deepen",
+                    "scene_pressure": "medium",
+                    "memories": [{"scope": "world", "text": f"{target_person}は現在地にいないと確認された。", "salience": 0.7}],
+                    "language_context": {
+                        "pack_source_language": "en",
+                        "play_language": "ja",
+                        "output_language_requested": "ja",
+                    },
+                    "present_people": [],
+                    "addressed_people": [target_person],
+                    "public_claims": [
+                        {"kind": "actor", "surface_text": target_person, "language": "ja", "role": "addressed"},
+                    ],
+                },
+                provider_name="test",
+                provider_response_id=None,
+            )
+        return ProviderResponse(
+            raw_output={
+                "action_interpretation": f"ヌートは{substitute_person}に街道の霧について尋ねる。",
+                "narrative": f"{substitute_person}は帳簿を閉じ、街道の霧について答えた。",
+                "npc_reaction": f"{substitute_person}は今見える範囲の話だけを返した。",
+                "current_situation": f"{current_location}では{substitute_person}が近くにいる。",
+                "current_location_name": current_location,
+                "suggested_actions": [
+                    {"label": "この場で確認する", "summary": "現在地で見える情報だけを整理する。"},
+                    {"label": "出口を確認する", "summary": "会いたい人物のいる場所へ行けるか確かめる。"},
+                ],
+                "consequence_summary": f"{substitute_person}が街道の霧について答えた。",
+                "world_tags": ["investigate"],
+                "consequence_tags": ["careful_observation"],
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": f"{substitute_person}が{target_person}の代わりに応答した。", "salience": 0.7}],
+                "language_context": {
+                    "pack_source_language": "en",
+                    "play_language": "ja",
+                    "output_language_requested": "ja",
+                },
+                "present_people": [substitute_person],
+                "addressed_people": [target_person],
+                "public_claims": [
+                    {"kind": "actor", "surface_text": target_person, "language": "ja", "role": "addressed"},
+                    {"kind": "actor", "surface_text": substitute_person, "language": "ja", "role": "present"},
+                ],
+            },
+            provider_name="test",
+            provider_response_id=None,
+        )
+
+    container.model_router.provider.generate = repaired_address_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        session_id = session_response.json()["session_id"]
+        payload = _post_turn_and_wait(client, session_id, auth_headers, "万象図書館の歴史家AIに街道の霧について尋ねる")
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    target_person = captured["target"]
+    substitute_person = captured["substitute"]
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        memories = db.execute(select(Memory).where(Memory.source_event_id == payload["event_id"])).scalars().all()
+        event = db.get(Event, payload["event_id"])
+        assert turn is not None
+        assert event is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is False
+        assert turn.resolved_output["rejected_claims"] == []
+        assert target_person in turn.resolved_output["narrative"]
+        assert "見当たらない" in turn.resolved_output["narrative"]
+        assert all("代わりに応答" not in memory.text for memory in memories)
+        assert "deterministic_fallback" not in event.payload
+        assert any(
+            item["kind"] == "addressed_absent" and item["claim"] == target_person and item["resolved_by"] == "repair"
+            for item in turn.resolved_output["consistency_interventions"]
+        )
+        assert substitute_person not in turn.resolved_output["narrative"]
+
+
+def test_addressed_absent_npc_substitution_records_intervention_and_falls_back(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    captured: dict[str, str] = {}
+
+    def substituted_address_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id not in {"session.turn_resolution", "session.turn_resolution_repair"}:
+            return original_generate(**kwargs)
+        public_context = kwargs["input_payload"]["public_game_context"]
+        current_location = public_context["current_location"]["name"]
+        substitute_person = public_context["visible_people"][0]["name"]
+        target_person = next(
+            person["name"]
+            for route in public_context["visible_exits"]
+            for person in route.get("arrival_people") or []
+        )
+        captured["target"] = target_person
+        captured["substitute"] = substitute_person
+        return ProviderResponse(
+            raw_output={
+                "action_interpretation": f"ヌートは{substitute_person}に街道の霧について尋ねる。",
+                "narrative": f"{substitute_person}は帳簿を閉じ、街道の霧について答えた。",
+                "npc_reaction": f"{substitute_person}は今見える範囲の話だけを返した。",
+                "current_situation": f"{current_location}では{substitute_person}が近くにいる。",
+                "current_location_name": current_location,
+                "suggested_actions": [
+                    {"label": "この場で確認する", "summary": "現在地で見える情報だけを整理する。"},
+                    {"label": "出口を確認する", "summary": "会いたい人物のいる場所へ行けるか確かめる。"},
+                ],
+                "consequence_summary": f"{substitute_person}が街道の霧について答えた。",
+                "world_tags": ["investigate"],
+                "consequence_tags": ["careful_observation"],
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": f"{substitute_person}が{target_person}の代わりに応答した。", "salience": 0.7}],
+                "language_context": {
+                    "pack_source_language": "en",
+                    "play_language": "ja",
+                    "output_language_requested": "ja",
+                },
+                "present_people": [substitute_person],
+                "addressed_people": [target_person],
+                "public_claims": [
+                    {"kind": "actor", "surface_text": target_person, "language": "ja", "role": "addressed"},
+                    {"kind": "actor", "surface_text": substitute_person, "language": "ja", "role": "present"},
+                ],
+            },
+            provider_name="test",
+            provider_response_id=None,
+        )
+
+    container.model_router.provider.generate = substituted_address_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        session_id = session_response.json()["session_id"]
+        before_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
+        payload = _post_turn_and_wait(client, session_id, auth_headers, f"{captured.get('target') or '万象図書館の歴史家AI'}に街道の霧について尋ねる")
+        after_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    target_person = captured["target"]
+    substitute_person = captured["substitute"]
+    assert payload["current_location"]["name"] == before_state["current_location"]["name"]
+    assert after_state["current_location"]["name"] == before_state["current_location"]["name"]
+    assert payload.get("system_message") is None
+    assert payload.get("failure") is None
+    assert payload.get("refund_ledger_id") is None
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        memories = db.execute(select(Memory).where(Memory.source_event_id == payload["event_id"])).scalars().all()
+        event = db.get(Event, payload["event_id"])
+        assert turn is not None
+        assert event is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is True
+        assert turn.resolved_output["rejected_claims"] == []
+        assert target_person in turn.resolved_output["narrative"]
+        assert "見当たらない" in turn.resolved_output["narrative"]
+        assert all("代わりに応答" not in memory.text for memory in memories)
+        interventions = turn.resolved_output["consistency_interventions"]
+        assert any(item["kind"] == "addressed_absent" and item["claim"] == target_person and item["resolved_by"] == "fallback" for item in interventions)
+        fallback = event.payload["deterministic_fallback"]
+        assert any(
+            item.get("claim") == target_person and item.get("reason") == "addressed_absent"
+            for item in fallback["rejected_claims"]
+        )
+        assert substitute_person not in turn.resolved_output["narrative"] or "見当たらない" in turn.resolved_output["narrative"]
+
+
+def test_absent_npc_mentioned_only_does_not_trigger_addressed_absent(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    captured: dict[str, str] = {}
+
+    def mentioned_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id != "session.turn_resolution":
+            return original_generate(**kwargs)
+        public_context = kwargs["input_payload"]["public_game_context"]
+        current_location = public_context["current_location"]["name"]
+        visible_person = public_context["visible_people"][0]["name"]
+        mentioned_person = next(
+            person["name"]
+            for route in public_context["visible_exits"]
+            for person in route.get("arrival_people") or []
+        )
+        captured["mentioned"] = mentioned_person
+        return ProviderResponse(
+            raw_output={
+                "action_interpretation": f"ヌートは{mentioned_person}についての噂を思い出す。",
+                "narrative": f"ヌートは{current_location}で、{mentioned_person}に関する噂を整理した。",
+                "npc_reaction": f"{visible_person}は噂を確定情報として扱わないよう促した。",
+                "current_situation": f"{current_location}では記録の確認が続いている。",
+                "current_location_name": current_location,
+                "suggested_actions": [
+                    {"label": "噂の出所を確認する", "summary": "現在地で確認できる情報源を探す。"},
+                    {"label": "別の場所へ向かう", "summary": "見えている出口から手がかりを追う。"},
+                ],
+                "consequence_summary": f"{mentioned_person}は噂として言及された。",
+                "world_tags": ["investigate"],
+                "consequence_tags": ["careful_observation"],
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": f"{mentioned_person}についての噂が整理された。", "salience": 0.7}],
+                "language_context": {
+                    "pack_source_language": "en",
+                    "play_language": "ja",
+                    "output_language_requested": "ja",
+                },
+                "present_people": [visible_person],
+                "addressed_people": [],
+                "public_claims": [
+                    {"kind": "actor", "surface_text": mentioned_person, "language": "ja", "role": "mentioned"},
+                    {"kind": "actor", "surface_text": visible_person, "language": "ja", "role": "present"},
+                ],
+            },
+            provider_name="test",
+            provider_response_id=None,
+        )
+
+    container.model_router.provider.generate = mentioned_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        payload = _post_turn_and_wait(client, session_response.json()["session_id"], auth_headers, "別地点の人物についての噂を整理する")
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is False
+        assert turn.resolved_output["rejected_claims"] == []
+        assert turn.resolved_output["consistency_interventions"] == []
+        assert captured["mentioned"] in turn.resolved_output["narrative"]
+
+
+def test_present_addressed_npc_passes_without_intervention(client, container, auth_headers):
+    original_generate = container.model_router.provider.generate
+    captured: dict[str, str] = {}
+
+    def present_address_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id != "session.turn_resolution":
+            return original_generate(**kwargs)
+        public_context = kwargs["input_payload"]["public_game_context"]
+        current_location = public_context["current_location"]["name"]
+        visible_person = public_context["visible_people"][0]["name"]
+        captured["visible"] = visible_person
+        return ProviderResponse(
+            raw_output={
+                "action_interpretation": f"ヌートは{visible_person}に確認を求める。",
+                "narrative": f"ヌートが問いかけると、{visible_person}は現在地で確認できる情報だけを返した。",
+                "npc_reaction": f"{visible_person}は穏やかに頷いた。",
+                "current_situation": f"{current_location}では{visible_person}が同席している。",
+                "current_location_name": current_location,
+                "suggested_actions": [
+                    {"label": "さらに確認する", "summary": "同席者へ公開情報を尋ねる。"},
+                    {"label": "周囲を見回す", "summary": "現在地で見えるものを確認する。"},
+                ],
+                "consequence_summary": f"{visible_person}への問いかけが現在地で解決された。",
+                "world_tags": ["investigate"],
+                "consequence_tags": ["careful_observation"],
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": f"{visible_person}が公開情報を返した。", "salience": 0.7}],
+                "language_context": {
+                    "pack_source_language": "en",
+                    "play_language": "ja",
+                    "output_language_requested": "ja",
+                },
+                "present_people": [visible_person],
+                "addressed_people": [visible_person],
+                "public_claims": [
+                    {"kind": "actor", "surface_text": visible_person, "language": "ja", "role": "addressed"},
+                    {"kind": "actor", "surface_text": visible_person, "language": "ja", "role": "present"},
+                ],
+            },
+            provider_name="test",
+            provider_response_id=None,
+        )
+
+    container.model_router.provider.generate = present_address_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        payload = _post_turn_and_wait(client, session_response.json()["session_id"], auth_headers, "同席している案内担当に確認を求める")
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is False
+        assert turn.resolved_output["rejected_claims"] == []
+        assert turn.resolved_output["consistency_interventions"] == []
+        assert captured["visible"] in turn.resolved_output["narrative"]

@@ -404,3 +404,5 @@ cypress/videos/
 
 .codegraph
 AGENTS.local.md
+
+.kilo/

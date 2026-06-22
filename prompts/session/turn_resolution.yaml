@@ -24,6 +24,8 @@ instructions: |
   - Do not quote player_action_text as a mechanical sentence. Restate the attempted action in natural prose.
   - current_location_name must be exactly one public place name: either public_game_context.current_location.name, one visible_exits[].destination_name, or a public alias from aliases_by_language. Do not combine a place with an object, fact, quest, slash-separated phrase, or target of investigation.
   - Return public_claims for important public names you used. Each claim may include kind, surface_text, language, role, optional key_candidate, and confidence. key_candidate is only your guess; the runtime harness will ignore it unless surface_text also matches public state.
+  - Put any person the exact player_action_text tries to address, ask, meet, visit, call to, or otherwise contact in addressed_people exactly as the target is written, whether or not that person is present. Mark that actor claim role as addressed. Do not silently replace an addressed person with a different visible person. If the addressed person is not present, resolve at the current location and make the absence or need to reach them clear in narrative.
+  - Use actor role present only for people treated as physically present in this scene. Use actor role mentioned for names that appear only in rumor, memory, background, or indirect reference.
   - Write all player-facing result content in narrative. Do not create separate "reaction" or "change" sections.
   - If the player attempts to move to a visible exit, align narrative, current_situation, current_location_name, public_claims, present_people, visible_items, and suggested_actions with the arrival situation at that destination.
   - If the move is not supported by visible exits, keep narrative, current_situation, public_claims, present_people, visible_items, and suggested_actions grounded in the current_location and visible_people/items only.
@@ -47,12 +49,13 @@ instructions: |
         "kind": "location" | "actor" | "item" | "quest" | "fact",
         "surface_text": string,
         "language": BCP-47 or "unknown",
-        "role": "current_location" | "present" | "mentioned" | "used" | "destination" | "offered",
+        "role": "current_location" | "present" | "addressed" | "mentioned" | "used" | "destination" | "offered",
         "key_candidate": string?,
         "confidence": number?
       }
     ],
     "present_people": string[],
+    "addressed_people": string[],
     "visible_items": string[],
     "used_item_names": string[],
     "known_facts": string[],

@@ -326,7 +326,7 @@ class PublicClaimDraft(BaseModel):
     kind: Literal["location", "actor", "item", "quest", "fact"]
     surface_text: str = Field(min_length=1)
     language: str = "unknown"
-    role: Literal["current_location", "present", "mentioned", "used", "destination", "offered"] = "mentioned"
+    role: Literal["current_location", "present", "addressed", "mentioned", "used", "destination", "offered"] = "mentioned"
     key_candidate: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
@@ -349,7 +349,7 @@ class PublicClaimDraft(BaseModel):
             kind = "actor"
         normalized["kind"] = kind if kind in {"location", "actor", "item", "quest", "fact"} else "fact"
         role = str(normalized.get("role") or "").strip().lower()
-        normalized["role"] = role if role in {"current_location", "present", "mentioned", "used", "destination", "offered"} else "mentioned"
+        normalized["role"] = role if role in {"current_location", "present", "addressed", "mentioned", "used", "destination", "offered"} else "mentioned"
         normalized["key_candidate"] = _first_non_empty_text(
             normalized.get("key_candidate"),
             normalized.get("canonical_key_candidate"),
@@ -468,6 +468,7 @@ class PublicGmTurnPayload(BaseModel):
     language_context: dict[str, Any] = Field(default_factory=dict)
     public_claims: list[PublicClaimDraft] = Field(default_factory=list)
     present_people: list[str] = Field(default_factory=list)
+    addressed_people: list[str] = Field(default_factory=list)
     visible_items: list[str] = Field(default_factory=list)
     used_item_names: list[str] = Field(default_factory=list)
     known_facts: list[str] = Field(default_factory=list)
@@ -558,6 +559,17 @@ class PublicGmTurnPayload(BaseModel):
             text = str(item).strip()
             if text:
                 present_people.append(text)
+        addressed_people: list[str] = []
+        for item in normalized.get("addressed_people") or []:
+            if isinstance(item, dict):
+                name = _first_non_empty_text(item.get("name"), item.get("display_name"), item.get("surface_text"))
+                if name:
+                    addressed_people.append(name)
+                    warnings.append("addressed_people object was normalized to name")
+                continue
+            text = str(item).strip()
+            if text:
+                addressed_people.append(text)
         visible_items: list[str] = []
         for item in normalized.get("visible_items") or []:
             if isinstance(item, dict):
@@ -570,6 +582,7 @@ class PublicGmTurnPayload(BaseModel):
             if text:
                 visible_items.append(text)
         normalized["present_people"] = present_people
+        normalized["addressed_people"] = addressed_people
         normalized["visible_items"] = visible_items
         normalized["used_item_names"] = [str(item).strip() for item in normalized.get("used_item_names") or [] if str(item).strip()]
         normalized["known_facts"] = [str(item).strip() for item in normalized.get("known_facts") or [] if str(item).strip()]
@@ -927,6 +940,7 @@ class StubModelProvider(BaseModelProvider):
                 }
             ],
             "present_people": [name for name in visible_people if name],
+            "addressed_people": [],
             "visible_items": [name for name in visible_items if name],
             "used_item_names": used_item_names,
             "known_facts": [],

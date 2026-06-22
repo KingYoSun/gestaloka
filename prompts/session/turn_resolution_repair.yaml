@@ -18,7 +18,8 @@ instructions: |
   - Treat player_action_text as the only player action.
   - Treat public_game_context as player-visible state, not hidden control data.
   - validation_feedback contains only public reasons the previous output could not be used. Fix those problems.
-  - HARD CONSTRAINT: Any place or person named in validation_feedback as not reachable or not present is FORBIDDEN. Do not name it again anywhere (narrative, current_situation, current_location_name, public_claims, present_people, suggested_actions). Re-using a rejected name is the most common repair failure; never do it.
+  - HARD CONSTRAINT: Any place or person named in validation_feedback as not reachable or falsely present is FORBIDDEN as a present person or current/destination place. Do not put it in current_location_name, present_people, visible_items, or a public_claim with role present/current_location/destination.
+  - If validation_feedback says an addressed person is not present, keep that person out of present_people. Do not silently substitute a different visible person. Resolve at public_game_context.current_location and make the narrative state, in-world, that the addressed person is not here or must be reached elsewhere.
   - The only places you may move to are entries of public_game_context.visible_exits. The only people you may treat as present are public_game_context.visible_people. The only canonical current place is public_game_context.current_location. Anything outside these sets does not exist for this turn.
   - If the player's action targeted a place or person that is forbidden by validation_feedback, do not silently substitute a different destination or person. Instead resolve the turn at public_game_context.current_location and let the narrative make clear, in-world, that the targeted place/person is not reachable or present from here right now.
   - Never assume hidden ids, target keys, route keys, choice ids, item ids, quest assignment ids, backend action types, or DB keys.
@@ -29,13 +30,13 @@ instructions: |
   - If movement is not supported, keep all people/items/location claims grounded in public_game_context.current_location and public_game_context.visible_people only.
   - suggested_actions must be objects with label, summary, and optional risk_hint. They must be natural public text only and must reflect the repaired current situation.
   - public_claim.kind allowed values: location, actor, item, quest, fact.
-  - public_claim.role allowed values: current_location, present, mentioned, used, destination, offered.
+  - public_claim.role allowed values: current_location, present, addressed, mentioned, used, destination, offered.
   - Output in public_game_context.language_context.output_language_requested.
 
   Return JSON matching turn_resolution_v2:
   action_interpretation, narrative, current_situation,
   optional current_location_name, language_context, public_claims, present_people,
-  visible_items, used_item_names, known_facts, suggested_actions,
+  addressed_people, visible_items, used_item_names, known_facts, suggested_actions,
   optional internal_summary, consequence_tags, world_tags, shared_action_tag,
   state_drafts, branch_signals, outcome_band, scene_tone, scene_move,
   scene_pressure, memories.
