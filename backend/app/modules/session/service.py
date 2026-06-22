@@ -2218,7 +2218,12 @@ def _resolve_public_ai_gm_turn_for_session(
                 {
                     "reason": "consistency_failed",
                     "claim": str(item.get("claim") or ""),
-                    "message": str(item.get("reason") or "The output contradicted canonical public state."),
+                    "message": (
+                        f"{item.get('reason') or 'The output contradicted canonical public state.'} "
+                        f"Do NOT name '{item.get('claim') or ''}' again. It is not reachable/present from the current "
+                        "location. Either resolve the turn at public_game_context.current_location, or, if the player "
+                        "moves, name only a place in public_game_context.visible_exits."
+                    ).strip(),
                 }
                 for item in dry_run_harness_result["rejected_claims"]
                 if isinstance(item, dict)
@@ -2282,48 +2287,19 @@ def _resolve_public_ai_gm_turn_for_session(
             apply_changes=False,
         )
         if dry_run_harness_result["rejected_claims"]:
-            _persist_role_runs(
-                db,
-                world_id=game_session.world_id,
-                turn_id=turn.id,
-                workflow_name="ai_gm",
-                role_runs=resolution.role_runs,
-                graph_context_status="public_context",
+            # Issue #5 (I3): repair still hallucinated unreachable places / absent
+            # people. Rather than failing the whole turn (and re-producing the same
+            # hallucination on retry), deterministically resolve a minimal narrative
+            # that completes at the canonical current location. The fallback payload
+            # only claims the current location, so it passes the harness cleanly.
+            resolution = container.council_service.fallback_public_turn(
+                council_request,
+                rejected_claims=dry_run_harness_result["rejected_claims"],
+                previous_role_runs=resolution.role_runs,
+                original_failure_reason="consistency_failed",
             )
-            failed_result = _build_failed_turn_result(
-                db,
-                container,
-                prepared,
-                turn=turn,
-                action_type="narrative",
-                resolution_mode="ai_gm_harness",
-                action_label=input_text,
-                graph_context_status="public_context",
-                failure_reason="repair_failed",
-                model_lane=resolution.final_lane,
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                input_mode="free_text",
-                interpreted_intent=payload.interpreted_intent,
-                next_choices=session_state.get("suggested_actions") or [],
-                consequence_summary="アクションに失敗しました。SPは返却されました。",
-                progress_phases=progress_phases,
-                failure_payload={
-                    "failure_reason": "repair_failed",
-                    "failure_reason_code": "repair_failed",
-                    "rejected_claims": dry_run_harness_result["rejected_claims"],
-                    "normalization_warnings": payload.interpreted_intent.get("normalization_warnings", []),
-                    "retrieval_trace": retrieval_trace_to_dict(retrieval.trace),
-                    "council_trace": [
-                        {
-                            "role": item.council_role,
-                            "approval_status": item.approval_status,
-                            "final_lane": item.final_lane,
-                        }
-                        for item in resolution.role_runs
-                    ],
-                },
-            )
-            return failed_result
+            payload = resolution.final_payload
+            progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
 
     _persist_role_runs(
         db,
