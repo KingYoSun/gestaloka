@@ -304,24 +304,42 @@ def test_public_claim_key_candidate_cannot_move_without_matching_surface_text(cl
             session_id,
             auth_headers,
             "虚無領域へ向かう",
-            expected_event="turn.failed",
         )
         after_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
     finally:
         container.model_router.provider.generate = original_generate
 
+    # The unmatched key_candidate still cannot move the player. Instead of failing
+    # the whole turn (and re-hallucinating on retry), the harness deterministically
+    # resolves a minimal narrative at the canonical current location (Issue #5 / I3).
     assert before_state["current_location"]["key"] == "nexus_city"
     assert payload["current_location"]["key"] == "nexus_city"
     assert after_state["current_location"]["key"] == "nexus_city"
     assert payload["location_updates"] == []
-    assert payload["system_message"] == "アクションに失敗しました。SPは返却されました。"
-    assert payload["failure"]["reason"] == "repair_failed"
-    assert payload["refund_ledger_id"]
+    assert payload.get("system_message") is None
+    assert payload.get("failure") is None
+    assert payload.get("refund_ledger_id") is None
+    assert payload["event_id"]
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
         assert turn is not None
-        assert turn.resolved_output["status"] == "failed"
-        assert turn.resolved_output["rejected_claims"]
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is True
+        # The fallback payload only claims the current location, so the harness
+        # accepts it cleanly; no hallucinated move enters canonical state.
+        assert turn.resolved_output["rejected_claims"] == []
+        assert not any(
+            item.get("change_kind") == "location" for item in turn.resolved_output["accepted_state_changes"]
+        )
+        # The unreachable place is named in-world as unreachable, not as a move.
+        assert "虚無領域" in turn.resolved_output["narrative"]
+        assert "見当たらない" in turn.resolved_output["narrative"]
+        # The original hallucination is recorded on the fallback for audit.
+        event = db.get(Event, payload["event_id"])
+        assert event is not None
+        fallback = event.payload["deterministic_fallback"]
+        assert fallback["reason"] == "consistency_failed"
+        assert any(item.get("claim") == "虚無領域" for item in fallback["rejected_claims"])
 
 
 def test_public_visible_item_reference_is_not_unowned_item_use_failure(client, container, auth_headers):
@@ -391,7 +409,7 @@ def test_public_visible_item_reference_is_not_unowned_item_use_failure(client, c
         ]
 
 
-def test_harness_rejects_unavailable_location_claim_without_moving_player(client, container, auth_headers):
+def test_harness_unavailable_location_claim_falls_back_without_moving_player(client, container, auth_headers):
     original_generate = container.model_router.provider.generate
 
     def impossible_location_generate(**kwargs):
@@ -433,7 +451,89 @@ def test_harness_rejects_unavailable_location_claim_without_moving_player(client
             session_id,
             auth_headers,
             "周囲を確認する",
-            expected_event="turn.failed",
+        )
+        after_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
+    finally:
+        container.model_router.provider.generate = original_generate
+
+    # The hallucinated move is rejected (player does not relocate), but instead of
+    # failing the turn the harness resolves a minimal narrative in place (Issue #5).
+    assert payload["current_location"]["name"] == before_state["current_location"]["name"]
+    assert after_state["current_location"]["name"] == before_state["current_location"]["name"]
+    assert payload["location_updates"] == []
+    assert payload.get("system_message") is None
+    assert payload.get("failure") is None
+    assert payload.get("refund_ledger_id") is None
+
+    with container.session_factory() as db:
+        turn = db.get(Turn, payload["turn_id"])
+        memories = db.execute(select(Memory).where(Memory.source_event_id == payload["event_id"])).scalars().all()
+        assert turn is not None
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is True
+        assert turn.resolved_output["rejected_claims"] == []
+        # The hallucinated NPC ("番人") is never materialized into canonical memory.
+        assert all("番人" not in memory.text for memory in memories)
+        event = db.get(Event, payload["event_id"])
+        assert event is not None
+        assert event.payload["deterministic_fallback"]["reason"] == "consistency_failed"
+
+
+def test_harness_repeated_absent_npc_hallucination_falls_back_in_place(client, container, auth_headers):
+    """Issue #5 (I3) regression: when both the first AI GM output and its repair
+    re-hallucinate the same absent NPC, the turn must not fail forever. The harness
+    deterministically resolves a minimal narrative in place that names the person as
+    absent, instead of returning repair_failed and refunding SP."""
+    original_generate = container.model_router.provider.generate
+    absent_npc_name = "忘却の審判官ヴェル"
+
+    def absent_npc_generate(**kwargs):
+        prompt = kwargs["prompt"]
+        if prompt.prompt_id not in {"session.turn_resolution", "session.turn_resolution_repair"}:
+            return original_generate(**kwargs)
+        # Both the initial output and the repair keep claiming the same NPC is here.
+        return ProviderResponse(
+            raw_output={
+                "action_interpretation": f"ヌートは{absent_npc_name}に話しかけようとしている。",
+                "narrative": f"{absent_npc_name}はヌートの問いに静かに頷いた。",
+                "npc_reaction": f"{absent_npc_name}は古い裁定の記憶を語り始めた。",
+                "current_situation": f"{absent_npc_name}が傍らに立っている。",
+                "suggested_actions": [
+                    {"label": "さらに尋ねる", "summary": "裁定の記憶を深掘りする。"},
+                    {"label": "周囲を見回す", "summary": "現在地の様子を確かめる。"},
+                ],
+                "consequence_summary": f"{absent_npc_name}との対話が始まった。",
+                "world_tags": ["investigate"],
+                "consequence_tags": ["careful_observation"],
+                "scene_tone": "measured",
+                "scene_move": "deepen",
+                "scene_pressure": "medium",
+                "memories": [{"scope": "world", "text": f"{absent_npc_name}が裁定の記憶を語った。", "salience": 0.7}],
+                "language_context": {
+                    "pack_source_language": "en",
+                    "play_language": "ja",
+                    "output_language_requested": "ja",
+                },
+                "present_people": [absent_npc_name],
+                "public_claims": [
+                    {"kind": "actor", "surface_text": absent_npc_name, "language": "ja", "role": "present"},
+                ],
+            },
+            provider_name="test",
+            provider_response_id=None,
+        )
+
+    container.model_router.provider.generate = absent_npc_generate
+    try:
+        session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+        assert session_response.status_code == 200
+        session_id = session_response.json()["session_id"]
+        before_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
+        payload = _post_turn_and_wait(
+            client,
+            session_id,
+            auth_headers,
+            f"{absent_npc_name}に話しかける",
         )
         after_state = client.get(f"/sessions/{session_id}/state", headers=auth_headers).json()
     finally:
@@ -441,14 +541,24 @@ def test_harness_rejects_unavailable_location_claim_without_moving_player(client
 
     assert payload["current_location"]["name"] == before_state["current_location"]["name"]
     assert after_state["current_location"]["name"] == before_state["current_location"]["name"]
-    assert payload["location_updates"] == []
-    assert payload["system_message"] == "アクションに失敗しました。SPは返却されました。"
-    assert payload["failure"]["reason"] == "repair_failed"
+    assert payload.get("system_message") is None
+    assert payload.get("failure") is None
+    assert payload.get("refund_ledger_id") is None
 
     with container.session_factory() as db:
         turn = db.get(Turn, payload["turn_id"])
         memories = db.execute(select(Memory).where(Memory.source_event_id == payload["event_id"])).scalars().all()
         assert turn is not None
-        assert turn.resolved_output["status"] == "failed"
-        assert turn.resolved_output["rejected_claims"]
-        assert all("番人" not in memory.text for memory in memories)
+        assert turn.resolved_output["status"] == "resolved"
+        assert turn.resolved_output["used_fallback"] is True
+        assert turn.resolved_output["rejected_claims"] == []
+        # The absent NPC is named as absent in the fallback narrative, not present.
+        assert absent_npc_name in turn.resolved_output["narrative"]
+        assert "見当たらない" in turn.resolved_output["narrative"]
+        # The hallucinated NPC dialogue is never materialized into canonical memory.
+        assert all("裁定の記憶" not in memory.text for memory in memories)
+        event = db.get(Event, payload["event_id"])
+        assert event is not None
+        fallback = event.payload["deterministic_fallback"]
+        assert fallback["reason"] == "consistency_failed"
+        assert any(item.get("claim") == absent_npc_name for item in fallback["rejected_claims"])

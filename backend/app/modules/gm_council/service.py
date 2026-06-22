@@ -953,6 +953,25 @@ def _public_validation_feedback(items: list[dict[str, Any]]) -> list[dict[str, s
     return feedback or [{"reason": "consistency_failed", "message": "The output must be repaired to match visible public state."}]
 
 
+def _split_rejected_claim_names(rejected_claims: list[dict[str, Any]] | None) -> tuple[list[str], list[str]]:
+    """Split harness rejected claims into ordered, de-duplicated lists of
+    unreachable place names and absent person names for fallback narration."""
+    unreachable_places: list[str] = []
+    absent_people: list[str] = []
+    for item in rejected_claims or []:
+        if not isinstance(item, dict):
+            continue
+        name = _compact_text(item.get("claim"))
+        if not name:
+            continue
+        claim_kind = str(item.get("claim_kind") or "")
+        if claim_kind == "location" and name not in unreachable_places:
+            unreachable_places.append(name)
+        elif claim_kind == "actor" and name not in absent_people:
+            absent_people.append(name)
+    return unreachable_places, absent_people
+
+
 def _public_text(value: Any) -> str:
     return _compact_text(value)
 
@@ -1260,6 +1279,45 @@ class GMCouncilService:
             deterministic_fallback_used=False,
         )
 
+    def fallback_public_turn(
+        self,
+        request: CouncilRequest,
+        *,
+        rejected_claims: list[dict[str, Any]] | None = None,
+        previous_role_runs: list[CouncilRoleRun] | None = None,
+        original_failure_reason: str | None = None,
+    ) -> TurnResolutionOutcome:
+        """Deterministically resolve a turn at the current location when the AI GM
+        and its repair attempt keep hallucinating unreachable places or absent
+        people (Issue #5 / I3). Produces a minimal, harness-clean narrative so the
+        whole turn is not failed; the rejected claims are recorded for audit."""
+        cleaned_claims = [item for item in (rejected_claims or []) if isinstance(item, dict)]
+        public_payload = self._public_turn_fallback_payload(request, rejected_claims=cleaned_claims)
+        final_payload = self._public_turn_to_resolution_payload(request, public_payload)
+        final_payload.event_payload = {
+            **final_payload.event_payload,
+            "deterministic_fallback": {
+                "reason": original_failure_reason or "consistency_failed",
+                "rejected_claims": cleaned_claims[:6],
+            },
+        }
+        fallback_role_run = CouncilRoleRun(
+            council_role="ai_gm_fallback",
+            stage_index=3,
+            prompt_id="session.turn_resolution_fallback",
+            approval_status="approved",
+            attempts=[],
+            final_lane="deterministic",
+            final_payload=public_payload.model_dump(),
+            failure_reason=None,
+        )
+        return TurnResolutionOutcome(
+            role_runs=[*(previous_role_runs or []), fallback_role_run],
+            final_lane="deterministic",
+            final_payload=final_payload,
+            deterministic_fallback_used=True,
+        )
+
     def _public_turn_input_payload(self, request: CouncilRequest) -> dict[str, Any]:
         player_profile = request.session_state.get("player_profile") or {}
         play_language = _play_language_context(player_profile)
@@ -1276,7 +1334,12 @@ class GMCouncilService:
             "recent_memories": [_public_text(item) for item in request.relevant_memories if _public_text(item)][:6],
         }
 
-    def _public_turn_fallback_payload(self, request: CouncilRequest) -> PublicGmTurnPayload:
+    def _public_turn_fallback_payload(
+        self,
+        request: CouncilRequest,
+        *,
+        rejected_claims: list[dict[str, Any]] | None = None,
+    ) -> PublicGmTurnPayload:
         input_payload = self._public_turn_input_payload(request)
         public_context = input_payload["public_game_context"]
         current_location = public_context.get("current_location") if isinstance(public_context, dict) else {}
@@ -1287,6 +1350,7 @@ class GMCouncilService:
         visible_exits = public_context.get("visible_exits") if isinstance(public_context, dict) else []
         visible_exits = [item for item in visible_exits or [] if isinstance(item, dict)]
         exit_name = _first_text((visible_exits[0] or {}).get("destination_name")) if visible_exits else ""
+        unreachable_places, absent_people = _split_rejected_claim_names(rejected_claims)
         suggestions = [
             {"label": "直前の結果を案内役に確認する", "summary": "場面を進める前に、確認できた変化だけを整理する。"},
             {"label": f"{location_name}で次に見える記録を調べる", "summary": "現在地にある公開情報から次の糸口を探す。"},
@@ -1296,10 +1360,16 @@ class GMCouncilService:
             },
         ]
         action_phrase = _naturalize_turn_action_text(input_text)
+        narrative_parts = [f"{request.player_name}は{action_phrase}。"]
+        if unreachable_places:
+            narrative_parts.append(f"{'・'.join(unreachable_places[:2])}へ通じる道は、ここからは今のところ見当たらない。")
+        if absent_people:
+            narrative_parts.append(f"{'・'.join(absent_people[:2])}の姿は、この場には見当たらない。")
+        narrative_parts.append(f"{location_name}の状況は、確認できる範囲でだけ変化する。")
         return PublicGmTurnPayload.model_validate(
             {
                 "action_interpretation": input_text,
-                "narrative": f"{request.player_name}は{action_phrase}。{location_name}の状況は、確認できる範囲でだけ変化する。",
+                "narrative": "".join(narrative_parts),
                 "npc_reaction": f"{request.npc_name}は、その場で見える変化にだけ反応する。",
                 "current_situation": _first_text(current_location.get("description"), f"{location_name}で次の判断点が見えている。"),
                 "current_location_name": location_name,
