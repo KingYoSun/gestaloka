@@ -107,6 +107,28 @@ def test_turn_api_rejects_legacy_hidden_action_contract(client, auth_headers):
     assert response.status_code == 422
 
 
+def test_turn_api_rejects_quest_lifecycle_action_metadata(client, auth_headers):
+    # AGENTS.md: /turns is canonically session_id + player_action_text. Quest journal actions
+    # (including leave/resume) must arrive as display-body player_action_text, never as hidden
+    # action metadata. The strict request model rejects such fields.
+    session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_id = session_response.json()["session_id"]
+
+    response = client.post(
+        "/turns",
+        json={
+            "session_id": session_id,
+            "player_action_text": "クエストから離脱: 来訪者ログ登録",
+            "action_type": "leave_quest",
+            "quest_assignment_id": "some-assignment",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
 def test_session_state_exposes_public_suggested_actions_only(client, auth_headers):
     session_response = client.post("/sessions", json=_session_payload(), headers=auth_headers)
     assert session_response.status_code == 200

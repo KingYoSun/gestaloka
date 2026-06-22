@@ -32,6 +32,7 @@ instructions: |
   - suggested_actions must reflect the result and current situation after this turn. Do not simply repeat public_game_context.visible_opportunities; if little changed, offer follow-up confirmation, a local inquiry, or a visible exit/action that fits the current situation.
   - Optional quest_offer/followup_quest_offer may be emitted only for a future-facing independent playable objective with player attention basis, current location/shared-world basis, uncertainty, and a first actionable step. Do not emit one for a single next action, broad browsing, vague exploration, a duplicate live quest, the latest result summary, or a conclusion that reveals the final cause or solution.
   - Quest progress is your narrative judgment, not a counter. Emit active_quest_resolution {"resolved": true, "summary": string, "outcome_basis": string[]?} only when the player's committed action accomplishes the objective of the current active quest. Omit it for observation, broad exploration, questions, or a partial step; the active quest stays ongoing until its situation is genuinely concluded. Never include a quest id.
+  - When the player's action sets the current active quest aside or returns to a paused quest, that disposition is your narrative judgment. Narrate it entirely at the current_location — no travel and no new people — and emit quest_lifecycle_directive {"disposition": "paused" | "resumed", "summary": string}: "paused" when they step away from the active quest, "resumed" when they take it back up. Omit quest_lifecycle_directive for every other action, and never include a quest id.
   - Output in play_language.prompt_name.
 
   Output schema:
@@ -69,5 +70,6 @@ instructions: |
     "memories": [{"scope": string, "text": string, "salience": number}],
     "quest_offer": object?,
     "followup_quest_offer": object?,
-    "active_quest_resolution": object?
+    "active_quest_resolution": object?,
+    "quest_lifecycle_directive": object?
   }

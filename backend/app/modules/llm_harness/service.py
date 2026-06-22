@@ -455,6 +455,7 @@ class TurnResolutionPayload(BaseModel):
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
     active_quest_resolution: dict[str, Any] | None = None
+    quest_lifecycle_directive: dict[str, Any] | None = None
     entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -490,6 +491,7 @@ class PublicGmTurnPayload(BaseModel):
     followup_quest_offer: dict[str, Any] | None = None
     quest_resolution_hint: dict[str, Any] | None = None
     active_quest_resolution: dict[str, Any] | None = None
+    quest_lifecycle_directive: dict[str, Any] | None = None
     entity_drafts: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -623,7 +625,14 @@ class PublicGmTurnPayload(BaseModel):
             shared_action_tag = "none"
         normalized["shared_action_tag"] = shared_action_tag
         normalized["memories"] = _memory_drafts(normalized.get("memories"), consequence_summary)
-        for key in ("quest_offer", "chapter_directive", "followup_quest_offer", "quest_resolution_hint", "active_quest_resolution"):
+        for key in (
+            "quest_offer",
+            "chapter_directive",
+            "followup_quest_offer",
+            "quest_resolution_hint",
+            "active_quest_resolution",
+            "quest_lifecycle_directive",
+        ):
             if not isinstance(normalized.get(key), dict):
                 normalized[key] = None
         if not isinstance(normalized.get("entity_drafts"), list):
@@ -888,6 +897,15 @@ class StubModelProvider(BaseModelProvider):
                 "summary": consequence_summary,
                 "outcome_basis": ["player_action"],
             }
+        # Offline stub stands in for the AI GM's lifecycle judgment: when the player's action
+        # text reads as setting the active quest aside or returning to it, emit the canonical
+        # quest_lifecycle_directive. The server applies it against the single active/paused quest.
+        quest_lifecycle_directive: dict[str, Any] | None = None
+        if active_quest_resolution is None:
+            if any(token in input_text for token in ("離脱", "いったん離れ", "脇に置", "保留にする", "set aside", "step away", "leave the quest")):
+                quest_lifecycle_directive = {"disposition": "paused", "summary": consequence_summary}
+            elif any(token in input_text for token in ("再開", "resume the quest", "return to the quest")):
+                quest_lifecycle_directive = {"disposition": "resumed", "summary": consequence_summary}
         return {
             "action_interpretation": input_text or "現在の状況を確かめる",
             "narrative": (
@@ -924,6 +942,7 @@ class StubModelProvider(BaseModelProvider):
             "scene_move": scene_move,
             "scene_pressure": "medium",
             "active_quest_resolution": active_quest_resolution,
+            "quest_lifecycle_directive": quest_lifecycle_directive,
             "memories": [
                 {
                     "scope": "world",

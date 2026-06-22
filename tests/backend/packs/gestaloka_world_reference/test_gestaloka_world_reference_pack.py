@@ -34,6 +34,7 @@ from app.modules.world_state.entity_generation import materialize_entity_drafts,
 from app.modules.world_state.shared_consequence import apply_shared_consequence_rules
 from app.modules.world_state.service import (
     apply_quest_lifecycle_action,
+    apply_quest_lifecycle_directive,
     build_session_state,
     create_dynamic_quest_offer,
     default_next_choices,
@@ -387,21 +388,109 @@ def test_active_starter_quest_blocks_dynamic_quest_offer_and_supports_lifecycle_
         for quest in advance_state.json()["quest_journal"]
     )
 
-    _, leave_payload, _ = post_turn_and_wait(
+    # I4: leaving an active quest is a structured player intent. The AI GM narrates the
+    # departure and the canonical quest_lifecycle_directive transition pauses the quest
+    # (active -> paused) rather than being a free-text no-op.
+    _, leave_payload, leave_messages = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"player_action_text": "来訪者ログ登録はいったん保留して、現在の場面を見直す"},
+        payload={"action_type": "leave_quest", "quest_assignment_id": quest_assignment_id},
     )
-    assert leave_payload["player_action_text"].startswith("来訪者ログ登録")
+    assert leave_payload["narrative"]
+    assert any(
+        item.get("assignment_id") == quest_assignment_id and item.get("status") == "paused"
+        for item in leave_payload["quest_updates"]
+    )
+    assert "quest.updated" in [message["event"] for message in leave_messages]
+    leave_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers).json()
+    assert any(
+        quest["assignment_id"] == quest_assignment_id and quest["status"] == "paused"
+        for quest in leave_state["quest_journal"]
+    )
+    assert any(
+        quest["assignment_id"] == quest_assignment_id and quest["available_actions"] == ["resume_quest"]
+        for quest in leave_state["quest_journal"]
+    )
 
     _, resume_payload, _ = post_turn_and_wait(
         client,
         session_id=session_payload["session_id"],
         auth_headers=auth_headers,
-        payload={"player_action_text": "来訪者ログ登録の続きを進める"},
+        payload={"action_type": "resume_quest", "quest_assignment_id": quest_assignment_id},
     )
-    assert resume_payload["player_action_text"] == "来訪者ログ登録の続きを進める"
+    assert resume_payload["narrative"]
+    assert any(
+        item.get("assignment_id") == quest_assignment_id and item.get("status") == "active"
+        for item in resume_payload["quest_updates"]
+    )
+    resume_state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers).json()
+    assert any(
+        quest["assignment_id"] == quest_assignment_id and quest["status"] == "active"
+        for quest in resume_state["quest_journal"]
+    )
+
+
+def test_apply_quest_lifecycle_directive_pauses_resumes_and_ignores_unknown(client, container, auth_headers):
+    session_response = client.post("/sessions", json=gestaloka_session_payload(), headers=auth_headers)
+    assert session_response.status_code == 200
+    session_payload = session_response.json()
+    actor_id = session_payload["player_actor_id"]
+    state = client.get(f"/sessions/{session_payload['session_id']}/state", headers=auth_headers).json()
+    assert state["quests"][0]["status"] == "active"
+    quest_assignment_id = state["quests"][0]["assignment_id"]
+
+    with container.session_factory() as db:
+        source_event = db.execute(
+            select(Event)
+            .where(Event.world_id == "gestaloka_world_reference", Event.session_id == session_payload["session_id"])
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(1)
+        ).scalar_one()
+
+        # Unknown / missing disposition is a no-op: deterministic code never invents a transition.
+        for directive in (None, {}, {"disposition": "elsewhere"}):
+            noop = apply_quest_lifecycle_directive(
+                db,
+                world_id="gestaloka_world_reference",
+                actor_id=actor_id,
+                source_event_id=source_event.id,
+                directive=directive,
+            )
+            assert noop == {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+
+        # Resumed with no paused quest present is also a no-op (nothing to verify against).
+        assert apply_quest_lifecycle_directive(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=actor_id,
+            source_event_id=source_event.id,
+            directive={"disposition": "resumed", "summary": "再開する。"},
+        )["quest_updates"] == []
+
+        paused = apply_quest_lifecycle_directive(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=actor_id,
+            source_event_id=source_event.id,
+            directive={"disposition": "paused", "summary": "いったん脇に置く。"},
+        )
+        assert any(
+            item["assignment_id"] == quest_assignment_id and item["status"] == "paused"
+            for item in paused["quest_updates"]
+        )
+
+        resumed = apply_quest_lifecycle_directive(
+            db,
+            world_id="gestaloka_world_reference",
+            actor_id=actor_id,
+            source_event_id=source_event.id,
+            directive={"disposition": "resumed", "summary": "再び向き合う。"},
+        )
+        assert any(
+            item["assignment_id"] == quest_assignment_id and item["status"] == "active"
+            for item in resumed["quest_updates"]
+        )
 
 
 def test_first_choice_completion_text_completes_active_quest_even_when_llm_returns_none_tags(

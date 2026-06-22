@@ -1398,6 +1398,9 @@ function applyResolvedTurnResponse(response: TurnResponse) {
   async function handleQuestAction(actionType: "accept_quest" | "decline_quest" | "ignore_quest" | "leave_quest" | "resume_quest", questAssignmentId: string) {
     const quest = sessionState?.quest_journal.find((item) => item.assignment_id === questAssignmentId);
     const actionLabel = t(`player.quest.actions.${actionType}`);
+    // Quest journal actions are conveyed as display-body player_action_text (AGENTS.md): the AI GM
+    // narrates the intent and, for leave/resume, emits the canonical quest_lifecycle_directive that
+    // the server applies. No hidden action metadata is sent on /turns.
     await submitTurnRequest({ player_action_text: quest ? `${actionLabel}: ${quest.title}` : actionLabel });
   }
 

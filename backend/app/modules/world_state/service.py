@@ -2524,6 +2524,73 @@ def apply_quest_lifecycle_action(
     raise ValueError(f"Unsupported quest action: {action_type}")
 
 
+def apply_quest_lifecycle_directive(
+    db: Session,
+    *,
+    world_id: str,
+    actor_id: str,
+    source_event_id: str,
+    directive: dict[str, Any] | None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Apply the AI GM's judgment that the player set aside (paused) or returned to (resumed)
+    a quest.
+
+    Like quest completion, leaving and resuming a quest are the AI GM's narrative judgment,
+    expressed in its canonical ``quest_lifecycle_directive`` output (see ADR-003). The player
+    conveys the intent through ``player_action_text`` only; deterministic code never decides
+    the action from that text. It just verifies a single eligible quest exists and applies the
+    canonical transition, so the narrative and the journal change come from the same turn and
+    cannot diverge:
+
+    - ``disposition == "paused"`` pauses the single active quest (unless its prologue/epilogue
+      locks departure).
+    - ``disposition == "resumed"`` reactivates the most recently paused quest.
+    """
+    empty: dict[str, list[dict[str, Any]]] = {"quest_updates": [], "inventory_updates": [], "chapter_updates": []}
+    directive = directive if isinstance(directive, dict) else {}
+    disposition = str(directive.get("disposition") or "").strip().lower()
+    if disposition == "paused":
+        active = _active_progression_quest(db, world_id=world_id, actor_id=actor_id)
+        if active is None:
+            return empty
+        assignment, _template = active
+        action_type = "leave_quest"
+    elif disposition == "resumed":
+        paused_row = db.execute(
+            select(QuestAssignment, QuestTemplate)
+            .join(
+                QuestTemplate,
+                (QuestTemplate.id == QuestAssignment.quest_template_id) & (QuestTemplate.world_id == QuestAssignment.world_id),
+            )
+            .where(
+                QuestAssignment.world_id == world_id,
+                QuestAssignment.owner_actor_id == actor_id,
+                QuestAssignment.status == "paused",
+            )
+            .order_by(QuestAssignment.updated_at.desc(), QuestAssignment.id.desc())
+        ).first()
+        if paused_row is None:
+            return empty
+        assignment, _template = paused_row
+        action_type = "resume_quest"
+    else:
+        return empty
+    try:
+        quest_updates, chapter_updates, _summary = apply_quest_lifecycle_action(
+            db,
+            world_id=world_id,
+            actor_id=actor_id,
+            quest_assignment_id=assignment.id,
+            action_type=action_type,
+            source_event_id=source_event_id,
+        )
+    except (LookupError, ValueError):
+        # Leaving is locked during prologue/epilogue, or the quest changed underfoot. The
+        # narrative already accounts for the moment; the journal simply does not transition.
+        return empty
+    return {"quest_updates": quest_updates, "inventory_updates": [], "chapter_updates": chapter_updates}
+
+
 def apply_dynamic_chapter_progression(
     db: Session,
     *,
