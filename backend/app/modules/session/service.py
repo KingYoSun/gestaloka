@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import time
 import re
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator
@@ -16,6 +18,7 @@ from app.models.entities import (
     Actor,
     ChapterTrack,
     Event,
+    Faction,
     LLMRun,
     Location,
     Memory,
@@ -1825,6 +1828,213 @@ def _retrieval_query_for_public_turn(
     return "\n".join(line for line in lines if line)
 
 
+def _scene_entity_keys(session_state: dict[str, Any]) -> set[str]:
+    """Normalized public names already fully described by the current scene.
+
+    References that resolve to one of these are not "after-the-fact" context and
+    are skipped so referenced_context only carries newly introduced elements."""
+    keys: set[str] = set()
+    current_location = session_state.get("current_location") or session_state.get("location") or {}
+    if isinstance(current_location, dict):
+        for value in (current_location.get("name"), current_location.get("source_name")):
+            normalized = _normalize_public_claim_text(str(value or ""))
+            if normalized:
+                keys.add(normalized)
+    for figure in session_state.get("local_figures") or session_state.get("plaza_figures") or []:
+        if isinstance(figure, dict):
+            for alias in _public_figure_aliases(figure):
+                normalized = _normalize_public_claim_text(alias)
+                if normalized:
+                    keys.add(normalized)
+    for item in session_state.get("inventory") or []:
+        if isinstance(item, dict):
+            normalized = _normalize_public_claim_text(str(item.get("name") or ""))
+            if normalized:
+                keys.add(normalized)
+    for route in session_state.get("nearby_routes") or []:
+        if isinstance(route, dict):
+            for value in (route.get("destination_name"), route.get("destination_source_name")):
+                normalized = _normalize_public_claim_text(str(value or ""))
+                if normalized:
+                    keys.add(normalized)
+    return keys
+
+
+def _build_world_reference_directory(
+    db: Session,
+    *,
+    world_id: str,
+    session_state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Canonical same-world entities (people, places, factions) the planner may
+    reference. Each entry carries public aliases plus the internal handles the
+    deterministic resolver uses for target memory retrieval. Internal handles are
+    never forwarded to the LLM (see _context_planner_input_payload sanitization).
+
+    The planner contract also accepts the thing/event categories, but those have no
+    canonical entity table to resolve against here; such references simply do not
+    resolve and are dropped (no hallucinated card), which is the intended fail-safe."""
+    directory: list[dict[str, Any]] = []
+
+    npc_figures = _enrich_public_figures_with_aliases(
+        db,
+        world_id=world_id,
+        figures=[npc for npc in list_npc_locations(db, world_id) if isinstance(npc, dict)],
+    )
+    for npc in npc_figures:
+        name = str(npc.get("source_name") or npc.get("display_name") or "").strip()
+        if not name:
+            continue
+        directory.append(
+            {
+                "name": name,
+                "category": "person",
+                "aliases": _public_figure_aliases(npc),
+                "summary": str(npc.get("summary") or "").strip(),
+                "actor_id": npc.get("actor_id"),
+                "location_id": npc.get("location_id"),
+            }
+        )
+
+    try:
+        _pack, template = resolve_world_pack(db, world_id)
+    except Exception:
+        template = None
+    if template is not None:
+        for location_key, pack_location in template.locations.items():
+            location_name = str(pack_location.name or location_key).strip()
+            if not location_name:
+                continue
+            location = get_location_by_key(db, world_id, location_key)
+            aliases = _location_public_aliases(
+                db, world_id, location_key=location_key, location_name=location_name
+            )
+            directory.append(
+                {
+                    "name": location_name,
+                    "category": "place",
+                    "aliases": aliases,
+                    "summary": str(pack_location.description or "").strip(),
+                    "location_id": location.id if location is not None else None,
+                }
+            )
+
+    factions = list(
+        db.execute(
+            select(Faction).where(Faction.world_id == world_id, Faction.status == "active")
+        ).scalars()
+    )
+    for faction in factions:
+        name = str(faction.name or "").strip()
+        if not name:
+            continue
+        aliases = _unique_public_aliases(
+            [name, *[alias for _language, alias in _public_glossary_aliases_for_text(db, world_id, name)]]
+        )
+        directory.append(
+            {
+                "name": name,
+                "category": "faction",
+                "aliases": aliases,
+                "summary": str(faction.description or "").strip(),
+            }
+        )
+
+    return directory
+
+
+def _match_reference_directory_entry(
+    directory: list[dict[str, Any]],
+    *,
+    name: str,
+    category: str,
+) -> dict[str, Any] | None:
+    same_category = [entry for entry in directory if str(entry.get("category") or "") == category]
+    for candidate_set in (same_category, directory):
+        for entry in candidate_set:
+            aliases = entry.get("aliases") or [entry.get("name")]
+            if any(_public_name_matches_claim(str(alias or ""), name) for alias in aliases if str(alias or "")):
+                return entry
+    return None
+
+
+def _resolve_referenced_context(
+    db: Session,
+    container: AppContainer,
+    *,
+    world_id: str,
+    references: list[dict[str, Any]],
+    directory: list[dict[str, Any]],
+    session_state: dict[str, Any],
+    fallback_location_id: str | None,
+) -> list[dict[str, Any]]:
+    """Resolve planner references to canonical entities and target-search the
+    memories tied to each. Unresolvable references are dropped (no hallucinated
+    cards). Output is public text only; no internal ids are included."""
+    if not references:
+        return []
+    scene_keys = _scene_entity_keys(session_state)
+    resolved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for reference in references:
+        if not isinstance(reference, dict):
+            continue
+        name = str(reference.get("name") or "").strip()
+        if not name:
+            continue
+        category = str(reference.get("category") or "person").strip().lower()
+        if category not in {"person", "place", "thing", "faction", "event"}:
+            category = "person"
+        entry = _match_reference_directory_entry(directory, name=name, category=category)
+        if entry is None:
+            continue
+        canonical_name = str(entry.get("name") or name).strip()
+        dedupe_key = _normalize_public_claim_text(canonical_name)
+        if not dedupe_key or dedupe_key in seen:
+            continue
+        if dedupe_key in scene_keys:
+            continue
+        seen.add(dedupe_key)
+
+        actor_id = entry.get("actor_id")
+        location_id = entry.get("location_id")
+        search_focus = str(reference.get("search_focus") or "").strip()
+        # Build the retrieval query from every public surface of the entity so the
+        # embedding query matches memories regardless of which language/alias the
+        # player used (the planner may echo the canonical name, the player the alias).
+        query_parts = [canonical_name, name, search_focus]
+        query_parts.extend(str(alias) for alias in entry.get("aliases") or [])
+        query_text = "\n".join(
+            dict.fromkeys(part.strip() for part in query_parts if part and part.strip())
+        )
+        try:
+            retrieval = container.memory_service.search(
+                db,
+                world_id=world_id,
+                query_text=query_text or canonical_name,
+                actor_id=actor_id if isinstance(actor_id, str) and actor_id else None,
+                location_id=(
+                    location_id
+                    if isinstance(location_id, str) and location_id
+                    else fallback_location_id
+                ),
+            )
+            related_memories = [item.text for item in retrieval.memories][:4]
+        except Exception:
+            related_memories = []
+        resolved.append(
+            {
+                "name": canonical_name,
+                "category": str(entry.get("category") or category),
+                "public_summary": str(entry.get("summary") or "").strip(),
+                "related_memories": related_memories,
+            }
+        )
+        if len(resolved) >= 6:
+            break
+    return resolved
+
+
 FORBIDDEN_PLAYER_TEXT_TOKENS = {
     "choice_id",
     "action_kind",
@@ -2361,17 +2571,71 @@ def _resolve_public_ai_gm_turn_for_session(
         alias_index=alias_index,
     )
     retrieval_location_id = _visible_route_destination_id(detected_route or {}) or prepared.location_id
-    retrieval = container.memory_service.search(
+    world_directory = _build_world_reference_directory(
         db,
         world_id=game_session.world_id,
-        query_text=_retrieval_query_for_public_turn(
-            input_text=input_text,
-            session_state=session_state,
-            detected_route=detected_route,
-        ),
-        actor_id=None,
-        location_id=retrieval_location_id,
+        session_state=session_state,
     )
+    planner_request = CouncilRequest(
+        world_id=game_session.world_id,
+        turn_id=turn.id,
+        player_name=player_actor.display_name,
+        npc_name=guide_npc.display_name,
+        input_text=input_text,
+        input_mode="free_text",
+        selected_choice=None,
+        relevant_memories=[],
+        relation_context=[],
+        graph_context_status="public_context",
+        session_state=session_state,
+    )
+    # Run the baseline semantic retrieval and the context planner concurrently so the
+    # planner's lite_lane latency is largely hidden behind the baseline embedding search.
+    _ = container.model_router.provider
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="public-turn-context") as executor:
+        retrieval_context = copy_context()
+        planner_context = copy_context()
+        retrieval_future = executor.submit(
+            retrieval_context.run,
+            container.memory_service.search,
+            db,
+            world_id=game_session.world_id,
+            query_text=_retrieval_query_for_public_turn(
+                input_text=input_text,
+                session_state=session_state,
+                detected_route=detected_route,
+            ),
+            actor_id=None,
+            location_id=retrieval_location_id,
+        )
+        planner_future = executor.submit(
+            planner_context.run,
+            container.council_service.plan_context,
+            planner_request,
+            world_directory=world_directory,
+        )
+        retrieval = retrieval_future.result()
+        try:
+            context_plan = planner_future.result()
+        except Exception:
+            context_plan = None
+
+    planner_role_run = context_plan.role_run if context_plan is not None else None
+    referenced_context: list[dict[str, Any]] = []
+    if context_plan is not None and context_plan.succeeded:
+        # fail-open: any resolution error degrades to baseline-only context.
+        try:
+            referenced_context = _resolve_referenced_context(
+                db,
+                container,
+                world_id=game_session.world_id,
+                references=context_plan.references,
+                directory=world_directory,
+                session_state=session_state,
+                fallback_location_id=retrieval_location_id,
+            )
+        except Exception:
+            referenced_context = []
     council_request = CouncilRequest(
         world_id=game_session.world_id,
         turn_id=turn.id,
@@ -2384,8 +2648,11 @@ def _resolve_public_ai_gm_turn_for_session(
         relation_context=[],
         graph_context_status="public_context",
         session_state=session_state,
+        referenced_context=referenced_context,
     )
     resolution = container.council_service.resolve_public_turn(council_request)
+    if planner_role_run is not None:
+        resolution.role_runs.insert(0, planner_role_run)
     progress_phases = _progress_phases_from_role_runs(resolution.role_runs)
     if not resolution.succeeded or resolution.final_payload is None:
         _persist_role_runs(
@@ -5562,6 +5829,7 @@ def _resolve_travel_target_key(
 
 def _progress_phases_from_role_runs(role_runs: list[Any]) -> list[str]:
     phase_map = {
+        "context_planner": "context_planning",
         "intent_interpreter": "intent_interpretation",
         "memory_manager": "memory_council",
         "npc_manager": "npc_council",
