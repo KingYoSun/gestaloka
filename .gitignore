@@ -406,3 +406,6 @@ cypress/videos/
 AGENTS.local.md
 
 .kilo/
+
+# Firecrawl local cache / install check output
+.firecrawl/
