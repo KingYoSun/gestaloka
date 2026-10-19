@@ -506,7 +506,7 @@ export class WorldAccess {
         kind: edge.kind === "see" ? "observation" : "interpretation",
         text:
           edge.kind === "see"
-            ? edge.observation?.aspect || edge.text || ""
+            ? edge.text || edge.observation?.aspect || ""
             : (content?.text ?? ""),
         from: edge.period.from,
         ...(edge.period.until === undefined

@@ -93,6 +93,7 @@ async function fixture() {
       [
         {
           ...edge("see", actor, object),
+          text: "箱の表面が見える。外側に浅い傷がある。",
           observation: {
             aspect: "箱の表面が見える",
             through: 0,
@@ -166,6 +167,7 @@ test("意図形成へ観測の側面だけを渡し、対象全体・未観測�
     "箱の表面を調べる",
   );
   expect(sent).toContain("箱の表面が見える");
+  expect(sent).toContain("外側に浅い傷がある。");
   await store.commit(
     await store.claim(scene.worldId, randomUUID()),
     store.context(scene.worldId),

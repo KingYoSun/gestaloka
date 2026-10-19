@@ -844,7 +844,7 @@ export class WorldAgent {
       observations: observations.map((edge) => ({
         id: edge.id,
         target: edge.target,
-        text: edge.observation?.aspect || edge.text || null,
+        text: edge.text || edge.observation?.aspect || null,
         period: edge.period,
       })),
       interpretations,

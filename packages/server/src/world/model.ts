@@ -11,7 +11,9 @@ const Period = z
 const Content = { id: z.uuid(), text: z.string() };
 const Observation = z
   .object({
-    aspect: z.string(),
+    aspect: z
+      .string()
+      .describe("受容した側面・範囲。textがない場合は、受容内容の本文も含める"),
     through: Time,
     sourceIds: z.array(z.uuid()).default([]),
     pathIds: z.array(z.uuid()).default([]),
@@ -54,7 +56,10 @@ export const WorldEdge = z
     source: z.uuid(),
     target: z.uuid(),
     role: z.enum(["content", "about"]).optional(),
-    text: z.string().optional(),
+    text: z
+      .string()
+      .optional()
+      .describe("関係の内容。seeではその存在に提示できる受容内容の本文"),
     period: Period,
     observation: Observation.optional(),
   })
