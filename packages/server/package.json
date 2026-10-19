@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./world": "./dist/world/store.js"
   },
   "dependencies": {
     "@langchain/core": "1.2.18",
