@@ -131,6 +131,12 @@ const Proposal = z
     resolvedUntil: Time,
     continuation: z.string().optional(),
     newParticipantId: z.uuid().optional(),
+    settledIntentions: z
+      .array(
+        z.object({ actorId: z.uuid(), reason: z.string().min(1) }).strict(),
+      )
+      .optional(),
+    deferredIntentions: z.array(z.uuid()).optional(),
     wakeups: z.array(
       z
         .object({
@@ -390,6 +396,34 @@ export class WorldAgent {
 
   async #validateProposal(row: Operation, proposal: WorldProposal) {
     const { request } = row;
+    const pending = new Set(
+      (request.intentions ?? []).map((intent) => intent.actorId),
+    );
+    for (const actorId of [
+      ...(proposal.settledIntentions ?? []).map((settled) => settled.actorId),
+      ...(proposal.deferredIntentions ?? []),
+    ]) {
+      if (
+        !pending.delete(actorId) ||
+        proposal.wakeups.some((wakeup) => wakeup.actorId === actorId)
+      )
+        throw new CandidateRejected(
+          "settledIntentions・deferredIntentionsには今回の意図だけを一度ずつ指定し、同じ主体のwakeupsと重ねないでください",
+        );
+    }
+    for (const wakeup of proposal.wakeups) pending.delete(wakeup.actorId);
+    if (pending.size)
+      throw new CandidateRejected(
+        `未解決の意図が省略されています。次の契機を待つ意図はdeferredIntentionsへ、起動時点が決まる継続・再判断はwakeupsへ、完了・中断は理由つきでsettledIntentionsへ返してください: ${[...pending].join(", ")}`,
+      );
+    if (
+      proposal.deferredIntentions?.length &&
+      !proposal.wakeups.length &&
+      request.until === undefined
+    )
+      throw new CandidateRejected(
+        "待機中の意図だけでは進行できません。実際の次の作用・判断の起動をwakeupsへ返してください",
+      );
     if (
       proposal.resolvedUntil < request.at ||
       (request.until !== undefined && proposal.resolvedUntil > request.until)
@@ -585,7 +619,16 @@ export class WorldAgent {
           wakeup.at <= request.at &&
           !(wakeup.at === request.at && sameTimeCause))
       )
-        throw new CandidateRejected("再起動の主体・時点が不正です");
+        throw new CandidateRejected(
+          `再起動の主体・時点が不正です: ${JSON.stringify(wakeup)}。主体の種別=${actor?.kind ?? "未確認"}、要求時点=${request.at}、到達時点=${proposal.resolvedUntil}、同時点の新たな作用・受容=${sameTimeCause}。${
+            request.intentions?.some(
+              (intent) =>
+                intent.actorId === wakeup.actorId && !intent.continuing,
+            )
+              ? "この主体の形成済みの意図はintentionsに提供済みです。その意図が選んだ返答・行動は再度の意図形成を経ずに解決できます。"
+              : "同時点の起動には、この主体へ到達した作用・受容が必要です。次の契機を待つだけの意図はdeferredIntentionsで保持できます。"
+          }`,
+        );
     }
     return context.dependencies;
   }
