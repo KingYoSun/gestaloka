@@ -16,6 +16,7 @@ import {
   bindingScripts,
   validateBindings,
   validateConnection,
+  type WorldEdge,
 } from "../world/model.js";
 import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
 
@@ -554,10 +555,22 @@ export class WorldAgent {
       const actor =
         nodes.get(wakeup.actorId) ??
         (await context.node(wakeup.actorId, proposal.resolvedUntil));
+      const reaches = (edge: WorldEdge) =>
+        edge.period.from <= wakeup.at &&
+        ((edge.kind === "effect" && edge.target === wakeup.actorId) ||
+          (edge.kind === "see" && edge.source === wakeup.actorId));
+      let sameTimeCause = proposal.changes.edges.some(reaches);
+      if (request.phase === "resolution")
+        for (const id of request.triggerEdgeIds ?? []) {
+          const edge = await context.edge(id);
+          if (edge && reaches(edge)) sameTimeCause = true;
+        }
       if (
         actor?.kind !== "existence" ||
         wakeup.at < proposal.resolvedUntil ||
-        (request.phase !== "schedule" && wakeup.at <= request.at)
+        (request.phase !== "schedule" &&
+          wakeup.at <= request.at &&
+          !(wakeup.at === request.at && sameTimeCause))
       )
         throw new CandidateRejected("再起動の主体・時点が不正です");
     }
