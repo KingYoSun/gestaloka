@@ -503,6 +503,64 @@ test("作用の受け手は同時点で判断へ進め、因果のない同時�
   expect(transport).toHaveBeenCalledTimes(4);
 });
 
+test("意図の省略・重複終了・継続との二重指定を確定せず、全主体の処遇を保存する", async () => {
+  const scene = await fixture();
+  const discarded = edge("effect", scene.actor, scene.object);
+  const settled = {
+    actorId: scene.actor.id,
+    reason: "本人の意図の処理が終了した",
+  };
+  const valid = proposal(changes(), {
+    settledIntentions: [settled],
+    deferredIntentions: [scene.object.id],
+    wakeups: [{ actorId: scene.place.id, at: 2000, mode: "resolve" }],
+  });
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(response(proposal(changes([], [discarded]))))
+    .mockResolvedValueOnce(
+      response({ ...valid, settledIntentions: [settled, settled] }),
+    )
+    .mockResolvedValueOnce(
+      response({
+        ...valid,
+        settledIntentions: [
+          ...valid.settledIntentions!,
+          { actorId: scene.object.id, reason: "重複" },
+        ],
+      }),
+    )
+    .mockResolvedValueOnce(
+      response({
+        ...valid,
+        wakeups: [{ actorId: scene.object.id, at: 2000, mode: "resolve" }],
+      }),
+    )
+    .mockResolvedValueOnce(response({ ...valid, wakeups: [] }))
+    .mockResolvedValueOnce(response(valid));
+  const runtime = await agent(transport);
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    rootIds: [scene.actor.id, scene.object.id],
+    actionText: "",
+    intentions: [scene.actor, scene.object].map((actor) => ({
+      actorId: actor.id,
+      actionText: "本人が形成した意図",
+      continuing: false,
+    })),
+  });
+  operations.push(id);
+  expect(await runtime.run(id)).toEqual(valid);
+  expect(transport).toHaveBeenCalledTimes(6);
+  expect(
+    await runtime.store.context(scene.worldId).edge(discarded.id),
+  ).toBeUndefined();
+  expect(await runtime.run(id)).toEqual(valid);
+  expect(transport).toHaveBeenCalledTimes(6);
+});
+
 test("期間は計画の指定として本人の知識と分離し、再開では保存済み方針を再利用する", async () => {
   const scene = await fixture();
   let input: { planningPeriod: { from: number; until: number } } | undefined;

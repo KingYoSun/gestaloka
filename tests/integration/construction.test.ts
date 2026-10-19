@@ -4,7 +4,7 @@ import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
-import { WorldAgent } from "@gestaloka/server/agent";
+import { WorldAgent, type WorldProposal } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
 
 const databases = connectDatabases();
@@ -129,12 +129,33 @@ async function fixture(
         interrupted = true;
         return response({ type: "pause", reason: "参照の確認を保留した" });
       }
-      const proposal = {
+      const proposal: WorldProposal = {
         type: "propose",
         changes: empty(),
         summary: "局所的な確認記録",
         resolvedUntil: request.until ?? request.at + 100,
-        wakeups: [] as unknown[],
+        wakeups: [],
+      };
+      const reply = (result: WorldProposal) => {
+        const { wakeups } = result;
+        const remaining = (request.intentions ?? []).filter(
+          (member) =>
+            !wakeups.some((wakeup) => wakeup.actorId === member.actorId),
+        );
+        return response({
+          ...result,
+          deferredIntentions:
+            request.activityUntil === undefined
+              ? []
+              : remaining.map((member) => member.actorId),
+          settledIntentions: (request.activityUntil === undefined
+            ? remaining
+            : []
+          ).map((member) => ({
+            actorId: member.actorId,
+            reason: "試験で指定した意図の処理を終了した",
+          })),
+        });
       };
       if (request.intentions)
         packets.push({
@@ -157,7 +178,7 @@ async function fixture(
           request.phase === "resolution" &&
           request.intentions.every((member) => !member.actionText)
         )
-          return response({
+          return reply({
             ...proposal,
             resolvedUntil: request.at,
             wakeups: [{ actorId: place, at: request.at + 1, mode: "intent" }],
@@ -171,7 +192,7 @@ async function fixture(
         );
         const from = human ? request.controlledActorId : place,
           to = human ? place : request.controlledActorId;
-        return response({
+        return reply({
           ...proposal,
           changes: {
             ...empty(),
@@ -206,7 +227,7 @@ async function fixture(
         });
       }
       if (activityMilestone && request.phase === "schedule" && request.at === 0)
-        return response({
+        return reply({
           ...proposal,
           wakeups: [{ actorId: place, at: 0, mode: "intent" }],
         });
@@ -215,19 +236,19 @@ async function fixture(
         request.phase === "interaction" &&
         request.at === 0
       )
-        return response({
+        return reply({
           ...proposal,
           resolvedUntil: WORLD_DAY_MS / 2,
           wakeups: [{ actorId: actor, at: WORLD_DAY_MS / 2, mode: "intent" }],
         });
       if (request.phase === "observation" && observationWake)
-        return response({
+        return reply({
           ...proposal,
           wakeups: [{ actorId: place, at: WORLD_DAY_MS, mode: "resolve" }],
         });
       if (request.phase === "participant") {
         const newcomer = randomUUID();
-        return response({
+        return reply({
           ...proposal,
           newParticipantId: newcomer,
           changes: {
@@ -258,7 +279,7 @@ async function fixture(
           mode: "resolve",
         });
       }
-      return response(proposal);
+      return reply(proposal);
     });
   const model = new LlmClient(
     databases.postgres,
@@ -531,6 +552,112 @@ test("人間の行動を途中保留から再開し、既に形成したNPCの�
   ).toEqual([actionText, actionText]);
 });
 
+test("人間へ操作を返しても未完了のNPC意図を保持し、再起動後は継続だけを評価する", async () => {
+  const scene = await fixture();
+  await scene.runtime.command(scene.id, "finish");
+  await scene.runtime.command(scene.id, "join");
+  await scene.runtime.tick(scene.id);
+  const human = (await scene.runtime.get(scene.id)).participant_id!;
+  const actionText = "本人が形成した未完了の意図";
+  await databases.postgres.query(
+    "UPDATE world_construction SET agenda=$2 WHERE id=$1",
+    [
+      scene.id,
+      JSON.stringify([
+        {
+          id: randomUUID(),
+          at: 0,
+          mode: "resolve",
+          actorId: scene.actor,
+          actionText,
+          planUntil: 100,
+        },
+        {
+          id: randomUUID(),
+          at: 0,
+          mode: "resolve",
+          actorId: scene.place,
+          actionText: "今回終了する意図",
+        },
+      ]),
+    ],
+  );
+  const packets: typeof scene.packets = [];
+  scene.transport.mockImplementation(async (_url, options) => {
+    const user = JSON.parse(
+      JSON.parse(String(options?.body)).messages[1].content,
+    );
+    expect(user.observerId).toBeUndefined();
+    const request = user.request;
+    const result: WorldProposal = {
+      type: "propose",
+      changes: empty(),
+      summary: "意図の継続を確認",
+      resolvedUntil: request.at,
+      wakeups: [],
+    };
+    if (!request.intentions) return response(result);
+    packets.push(request);
+    if (request.at === 0)
+      return response({
+        ...result,
+        resolvedUntil: 10,
+        wakeups: [{ actorId: human, at: 10, mode: "intent" }],
+        deferredIntentions: [scene.actor],
+        settledIntentions: [
+          { actorId: scene.place, reason: "この意図の処理は終了した" },
+        ],
+      });
+    return response({
+      ...result,
+      resolvedUntil: 30,
+      wakeups: [{ actorId: human, at: 30, mode: "intent" }],
+      settledIntentions: [
+        { actorId: scene.actor, reason: "継続部分の処理が終了した" },
+      ],
+    });
+  });
+  await scene.runtime.play(scene.id, "いま知覚できる範囲を確認する");
+  await scene.runtime.tick(scene.id);
+  await scene.runtime.tick(scene.id);
+  const returned = await scene.runtime.get(scene.id);
+  expect(returned.state).toBe("finished");
+  expect(returned.agenda).toEqual([
+    expect.objectContaining({
+      actorId: scene.actor,
+      at: 10,
+      mode: "resolve",
+      deferred: true,
+      actionText,
+      planUntil: 100,
+    }),
+  ]);
+  const restarted = new WorldConstruction(
+    scene.runtime.builder,
+    scene.agent,
+    databases.queue,
+    scene.runtime.queueName,
+  );
+  expect((await restarted.get(scene.id)).agenda).toEqual(returned.agenda);
+  await restarted.play(scene.id, "継続の変化を待つ");
+  for (let count = 0; count < 4; count++) await restarted.tick(scene.id);
+  expect((await restarted.get(scene.id)).state).toBe("finished");
+  expect((await restarted.get(scene.id)).agenda).toEqual([]);
+  expect(packets[1]).toMatchObject({ phase: "interaction", at: 10 });
+  expect(packets[1]!.intentions).toContainEqual({
+    actorId: scene.actor,
+    actionText,
+    continuing: true,
+    planUntil: 100,
+  });
+  expect(
+    packets
+      .slice(1)
+      .flatMap((packet) => packet.intentions.map((intent) => intent.actorId)),
+  ).not.toContain(scene.place);
+  expect(scene.intents).toEqual([]);
+});
+
 test("起動の提案がなくても確定した作用の受け手を評価し、人間の元の意図を保持する", async () => {
   const scene = await fixture(false, false, false, true);
   await scene.runtime.command(scene.id, "finish");
@@ -715,6 +842,13 @@ test("活動方針を節目まで継続し、重要な判断と追加期間で�
   ).toMatchObject({ continuing: true, planUntil: WORLD_DAY_MS });
   expect(scene.plans.filter((plan) => plan.actor === scene.place)).toHaveLength(
     1,
+  );
+  expect((await scene.runtime.get(scene.id)).agenda).toContainEqual(
+    expect.objectContaining({
+      actorId: scene.place,
+      deferred: true,
+      planUntil: WORLD_DAY_MS,
+    }),
   );
   const renewed = scene.plans.filter((plan) => plan.actor === scene.actor);
   expect(renewed).toHaveLength(2);

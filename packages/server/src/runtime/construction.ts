@@ -13,6 +13,7 @@ type Work = {
   actorId?: string;
   actionText?: string;
   planUntil?: number;
+  deferred?: boolean;
   observationId?: string;
   operationId?: string;
   members?: Work[];
@@ -157,6 +158,11 @@ export class WorldConstruction {
         ConstructionDuration.parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
+        for (const work of row.agenda)
+          if (work.deferred) {
+            delete work.deferred;
+            work.at = row.at;
+          }
         if (!row.agenda.length)
           row.agenda.push({ id: randomUUID(), at: row.at, mode: "schedule" });
       } else if (command === "resume") {
@@ -311,7 +317,7 @@ export class WorldConstruction {
       if (!work.operationId && prepared && !humanDecision) {
         const next = Math.min(
           ...row.agenda
-            .filter((entry) => entry.at > work.at)
+            .filter((entry) => !entry.deferred && entry.at > work.at)
             .map((entry) => entry.at),
         );
         const until =
@@ -491,6 +497,21 @@ export class WorldConstruction {
             : {}),
       });
     }
+    for (const actorId of result.deferredIntentions ?? []) {
+      const source = members.find((member) => member.actorId === actorId)!;
+      row.agenda.push({
+        id: randomUUID(),
+        at: result.resolvedUntil,
+        mode: "resolve",
+        deferred: true,
+        actorId,
+        actionText: source.actionText ?? "",
+        ...(source.triggers?.length ? { triggers: source.triggers } : {}),
+        ...(source.planUntil === undefined
+          ? {}
+          : { planUntil: source.planUntil }),
+      });
+    }
     if (propagate) {
       for (const edge of result.changes.edges) {
         const receiver =
@@ -518,26 +539,9 @@ export class WorldConstruction {
           };
           row.agenda.push(pending);
         }
+        delete pending.deferred;
         pending.triggers = [...new Set([...(pending.triggers ?? []), edge.id])];
       }
-      if (row.state === "running")
-        for (const source of members)
-          if (
-            source.planUntil !== undefined &&
-            !row.agenda.some(
-              (entry) =>
-                entry.actorId === source.actorId &&
-                entry.at === result.resolvedUntil,
-            )
-          )
-            row.agenda.push({
-              id: randomUUID(),
-              at: result.resolvedUntil,
-              actorId: source.actorId!,
-              mode: "resolve",
-              actionText: source.actionText ?? "",
-              planUntil: source.planUntil,
-            });
     }
   }
 
@@ -548,12 +552,15 @@ export class WorldConstruction {
         Number(b.mode === "schedule") - Number(a.mode === "schedule") ||
         a.id.localeCompare(b.id),
     );
-    const first = row.agenda[0];
+    const first = row.agenda.find((work) => !work.deferred);
     if (!first || (row.state !== "playing" && first.at >= row.target))
       return { id: randomUUID(), at: row.at, mode: "schedule" };
-    if (first.mode === "schedule") return row.agenda.shift()!;
-    const due = row.agenda.filter((work) => work.at === first.at);
-    row.agenda = row.agenda.filter((work) => work.at !== first.at);
+    if (first.mode === "schedule") {
+      row.agenda.splice(row.agenda.indexOf(first), 1);
+      return first;
+    }
+    const due = row.agenda.filter((work) => work.at <= first.at);
+    row.agenda = row.agenda.filter((work) => work.at > first.at);
     const human =
       row.state === "playing"
         ? due.find(
@@ -578,6 +585,8 @@ export class WorldConstruction {
           actions.find((work) => work.mode === "intent") ??
           actions[0]!),
       };
+      selected.at = first.at;
+      delete selected.deferred;
       if (
         row.state === "running" &&
         selected.planUntil !== undefined &&
@@ -661,14 +670,18 @@ export class WorldConstruction {
         } else if (row.state === "playing") {
           row.at = Math.min(
             result.resolvedUntil,
-            ...row.agenda.map((entry) => entry.at),
+            ...row.agenda
+              .filter((entry) => !entry.deferred)
+              .map((entry) => entry.at),
           );
           if (!row.agenda.length) row.state = "finished";
         } else {
           row.at = Math.min(
             row.target,
             result.resolvedUntil,
-            ...row.agenda.map((entry) => entry.at),
+            ...row.agenda
+              .filter((entry) => !entry.deferred)
+              .map((entry) => entry.at),
           );
           if (row.at === row.target) row.state = "ready";
           else if (result.resolvedUntil <= work.at && row.agenda.length === 0) {

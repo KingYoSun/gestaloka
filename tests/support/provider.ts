@@ -161,6 +161,22 @@ export async function fixtureRuntime(): Promise<{
             wakeups: [{ actorId: actor, at: until + 1, mode: "intent" }],
           };
         } else content = result;
+        const proposal = content as typeof result;
+        content = {
+          ...proposal,
+          settledIntentions: (request.intentions ?? [])
+            .filter(
+              (intent: { actorId: string }) =>
+                !proposal.wakeups.some(
+                  (wakeup) =>
+                    (wakeup as { actorId: string }).actorId === intent.actorId,
+                ),
+            )
+            .map((intent: { actorId: string }) => ({
+              actorId: intent.actorId,
+              reason: "試験で指定した意図の処理を終了した",
+            })),
+        };
       }
       return new Response(
         JSON.stringify({
