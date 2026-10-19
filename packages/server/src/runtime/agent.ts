@@ -34,6 +34,7 @@ export const Interaction = z
     ]),
     at: Time,
     until: Time.optional(),
+    activityUntil: Time.optional(),
     rootIds: z.array(z.uuid()).min(1),
     actorId: z.uuid().optional(),
     controlledActorId: z.uuid().optional(),
@@ -47,6 +48,7 @@ export const Interaction = z
             actorId: z.uuid(),
             actionText: z.string(),
             continuing: z.boolean(),
+            planUntil: Time.optional(),
           })
           .strict(),
       )
@@ -55,6 +57,17 @@ export const Interaction = z
   .strict()
   .refine(
     (request) => request.until === undefined || request.until >= request.at,
+  )
+  .refine(
+    (request) =>
+      request.activityUntil === undefined ||
+      (request.activityUntil >= request.at &&
+        !request.controlledActorId &&
+        (request.intentions ?? []).every(
+          (intent) =>
+            intent.planUntil === undefined || intent.planUntil > request.at,
+        )),
+    "活動方針の期間または操作対象が不正です",
   )
   .refine((request) => {
     const ids = [
@@ -860,6 +873,7 @@ export class WorldAgent {
     at: number,
     id: string,
     ownIntentions: string[] = [],
+    activityUntil?: number,
   ) {
     const saved = await this.pool.query<{
       view: unknown;
@@ -869,9 +883,13 @@ export class WorldAgent {
       [id, worldId, observerId, at],
     );
     if (!saved.rows[0]) {
+      if (activityUntil !== undefined) Time.gt(at).parse(activityUntil);
       const view = {
         ...(await this.view(worldId, observerId, at)),
         ...(ownIntentions.length ? { ownIntentions } : {}),
+        ...(activityUntil === undefined
+          ? {}
+          : { planningPeriod: { from: at, until: activityUntil } }),
       };
       const system = await readFile(
         new URL("../../../../prompts/actor-intent.md", import.meta.url),

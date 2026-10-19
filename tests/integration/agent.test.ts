@@ -1,3 +1,4 @@
+import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
@@ -498,4 +499,47 @@ test("作用の受け手は同時点で判断へ進め、因果のない同時�
   operations.push(uncaused);
   expect((await runtime.run(uncaused)).resolvedUntil).toBe(1);
   expect(transport).toHaveBeenCalledTimes(4);
+});
+
+test("期間は計画の指定として本人の知識と分離し、再開では保存済み方針を再利用する", async () => {
+  const scene = await fixture();
+  let input: { planningPeriod: { from: number; until: number } } | undefined;
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      input = JSON.parse(body.messages[1].content);
+      expect(String(options?.body)).not.toContain("SECRET_FACT");
+      expect(String(options?.body)).not.toContain("TARGET_PRIVATE");
+      return response({ actionText: "観測した範囲の活動方針" });
+    });
+  const runtime = await agent(transport),
+    id = randomUUID();
+  const plan = await runtime.intent(
+    scene.worldId,
+    scene.actor.id,
+    0,
+    id,
+    [],
+    WORLD_DAY_MS,
+  );
+  expect(input?.planningPeriod).toEqual({ from: 0, until: WORLD_DAY_MS });
+  expect(
+    await runtime.intent(
+      scene.worldId,
+      scene.actor.id,
+      0,
+      id,
+      [],
+      WORLD_DAY_MS * 2,
+    ),
+  ).toBe(plan);
+  expect(transport).toHaveBeenCalledTimes(1);
+  const saved = (
+    await databases.postgres.query(
+      "SELECT view FROM world_intent WHERE id=$1",
+      [id],
+    )
+  ).rows[0].view;
+  expect(saved.planningPeriod.until).toBe(WORLD_DAY_MS);
 });
