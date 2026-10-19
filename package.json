@@ -9,6 +9,7 @@
   "scripts": {
     "env:init": "node scripts/init-env.mjs",
     "llm:probe": "pnpm build:server && node --env-file=.env --import tsx scripts/probe-model.ts",
+    "llm:harness-probe": "pnpm llm:probe --harness",
     "llm:compare": "pnpm build:server && node --env-file=.env --import tsx scripts/compare-reasoning.ts",
     "world:generate": "pnpm build:server && node --env-file=.env --import tsx scripts/generate-world.ts",
     "world:act": "pnpm build:server && node --env-file=.env --import tsx scripts/world-action.ts",

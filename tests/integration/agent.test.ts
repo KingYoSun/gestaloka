@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
+import { modelEnvironment, approvedTransport } from "../support/model.js";
 import {
   WorldStore,
   type Change,
@@ -112,8 +113,8 @@ async function agent(transport: typeof fetch) {
   budgets.push(budgetId);
   const model = new LlmClient(
     databases.postgres,
-    { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
-    transport,
+    modelEnvironment(budgetId),
+    approvedTransport(transport),
   );
   const runtime = new WorldAgent(
     databases.postgres,
@@ -603,3 +604,87 @@ test("期間は計画の指定として本人の知識と分離し、再開で�
   ).rows[0].view;
   expect(saved.planningPeriod.until).toBe(WORLD_DAY_MS);
 });
+
+test.each(["observation", "interaction", "resolution"] as const)(
+  "%sの確定は上位モデルへ渡し、修正要求を戻して承認前には世界を書き換えない",
+  async (phase) => {
+    const scene = await fixture(),
+      budgetId = randomUUID();
+    budgets.push(budgetId);
+    const rejected = edge("effect", scene.actor, scene.object),
+      accepted = edge("see", scene.actor, scene.object, "今回受容した側面");
+    let proposed = 0,
+      reviewed = 0;
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_url, options) => {
+        const body = JSON.parse(String(options?.body)),
+          input = JSON.parse(body.messages[1].content);
+        if (input.commitReview) {
+          expect(body.model).toBe("gpt-6-luna");
+          reviewed++;
+          expect(
+            await store.context(scene.worldId).edge(rejected.id),
+          ).toBeUndefined();
+          expect(
+            await store.context(scene.worldId).edge(accepted.id),
+          ).toBeUndefined();
+          return response({
+            type: reviewed === 1 ? "revise" : "commit",
+            reason:
+              reviewed === 1
+                ? "本人の意図と作用が対応していない"
+                : "受容の根拠が対応している",
+          });
+        }
+        expect(body.model).toBe(
+          phase === "observation" ? "gemini-3.8-flash" : "gpt-6-luna",
+        );
+        proposed++;
+        return response(
+          proposal(changes([], proposed === 1 ? [rejected] : [accepted])),
+        );
+      });
+    const normalized: typeof fetch = async (url, options) => {
+      const result = await transport(url, options),
+        data = await result.json();
+      data.usage.total_tokens = 2;
+      return new Response(JSON.stringify(data));
+    };
+    const runtime = new WorldAgent(
+      databases.postgres,
+      databases.graph,
+      databases.checkpointer,
+      new LlmClient(
+        databases.postgres,
+        {
+          ...modelEnvironment(budgetId),
+          LLM_RESOLUTION_MODEL: "gpt-6-luna",
+          OPENAI_API_KEY: "unused",
+        },
+        normalized,
+      ),
+    );
+    await runtime.setup();
+    const id = await runtime.create({
+      worldId: scene.worldId,
+      phase,
+      actorId: scene.actor.id,
+      at: 0,
+      until: 1000,
+      rootIds: [scene.actor.id],
+      actionText: "",
+    });
+    operations.push(id);
+    expect((await runtime.run(id)).changes.edges).toEqual([accepted]);
+    expect(reviewed).toBe(2);
+    expect(proposed).toBe(2);
+    expect(
+      await store.context(scene.worldId).edge(rejected.id),
+    ).toBeUndefined();
+    expect(await store.context(scene.worldId).edge(accepted.id)).toBeDefined();
+    const calls = transport.mock.calls.length;
+    await runtime.run(id);
+    expect(transport).toHaveBeenCalledTimes(calls);
+  },
+);

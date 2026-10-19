@@ -341,3 +341,152 @@ test.each(["gemini-3.8-flash", "gpt-6-luna"])(
     expect((await client.ledger.summary()).upperCostUsd).toBe(0);
   },
 );
+
+test.each(["messages", "responses"] as const)(
+  "上位モデルを%sで提案・確定へ配分し、利用量と保存済み要求を維持する",
+  async (api) => {
+    const base = environment(),
+      modelName =
+        api === "messages" ? "claude-upper-for-test" : "custom-upper-for-test";
+    const config = {
+      ...base,
+      LLM_RESOLUTION_PROVIDER: api === "messages" ? "anthropic" : "openai",
+      LLM_RESOLUTION_MODEL: modelName,
+      LLM_RESOLUTION_API: api,
+      LLM_RESOLUTION_REASONING_EFFORT: "high",
+      LLM_RESOLUTION_CONTEXT_TOKENS: "10000",
+      LLM_RESOLUTION_MAX_OUTPUT_TOKENS: "1000",
+      LLM_RESOLUTION_INPUT_USD_PER_MILLION: "20",
+      LLM_RESOLUTION_CACHED_INPUT_USD_PER_MILLION: "2",
+      LLM_RESOLUTION_OUTPUT_USD_PER_MILLION: "60",
+      ANTHROPIC_API_KEY: "upper-secret",
+      OPENAI_API_KEY: "upper-secret",
+    };
+    const transport = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+      if (String(url).endsWith("/models"))
+        return new Response(JSON.stringify({ data: [{ id: modelName }] }));
+      if (String(url).endsWith("/chat/completions")) return response();
+      return new Response(
+        JSON.stringify(
+          api === "messages"
+            ? {
+                id: randomUUID(),
+                model: modelName,
+                stop_reason: "end_turn",
+                content: [
+                  { type: "thinking", thinking: "PRIVATE_THINKING" },
+                  { type: "text", text: '{"connected":true}' },
+                ],
+                usage: {
+                  input_tokens: 10,
+                  cache_creation_input_tokens: 4,
+                  cache_read_input_tokens: 6,
+                  output_tokens: 3,
+                },
+              }
+            : {
+                id: randomUUID(),
+                model: modelName,
+                status: "completed",
+                output: [
+                  {
+                    type: "reasoning",
+                    content: [
+                      { type: "summary_text", text: "PRIVATE_THINKING" },
+                    ],
+                  },
+                  {
+                    type: "message",
+                    content: [
+                      { type: "output_text", text: '{"connected":true}' },
+                    ],
+                  },
+                ],
+                usage: {
+                  input_tokens: 20,
+                  input_tokens_details: { cached_tokens: 6 },
+                  output_tokens: 3,
+                },
+              },
+        ),
+      );
+    });
+    const client = new LlmClient(databases.postgres, config, transport);
+    await client.ledger.setup();
+    expect((await client.verifyModel("resolution")).apiModel).toBe(modelName);
+    const messages = [
+      { role: "system" as const, content: "JSON" },
+      { role: "user" as const, content: "JSON" },
+    ];
+    await client.complete(randomUUID(), "observation", messages);
+    const id = randomUUID(),
+      result = await client.complete(
+        id,
+        "world-update",
+        messages,
+        "resolution",
+      );
+    await client.complete(randomUUID(), "world-commit", messages, "resolution");
+    expect(result.content).toBe('{"connected":true}');
+    expect(result.usage).toEqual({
+      prompt_tokens: 20,
+      completion_tokens: 3,
+      prompt_cache_hit_tokens: 6,
+      prompt_cache_miss_tokens: 14,
+    });
+    const requests = transport.mock.calls
+      .slice(2)
+      .map((c) => JSON.parse(String(c[1]?.body)));
+    expect(requests.every((r) => r.model === modelName)).toBe(true);
+    if (api === "messages") {
+      expect(requests[0]).toMatchObject({
+        system: "JSON",
+        messages: [{ role: "user", content: "JSON" }],
+        thinking: { type: "adaptive" },
+        output_config: { effort: "high" },
+      });
+      expect(transport.mock.calls[2]![1]!.headers).toMatchObject({
+        "x-api-key": "upper-secret",
+        "anthropic-version": "2023-06-01",
+      });
+    } else
+      expect(requests[0]).toMatchObject({
+        input: messages,
+        reasoning: { effort: "high" },
+        max_output_tokens: 1000,
+        store: false,
+      });
+    const switched = new LlmClient(databases.postgres, base, transport);
+    expect(
+      await switched.complete(id, "world-update", messages, "resolution"),
+    ).toEqual(result);
+    expect(transport).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(await client.ledger.input(id))).not.toMatch(
+      /upper-secret|PRIVATE_THINKING/,
+    );
+    expect((await client.ledger.summary()).upperCostUsd).toBeCloseTo(
+      0.00097406,
+      9,
+    );
+  },
+);
+
+test("未登録モデルの料金・文脈上限が未設定なら送信前に拒否する", () => {
+  expect(
+    () =>
+      new LlmClient(databases.postgres, {
+        ...environment(),
+        LLM_MODEL: "claude-upper-for-test",
+        ANTHROPIC_API_KEY: "unused",
+      }),
+  ).toThrow("CONTEXT_TOKENS");
+  expect(
+    () =>
+      new LlmClient(databases.postgres, {
+        ...environment(),
+        LLM_MODEL: "claude-upper-for-test",
+        ANTHROPIC_API_KEY: "unused",
+        LLM_CONTEXT_TOKENS: "100000",
+      }),
+  ).toThrow("料金が未設定");
+});

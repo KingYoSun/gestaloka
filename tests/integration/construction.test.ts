@@ -6,6 +6,7 @@ import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent, type WorldProposal } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
+import { modelEnvironment, approvedTransport } from "../support/model.js";
 
 const databases = connectDatabases();
 const ids: string[] = [],
@@ -283,8 +284,8 @@ async function fixture(
     });
   const model = new LlmClient(
     databases.postgres,
-    { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
-    transport,
+    modelEnvironment(budgetId),
+    approvedTransport(transport),
   );
   const agent = new WorldAgent(
     databases.postgres,
