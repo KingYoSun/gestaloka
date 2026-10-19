@@ -142,7 +142,7 @@ test("推論量の設定を変更しても保存済み呼出しを再送せず�
   const saved = await high.complete(id, "probe", messages);
   const low = new DeepSeekClient(
     databases.postgres,
-    { ...config, LLM_REASONING_EFFORT: "low" },
+    { ...config, LLM_REASONING_EFFORT: "none" },
     transport,
   );
   expect(await low.complete(id, "probe", messages)).toEqual(saved);
@@ -150,7 +150,11 @@ test("推論量の設定を変更しても保存済み呼出しを再送せず�
   await low.complete(randomUUID(), "probe", messages);
   expect(
     JSON.parse(String(transport.mock.calls[1]![1]!.body)).reasoning_effort,
-  ).toBe("low");
+  ).toBe("none");
+  await low.complete(randomUUID(), "initial-generation", messages);
+  expect(
+    JSON.parse(String(transport.mock.calls[2]![1]!.body)).reasoning_effort,
+  ).toBe("high");
   expect(
     ((await low.ledger.input(id)) as { request: { reasoning_effort: string } })
       .request.reasoning_effort,

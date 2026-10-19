@@ -137,6 +137,7 @@ async function session() {
   });
   expect(reply.statusCode).toBe(200);
   const subject = reply.json<{ id: string }>().id;
+  expect(reply.headers["x-gestaloka-subject"]).toBe(subject);
   subjects.push(subject);
   const cookie = String(reply.headers["set-cookie"]).split(";")[0]!;
   expect(reply.headers["set-cookie"]).toContain("HttpOnly");
@@ -352,6 +353,8 @@ test("管理記録と村民の知識を分離し、全件を省略せずペー�
     },
   );
   let before: string | undefined;
+  let newer: string | undefined;
+  let firstIds: string[] = [];
   const records: { id: string; text: string }[] = [];
   do {
     const reply = await app.inject({
@@ -362,12 +365,24 @@ test("管理記録と村民の知識を分離し、全件を省略せずペー�
     for (const secret of ["PRIVATE_", "試遊主体だけが得た情報", "管理者向け"])
       expect(reply.body).not.toContain(secret);
     const page = reply.json();
+    if (!before) firstIds = page.items.map((item: { id: string }) => item.id);
+    else newer = page.previous;
     expect(page.items.length).toBeLessThanOrEqual(50);
     records.push(...page.items);
     before = page.next;
   } while (before);
   expect(records).toHaveLength(56);
   expect(new Set(records.map((item) => item.id)).size).toBe(56);
+  const reverse = (
+    await app.inject({
+      url: `/api/worlds/${scene.id}/knowledge?after=${newer}`,
+      headers: headers(scene.cookie),
+    })
+  ).json();
+  expect(reverse.items.map((item: { id: string }) => item.id)).toEqual(
+    firstIds,
+  );
+  expect(reverse.previous).toBeNull();
   const beforeReads = (
     await store
       .context(row.world_id!)
@@ -482,6 +497,7 @@ test("割当済みの村民へ自由記述を一度だけ受け付け、操作�
   expect(accepted[0]!.json()).toEqual(accepted[1]!.json());
   expect(accepted[0]!.json()).toEqual({
     id: scene.id,
+    viewerId: actor,
     runId: input.requestId,
     at: 0,
     state: "running",
@@ -519,6 +535,7 @@ test("割当済みの村民へ自由記述を一度だけ受け付け、操作�
     ).json(),
   ).toEqual({
     id: scene.id,
+    viewerId: actor,
     runId: input.requestId,
     at: 0,
     state: "running",

@@ -17,7 +17,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   { languageOptions: { globals: { ...globals.node, ...globals.browser } } },
   {
-    files: ["apps/web/**/*.{ts,tsx}", "packages/contracts/src/**/*.ts"],
+    files: ["apps/web/src/**/*.{ts,tsx}", "packages/contracts/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [
         "error",

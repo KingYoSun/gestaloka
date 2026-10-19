@@ -1,10 +1,16 @@
 {
   "extends": "./tsconfig.base.json",
-  "compilerOptions": { "noEmit": true, "jsx": "react-jsx" },
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": { "@/*": ["apps/web/src/*"] }
+  },
   "include": [
     "scripts/**/*.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",
-    "*.config.ts"
+    "*.config.ts",
+    "apps/web/src/assets.d.ts"
   ]
 }

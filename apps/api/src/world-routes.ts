@@ -19,6 +19,7 @@ import {
   PlayerStatus,
   RequestIdentity,
   PlayRun,
+  DeliveryCursor,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
 
@@ -37,8 +38,17 @@ export async function worldRoutes(
       );
     return access;
   };
-  const subject = (request: FastifyRequest) =>
-    service().authenticate(request.cookies.gestaloka);
+  const identities = new WeakMap<FastifyRequest, string>();
+  const subject = async (request: FastifyRequest) => {
+    const id = await service().authenticate(request.cookies.gestaloka);
+    identities.set(request, id);
+    return id;
+  };
+  app.addHook("onSend", async (request, reply, payload) => {
+    const identity = identities.get(request);
+    if (identity) reply.header("X-Gestaloka-Subject", identity);
+    return payload;
+  });
   const errors = {
     400: ApiError,
     500: ApiError,
@@ -98,6 +108,7 @@ export async function worldRoutes(
     { schema: { response: { 200: BrowserSession, ...errors } } },
     async (request, reply) => {
       const session = await service().session(request.cookies.gestaloka);
+      identities.set(request, session.id);
       if (session.credential)
         reply.setCookie("gestaloka", session.credential, {
           path: "/",
@@ -171,6 +182,7 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.before,
+        request.query.after,
       ),
   );
   app.get(
@@ -187,6 +199,7 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.before,
+        request.query.after,
       ),
   );
   app.get(
@@ -243,6 +256,22 @@ export async function worldRoutes(
       ),
   );
   const streams = new Map<AbortController, () => void>();
+  app.get(
+    "/api/worlds/:id/cursor",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: EventQuery.pick({ role: true }),
+        response: { 200: DeliveryCursor, ...errors },
+      },
+    },
+    async (request) =>
+      service().cursor(
+        await subject(request),
+        request.params.id,
+        request.query.role,
+      ),
+  );
   app.addHook("preClose", async () => {
     for (const [controller, close] of streams) {
       controller.abort();

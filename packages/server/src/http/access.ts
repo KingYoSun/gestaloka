@@ -257,6 +257,7 @@ export class WorldAccess {
     ).rows[0];
     return PlayerStatus.parse({
       id: row.id,
+      viewerId: row.participant_id,
       runId: last?.id ?? null,
       at: row.at,
       state:
@@ -309,6 +310,7 @@ export class WorldAccess {
       );
     return PlayRun.parse({
       id: row.id,
+      viewerId: row.actor_id,
       worldId: row.construction_id,
       actionText: row.action_text,
       startedAt: Number(row.started_at),
@@ -375,9 +377,9 @@ export class WorldAccess {
       )
     ).rows;
   }
-  async records(subject: string, id: string, before?: string) {
+  async records(subject: string, id: string, before?: string, after?: string) {
     await this.authorize(subject, id, "admin");
-    if (before && !sequence(before))
+    if ((before && !sequence(before)) || (after && !sequence(after)))
       throw new AccessError(409, "CURSOR_INVALID", "履歴を再取得してください");
     const rows = (
       await this.pool.query<{
@@ -389,11 +391,13 @@ export class WorldAccess {
           changes: { nodes: unknown[]; edges: unknown[] };
         };
       }>(
-        "SELECT id::text,at::text,result FROM construction_log WHERE construction_id=$1 AND ($2::bigint IS NULL OR id<$2) ORDER BY id DESC LIMIT 50",
-        [id, before ?? null],
+        `SELECT id::text,at::text,result FROM construction_log WHERE construction_id=$1 AND ($2::bigint IS NULL OR id${after ? ">" : "<"}$2) ORDER BY id ${after ? "ASC" : "DESC"} LIMIT 51`,
+        [id, after || before || null],
       )
     ).rows;
-    const items = rows.map((row) => ({
+    const page = rows.slice(0, 50);
+    if (after) page.reverse();
+    const items = page.map((row) => ({
       id: row.id,
       at: Number(row.at),
       summary: row.result.summary,
@@ -403,7 +407,7 @@ export class WorldAccess {
         edges: row.result.changes.edges.length,
       },
     }));
-    if (rows.length < 50) {
+    if (!after && rows.length < 50) {
       const initial = (
         await this.pool.query<{
           result: {
@@ -426,17 +430,28 @@ export class WorldAccess {
     }
     return AdminPage.parse({
       items,
-      next: rows.length === 50 ? rows.at(-1)!.id : null,
+      next:
+        page.length && (after || rows.length >= 50) ? page.at(-1)!.id : null,
+      previous:
+        items.length && (after ? rows.length > 50 : !!before)
+          ? (page[0]?.id ?? "0")
+          : null,
     });
   }
-  async knowledge(subject: string, id: string, before?: string) {
+  async knowledge(
+    subject: string,
+    id: string,
+    before?: string,
+    after?: string,
+  ) {
     const grant = await this.authorize(subject, id, "player");
     const row = await this.construction.get(id);
     let cursor: z.infer<typeof Cursor> | undefined;
-    if (before)
+    const raw = after || before;
+    if (raw)
       try {
         cursor = Cursor.parse(
-          JSON.parse(Buffer.from(before, "base64url").toString("utf8")),
+          JSON.parse(Buffer.from(raw, "base64url").toString("utf8")),
         );
       } catch {
         throw new AccessError(
@@ -446,15 +461,33 @@ export class WorldAccess {
         );
       }
     const context = this.construction.agent.store.context(row.world_id!);
-    const edges = (
+    const all = (
       await Promise.all([
-        context.historyPage(grant.actor_id!, "see", row.at, cursor),
-        context.historyPage(grant.actor_id!, "interpret", row.at, cursor),
+        context.historyPage(
+          grant.actor_id!,
+          "see",
+          row.at,
+          after ? undefined : cursor,
+          after ? cursor : undefined,
+        ),
+        context.historyPage(
+          grant.actor_id!,
+          "interpret",
+          row.at,
+          after ? undefined : cursor,
+          after ? cursor : undefined,
+        ),
       ])
     )
       .flat()
-      .sort((a, b) => b.period.from - a.period.from || b.id.localeCompare(a.id))
-      .slice(0, 50);
+      .sort(
+        (a, b) =>
+          (after ? 1 : -1) *
+          (a.period.from - b.period.from ||
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      );
+    const edges = all.slice(0, 50);
+    if (after) edges.reverse();
     const items = [];
     for (const edge of edges) {
       if (edge.kind === "interpret" && edge.role !== "content") continue;
@@ -482,16 +515,18 @@ export class WorldAccess {
       });
     }
     await context.validate();
-    const last = edges.at(-1);
+    const encode = (edge: (typeof edges)[number] | undefined) =>
+      edge
+        ? Buffer.from(
+            JSON.stringify({ from: edge.period.from, id: edge.id }),
+          ).toString("base64url")
+        : null;
     return KnowledgePage.parse({
+      viewerId: grant.actor_id,
       at: row.at,
       items,
-      next:
-        edges.length === 50 && last
-          ? Buffer.from(
-              JSON.stringify({ from: last.period.from, id: last.id }),
-            ).toString("base64url")
-          : null,
+      next: after || all.length > 50 ? encode(edges.at(-1)) : null,
+      previous: (after ? all.length > 50 : !!before) ? encode(edges[0]) : null,
     });
   }
   async events(subject: string, id: string, role: Role, after: string) {
@@ -516,5 +551,16 @@ export class WorldAccess {
         [subject, id, role, after],
       )
     ).rows;
+  }
+  async cursor(subject: string, id: string, role: Role) {
+    await this.authorize(subject, id, role);
+    return {
+      cursor: (
+        await this.pool.query<{ id: string }>(
+          "SELECT coalesce(max(id),0)::text AS id FROM world_event WHERE subject_id=$1 AND construction_id=$2 AND role=$3",
+          [subject, id, role],
+        )
+      ).rows[0]!.id,
+    };
   }
 }
