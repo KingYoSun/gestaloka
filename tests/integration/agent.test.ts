@@ -251,13 +251,19 @@ test("照会・再評価・確定を共有し、進捗保存を失っても確�
   expect(inputs[3]).toContain("CHANGED_PRIVATE");
   expect(inputs[0]).toContain(scene.object.id);
   expect(inputs[0]).toContain("TARGET_PRIVATE");
-  const seed = JSON.parse(
+  const { initialContext: seed, graphObjects } = JSON.parse(
     JSON.parse(inputs[0]!).messages[1].content,
-  ).initialContext;
+  );
   expect(seed[0]).toMatchObject({
     request: { kind: "node", id: scene.actor.id },
-    result: { node: { id: scene.actor.id } },
+    result: { node: { graphRef: expect.any(Number) } },
   });
+  expect(graphObjects[seed[0].result.node.graphRef]).toEqual(scene.actor);
+  const extra = JSON.parse(JSON.parse(inputs[1]!).messages.at(-1).content);
+  expect(extra.requests).toEqual([{ kind: "node", id: scene.secret.id }]);
+  expect(extra.graphObjects[extra.results[0].node.graphRef]).toEqual(
+    scene.secret,
+  );
   const view = await runtime.view(scene.worldId, scene.actor.id, 1000);
   expect(JSON.stringify(view)).not.toContain("CHANGED_PRIVATE");
   expect(view.observations).toHaveLength(2);
@@ -270,6 +276,38 @@ test("照会・再評価・確定を共有し、進捗保存を失っても確�
   expect(
     (await runtime.view(scene.worldId, scene.actor.id, 1000)).observations,
   ).toHaveLength(2);
+});
+
+test("保存済みの旧プロンプトでは初期文脈と追加照会の表現を維持する", async () => {
+  const scene = await fixture();
+  const inputs: string[] = [];
+  const runtime = await agent(async (_url, options) => {
+    inputs.push(String(options?.body));
+    return response(
+      inputs.length === 1
+        ? { type: "query", requests: [{ kind: "node", id: scene.secret.id }] }
+        : proposal(changes()),
+    );
+  });
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id],
+    actionText: "周囲を確かめる",
+  });
+  operations.push(id);
+  await databases.postgres.query(
+    "UPDATE world_operation SET system_prompt=$2 WHERE id=$1",
+    [id, "旧プロンプトのまま再開する世界更新"],
+  );
+  await runtime.run(id);
+  const seed = JSON.parse(JSON.parse(inputs[0]!).messages[1].content);
+  expect(seed.initialContext[0].result.node).toEqual(scene.actor);
+  const extra = JSON.parse(JSON.parse(inputs[1]!).messages.at(-1).content);
+  expect(extra.results[0].node).toEqual(scene.secret);
+  expect(inputs.every((input) => !input.includes("graphRef"))).toBe(true);
 });
 
 test("人間用には別の村民を生成し、試遊村民とその観測を保持したまま分離する", async () => {

@@ -19,6 +19,7 @@ import {
   type WorldEdge,
 } from "../world/model.js";
 import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
+import { graphContext } from "./context.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -594,6 +595,9 @@ export class WorldAgent {
     z.uuid().parse(id);
     const activated = await this.#activate(id);
     const { row, claim } = activated;
+    const contextMessage = row.system_prompt.includes("graphObjects")
+      ? graphContext
+      : JSON.stringify;
     let { lease } = activated;
     if (row.state === "complete" && row.result) return row.result;
     if (
@@ -707,7 +711,7 @@ export class WorldAgent {
                 { role: "system", content: row.system_prompt },
                 {
                   role: "user",
-                  content: JSON.stringify({
+                  content: contextMessage({
                     request: row.request,
                     initialContext: requests.map((request, index) => ({
                       request,
@@ -761,7 +765,7 @@ export class WorldAgent {
                 row.dependencies = output.dependencies;
                 row.messages.push({
                   role: "user",
-                  content: JSON.stringify({
+                  content: contextMessage({
                     requests: decision.requests,
                     results: output.results,
                   }),
