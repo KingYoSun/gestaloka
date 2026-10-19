@@ -8,3 +8,74 @@ export const HealthEvent = z.object({
   type: z.literal("health"),
   data: Health,
 });
+
+export const ApiError = z.object({ code: z.string(), message: z.string() });
+export const BrowserSession = z.object({ id: z.uuid() });
+export const ResourceId = z.object({ id: z.uuid() });
+export const WorldList = z.array(ResourceId);
+export const CreateWorld = z
+  .object({ requestId: z.uuid(), prompt: z.string().min(1) })
+  .strict();
+export const WorldCommand = z.discriminatedUnion("command", [
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.literal("advance"),
+      duration: z.number().int().positive().safe(),
+    })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.enum(["resume", "finish", "join"]),
+    })
+    .strict(),
+]);
+export const WorldStatus = z.object({
+  id: z.uuid(),
+  state: z.enum([
+    "generating",
+    "ready",
+    "running",
+    "paused",
+    "finished",
+    "joining",
+  ]),
+  at: z.number().int().nonnegative().safe(),
+  target: z.number().int().nonnegative().safe(),
+  hasParticipant: z.boolean(),
+  error: z.string().nullable(),
+});
+export const PageQuery = z.object({ before: z.string().optional() });
+export const AdminRecord = z.object({
+  id: z.string(),
+  at: z.number().int().nonnegative().safe(),
+  summary: z.string(),
+  continuation: z.string().nullable(),
+  counts: z.object({ nodes: z.number().int(), edges: z.number().int() }),
+});
+export const AdminPage = z.object({
+  items: z.array(AdminRecord),
+  next: z.string().nullable(),
+});
+export const KnowledgeRecord = z.object({
+  id: z.uuid(),
+  kind: z.enum(["observation", "interpretation"]),
+  text: z.string(),
+  from: z.number().int().nonnegative().safe(),
+  until: z.number().int().nonnegative().safe().optional(),
+});
+export const KnowledgePage = z.object({
+  at: z.number().int().nonnegative().safe(),
+  items: z.array(KnowledgeRecord),
+  next: z.string().nullable(),
+});
+export const EventQuery = z.object({
+  role: z.enum(["admin", "player"]),
+  after: z.string().regex(/^\d+$/).optional(),
+});
+export const WorldEvent = z.object({
+  id: z.string(),
+  worldId: z.uuid(),
+  type: z.literal("invalidate"),
+});

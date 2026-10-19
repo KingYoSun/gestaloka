@@ -1,7 +1,7 @@
 # GESTALOKA v3
 
 動的な自由記述シェアワールドを構築するプロジェクトです。
-開発基盤と、CLIによる初期世界の生成・保存、共通の世界更新Agent、時間指定の構築・別村民の生成を実装しています。APIは疎通確認用HTTP/SSE、ワーカーは構築ジョブの実行、Webは起動画面までです。画面からの構築と人間の操作権の登録は未実装です。
+開発基盤、共通の世界更新Agent、時間指定の構築・別村民の生成と管理APIを実装しています。ワーカーは構築ジョブを実行し、APIは管理操作・権限確認・村民の公開知識・進捗再送を扱います。Webは起動画面までで、人間の自由記述行動と画面の接続は未実装です。
 
 ## ローカル起動
 
@@ -28,7 +28,7 @@ API・ワーカー・Webは、それぞれ `pnpm --filter @gestaloka/api dev`、
 - `packages/contracts`: ブラウザーでも利用できる公開Zodスキーマと生成HTTP型。
 - `packages/server`: サーバー用のDB・キュー・チェックポイント接続。
 
-`pnpm generate` は公開Zodスキーマを登録したFastifyからOpenAPIを取得し、openapi-typescriptでHTTPクライアント型を生成します。OpenAPIやクライアント型は直接編集しません。SSEのデータも公開Zodスキーマで実行時検証します。現在の疎通用SSEは一つのメッセージで終了し、世界更新の再送契約はまだ含みません。
+`pnpm generate` は公開Zodスキーマを登録したFastifyからOpenAPIを取得し、openapi-typescriptでHTTPクライアント型を生成します。OpenAPIやクライアント型は直接編集しません。SSEのデータも公開Zodスキーマで実行時検証します。疎通用SSEは一つのメッセージで終了し、世界ごとの進捗SSEは保存済みIDからの再送に対応します。
 
 ## DeepSeekによる初期生成
 
@@ -77,7 +77,15 @@ pnpm world:build resume --id <constructionId>
 
 `advance`はreadyの区切りから、ミリ秒で指定した期間を追加します。`finish`はその区切りで構築を完了し、`join`は別の新しい村民を共通Agentで生成します。試遊村民の存在・履歴・所有・知識は残ります。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。
 
-取得結果は到達時刻・目標時刻・主な処理記録・未処理の起動を含む管理情報です。操作権と公開viewの配信は後続で接続します。区間をまたぐ継続と参加の契約は [ADR-003](documents/adr/ADR-003-construction-lifecycle.md) を参照してください。
+取得結果は到達時刻・目標時刻・主な処理記録・未処理の起動を含む管理情報です。区間をまたぐ継続と参加の契約は [ADR-003](documents/adr/ADR-003-construction-lifecycle.md)、実行結果と時間配分の残る問題は [構築の実測記録](documents/evaluations/construction-2026-10-19.md) を参照してください。
+
+## 管理APIと公開知識
+
+APIとワーカーを起動し、同じオリジンから利用します。初回の `POST /api/session` で発行するHttpOnly Cookieがローカルの操作主体を識別します。変更操作には `X-Gestaloka-Request: 1` を付け、世界の作成・構築操作には再送用のrequestIdを指定します。
+
+`/api/worlds` で自分の世界を作成・取得し、`/api/worlds/:id/commands` で期間追加・再開・完了・参加を受け付けます。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は割り当てた村民本人の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。
+
+`/api/worlds/:id/events?role=admin` または `role=player` は、現在の権限を確認して更新通知を配信します。Last-Event-IDによる再送に対応し、別の主体・世界・ロールのcursorは拒否します。取得や再接続だけで世界内の観測は追加しません。CLIで作った世界へブラウザーの権限を自動付与しません。詳細は [ADR-004](documents/adr/ADR-004-world-api.md) を参照してください。
 
 ## 検証
 
@@ -93,7 +101,7 @@ pnpm test:e2e
 
 統合テストは実DBを使い、Neo4jの再接続後の読取、PostgreSQLトランザクション内のキュー投入のロールバック、LangGraphの中断・再開と保存済みtaskの再利用を確認します。テストは専用レコードとキューを作り、世界モデルの正本を作りません。ブラウザーテストは実APIへ接続し、HTTPと標準EventSourceの疎通を確認します。
 
-物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、公開画面・操作権と人間の通常操作への接続は後続実装です。
+物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、時間配分の調整、公開画面と人間の通常操作への接続は後続実装です。
 
 ## 設計資料
 

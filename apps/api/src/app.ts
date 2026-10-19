@@ -8,8 +8,10 @@ import {
   type ZodTypeProvider,
 } from "@fastify/type-provider-zod";
 import { Health, HealthEvent } from "@gestaloka/contracts";
+import type { WorldAccess } from "@gestaloka/server/access";
+import { worldRoutes } from "./world-routes.js";
 
-export async function createApp() {
+export async function createApp(access?: WorldAccess) {
   const app = Fastify().withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -28,6 +30,7 @@ export async function createApp() {
       await reply.sse.send({ event: event.type, data: event });
     },
   );
+  await worldRoutes(app, access);
   await app.ready();
   return app;
 }
