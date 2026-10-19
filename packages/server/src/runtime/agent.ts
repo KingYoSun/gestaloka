@@ -18,7 +18,7 @@ import {
   validateConnection,
   type WorldEdge,
 } from "../world/model.js";
-import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
+import type { LlmClient, ChatMessage } from "../llm/client.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -181,7 +181,7 @@ export class WorldAgent {
     readonly pool: pg.Pool,
     graph: Driver,
     readonly checkpointer: PostgresSaver,
-    readonly model: DeepSeekClient,
+    readonly model: LlmClient,
   ) {
     this.store = new WorldStore(graph);
   }
@@ -854,7 +854,7 @@ export class WorldAgent {
   async hasCompletedIntent(id: string) {
     const saved = (
       await this.pool.query<{
-        response: Awaited<ReturnType<DeepSeekClient["complete"]>> | null;
+        response: Awaited<ReturnType<LlmClient["complete"]>> | null;
       }>("SELECT response FROM llm_call WHERE id=$1 AND state='complete'", [id])
     ).rows[0]?.response;
     try {

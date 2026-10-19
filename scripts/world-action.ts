@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 
 const { values } = parseArgs({
@@ -24,7 +24,7 @@ if (!values.build && !values.resume)
 const databases = connectDatabases();
 try {
   await databases.verify();
-  const model = new DeepSeekClient(databases.postgres, {
+  const model = new LlmClient(databases.postgres, {
     ...process.env,
     LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS ?? "65536",
   });

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient, type ChatMessage } from "@gestaloka/server/llm";
+import { LlmClient, type ChatMessage } from "@gestaloka/server/llm";
 import { Change } from "@gestaloka/server/world";
 
 const { values } = parseArgs({
@@ -37,7 +37,7 @@ try {
     )
   ).rows[0];
   if (!source) throw new Error("保存済み呼出しを確認できません");
-  const model = new DeepSeekClient(databases.postgres, {
+  const model = new LlmClient(databases.postgres, {
     ...process.env,
     LLM_REASONING_EFFORT: effort,
     LLM_MAX_OUTPUT_TOKENS: String(source.request.request.max_tokens),

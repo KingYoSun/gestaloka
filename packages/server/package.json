@@ -6,7 +6,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./world": "./dist/world/store.js",
-    "./llm": "./dist/llm/deepseek.js",
+    "./llm": "./dist/llm/client.js",
     "./build": "./dist/runtime/build.js",
     "./agent": "./dist/runtime/agent.js",
     "./construction": "./dist/runtime/construction.js",

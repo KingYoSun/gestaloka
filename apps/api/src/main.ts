@@ -1,6 +1,6 @@
 import { connectDatabases } from "@gestaloka/server";
 import { createApp } from "./app.js";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient, llmApiKey } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -12,9 +12,9 @@ databases.queue.on("error", (error) => console.error(error));
 try {
   await databases.verify();
   let access: WorldAccess | undefined;
-  if (process.env.DEEPSEEK_API_KEY) {
+  if (llmApiKey()) {
     await databases.queue.start();
-    const model = new DeepSeekClient(databases.postgres);
+    const model = new LlmClient(databases.postgres);
     access = new WorldAccess(
       new WorldConstruction(
         new WorldBuilder(

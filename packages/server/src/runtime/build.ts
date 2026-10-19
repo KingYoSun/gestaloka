@@ -11,7 +11,7 @@ import {
   validateBindings,
   validateConnection,
 } from "../world/model.js";
-import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
+import type { LlmClient, ChatMessage } from "../llm/client.js";
 
 const Proposal = z
   .object({
@@ -98,7 +98,7 @@ export class WorldBuilder {
     readonly pool: pg.Pool,
     graph: Driver,
     readonly checkpointer: PostgresSaver,
-    readonly model: DeepSeekClient,
+    readonly model: LlmClient,
   ) {
     this.store = new WorldStore(graph);
   }

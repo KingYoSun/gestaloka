@@ -30,9 +30,43 @@ API・ワーカー・Webは、それぞれ `pnpm --filter @gestaloka/api dev`、
 
 `pnpm generate` は公開Zodスキーマを登録したFastifyからOpenAPIを取得し、openapi-typescriptでHTTPクライアント型を生成します。OpenAPIやクライアント型は直接編集しません。SSEのデータも公開Zodスキーマで実行時検証します。疎通用SSEは一つのメッセージで終了し、世界ごとの進捗SSEは保存済みIDからの再送に対応します。
 
-## DeepSeekによる初期生成
+## モデルの接続設定
 
-`.env` に `DEEPSEEK_API_KEY` を設定します。指定バージョンDeepSeek-V4.1-Flash-1017のAPI識別子は `deepseek-flash` です。接続先は `https://api.deepseek.com` を使います。
+`.env` の `LLM_MODEL` でモデルを選び、そのモデルのAPIキーとbase URLを設定します。endpointには `/chat/completions` を付けず、下表のbase URLまでを指定してください。末尾の `/` はどちらでも使えます。
+
+| LLM_MODEL          | APIキー            | endpoint設定        | 既定のbase URL                                            |
+| ------------------ | ------------------ | ------------------- | --------------------------------------------------------- |
+| `deepseek-flash`   | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com`                                |
+| `gemini-3.8-flash` | `GEMINI_API_KEY`   | `GEMINI_BASE_URL`   | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `gpt-6-luna`       | `OPENAI_API_KEY`   | `OPENAI_BASE_URL`   | `https://api.openai.com/v1`                               |
+
+Gemini 3.8 Flash／lowを使う場合は、次の値を設定します。既存行があれば置き換えてください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
+
+```dotenv
+LLM_MODEL=gemini-3.8-flash
+GEMINI_API_KEY=<APIキー>
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+GEMINI_REASONING_EFFORT=low
+GEMINI_INITIAL_REASONING_EFFORT=low
+```
+
+GPT-6 Luna／lowの場合は、次の値を設定します。
+
+```dotenv
+LLM_MODEL=gpt-6-luna
+OPENAI_API_KEY=<APIキー>
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_REASONING_EFFORT=low
+OPENAI_INITIAL_REASONING_EFFORT=low
+```
+
+設定後にAPIとワーカーを再起動し、`pnpm llm:probe` で疎通を確認してください。probeは予算に含める有料の生成を1回行い、モデル識別子・使用量・時間を保存します。接続確認はゲーム全体の品質検証とは別です。
+
+各設定の `low` は通常行動と初期生成の両方に適用されます。モデル別の設定を共通の `LLM_REASONING_EFFORT` / `LLM_INITIAL_REASONING_EFFORT` より優先するため、既存のDeepSeek用highを残したまま切り替えられます。両方未指定時はDeepSeekがhigh、GeminiとGPT-6 Lunaがlowです。既存のDeepSeek設定も使え、`LLM_MODEL` がなければ `DEEPSEEK_MODEL`、それもなければ `deepseek-flash` を選びます。
+
+Geminiは公式の[OpenAI互換endpoint](https://ai.google.dev/gemini-api/docs/openai)を使います。GPT-6 Lunaは[公式モデル仕様](https://developers.openai.com/api/docs/models/gpt-6-luna)に従いChat Completionsで接続し、`max_completion_tokens` と `service_tier=default` を指定します。実行中の生成や世界の契約はモデル別に分岐させず、同じ世界更新Agentを使います。
+
+## 初期生成
 
 ```powershell
 pnpm llm:probe
@@ -42,7 +76,11 @@ pnpm world:generate --resume <runId>
 
 初期入力はファイルから読み込み、エンジン内の固定設定にはしません。生成候補の構造・接続を検証し、Neo4jへの確定とPostgreSQLの構築記録・LangGraphチェックポイントを関連づけます。`ready` はT0の成立を表し、管理者による世界構築完了とは区別します。再取得だけでは生成や観測を再実行しません。構造検査の成功は意味的な整合性の証明ではありません。
 
-`LLM_BUDGET_ID` が実測全体の費用を集計し、既定の上限は今回承認された40ドルです。PostgreSQLで送信前の予約と応答後の精算を行い、再開・別プロセスでも共有します。単価は2026-10-19に確認したFlashのピーク料金を使うため、表示額は請求額そのものではなく上限見積です。応答喪失時は予約を残し、同じ呼出しIDを自動再送しません。上限や応答未確定による停止は実行上の保留であり、世界内の失敗ではありません。
+`LLM_BUDGET_ID` が実測全体の費用を集計し、既定の上限は今回承認された40ドルです。モデルを変えても同じIDを使い、DeepSeek・Gemini・OpenAIの費用を通算します。既定IDは既存記録を引き継ぐため `deepseek-v4.1-flash-1017-evaluation` のままです。PostgreSQLで送信前の予約と応答後の精算を行い、再開・別プロセスでも共有します。
+
+表示額は請求額ではなく、2026-10-19に公式資料で確認した料金から計算する上限見積です。DeepSeekは既存のピーク単価を維持します。Geminiは[公表済みの2027年以降の標準単価](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash)（100万トークンあたり入力1.50ドル・キャッシュ0.15ドル・出力7.50ドル）、GPT-6 Lunaは[長い入力とキャッシュ書込の割増](https://developers.openai.com/api/docs/models/gpt-6-luna)を含む上限単価（入力0.25ドル・出力0.75ドル）を使います。Geminiの2026年中の標準料金やGPTの通常の短い入力では、見積が請求より大きくなります。組み込み料金は上記の公式サービスのテキスト生成を対象とし、別料金の独自gatewayを使う場合はこの見積をそのまま請求額として扱わないでください。
+
+応答喪失時は予約を残し、同じ呼出しIDを自動再送しません。上限や応答未確定による停止は実行上の保留であり、世界内の失敗ではありません。応答・使用量の保存形式は共通化し、APIキーや内部推論は記録しません。新しい要求にはendpointと上限単価も保存し、設定変更後に同じ呼び出しを再開しても元の要求・精算条件を保持します。
 
 1回の最大出力は接続確認で16,384トークン、初期生成で65,536トークンです。`LLM_MAX_OUTPUT_TOKENS` で設定でき、予約額にも反映します。キーと内部推論は実測記録へ保存しません。サーバー側の入出力・使用量・遅延はPostgreSQL、生成の確認記録はローカルの `artifacts/evaluations/` に保存します。
 
@@ -94,7 +132,7 @@ APIとワーカーを起動し、同じオリジンから利用します。初�
 
 `/api/worlds/:id/events?role=admin` または `role=player` は、現在の権限を確認して更新通知を配信します。Last-Event-IDによる再送に対応し、別の主体・世界・ロールのcursorは拒否します。取得や再接続だけで世界内の観測は追加しません。CLIで作った世界へブラウザーの権限を自動付与しません。詳細は [ADR-004](documents/adr/ADR-004-world-api.md) を参照してください。
 
-同時刻の意図と人間への操作返却は [ADR-005](documents/adr/ADR-005-human-play.md)、待ち時間と推論量の比較は [通常行動の実測](documents/evaluations/human-play-2026-10-19.md) を参照してください。`LLM_REASONING_EFFORT`で通常行動、`LLM_INITIAL_REASONING_EFFORT`で初期生成の推論量を指定できます。値はnone・low・high・max、コードの既定値は両方highです。同じ呼出しIDの保存済み設定と応答は保持し、新しい呼出しから設定を適用します。
+同時刻の意図と人間への操作返却は [ADR-005](documents/adr/ADR-005-human-play.md)、待ち時間と推論量の比較は [通常行動の実測](documents/evaluations/human-play-2026-10-19.md) を参照してください。`LLM_REASONING_EFFORT`で通常行動、`LLM_INITIAL_REASONING_EFFORT`で初期生成の推論量を指定できます。DeepSeekはnone・low・high・max、Geminiはlow・medium・high、GPT-6 Lunaはnone・low・medium・high・xhigh・maxを使えます。同じ呼出しIDの保存済み設定と応答は保持し、新しい呼出しから設定を適用します。
 
 画面は [ADR-006](documents/adr/ADR-006-gameplay-ui.md) に従います。受付後の再読込で行動を追加送信せず、保存されたrunIdの入力と進行へ戻ります。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。過去を読んでいる間の更新では位置を移動しません。通信の再接続時は、配信位置と公開状態を取得し直します。
 

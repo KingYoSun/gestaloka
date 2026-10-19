@@ -2,7 +2,7 @@ import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import {
   WorldStore,
   type Change,
@@ -110,7 +110,7 @@ async function fixture() {
 async function agent(transport: typeof fetch) {
   const budgetId = randomUUID();
   budgets.push(budgetId);
-  const model = new DeepSeekClient(
+  const model = new LlmClient(
     databases.postgres,
     { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
     transport,
