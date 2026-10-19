@@ -103,6 +103,8 @@ pnpm llm:probe --target resolution
 
 この確認は専用の小さな世界を作り、結果提案から世界への確定まで実行します。既存の試遊世界は変更しません。モデル・料金の変更は新しい呼出しへ適用し、保存済みの要求と応答は元の条件で再利用します。
 
+同じ開始状態・行動によるGPT-6.1 Sol、Claude Sonnet 5.5、DeepSeek Flashの比較は、[上位モデルの実測記録](documents/evaluations/upper-models-2026-10-20.md)を参照してください。
+
 ### DeepSeek Harness
 
 DeepSeekを結果担当に選んだ場合、結果提案と確定判断の両方を公式の[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）経由で実行します。上位設定を省略して基本モデルにDeepSeekを選んだ場合も同じです。独立したChat Completions呼出しへ置き換えません。
