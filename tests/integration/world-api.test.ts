@@ -8,6 +8,7 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
+import { modelEnvironment, approvedTransport } from "../support/model.js";
 
 const databases = connectDatabases(),
   budgetId = randomUUID();
@@ -18,8 +19,8 @@ const queueName = `api-test-${randomUUID()}`;
 const empty = () => ({ nodes: [], edges: [], revisions: [], endEdges: [] });
 const model = new LlmClient(
   databases.postgres,
-  { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
-  async (_url, options) => {
+  modelEnvironment(budgetId),
+  approvedTransport(async (_url, options) => {
     const user = JSON.parse(
       JSON.parse(String(options?.body)).messages.find(
         (message: { role: string }) => message.role === "user",
@@ -115,7 +116,7 @@ const model = new LlmClient(
         },
       }),
     );
-  },
+  }),
 );
 const runtime = new WorldConstruction(
   new WorldBuilder(

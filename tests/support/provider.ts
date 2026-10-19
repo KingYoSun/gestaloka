@@ -5,6 +5,7 @@ import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
+import { modelEnvironment, approvedTransport } from "./model.js";
 
 export async function fixtureRuntime(): Promise<{
   databases: ReturnType<typeof connectDatabases>;
@@ -19,8 +20,8 @@ export async function fixtureRuntime(): Promise<{
   let sequence = 0;
   const model = new LlmClient(
     databases.postgres,
-    { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: `e2e-${scope}` },
-    async (_url, options) => {
+    modelEnvironment(`e2e-${scope}`),
+    approvedTransport(async (_url, options) => {
       await delay(100);
       const input = JSON.parse(String(options?.body));
       const user = JSON.parse(
@@ -199,7 +200,7 @@ export async function fixtureRuntime(): Promise<{
           },
         }),
       );
-    },
+    }),
   );
   const runtime = new WorldConstruction(
     new WorldBuilder(

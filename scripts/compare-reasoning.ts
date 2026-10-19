@@ -13,7 +13,9 @@ const { values } = parseArgs({
   },
 });
 const id = z.uuid().parse(values.operation),
-  effort = z.enum(["none", "low", "high", "max"]).parse(values.effort);
+  effort = z
+    .enum(["none", "low", "medium", "high", "xhigh", "max"])
+    .parse(values.effort);
 const databases = connectDatabases();
 try {
   const row = (
@@ -28,7 +30,13 @@ try {
   const source = (
     await databases.postgres.query<{
       id: string;
-      request: { request: { max_tokens: number } };
+      request: {
+        request: {
+          max_tokens?: number;
+          max_completion_tokens?: number;
+          max_output_tokens?: number;
+        };
+      };
       elapsed_ms: number;
       response: { content: string };
     }>(
@@ -43,8 +51,18 @@ try {
     DEEPSEEK_REASONING_EFFORT: effort,
     GEMINI_REASONING_EFFORT: effort,
     OPENAI_REASONING_EFFORT: effort,
-    LLM_MAX_OUTPUT_TOKENS: String(source.request.request.max_tokens),
+    ANTHROPIC_REASONING_EFFORT: effort,
+    LLM_RESOLUTION_REASONING_EFFORT: effort,
+    LLM_RESOLUTION_MAX_OUTPUT_TOKENS: String(
+      source.request.request.max_tokens ??
+        source.request.request.max_completion_tokens ??
+        source.request.request.max_output_tokens,
+    ),
   });
+  if (model.settingsFor("resolution").provider === "deepseek")
+    throw new Error(
+      "DeepSeekの結果提案と確定はdsh経由です。pnpm llm:harness-probe または世界の通常行動で確認してください",
+    );
   await model.ledger.setup();
   const callId = randomUUID();
   console.log(
@@ -60,6 +78,7 @@ try {
     callId,
     `reasoning-comparison-${effort}`,
     messages,
+    "resolution",
   );
   const response: unknown = JSON.parse(result.content);
   const envelope = z.object({ type: z.string() }).passthrough().parse(response);

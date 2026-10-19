@@ -19,6 +19,7 @@ import {
   type WorldEdge,
 } from "../world/model.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
+import { runHarness } from "./harness.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -156,6 +157,12 @@ const Decision = z.discriminatedUnion("type", [
   Proposal,
   z.object({ type: z.literal("pause"), reason: z.string() }).strict(),
 ]);
+const CommitDecision = z
+  .object({
+    type: z.enum(["commit", "revise", "pause"]),
+    reason: z.string().min(1),
+  })
+  .strict();
 type Operation = {
   id: string;
   run_id: string;
@@ -170,6 +177,7 @@ type Operation = {
   dependencies: Dependency[];
   candidate: WorldProposal | null;
   result: WorldProposal | null;
+  approved: boolean;
 };
 export class OperationPaused extends Error {}
 export class SupersededWorker extends Error {}
@@ -205,6 +213,9 @@ export class WorldAgent {
       CREATE TABLE IF NOT EXISTS world_intent (
       id uuid PRIMARY KEY, world_id uuid NOT NULL, actor_id uuid NOT NULL, at bigint NOT NULL,
       view jsonb NOT NULL, system_prompt text NOT NULL);`);
+    await this.pool.query(
+      "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false",
+    );
   }
 
   async create(
@@ -212,6 +223,7 @@ export class WorldAgent {
     runId = randomUUID(),
     database: Pick<pg.Pool, "query"> = this.pool,
   ) {
+    this.model.settingsFor("resolution");
     const request = Interaction.parse(input),
       id = randomUUID();
     z.uuid().parse(runId);
@@ -256,7 +268,7 @@ export class WorldAgent {
 
   async #save(row: Operation, claim: string) {
     const result = await this.pool.query(
-      `UPDATE world_operation SET epoch=$3, step=$4, messages=$5, dependencies=$6, candidate=$7
+      `UPDATE world_operation SET epoch=$3, step=$4, messages=$5, dependencies=$6, candidate=$7,approved=$8
       WHERE id=$1 AND claim_key=$2`,
       [
         row.id,
@@ -266,6 +278,7 @@ export class WorldAgent {
         JSON.stringify(row.messages),
         JSON.stringify(row.dependencies),
         JSON.stringify(row.candidate),
+        row.approved,
       ],
     );
     if (result.rowCount !== 1)
@@ -657,7 +670,14 @@ export class WorldAgent {
     const ask = task(
       "world-thought",
       async (input: { id: string; messages: ChatMessage[] }) =>
-        this.model.complete(input.id, "world-update", input.messages),
+        this.model.complete(
+          input.id,
+          "world-update",
+          input.messages,
+          ["interaction", "resolution"].includes(row.request.phase)
+            ? "resolution"
+            : "default",
+        ),
     );
     const query = task(
       "world-query",
@@ -762,7 +782,219 @@ export class WorldAgent {
               ];
               await this.#save(row, claim);
             }
+            if (
+              this.model.settingsFor("resolution").provider === "deepseek" &&
+              (["interaction", "resolution"].includes(row.request.phase) ||
+                row.candidate)
+            ) {
+              let proposalId = row.candidate ? randomUUID() : undefined;
+              let paused: string | undefined;
+              let committed = false;
+              const reviewPrompt = await readFile(
+                new URL("../../../../prompts/world-commit.md", import.meta.url),
+                "utf8",
+              );
+              try {
+                await runHarness({
+                  id,
+                  epoch: row.epoch,
+                  model: this.model,
+                  system:
+                    row.system_prompt.replace(
+                      "与えられたJSONスキーマに一致するJSONオブジェクトだけを返してください。",
+                      "",
+                    ) +
+                    "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
+                    reviewPrompt.replace(
+                      "指定されたJSONだけを返してください。",
+                      "world_commitを呼ぶ前に次の条件を照合してください。",
+                    ),
+                  input: {
+                    request: row.request,
+                    evidence: row.messages
+                      .filter((m) => m.role === "user")
+                      .map((m) => JSON.parse(m.content)),
+                    candidate: row.candidate,
+                    proposalId,
+                  },
+                  tools: [
+                    {
+                      name: "world_read",
+                      description:
+                        "この世界の必要なノード・関係・履歴を照会する。内部照会は観測ではない。",
+                      schema: z.toJSONSchema(
+                        z.object({ requests: z.array(Query).min(1) }).strict(),
+                        { io: "input" },
+                      ),
+                      execute: async (input) => {
+                        const value = z
+                          .object({ requests: z.array(Query).min(1) })
+                          .parse(input);
+                        const output = await query({
+                          row,
+                          requests: value.requests,
+                        });
+                        row.dependencies = output.dependencies;
+                        await this.#save(row, claim);
+                        return output.results;
+                      },
+                    },
+                    {
+                      name: "world_propose",
+                      description:
+                        "世界変更の候補を提出する。まだ世界へ確定しない。返されたproposalIdを確認し確定判断へ進む。",
+                      schema: z.toJSONSchema(Proposal, { io: "input" }),
+                      execute: async (input) => {
+                        if (paused || committed)
+                          throw new Error("この実行は既に終了しています");
+                        const candidate = Proposal.parse(input);
+                        row.dependencies = await this.#validateProposal(
+                          row,
+                          candidate,
+                        );
+                        row.candidate = candidate;
+                        row.approved = false;
+                        proposalId = randomUUID();
+                        await this.#save(row, claim);
+                        return { proposalId, candidate, review: reviewPrompt };
+                      },
+                    },
+                    {
+                      name: "world_commit",
+                      description:
+                        "提出した候補と根拠を照合し、受入条件を満たす場合に確定する。形式・参照・版検査を通して原子的に確定する。",
+                      schema: z.toJSONSchema(
+                        z
+                          .object({
+                            proposalId: z.uuid(),
+                            reason: z.string().min(1),
+                          })
+                          .strict(),
+                        { io: "input" },
+                      ),
+                      execute: async (input) => {
+                        const approval = z
+                          .object({
+                            proposalId: z.uuid(),
+                            reason: z.string().min(1),
+                          })
+                          .parse(input);
+                        if (
+                          paused ||
+                          approval.proposalId !== proposalId ||
+                          !row.candidate
+                        )
+                          throw new Error(
+                            "有効な候補のproposalIdを指定してください",
+                          );
+                        if (committed) return { committed: true };
+                        row.dependencies = await this.#validateProposal(
+                          row,
+                          row.candidate,
+                        );
+                        row.approved = true;
+                        await this.#save(row, claim);
+                        await commit({
+                          candidate: row.candidate,
+                          dependencies: row.dependencies,
+                        });
+                        committed = true;
+                        return {
+                          committed: true,
+                          summary: row.candidate.summary,
+                        };
+                      },
+                    },
+                    {
+                      name: "world_pause",
+                      description:
+                        "取得できない必要条件を明示し、世界を変更せず保留する。",
+                      schema: z.toJSONSchema(
+                        z.object({ reason: z.string().min(1) }).strict(),
+                        { io: "input" },
+                      ),
+                      execute: async (input) => {
+                        paused = z
+                          .object({ reason: z.string().min(1) })
+                          .parse(input).reason;
+                        return { paused: true };
+                      },
+                    },
+                  ],
+                });
+              } catch (error) {
+                if (
+                  !(await this.store.receipt(
+                    row.request.worldId,
+                    row.commit_id,
+                  ))
+                )
+                  throw error;
+              }
+              if (await this.store.receipt(row.request.worldId, row.commit_id))
+                return this.#finish(row, claim);
+              throw new OperationPaused(
+                paused ?? "dshから世界への確定が完了していないため保留します",
+              );
+            }
             if (row.candidate) {
+              if (!row.approved) {
+                const review = await this.model.complete(
+                  callId(id, row.epoch, row.step + 1000000),
+                  "world-commit",
+                  [
+                    {
+                      role: "system",
+                      content: await readFile(
+                        new URL(
+                          "../../../../prompts/world-commit.md",
+                          import.meta.url,
+                        ),
+                        "utf8",
+                      ),
+                    },
+                    {
+                      role: "user",
+                      content: JSON.stringify({
+                        commitReview: {
+                          request: row.request,
+                          candidate: row.candidate,
+                          evidence: row.messages
+                            .filter((m) => m.role === "user")
+                            .map((m) => JSON.parse(m.content))
+                            .filter((m) => !("validationErrors" in m)),
+                        },
+                        responseSchema: z.toJSONSchema(CommitDecision, {
+                          io: "input",
+                        }),
+                      }),
+                    },
+                  ],
+                  "resolution",
+                );
+                if (review.finishReason !== "stop")
+                  throw new OperationPaused("確定判断の応答が未完了です");
+                const decision = CommitDecision.parse(
+                  JSON.parse(review.content),
+                );
+                if (decision.type === "pause")
+                  throw new OperationPaused(decision.reason);
+                if (decision.type === "revise") {
+                  row.candidate = null;
+                  row.messages.push({
+                    role: "user",
+                    content: JSON.stringify({ commitReview: decision.reason }),
+                  });
+                  await this.#save(row, claim);
+                  continue;
+                }
+                row.dependencies = await this.#validateProposal(
+                  row,
+                  row.candidate,
+                );
+                row.approved = true;
+                await this.#save(row, claim);
+              }
               await commit({
                 candidate: row.candidate,
                 dependencies: row.dependencies,
@@ -836,6 +1068,7 @@ export class WorldAgent {
             row.step = 0;
             row.messages = null;
             row.candidate = null;
+            row.approved = false;
             row.dependencies = [];
             await this.#save(row, claim);
             const renewed = await this.#activate(id, claim);

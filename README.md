@@ -32,13 +32,16 @@ API・ワーカー・Webは、それぞれ `pnpm --filter @gestaloka/api dev`、
 
 ## モデルの接続設定
 
-`.env` の `LLM_MODEL` でモデルを選び、そのモデルのAPIキーとbase URLを設定します。endpointには `/chat/completions` を付けず、下表のbase URLまでを指定してください。末尾の `/` はどちらでも使えます。
+`.env` の `LLM_MODEL` で基本モデルを、`LLM_RESOLUTION_MODEL` で結果提案・確定判断を担当する上位モデルを指定します。モデルIDは固定リストに制限しません。各サービスが返す利用可能なIDを指定してください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
 
-| LLM_MODEL          | APIキー            | endpoint設定        | 既定のbase URL                                            |
-| ------------------ | ------------------ | ------------------- | --------------------------------------------------------- |
-| `deepseek-flash`   | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com`                                |
-| `gemini-3.8-flash` | `GEMINI_API_KEY`   | `GEMINI_BASE_URL`   | `https://generativelanguage.googleapis.com/v1beta/openai` |
-| `gpt-6-luna`       | `OPENAI_API_KEY`   | `OPENAI_BASE_URL`   | `https://api.openai.com/v1`                               |
+| LLM_MODEL          | APIキー             | endpoint設定         | 既定のbase URL                                            |
+| ------------------ | ------------------- | -------------------- | --------------------------------------------------------- |
+| `deepseek-flash`   | `DEEPSEEK_API_KEY`  | `DEEPSEEK_BASE_URL`  | `https://api.deepseek.com`                                |
+| `gemini-3.8-flash` | `GEMINI_API_KEY`    | `GEMINI_BASE_URL`    | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| `gpt-6-luna`       | `OPENAI_API_KEY`    | `OPENAI_BASE_URL`    | `https://api.openai.com/v1`                               |
+| ClaudeのモデルID   | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1`                            |
+
+endpointには `/chat/completions`・`/responses`・`/messages` を付けません。末尾の `/` はどちらでも使えます。ClaudeはAnthropic Messages API、OpenAIは既定でChat Completionsを使います。Responses APIを使うモデルには `OPENAI_API=responses` または対象側の `LLM_RESOLUTION_API=responses` を指定します。
 
 Gemini 3.8 Flash／lowを使う場合は、次の値を設定します。既存行があれば置き換えてください。キーの値はチャットへ送らず、ローカルの `.env` に記入します。
 
@@ -60,11 +63,63 @@ OPENAI_REASONING_EFFORT=low
 OPENAI_INITIAL_REASONING_EFFORT=low
 ```
 
-設定後にAPIとワーカーを再起動し、`pnpm llm:probe` で疎通を確認してください。probeは予算に含める有料の生成を1回行い、モデル識別子・使用量・時間を保存します。接続確認はゲーム全体の品質検証とは別です。
+設定後にAPIとワーカーを再起動し、`pnpm llm:probe` で基本モデルの疎通を確認してください。probeは予算に含める有料の生成を1回行い、モデル識別子・使用量・時間を保存します。接続確認はゲーム全体の品質検証とは別です。
 
 各設定の `low` は通常行動と初期生成の両方に適用されます。モデル別の設定を共通の `LLM_REASONING_EFFORT` / `LLM_INITIAL_REASONING_EFFORT` より優先するため、既存のDeepSeek用highを残したまま切り替えられます。両方未指定時はDeepSeekがhigh、GeminiとGPT-6 Lunaがlowです。既存のDeepSeek設定も使え、`LLM_MODEL` がなければ `DEEPSEEK_MODEL`、それもなければ `deepseek-flash` を選びます。
 
-Geminiは公式の[OpenAI互換endpoint](https://ai.google.dev/gemini-api/docs/openai)を使います。GPT-6 Lunaは[公式モデル仕様](https://developers.openai.com/api/docs/models/gpt-6-luna)に従いChat Completionsで接続し、`max_completion_tokens` と `service_tier=default` を指定します。実行中の生成や世界の契約はモデル別に分岐させず、同じ世界更新Agentを使います。
+Geminiは公式の[OpenAI互換endpoint](https://ai.google.dev/gemini-api/docs/openai)を使います。GPT-6 Lunaは[公式モデル仕様](https://developers.openai.com/api/docs/models/gpt-6-luna)に従いChat Completionsで接続し、`max_completion_tokens` と `service_tier=default` を指定します。Claudeは[Messages API](https://platform.claude.com/docs/en/api/messages/create)を使い、推論を有効にする場合はadaptive thinkingとeffortを指定します。選択するモデルがその形式・推論量に対応していることを確認してください。
+
+### 上位モデルと確定判断
+
+| 処理                                                | 使用する設定           |
+| --------------------------------------------------- | ---------------------- |
+| 初期生成、NPCの観測候補・意図形成、参加者の生成候補 | `LLM_MODEL`            |
+| 相互作用・継続作用の結果提案（4）                   | `LLM_RESOLUTION_MODEL` |
+| 共通Agentによる全候補の世界への確定判断             | `LLM_RESOLUTION_MODEL` |
+
+確定担当は、提案と照会済みの根拠を読み、承認・修正要求・保留を返します。承認後も構造・依存版・実行世代を検証し、既存の原子的な確定とreceiptを使います。LLMが直接DBを書き換えることはありません。初期生成のT0確定は従来の生成処理です。
+
+上位モデルを切り替える例です。山括弧の値は、利用するモデルの仕様と料金に置き換えてください。Claudeの固定モデルIDや料金は組み込んでいません。
+
+```dotenv
+LLM_RESOLUTION_MODEL=<利用可能なClaudeのモデルID>
+LLM_RESOLUTION_PROVIDER=anthropic
+LLM_RESOLUTION_API=messages
+LLM_RESOLUTION_REASONING_EFFORT=high
+LLM_RESOLUTION_CONTEXT_TOKENS=<コンテキスト上限>
+LLM_RESOLUTION_MAX_OUTPUT_TOKENS=<出力上限>
+LLM_RESOLUTION_INPUT_USD_PER_MILLION=<入力の上限単価>
+LLM_RESOLUTION_CACHED_INPUT_USD_PER_MILLION=<キャッシュ読取の上限単価>
+LLM_RESOLUTION_OUTPUT_USD_PER_MILLION=<出力の上限単価>
+ANTHROPIC_API_KEY=<APIキー>
+ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
+```
+
+既知の3モデル以外では、コンテキスト上限と3種類の単価が必須です。基本モデルへ使う場合は `LLM_RESOLUTION_` を `LLM_` に置き換えます。キャッシュ書込や長い入力の割増がある場合は、それを含む上限単価にしてください。`LLM_RESOLUTION_BASE_URL` で上位モデル専用の接続先も指定できます。`LLM_RESOLUTION_MODEL` が空欄なら従来の基本モデルを引き継ぐため、上位モデルで運用するには明示設定が必要です。
+
+```powershell
+pnpm llm:probe --target resolution
+```
+
+この確認は専用の小さな世界を作り、結果提案から世界への確定まで実行します。既存の試遊世界は変更しません。モデル・料金の変更は新しい呼出しへ適用し、保存済みの要求と応答は元の条件で再利用します。
+
+### DeepSeek Harness
+
+DeepSeekを結果担当に選んだ場合、結果提案と確定判断の両方を公式の[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）経由で実行します。上位設定を省略して基本モデルにDeepSeekを選んだ場合も同じです。独立したChat Completions呼出しへ置き換えません。
+
+```dotenv
+DEEPSEEK_API_KEY=<APIキー>
+DEEPSEEK_HARNESS_BASE_URL=https://api.deepseek.com/anthropic
+DEEPSEEK_HARNESS_HOME=artifacts/harness
+```
+
+```powershell
+pnpm llm:harness-probe
+```
+
+このコマンドはプロセス内だけでDeepSeekを選び、同じ専用世界の確認をdsh経由で行います。`.env` の基本モデルは変更しません。dshに公開するツールは世界の照会・候補の提出・提出済み候補の確定・保留だけです。提出と確定は別のモデル判断にし、シェルやファイル編集のツールは公開しません。モデルへの送信前に共通予算を予約し、応答が不明な場合は自動再送せず予約を保持します。
+
+Harnessが会話を再利用するため、署名や推論ブロックを含むnative応答は非公開の実行記録へ保存します。APIキーは保存せず、これらの内部記録を共有グラフ・プレイヤーの観測へ転記しません。ClaudeとOpenAIの直接呼出しでは、テキストと使用量だけを共通応答へ保存します。
 
 ## 初期生成
 
@@ -76,13 +131,13 @@ pnpm world:generate --resume <runId>
 
 初期入力はファイルから読み込み、エンジン内の固定設定にはしません。生成候補の構造・接続を検証し、Neo4jへの確定とPostgreSQLの構築記録・LangGraphチェックポイントを関連づけます。`ready` はT0の成立を表し、管理者による世界構築完了とは区別します。再取得だけでは生成や観測を再実行しません。構造検査の成功は意味的な整合性の証明ではありません。
 
-`LLM_BUDGET_ID` が実測全体の費用を集計し、既定の上限は今回承認された40ドルです。モデルを変えても同じIDを使い、DeepSeek・Gemini・OpenAIの費用を通算します。既定IDは既存記録を引き継ぐため `deepseek-v4.1-flash-1017-evaluation` のままです。PostgreSQLで送信前の予約と応答後の精算を行い、再開・別プロセスでも共有します。
+`LLM_BUDGET_ID` が実測全体の費用を集計し、既定の上限は今回承認された40ドルです。モデルを変えても同じIDを使い、DeepSeek・Gemini・OpenAI・Claudeの費用を通算します。既定IDは既存記録を引き継ぐため `deepseek-v4.1-flash-1017-evaluation` のままです。PostgreSQLで送信前の予約と応答後の精算を行い、再開・別プロセスでも共有します。
 
 表示額は請求額ではなく、2026-10-19に公式資料で確認した料金から計算する上限見積です。DeepSeekは既存のピーク単価を維持します。Geminiは[公表済みの2027年以降の標準単価](https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash)（100万トークンあたり入力1.50ドル・キャッシュ0.15ドル・出力7.50ドル）、GPT-6 Lunaは[長い入力とキャッシュ書込の割増](https://developers.openai.com/api/docs/models/gpt-6-luna)を含む上限単価（入力0.25ドル・出力0.75ドル）を使います。Geminiの2026年中の標準料金やGPTの通常の短い入力では、見積が請求より大きくなります。組み込み料金は上記の公式サービスのテキスト生成を対象とし、別料金の独自gatewayを使う場合はこの見積をそのまま請求額として扱わないでください。
 
-応答喪失時は予約を残し、同じ呼出しIDを自動再送しません。上限や応答未確定による停止は実行上の保留であり、世界内の失敗ではありません。応答・使用量の保存形式は共通化し、APIキーや内部推論は記録しません。新しい要求にはendpointと上限単価も保存し、設定変更後に同じ呼び出しを再開しても元の要求・精算条件を保持します。
+応答喪失時は予約を残し、同じ呼出しIDを自動再送しません。上限や応答未確定による停止は実行上の保留であり、世界内の失敗ではありません。応答・使用量は共通の台帳へ保存します。新しい要求には接続条件と上限単価も保存し、設定変更後に同じ呼び出しを再開しても元の要求・精算条件を保持します。
 
-1回の最大出力は接続確認で16,384トークン、初期生成で65,536トークンです。`LLM_MAX_OUTPUT_TOKENS` で設定でき、予約額にも反映します。キーと内部推論は実測記録へ保存しません。サーバー側の入出力・使用量・遅延はPostgreSQL、生成の確認記録はローカルの `artifacts/evaluations/` に保存します。
+1回の最大出力は接続確認で16,384トークン、初期生成で65,536トークンです。`LLM_MAX_OUTPUT_TOKENS` で設定でき、予約額にも反映します。APIキーは実測記録へ保存しません。サーバー側の入出力・使用量・遅延はPostgreSQL、生成の確認記録はローカルの `artifacts/evaluations/` に保存します。
 
 実測結果は [初期生成の確認記録](documents/evaluations/deepseek-initial-world-2026-10-19.md) を参照してください。
 
@@ -136,7 +191,7 @@ APIとワーカーを起動し、同じオリジンから利用します。初�
 
 画面は [ADR-006](documents/adr/ADR-006-gameplay-ui.md) に従います。受付後の再読込で行動を追加送信せず、保存されたrunIdの入力と進行へ戻ります。履歴は前後へ取得でき、保持は4ページ、描画は表示範囲に絞ります。過去を読んでいる間の更新では位置を移動しません。通信の再接続時は、配信位置と公開状態を取得し直します。
 
-`pnpm llm:compare --operation <operationId> --effort low` は完了済みの最終入力で候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
+`pnpm llm:compare --operation <operationId> --effort low` は上位モデル設定で完了済みの最終入力から候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。dshによるツール実行が必要なDeepSeekはこの単独比較の対象外です。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
 
 ## 検証
 
