@@ -670,6 +670,7 @@ export interface paths {
                         requestId: string;
                         /** @enum {string} */
                         command: "advance";
+                        /** @description 管理者が追加する期間。ミリ秒表記で、1日以上かつ1日の整数倍 */
                         duration: number;
                     } | {
                         /** Format: uuid */

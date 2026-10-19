@@ -352,11 +352,6 @@ select {
 .duration-fields input {
   max-width: 130px;
 }
-select {
-  border: 1px solid var(--input);
-  border-radius: var(--radius);
-  padding: 8px;
-}
 .build-controls .field-error {
   margin-bottom: 0;
 }

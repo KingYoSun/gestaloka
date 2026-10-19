@@ -67,16 +67,16 @@ pnpm world:act --resume <operationId>
 ```powershell
 pnpm world:build create --prompt examples/village.txt
 pnpm world:build show --id <constructionId>
-pnpm world:build advance --id <constructionId> --duration 60000
+pnpm world:build advance --id <constructionId> --days 1
 pnpm world:build show --id <constructionId>
-pnpm world:build advance --id <constructionId> --duration 30000
+pnpm world:build advance --id <constructionId> --days 1
 pnpm world:build finish --id <constructionId>
 pnpm world:build join --id <constructionId>
 pnpm world:build act --id <constructionId> --action examples/greet-neighbor.txt
 pnpm world:build resume --id <constructionId>
 ```
 
-`advance`はreadyの区切りから、ミリ秒で指定した期間を追加します。`finish`はその区切りで構築を完了し、`join`は別の新しい村民を共通Agentで生成します。試遊村民の存在・履歴・所有・知識は残ります。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。
+`advance`はreadyの区切りから、`--days`で指定した日数を追加します。管理者の指定は最小1日、1日単位です。内部ではミリ秒で時点を保持し、1日未満の相互作用も処理します。`finish`はその区切りで構築を完了し、`join`は別の新しい村民を共通Agentで生成します。試遊村民の存在・履歴・所有・知識は残ります。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。
 
 `act`は参加した人間の村民へファイルの行動文を渡します。期間は指定せず、NPCの判断を必要に応じて挟み、次に人間の判断が必要になる場面まで進めます。人間の次の意図をAIで形成しません。継続中の活動は保持し、途中保留の再開にも同じ保存記録を使います。
 

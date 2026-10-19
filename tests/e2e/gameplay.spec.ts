@@ -13,16 +13,17 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   await expect(
     page.getByRole("button", { name: "試遊を進める", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("さらに進める世界内時間", { exact: true }).fill("2");
+  await page.getByLabel("さらに進める日数", { exact: true }).fill("2");
   await page.getByRole("button", { name: "試遊を進める", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "さらに進める", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("さらに進める世界内時間", { exact: true }).fill("1");
+  await page.getByLabel("さらに進める日数", { exact: true }).fill("1");
   await page.getByRole("button", { name: "さらに進める", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "世界構築を完了する", exact: true }),
   ).toBeEnabled();
+  await expect(page.locator(".time-summary")).toContainText("3日");
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
     .click();
@@ -104,7 +105,7 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
   await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
     .click();
-  await page.getByLabel("さらに進める世界内時間", { exact: true }).fill("1");
+  await page.getByLabel("さらに進める日数", { exact: true }).fill("1");
   await page.getByRole("button", { name: "試遊を進める", exact: true }).click();
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
@@ -135,8 +136,11 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
     ).toBeHidden();
     expect(await scroll.locator("article").count()).toBeLessThan(20);
   }
-  await scroll.evaluate((element) => {
+  await scroll.evaluate(async (element) => {
     element.scrollTop = element.scrollHeight;
+    // 仮想行の描画とResizeObserverによる高さの計測後に閲覧位置を読む。
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
   });
   const anchor = await scroll.evaluate((element) => {
     const top = element.getBoundingClientRect().top;

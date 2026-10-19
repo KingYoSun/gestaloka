@@ -1134,9 +1134,10 @@
                       },
                       "duration": {
                         "type": "integer",
-                        "minimum": 0,
-                        "exclusiveMinimum": true,
-                        "maximum": 9007199254740991
+                        "minimum": 86400000,
+                        "maximum": 9007199254740991,
+                        "multipleOf": 86400000,
+                        "description": "管理者が追加する期間。ミリ秒表記で、1日以上かつ1日の整数倍"
                       }
                     },
                     "required": [

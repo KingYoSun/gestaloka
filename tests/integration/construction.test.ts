@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { DeepSeekClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
@@ -186,7 +187,7 @@ async function fixture(
       if (request.phase === "observation" && observationWake)
         return response({
           ...proposal,
-          wakeups: [{ actorId: place, at: 10000, mode: "resolve" }],
+          wakeups: [{ actorId: place, at: WORLD_DAY_MS, mode: "resolve" }],
         });
       if (request.phase === "participant") {
         const newcomer = randomUUID();
@@ -322,14 +323,14 @@ test("受付した構築区間を独立したpg-bossワーカーが取得して�
   await scene.runtime.setup();
   await scene.runtime.work();
   try {
-    await scene.runtime.command(scene.id, "advance", 10000);
+    await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
     await vi.waitFor(
       async () => {
         expect((await scene.runtime.get(scene.id)).state).toBe("ready");
       },
       { timeout: 30000, interval: 100 },
     );
-    expect((await scene.runtime.get(scene.id)).at).toBe(10000);
+    expect((await scene.runtime.get(scene.id)).at).toBe(WORLD_DAY_MS);
     const records = (await scene.runtime.report(scene.id)).records;
     expect(new Set(records.map((record) => record.operation_id)).size).toBe(
       records.length,
@@ -343,14 +344,14 @@ test("受付した構築区間を独立したpg-bossワーカーが取得して�
 
 test("知覚の更新で生じた未処理の作用を区間の次へ保持する", async () => {
   const scene = await fixture(false, true);
-  await scene.runtime.command(scene.id, "advance", 10000);
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
   const row = await reach(scene.runtime, scene.id);
   expect(row.state).toBe("ready");
   expect(row.agenda).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         actorId: scene.place,
-        at: 10000,
+        at: WORLD_DAY_MS,
         mode: "resolve",
       }),
     ]),
@@ -522,12 +523,17 @@ test("起動の提案がなくても確定した作用の受け手を評価し�
 
 test("時間指定・追加進行・明示完了・別の村民の参加で履歴と継続を保持する", async () => {
   const scene = await fixture();
-  await scene.runtime.command(scene.id, "advance", 10000);
+  for (const duration of [WORLD_DAY_MS - 1, WORLD_DAY_MS * 1.5])
+    await expect(
+      scene.runtime.command(scene.id, "advance", duration),
+    ).rejects.toThrow();
+  expect((await scene.runtime.get(scene.id)).target).toBe(0);
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
   let row = await reach(scene.runtime, scene.id);
   expect(row).toMatchObject({
     state: "ready",
-    at: 10000,
-    target: 10000,
+    at: WORLD_DAY_MS,
+    target: WORLD_DAY_MS,
     participant_id: null,
   });
   expect(row.agenda).toEqual(
@@ -535,14 +541,14 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
       expect.objectContaining({
         mode: "resolve",
         actorId: scene.actor,
-        at: 10000,
+        at: WORLD_DAY_MS,
       }),
     ]),
   );
   const first = await scene.runtime.report(scene.id);
-  await scene.runtime.command(scene.id, "advance", 5000);
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
   row = await reach(scene.runtime, scene.id);
-  expect(row).toMatchObject({ state: "ready", at: 15000 });
+  expect(row).toMatchObject({ state: "ready", at: WORLD_DAY_MS * 2 });
   expect(scene.actions).toEqual([
     "知覚した場所へ働きかけ続ける",
     "知覚した場所へ働きかけ続ける",
@@ -555,17 +561,25 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
   expect(scene.transport).toHaveBeenCalledTimes(calls);
   await scene.runtime.command(scene.id, "finish");
   expect((await scene.runtime.get(scene.id)).state).toBe("finished");
-  const before = await scene.agent.view(row.world_id!, scene.actor, 15000);
+  const before = await scene.agent.view(
+    row.world_id!,
+    scene.actor,
+    WORLD_DAY_MS * 2,
+  );
   await scene.runtime.command(scene.id, "join");
   await scene.runtime.tick(scene.id);
   row = await scene.runtime.get(scene.id);
   expect(row.participant_id).not.toBe(scene.actor);
-  expect(await scene.agent.view(row.world_id!, scene.actor, 15000)).toEqual(
-    before,
-  );
+  expect(
+    await scene.agent.view(row.world_id!, scene.actor, WORLD_DAY_MS * 2),
+  ).toEqual(before);
   expect(
     (
-      await scene.agent.view(row.world_id!, row.participant_id!, 15000)
+      await scene.agent.view(
+        row.world_id!,
+        row.participant_id!,
+        WORLD_DAY_MS * 2,
+      )
     ).observations.map((item) => item.text),
   ).toEqual(["自分で得た初期観測"]);
   await scene.runtime.command(scene.id, "join");
@@ -576,13 +590,17 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
 
 test("途中保留を時刻到達・構築完了と区別し、再開して同じ世界へ到達する", async () => {
   const scene = await fixture(true);
-  await scene.runtime.command(scene.id, "advance", 10000);
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
   await scene.runtime.tick(scene.id);
   await expect(scene.runtime.tick(scene.id)).rejects.toThrow(
     "参照の確認を保留した",
   );
   const stopped = await scene.runtime.get(scene.id);
-  expect(stopped).toMatchObject({ state: "paused", at: 0, target: 10000 });
+  expect(stopped).toMatchObject({
+    state: "paused",
+    at: 0,
+    target: WORLD_DAY_MS,
+  });
   await expect(scene.runtime.command(scene.id, "finish")).rejects.toThrow(
     "指定時刻へ到達",
   );
@@ -590,7 +608,7 @@ test("途中保留を時刻到達・構築完了と区別し、再開して同�
   const resumed = await reach(scene.runtime, scene.id);
   expect(resumed).toMatchObject({
     state: "ready",
-    at: 10000,
+    at: WORLD_DAY_MS,
     world_id: stopped.world_id,
     actor_id: stopped.actor_id,
   });
@@ -599,7 +617,7 @@ test("途中保留を時刻到達・構築完了と区別し、再開して同�
 
 test("確定後の構築進捗喪失を同じoperationのreceiptから復旧する", async () => {
   const scene = await fixture();
-  await scene.runtime.command(scene.id, "advance", 10000);
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
   await scene.runtime.tick(scene.id);
   const original = scene.agent.run.bind(scene.agent);
   let staged: Awaited<ReturnType<WorldConstruction["get"]>> | undefined;

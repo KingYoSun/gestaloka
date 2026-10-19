@@ -158,7 +158,7 @@ export function Manage({ id }: { id: string }) {
     z.output<typeof DurationForm>
   >({
     resolver: zodResolver(DurationForm),
-    defaultValues: { amount: "", unit: "seconds" },
+    defaultValues: { amount: "1" },
   });
   const command = $api.useMutation("post", "/api/worlds/{id}/commands", {
     onSuccess: () => {
@@ -238,19 +238,18 @@ export function Manage({ id }: { id: string }) {
               }),
             )}
           >
-            <Label htmlFor="duration">さらに進める世界内時間</Label>
+            <Label htmlFor="duration">さらに進める日数</Label>
             <div className="duration-fields">
               <Input
                 id="duration"
-                inputMode="decimal"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
                 {...duration.register("amount")}
                 aria-describedby="duration-error"
               />
-              <select aria-label="時間の単位" {...duration.register("unit")}>
-                <option value="seconds">秒</option>
-                <option value="minutes">分</option>
-                <option value="hours">時間</option>
-              </select>
+              <span>日</span>
               <Button type="submit" disabled={busy}>
                 {world.at === 0 ? "試遊を進める" : "さらに進める"}
               </Button>

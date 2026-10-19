@@ -20,7 +20,11 @@ import { http, HttpResponse } from "msw";
 import { App, createAppRouter } from "../../apps/web/src/App.js";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { resetSession } from "../../apps/web/src/api.js";
-import type { PlayerStatus, PlayRun } from "@gestaloka/contracts";
+import {
+  WORLD_DAY_MS,
+  type PlayerStatus,
+  type PlayRun,
+} from "@gestaloka/contracts";
 import type { z } from "zod";
 
 const A = "00000000-0000-4000-8000-000000000001",
@@ -33,6 +37,7 @@ let identity = A,
   actionPosts = 0,
   adminReads = 0,
   submitted: unknown;
+const commands: unknown[] = [];
 const world = {
   id: W,
   prompt: "村の設定",
@@ -107,6 +112,10 @@ const server = setupServer(
     return json(world, 202);
   }),
   http.get("*/api/worlds/:id", () => json(world)),
+  http.post("*/api/worlds/:id/commands", async ({ request }) => {
+    commands.push(await request.json());
+    return json(world, 202);
+  }),
   http.get("*/api/worlds/:id/cursor", () => json({ cursor: "0" })),
   http.get("*/api/worlds/:id/records", () => {
     adminReads++;
@@ -167,6 +176,7 @@ beforeEach(() => {
   actionPosts = 0;
   adminReads = 0;
   submitted = undefined;
+  commands.length = 0;
   run = null;
   player = {
     id: W,
@@ -317,4 +327,27 @@ test("SSEの重複を無視し、切断後は配信位置とスナップショ�
   expect(Source.instances[1]!.url).toContain("after=10");
   expect(cursors).toBe(2);
   expect(reads).toBeGreaterThan(before);
+});
+
+test("構築期間は日数で入力し、端数を送信せず整数の日数を受け付ける", async () => {
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
+      )}
+    />,
+  );
+  const field = await screen.findByLabelText("さらに進める日数");
+  expect((field as HTMLInputElement).value).toBe("1");
+  fireEvent.change(field, { target: { value: "0.5" } });
+  fireEvent.submit(field.closest("form")!);
+  await screen.findByText("1日以上の整数で入力してください");
+  expect(commands).toHaveLength(0);
+  fireEvent.change(field, { target: { value: "2" } });
+  fireEvent.submit(field.closest("form")!);
+  await waitFor(() => expect(commands).toHaveLength(1));
+  expect(commands[0]).toMatchObject({
+    command: "advance",
+    duration: WORLD_DAY_MS * 2,
+  });
 });

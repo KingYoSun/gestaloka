@@ -16,12 +16,20 @@ export const WorldList = z.array(ResourceId);
 export const CreateWorld = z
   .object({ requestId: z.uuid(), prompt: z.string().min(1) })
   .strict();
+export const WORLD_DAY_MS = 86_400_000;
+export const ConstructionDuration = z
+  .number()
+  .int()
+  .safe()
+  .min(WORLD_DAY_MS)
+  .multipleOf(WORLD_DAY_MS)
+  .describe("管理者が追加する期間。ミリ秒表記で、1日以上かつ1日の整数倍");
 export const WorldCommand = z.discriminatedUnion("command", [
   z
     .object({
       requestId: z.uuid(),
       command: z.literal("advance"),
-      duration: z.number().int().positive().safe(),
+      duration: ConstructionDuration,
     })
     .strict(),
   z
