@@ -113,15 +113,19 @@ function findProposal(value: unknown): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   if ("proposalId" in value && typeof value.proposalId === "string")
     return value.proposalId;
-  for (const child of Object.values(value)) {
+  for (const child of Object.values(value).reverse()) {
     const found = findProposal(child);
     if (found) return found;
   }
   return undefined;
 }
-test.each([false, true])(
-  "実際のdshで確定を重複適用せず、確定後の通信失敗=%sでもreceiptを保つ",
-  async (failAfterCommit) => {
+test.each([
+  { failAfterCommit: false, repairCommit: false },
+  { failAfterCommit: true, repairCommit: false },
+  { failAfterCommit: false, repairCommit: true },
+])(
+  "実際のdshで確定を重複適用せず、通信失敗 $failAfterCommit / 候補修正 $repairCommit でもreceiptを保つ",
+  async ({ failAfterCommit, repairCommit }) => {
     const worldId = randomUUID(),
       actor = randomUUID(),
       script = randomUUID(),
@@ -176,7 +180,34 @@ test.each([false, true])(
             expect(
               await new WorldStore(d.graph).context(worldId).node(script),
             ).toBeUndefined();
-            return call("world_propose", candidate);
+            return call(
+              "world_propose",
+              repairCommit
+                ? {
+                    ...candidate,
+                    changes: {
+                      ...candidate.changes,
+                      edges: [
+                        ...candidate.changes.edges,
+                        {
+                          id: randomUUID(),
+                          kind: "see",
+                          source: actor,
+                          target: script,
+                          text: "存在しない作用経路を修正する試験",
+                          period: { from: 1 },
+                          observation: {
+                            aspect: "状態",
+                            through: 1,
+                            sourceIds: [script],
+                            pathIds: [randomUUID()],
+                          },
+                        },
+                      ],
+                    },
+                  }
+                : candidate,
+            );
           case 2:
             {
               const results = body.messages
@@ -198,14 +229,34 @@ test.each([false, true])(
               reason: "候補と根拠を照合した",
             });
           case 3:
+            if (repairCommit) {
+              expect(
+                await new WorldStore(d.graph).context(worldId).node(script),
+              ).toBeUndefined();
+              expect(JSON.stringify(body.messages.at(-1))).toContain(
+                "観測した作用経路が同じ世界に存在しません",
+              );
+              return call("world_propose", candidate);
+            }
             return call("world_commit", {
               proposalId: findProposal(body),
               reason: "同じ要求の再確認",
             });
-          default:
-            if (failAfterCommit) throw new Error("応答を喪失した");
-            return sse(body.model, [{ type: "text", text: "完了しました" }]);
+          case 4:
+            if (repairCommit)
+              return call("world_commit", {
+                proposalId: findProposal(body),
+                reason: "修正候補の根拠を照合した",
+              });
+            break;
+          case 5:
+            return call("world_commit", {
+              proposalId: findProposal(body),
+              reason: "同じ確定の再確認",
+            });
         }
+        if (failAfterCommit) throw new Error("応答を喪失した");
+        return sse(body.model, [{ type: "text", text: "完了しました" }]);
       });
     const model = new LlmClient(
       d.postgres,
@@ -241,7 +292,7 @@ test.each([false, true])(
     });
     operations.push(id);
     expect(await agent.run(id)).toEqual(candidate);
-    expect(stage).toBe(5);
+    expect(stage).toBe(repairCommit ? 7 : 5);
     expect(await store.context(worldId).node(script)).toMatchObject({
       id: script,
     });
@@ -249,7 +300,7 @@ test.each([false, true])(
     expect(await agent.run(id)).toEqual(candidate);
     expect(transport).toHaveBeenCalledTimes(calls);
     expect(await model.ledger.summary()).toMatchObject({
-      calls: 5,
+      calls: repairCommit ? 7 : 5,
       unsettled: failAfterCommit ? 1 : 0,
     });
   },

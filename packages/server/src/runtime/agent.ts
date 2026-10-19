@@ -684,19 +684,20 @@ export class WorldAgent {
       async (input: { row: Operation; requests: z.infer<typeof Query>[] }) =>
         this.#queries(input.row, input.requests),
     );
-    const commit = task(
-      "world-commit",
-      async (input: { dependencies: Dependency[]; candidate: WorldProposal }) =>
-        this.store.commit(
-          lease,
-          this.store.context(row.request.worldId, input.dependencies),
-          {
-            commitId: row.commit_id,
-            at: input.candidate.resolvedUntil,
-            changes: input.candidate.changes,
-          },
-        ),
-    );
+    const commit = async (input: {
+      dependencies: Dependency[];
+      candidate: WorldProposal;
+    }) =>
+      this.store.commit(
+        lease,
+        this.store.context(row.request.worldId, input.dependencies),
+        {
+          commitId: row.commit_id,
+          at: input.candidate.resolvedUntil,
+          changes: input.candidate.changes,
+        },
+      );
+    const commitTask = task("world-commit", commit);
     const workflow = entrypoint(
       { name: "world-operation", checkpointer: this.checkpointer },
       async () => {
@@ -839,10 +840,8 @@ export class WorldAgent {
                         const value = z
                           .object({ requests: z.array(Query).min(1) })
                           .parse(input);
-                        const output = await query({
-                          row,
-                          requests: value.requests,
-                        });
+                        // MCP returns recoverable tool errors to dsh; a failed workflow task would abort the parent.
+                        const output = await this.#queries(row, value.requests);
                         row.dependencies = output.dependencies;
                         await this.#save(row, claim);
                         return output.results;
@@ -1004,7 +1003,7 @@ export class WorldAgent {
                 row.approved = true;
                 await this.#save(row, claim);
               }
-              await commit({
+              await commitTask({
                 candidate: row.candidate,
                 dependencies: row.dependencies,
               });
