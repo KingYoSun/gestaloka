@@ -114,10 +114,11 @@ export function History({
   });
   const anchor = useRef<{ id: string; offset: number } | null>(null),
     atTop = useRef(true),
-    resetting = useRef(false);
+    resetting = useRef(false),
+    restoring = useRef(false);
   const previous = useRef<InfiniteData<Page, Cursor> | undefined>(undefined);
   function remember() {
-    if (resetting.current) return;
+    if (resetting.current || restoring.current) return;
     const top = scroll.current?.scrollTop ?? 0;
     atTop.current = top < 48 && query.data?.pages[0]?.previous === null;
     const viewport = scroll.current?.getBoundingClientRect().top ?? 0;
@@ -131,6 +132,7 @@ export function History({
       };
   }
   useLayoutEffect(() => {
+    let frame: number | undefined;
     if (previous.current !== query.data) {
       if (atTop.current) {
         virtual.scrollToOffset(0);
@@ -140,23 +142,34 @@ export function History({
           (entry) => entry.id === anchor.current!.id,
         );
         if (index >= 0) {
-          const start = virtual.getOffsetForIndex(index, "start")?.[0];
-          if (start !== undefined)
-            virtual.scrollToOffset(start - anchor.current.offset);
           const saved = anchor.current;
-          resetting.current = true;
-          requestAnimationFrame(() => {
+          let stable = 0;
+          restoring.current = true;
+          const position = () => {
+            const start = virtual.getOffsetForIndex(index, "start")?.[0];
+            if (start !== undefined)
+              virtual.scrollToOffset(start - saved.offset);
+          };
+          position();
+          const restore = () => {
             const container = scroll.current;
             const row = container?.querySelector<HTMLElement>(
               `[data-record-id="${saved.id}"]`,
             );
-            if (container && row)
-              container.scrollTop +=
+            if (container && row) {
+              const delta =
                 row.getBoundingClientRect().top -
                 container.getBoundingClientRect().top -
                 saved.offset;
-            resetting.current = false;
-          });
+              if (Math.abs(delta) > 0.5) {
+                container.scrollTop += delta;
+                stable = 0;
+              } else stable++;
+            } else position();
+            if (stable < 2) frame = requestAnimationFrame(restore);
+            else restoring.current = false;
+          };
+          frame = requestAnimationFrame(restore);
         } else if (previous.current) {
           client.setQueryData(key, previous.current);
           return;
@@ -164,6 +177,10 @@ export function History({
       }
       previous.current = query.data;
     }
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      restoring.current = false;
+    };
   }, [client, entries, key, query.data, virtual]);
   useImperativeHandle(ref, () => ({
     updated() {
