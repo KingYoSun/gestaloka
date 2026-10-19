@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { DeepSeekClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
@@ -260,7 +261,23 @@ test("Cookieの主体・世界の操作権・同一オリジンを確認し、�
       })
     ).statusCode,
   ).toBe(403);
-  const input = { requestId: randomUUID(), command: "advance", duration: 1000 };
+  const input = {
+    requestId: randomUUID(),
+    command: "advance",
+    duration: WORLD_DAY_MS,
+  };
+  for (const duration of [0, WORLD_DAY_MS - 1, WORLD_DAY_MS * 1.5])
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/worlds/${scene.id}/commands`,
+          headers: headers(scene.cookie),
+          payload: { ...input, duration },
+        })
+      ).statusCode,
+    ).toBe(400);
+  expect((await runtime.get(scene.id)).state).toBe("ready");
   const results = await Promise.all(
     [1, 2].map(() =>
       app.inject({
@@ -273,14 +290,14 @@ test("Cookieの主体・世界の操作権・同一オリジンを確認し、�
   );
   expect(results.map((reply) => reply.statusCode)).toEqual([202, 202]);
   expect(results[0]!.json()).toEqual(results[1]!.json());
-  expect((await runtime.get(scene.id)).target).toBe(1000);
+  expect((await runtime.get(scene.id)).target).toBe(WORLD_DAY_MS);
   expect(
     (
       await app.inject({
         method: "POST",
         url: `/api/worlds/${scene.id}/commands`,
         headers: headers(scene.cookie),
-        payload: { ...input, duration: 2000 },
+        payload: { ...input, duration: WORLD_DAY_MS * 2 },
       })
     ).statusCode,
   ).toBe(409);

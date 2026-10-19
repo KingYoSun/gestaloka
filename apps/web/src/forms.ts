@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { z } from "zod";
+import { ConstructionDuration, WORLD_DAY_MS } from "@gestaloka/contracts";
 
 export function usePending<T>(key: string, schema: z.ZodType<T>) {
   const [value, setValue] = useState<T | null>(() => {
@@ -18,23 +19,15 @@ export function usePending<T>(key: string, schema: z.ZodType<T>) {
 }
 export const DurationForm = z
   .object({
-    amount: z.string().min(1, "進める時間を入力してください"),
-    unit: z.enum(["seconds", "minutes", "hours"]),
+    amount: z.string().min(1, "進める日数を入力してください"),
   })
   .transform((value, context) => {
-    const raw =
-        Number(value.amount) *
-        { seconds: 1000, minutes: 60000, hours: 3600000 }[value.unit],
-      duration = Math.round(raw);
-    if (
-      !Number.isSafeInteger(duration) ||
-      duration <= 0 ||
-      Math.abs(raw - duration) > 0.000001
-    ) {
+    const duration = Number(value.amount) * WORLD_DAY_MS;
+    if (!ConstructionDuration.safeParse(duration).success) {
       context.addIssue({
         code: "custom",
         path: ["amount"],
-        message: "正の時間をミリ秒単位で入力してください",
+        message: "1日以上の整数で入力してください",
       });
       return z.NEVER;
     }

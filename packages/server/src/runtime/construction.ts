@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { PgBoss } from "pg-boss";
 import { z } from "zod";
+import { ConstructionDuration } from "@gestaloka/contracts";
 import { WorldBuilder } from "./build.js";
 import { WorldAgent, SupersededWorker, type WorldProposal } from "./agent.js";
 
@@ -152,7 +153,7 @@ export class WorldConstruction {
           throw new ConstructionStateError(
             "区切りに到達した構築セッションを指定してください",
           );
-        time.positive().parse(duration);
+        ConstructionDuration.parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
         if (!row.agenda.length)

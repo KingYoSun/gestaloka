@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
+import { ConstructionDuration, WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { DeepSeekClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
@@ -12,13 +13,17 @@ const { values, positionals } = parseArgs({
   options: {
     id: { type: "string" },
     prompt: { type: "string" },
-    duration: { type: "string" },
+    days: { type: "string" },
     action: { type: "string" },
   },
 });
 const command = z
   .enum(["create", "show", "advance", "resume", "finish", "join", "act"])
   .parse(positionals[0]);
+const duration =
+  command === "advance"
+    ? ConstructionDuration.parse(Number(values.days) * WORLD_DAY_MS)
+    : undefined;
 const databases = connectDatabases();
 databases.queue.on("error", (error) => console.error(error));
 try {
@@ -54,11 +59,7 @@ try {
       if (!values.action) throw new Error("--action <file> を指定してください");
       await construction.play(id, await readFile(values.action, "utf8"));
     } else if (command !== "show")
-      await construction.command(
-        id,
-        command,
-        values.duration === undefined ? undefined : Number(values.duration),
-      );
+      await construction.command(id, command, duration);
     console.log(JSON.stringify(await construction.report(id), null, 2));
   }
 } finally {
