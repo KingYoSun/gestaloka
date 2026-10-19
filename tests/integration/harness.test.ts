@@ -178,6 +178,18 @@ test.each([false, true])(
             ).toBeUndefined();
             return call("world_propose", candidate);
           case 2:
+            {
+              const results = body.messages
+                .flatMap((m: { content: { type: string }[] }) => m.content)
+                .filter((c: { type: string }) => c.type === "tool_result");
+              const review = JSON.stringify(results.at(-1));
+              expect(review).not.toMatch(
+                /指定されたJSONだけ|type=commit|type=revise|type=pause/,
+              );
+              expect(review).toContain("world_propose");
+              expect(review).toContain("world_commit");
+              expect(review).toContain("未解決の意図と継続を保持");
+            }
             expect(
               await new WorldStore(d.graph).context(worldId).node(script),
             ).toBeUndefined();

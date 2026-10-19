@@ -790,10 +790,22 @@ export class WorldAgent {
               let proposalId = row.candidate ? randomUUID() : undefined;
               let paused: string | undefined;
               let committed = false;
-              const reviewPrompt = await readFile(
-                new URL("../../../../prompts/world-commit.md", import.meta.url),
-                "utf8",
-              );
+              // Native tools share acceptance rules, not the direct API's JSON return protocol.
+              const reviewPrompt = [
+                "提出済み候補とrequest・evidenceを、次の条件で照合してください。",
+                ...(
+                  await readFile(
+                    new URL(
+                      "../../../../prompts/world-commit.md",
+                      import.meta.url,
+                    ),
+                    "utf8",
+                  )
+                )
+                  .split(/\r?\n/)
+                  .filter((line) => line.startsWith("- ")),
+                "条件を満たす候補はworld_commitで確定します。不備や確認不足があればworld_readで必要な根拠を照会し、world_proposeで修正した候補を提出してください。新しいproposalIdを受け取ってから再度照合し、world_commitへ進みます。必要な条件を本当に取得できない場合はworld_pauseを使います。特定の物語や返答の好みを合否基準にせず、推論過程は出力しません。",
+              ].join("\n\n");
               try {
                 await runHarness({
                   id,
@@ -805,10 +817,7 @@ export class WorldAgent {
                       "",
                     ) +
                     "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
-                    reviewPrompt.replace(
-                      "指定されたJSONだけを返してください。",
-                      "world_commitを呼ぶ前に次の条件を照合してください。",
-                    ),
+                    reviewPrompt,
                   input: {
                     request: row.request,
                     evidence: row.messages
