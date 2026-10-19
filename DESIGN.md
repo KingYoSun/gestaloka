@@ -1,6 +1,6 @@
-# GESTALOKA v2 Design Rules
+# GESTALOKA Design Rules
 
-> GESTALOKA v2 のフロントエンド視覚設計ルール。
+> GESTALOKA のフロントエンド視覚設計ルール。
 > 色、文字、余白、幅、影、レスポンシブの数値は原則としてこの文書の値を使い、実装では CSS Custom Properties へ集約する。
 
 ---
@@ -21,7 +21,7 @@
 - **Navy** (`#0b2034`): ロゴ、本文、細線、アイコン。通常モードでは面背景に使わない。ダークモード背景の基準色。
 - **Gold** (`#c6922e`): primary CTA、短い下線、重要なアクセント、選択中状態。
 - **Sage** (`#65785f`): セカンダリテキスト、補助見出し、穏やかな状態表示。
-- **Cream** (`#f2eadf`): 通常モードのページ背景、first view 背景、紙質感の基準。旧 Brand White の役割を置き換える。
+- **Cream** (`#f2eadf`): 通常モードのページ背景、first view 背景、紙質感の基準。
 - **Aqua** (`#7bcfd0`): story-seed の差し色、フォーカス補助、軽い強調。広い背景や本文色には使わない。
 
 ### Semantic（意味的な色）
@@ -57,7 +57,7 @@
 
 - **Background Primary** (`#f2eadf`): 通常モードのページ背景
 - **Background Secondary** (`#f8f2e8`): セクション背景、フォーム背景
-- **Background Texture** (`/brand/texture.png`): 通常モードの紙質感。モノクロ texture を Cream 背景へ `background-blend-mode: multiply` で混ぜ、文字の可読性を優先する。
+- **Background Texture** (`texture.png`): 通常モードの紙質感。モノクロ texture を Cream 背景へ `background-blend-mode: multiply` で混ぜ、文字の可読性を優先する。
 - **Dark Background** (`#0b2034`): ダークモード背景
 - **Surface Normal** (`#fffaf1`): カード等の面
 - **Surface Primary** (`#c6922e`): プライマリ CTA。通常モードで navy の塗り CTA は使わない。
@@ -215,7 +215,7 @@ font-feature-settings: normal;
 
 ### 3.8 縦書き
 
-- GESTALOKA v2 の標準 UI は横書きのみ。
+- GESTALOKA の標準 UI は横書きのみ。
 - 将来、物語演出で縦書きを導入する場合も、この文書の標準レイアウトとは別ルールとして扱う。
 
 ---
@@ -345,10 +345,8 @@ font-feature-settings: normal;
 ### Dark Mode
 
 - 初回表示は `prefers-color-scheme: dark` を読み、`light | dark` の 2 択へ正規化する。
-- ユーザー操作後は localStorage key `gestaloka.theme` を正とし、`theme-light` または `theme-dark` を `<html>` に付与する。
-- 切替 UI は言語切替の横に置くアイコンボタンとし、`Sun` / `Moon` を使う。表示テキストは出さず、`aria-label` と `sr-only` で意味を提供する。
-- `theme-dark` は REVERSE LOCKUP として扱い、navy `#0b2034` 背景、off-white 系文字、gold / aqua accent を維持する。
-- `theme-light` は OS が dark の場合でも通常モードの cream + texture 背景を明示的に上書きする。
+- 切替 UI はアイコンボタンとし、`Sun` / `Moon` を使う。表示テキストは出さず、`aria-label` と `sr-only` で意味を提供する。
+- ダークモードは REVERSE LOCKUP として扱い、navy `#0b2034` 背景、off-white 系文字、gold / aqua accent を維持する。
 - すべてのセマンティックカラーを CSS Custom Properties で切り替える。
 - ライト / ダークのどちらでも、本文の可読性とフォーカスリングの視認性を維持する。
 
@@ -362,7 +360,7 @@ font-feature-settings: normal;
 Brand Navy: #0b2034（通常モードは前景用、ダークモード背景用）
 Brand Gold: #c6922e（CTA・アクセント用）
 Brand Sage: #65785f（補助テキスト・状態用）
-Brand Cream: #f2eadf（通常モード背景用。旧 Brand White）
+Brand Cream: #f2eadf（通常モード背景用）
 Brand Aqua: #7bcfd0（focus・軽い差し色用）
 CTA Background: #c6922e（ライトモード）
 Text Primary: #0b2034
@@ -390,7 +388,7 @@ Reading Width: 620px
 ### 実装時の短い指示例
 
 ```text
-GESTALOKA v2 の DESIGN.md に従って、物語本文と選択肢の UI を調整してください。
+GESTALOKA の DESIGN.md に従って、物語本文と選択肢の UI を調整してください。
 - フォント: "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
     Arial, "Noto Sans JP", Meiryo, sans-serif
 - テキスト色: #0b2034（通常本文に純粋な黒は使わない）
