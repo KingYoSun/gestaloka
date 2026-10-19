@@ -23,7 +23,7 @@ const Time = z.number().int().nonnegative().safe();
 export const Interaction = z
   .object({
     worldId: z.uuid(),
-    phase: z.enum(["interaction", "schedule", "participant"]),
+    phase: z.enum(["interaction", "schedule", "observation", "participant"]),
     at: Time,
     until: Time,
     rootIds: z.array(z.uuid()).min(1),
@@ -138,10 +138,17 @@ export class WorldAgent {
       request jsonb NOT NULL, system_prompt text NOT NULL, state text NOT NULL DEFAULT 'queued',
       claim_key uuid, graph_generation integer, epoch integer NOT NULL DEFAULT 0, step integer NOT NULL DEFAULT 0,
       messages jsonb, dependencies jsonb NOT NULL DEFAULT '[]', candidate jsonb, result jsonb,
-      pause_reason text, created_at timestamptz NOT NULL DEFAULT now());`);
+      pause_reason text, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS world_intent (
+      id uuid PRIMARY KEY, world_id uuid NOT NULL, actor_id uuid NOT NULL, at bigint NOT NULL,
+      view jsonb NOT NULL, system_prompt text NOT NULL);`);
   }
 
-  async create(input: Interaction, runId = randomUUID()) {
+  async create(
+    input: Interaction,
+    runId = randomUUID(),
+    database: Pick<pg.Pool, "query"> = this.pool,
+  ) {
     const request = Interaction.parse(input),
       id = randomUUID();
     z.uuid().parse(runId);
@@ -149,7 +156,7 @@ export class WorldAgent {
       new URL("../../../../prompts/world-update.md", import.meta.url),
       "utf8",
     );
-    await this.pool.query(
+    await database.query(
       "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt) VALUES ($1,$2,$3,$4,$5)",
       [id, runId, randomUUID(), JSON.stringify(request), system],
     );
@@ -309,6 +316,20 @@ export class WorldAgent {
     )
       throw new CandidateRejected("実際の到達時点が要求区間に含まれていません");
     const context = this.store.context(request.worldId, row.dependencies);
+    for (const node of [
+      ...proposal.changes.nodes,
+      ...proposal.changes.revisions,
+    ]) {
+      if (
+        node.kind === "event" &&
+        (node.period.from > proposal.resolvedUntil ||
+          (node.period.until !== undefined &&
+            node.period.until > proposal.resolvedUntil))
+      )
+        throw new CandidateRejected(
+          "未到達の未来の出来事を確定できません。継続中のeventは終点を未指定にしてください",
+        );
+    }
     const consulted = new Set(
       row.dependencies.map((dependency) => dependency.key),
     );
@@ -722,11 +743,34 @@ export class WorldAgent {
   }
 
   async intent(worldId: string, observerId: string, at: number, id: string) {
-    const view = await this.view(worldId, observerId, at);
-    const system = await readFile(
-      new URL("../../../../prompts/actor-intent.md", import.meta.url),
-      "utf8",
+    const saved = await this.pool.query<{
+      view: unknown;
+      system_prompt: string;
+    }>(
+      "SELECT view,system_prompt FROM world_intent WHERE id=$1 AND world_id=$2 AND actor_id=$3 AND at=$4",
+      [id, worldId, observerId, at],
     );
+    if (!saved.rows[0]) {
+      const view = await this.view(worldId, observerId, at);
+      const system = await readFile(
+        new URL("../../../../prompts/actor-intent.md", import.meta.url),
+        "utf8",
+      );
+      await this.pool.query(
+        "INSERT INTO world_intent(id,world_id,actor_id,at,view,system_prompt) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING",
+        [id, worldId, observerId, at, JSON.stringify(view), system],
+      );
+    }
+    const record = await this.pool.query<{
+      view: unknown;
+      system_prompt: string;
+    }>(
+      "SELECT view,system_prompt FROM world_intent WHERE id=$1 AND world_id=$2 AND actor_id=$3 AND at=$4",
+      [id, worldId, observerId, at],
+    );
+    if (!record.rows[0])
+      throw new Error("同じ意図形成IDを別の主体・時点に使用できません");
+    const { view, system_prompt: system } = record.rows[0];
     const ask = task("actor-intent", async () =>
       this.model.complete(id, "intent", [
         { role: "system", content: system },
