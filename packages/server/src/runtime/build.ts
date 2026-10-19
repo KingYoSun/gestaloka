@@ -113,9 +113,12 @@ export class WorldBuilder {
       created_at timestamptz NOT NULL DEFAULT now());`);
   }
 
-  async create(initialPrompt: string) {
+  async create(
+    initialPrompt: string,
+    database: Pick<pg.Pool, "query"> = this.pool,
+  ) {
     const runId = randomUUID();
-    await this.pool.query(
+    await database.query(
       "INSERT INTO world_build (run_id, world_id, commit_id, initial_prompt) VALUES ($1,$2,$3,$4)",
       [runId, randomUUID(), randomUUID(), initialPrompt],
     );

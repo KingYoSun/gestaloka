@@ -8,7 +8,8 @@
     "./world": "./dist/world/store.js",
     "./llm": "./dist/llm/deepseek.js",
     "./build": "./dist/runtime/build.js",
-    "./agent": "./dist/runtime/agent.js"
+    "./agent": "./dist/runtime/agent.js",
+    "./construction": "./dist/runtime/construction.js"
   },
   "dependencies": {
     "@langchain/core": "1.2.18",

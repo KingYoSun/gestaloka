@@ -1,7 +1,7 @@
 # GESTALOKA v3
 
 動的な自由記述シェアワールドを構築するプロジェクトです。
-開発基盤と、CLIによる初期世界の生成・保存、共通の世界更新Agentを実装しています。APIは疎通確認用HTTP/SSE、ワーカーはキューとチェックポイントの初期化、Webは起動画面までです。時間指定の自動試遊と画面からの世界構築は未実装です。
+開発基盤と、CLIによる初期世界の生成・保存、共通の世界更新Agent、時間指定の構築・別村民の生成を実装しています。APIは疎通確認用HTTP/SSE、ワーカーは構築ジョブの実行、Webは起動画面までです。画面からの構築と人間の操作権の登録は未実装です。
 
 ## ローカル起動
 
@@ -23,7 +23,7 @@ API・ワーカー・Webは、それぞれ `pnpm --filter @gestaloka/api dev`、
 ## 構成と公開契約
 
 - `apps/api`: FastifyのHTTP/SSEと公開スキーマの登録。
-- `apps/worker`: APIとは独立したNode.jsプロセス。pg-bossとLangGraphのPostgreSQLチェックポイントを初期化。
+- `apps/worker`: APIとは独立したNode.jsプロセス。pg-bossで構築ジョブを取得し、共通Agentで進行。
 - `apps/web`: React / Vite。サーバー内部への依存をESLintで拒否。
 - `packages/contracts`: ブラウザーでも利用できる公開Zodスキーマと生成HTTP型。
 - `packages/server`: サーバー用のDB・キュー・チェックポイント接続。
@@ -60,6 +60,25 @@ pnpm world:act --resume <operationId>
 
 再開は保存済みの結果とreceiptを確認します。応答不明の予約は保持し、同じ呼出しを自動再送しません。保留の再開は新しい未確定処理を始める場合があります。初期生成と同じ予算を通算します。主体の知識・実行世代・候補の扱いは [ADR-002](documents/adr/ADR-002-world-agent.md)、失敗例を含む確認結果は [世界更新の実測記録](documents/evaluations/world-agent-2026-10-19.md) を参照してください。
 
+## 時間指定の世界構築
+
+別のターミナルで `pnpm --filter @gestaloka/worker dev` を起動し、次の管理者用CLIを使います。モデルのAPIキーが必要です。受付コマンドはジョブを保存して返り、ブラウザーやCLIを閉じてもワーカーが処理します。
+
+```powershell
+pnpm world:build create --prompt examples/village.txt
+pnpm world:build show --id <constructionId>
+pnpm world:build advance --id <constructionId> --duration 60000
+pnpm world:build show --id <constructionId>
+pnpm world:build advance --id <constructionId> --duration 30000
+pnpm world:build finish --id <constructionId>
+pnpm world:build join --id <constructionId>
+pnpm world:build resume --id <constructionId>
+```
+
+`advance`はreadyの区切りから、ミリ秒で指定した期間を追加します。`finish`はその区切りで構築を完了し、`join`は別の新しい村民を共通Agentで生成します。試遊村民の存在・履歴・所有・知識は残ります。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。
+
+取得結果は到達時刻・目標時刻・主な処理記録・未処理の起動を含む管理情報です。操作権と公開viewの配信は後続で接続します。区間をまたぐ継続と参加の契約は [ADR-003](documents/adr/ADR-003-construction-lifecycle.md) を参照してください。
+
 ## 検証
 
 ```powershell
@@ -74,7 +93,7 @@ pnpm test:e2e
 
 統合テストは実DBを使い、Neo4jの再接続後の読取、PostgreSQLトランザクション内のキュー投入のロールバック、LangGraphの中断・再開と保存済みtaskの再利用を確認します。テストは専用レコードとキューを作り、世界モデルの正本を作りません。ブラウザーテストは実APIへ接続し、HTTPと標準EventSourceの疎通を確認します。
 
-物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、時間指定の試遊管理と世界構築完了後の村民参加は後続実装です。
+物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、公開画面・操作権と人間の通常操作への接続は後続実装です。
 
 ## 設計資料
 

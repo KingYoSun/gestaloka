@@ -128,6 +128,10 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await databases.postgres.query(
+    "DELETE FROM world_intent WHERE world_id=ANY($1::uuid[])",
+    [worlds],
+  );
+  await databases.postgres.query(
     "DELETE FROM world_operation WHERE id=ANY($1)",
     [operations],
   );
@@ -156,10 +160,27 @@ test("意図形成へ観測の側面だけを渡し、対象全体・未観測�
       return response({ actionText: "箱の表面を調べる" });
     });
   const runtime = await agent(transport);
-  expect(
-    await runtime.intent(scene.worldId, scene.actor.id, 0, randomUUID()),
-  ).toBe("箱の表面を調べる");
+  const intentId = randomUUID();
+  expect(await runtime.intent(scene.worldId, scene.actor.id, 0, intentId)).toBe(
+    "箱の表面を調べる",
+  );
   expect(sent).toContain("箱の表面が見える");
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: changes(
+        [],
+        [edge("see", scene.actor, scene.object, "後から受容した別の側面")],
+      ),
+    },
+  );
+  expect(await runtime.intent(scene.worldId, scene.actor.id, 0, intentId)).toBe(
+    "箱の表面を調べる",
+  );
+  expect(transport).toHaveBeenCalledTimes(1);
   for (const privateText of [
     "SELF_PRIVATE",
     "ROOT_PRIVATE",
@@ -169,7 +190,7 @@ test("意図形成へ観測の側面だけを渡し、対象全体・未観測�
     expect(sent).not.toContain(privateText);
   expect(
     (await runtime.view(scene.worldId, scene.actor.id, 0)).observations,
-  ).toHaveLength(1);
+  ).toHaveLength(2);
 });
 
 test("照会・再評価・確定を共有し、進捗保存を失っても確定済みの過去を再生成しない", async () => {
