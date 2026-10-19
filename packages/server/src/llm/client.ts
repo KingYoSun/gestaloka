@@ -163,7 +163,14 @@ export class LlmClient {
     const body = z
       .object({ data: z.array(z.object({ id: z.string() })) })
       .parse(await response.json());
-    if (!body.data.some((model) => model.id === this.settings.model))
+    if (
+      !body.data.some(
+        (model) =>
+          model.id === this.settings.model ||
+          (this.settings.model === "gemini-3.8-flash" &&
+            model.id === `models/${this.settings.model}`),
+      )
+    )
       throw new Error("指定モデルのAPI識別子が利用できません");
     return {
       requestedVersion: this.requestedVersion,

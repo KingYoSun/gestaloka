@@ -184,7 +184,11 @@ test.each([
         new Response(
           JSON.stringify(
             String(url).endsWith("/models")
-              ? { data: [{ id: model }] }
+              ? {
+                  data: [
+                    { id: prefix === "GEMINI" ? `models/${model}` : model },
+                  ],
+                }
               : {
                   id: randomUUID(),
                   model,
