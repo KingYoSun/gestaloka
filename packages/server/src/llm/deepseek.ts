@@ -35,6 +35,9 @@ export const DeepSeekSettings = z.object({
     .default("deepseek-v4.1-flash-1017-evaluation"),
   LLM_BUDGET_USD: z.coerce.number().positive().max(40).default(40),
   LLM_REASONING_EFFORT: z.enum(["none", "low", "high", "max"]).default("high"),
+  LLM_INITIAL_REASONING_EFFORT: z
+    .enum(["none", "low", "high", "max"])
+    .default("high"),
   LLM_MAX_OUTPUT_TOKENS: z.coerce
     .number()
     .int()
@@ -115,7 +118,9 @@ export class DeepSeekClient {
       response_format: { type: "json_object" },
       reasoning_effort:
         previous?.request?.reasoning_effort ??
-        this.settings.LLM_REASONING_EFFORT,
+        (role === "initial-generation"
+          ? this.settings.LLM_INITIAL_REASONING_EFFORT
+          : this.settings.LLM_REASONING_EFFORT),
       max_tokens:
         previous?.request?.max_tokens ?? this.settings.LLM_MAX_OUTPUT_TOKENS,
       stream: false,

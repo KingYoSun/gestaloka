@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 
 test("同一オリジンでWeb・HTTP・SSEへ接続する", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "gestaloka" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "世界を始める" }),
+  ).toBeVisible();
   const result = await page.evaluate(async () => {
     const http = await fetch("/api/health").then((response) => response.json());
     const sse = await new Promise((resolve, reject) => {

@@ -50,7 +50,9 @@ export const WorldStatus = z.object({
   hasParticipant: z.boolean(),
   error: z.string().nullable(),
 });
-export const PageQuery = z.object({ before: z.string().optional() });
+export const PageQuery = z
+  .object({ before: z.string().optional(), after: z.string().optional() })
+  .refine((value) => !value.before || !value.after);
 export const AdminRecord = z.object({
   id: z.string(),
   at: z.number().int().nonnegative().safe(),
@@ -61,6 +63,7 @@ export const AdminRecord = z.object({
 export const AdminPage = z.object({
   items: z.array(AdminRecord),
   next: z.string().nullable(),
+  previous: z.string().nullable(),
 });
 export const KnowledgeRecord = z.object({
   id: z.uuid(),
@@ -70,25 +73,29 @@ export const KnowledgeRecord = z.object({
   until: z.number().int().nonnegative().safe().optional(),
 });
 export const KnowledgePage = z.object({
+  viewerId: z.uuid(),
   at: z.number().int().nonnegative().safe(),
   items: z.array(KnowledgeRecord),
   next: z.string().nullable(),
+  previous: z.string().nullable(),
 });
 export const EventQuery = z.object({
   role: z.enum(["admin", "player"]),
   after: z.string().regex(/^\d+$/).optional(),
 });
 export const WorldEvent = z.object({
-  id: z.string(),
+  id: z.string().regex(/^\d+$/),
   worldId: z.uuid(),
   type: z.literal("invalidate"),
 });
+export const DeliveryCursor = z.object({ cursor: z.string().regex(/^\d+$/) });
 export const PlayerAction = z
   .object({ requestId: z.uuid(), actionText: z.string().min(1) })
   .strict();
 export const RequestIdentity = z.object({ requestId: z.uuid() }).strict();
 export const PlayerStatus = z.object({
   id: z.uuid(),
+  viewerId: z.uuid(),
   runId: z.uuid().nullable(),
   at: z.number().int().nonnegative().safe(),
   state: z.enum(["ready", "running", "paused"]),
@@ -96,6 +103,7 @@ export const PlayerStatus = z.object({
 });
 export const PlayRun = z.object({
   id: z.uuid(),
+  viewerId: z.uuid(),
   worldId: z.uuid(),
   actionText: z.string(),
   startedAt: z.number().int().nonnegative().safe(),

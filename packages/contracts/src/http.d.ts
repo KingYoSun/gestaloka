@@ -804,6 +804,7 @@ export interface paths {
             parameters: {
                 query?: {
                     before?: string;
+                    after?: string;
                 };
                 header?: never;
                 path: {
@@ -831,6 +832,7 @@ export interface paths {
                                 };
                             }[];
                             next: string | null;
+                            previous: string | null;
                         };
                     };
                 };
@@ -939,6 +941,7 @@ export interface paths {
             parameters: {
                 query?: {
                     before?: string;
+                    after?: string;
                 };
                 header?: never;
                 path: {
@@ -955,6 +958,8 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** Format: uuid */
+                            viewerId: string;
                             at: number;
                             items: {
                                 /** Format: uuid */
@@ -966,6 +971,7 @@ export interface paths {
                                 until?: number;
                             }[];
                             next: string | null;
+                            previous: string | null;
                         };
                     };
                 };
@@ -1090,6 +1096,8 @@ export interface paths {
                         "application/json": {
                             /** Format: uuid */
                             id: string;
+                            /** Format: uuid */
+                            viewerId: string;
                             /** Format: uuid */
                             runId: string | null;
                             at: number;
@@ -1220,6 +1228,8 @@ export interface paths {
                         "application/json": {
                             /** Format: uuid */
                             id: string;
+                            /** Format: uuid */
+                            viewerId: string;
                             /** Format: uuid */
                             worldId: string;
                             actionText: string;
@@ -1363,6 +1373,8 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             /** Format: uuid */
+                            viewerId: string;
+                            /** Format: uuid */
                             runId: string | null;
                             at: number;
                             /** @enum {string} */
@@ -1500,6 +1512,8 @@ export interface paths {
                             /** Format: uuid */
                             id: string;
                             /** Format: uuid */
+                            viewerId: string;
+                            /** Format: uuid */
                             runId: string | null;
                             at: number;
                             /** @enum {string} */
@@ -1594,6 +1608,131 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worlds/{id}/cursor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    role: "admin" | "player";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            cursor: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

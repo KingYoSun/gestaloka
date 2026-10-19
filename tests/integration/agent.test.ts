@@ -248,6 +248,13 @@ test("照会・再評価・確定を共有し、進捗保存を失っても確�
   expect(inputs[3]).toContain("CHANGED_PRIVATE");
   expect(inputs[0]).toContain(scene.object.id);
   expect(inputs[0]).toContain("TARGET_PRIVATE");
+  const seed = JSON.parse(
+    JSON.parse(inputs[0]!).messages[1].content,
+  ).initialContext;
+  expect(seed[0]).toMatchObject({
+    request: { kind: "node", id: scene.actor.id },
+    result: { node: { id: scene.actor.id } },
+  });
   const view = await runtime.view(scene.worldId, scene.actor.id, 1000);
   expect(JSON.stringify(view)).not.toContain("CHANGED_PRIVATE");
   expect(view.observations).toHaveLength(2);

@@ -683,7 +683,10 @@ export class WorldAgent {
                   role: "user",
                   content: JSON.stringify({
                     request: row.request,
-                    initialContext: seed.results,
+                    initialContext: requests.map((request, index) => ({
+                      request,
+                      result: seed.results[index],
+                    })),
                     responseSchema: z.toJSONSchema(Decision, { io: "input" }),
                   }),
                 },

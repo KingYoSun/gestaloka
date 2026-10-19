@@ -213,22 +213,26 @@ export class WorldContext {
     kind: "see" | "interpret",
     through: number,
     before?: { from: number; id: string },
+    after?: { from: number; id: string },
   ) {
     z.uuid().parse(id);
     z.enum(["see", "interpret"]).parse(kind);
+    const cursor = after ?? before,
+      order = after ? "ASC" : "DESC",
+      compare = after ? ">" : "<";
     return this.#read(relationKey(id, kind, "out"), async (tx) => {
       const result = await tx.run(
         `MATCH(n:WorldNode {worldId:$worldId,id:$id})-[r:${kind}]->()
          WHERE r.worldId=$worldId AND r.validFrom<=$through
-         AND ($before IS NULL OR r.validFrom<$before OR (r.validFrom=$before AND r.id<$cursor))
-         RETURN r.data AS data ORDER BY r.validFrom DESC,r.id DESC LIMIT $limit`,
+         AND ($before IS NULL OR r.validFrom${compare}$before OR (r.validFrom=$before AND r.id${compare}$cursor))
+         RETURN r.data AS data ORDER BY r.validFrom ${order},r.id ${order} LIMIT $limit`,
         {
           worldId: this.worldId,
           id,
           through,
-          before: before?.from ?? null,
-          cursor: before?.id ?? null,
-          limit: int(50),
+          before: cursor?.from ?? null,
+          cursor: cursor?.id ?? null,
+          limit: int(51),
         },
       );
       return result.records.map((row) =>
