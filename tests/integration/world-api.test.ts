@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -16,7 +16,7 @@ const subjects: string[] = [],
   worlds: string[] = [];
 const queueName = `api-test-${randomUUID()}`;
 const empty = () => ({ nodes: [], edges: [], revisions: [], endEdges: [] });
-const model = new DeepSeekClient(
+const model = new LlmClient(
   databases.postgres,
   { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
   async (_url, options) => {

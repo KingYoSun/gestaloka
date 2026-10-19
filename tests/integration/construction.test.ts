@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -260,7 +260,7 @@ async function fixture(
       }
       return response(proposal);
     });
-  const model = new DeepSeekClient(
+  const model = new LlmClient(
     databases.postgres,
     { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
     transport,

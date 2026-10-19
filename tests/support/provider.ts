@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -17,7 +17,7 @@ export async function fixtureRuntime(): Promise<{
   databases.queue.on("error", console.error);
   await databases.queue.start();
   let sequence = 0;
-  const model = new DeepSeekClient(
+  const model = new LlmClient(
     databases.postgres,
     { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: `e2e-${scope}` },
     async (_url, options) => {

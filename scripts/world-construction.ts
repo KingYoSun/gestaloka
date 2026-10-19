@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 import { ConstructionDuration, WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -29,7 +29,7 @@ databases.queue.on("error", (error) => console.error(error));
 try {
   await databases.verify();
   await databases.queue.start();
-  const model = new DeepSeekClient(databases.postgres);
+  const model = new LlmClient(databases.postgres);
   const construction = new WorldConstruction(
     new WorldBuilder(
       databases.postgres,

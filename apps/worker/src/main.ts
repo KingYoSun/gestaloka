@@ -1,5 +1,5 @@
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
@@ -10,7 +10,7 @@ try {
   await databases.verify();
   await databases.checkpointer.setup();
   await databases.queue.start();
-  const model = new DeepSeekClient(databases.postgres, {
+  const model = new LlmClient(databases.postgres, {
     ...process.env,
     LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS ?? "65536",
   });

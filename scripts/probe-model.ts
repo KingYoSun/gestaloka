@@ -3,13 +3,13 @@ import { readFile } from "node:fs/promises";
 import { entrypoint, task } from "@langchain/langgraph";
 import { z } from "zod";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 
 const databases = connectDatabases();
 try {
   await databases.verify();
   await databases.checkpointer.setup();
-  const model = new DeepSeekClient(databases.postgres);
+  const model = new LlmClient(databases.postgres);
   await model.ledger.setup();
   const identity = await model.verifyModel();
   const prompt = await readFile(

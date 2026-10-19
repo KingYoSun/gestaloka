@@ -1,7 +1,7 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { connectDatabases } from "@gestaloka/server";
-import { DeepSeekClient, MODEL_VERSION } from "@gestaloka/server/llm";
+import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 
 const { values } = parseArgs({
@@ -12,7 +12,7 @@ if (!values.prompt && !values.resume)
 const databases = connectDatabases();
 try {
   await databases.verify();
-  const model = new DeepSeekClient(databases.postgres, {
+  const model = new LlmClient(databases.postgres, {
     ...process.env,
     LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS ?? "65536",
   });
@@ -30,7 +30,7 @@ try {
   console.log(JSON.stringify({ runId }));
   const build = await builder.generate(runId);
   const budget = await model.ledger.summary();
-  const report = { requestedModel: MODEL_VERSION, ...build, budget };
+  const report = { requestedModel: model.requestedVersion, ...build, budget };
   const directory = new URL("../artifacts/evaluations/", import.meta.url);
   await mkdir(directory, { recursive: true });
   await writeFile(

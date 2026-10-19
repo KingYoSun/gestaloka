@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
-import { BudgetUnavailable, DeepSeekClient } from "@gestaloka/server/llm";
+import { BudgetUnavailable, LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 
 const databases = connectDatabases();
@@ -79,7 +79,7 @@ test("参照先が不正な候補を修正し、確定後の再開・進捗保�
     .fn<typeof fetch>()
     .mockResolvedValueOnce(reply(invalid))
     .mockResolvedValueOnce(reply(valid));
-  const model = new DeepSeekClient(
+  const model = new LlmClient(
     databases.postgres,
     { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
     transport,
@@ -116,7 +116,7 @@ test("参照先が不正な候補を修正し、確定後の再開・進捗保�
 test("予算不足は構築の保留として保存し、モデル送信も世界の作成も行わない", async () => {
   const limitedBudget = randomUUID();
   const transport = vi.fn<typeof fetch>();
-  const model = new DeepSeekClient(
+  const model = new LlmClient(
     databases.postgres,
     {
       DEEPSEEK_API_KEY: "unused",
