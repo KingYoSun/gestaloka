@@ -20,21 +20,57 @@ import {
 import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
 
 const Time = z.number().int().nonnegative().safe();
+const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
 export const Interaction = z
   .object({
     worldId: z.uuid(),
-    phase: z.enum(["interaction", "schedule", "observation", "participant"]),
+    phase: z.enum([
+      "interaction",
+      "resolution",
+      "schedule",
+      "observation",
+      "participant",
+    ]),
     at: Time,
-    until: Time,
+    until: Time.optional(),
     rootIds: z.array(z.uuid()).min(1),
     actorId: z.uuid().optional(),
+    controlledActorId: z.uuid().optional(),
+    controlledActionText: z.string().optional(),
+    triggerEdgeIds: z.array(z.uuid()).optional(),
     actionText: z.string(),
+    intentions: z
+      .array(
+        z
+          .object({
+            actorId: z.uuid(),
+            actionText: z.string(),
+            continuing: z.boolean(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict()
-  .refine((request) => request.until >= request.at);
+  .refine(
+    (request) => request.until === undefined || request.until >= request.at,
+  )
+  .refine((request) => {
+    const ids = [
+      ...(request.actorId ? [request.actorId] : []),
+      ...(request.intentions ?? []).map((item) => item.actorId),
+    ];
+    return new Set(ids).size === ids.length;
+  }, "同じ存在の行動意図は一つにまとめてください");
 type Interaction = z.infer<typeof Interaction>;
 const Query = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("observations"), id: z.uuid() }).strict(),
+  z
+    .object({
+      kind: z.literal("observations"),
+      id: z.uuid(),
+      through: Time.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("history"),
@@ -42,6 +78,7 @@ const Query = z.discriminatedUnion("kind", [
       relation: RelationKind,
       direction: z.enum(["in", "out"]),
       from: Time.optional(),
+      through: Time.optional(),
     })
     .strict(),
   z.object({ kind: z.literal("edge"), id: z.uuid() }).strict(),
@@ -58,7 +95,13 @@ const Query = z.discriminatedUnion("kind", [
       through: Time.optional(),
     })
     .strict(),
-  z.object({ kind: z.literal("effects"), id: z.uuid() }).strict(),
+  z
+    .object({
+      kind: z.literal("effects"),
+      id: z.uuid(),
+      through: Time.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("skill"),
@@ -225,41 +268,67 @@ export class WorldAgent {
     await context.validate();
     const results: unknown[] = [];
     for (const query of requests) {
-      const at =
-        "at" in query ? (query.at ?? row.request.until) : row.request.until;
-      if (at > row.request.until)
+      const horizon = row.request.until ?? row.request.at;
+      const at = "at" in query ? (query.at ?? horizon) : horizon;
+      const through = "through" in query ? (query.through ?? at) : at;
+      if (
+        row.request.until !== undefined &&
+        (at > row.request.until || through > row.request.until)
+      )
         throw new CandidateRejected("要求区間より後の時点は照会できません");
       switch (query.kind) {
         case "observations":
-          results.push(await context.observations(query.id, row.request.until));
+          results.push(await context.observations(query.id, through));
           break;
         case "edge":
           results.push((await context.edge(query.id)) ?? null);
           break;
-        case "node":
+        case "node": {
+          const currentStates = [];
+          for (const edge of await context.relations(
+            query.id,
+            "status",
+            "out",
+            at,
+          )) {
+            if (edge.role !== "content") continue;
+            const about = await context.relations(
+              edge.target,
+              "status",
+              "out",
+              at,
+            );
+            const targets = [];
+            for (const relation of about)
+              if (relation.role === "about")
+                targets.push(await context.node(relation.target, at));
+            currentStates.push({
+              edge,
+              script: await context.node(edge.target, at),
+              about,
+              targets,
+            });
+          }
           results.push({
+            currentStates,
             node: (await context.node(query.id, at)) ?? null,
             knownAt: await context.latestTime(query.id),
-            stateSubjects: await context.history(
-              query.id,
-              "status",
-              "in",
-              row.request.until,
-            ),
+            stateSubjects: await context.history(query.id, "status", "in", at),
             interpreters: await context.history(
               query.id,
               "interpret",
               "in",
-              row.request.until,
+              at,
             ),
           });
           break;
+        }
         case "history": {
           const history = await context.history(
             query.id,
             query.relation,
             query.direction,
-            row.request.until,
+            through,
             query.from ?? 0,
           );
           const peers = [];
@@ -268,14 +337,11 @@ export class WorldAgent {
               query.direction === "out" ? edge.target : edge.source,
             ),
           ))
-            peers.push((await context.node(id, row.request.until)) ?? null);
+            peers.push((await context.node(id, through)) ?? null);
           results.push({ history, peers });
           break;
         }
         case "relations": {
-          const through = query.through ?? at;
-          if (through > row.request.until)
-            throw new CandidateRejected("要求区間より後の関係は照会できません");
           results.push(
             await context.relations(
               query.id,
@@ -289,7 +355,7 @@ export class WorldAgent {
         }
         case "effects":
           results.push(
-            await context.effects(query.id, row.request.at, row.request.until),
+            await context.effects(query.id, row.request.at, through),
           );
           break;
         case "skill":
@@ -312,7 +378,7 @@ export class WorldAgent {
     const { request } = row;
     if (
       proposal.resolvedUntil < request.at ||
-      proposal.resolvedUntil > request.until
+      (request.until !== undefined && proposal.resolvedUntil > request.until)
     )
       throw new CandidateRejected("実際の到達時点が要求区間に含まれていません");
     const context = this.store.context(request.worldId, row.dependencies);
@@ -477,6 +543,14 @@ export class WorldAgent {
         "参加者には新しいexistenceを指定してください",
       );
     for (const wakeup of proposal.wakeups) {
+      if (
+        request.phase === "observation" &&
+        wakeup.mode === "intent" &&
+        wakeup.actorId === request.actorId
+      )
+        throw new CandidateRejected(
+          "観測主体の意図形成は呼出し側が続けて行います。将来の継続原因はresolveとして保持してください",
+        );
       const actor =
         nodes.get(wakeup.actorId) ??
         (await context.node(wakeup.actorId, proposal.resolvedUntil));
@@ -548,10 +622,16 @@ export class WorldAgent {
               .context(row.request.worldId, row.dependencies)
               .validate();
             if (!row.messages) {
-              const requests: z.infer<typeof Query>[] = [];
+              const requests: z.infer<typeof Query>[] = (
+                row.request.triggerEdgeIds ?? []
+              ).map((id) => ({ kind: "edge", id }));
               for (const root of new Set([
                 ...row.request.rootIds,
                 ...(row.request.actorId ? [row.request.actorId] : []),
+                ...(row.request.controlledActorId
+                  ? [row.request.controlledActorId]
+                  : []),
+                ...(row.request.intentions ?? []).map((item) => item.actorId),
               ])) {
                 requests.push(
                   { kind: "node", id: root },
@@ -742,7 +822,29 @@ export class WorldAgent {
     };
   }
 
-  async intent(worldId: string, observerId: string, at: number, id: string) {
+  async hasCompletedIntent(id: string) {
+    const saved = (
+      await this.pool.query<{
+        response: Awaited<ReturnType<DeepSeekClient["complete"]>> | null;
+      }>("SELECT response FROM llm_call WHERE id=$1 AND state='complete'", [id])
+    ).rows[0]?.response;
+    try {
+      return (
+        saved?.finishReason === "stop" &&
+        IntentResult.safeParse(JSON.parse(saved.content)).success
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async intent(
+    worldId: string,
+    observerId: string,
+    at: number,
+    id: string,
+    ownIntentions: string[] = [],
+  ) {
     const saved = await this.pool.query<{
       view: unknown;
       system_prompt: string;
@@ -751,7 +853,10 @@ export class WorldAgent {
       [id, worldId, observerId, at],
     );
     if (!saved.rows[0]) {
-      const view = await this.view(worldId, observerId, at);
+      const view = {
+        ...(await this.view(worldId, observerId, at)),
+        ...(ownIntentions.length ? { ownIntentions } : {}),
+      };
       const system = await readFile(
         new URL("../../../../prompts/actor-intent.md", import.meta.url),
         "utf8",
@@ -787,9 +892,6 @@ export class WorldAgent {
     );
     if (response.finishReason !== "stop")
       throw new OperationPaused("行動意図の応答が未完了です");
-    return z
-      .object({ actionText: z.string().min(1) })
-      .strict()
-      .parse(JSON.parse(response.content)).actionText;
+    return IntentResult.parse(JSON.parse(response.content)).actionText;
   }
 }

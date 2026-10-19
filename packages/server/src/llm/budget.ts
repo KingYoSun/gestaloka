@@ -150,6 +150,13 @@ export class BudgetLedger {
     );
     return result.rows[0]?.state;
   }
+  async input(id: string) {
+    const result = await this.pool.query<{ request: unknown }>(
+      "SELECT request FROM llm_call WHERE id=$1 AND budget_id=$2",
+      [id, this.budgetId],
+    );
+    return result.rows[0]?.request;
+  }
 
   async summary() {
     const result = await this.pool.query<{

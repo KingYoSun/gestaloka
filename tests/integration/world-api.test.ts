@@ -170,6 +170,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await app?.close();
   await databases.queue.deleteQueue(queueName);
+  await databases.queue.deleteQueue(`${queueName}-play`);
   await databases.postgres.query(
     "DELETE FROM world_event WHERE construction_id=ANY($1)",
     [ids],
@@ -436,4 +437,114 @@ test("SSEを保存済みIDから再送し、他の世界のcursorと権限失効
     controller.abort();
     await reader.cancel();
   }
+});
+
+test("割当済みの村民へ自由記述を一度だけ受け付け、操作対象の自己申告を拒否する", async () => {
+  const scene = await fixture();
+  for (const command of ["finish", "join"])
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/worlds/${scene.id}/commands`,
+          headers: headers(scene.cookie),
+          payload: { requestId: randomUUID(), command },
+        })
+      ).statusCode,
+    ).toBe(202);
+  await runtime.tick(scene.id);
+  const actor = (await runtime.get(scene.id)).participant_id!;
+  const input = {
+    requestId: randomUUID(),
+    actionText: "近くの人に挨拶する。\r\n辺りを見渡す。",
+  };
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/worlds/${scene.id}/actions`,
+        headers: headers(scene.cookie),
+        payload: { ...input, actorId: randomUUID() },
+      })
+    ).statusCode,
+  ).toBe(400);
+  const accepted = await Promise.all(
+    [1, 2].map(() =>
+      app.inject({
+        method: "POST",
+        url: `/api/worlds/${scene.id}/actions`,
+        headers: headers(scene.cookie),
+        payload: input,
+      }),
+    ),
+  );
+  expect(accepted.map((reply) => reply.statusCode)).toEqual([202, 202]);
+  expect(accepted[0]!.json()).toEqual(accepted[1]!.json());
+  expect(accepted[0]!.json()).toEqual({
+    id: scene.id,
+    runId: input.requestId,
+    at: 0,
+    state: "running",
+    error: null,
+  });
+  expect((await runtime.get(scene.id)).agenda).toContainEqual(
+    expect.objectContaining({
+      actorId: actor,
+      actionText: input.actionText,
+      mode: "action",
+    }),
+  );
+  const jobs = await databases.postgres.query(
+    "SELECT id FROM pgboss.job WHERE name=$1 AND data->>'id'=$2",
+    [`${queueName}-play`, scene.id],
+  );
+  expect(jobs.rowCount).toBe(1);
+  const other = await session();
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/worlds/${scene.id}/actions`,
+        headers: headers(other.cookie),
+        payload: { ...input, requestId: randomUUID() },
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${scene.id}/play`,
+        headers: headers(scene.cookie),
+      })
+    ).json(),
+  ).toEqual({
+    id: scene.id,
+    runId: input.requestId,
+    at: 0,
+    state: "running",
+    error: null,
+  });
+  expect(
+    (
+      await app.inject({
+        url: `/api/runs/${input.requestId}`,
+        headers: headers(scene.cookie),
+      })
+    ).json(),
+  ).toMatchObject({
+    id: input.requestId,
+    worldId: scene.id,
+    actionText: input.actionText,
+    state: "running",
+    at: 0,
+    startedAt: 0,
+  });
+  expect(
+    (
+      await app.inject({
+        url: `/api/runs/${input.requestId}`,
+        headers: headers(other.cookie),
+      })
+    ).statusCode,
+  ).toBe(404);
 });

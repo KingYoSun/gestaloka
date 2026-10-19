@@ -15,6 +15,10 @@ import {
   KnowledgePage,
   EventQuery,
   WorldEvent,
+  PlayerAction,
+  PlayerStatus,
+  RequestIdentity,
+  PlayRun,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
 
@@ -47,6 +51,7 @@ export async function worldRoutes(
   app.addHook("onRequest", async (request, reply) => {
     if (
       request.url.startsWith("/api/worlds") ||
+      request.url.startsWith("/api/runs") ||
       request.url.startsWith("/api/session")
     )
       reply.header("Cache-Control", "private, no-store");
@@ -182,6 +187,59 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.before,
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/play",
+    {
+      schema: {
+        params: ResourceId,
+        response: { 200: PlayerStatus, ...errors },
+      },
+    },
+    async (request) =>
+      service().player(await subject(request), request.params.id),
+  );
+  app.get(
+    "/api/runs/:id",
+    { schema: { params: ResourceId, response: { 200: PlayRun, ...errors } } },
+    async (request) => service().run(await subject(request), request.params.id),
+  );
+  app.post(
+    "/api/worlds/:id/actions",
+    {
+      schema: {
+        params: ResourceId,
+        body: PlayerAction,
+        response: { 202: PlayerStatus, ...errors },
+      },
+    },
+    async (request, reply) =>
+      reply
+        .code(202)
+        .send(
+          await service().play(
+            await subject(request),
+            request.params.id,
+            request.body,
+          ),
+        ),
+  );
+  app.post(
+    "/api/worlds/:id/play/resume",
+    {
+      schema: {
+        params: ResourceId,
+        body: RequestIdentity,
+        response: { 202: PlayerStatus, ...errors },
+      },
+    },
+    async (request, reply) =>
+      reply.code(202).send(
+        await service().play(await subject(request), request.params.id, {
+          ...request.body,
+          resume: true,
+        }),
       ),
   );
   const streams = new Map<AbortController, () => void>();

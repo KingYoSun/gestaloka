@@ -8,15 +8,26 @@ import { WorldAgent, SupersededWorker, type WorldProposal } from "./agent.js";
 type Work = {
   id: string;
   at: number;
-  mode: "schedule" | "intent" | "resolve" | "participant";
+  mode: "schedule" | "intent" | "resolve" | "participant" | "action" | "frame";
   actorId?: string;
   actionText?: string;
   observationId?: string;
   operationId?: string;
+  members?: Work[];
+  previousActions?: string[];
+  triggers?: string[];
 };
 export type Construction = {
   id: string;
-  state: "generating" | "ready" | "running" | "paused" | "finished" | "joining";
+  state:
+    | "generating"
+    | "ready"
+    | "running"
+    | "paused"
+    | "finished"
+    | "joining"
+    | "playing"
+    | "play_paused";
   world_id: string | null;
   actor_id: string | null;
   root_ids: string[];
@@ -27,6 +38,8 @@ export type Construction = {
   participant_id: string | null;
   claim: string | null;
   error: string | null;
+  initial_prompt: string;
+  created_at: Date;
 };
 const time = z.number().int().nonnegative().safe();
 export class ConstructionStateError extends Error {}
@@ -55,12 +68,18 @@ export class WorldConstruction {
       id bigserial PRIMARY KEY, construction_id uuid NOT NULL REFERENCES world_construction(id),
       operation_id uuid UNIQUE NOT NULL REFERENCES world_operation(id),
       at bigint NOT NULL, result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());`);
-    await this.queue.createQueue(this.queueName, {
-      retryLimit: 2,
-      retryDelay: 5,
-      expireInSeconds: 900,
-      heartbeatSeconds: 30,
-    });
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS world_run (
+      id uuid PRIMARY KEY,construction_id uuid NOT NULL REFERENCES world_construction(id) ON DELETE CASCADE,
+      actor_id uuid NOT NULL,action_text text NOT NULL,state text NOT NULL,
+      started_at bigint NOT NULL,at bigint NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS world_run_latest ON world_run(construction_id,actor_id,created_at DESC);`);
+    for (const name of [this.queueName, `${this.queueName}-play`])
+      await this.queue.createQueue(name, {
+        retryLimit: 2,
+        retryDelay: 5,
+        expireInSeconds: 900,
+        heartbeatSeconds: 30,
+      });
   }
 
   async #transaction<T>(
@@ -82,9 +101,9 @@ export class WorldConstruction {
     }
   }
 
-  async #enqueue(client: pg.PoolClient, id: string) {
+  async #enqueue(client: pg.PoolClient, id: string, play = false) {
     await this.queue.send(
-      this.queueName,
+      play ? `${this.queueName}-play` : this.queueName,
       { id },
       {
         db: { executeSql: (text, values) => client.query(text, values) },
@@ -112,7 +131,7 @@ export class WorldConstruction {
   ) {
     z.uuid().parse(id);
     const result = await client.query<Construction>(
-      `SELECT * FROM world_construction WHERE id=$1${lock ? " FOR UPDATE" : ""}`,
+      `SELECT c.*,b.initial_prompt,b.created_at FROM world_construction c JOIN world_build b ON b.run_id=c.id WHERE c.id=$1${lock ? " FOR UPDATE OF c" : ""}`,
       [id],
     );
     const row = result.rows[0];
@@ -136,22 +155,29 @@ export class WorldConstruction {
         time.positive().parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
-        row.agenda.push({ id: randomUUID(), at: row.at, mode: "schedule" });
+        if (!row.agenda.length)
+          row.agenda.push({ id: randomUUID(), at: row.at, mode: "schedule" });
       } else if (command === "resume") {
-        if (row.state !== "paused")
+        if (row.state !== "paused" && row.state !== "play_paused")
           throw new ConstructionStateError(
             "保留中の構築セッションを指定してください",
           );
-        row.state = row.world_id
-          ? row.current?.mode === "participant"
-            ? "joining"
-            : "running"
-          : "generating";
-        if (
-          row.current?.mode === "intent" &&
-          row.current.actionText === undefined
-        )
-          row.current.id = randomUUID();
+        row.state =
+          row.state === "play_paused"
+            ? "playing"
+            : row.world_id
+              ? row.current?.mode === "participant"
+                ? "joining"
+                : "running"
+              : "generating";
+        for (const work of row.current?.members ??
+          (row.current ? [row.current] : []))
+          if (
+            work.mode === "intent" &&
+            work.actionText === undefined &&
+            !(await this.agent.hasCompletedIntent(work.id))
+          )
+            work.id = randomUUID();
       } else if (command === "finish") {
         if (row.state !== "ready")
           throw new ConstructionStateError(
@@ -159,7 +185,9 @@ export class WorldConstruction {
           );
         row.state = "finished";
         row.agenda = row.agenda.filter(
-          (work) => work.actorId !== row.actor_id || work.mode !== "intent",
+          (work) =>
+            work.mode !== "schedule" &&
+            (work.actorId !== row.actor_id || work.mode !== "intent"),
         );
       } else {
         if (row.participant_id) return row;
@@ -173,7 +201,45 @@ export class WorldConstruction {
       row.error = null;
       row.claim = null;
       await this.#save(row, client);
-      if (row.state !== "finished") await this.#enqueue(client, id);
+      if (row.state !== "finished")
+        await this.#enqueue(client, id, row.state === "playing");
+      return row;
+    }, existing);
+  }
+
+  async play(
+    id: string,
+    actionText: string,
+    existing?: pg.PoolClient,
+    runId: string = randomUUID(),
+  ) {
+    z.string().min(1).parse(actionText);
+    z.uuid().parse(runId);
+    return this.#transaction(async (client) => {
+      const row = await this.get(id, client, true);
+      if (row.state !== "finished" || !row.participant_id)
+        throw new ConstructionStateError(
+          "前の行動が区切られてから操作してください",
+        );
+      row.state = "playing";
+      await client.query(
+        "INSERT INTO world_run(id,construction_id,actor_id,action_text,state,started_at,at) VALUES($1,$2,$3,$4,'running',$5,$5)",
+        [runId, id, row.participant_id, actionText, row.at],
+      );
+      row.claim = null;
+      row.error = null;
+      row.agenda = row.agenda.filter(
+        (work) => work.actorId !== row.participant_id || work.mode !== "intent",
+      );
+      row.agenda.push({
+        id: randomUUID(),
+        at: row.at,
+        mode: "action",
+        actorId: row.participant_id,
+        actionText,
+      });
+      await this.#save(row, client);
+      await this.#enqueue(client, id, true);
       return row;
     }, existing);
   }
@@ -184,9 +250,13 @@ export class WorldConstruction {
     expected?: string,
   ) {
     const result = await client.query(
-      `UPDATE world_construction SET state=$2,world_id=$3,actor_id=$4,root_ids=$5,
+      `WITH updated AS (UPDATE world_construction SET state=$2,world_id=$3,actor_id=$4,root_ids=$5,
        at=$6,target=$7,agenda=$8,current=$9,participant_id=$10,claim=$11,error=$12
-       WHERE id=$1 AND ($13::uuid IS NULL OR claim=$13)`,
+       WHERE id=$1 AND ($13::uuid IS NULL OR claim=$13) RETURNING id,state,at,participant_id),
+       progress AS (UPDATE world_run r SET at=u.at,state=CASE u.state WHEN 'playing' THEN 'running' WHEN 'play_paused' THEN 'paused' ELSE 'ready' END
+       FROM updated u WHERE u.participant_id IS NOT NULL AND u.state IN ('playing','play_paused','finished')
+       AND r.id=(SELECT id FROM world_run WHERE construction_id=u.id AND actor_id=u.participant_id ORDER BY created_at DESC,id DESC LIMIT 1)
+       RETURNING r.id) SELECT id FROM updated`,
       [
         row.id,
         row.state,
@@ -211,53 +281,165 @@ export class WorldConstruction {
     return this.#transaction(async (client) => {
       await this.#save(row, client, claim);
       const work = row.current!;
-      if (work.mode === "intent" && !work.observationId) {
-        work.observationId = await this.agent.create(
-          {
-            worldId: row.world_id!,
-            phase: "observation",
-            at: work.at,
-            until: work.at,
-            rootIds: row.root_ids,
-            actorId: work.actorId!,
-            actionText: "",
-          },
-          randomUUID(),
-          client,
-        );
-      }
-      if (work.mode !== "intent" || work.actionText !== undefined) {
-        if (!work.operationId)
-          work.operationId = await this.agent.create(
+      for (const member of work.members ?? []) {
+        if (member.mode === "intent" && !member.observationId)
+          member.observationId = await this.agent.create(
             {
               worldId: row.world_id!,
-              phase:
-                work.mode === "participant"
-                  ? "participant"
-                  : work.mode === "schedule" ||
-                      (work.mode === "resolve" && !work.actionText)
-                    ? "schedule"
-                    : "interaction",
+              phase: "observation",
               at: work.at,
-              until:
-                work.mode === "participant"
-                  ? work.at
-                  : Math.min(
-                      row.target,
-                      ...row.agenda
-                        .filter((entry) => entry.at >= work.at)
-                        .map((entry) => entry.at),
-                    ),
-              rootIds: row.root_ids,
-              ...(work.actorId ? { actorId: work.actorId } : {}),
-              actionText: work.actionText ?? "",
+              until: work.at,
+              rootIds: [member.actorId!],
+              actorId: member.actorId!,
+              actionText: "",
             },
             randomUUID(),
             client,
           );
       }
+      const prepared = (work.members ?? []).every(
+        (member) => member.mode !== "intent" || member.actionText !== undefined,
+      );
+      const humanDecision =
+        row.state === "playing" &&
+        work.members?.some(
+          (member) =>
+            member.mode === "intent" && member.actorId === row.participant_id,
+        );
+      if (!work.operationId && prepared && !humanDecision) {
+        const next = Math.min(
+          ...row.agenda
+            .filter((entry) => entry.at > work.at)
+            .map((entry) => entry.at),
+        );
+        const until =
+          work.mode === "participant"
+            ? work.at
+            : work.mode === "schedule" &&
+                row.agenda.some((entry) => entry.at === work.at)
+              ? work.at
+              : row.state === "playing"
+                ? Number.isFinite(next)
+                  ? next
+                  : undefined
+                : Math.min(row.target, next);
+        const controlledAction =
+          row.state === "playing"
+            ? (
+                await client.query<{ action_text: string }>(
+                  "SELECT action_text FROM world_run WHERE construction_id=$1 AND actor_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1",
+                  [row.id, row.participant_id],
+                )
+              ).rows[0]?.action_text
+            : undefined;
+        work.operationId = await this.agent.create(
+          {
+            worldId: row.world_id!,
+            phase:
+              work.mode === "participant"
+                ? "participant"
+                : work.mode === "schedule"
+                  ? "schedule"
+                  : work.members?.every((member) => member.mode === "resolve")
+                    ? "resolution"
+                    : "interaction",
+            at: work.at,
+            ...(until === undefined ? {} : { until }),
+            rootIds: work.members?.length
+              ? work.members.map((member) => member.actorId!)
+              : row.root_ids,
+            actionText: "",
+            ...(row.state === "playing"
+              ? { controlledActorId: row.participant_id! }
+              : {}),
+            ...(controlledAction === undefined
+              ? {}
+              : { controlledActionText: controlledAction }),
+            triggerEdgeIds: [
+              ...new Set(
+                (work.members ?? []).flatMap((member) => member.triggers ?? []),
+              ),
+            ],
+            ...(work.members
+              ? {
+                  intentions: work.members.map((member) => ({
+                    actorId: member.actorId!,
+                    actionText: member.actionText ?? "",
+                    continuing: member.mode === "resolve",
+                  })),
+                }
+              : {}),
+          },
+          randomUUID(),
+          client,
+        );
+      }
       await this.#save(row, client, claim);
     });
+  }
+
+  async #parallel(items: Work[], action: (work: Work) => Promise<void>) {
+    const pending = [...items];
+    const results = await Promise.allSettled(
+      [0, 1].map(async () => {
+        for (;;) {
+          const work = pending.shift();
+          if (!work) return;
+          await action(work);
+        }
+      }),
+    );
+    for (const result of results)
+      if (result.status === "rejected") throw result.reason;
+  }
+
+  async #prepare(row: Construction, claim: string) {
+    await this.#stage(row, claim);
+    const members = row.current!.members ?? [];
+    const observations = new Map<string, WorldProposal>();
+    await this.#parallel(
+      members.filter((member) => member.observationId !== undefined),
+      async (member) => {
+        observations.set(
+          member.observationId!,
+          await this.agent.run(member.observationId!),
+        );
+      },
+    );
+    await this.#transaction(async (client) => {
+      await this.#save(row, client, claim);
+      for (const [id, result] of observations)
+        await this.#record(row, id, result, client);
+      await this.#save(row, client, claim);
+    });
+    if (
+      row.state === "playing" &&
+      members.some(
+        (member) =>
+          member.mode === "intent" && member.actorId === row.participant_id,
+      )
+    ) {
+      row.at = row.current!.at;
+      row.state = "finished";
+      row.current = null;
+      await this.#save(row, this.pool, claim);
+      return;
+    }
+    await this.#parallel(
+      members.filter(
+        (member) => member.mode === "intent" && member.actionText === undefined,
+      ),
+      async (member) => {
+        member.actionText = await this.agent.intent(
+          row.world_id!,
+          member.actorId!,
+          member.at,
+          member.id,
+          member.previousActions,
+        );
+      },
+    );
+    await this.#stage(row, claim);
   }
 
   async #record(
@@ -265,6 +447,7 @@ export class WorldConstruction {
     operationId: string,
     result: WorldProposal,
     client: pg.PoolClient,
+    propagate = false,
   ) {
     await client.query(
       `INSERT INTO construction_log(construction_id,operation_id,at,result) VALUES($1,$2,$3,$4)
@@ -272,6 +455,9 @@ export class WorldConstruction {
       [row.id, operationId, result.resolvedUntil, JSON.stringify(result)],
     );
     for (const wakeup of result.wakeups) {
+      const source = (
+        row.current?.members ?? (row.current ? [row.current] : [])
+      ).find((member) => member.actorId === wakeup.actorId);
       if (
         row.agenda.some(
           (entry) =>
@@ -286,21 +472,96 @@ export class WorldConstruction {
         ...wakeup,
         ...(wakeup.mode === "resolve"
           ? {
-              actionText:
-                wakeup.actorId === row.current?.actorId
-                  ? (row.current.actionText ?? "")
-                  : "",
+              actionText: source?.actionText ?? "",
             }
           : {}),
       });
     }
+    if (propagate) {
+      for (const edge of result.changes.edges) {
+        const receiver =
+          edge.kind === "effect"
+            ? edge.target
+            : edge.kind === "see"
+              ? edge.source
+              : undefined;
+        if (!receiver || receiver === row.participant_id) continue;
+        const activationAt = Math.max(result.resolvedUntil, edge.period.from);
+        let pending = row.agenda.find(
+          (entry) => entry.actorId === receiver && entry.at === activationAt,
+        );
+        if (!pending) {
+          pending = {
+            id: randomUUID(),
+            at: activationAt,
+            mode: "resolve",
+            actorId: receiver,
+            actionText: "",
+          };
+          row.agenda.push(pending);
+        }
+        pending.triggers = [...new Set([...(pending.triggers ?? []), edge.id])];
+      }
+    }
+  }
+
+  #take(row: Construction): Work {
+    row.agenda.sort(
+      (a, b) =>
+        a.at - b.at ||
+        Number(b.mode === "schedule") - Number(a.mode === "schedule") ||
+        a.id.localeCompare(b.id),
+    );
+    const first = row.agenda[0];
+    if (!first || (row.state !== "playing" && first.at >= row.target))
+      return { id: randomUUID(), at: row.at, mode: "schedule" };
+    if (first.mode === "schedule") return row.agenda.shift()!;
+    const due = row.agenda.filter((work) => work.at === first.at);
+    row.agenda = row.agenda.filter((work) => work.at !== first.at);
+    const human =
+      row.state === "playing"
+        ? due.find(
+            (work) =>
+              work.mode === "intent" && work.actorId === row.participant_id,
+          )
+        : undefined;
+    if (human) {
+      row.agenda.push(...due.filter((work) => work !== human));
+      return {
+        id: randomUUID(),
+        at: first.at,
+        mode: "frame",
+        members: [human],
+      };
+    }
+    const members = [];
+    for (const actorId of new Set(due.map((work) => work.actorId))) {
+      const actions = due.filter((work) => work.actorId === actorId);
+      const selected =
+        actions.find((work) => work.mode === "action") ??
+        actions.find((work) => work.mode === "intent") ??
+        actions[0]!;
+      members.push({
+        ...selected,
+        triggers: [...new Set(actions.flatMap((work) => work.triggers ?? []))],
+        previousActions: [
+          ...new Set(
+            actions
+              .filter((work) => work.mode === "resolve")
+              .flatMap((work) => (work.actionText ? [work.actionText] : [])),
+          ),
+        ],
+      });
+    }
+    return { id: randomUUID(), at: first.at, mode: "frame", members };
   }
 
   async tick(id: string) {
     const claim = randomUUID();
     let row = await this.#transaction(async (client) => {
       const row = await this.get(id, client, true);
-      if (!["generating", "running", "joining"].includes(row.state)) return row;
+      if (!["generating", "running", "joining", "playing"].includes(row.state))
+        return row;
       row.claim = claim;
       await this.#save(row, client);
       return row;
@@ -314,50 +575,47 @@ export class WorldConstruction {
         row.root_ids = build.result!.rootIds;
         row.state = "ready";
         row.agenda = [
+          { id: randomUUID(), at: 0, mode: "schedule" },
           { id: randomUUID(), at: 0, mode: "intent", actorId: row.actor_id },
         ];
         await this.#save(row, this.pool, claim);
         return;
       }
       if (!row.current) {
-        row.agenda.sort(
-          (a, b) =>
-            a.at - b.at ||
-            Number(b.mode === "schedule") - Number(a.mode === "schedule") ||
-            a.id.localeCompare(b.id),
-        );
-        const work = row.agenda[0];
-        row.current =
-          work && work.at < row.target
-            ? row.agenda.shift()!
-            : { id: randomUUID(), at: row.at, mode: "schedule" };
+        row.current = this.#take(row);
       }
+      if (!["frame", "schedule", "participant"].includes(row.current.mode))
+        row.current = {
+          id: randomUUID(),
+          at: row.current.at,
+          mode: "frame",
+          members: [row.current],
+          ...(row.current.operationId
+            ? { operationId: row.current.operationId }
+            : {}),
+        };
+      await this.#prepare(row, claim);
+      if (!row.current) return row;
       const work = row.current;
-      await this.#stage(row, claim);
-      if (work.mode === "intent") {
-        const observed = await this.agent.run(work.observationId!);
-        await this.#transaction(async (client) => {
-          await this.#save(row, client, claim);
-          await this.#record(row, work.observationId!, observed, client);
-          await this.#save(row, client, claim);
-        });
-        if (work.actionText === undefined) {
-          work.actionText = await this.agent.intent(
-            row.world_id!,
-            work.actorId!,
-            work.at,
-            work.id,
-          );
-          await this.#stage(row, claim);
-        }
-      }
       const result = await this.agent.run(work.operationId!);
       await this.#transaction(async (client) => {
         await this.#save(row, client, claim);
-        await this.#record(row, work.operationId!, result, client);
+        await this.#record(
+          row,
+          work.operationId!,
+          result,
+          client,
+          work.mode !== "participant",
+        );
         if (work.mode === "participant") {
           row.participant_id = result.newParticipantId!;
           row.state = "finished";
+        } else if (row.state === "playing") {
+          row.at = Math.min(
+            result.resolvedUntil,
+            ...row.agenda.map((entry) => entry.at),
+          );
+          if (!row.agenda.length) row.state = "finished";
         } else {
           row.at = Math.min(
             row.target,
@@ -374,17 +632,13 @@ export class WorldConstruction {
         row.current = null;
         if (row.state !== "paused") row.error = null;
         await this.#save(row, client, claim);
-        if (row.state === "running") await this.#enqueue(client, id);
+        if (row.state === "running" || row.state === "playing")
+          await this.#enqueue(client, id, row.state === "playing");
       });
     } catch (error) {
-      await this.pool.query(
-        "UPDATE world_construction SET state='paused',error=$3 WHERE id=$1 AND claim=$2",
-        [
-          id,
-          claim,
-          error instanceof Error ? error.message : "実行を保留しました",
-        ],
-      );
+      row.state = row.state === "playing" ? "play_paused" : "paused";
+      row.error = error instanceof Error ? error.message : "実行を保留しました";
+      await this.#save(row, this.pool, claim);
       throw error;
     }
     row = await this.get(id);
@@ -392,24 +646,28 @@ export class WorldConstruction {
   }
 
   async work() {
-    return this.queue.work<{ id: string }>(
-      this.queueName,
-      { localConcurrency: 2, pollingIntervalSeconds: 0.5 },
-      async (jobs) => {
-        for (const job of jobs) {
-          try {
-            await this.tick(job.data.id);
-          } catch (error) {
-            if (!(error instanceof Error)) throw error;
-            console.error(
-              JSON.stringify({
-                constructionId: job.data.id,
-                error: error.message,
-              }),
-            );
-          }
-        }
-      },
+    return Promise.all(
+      [this.queueName, `${this.queueName}-play`].map((name) =>
+        this.queue.work<{ id: string }>(
+          name,
+          { localConcurrency: 2, pollingIntervalSeconds: 0.5 },
+          async (jobs) => {
+            for (const job of jobs) {
+              try {
+                await this.tick(job.data.id);
+              } catch (error) {
+                if (!(error instanceof Error)) throw error;
+                console.error(
+                  JSON.stringify({
+                    constructionId: job.data.id,
+                    error: error.message,
+                  }),
+                );
+              }
+            }
+          },
+        ),
+      ),
     );
   }
 

@@ -129,3 +129,30 @@ test("応答喪失後は予約を維持し、同じ呼出しを自動再送し�
     ).setup(),
   ).rejects.toBeInstanceOf(BudgetUnavailable);
 });
+
+test("推論量の設定を変更しても保存済み呼出しを再送せず、新しい呼出しだけへ適用する", async () => {
+  const config = environment(),
+    transport = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => response());
+  const high = new DeepSeekClient(databases.postgres, config, transport);
+  await high.ledger.setup();
+  const id = randomUUID(),
+    messages = [{ role: "user" as const, content: "JSONで返す" }];
+  const saved = await high.complete(id, "probe", messages);
+  const low = new DeepSeekClient(
+    databases.postgres,
+    { ...config, LLM_REASONING_EFFORT: "low" },
+    transport,
+  );
+  expect(await low.complete(id, "probe", messages)).toEqual(saved);
+  expect(transport).toHaveBeenCalledTimes(1);
+  await low.complete(randomUUID(), "probe", messages);
+  expect(
+    JSON.parse(String(transport.mock.calls[1]![1]!.body)).reasoning_effort,
+  ).toBe("low");
+  expect(
+    ((await low.ledger.input(id)) as { request: { reasoning_effort: string } })
+      .request.reasoning_effort,
+  ).toBe("high");
+});

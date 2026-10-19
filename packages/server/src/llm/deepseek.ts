@@ -34,6 +34,7 @@ export const DeepSeekSettings = z.object({
     .min(1)
     .default("deepseek-v4.1-flash-1017-evaluation"),
   LLM_BUDGET_USD: z.coerce.number().positive().max(40).default(40),
+  LLM_REASONING_EFFORT: z.enum(["none", "low", "high", "max"]).default("high"),
   LLM_MAX_OUTPUT_TOKENS: z.coerce
     .number()
     .int()
@@ -97,18 +98,32 @@ export class DeepSeekClient {
     messages: ChatMessage[],
   ): Promise<SavedCompletion> {
     z.uuid().parse(id);
+    const previous = (await this.ledger.input(id)) as
+      | {
+          requestedVersion: string;
+          pricingDate: string;
+          request: {
+            model: "deepseek-flash";
+            reasoning_effort: string;
+            max_tokens: number;
+          };
+        }
+      | undefined;
     const request = {
-      model: this.settings.DEEPSEEK_MODEL,
+      model: previous?.request?.model ?? this.settings.DEEPSEEK_MODEL,
       messages,
       response_format: { type: "json_object" },
-      reasoning_effort: "high",
-      max_tokens: this.settings.LLM_MAX_OUTPUT_TOKENS,
+      reasoning_effort:
+        previous?.request?.reasoning_effort ??
+        this.settings.LLM_REASONING_EFFORT,
+      max_tokens:
+        previous?.request?.max_tokens ?? this.settings.LLM_MAX_OUTPUT_TOKENS,
       stream: false,
     };
     const stored = {
       role,
-      requestedVersion: MODEL_VERSION,
-      pricingDate: "2026-10-19",
+      requestedVersion: previous?.requestedVersion ?? MODEL_VERSION,
+      pricingDate: previous?.pricingDate ?? "2026-10-19",
       request,
     };
     const hash = createHash("sha256")

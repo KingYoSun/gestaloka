@@ -32,7 +32,12 @@ const response = (content: unknown) =>
     }),
   );
 
-async function fixture(pause = false, observationWake = false) {
+async function fixture(
+  pause = false,
+  observationWake = false,
+  pausePlay = false,
+  omitReceiverWake = false,
+) {
   const budgetId = randomUUID();
   budgets.push(budgetId);
   const queueName = `construction-test-${randomUUID()}`;
@@ -40,7 +45,17 @@ async function fixture(pause = false, observationWake = false) {
   const actor = randomUUID(),
     place = randomUUID();
   let interrupted = false;
+  let playInterrupted = false;
   const actions: string[] = [];
+  const intents: string[] = [];
+  const packets: {
+    phase: string;
+    at: number;
+    until?: number;
+    intentions: { actorId: string; actionText: string; continuing: boolean }[];
+    triggerEdgeIds?: string[];
+    controlledActionText?: string;
+  }[] = [];
   const transport = vi
     .fn<typeof fetch>()
     .mockImplementation(async (_url, options) => {
@@ -73,13 +88,23 @@ async function fixture(pause = false, observationWake = false) {
             ],
           },
         });
-      if (user.observerId)
+      if (user.observerId) {
+        intents.push(user.observerId);
         return response({ actionText: "知覚した場所へ働きかけ続ける" });
+      }
       const request = user.request as {
         phase: string;
         at: number;
-        until: number;
+        until?: number;
+        controlledActorId?: string;
+        controlledActionText?: string;
+        triggerEdgeIds?: string[];
         actionText: string;
+        intentions?: {
+          actorId: string;
+          actionText: string;
+          continuing: boolean;
+        }[];
       };
       if (request.phase === "observation" && pause && !interrupted) {
         interrupted = true;
@@ -89,9 +114,75 @@ async function fixture(pause = false, observationWake = false) {
         type: "propose",
         changes: empty(),
         summary: "局所的な確認記録",
-        resolvedUntil: request.until,
+        resolvedUntil: request.until ?? request.at + 100,
         wakeups: [] as unknown[],
       };
+      if (request.intentions)
+        packets.push({
+          phase: request.phase,
+          at: request.at,
+          ...(request.until === undefined ? {} : { until: request.until }),
+          intentions: request.intentions,
+          ...(request.triggerEdgeIds === undefined
+            ? {}
+            : { triggerEdgeIds: request.triggerEdgeIds }),
+          ...(request.controlledActionText === undefined
+            ? {}
+            : { controlledActionText: request.controlledActionText }),
+        });
+      if (request.controlledActorId && request.intentions?.length) {
+        if (
+          request.phase === "resolution" &&
+          request.intentions.every((member) => !member.actionText)
+        )
+          return response({
+            ...proposal,
+            resolvedUntil: request.at,
+            wakeups: [{ actorId: place, at: request.at + 1, mode: "intent" }],
+          });
+        if (pausePlay && !playInterrupted) {
+          playInterrupted = true;
+          return response({ type: "pause", reason: "区間を保存して保留した" });
+        }
+        const human = request.intentions.find(
+          (member) => member.actorId === request.controlledActorId,
+        );
+        const from = human ? request.controlledActorId : place,
+          to = human ? place : request.controlledActorId;
+        return response({
+          ...proposal,
+          changes: {
+            ...empty(),
+            edges: [
+              {
+                id: randomUUID(),
+                kind: "effect",
+                source: from,
+                target: to,
+                period: { from: request.at, until: proposal.resolvedUntil },
+              },
+              {
+                id: randomUUID(),
+                kind: "see",
+                source: to,
+                target: from,
+                text: human ? human.actionText : "本人に届いた応答",
+                period: { from: request.at, until: proposal.resolvedUntil },
+              },
+            ],
+          },
+          wakeups:
+            human && omitReceiverWake
+              ? []
+              : [
+                  {
+                    actorId: to,
+                    at: proposal.resolvedUntil + 1,
+                    mode: "intent",
+                  },
+                ],
+        });
+      }
       if (request.phase === "observation" && observationWake)
         return response({
           ...proposal,
@@ -118,11 +209,15 @@ async function fixture(pause = false, observationWake = false) {
           },
         });
       }
-      if (request.phase === "interaction") {
-        actions.push(request.actionText);
+      if (request.phase === "interaction" || request.phase === "resolution") {
+        actions.push(
+          ...(request.intentions ?? [{ actionText: request.actionText }]).map(
+            (item) => item.actionText,
+          ),
+        );
         proposal.wakeups.push({
           actorId: actor,
-          at: request.until,
+          at: proposal.resolvedUntil,
           mode: "resolve",
         });
       }
@@ -155,7 +250,17 @@ async function fixture(pause = false, observationWake = false) {
   ids.push(id);
   await runtime.tick(id);
   worlds.push((await runtime.get(id)).world_id!);
-  return { id, runtime, agent, transport, actor, place, actions };
+  return {
+    id,
+    runtime,
+    agent,
+    transport,
+    actor,
+    place,
+    actions,
+    intents,
+    packets,
+  };
 }
 beforeAll(async () => {
   await databases.verify();
@@ -163,7 +268,10 @@ beforeAll(async () => {
   await databases.queue.start();
 });
 afterAll(async () => {
-  for (const name of queues) await databases.queue.deleteQueue(name);
+  for (const name of queues) {
+    await databases.queue.deleteQueue(name);
+    await databases.queue.deleteQueue(`${name}-play`);
+  }
   await databases.postgres.query(
     "DELETE FROM construction_log WHERE construction_id=ANY($1)",
     [ids],
@@ -219,7 +327,7 @@ test("受付した構築区間を独立したpg-bossワーカーが取得して�
       async () => {
         expect((await scene.runtime.get(scene.id)).state).toBe("ready");
       },
-      { timeout: 10000, interval: 100 },
+      { timeout: 30000, interval: 100 },
     );
     expect((await scene.runtime.get(scene.id)).at).toBe(10000);
     const records = (await scene.runtime.report(scene.id)).records;
@@ -229,6 +337,7 @@ test("受付した構築区間を独立したpg-bossワーカーが取得して�
     expect(scene.actions).toHaveLength(1);
   } finally {
     await databases.queue.offWork(scene.runtime.queueName);
+    await databases.queue.offWork(`${scene.runtime.queueName}-play`);
   }
 });
 
@@ -250,6 +359,164 @@ test("知覚の更新で生じた未処理の作用を区間の次へ保持す�
     (await scene.runtime.report(scene.id)).records.some((record) =>
       record.result.wakeups.some((work) => work.actorId === scene.place),
     ),
+  ).toBe(true);
+});
+
+test("同時刻の意図をそろえ、NPCの反応を経て人間へ操作を返す", async () => {
+  const scene = await fixture();
+  await scene.runtime.command(scene.id, "finish");
+  await scene.runtime.command(scene.id, "join");
+  await scene.runtime.tick(scene.id);
+  const joined = await scene.runtime.get(scene.id),
+    human = joined.participant_id!;
+  const previous = "継続中の意図を保持する";
+  await databases.postgres.query(
+    "UPDATE world_construction SET agenda=$2 WHERE id=$1",
+    [
+      scene.id,
+      JSON.stringify([
+        { id: randomUUID(), at: 0, mode: "intent", actorId: scene.place },
+        {
+          id: randomUUID(),
+          at: 0,
+          mode: "resolve",
+          actorId: scene.actor,
+          actionText: previous,
+        },
+      ]),
+    ],
+  );
+  const actionText = "近くの相手へ声をかける。\n返答を待つ。";
+  await scene.runtime.play(scene.id, actionText);
+  for (
+    let count = 0;
+    count < 10 && (await scene.runtime.get(scene.id)).state === "playing";
+    count++
+  )
+    await scene.runtime.tick(scene.id);
+  const row = await scene.runtime.get(scene.id);
+  expect(row.state).toBe("finished");
+  expect(row.at).toBeGreaterThan(0);
+  const first = scene.packets[0]!;
+  expect(first.until).toBeUndefined();
+  expect(new Set(first.intentions.map((member) => member.actorId)).size).toBe(
+    3,
+  );
+  expect(first.intentions).toContainEqual({
+    actorId: human,
+    actionText,
+    continuing: false,
+  });
+  expect(first.intentions).toContainEqual({
+    actorId: scene.actor,
+    actionText: previous,
+    continuing: true,
+  });
+  expect(scene.intents).not.toContain(human);
+  expect(scene.intents.filter((actor) => actor === scene.place)).toHaveLength(
+    2,
+  );
+  expect(
+    (await scene.agent.view(row.world_id!, human, row.at)).observations.map(
+      (item) => item.text,
+    ),
+  ).toContain("本人に届いた応答");
+});
+
+test("人間の行動を途中保留から再開し、既に形成したNPCの意図を再生成しない", async () => {
+  const scene = await fixture(false, false, true);
+  await scene.runtime.command(scene.id, "finish");
+  await scene.runtime.command(scene.id, "join");
+  await scene.runtime.tick(scene.id);
+  const joined = await scene.runtime.get(scene.id),
+    human = joined.participant_id!;
+  await databases.postgres.query(
+    "UPDATE world_construction SET agenda=$2 WHERE id=$1",
+    [
+      scene.id,
+      JSON.stringify([
+        { id: randomUUID(), at: 0, mode: "intent", actorId: scene.place },
+      ]),
+    ],
+  );
+  const actionText = "相手へ問いかける";
+  await scene.runtime.play(scene.id, actionText);
+  await expect(scene.runtime.tick(scene.id)).rejects.toThrow(
+    "区間を保存して保留した",
+  );
+  expect((await scene.runtime.get(scene.id)).state).toBe("play_paused");
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT state FROM world_run WHERE construction_id=$1",
+        [scene.id],
+      )
+    ).rows[0].state,
+  ).toBe("paused");
+  const formed = scene.intents.length;
+  const stopped = await scene.runtime.get(scene.id);
+  const cached = stopped.current!.members!.find(
+    (member) => member.actorId === scene.place,
+  )!;
+  const cachedId = cached.id;
+  delete cached.actionText;
+  await databases.postgres.query(
+    "UPDATE world_construction SET current=$2 WHERE id=$1",
+    [scene.id, JSON.stringify(stopped.current)],
+  );
+  await scene.runtime.command(scene.id, "resume");
+  expect(
+    (await scene.runtime.get(scene.id)).current!.members!.find(
+      (member) => member.actorId === scene.place,
+    )!.id,
+  ).toBe(cachedId);
+  await scene.runtime.tick(scene.id);
+  expect(scene.intents).toHaveLength(formed);
+  for (
+    let count = 0;
+    count < 10 && (await scene.runtime.get(scene.id)).state === "playing";
+    count++
+  )
+    await scene.runtime.tick(scene.id);
+  expect((await scene.runtime.get(scene.id)).state).toBe("finished");
+  expect(scene.intents).not.toContain(human);
+  expect(
+    scene.packets
+      .slice(0, 2)
+      .map(
+        (packet) =>
+          packet.intentions.find((member) => member.actorId === human)
+            ?.actionText,
+      ),
+  ).toEqual([actionText, actionText]);
+});
+
+test("起動の提案がなくても確定した作用の受け手を評価し、人間の元の意図を保持する", async () => {
+  const scene = await fixture(false, false, false, true);
+  await scene.runtime.command(scene.id, "finish");
+  await scene.runtime.command(scene.id, "join");
+  await scene.runtime.tick(scene.id);
+  const human = (await scene.runtime.get(scene.id)).participant_id!;
+  const actionText = "相手に問いかけ、応答を待つ";
+  await scene.runtime.play(scene.id, actionText);
+  for (
+    let count = 0;
+    count < 10 && (await scene.runtime.get(scene.id)).state === "playing";
+    count++
+  )
+    await scene.runtime.tick(scene.id);
+  expect((await scene.runtime.get(scene.id)).state).toBe("finished");
+  expect(scene.intents).toEqual([scene.place]);
+  expect(scene.intents).not.toContain(human);
+  const recovery = scene.packets.find(
+    (packet) => packet.phase === "resolution",
+  )!;
+  expect(recovery.triggerEdgeIds).toHaveLength(2);
+  const world = (await scene.runtime.get(scene.id)).world_id!;
+  for (const id of recovery.triggerEdgeIds!)
+    expect(await scene.agent.store.context(world).edge(id)).toBeDefined();
+  expect(
+    scene.packets.every((packet) => packet.controlledActionText === actionText),
   ).toBe(true);
 });
 
