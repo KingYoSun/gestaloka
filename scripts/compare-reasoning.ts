@@ -40,6 +40,9 @@ try {
   const model = new LlmClient(databases.postgres, {
     ...process.env,
     LLM_REASONING_EFFORT: effort,
+    DEEPSEEK_REASONING_EFFORT: effort,
+    GEMINI_REASONING_EFFORT: effort,
+    OPENAI_REASONING_EFFORT: effort,
     LLM_MAX_OUTPUT_TOKENS: String(source.request.request.max_tokens),
   });
   await model.ledger.setup();
