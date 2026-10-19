@@ -12,6 +12,7 @@ type Work = {
   mode: "schedule" | "intent" | "resolve" | "participant" | "action" | "frame";
   actorId?: string;
   actionText?: string;
+  planUntil?: number;
   observationId?: string;
   operationId?: string;
   members?: Work[];
@@ -346,6 +347,7 @@ export class WorldConstruction {
                     : "interaction",
             at: work.at,
             ...(until === undefined ? {} : { until }),
+            ...(row.state === "running" ? { activityUntil: row.target } : {}),
             rootIds: work.members?.length
               ? work.members.map((member) => member.actorId!)
               : row.root_ids,
@@ -367,6 +369,9 @@ export class WorldConstruction {
                     actorId: member.actorId!,
                     actionText: member.actionText ?? "",
                     continuing: member.mode === "resolve",
+                    ...(member.planUntil === undefined
+                      ? {}
+                      : { planUntil: member.planUntil }),
                   })),
                 }
               : {}),
@@ -437,7 +442,9 @@ export class WorldConstruction {
           member.at,
           member.id,
           member.previousActions,
+          row.state === "running" ? row.target : undefined,
         );
+        if (row.state === "running") member.planUntil = row.target;
       },
     );
     await this.#stage(row, claim);
@@ -450,15 +457,16 @@ export class WorldConstruction {
     client: pg.PoolClient,
     propagate = false,
   ) {
+    const members = row.current?.members ?? (row.current ? [row.current] : []);
     await client.query(
       `INSERT INTO construction_log(construction_id,operation_id,at,result) VALUES($1,$2,$3,$4)
        ON CONFLICT(operation_id) DO NOTHING`,
       [row.id, operationId, result.resolvedUntil, JSON.stringify(result)],
     );
     for (const wakeup of result.wakeups) {
-      const source = (
-        row.current?.members ?? (row.current ? [row.current] : [])
-      ).find((member) => member.actorId === wakeup.actorId);
+      const source = members.find(
+        (member) => member.actorId === wakeup.actorId,
+      );
       if (
         row.agenda.some(
           (entry) =>
@@ -474,8 +482,13 @@ export class WorldConstruction {
         ...(wakeup.mode === "resolve"
           ? {
               actionText: source?.actionText ?? "",
+              ...(source?.planUntil === undefined
+                ? {}
+                : { planUntil: source.planUntil }),
             }
-          : {}),
+          : source?.actionText
+            ? { previousActions: [source.actionText] }
+            : {}),
       });
     }
     if (propagate) {
@@ -492,17 +505,39 @@ export class WorldConstruction {
           (entry) => entry.actorId === receiver && entry.at === activationAt,
         );
         if (!pending) {
+          const source = members.find((member) => member.actorId === receiver);
           pending = {
             id: randomUUID(),
             at: activationAt,
             mode: "resolve",
             actorId: receiver,
-            actionText: "",
+            actionText: source?.actionText ?? "",
+            ...(source?.planUntil === undefined
+              ? {}
+              : { planUntil: source.planUntil }),
           };
           row.agenda.push(pending);
         }
         pending.triggers = [...new Set([...(pending.triggers ?? []), edge.id])];
       }
+      if (row.state === "running")
+        for (const source of members)
+          if (
+            source.planUntil !== undefined &&
+            !row.agenda.some(
+              (entry) =>
+                entry.actorId === source.actorId &&
+                entry.at === result.resolvedUntil,
+            )
+          )
+            row.agenda.push({
+              id: randomUUID(),
+              at: result.resolvedUntil,
+              actorId: source.actorId!,
+              mode: "resolve",
+              actionText: source.actionText ?? "",
+              planUntil: source.planUntil,
+            });
     }
   }
 
@@ -538,19 +573,31 @@ export class WorldConstruction {
     const members = [];
     for (const actorId of new Set(due.map((work) => work.actorId))) {
       const actions = due.filter((work) => work.actorId === actorId);
-      const selected =
-        actions.find((work) => work.mode === "action") ??
-        actions.find((work) => work.mode === "intent") ??
-        actions[0]!;
+      const selected = {
+        ...(actions.find((work) => work.mode === "action") ??
+          actions.find((work) => work.mode === "intent") ??
+          actions[0]!),
+      };
+      if (
+        row.state === "running" &&
+        selected.planUntil !== undefined &&
+        selected.planUntil <= first.at
+      ) {
+        selected.id = randomUUID();
+        selected.mode = "intent";
+        delete selected.actionText;
+        delete selected.planUntil;
+      }
       members.push({
         ...selected,
         triggers: [...new Set(actions.flatMap((work) => work.triggers ?? []))],
         previousActions: [
-          ...new Set(
-            actions
+          ...new Set([
+            ...actions.flatMap((work) => work.previousActions ?? []),
+            ...actions
               .filter((work) => work.mode === "resolve")
               .flatMap((work) => (work.actionText ? [work.actionText] : [])),
-          ),
+          ]),
         ],
       });
     }

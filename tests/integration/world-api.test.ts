@@ -85,7 +85,13 @@ const model = new DeepSeekClient(
                 kind: "see",
                 source: actor,
                 target: user.request.rootIds[0],
-                text: "自分で見た風景",
+                text: "自分で見た風景。川へ向かう人を見かけた。",
+                observation: {
+                  aspect: "風景の様子",
+                  through: user.request.at,
+                  sourceIds: [user.request.rootIds[0]],
+                  pathIds: [],
+                },
                 period: { from: user.request.at },
               },
             ],
@@ -389,6 +395,9 @@ test("管理記録と村民の知識を分離し、全件を省略せずペー�
     before = page.next;
   } while (before);
   expect(records).toHaveLength(56);
+  expect(records.map((item) => item.text)).toContain(
+    "自分で見た風景。川へ向かう人を見かけた。",
+  );
   expect(new Set(records.map((item) => item.id)).size).toBe(56);
   const reverse = (
     await app.inject({

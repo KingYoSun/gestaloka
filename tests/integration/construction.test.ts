@@ -38,6 +38,7 @@ async function fixture(
   observationWake = false,
   pausePlay = false,
   omitReceiverWake = false,
+  activityMilestone = false,
 ) {
   const budgetId = randomUUID();
   budgets.push(budgetId);
@@ -49,11 +50,22 @@ async function fixture(
   let playInterrupted = false;
   const actions: string[] = [];
   const intents: string[] = [];
+  const plans: {
+    actor: string;
+    period: { from: number; until: number } | null;
+    own: string[];
+  }[] = [];
   const packets: {
     phase: string;
     at: number;
     until?: number;
-    intentions: { actorId: string; actionText: string; continuing: boolean }[];
+    activityUntil?: number;
+    intentions: {
+      actorId: string;
+      actionText: string;
+      continuing: boolean;
+      planUntil?: number;
+    }[];
     triggerEdgeIds?: string[];
     controlledActionText?: string;
   }[] = [];
@@ -91,12 +103,18 @@ async function fixture(
         });
       if (user.observerId) {
         intents.push(user.observerId);
+        plans.push({
+          actor: user.observerId,
+          period: user.planningPeriod ?? null,
+          own: user.ownIntentions ?? [],
+        });
         return response({ actionText: "知覚した場所へ働きかけ続ける" });
       }
       const request = user.request as {
         phase: string;
         at: number;
         until?: number;
+        activityUntil?: number;
         controlledActorId?: string;
         controlledActionText?: string;
         triggerEdgeIds?: string[];
@@ -123,6 +141,9 @@ async function fixture(
           phase: request.phase,
           at: request.at,
           ...(request.until === undefined ? {} : { until: request.until }),
+          ...(request.activityUntil === undefined
+            ? {}
+            : { activityUntil: request.activityUntil }),
           intentions: request.intentions,
           ...(request.triggerEdgeIds === undefined
             ? {}
@@ -184,6 +205,21 @@ async function fixture(
                 ],
         });
       }
+      if (activityMilestone && request.phase === "schedule" && request.at === 0)
+        return response({
+          ...proposal,
+          wakeups: [{ actorId: place, at: 0, mode: "intent" }],
+        });
+      if (
+        activityMilestone &&
+        request.phase === "interaction" &&
+        request.at === 0
+      )
+        return response({
+          ...proposal,
+          resolvedUntil: WORLD_DAY_MS / 2,
+          wakeups: [{ actorId: actor, at: WORLD_DAY_MS / 2, mode: "intent" }],
+        });
       if (request.phase === "observation" && observationWake)
         return response({
           ...proposal,
@@ -260,6 +296,7 @@ async function fixture(
     place,
     actions,
     intents,
+    plans,
     packets,
   };
 }
@@ -400,6 +437,8 @@ test("同時刻の意図をそろえ、NPCの反応を経て人間へ操作を�
   expect(row.at).toBeGreaterThan(0);
   const first = scene.packets[0]!;
   expect(first.until).toBeUndefined();
+  expect(first.activityUntil).toBeUndefined();
+  expect(scene.plans.every((plan) => plan.period === null)).toBe(true);
   expect(new Set(first.intentions.map((member) => member.actorId)).size).toBe(
     3,
   );
@@ -653,4 +692,54 @@ test("確定後の構築進捗喪失を同じoperationのreceiptから復旧す�
       (record) => record.operation_id === staged!.current!.operationId,
     ),
   ).toHaveLength(1);
+});
+
+test("活動方針を節目まで継続し、重要な判断と追加期間では本人の方針を更新する", async () => {
+  const scene = await fixture(false, false, false, false, true);
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
+  expect((await reach(scene.runtime, scene.id)).at).toBe(WORLD_DAY_MS);
+  const packets = scene.packets.filter(
+    (packet) => packet.phase === "interaction",
+  );
+  expect(packets[0]).toMatchObject({ activityUntil: WORLD_DAY_MS, at: 0 });
+  expect(packets[0]!.intentions).toHaveLength(2);
+  expect(
+    packets[0]!.intentions.every((member) => member.planUntil === WORLD_DAY_MS),
+  ).toBe(true);
+  expect(packets[1]).toMatchObject({
+    at: WORLD_DAY_MS / 2,
+    activityUntil: WORLD_DAY_MS,
+  });
+  expect(
+    packets[1]!.intentions.find((member) => member.actorId === scene.place),
+  ).toMatchObject({ continuing: true, planUntil: WORLD_DAY_MS });
+  expect(scene.plans.filter((plan) => plan.actor === scene.place)).toHaveLength(
+    1,
+  );
+  const renewed = scene.plans.filter((plan) => plan.actor === scene.actor);
+  expect(renewed).toHaveLength(2);
+  expect(renewed[1]).toMatchObject({
+    period: { from: WORLD_DAY_MS / 2, until: WORLD_DAY_MS },
+    own: ["知覚した場所へ働きかけ続ける"],
+  });
+  const saved = (await scene.runtime.report(scene.id)).records;
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
+  expect((await reach(scene.runtime, scene.id)).at).toBe(WORLD_DAY_MS * 2);
+  expect(
+    scene.plans
+      .slice(-2)
+      .every(
+        (plan) =>
+          plan.period?.from === WORLD_DAY_MS &&
+          plan.period.until === WORLD_DAY_MS * 2,
+      ),
+  ).toBe(true);
+  expect(
+    scene.plans
+      .slice(-2)
+      .every((plan) => plan.own.includes("知覚した場所へ働きかけ続ける")),
+  ).toBe(true);
+  expect(
+    (await scene.runtime.report(scene.id)).records.slice(0, saved.length),
+  ).toEqual(saved);
 });
