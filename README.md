@@ -1,7 +1,7 @@
 # GESTALOKA v3
 
 動的な自由記述シェアワールドを構築するプロジェクトです。
-現在は開発基盤を実装しています。APIは疎通確認用HTTP/SSE、ワーカーはキューとチェックポイントの初期化、Webは起動画面までです。世界生成・試遊・通常プレイは未実装です。
+開発基盤と、CLIによる初期世界の生成・保存を実装しています。APIは疎通確認用HTTP/SSE、ワーカーはキューとチェックポイントの初期化、Webは起動画面までです。試遊・通常プレイと画面からの世界構築は未実装です。
 
 ## ローカル起動
 
@@ -29,6 +29,24 @@ API・ワーカー・Webは、それぞれ `pnpm --filter @gestaloka/api dev`、
 - `packages/server`: サーバー用のDB・キュー・チェックポイント接続。
 
 `pnpm generate` は公開Zodスキーマを登録したFastifyからOpenAPIを取得し、openapi-typescriptでHTTPクライアント型を生成します。OpenAPIやクライアント型は直接編集しません。SSEのデータも公開Zodスキーマで実行時検証します。現在の疎通用SSEは一つのメッセージで終了し、世界更新の再送契約はまだ含みません。
+
+## DeepSeekによる初期生成
+
+`.env` に `DEEPSEEK_API_KEY` を設定します。指定バージョンDeepSeek-V4.1-Flash-1017のAPI識別子は `deepseek-flash` です。接続先は `https://api.deepseek.com` を使います。
+
+```powershell
+pnpm llm:probe
+pnpm world:generate --prompt examples/village.txt
+pnpm world:generate --resume <runId>
+```
+
+初期入力はファイルから読み込み、エンジン内の固定設定にはしません。生成候補の構造・接続を検証し、Neo4jへの確定とPostgreSQLの構築記録・LangGraphチェックポイントを関連づけます。`ready` はT0の成立を表し、管理者による世界構築完了とは区別します。再取得だけでは生成や観測を再実行しません。構造検査の成功は意味的な整合性の証明ではありません。
+
+`LLM_BUDGET_ID` が実測全体の費用を集計し、既定の上限は今回承認された40ドルです。PostgreSQLで送信前の予約と応答後の精算を行い、再開・別プロセスでも共有します。単価は2026-10-19に確認したFlashのピーク料金を使うため、表示額は請求額そのものではなく上限見積です。応答喪失時は予約を残し、同じ呼出しIDを自動再送しません。上限や応答未確定による停止は実行上の保留であり、世界内の失敗ではありません。
+
+1回の最大出力は接続確認で16,384トークン、初期生成で65,536トークンです。`LLM_MAX_OUTPUT_TOKENS` で設定でき、予約額にも反映します。キーと内部推論は実測記録へ保存しません。サーバー側の入出力・使用量・遅延はPostgreSQL、生成の確認記録はローカルの `artifacts/evaluations/` に保存します。
+
+実測結果は [初期生成の確認記録](documents/evaluations/deepseek-initial-world-2026-10-19.md) を参照してください。
 
 ## 検証
 

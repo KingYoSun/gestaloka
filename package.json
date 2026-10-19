@@ -8,6 +8,8 @@
   },
   "scripts": {
     "env:init": "node scripts/init-env.mjs",
+    "llm:probe": "pnpm build:server && node --env-file=.env --import tsx scripts/probe-model.ts",
+    "world:generate": "pnpm build:server && node --env-file=.env --import tsx scripts/generate-world.ts",
     "dev": "pnpm build:server && pnpm --parallel --filter './apps/*' dev",
     "build:server": "tsc -b packages/contracts packages/server apps/api apps/worker",
     "build": "pnpm build:server && pnpm --filter @gestaloka/web build",
@@ -48,6 +50,7 @@
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.2",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "zod": "4.6.7"
   }
 }
