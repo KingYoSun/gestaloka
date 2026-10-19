@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Driver, ManagedTransaction } from "neo4j-driver";
+import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
 import {
   Change,
@@ -201,6 +201,35 @@ export class WorldContext {
         WHERE r.worldId=$worldId AND r.validFrom>=$from AND r.validFrom<=$through
         RETURN r.data AS data ORDER BY r.validFrom,r.id`,
         { worldId: this.worldId, id, from, through },
+      );
+      return result.records.map((row) =>
+        WorldEdge.parse(JSON.parse(row.get("data"))),
+      );
+    });
+  }
+
+  async historyPage(
+    id: string,
+    kind: "see" | "interpret",
+    through: number,
+    before?: { from: number; id: string },
+  ) {
+    z.uuid().parse(id);
+    z.enum(["see", "interpret"]).parse(kind);
+    return this.#read(relationKey(id, kind, "out"), async (tx) => {
+      const result = await tx.run(
+        `MATCH(n:WorldNode {worldId:$worldId,id:$id})-[r:${kind}]->()
+         WHERE r.worldId=$worldId AND r.validFrom<=$through
+         AND ($before IS NULL OR r.validFrom<$before OR (r.validFrom=$before AND r.id<$cursor))
+         RETURN r.data AS data ORDER BY r.validFrom DESC,r.id DESC LIMIT $limit`,
+        {
+          worldId: this.worldId,
+          id,
+          through,
+          before: before?.from ?? null,
+          cursor: before?.id ?? null,
+          limit: int(50),
+        },
       );
       return result.records.map((row) =>
         WorldEdge.parse(JSON.parse(row.get("data"))),

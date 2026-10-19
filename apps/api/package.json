@@ -8,11 +8,12 @@
     "start": "node --env-file-if-exists=../../.env dist/main.js"
   },
   "dependencies": {
-    "@gestaloka/contracts": "workspace:*",
-    "@gestaloka/server": "workspace:*",
+    "@fastify/cookie": "11.1.3",
     "@fastify/sse": "0.6.1",
     "@fastify/swagger": "9.9.2",
     "@fastify/type-provider-zod": "1.0.1",
+    "@gestaloka/contracts": "workspace:*",
+    "@gestaloka/server": "workspace:*",
     "fastify": "5.12.7"
   }
 }

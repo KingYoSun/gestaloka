@@ -29,6 +29,7 @@ export type Construction = {
   error: string | null;
 };
 const time = z.number().int().nonnegative().safe();
+export class ConstructionStateError extends Error {}
 
 export class WorldConstruction {
   constructor(
@@ -62,7 +63,11 @@ export class WorldConstruction {
     });
   }
 
-  async #transaction<T>(action: (client: pg.PoolClient) => Promise<T>) {
+  async #transaction<T>(
+    action: (client: pg.PoolClient) => Promise<T>,
+    existing?: pg.PoolClient,
+  ) {
+    if (existing) return action(existing);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -87,7 +92,7 @@ export class WorldConstruction {
     );
   }
 
-  async create(prompt: string) {
+  async create(prompt: string, existing?: pg.PoolClient) {
     z.string().min(1).parse(prompt);
     return this.#transaction(async (client) => {
       const id = await this.builder.create(prompt, client);
@@ -97,7 +102,7 @@ export class WorldConstruction {
       );
       await this.#enqueue(client, id);
       return id;
-    });
+    }, existing);
   }
 
   async get(
@@ -119,19 +124,24 @@ export class WorldConstruction {
     id: string,
     command: "advance" | "resume" | "finish" | "join",
     duration?: number,
+    existing?: pg.PoolClient,
   ) {
     return this.#transaction(async (client) => {
       const row = await this.get(id, client, true);
       if (command === "advance") {
         if (row.state !== "ready")
-          throw new Error("区切りに到達した構築セッションを指定してください");
+          throw new ConstructionStateError(
+            "区切りに到達した構築セッションを指定してください",
+          );
         time.positive().parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
         row.agenda.push({ id: randomUUID(), at: row.at, mode: "schedule" });
       } else if (command === "resume") {
         if (row.state !== "paused")
-          throw new Error("保留中の構築セッションを指定してください");
+          throw new ConstructionStateError(
+            "保留中の構築セッションを指定してください",
+          );
         row.state = row.world_id
           ? row.current?.mode === "participant"
             ? "joining"
@@ -144,7 +154,9 @@ export class WorldConstruction {
           row.current.id = randomUUID();
       } else if (command === "finish") {
         if (row.state !== "ready")
-          throw new Error("指定時刻へ到達してから構築を完了してください");
+          throw new ConstructionStateError(
+            "指定時刻へ到達してから構築を完了してください",
+          );
         row.state = "finished";
         row.agenda = row.agenda.filter(
           (work) => work.actorId !== row.actor_id || work.mode !== "intent",
@@ -152,7 +164,9 @@ export class WorldConstruction {
       } else {
         if (row.participant_id) return row;
         if (row.state !== "finished")
-          throw new Error("世界構築の完了後に参加してください");
+          throw new ConstructionStateError(
+            "世界構築の完了後に参加してください",
+          );
         row.state = "joining";
         row.current = { id: randomUUID(), at: row.at, mode: "participant" };
       }
@@ -161,7 +175,7 @@ export class WorldConstruction {
       await this.#save(row, client);
       if (row.state !== "finished") await this.#enqueue(client, id);
       return row;
-    });
+    }, existing);
   }
 
   async #save(
