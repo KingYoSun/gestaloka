@@ -1,0 +1,13 @@
+{
+  "name": "@gestaloka/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node --env-file-if-exists=../../.env dist/main.js"
+  },
+  "dependencies": {
+    "@gestaloka/server": "workspace:*"
+  }
+}

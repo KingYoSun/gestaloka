@@ -1,0 +1,15 @@
+{
+  "name": "@gestaloka/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./http": {
+      "types": "./src/http.d.ts"
+    }
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

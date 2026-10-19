@@ -1,0 +1,22 @@
+:root {
+  font-family:
+    "Helvetica Neue", "Hiragino Sans", Arial, "Noto Sans JP", Meiryo, sans-serif;
+  color: #0b2034;
+  background: #f2eadf;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 620px;
+  margin: 80px auto;
+  padding: 24px;
+}
+h1 {
+  font-size: 32px;
+  letter-spacing: 0.04em;
+}
+p {
+  font-size: 18px;
+  line-height: 2;
+}

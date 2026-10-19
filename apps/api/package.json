@@ -1,0 +1,18 @@
+{
+  "name": "@gestaloka/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node --env-file-if-exists=../../.env dist/main.js"
+  },
+  "dependencies": {
+    "@gestaloka/contracts": "workspace:*",
+    "@gestaloka/server": "workspace:*",
+    "@fastify/sse": "0.6.1",
+    "@fastify/swagger": "9.9.2",
+    "@fastify/type-provider-zod": "1.0.1",
+    "fastify": "5.12.7"
+  }
+}
