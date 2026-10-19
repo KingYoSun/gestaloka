@@ -619,7 +619,16 @@ export class WorldAgent {
           wakeup.at <= request.at &&
           !(wakeup.at === request.at && sameTimeCause))
       )
-        throw new CandidateRejected("再起動の主体・時点が不正です");
+        throw new CandidateRejected(
+          `再起動の主体・時点が不正です: ${JSON.stringify(wakeup)}。主体の種別=${actor?.kind ?? "未確認"}、要求時点=${request.at}、到達時点=${proposal.resolvedUntil}、同時点の新たな作用・受容=${sameTimeCause}。${
+            request.intentions?.some(
+              (intent) =>
+                intent.actorId === wakeup.actorId && !intent.continuing,
+            )
+              ? "この主体の形成済みの意図はintentionsに提供済みです。その意図が選んだ返答・行動は再度の意図形成を経ずに解決できます。"
+              : "同時点の起動には、この主体へ到達した作用・受容が必要です。次の契機を待つだけの意図はdeferredIntentionsで保持できます。"
+          }`,
+        );
     }
     return context.dependencies;
   }
