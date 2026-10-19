@@ -16,6 +16,7 @@ import {
   bindingScripts,
   validateBindings,
   validateConnection,
+  normalizeChange,
   type WorldEdge,
 } from "../world/model.js";
 import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
@@ -396,6 +397,13 @@ export class WorldAgent {
       (request.until !== undefined && proposal.resolvedUntil > request.until)
     )
       throw new CandidateRejected("実際の到達時点が要求区間に含まれていません");
+    try {
+      normalizeChange(proposal.changes, proposal.resolvedUntil);
+    } catch (error) {
+      throw new CandidateRejected(
+        error instanceof Error ? error.message : "invalid observation",
+      );
+    }
     const context = this.store.context(request.worldId, row.dependencies);
     for (const node of [
       ...proposal.changes.nodes,
@@ -506,6 +514,15 @@ export class WorldAgent {
         throw new CandidateRejected(
           `新規エッジのIDが既に使われています: ${edge.id}`,
         );
+      for (const id of edge.observation?.pathIds ?? []) {
+        const path =
+          proposal.changes.edges.find((item) => item.id === id) ??
+          (await context.edge(id));
+        if (path?.kind !== "effect")
+          throw new CandidateRejected(
+            `観測のpathIdsには同じ世界のeffectを指定してください: ${id}`,
+          );
+      }
     }
     for (const id of new Set(
       proposal.changes.edges.flatMap((edge) => [edge.source, edge.target]),

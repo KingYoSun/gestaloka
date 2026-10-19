@@ -382,6 +382,62 @@ test("既存の状態記述へ不完全な解釈だけを結びつけて新し�
   expect(await store.context(scene.worldId).node(duplicate.id)).toBeUndefined();
 });
 
+test.each(["受容時点", "作用経路"])(
+  "%sの不整合を確定前にモデルへ返し、修正済みの観測だけを一度確定する",
+  async (invalid) => {
+    const scene = await fixture();
+    const event = {
+      id: randomUUID(),
+      kind: "event" as const,
+      text: "箱の表面で変化が起きた",
+      period: { from: 1000 },
+    };
+    const occurrence = edge("happen", scene.object, event);
+    const received = {
+      ...edge("see", scene.actor, scene.object, "箱の表面の変化が見えた"),
+      period: { from: 1000 },
+      observation: {
+        aspect: "表面の変化",
+        through: 1000,
+        sourceIds: [scene.object.id],
+        pathIds: [] as string[],
+      },
+    };
+    const inputs: string[] = [];
+    const runtime = await agent(async (_url, options) => {
+      inputs.push(String(options?.body));
+      expect(
+        await store.context(scene.worldId).edge(received.id),
+      ).toBeUndefined();
+      const observation = { ...received.observation };
+      if (inputs.length === 1) {
+        if (invalid === "受容時点") observation.through = 1001;
+        else observation.pathIds = [occurrence.id];
+      }
+      return response(
+        proposal(changes([event], [occurrence, { ...received, observation }])),
+      );
+    });
+    const id = await runtime.create({
+      worldId: scene.worldId,
+      phase: "interaction",
+      at: 0,
+      until: 1000,
+      rootIds: [scene.actor.id],
+      actionText: "箱の表面を確かめる",
+    });
+    operations.push(id);
+    await runtime.run(id);
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]).toContain(invalid === "受容時点" ? "確定時点" : "effect");
+    expect(
+      (await runtime.view(scene.worldId, scene.actor.id, 1000)).observations,
+    ).toHaveLength(2);
+    await runtime.run(id);
+    expect(inputs).toHaveLength(2);
+  },
+);
+
 test("観測期間終了後も受容した情報を保持し、再表示で観測を追加しない", async () => {
   const scene = await fixture();
   const observation = {
