@@ -13,10 +13,11 @@ const { values, positionals } = parseArgs({
     id: { type: "string" },
     prompt: { type: "string" },
     duration: { type: "string" },
+    action: { type: "string" },
   },
 });
 const command = z
-  .enum(["create", "show", "advance", "resume", "finish", "join"])
+  .enum(["create", "show", "advance", "resume", "finish", "join", "act"])
   .parse(positionals[0]);
 const databases = connectDatabases();
 databases.queue.on("error", (error) => console.error(error));
@@ -49,7 +50,10 @@ try {
     );
   } else {
     const id = z.uuid().parse(values.id);
-    if (command !== "show")
+    if (command === "act") {
+      if (!values.action) throw new Error("--action <file> を指定してください");
+      await construction.play(id, await readFile(values.action, "utf8"));
+    } else if (command !== "show")
       await construction.command(
         id,
         command,

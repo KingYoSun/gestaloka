@@ -6,6 +6,9 @@ import {
   KnowledgePage,
   AdminPage,
   type WorldCommand,
+  type PlayerAction,
+  PlayerStatus,
+  PlayRun,
 } from "@gestaloka/contracts";
 import {
   ConstructionStateError,
@@ -61,7 +64,8 @@ export class WorldAccess {
            (OLD.state,OLD.at,OLD.target,OLD.participant_id,OLD.error) THEN
           INSERT INTO world_event(subject_id,construction_id,role,event_key)
           SELECT subject_id,construction_id,role,gen_random_uuid()::text FROM world_access
-          WHERE construction_id=NEW.id AND (role='admin' OR NEW.participant_id IS DISTINCT FROM OLD.participant_id);
+          WHERE construction_id=NEW.id AND (role='admin' OR NEW.participant_id IS DISTINCT FROM OLD.participant_id
+            OR (role='player' AND (NEW.state IN ('playing','play_paused') OR OLD.state IN ('playing','play_paused'))));
         END IF;
         RETURN NEW;
       END $$;
@@ -180,6 +184,8 @@ export class WorldAccess {
   statusData(row: Awaited<ReturnType<WorldConstruction["get"]>>) {
     return WorldStatus.parse({
       id: row.id,
+      prompt: row.initial_prompt,
+      createdAt: row.created_at.toISOString(),
       state: row.state,
       at: row.at,
       target: row.target,
@@ -238,6 +244,128 @@ export class WorldAccess {
   async status(subject: string, id: string) {
     await this.authorize(subject, id, "admin");
     return this.statusData(await this.construction.get(id));
+  }
+  async playerData(
+    row: Awaited<ReturnType<WorldConstruction["get"]>>,
+    database: Pick<pg.Pool, "query"> = this.pool,
+  ) {
+    const last = (
+      await database.query<{ id: string }>(
+        "SELECT id FROM world_run WHERE construction_id=$1 AND actor_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1",
+        [row.id, row.participant_id],
+      )
+    ).rows[0];
+    return PlayerStatus.parse({
+      id: row.id,
+      runId: last?.id ?? null,
+      at: row.at,
+      state:
+        row.state === "play_paused"
+          ? "paused"
+          : row.state === "playing"
+            ? "running"
+            : "ready",
+      error:
+        row.state === "play_paused"
+          ? "処理を保留しました。保存済みの状態から再開できます。"
+          : null,
+    });
+  }
+  async player(subject: string, id: string) {
+    const grant = await this.authorize(subject, id, "player");
+    const row = await this.construction.get(id);
+    if (grant.actor_id !== row.participant_id)
+      throw new AccessError(
+        403,
+        "ACTOR_CHANGED",
+        "操作対象を再取得してください",
+      );
+    return this.playerData(row);
+  }
+  async run(subject: string, id: string) {
+    const row = (
+      await this.pool.query<{
+        id: string;
+        construction_id: string;
+        actor_id: string;
+        action_text: string;
+        state: string;
+        started_at: string;
+        at: string;
+      }>("SELECT * FROM world_run WHERE id=$1", [id])
+    ).rows[0];
+    if (!row)
+      throw new AccessError(
+        404,
+        "RUN_NOT_FOUND",
+        "利用できる実行が見つかりません",
+      );
+    const grant = await this.authorize(subject, row.construction_id, "player");
+    if (grant.actor_id !== row.actor_id)
+      throw new AccessError(
+        404,
+        "RUN_NOT_FOUND",
+        "利用できる実行が見つかりません",
+      );
+    return PlayRun.parse({
+      id: row.id,
+      worldId: row.construction_id,
+      actionText: row.action_text,
+      startedAt: Number(row.started_at),
+      at: Number(row.at),
+      state: row.state,
+      error:
+        row.state === "paused"
+          ? "処理を保留しました。保存済みの状態から再開できます。"
+          : null,
+    });
+  }
+  async play(
+    subject: string,
+    id: string,
+    input: z.infer<typeof PlayerAction> | { requestId: string; resume: true },
+  ) {
+    await this.authorize(subject, id, "player");
+    return this.#accept(
+      subject,
+      input.requestId,
+      { operation: "play", id, ...input },
+      async (client) => {
+        const grant = await this.authorize(subject, id, "player", client);
+        const current = await this.construction.get(id, client, true);
+        if (grant.actor_id !== current.participant_id)
+          throw new AccessError(
+            403,
+            "ACTOR_CHANGED",
+            "操作対象を再取得してください",
+          );
+        try {
+          if ("resume" in input) {
+            if (current.state !== "play_paused")
+              throw new ConstructionStateError(
+                "保留中の行動を指定してください",
+              );
+            return this.playerData(
+              await this.construction.command(id, "resume", undefined, client),
+              client,
+            );
+          }
+          return this.playerData(
+            await this.construction.play(
+              id,
+              input.actionText,
+              client,
+              input.requestId,
+            ),
+            client,
+          );
+        } catch (error) {
+          if (error instanceof ConstructionStateError)
+            throw new AccessError(409, "STATE_CONFLICT", error.message);
+          throw error;
+        }
+      },
+    );
   }
   async list(subject: string) {
     return (

@@ -1,7 +1,7 @@
 # GESTALOKA v3
 
 動的な自由記述シェアワールドを構築するプロジェクトです。
-開発基盤、共通の世界更新Agent、時間指定の構築・別村民の生成と管理APIを実装しています。ワーカーは構築ジョブを実行し、APIは管理操作・権限確認・村民の公開知識・進捗再送を扱います。Webは起動画面までで、人間の自由記述行動と画面の接続は未実装です。
+開発基盤、共通の世界更新Agent、時間指定の構築・別村民の生成、管理APIと人間の自由記述行動を実装しています。ワーカーは構築と通常行動を別の取得枠で実行し、APIは権限確認・村民の公開知識・進捗再送を扱います。Webは起動画面までです。
 
 ## ローカル起動
 
@@ -72,10 +72,13 @@ pnpm world:build show --id <constructionId>
 pnpm world:build advance --id <constructionId> --duration 30000
 pnpm world:build finish --id <constructionId>
 pnpm world:build join --id <constructionId>
+pnpm world:build act --id <constructionId> --action examples/greet-neighbor.txt
 pnpm world:build resume --id <constructionId>
 ```
 
 `advance`はreadyの区切りから、ミリ秒で指定した期間を追加します。`finish`はその区切りで構築を完了し、`join`は別の新しい村民を共通Agentで生成します。試遊村民の存在・履歴・所有・知識は残ります。`resume`はpausedの処理を再開します。目標未到達の保留を、構築完了として扱いません。
+
+`act`は参加した人間の村民へファイルの行動文を渡します。期間は指定せず、NPCの判断を必要に応じて挟み、次に人間の判断が必要になる場面まで進めます。人間の次の意図をAIで形成しません。継続中の活動は保持し、途中保留の再開にも同じ保存記録を使います。
 
 取得結果は到達時刻・目標時刻・主な処理記録・未処理の起動を含む管理情報です。区間をまたぐ継続と参加の契約は [ADR-003](documents/adr/ADR-003-construction-lifecycle.md)、実行結果と時間配分の残る問題は [構築の実測記録](documents/evaluations/construction-2026-10-19.md) を参照してください。
 
@@ -85,7 +88,13 @@ APIとワーカーを起動し、同じオリジンから利用します。初�
 
 `/api/worlds` で自分の世界を作成・取得し、`/api/worlds/:id/commands` で期間追加・再開・完了・参加を受け付けます。受付とpg-boss投入は同時保存され、202の後はワーカーで実行します。`/records` は管理者向けの報告、`/knowledge` は割り当てた村民本人の観測・解釈だけを返します。履歴は1ページ50件で、nextから続きを取得できます。
 
+`/api/worlds/:id/actions` は自由記述のactionTextとrequestIdを受け付けます。操作対象はサーバー側の割当で決め、actorIdの自己申告は受け付けません。受付結果のrunIdから `/api/runs/:id` で本人の入力・到達時刻・処理状態を取得でき、`/api/worlds/:id/play/resume` で途中保留を再開できます。入力の受付と世界内の成功は区別します。
+
 `/api/worlds/:id/events?role=admin` または `role=player` は、現在の権限を確認して更新通知を配信します。Last-Event-IDによる再送に対応し、別の主体・世界・ロールのcursorは拒否します。取得や再接続だけで世界内の観測は追加しません。CLIで作った世界へブラウザーの権限を自動付与しません。詳細は [ADR-004](documents/adr/ADR-004-world-api.md) を参照してください。
+
+同時刻の意図と人間への操作返却は [ADR-005](documents/adr/ADR-005-human-play.md)、待ち時間と推論量の比較は [通常行動の実測](documents/evaluations/human-play-2026-10-19.md) を参照してください。既定の推論量はhighです。`LLM_REASONING_EFFORT`でnone・low・high・maxを指定できます。同じ呼出しIDの保存済み設定と応答は保持し、新しい呼出しから設定を適用します。
+
+`pnpm llm:compare --operation <operationId> --effort low` は完了済みの最終入力で候補を再生成し、構造と時間・使用量を記録します。差分を世界へ確定せず、同じ予算で通算します。一つの候補の構造検査を、意味的な品質や通常プレイ全体の保証にはしません。
 
 ## 検証
 
@@ -101,7 +110,7 @@ pnpm test:e2e
 
 統合テストは実DBを使い、Neo4jの再接続後の読取、PostgreSQLトランザクション内のキュー投入のロールバック、LangGraphの中断・再開と保存済みtaskの再利用を確認します。テストは専用レコードとキューを作り、世界モデルの正本を作りません。ブラウザーテストは実APIへ接続し、HTTPと標準EventSourceの疎通を確認します。
 
-物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、時間配分の調整、公開画面と人間の通常操作への接続は後続実装です。
+物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、性能改善後の再評価と公開画面の接続を続けています。
 
 ## 設計資料
 

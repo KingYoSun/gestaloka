@@ -33,6 +33,8 @@ export const WorldCommand = z.discriminatedUnion("command", [
 ]);
 export const WorldStatus = z.object({
   id: z.uuid(),
+  prompt: z.string(),
+  createdAt: z.iso.datetime(),
   state: z.enum([
     "generating",
     "ready",
@@ -40,6 +42,8 @@ export const WorldStatus = z.object({
     "paused",
     "finished",
     "joining",
+    "playing",
+    "play_paused",
   ]),
   at: z.number().int().nonnegative().safe(),
   target: z.number().int().nonnegative().safe(),
@@ -78,4 +82,24 @@ export const WorldEvent = z.object({
   id: z.string(),
   worldId: z.uuid(),
   type: z.literal("invalidate"),
+});
+export const PlayerAction = z
+  .object({ requestId: z.uuid(), actionText: z.string().min(1) })
+  .strict();
+export const RequestIdentity = z.object({ requestId: z.uuid() }).strict();
+export const PlayerStatus = z.object({
+  id: z.uuid(),
+  runId: z.uuid().nullable(),
+  at: z.number().int().nonnegative().safe(),
+  state: z.enum(["ready", "running", "paused"]),
+  error: z.string().nullable(),
+});
+export const PlayRun = z.object({
+  id: z.uuid(),
+  worldId: z.uuid(),
+  actionText: z.string(),
+  startedAt: z.number().int().nonnegative().safe(),
+  at: z.number().int().nonnegative().safe(),
+  state: z.enum(["ready", "running", "paused"]),
+  error: z.string().nullable(),
 });
