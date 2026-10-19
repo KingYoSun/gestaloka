@@ -116,6 +116,39 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
   await page.getByRole("link", { name: /村民の画面を開く/ }).click();
   const section = page.getByRole("region", { name: "あなたの記録" }),
     scroll = page.getByLabel("記録の閲覧領域");
+  async function settled() {
+    await scroll.evaluate(async (element) => {
+      let previous = "",
+        stable = 0;
+      while (stable < 3) {
+        await new Promise(requestAnimationFrame);
+        const state =
+          `${element.scrollTop}:${element.scrollHeight}:` +
+          [...element.querySelectorAll<HTMLElement>("article")]
+            .map(
+              (row) =>
+                `${row.dataset.recordId}:${row.getBoundingClientRect().top}`,
+            )
+            .join("|");
+        stable = state === previous ? stable + 1 : 0;
+        previous = state;
+      }
+    });
+  }
+  async function older() {
+    const loaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname.endsWith("/knowledge") && url.searchParams.has("before")
+      );
+    });
+    await page
+      .getByRole("button", { name: "古い記録を読む", exact: true })
+      .click();
+    await loaded;
+    await expect(scroll).toHaveAttribute("aria-busy", "false");
+    await settled();
+  }
   await expect
     .poll(() => section.getAttribute("data-retained-records"))
     .toBe("50");
@@ -123,9 +156,7 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
     await scroll.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
-    await page
-      .getByRole("button", { name: "古い記録を読む", exact: true })
-      .click();
+    await older();
     await expect
       .poll(async () =>
         Number(await section.getAttribute("data-retained-records")),
@@ -142,6 +173,7 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
     await new Promise(requestAnimationFrame);
     await new Promise(requestAnimationFrame);
   });
+  await settled();
   const anchor = await scroll.evaluate((element) => {
     const top = element.getBoundingClientRect().top;
     const item = [...element.querySelectorAll("article")].find(
@@ -152,23 +184,24 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
       offset: item.getBoundingClientRect().top - top,
     };
   });
-  await page
-    .getByRole("button", { name: "古い記録を読む", exact: true })
-    .click();
+  await older();
   await expect(
     page.getByText("記録を確認しています", { exact: true }),
   ).toBeHidden();
   await expect
-    .poll(() => scroll.locator(`[data-record-id="${anchor.id}"]`).count())
-    .toBe(1);
-  const offset = await scroll
-    .locator(`[data-record-id="${anchor.id}"]`)
-    .evaluate(
-      (element) =>
-        element.getBoundingClientRect().top -
-        element.parentElement!.parentElement!.getBoundingClientRect().top,
-    );
-  expect(Math.abs(offset - anchor.offset)).toBeLessThan(5);
+    .poll(() =>
+      scroll.evaluate((container, saved) => {
+        const row = container.querySelector(`[data-record-id="${saved.id}"]`);
+        return row
+          ? Math.abs(
+              row.getBoundingClientRect().top -
+                container.getBoundingClientRect().top -
+                saved.offset,
+            )
+          : Infinity;
+      }, anchor),
+    )
+    .toBeLessThan(5);
   expect(
     Number(await section.getAttribute("data-retained-records")),
   ).toBeLessThanOrEqual(200);

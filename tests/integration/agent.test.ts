@@ -438,3 +438,64 @@ test("引継ぎ後の古いワーカーは進捗を保存できず、同じモ�
   expect((await runtime.run(id)).resolvedUntil).toBe(1000);
   expect(transport).toHaveBeenCalledTimes(1);
 });
+
+test("作用の受け手は同時点で判断へ進め、因果のない同時点再起動は拒否する", async () => {
+  const scene = await fixture();
+  const incoming = edge("effect", scene.actor, scene.object);
+  const reception = edge(
+    "see",
+    scene.object,
+    scene.actor,
+    "届いた作用を受容した",
+  );
+  let call = 0;
+  const transport = vi.fn<typeof fetch>().mockImplementation(async () => {
+    call++;
+    if (call === 1)
+      return response(
+        proposal(changes([], [incoming, reception]), {
+          resolvedUntil: 0,
+          wakeups: [{ actorId: scene.object.id, at: 0, mode: "intent" }],
+        }),
+      );
+    if (call <= 3)
+      return response(
+        proposal(changes(), {
+          resolvedUntil: 0,
+          wakeups: [{ actorId: scene.object.id, at: 0, mode: "intent" }],
+        }),
+      );
+    return response(proposal(changes(), { resolvedUntil: 1 }));
+  });
+  const runtime = await agent(transport);
+  const request = {
+    worldId: scene.worldId,
+    phase: "interaction" as const,
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id],
+    actorId: scene.actor.id,
+    actionText: "相手へ働きかける",
+  };
+  const sent = await runtime.create(request);
+  operations.push(sent);
+  expect((await runtime.run(sent)).wakeups[0]?.at).toBe(0);
+  const received = await runtime.create({
+    ...request,
+    phase: "resolution",
+    rootIds: [scene.object.id],
+    actorId: scene.object.id,
+    actionText: "",
+    triggerEdgeIds: [incoming.id, reception.id],
+  });
+  operations.push(received);
+  expect((await runtime.run(received)).wakeups[0]?.at).toBe(0);
+  expect(transport).toHaveBeenCalledTimes(2);
+  const uncaused = await runtime.create({
+    ...request,
+    actionText: "同じ時点の再起動を要求する",
+  });
+  operations.push(uncaused);
+  expect((await runtime.run(uncaused)).resolvedUntil).toBe(1);
+  expect(transport).toHaveBeenCalledTimes(4);
+});
