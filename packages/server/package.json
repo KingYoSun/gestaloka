@@ -1,0 +1,19 @@
+{
+  "name": "@gestaloka/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "dependencies": {
+    "@langchain/core": "1.2.18",
+    "@langchain/langgraph": "1.5.1",
+    "@langchain/langgraph-checkpoint": "1.2.0",
+    "@langchain/langgraph-checkpoint-postgres": "1.1.0",
+    "neo4j-driver": "6.2.0",
+    "pg": "8.23.1",
+    "pg-boss": "12.38.0",
+    "zod": "4.6.7"
+  }
+}

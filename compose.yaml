@@ -1,0 +1,39 @@
+name: gestaloka-v3
+services:
+  postgres:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_DB: gestaloka
+      POSTGRES_USER: gestaloka
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run pnpm env:init}
+    ports:
+      - "127.0.0.1:25432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gestaloka", "-d", "gestaloka"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  neo4j:
+    image: neo4j:5.26-community@sha256:0a6e7aedf54a531f76286032d4365ead65b11cca05e4a15cdf23b8e53d6db02b
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Run pnpm env:init}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 128m
+    ports:
+      - "127.0.0.1:27687:7687"
+      - "127.0.0.1:27474:7474"
+    volumes:
+      - graph-data:/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", 'cypher-shell -u neo4j -p "$${NEO4J_AUTH#*/}" "RETURN 1"']
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+volumes:
+  postgres-data:
+  graph-data:

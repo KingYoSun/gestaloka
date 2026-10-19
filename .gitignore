@@ -1,2 +1,8 @@
 AGENTS.local.md
 .codegraph/
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+test-results/
+playwright-report/
