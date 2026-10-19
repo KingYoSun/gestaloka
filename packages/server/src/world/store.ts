@@ -7,12 +7,16 @@ import {
   WorldEdge,
   WorldNode,
   validateConnection,
+  bindingScripts,
+  validateBindings,
+  normalizeChange,
+  requestedChange,
 } from "./model.js";
 
 export { Change, RelationKind, WorldEdge, WorldNode } from "./model.js";
 type Direction = "in" | "out";
 type Lease = { worldId: string; runId: string; generation: number };
-type Dependency = { key: string; version: number };
+export type Dependency = { key: string; version: number };
 export type Receipt = {
   commitId: string;
   runId: string;
@@ -30,6 +34,10 @@ const edgeKeys = (edge: WorldEdge) => [
   edgeKey(edge.id),
   relationKey(edge.source, edge.kind, "out"),
   relationKey(edge.target, edge.kind, "in"),
+];
+const observationKeys = (edge: WorldEdge) => [
+  ...(edge.observation?.sourceIds ?? []).map((id) => `source:${id}`),
+  ...(edge.observation?.pathIds ?? []).map(edgeKey),
 ];
 
 async function version(tx: ManagedTransaction, worldId: string, key: string) {
@@ -55,20 +63,43 @@ export class WorldContext {
   constructor(
     readonly driver: Driver,
     readonly worldId: string,
+    dependencies: readonly Dependency[] = [],
   ) {
     z.uuid().parse(worldId);
+    for (const dependency of dependencies)
+      this.#dependencies.set(dependency.key, dependency.version);
   }
   get dependencies(): Dependency[] {
     return [...this.#dependencies].map(([key, version]) => ({ key, version }));
   }
 
-  async #read<T>(key: string, query: (tx: ManagedTransaction) => Promise<T>) {
+  async validate() {
+    const session = this.driver.session();
+    try {
+      await session.executeRead(async (tx) => {
+        for (const dependency of this.dependencies) {
+          if (
+            (await version(tx, this.worldId, dependency.key)) !==
+            dependency.version
+          )
+            throw new WorldConflict("保存済みの文脈が変わりました");
+        }
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  async #read<T>(
+    key: string,
+    query: (tx: ManagedTransaction, revision: number) => Promise<T>,
+  ) {
     const session = this.driver.session();
     try {
       return await session.executeRead(async (tx) => {
         // Capture the revision before the data read; a concurrent write then invalidates the context.
         const revision = await version(tx, this.worldId, key);
-        const data = await query(tx);
+        const data = await query(tx, revision);
         const prior = this.#dependencies.get(key);
         if (prior !== undefined && prior !== revision)
           throw new WorldConflict("文脈の取得中に依存が変わりました");
@@ -111,29 +142,117 @@ export class WorldContext {
     });
   }
 
+  async latestTime(id: string) {
+    return this.#read(nodeKey(id), async (tx) => {
+      const result = await tx.run(
+        "MATCH (n:WorldNode {worldId:$worldId,id:$id}) RETURN n.knownFrom AS at",
+        { worldId: this.worldId, id },
+      );
+      return result.records[0]
+        ? Number(result.records[0].get("at"))
+        : undefined;
+    });
+  }
+
   async relations(
     id: string,
     kind: RelationKind,
     direction: Direction,
     at: number,
+    through: number = at,
   ): Promise<WorldEdge[]> {
     z.uuid().parse(id);
     RelationKind.parse(kind);
     z.enum(["in", "out"]).parse(direction);
     z.number().int().nonnegative().safe().parse(at);
+    z.number().int().min(at).safe().parse(through);
     return this.#read(relationKey(id, kind, direction), async (tx) => {
       const pattern =
         direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
       const result = await tx.run(
         `MATCH (n:WorldNode {worldId: $worldId, id: $id})
-        MATCH ${pattern} WHERE r.worldId = $worldId AND r.validFrom <= $at
+        MATCH ${pattern} WHERE r.worldId = $worldId AND r.validFrom <= $through
         AND (r.validTo IS NULL OR $at < r.validTo) RETURN r.data AS data ORDER BY r.id`,
-        { worldId: this.worldId, id, at },
+        { worldId: this.worldId, id, at, through },
       );
       return result.records.map((row) =>
         WorldEdge.parse(JSON.parse(row.get("data"))),
       );
     });
+  }
+
+  async history(
+    id: string,
+    kind: RelationKind,
+    direction: Direction,
+    through: number,
+    from = 0,
+  ): Promise<WorldEdge[]> {
+    z.uuid().parse(id);
+    RelationKind.parse(kind);
+    z.enum(["in", "out"]).parse(direction);
+    z.number().int().nonnegative().safe().parse(from);
+    z.number().int().min(from).safe().parse(through);
+    return this.#read(relationKey(id, kind, direction), async (tx) => {
+      const pattern =
+        direction === "out" ? `(n)-[r:${kind}]->()` : `(n)<-[r:${kind}]-()`;
+      const result = await tx.run(
+        `MATCH(n:WorldNode {worldId:$worldId,id:$id}) MATCH ${pattern}
+        WHERE r.worldId=$worldId AND r.validFrom>=$from AND r.validFrom<=$through
+        RETURN r.data AS data ORDER BY r.validFrom,r.id`,
+        { worldId: this.worldId, id, from, through },
+      );
+      return result.records.map((row) =>
+        WorldEdge.parse(JSON.parse(row.get("data"))),
+      );
+    });
+  }
+
+  async observations(id: string, through: number) {
+    const records = [];
+    for (const edge of await this.history(id, "see", "out", through)) {
+      const basis = edge.observation;
+      let sourceChanged: boolean | null = basis?.versions ? false : null;
+      for (const [key, old] of Object.entries(basis?.versions ?? {})) {
+        const current = await this.#read(
+          key,
+          async (_tx, revision) => revision,
+        );
+        if (current !== old) sourceChanged = true;
+      }
+      records.push({
+        edge,
+        sourceChanged,
+        timeAdvanced: basis === undefined || through > basis.through,
+      });
+    }
+    return records;
+  }
+
+  async effects(id: string, from: number, through: number) {
+    const pending = [id],
+      visited = new Set<string>();
+    const result = [];
+    while (pending.length) {
+      const current = pending.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const incoming = await this.relations(
+        current,
+        "effect",
+        "in",
+        from,
+        through,
+      );
+      result.push({
+        id: current,
+        node: await this.node(current, through),
+        states: await this.relations(current, "status", "out", from, through),
+        incoming,
+      });
+      pending.push(...incoming.map((edge) => edge.source));
+    }
+    return result;
   }
 }
 
@@ -156,8 +275,8 @@ export class WorldStore {
     );
   }
 
-  context(worldId: string) {
-    return new WorldContext(this.driver, worldId);
+  context(worldId: string, dependencies: readonly Dependency[] = []) {
+    return new WorldContext(this.driver, worldId, dependencies);
   }
 
   async claim(worldId: string, runId: string): Promise<Lease> {
@@ -193,7 +312,7 @@ export class WorldStore {
     context: WorldContext,
     input: { commitId: string; at: number; changes: unknown },
   ): Promise<Receipt> {
-    const { commitId, at, changes } = z
+    const parsed = z
       .object({
         commitId: z.uuid(),
         at: z.number().int().nonnegative().safe(),
@@ -201,11 +320,15 @@ export class WorldStore {
       })
       .strict()
       .parse(input);
+    const { commitId, at } = parsed;
+    const changes = normalizeChange(parsed.changes, at);
     if (lease.worldId !== context.worldId)
       throw new Error("異なる世界の文脈は確定できません");
     const { worldId, runId, generation } = lease;
     const hash = createHash("sha256")
-      .update(JSON.stringify({ runId, at, changes }))
+      .update(
+        JSON.stringify({ runId, at, changes: requestedChange(changes, at) }),
+      )
       .digest("hex");
     const session = this.driver.session();
     try {
@@ -280,10 +403,51 @@ export class WorldStore {
           ...changes.edges.flatMap(edgeKeys),
           ...ended.flatMap(edgeKeys),
         ]);
+        const sourceIds = new Set(
+          [...changes.nodes, ...changes.revisions].map((node) => node.id),
+        );
+        for (const edge of [...changes.edges, ...ended]) {
+          if (edge.kind !== "see" && edge.kind !== "interpret") {
+            sourceIds.add(edge.source);
+            sourceIds.add(edge.target);
+          }
+        }
+        const changedScripts = new Set([
+          ...changes.revisions
+            .filter((node) => node.kind === "script")
+            .map((node) => node.id),
+          ...[...changes.edges, ...ended]
+            .filter((edge) => edge.kind === "status" && edge.role === "about")
+            .map((edge) => edge.source),
+        ]);
+        for (const id of changedScripts) {
+          const key = relationKey(id, "status", "in");
+          dependencies.push({ key, version: await version(tx, worldId, key) });
+          const owners = await tx.run(
+            `MATCH(o:WorldNode)-[r:status {worldId:$worldId}]->(s:WorldNode {worldId:$worldId,id:$id})
+            WHERE o.worldId=$worldId AND o.kind='existence' AND r.validFrom<=$at AND (r.validTo IS NULL OR $at<r.validTo) RETURN DISTINCT o.id AS id`,
+            { worldId, id, at },
+          );
+          for (const owner of owners.records) sourceIds.add(owner.get("id"));
+        }
+        for (const edge of changes.edges)
+          if (
+            edge.kind === "status" &&
+            edge.role === "content" &&
+            changedScripts.has(edge.target)
+          )
+            sourceIds.add(edge.source);
+        for (const id of sourceIds) touched.add(`source:${id}`);
+        const bindings = bindingScripts([...changes.edges, ...ended]);
         const keys = [
           ...new Set([
             ...touched,
             ...dependencies.map((dependency) => dependency.key),
+            ...changes.edges.flatMap(observationKeys),
+            ...bindings.flatMap((binding) => [
+              relationKey(binding.id, binding.kind, "in"),
+              relationKey(binding.id, binding.kind, "out"),
+            ]),
           ]),
         ].sort();
         const versions = new Map<string, number>();
@@ -332,7 +496,11 @@ export class WorldStore {
         }
         const endpointIds = [
           ...new Set(
-            changes.edges.flatMap((edge) => [edge.source, edge.target]),
+            changes.edges.flatMap((edge) => [
+              edge.source,
+              edge.target,
+              ...(edge.observation?.sourceIds ?? []),
+            ]),
           ),
         ];
         const endpoints = await tx.run(
@@ -382,12 +550,62 @@ export class WorldStore {
             { worldId, key },
           );
         }
+        const canonicalEdges = [];
+        for (const edge of changes.edges) {
+          if (!edge.observation) {
+            canonicalEdges.push(edge);
+            continue;
+          }
+          if (edge.observation.sourceIds.some((id) => !nodes.has(id)))
+            throw new Error("観測元が同じ世界に存在しません");
+          const paths = edge.observation.pathIds;
+          if (paths.length) {
+            const found = await tx.run(
+              "MATCH()-[r:effect {worldId:$worldId}]->() WHERE r.id IN $ids RETURN r.id AS id",
+              { worldId, ids: paths },
+            );
+            if (
+              new Set(found.records.map((record) => record.get("id"))).size !==
+              paths.length
+            )
+              throw new Error("観測した作用経路が同じ世界に存在しません");
+          }
+          const snapshot = Object.fromEntries(
+            observationKeys(edge).map((key) => [
+              key,
+              versions.get(key)! + (touched.has(key) ? 1 : 0),
+            ]),
+          );
+          const canonical = {
+            ...edge,
+            observation: { ...edge.observation, versions: snapshot },
+          };
+          await tx.run(
+            "MATCH()-[r {worldId:$worldId,id:$id}]->() SET r.data=$data",
+            { worldId, id: edge.id, data: JSON.stringify(canonical) },
+          );
+          canonicalEdges.push(canonical);
+        }
+        for (const binding of bindings) {
+          const result = await tx.run(
+            `MATCH(s:WorldNode {worldId:$worldId,id:$id})-[r:${binding.kind}]-(n:WorldNode)
+            WHERE r.worldId=$worldId RETURN DISTINCT r.data AS data`,
+            { worldId, id: binding.id },
+          );
+          validateBindings(
+            binding.kind,
+            binding.id,
+            result.records.map((record) =>
+              WorldEdge.parse(JSON.parse(record.get("data"))),
+            ),
+          );
+        }
         const receipt: Receipt = {
           commitId,
           runId,
           at,
           committedAt: new Date().toISOString(),
-          changes,
+          changes: { ...changes, edges: canonicalEdges },
         };
         await tx.run(
           "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data})",

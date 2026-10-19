@@ -1,0 +1,412 @@
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { connectDatabases } from "@gestaloka/server";
+import { DeepSeekClient } from "@gestaloka/server/llm";
+import {
+  WorldStore,
+  type Change,
+  type WorldNode,
+  type WorldEdge,
+} from "@gestaloka/server/world";
+import {
+  WorldAgent,
+  OperationPaused,
+  SupersededWorker,
+  type WorldProposal,
+} from "@gestaloka/server/agent";
+
+const databases = connectDatabases(),
+  store = new WorldStore(databases.graph);
+const worlds: string[] = [],
+  operations: string[] = [],
+  budgets: string[] = [];
+const node = (kind: "existence" | "script", text: string): WorldNode => ({
+  id: randomUUID(),
+  kind,
+  text,
+});
+const edge = (
+  kind: WorldEdge["kind"],
+  source: WorldNode,
+  target: WorldNode,
+  text?: string,
+  role?: "content" | "about",
+): WorldEdge => ({
+  id: randomUUID(),
+  kind,
+  source: source.id,
+  target: target.id,
+  period: { from: 0 },
+  ...(text === undefined ? {} : { text }),
+  ...(role === undefined ? {} : { role }),
+});
+const changes = (nodes: WorldNode[] = [], edges: WorldEdge[] = []): Change => ({
+  nodes,
+  edges,
+  revisions: [],
+  endEdges: [],
+});
+const proposal = (
+  delta: Change,
+  extra: Partial<WorldProposal> = {},
+): WorldProposal => ({
+  type: "propose",
+  changes: delta,
+  summary: "管理者向けの処理記録",
+  resolvedUntil: 1000,
+  wakeups: [],
+  ...extra,
+});
+const response = (content: unknown) =>
+  new Response(
+    JSON.stringify({
+      id: randomUUID(),
+      model: "deepseek-flash",
+      choices: [
+        {
+          finish_reason: "stop",
+          message: { content: JSON.stringify(content) },
+        },
+      ],
+      usage: {
+        prompt_tokens: 1,
+        completion_tokens: 1,
+        prompt_cache_hit_tokens: 0,
+        prompt_cache_miss_tokens: 1,
+      },
+    }),
+  );
+async function fixture() {
+  const worldId = randomUUID();
+  worlds.push(worldId);
+  const actor = node("existence", "SELF_PRIVATE"),
+    place = node("existence", "ROOT_PRIVATE"),
+    object = node("existence", "TARGET_PRIVATE"),
+    secret = node("script", "SECRET_FACT");
+  const lease = await store.claim(worldId, randomUUID());
+  await store.commit(lease, store.context(worldId), {
+    commitId: randomUUID(),
+    at: 0,
+    changes: changes(
+      [actor, place, object, secret],
+      [
+        {
+          ...edge("see", actor, object),
+          observation: {
+            aspect: "箱の表面が見える",
+            through: 0,
+            sourceIds: [object.id],
+            pathIds: [],
+          },
+        },
+        edge("status", object, secret, undefined, "content"),
+      ],
+    ),
+  });
+  return { worldId, actor, place, object, secret };
+}
+async function agent(transport: typeof fetch) {
+  const budgetId = randomUUID();
+  budgets.push(budgetId);
+  const model = new DeepSeekClient(
+    databases.postgres,
+    { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
+    transport,
+  );
+  const runtime = new WorldAgent(
+    databases.postgres,
+    databases.graph,
+    databases.checkpointer,
+    model,
+  );
+  await runtime.setup();
+  return runtime;
+}
+beforeAll(async () => {
+  await databases.verify();
+  await store.setup();
+});
+afterAll(async () => {
+  await databases.postgres.query(
+    "DELETE FROM world_operation WHERE id=ANY($1)",
+    [operations],
+  );
+  await databases.postgres.query(
+    "DELETE FROM llm_call WHERE budget_id=ANY($1)",
+    [budgets],
+  );
+  await databases.postgres.query("DELETE FROM llm_budget WHERE id=ANY($1)", [
+    budgets,
+  ]);
+  for (const worldId of worlds)
+    await databases.graph.executeQuery(
+      "MATCH(n) WHERE n.worldId=$worldId DETACH DELETE n",
+      { worldId },
+    );
+  await databases.close();
+});
+
+test("意図形成へ観測の側面だけを渡し、対象全体・未観測の秘密・管理文脈を渡さない", async () => {
+  const scene = await fixture();
+  let sent = "";
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, options) => {
+      sent = String(options?.body);
+      return response({ actionText: "箱の表面を調べる" });
+    });
+  const runtime = await agent(transport);
+  expect(
+    await runtime.intent(scene.worldId, scene.actor.id, 0, randomUUID()),
+  ).toBe("箱の表面を調べる");
+  expect(sent).toContain("箱の表面が見える");
+  for (const privateText of [
+    "SELF_PRIVATE",
+    "ROOT_PRIVATE",
+    "TARGET_PRIVATE",
+    "SECRET_FACT",
+  ])
+    expect(sent).not.toContain(privateText);
+  expect(
+    (await runtime.view(scene.worldId, scene.actor.id, 0)).observations,
+  ).toHaveLength(1);
+});
+
+test("照会・再評価・確定を共有し、進捗保存を失っても確定済みの過去を再生成しない", async () => {
+  const scene = await fixture();
+  const state = node("script", "観測した表面の変化");
+  const delta = changes(
+    [state],
+    [
+      edge("status", scene.object, state, undefined, "content"),
+      {
+        ...edge("see", scene.actor, state, "表面の模様が変わった"),
+        period: { from: 1000 },
+      },
+    ],
+  );
+  let call = 0;
+  const inputs: string[] = [];
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, options) => {
+      inputs.push(String(options?.body));
+      call++;
+      if (call === 1 || call === 3)
+        return response({
+          type: "query",
+          requests: [{ kind: "node", id: scene.secret.id }],
+        });
+      if (call === 2) {
+        const lease = await store.claim(scene.worldId, randomUUID());
+        await store.commit(lease, store.context(scene.worldId), {
+          commitId: randomUUID(),
+          at: 0,
+          changes: {
+            ...changes(),
+            revisions: [{ ...scene.secret, text: "CHANGED_PRIVATE" }],
+          },
+        });
+      }
+      return response(proposal(delta));
+    });
+  const runtime = await agent(transport);
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id, scene.place.id],
+    actorId: scene.actor.id,
+    actionText: "箱の表面を調べる",
+  });
+  operations.push(id);
+  const result = await runtime.run(id);
+  expect(result.resolvedUntil).toBe(1000);
+  expect(call).toBe(4);
+  expect(inputs[3]).toContain("CHANGED_PRIVATE");
+  expect(inputs[0]).toContain(scene.object.id);
+  expect(inputs[0]).toContain("TARGET_PRIVATE");
+  const view = await runtime.view(scene.worldId, scene.actor.id, 1000);
+  expect(JSON.stringify(view)).not.toContain("CHANGED_PRIVATE");
+  expect(view.observations).toHaveLength(2);
+  await databases.postgres.query(
+    "UPDATE world_operation SET state='paused',result=NULL WHERE id=$1",
+    [id],
+  );
+  expect(await runtime.run(id)).toEqual(result);
+  expect(call).toBe(4);
+  expect(
+    (await runtime.view(scene.worldId, scene.actor.id, 1000)).observations,
+  ).toHaveLength(2);
+});
+
+test("人間用には別の村民を生成し、試遊村民とその観測を保持したまま分離する", async () => {
+  const scene = await fixture();
+  const newcomer = node("existence", "新しい村民"),
+    membership = node("script", "この村の村民である");
+  const candidate = proposal(
+    changes(
+      [newcomer, membership],
+      [
+        edge("status", newcomer, membership, undefined, "content"),
+        edge("status", membership, scene.place, undefined, "about"),
+        edge("see", newcomer, scene.place, "広場が見える"),
+      ],
+    ),
+    { newParticipantId: newcomer.id },
+  );
+  const runtime = await agent(
+    vi.fn<typeof fetch>().mockImplementation(async () => response(candidate)),
+  );
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "participant",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.place.id],
+    actionText: "別の村民として参加する",
+  });
+  operations.push(id);
+  expect((await runtime.run(id)).newParticipantId).toBe(newcomer.id);
+  const view = await runtime.view(scene.worldId, newcomer.id, 1000);
+  expect(view.observations).toHaveLength(1);
+  expect(view.observations[0]?.text).toBe("広場が見える");
+  expect(await store.context(scene.worldId).node(scene.actor.id)).toEqual(
+    scene.actor,
+  );
+  expect(
+    (await runtime.view(scene.worldId, scene.actor.id, 1000)).observations,
+  ).toHaveLength(1);
+});
+
+test("既存の状態記述へ不完全な解釈だけを結びつけて新しい存在を確定できない", async () => {
+  const scene = await fixture(),
+    duplicate = node("existence", "追加候補");
+  let call = 0;
+  const invalid = proposal(
+    changes(
+      [duplicate],
+      [edge("interpret", duplicate, scene.secret, undefined, "content")],
+    ),
+  );
+  const inputs: string[] = [];
+  const runtime = await agent(
+    vi.fn<typeof fetch>().mockImplementation(async (_url, options) => {
+      inputs.push(String(options?.body));
+      return response(++call === 1 ? invalid : proposal(changes()));
+    }),
+  );
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id],
+    actorId: scene.actor.id,
+    actionText: "見えている対象を確かめる",
+  });
+  operations.push(id);
+  await runtime.run(id);
+  expect(call).toBe(2);
+  expect(inputs[1]).toContain("主体・内容・対象");
+  expect(await store.context(scene.worldId).node(duplicate.id)).toBeUndefined();
+});
+
+test("観測期間終了後も受容した情報を保持し、再表示で観測を追加しない", async () => {
+  const scene = await fixture();
+  const observation = {
+    ...edge("see", scene.actor, scene.place, "一時的に窓から見えた景色"),
+    period: { from: 100, until: 200 },
+  };
+  await store.commit(
+    await store.claim(scene.worldId, randomUUID()),
+    store.context(scene.worldId),
+    { commitId: randomUUID(), at: 200, changes: changes([], [observation]) },
+  );
+  const runtime = await agent(vi.fn<typeof fetch>());
+  const first = await runtime.view(scene.worldId, scene.actor.id, 1000);
+  expect(
+    first.observations.some((record) => record.id === observation.id),
+  ).toBe(true);
+  expect(await runtime.view(scene.worldId, scene.actor.id, 1000)).toEqual(
+    first,
+  );
+});
+
+test("保留後に明示的に再開でき、保留を世界内の失敗へ変換しない", async () => {
+  const scene = await fixture();
+  let call = 0;
+  const runtime = await agent(
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        response(
+          ++call === 1
+            ? { type: "pause", reason: "追加の確認が必要" }
+            : proposal(changes()),
+        ),
+      ),
+  );
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id],
+    actorId: scene.actor.id,
+    actionText: "周囲を確かめる",
+  });
+  operations.push(id);
+  await expect(runtime.run(id)).rejects.toBeInstanceOf(OperationPaused);
+  expect(
+    (await runtime.view(scene.worldId, scene.actor.id, 0)).observations,
+  ).toHaveLength(1);
+  expect((await runtime.run(id, "確認できた範囲で続ける")).resolvedUntil).toBe(
+    1000,
+  );
+});
+
+test("引継ぎ後の古いワーカーは進捗を保存できず、同じモデル要求を二重送信しない", async () => {
+  const scene = await fixture();
+  let release!: (value: Response) => void, started!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const transport = vi.fn<typeof fetch>().mockImplementation(async () => {
+    started();
+    return new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+  });
+  const runtime = await agent(transport);
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "interaction",
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id],
+    actorId: scene.actor.id,
+    actionText: "周囲を見る",
+  });
+  operations.push(id);
+  const old = runtime.run(id).then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  await entered;
+  await expect(runtime.run(id)).rejects.toThrow("未確定");
+  release(response(proposal(changes())));
+  const abandoned = await old;
+  expect(
+    "error" in abandoned && abandoned.error instanceof SupersededWorker,
+  ).toBe(true);
+  expect(transport).toHaveBeenCalledTimes(1);
+  const saved = await databases.postgres.query<{ state: string }>(
+    "SELECT state FROM world_operation WHERE id=$1",
+    [id],
+  );
+  expect(saved.rows[0]?.state).toBe("paused");
+  expect((await runtime.run(id)).resolvedUntil).toBe(1000);
+  expect(transport).toHaveBeenCalledTimes(1);
+});

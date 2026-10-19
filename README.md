@@ -1,7 +1,7 @@
 # GESTALOKA v3
 
 動的な自由記述シェアワールドを構築するプロジェクトです。
-開発基盤と、CLIによる初期世界の生成・保存を実装しています。APIは疎通確認用HTTP/SSE、ワーカーはキューとチェックポイントの初期化、Webは起動画面までです。試遊・通常プレイと画面からの世界構築は未実装です。
+開発基盤と、CLIによる初期世界の生成・保存、共通の世界更新Agentを実装しています。APIは疎通確認用HTTP/SSE、ワーカーはキューとチェックポイントの初期化、Webは起動画面までです。時間指定の自動試遊と画面からの世界構築は未実装です。
 
 ## ローカル起動
 
@@ -48,6 +48,18 @@ pnpm world:generate --resume <runId>
 
 実測結果は [初期生成の確認記録](documents/evaluations/deepseek-initial-world-2026-10-19.md) を参照してください。
 
+## 共通の世界更新
+
+```powershell
+pnpm world:act --build <buildRunId> --action examples/greet-village-leader.txt --at 0 --until 60000
+pnpm world:act --build <buildRunId> --actor <existenceId> --at 5000 --until 60000
+pnpm world:act --resume <operationId>
+```
+
+世界内時間はT0からのミリ秒です。行動ファイルを省略すると、指定した主体の観測・解釈だけから意図を形成します。世界更新Agentは共有グラフを照会し、候補を検証・確定します。管理者向けCLIの要約と、主体が取得できるviewは分けて出力し、ローカルの `artifacts/world-operations/` に保存します。管理情報を含むCLI出力を、そのままプレイヤーへ公開する用途には使いません。
+
+再開は保存済みの結果とreceiptを確認します。応答不明の予約は保持し、同じ呼出しを自動再送しません。保留の再開は新しい未確定処理を始める場合があります。初期生成と同じ予算を通算します。主体の知識・実行世代・候補の扱いは [ADR-002](documents/adr/ADR-002-world-agent.md)、失敗例を含む確認結果は [世界更新の実測記録](documents/evaluations/world-agent-2026-10-19.md) を参照してください。
+
 ## 検証
 
 ```powershell
@@ -62,7 +74,7 @@ pnpm test:e2e
 
 統合テストは実DBを使い、Neo4jの再接続後の読取、PostgreSQLトランザクション内のキュー投入のロールバック、LangGraphの中断・再開と保存済みtaskの再利用を確認します。テストは専用レコードとキューを作り、世界モデルの正本を作りません。ブラウザーテストは実APIへ接続し、HTTPと標準EventSourceの疎通を確認します。
 
-物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる意味評価、作用の解決、世界構築から村民への引継ぎは後続実装です。
+物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルによる評価は部分実施で、時間指定の試遊管理と世界構築完了後の村民参加は後続実装です。
 
 ## 設計資料
 
