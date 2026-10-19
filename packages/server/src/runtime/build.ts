@@ -6,7 +6,11 @@ import { entrypoint, task } from "@langchain/langgraph";
 import type { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { z } from "zod";
 import { WorldStore, Change } from "../world/store.js";
-import { validateConnection } from "../world/model.js";
+import {
+  bindingScripts,
+  validateBindings,
+  validateConnection,
+} from "../world/model.js";
 import type { DeepSeekClient, ChatMessage } from "../llm/deepseek.js";
 
 const Proposal = z
@@ -18,6 +22,16 @@ const Proposal = z
   })
   .strict()
   .superRefine((proposal, context) => {
+    for (const binding of bindingScripts(proposal.changes.edges)) {
+      try {
+        validateBindings(binding.kind, binding.id, proposal.changes.edges);
+      } catch (error) {
+        context.addIssue({
+          code: "custom",
+          message: error instanceof Error ? error.message : "invalid binding",
+        });
+      }
+    }
     const nodes = new Map(
       proposal.changes.nodes.map((node) => [node.id, node]),
     );
@@ -25,6 +39,13 @@ const Proposal = z
       const source = nodes.get(edge.source),
         target = nodes.get(edge.target);
       try {
+        if (
+          edge.kind === "see" &&
+          !(edge.observation?.aspect || edge.text)?.trim()
+        )
+          throw new Error(
+            "seeには対象全体ではなく実際に観測した内容を記述してください",
+          );
         if (!source || !target)
           throw new Error("初期候補に接続先のノードがありません");
         validateConnection(edge, source, target);
