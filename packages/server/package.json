@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
-    "./world": "./dist/world/store.js"
+    "./world": "./dist/world/store.js",
+    "./llm": "./dist/llm/deepseek.js",
+    "./build": "./dist/runtime/build.js"
   },
   "dependencies": {
     "@langchain/core": "1.2.18",
