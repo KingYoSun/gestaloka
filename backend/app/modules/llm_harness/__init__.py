@@ -1,1 +1,0 @@
-"""LLM harness module."""

@@ -1,9 +1,0 @@
-dataset_id: council_world_progress_smoke
-prompt_id: council.world_progress
-expected_output_schema: council_world_progress_v3
-cases:
-  - case_id: council-world-basic
-    world_id: world-alpha
-    player_name: Demo Player
-    npc_name: Nexus Entry Liaison
-    input_text: 広場で旅人を助け、灯をともす
