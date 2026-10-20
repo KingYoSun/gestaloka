@@ -1,6 +1,6 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { connectDatabases } from "@gestaloka/server";
+import { connectDatabases, ExecutionBudget } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 
@@ -28,6 +28,7 @@ try {
     values.resume ??
     (await builder.create(await readFile(values.prompt!, "utf8")));
   console.log(JSON.stringify({ runId }));
+  if (values.resume) await ExecutionBudget.extend(runId, databases.postgres);
   const build = await builder.generate(runId);
   const budget = await model.ledger.summary();
   const report = { requestedModel: model.requestedVersion, ...build, budget };

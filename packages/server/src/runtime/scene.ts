@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
+import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import type { ChatMessage } from "../llm/client.js";
 import type { Dependency } from "../world/store.js";
@@ -71,6 +72,7 @@ export type SceneData = {
   nextPurpose?: string;
   resumeState?: SceneRow["state"];
   error?: string;
+  limitReached?: boolean;
 };
 export type SceneRow = {
   id: string;
@@ -230,7 +232,8 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
-      if (row.data.work) {
+      const extended = await ExecutionBudget.extend(this.#budget(row), client);
+      if (row.data.work && !extended) {
         row.data.work = {
           ...row.data.work,
           id: randomUUID(),
@@ -244,6 +247,7 @@ export class WorldScenes {
         };
       }
       delete row.data.error;
+      delete row.data.limitReached;
     } else {
       if (row.state !== "active")
         throw new ConstructionStateError(
@@ -275,6 +279,14 @@ export class WorldScenes {
       await this.#enqueue(client, row.id);
     return row;
   }
+  #budget(row: SceneRow) {
+    return row.state === "preparing"
+      ? row.id
+      : row.state === "acting"
+        ? row.data.actions.at(-1)!.id
+        : sceneId(`${row.id}:reflection`);
+  }
+
   async #ask(
     row: SceneRow,
     kind: Work["kind"],
@@ -697,13 +709,27 @@ export class WorldScenes {
       });
     if (row.claim !== claim) return;
     try {
-      if (row.state === "preparing") await this.#background(row);
+      if (row.state === "preparing")
+        await ExecutionBudget.run(this.pool, this.#budget(row), () =>
+          this.#background(row),
+        );
       else if (row.state === "acting") {
-        if (await this.#action(row)) await this.#reflect(row);
-      } else await this.#reflect(row);
+        if (
+          await ExecutionBudget.run(this.pool, this.#budget(row), () =>
+            this.#action(row),
+          )
+        )
+          await ExecutionBudget.run(this.pool, this.#budget(row), () =>
+            this.#reflect(row),
+          );
+      } else
+        await ExecutionBudget.run(this.pool, this.#budget(row), () =>
+          this.#reflect(row),
+        );
     } catch (error) {
       if (error instanceof SupersededWorker) return;
       row.data.resumeState = row.state;
+      row.data.limitReached = error instanceof ExecutionLimit;
       row.data.error =
         error instanceof Error ? error.message : "シーンを保留しました";
       row.state = "paused";

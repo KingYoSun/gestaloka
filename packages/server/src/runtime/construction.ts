@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ConstructionDuration } from "@gestaloka/contracts";
 import { WorldBuilder } from "./build.js";
 import { WorldAgent, SupersededWorker, type WorldProposal } from "./agent.js";
+import { ExecutionBudget } from "../execution-budget.js";
 
 type Work = {
   id: string;
@@ -43,6 +44,7 @@ export type Construction = {
   error: string | null;
   initial_prompt: string;
   created_at: Date;
+  budget_id?: string | null;
 };
 const time = z.number().int().nonnegative().safe();
 export class ConstructionStateError extends Error {}
@@ -76,6 +78,9 @@ export class WorldConstruction {
       actor_id uuid NOT NULL,action_text text NOT NULL,state text NOT NULL,
       started_at bigint NOT NULL,at bigint NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS world_run_latest ON world_run(construction_id,actor_id,created_at DESC);`);
+    await this.pool.query(
+      "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid",
+    );
     for (const name of [this.queueName, `${this.queueName}-play`])
       await this.queue.createQueue(name, {
         retryLimit: 2,
@@ -158,6 +163,7 @@ export class WorldConstruction {
         ConstructionDuration.parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
+        row.budget_id = randomUUID();
         for (const work of row.agenda)
           if (work.deferred) {
             delete work.deferred;
@@ -178,7 +184,11 @@ export class WorldConstruction {
                 ? "joining"
                 : "running"
               : "generating";
-        for (const work of row.current?.members ??
+        const extended = await ExecutionBudget.extend(
+          row.budget_id ?? row.id,
+          client,
+        );
+        for (const work of (extended ? [] : row.current?.members) ??
           (row.current ? [row.current] : []))
           if (
             work.mode === "intent" &&
@@ -204,6 +214,7 @@ export class WorldConstruction {
             "世界構築の完了後に参加してください",
           );
         row.state = "joining";
+        row.budget_id = randomUUID();
         row.current = { id: randomUUID(), at: row.at, mode: "participant" };
       }
       row.error = null;
@@ -230,6 +241,7 @@ export class WorldConstruction {
           "前の行動が区切られてから操作してください",
         );
       row.state = "playing";
+      row.budget_id = runId;
       await client.query(
         "INSERT INTO world_run(id,construction_id,actor_id,action_text,state,started_at,at) VALUES($1,$2,$3,$4,'running',$5,$5)",
         [runId, id, row.participant_id, actionText, row.at],
@@ -259,7 +271,7 @@ export class WorldConstruction {
   ) {
     const result = await client.query(
       `WITH updated AS (UPDATE world_construction SET state=$2,world_id=$3,actor_id=$4,root_ids=$5,
-       at=$6,target=$7,agenda=$8,current=$9,participant_id=$10,claim=$11,error=$12
+       at=$6,target=$7,agenda=$8,current=$9,participant_id=$10,claim=$11,error=$12,budget_id=$14
        WHERE id=$1 AND ($13::uuid IS NULL OR claim=$13) RETURNING id,state,at,participant_id),
        progress AS (UPDATE world_run r SET at=u.at,state=CASE u.state WHEN 'playing' THEN 'running' WHEN 'play_paused' THEN 'paused' ELSE 'ready' END
        FROM updated u WHERE u.participant_id IS NOT NULL AND u.state IN ('playing','play_paused','finished')
@@ -279,6 +291,7 @@ export class WorldConstruction {
         row.claim,
         row.error,
         expected ?? null,
+        row.budget_id ?? null,
       ],
     );
     if (result.rowCount !== 1)
@@ -650,86 +663,92 @@ export class WorldConstruction {
       return row;
     });
     if (row.claim !== claim) return;
-    try {
-      if (row.state === "generating") {
-        const build = await this.builder.generate(id);
-        row.world_id = build.world_id;
-        row.actor_id = build.result!.playerId;
-        row.root_ids = build.result!.rootIds;
-        row.state = "ready";
-        row.agenda = [
-          { id: randomUUID(), at: 0, mode: "schedule" },
-          { id: randomUUID(), at: 0, mode: "intent", actorId: row.actor_id },
-        ];
-        await this.#save(row, this.pool, claim);
-        return;
-      }
-      if (!row.current) {
-        row.current = this.#take(row);
-      }
-      if (!["frame", "schedule", "participant"].includes(row.current.mode))
-        row.current = {
-          id: randomUUID(),
-          at: row.current.at,
-          mode: "frame",
-          members: [row.current],
-          ...(row.current.operationId
-            ? { operationId: row.current.operationId }
-            : {}),
-        };
-      await this.#prepare(row, claim);
-      if (!row.current) return row;
-      const work = row.current;
-      const result = await this.agent.run(work.operationId!);
-      await this.#transaction(async (client) => {
-        await this.#save(row, client, claim);
-        await this.#record(
-          row,
-          work.operationId!,
-          result,
-          client,
-          work.mode !== "participant",
-        );
-        if (work.mode === "participant") {
-          row.participant_id = result.newParticipantId!;
-          row.state = "finished";
-        } else if (row.state === "playing") {
-          row.at = Math.min(
-            result.resolvedUntil,
-            ...row.agenda
-              .filter((entry) => !entry.deferred)
-              .map((entry) => entry.at),
-          );
-          if (!row.agenda.length) row.state = "finished";
-        } else {
-          row.at = Math.min(
-            row.target,
-            result.resolvedUntil,
-            ...row.agenda
-              .filter((entry) => !entry.deferred)
-              .map((entry) => entry.at),
-          );
-          if (row.at === row.target) row.state = "ready";
-          else if (result.resolvedUntil <= work.at && row.agenda.length === 0) {
-            row.state = "paused";
-            row.error =
-              "指定時刻までの進行と次の起動を確定できず、実際の到達時点で保留しました";
-          }
+    return ExecutionBudget.run(this.pool, row.budget_id ?? row.id, async () => {
+      try {
+        if (row.state === "generating") {
+          const build = await this.builder.generate(id);
+          row.world_id = build.world_id;
+          row.actor_id = build.result!.playerId;
+          row.root_ids = build.result!.rootIds;
+          row.state = "ready";
+          row.agenda = [
+            { id: randomUUID(), at: 0, mode: "schedule" },
+            { id: randomUUID(), at: 0, mode: "intent", actorId: row.actor_id },
+          ];
+          await this.#save(row, this.pool, claim);
+          return;
         }
-        row.current = null;
-        if (row.state !== "paused") row.error = null;
-        await this.#save(row, client, claim);
-        if (row.state === "running" || row.state === "playing")
-          await this.#enqueue(client, id, row.state === "playing");
-      });
-    } catch (error) {
-      row.state = row.state === "playing" ? "play_paused" : "paused";
-      row.error = error instanceof Error ? error.message : "実行を保留しました";
-      await this.#save(row, this.pool, claim);
-      throw error;
-    }
-    row = await this.get(id);
-    return row;
+        if (!row.current) {
+          row.current = this.#take(row);
+        }
+        if (!["frame", "schedule", "participant"].includes(row.current.mode))
+          row.current = {
+            id: randomUUID(),
+            at: row.current.at,
+            mode: "frame",
+            members: [row.current],
+            ...(row.current.operationId
+              ? { operationId: row.current.operationId }
+              : {}),
+          };
+        await this.#prepare(row, claim);
+        if (!row.current) return row;
+        const work = row.current;
+        const result = await this.agent.run(work.operationId!);
+        await this.#transaction(async (client) => {
+          await this.#save(row, client, claim);
+          await this.#record(
+            row,
+            work.operationId!,
+            result,
+            client,
+            work.mode !== "participant",
+          );
+          if (work.mode === "participant") {
+            row.participant_id = result.newParticipantId!;
+            row.state = "finished";
+          } else if (row.state === "playing") {
+            row.at = Math.min(
+              result.resolvedUntil,
+              ...row.agenda
+                .filter((entry) => !entry.deferred)
+                .map((entry) => entry.at),
+            );
+            if (!row.agenda.length) row.state = "finished";
+          } else {
+            row.at = Math.min(
+              row.target,
+              result.resolvedUntil,
+              ...row.agenda
+                .filter((entry) => !entry.deferred)
+                .map((entry) => entry.at),
+            );
+            if (row.at === row.target) row.state = "ready";
+            else if (
+              result.resolvedUntil <= work.at &&
+              row.agenda.length === 0
+            ) {
+              row.state = "paused";
+              row.error =
+                "指定時刻までの進行と次の起動を確定できず、実際の到達時点で保留しました";
+            }
+          }
+          row.current = null;
+          if (row.state !== "paused") row.error = null;
+          await this.#save(row, client, claim);
+          if (row.state === "running" || row.state === "playing")
+            await this.#enqueue(client, id, row.state === "playing");
+        });
+      } catch (error) {
+        row.state = row.state === "playing" ? "play_paused" : "paused";
+        row.error =
+          error instanceof Error ? error.message : "実行を保留しました";
+        await this.#save(row, this.pool, claim);
+        throw error;
+      }
+      row = await this.get(id);
+      return row;
+    });
   }
 
   async work() {

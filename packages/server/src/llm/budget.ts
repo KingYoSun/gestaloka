@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { ExecutionBudget } from "../execution-budget.js";
 
 export const NANO_USD = 1_000_000_000;
 export class BudgetUnavailable extends Error {}
@@ -22,6 +23,7 @@ export class BudgetLedger {
     readonly limitNano: number,
   ) {}
   async setup() {
+    await ExecutionBudget.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS llm_budget (
       id text PRIMARY KEY, limit_nano bigint NOT NULL, used_nano bigint NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS llm_call (
@@ -84,6 +86,7 @@ export class BudgetLedger {
           Number(budget.rows[0].limit_nano)
       )
         throw new BudgetUnavailable("費用上限のため実行を保留します");
+      await ExecutionBudget.take("llm", client);
       await client.query(
         "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request) VALUES ($1,$2,$3,$4,$5)",
         [id, this.budgetId, hash, reservation, JSON.stringify(request)],

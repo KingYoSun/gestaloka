@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { ExecutionBudget } from "../execution-budget.js";
 import { readFile } from "node:fs/promises";
 import type pg from "pg";
 import type { Driver } from "neo4j-driver";
@@ -126,6 +127,10 @@ export class WorldBuilder {
   }
 
   async generate(runId: string) {
+    return ExecutionBudget.run(this.pool, runId, () => this.#generate(runId));
+  }
+
+  async #generate(runId: string) {
     z.uuid().parse(runId);
     const record = await this.pool.query<Build>(
       "SELECT * FROM world_build WHERE run_id = $1",

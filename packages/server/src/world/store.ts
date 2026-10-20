@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ExecutionBudget } from "../execution-budget.js";
 import { int, type Driver, type ManagedTransaction } from "neo4j-driver";
 import { z } from "zod";
 import {
@@ -94,6 +95,7 @@ export class WorldContext {
     key: string,
     query: (tx: ManagedTransaction, revision: number) => Promise<T>,
   ) {
+    await ExecutionBudget.take("graph");
     const session = this.driver.session();
     try {
       return await session.executeRead(async (tx) => {

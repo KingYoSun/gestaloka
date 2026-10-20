@@ -119,7 +119,11 @@ export function ScenePlayer({
         <Notice>再接続しています。保存したシーンから復帰します。</Notice>
       )}
       {scene ? (
-        <Notice>{labels[scene.state]}</Notice>
+        <Notice>
+          {scene.state === "paused"
+            ? (scene.error ?? labels.paused)
+            : labels[scene.state]}
+        </Notice>
       ) : (
         <Notice>
           次に体験したい場面を伝えてください。背景情報から、シーンのあらすじを準備します。

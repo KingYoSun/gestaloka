@@ -305,7 +305,9 @@ export class WorldAccess {
         result: row.state === "result" ? (d.result ?? null) : null,
         error:
           row.state === "paused"
-            ? "処理を保留しました。保存したシーンから再開できます。"
+            ? d.limitReached
+              ? "1操作の処理上限に達しました。再開すると枠を追加し、保存したシーンから続けます。"
+              : "処理を保留しました。保存したシーンから再開できます。"
             : null,
         messages: d.events.flatMap((e) =>
           e.receipts

@@ -342,6 +342,14 @@ test.each([
       expect(
         (
           await d.postgres.query(
+            "SELECT llm_used FROM execution_budget WHERE id=$1",
+            [id],
+          )
+        ).rows[0],
+      ).toEqual({ llm_used: 2 });
+      expect(
+        (
+          await d.postgres.query(
             "SELECT state,epoch FROM world_operation WHERE id=$1",
             [id],
           )
@@ -368,6 +376,17 @@ test.each([
     expect(await model.ledger.summary()).toMatchObject({
       calls: (repairCommit ? 7 : 5) + (transientFailure ? 1 : 0),
       unsettled: failAfterCommit || transientFailure ? 1 : 0,
+    });
+    expect(
+      (
+        await d.postgres.query(
+          "SELECT llm_used,graph_used FROM execution_budget WHERE id=$1",
+          [id],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      llm_used: (repairCommit ? 7 : 5) + (transientFailure ? 1 : 0),
+      graph_used: expect.any(Number),
     });
   },
   90000,

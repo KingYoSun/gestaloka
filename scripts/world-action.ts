@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { connectDatabases } from "@gestaloka/server";
+import { connectDatabases, ExecutionBudget } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 
@@ -36,6 +36,8 @@ try {
   );
   await agent.setup();
   let operationId = values.resume;
+  if (operationId)
+    await ExecutionBudget.extend(operationId, databases.postgres);
   if (!operationId) {
     const row = await databases.postgres.query<{
       world_id: string;
