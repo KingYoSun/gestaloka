@@ -7,3 +7,5 @@ AGENTS.local.md.example
 DESIGN.md
 LICENSE
 .codegraph/
+.ory/
+.env.ory

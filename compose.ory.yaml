@@ -1,0 +1,79 @@
+services:
+  identity-postgres:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_USER: ory
+      POSTGRES_PASSWORD: ${ORY_DATABASE_PASSWORD:?Run pnpm auth:init}
+      POSTGRES_DB: ory
+    volumes:
+      - identity-data:/var/lib/postgresql/data
+      - ./infra/ory/databases.sql:/docker-entrypoint-initdb.d/databases.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U ory -d ory]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  kratos-migrate:
+    image: &kratos-image oryd/kratos:v26.2.0@sha256:2a13bb8d362c7a7ae33bd7c0f5168aee46921f15c916a06346db91c06dc76643
+    command: migrate sql -e --yes
+    environment: &kratos-env
+      DSN: postgres://ory:${ORY_DATABASE_PASSWORD:?Run pnpm auth:init}@identity-postgres:5432/kratos?sslmode=disable
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+
+  kratos:
+    image: *kratos-image
+    command: serve --config /etc/generated/kratos.json --dev
+    environment:
+      <<: *kratos-env
+      SECRETS_COOKIE: ${KRATOS_COOKIE_SECRET:?Run pnpm auth:init}
+      SECRETS_CIPHER: ${KRATOS_CIPHER_SECRET:?Run pnpm auth:init}
+    volumes:
+      - ./infra/ory:/etc/config:ro
+      - ./.ory/kratos.json:/etc/generated/kratos.json:ro
+    ports:
+      - 127.0.0.1:24433:4433
+      - 127.0.0.1:24434:4434
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:4434/health/ready]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  hydra-migrate:
+    image: &hydra-image oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
+    command: migrate sql -e --yes
+    environment: &hydra-env
+      DSN: postgres://ory:${ORY_DATABASE_PASSWORD:?Run pnpm auth:init}@identity-postgres:5432/hydra?sslmode=disable
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+
+  hydra:
+    image: *hydra-image
+    command: serve all --config /etc/config/hydra.json --dev
+    environment:
+      <<: *hydra-env
+      SECRETS_SYSTEM: ${HYDRA_SYSTEM_SECRET:?Run pnpm auth:init}
+      OIDC_SUBJECT_IDENTIFIERS_PAIRWISE_SALT: ${HYDRA_PAIRWISE_SALT:?Run pnpm auth:init}
+    volumes:
+      - ./.ory/hydra.json:/etc/config/hydra.json:ro
+    ports:
+      - 127.0.0.1:24444:4444
+      - 127.0.0.1:24445:4445
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:4445/health/ready]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  identity-data:

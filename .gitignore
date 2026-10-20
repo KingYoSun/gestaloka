@@ -4,6 +4,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env
+.env.ory
+.ory/
 test-results/
 playwright-report/
 artifacts/

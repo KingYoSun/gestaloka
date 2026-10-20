@@ -1,0 +1,15 @@
+{
+  "$id": "https://gestaloka.invalid/schemas/identity.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "traits": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["traits"]
+}

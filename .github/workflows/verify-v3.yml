@@ -19,9 +19,11 @@ jobs:
       - run: pnpm env:init
       - run: pnpm db:up
       - run: pnpm test:integration
+      - run: pnpm auth:up
+      - run: pnpm test:auth
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - if: failure()
-        run: docker compose logs
+        run: docker compose logs && docker compose --env-file .env --env-file .env.ory -f compose.yaml -f compose.ory.yaml logs --no-color
       - if: always()
-        run: docker compose stop
+        run: docker compose stop && pnpm auth:stop
