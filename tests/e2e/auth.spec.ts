@@ -110,16 +110,14 @@ test("OAuth同意後にHydraと登録済みクライアントへ遷移できる"
   const app = await createApp(undefined, identity, origin);
   const url = await app.listen({ host: "127.0.0.1", port: 0 });
   try {
-    await page
-      .context()
-      .addCookies([
-        {
-          name: "ory_kratos_session",
-          value: "browser-test",
-          domain: "127.0.0.1",
-          path: "/",
-        },
-      ]);
+    await page.context().addCookies([
+      {
+        name: "ory_kratos_session",
+        value: "browser-test",
+        domain: "127.0.0.1",
+        path: "/",
+      },
+    ]);
     const network = await page.context().newCDPSession(page);
     await network.send("Network.enable");
     await network.send("Network.setBlockedURLs", { urls: [target] });
