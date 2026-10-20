@@ -90,13 +90,7 @@ export function openSession() {
   if (opening) return opening;
   const epoch = session.epoch;
   opening = (async () => {
-    let data;
-    try {
-      data = (await api.GET("/api/session")).data;
-    } catch (error) {
-      if (!(error instanceof ApiFailure) || error.status !== 401) throw error;
-      data = (await api.POST("/api/session")).data;
-    }
+    const data = (await api.GET("/api/session")).data;
     const identity = BrowserSession.parse(data).id;
     if (epoch !== session.epoch) throw new ScopeChanged();
     publish({ id: identity, epoch, error: null });

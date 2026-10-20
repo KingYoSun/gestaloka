@@ -2,7 +2,12 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "@fastify/type-provider-zod";
 import { z } from "zod";
-import { ApiError, Member, Operation } from "@gestaloka/contracts";
+import {
+  ApiError,
+  Member,
+  Operation,
+  LegacyClaimPage,
+} from "@gestaloka/contracts";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { type Operations } from "@gestaloka/server/operations";
 import { AccessError } from "@gestaloka/server/access";
@@ -14,6 +19,12 @@ export async function operationsRoutes(
   operations?: Operations,
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
+  const identities = new WeakMap<FastifyRequest, string>();
+  app.addHook("onSend", async (request, reply, payload) => {
+    const id = identities.get(request);
+    if (id) reply.header("X-Gestaloka-Subject", id);
+    return payload;
+  });
   const service = () => {
     if (!operations || !identity)
       throw new AccessError(
@@ -25,7 +36,9 @@ export async function operationsRoutes(
   };
   const actor = async (request: FastifyRequest) => {
     service();
-    return (await identity!.session(request.headers.cookie)).userId;
+    const id = (await identity!.session(request.headers.cookie)).userId;
+    identities.set(request, id);
+    return id;
   };
   app.addHook("onRequest", async (request, reply) => {
     reply.header("Cache-Control", "private, no-store");
@@ -106,8 +119,24 @@ export async function operationsRoutes(
         await actor(request),
         request.body.requestId,
         request.body.command,
+        { legacyToken: request.cookies.gestaloka },
       ),
     }),
+  );
+  app.get(
+    "/api/account/legacy",
+    {
+      schema: {
+        querystring: z.object({ before: z.uuid().optional() }),
+        response: { 200: LegacyClaimPage, ...errors },
+      },
+    },
+    async (request) =>
+      service().legacyPreview(
+        await actor(request),
+        request.cookies.gestaloka,
+        request.query.before,
+      ),
   );
   app.addContentTypeParser(
     "application/x-www-form-urlencoded",
@@ -115,6 +144,24 @@ export async function operationsRoutes(
     (_request, body, done) =>
       done(null, Object.fromEntries(new URLSearchParams(String(body)))),
   );
+  const formCookie = (path: string) =>
+    `gestaloka_form_${path.split("/").at(-1)}`;
+  const fields = (
+    request: FastifyRequest,
+    reply: Parameters<typeof authPage>[0],
+    path: string,
+  ) => {
+    const csrf = randomBytes(32).toString("hex");
+    reply.header("Referrer-Policy", "same-origin");
+    reply.setCookie(formCookie(path), csrf, {
+      path,
+      httpOnly: true,
+      sameSite: "strict",
+      secure: request.protocol === "https",
+      maxAge: 600,
+    });
+    return `<input type="hidden" name="requestId" value="${randomUUID()}"><input type="hidden" name="csrf" value="${csrf}">`;
+  };
   const form = async (
     request: FastifyRequest,
     reply: Parameters<typeof authPage>[0],
@@ -122,70 +169,108 @@ export async function operationsRoutes(
   ) => {
     const userId = await actor(request);
     const state = await service().state(userId);
-    const csrf = randomBytes(32).toString("hex");
-    reply.header("Referrer-Policy", "same-origin");
-    reply.setCookie("gestaloka_registration", csrf, {
-      path: "/auth/register",
-      httpOnly: true,
-      sameSite: "strict",
-      secure: request.protocol === "https",
-      maxAge: 600,
-    });
     const status = state.member?.banned
       ? "<p>利用が停止されています。</p>"
       : state.member
-        ? `<p>${state.member.role === "admin" ? "管理者として" : ""}利用登録済みです。</p>`
-        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? "<p>利用登録には招待トークンが必要です。</p>" : "<p>利用登録できます。</p>"}<form method="post"><input type="hidden" name="requestId" value="${randomUUID()}"><input type="hidden" name="csrf" value="${csrf}">${state.bootstrapAvailable || !state.inviteRequired ? "" : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
+        ? `<p>${state.member.role === "admin" ? "管理者として" : ""}利用登録済みです。</p><a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>`
+        : `${state.bootstrapAvailable ? "<p>最初に利用登録した1人が管理者になります。その後は招待制になります。</p>" : state.inviteRequired ? "<p>利用登録には招待トークンが必要です。</p>" : "<p>利用登録できます。</p>"}<form method="post">${fields(request, reply, "/auth/register")}${state.bootstrapAvailable || !state.inviteRequired ? "" : '<label>招待トークン <input name="invitation" autocomplete="off" required></label>'}<button>利用登録する</button></form>`;
     return authPage(
       reply,
       "利用登録",
       `<p>アプリID: ${escapeHtml(userId)}</p>${error ? `<p>${escapeHtml(error)}</p>` : ""}${status}`,
     );
   };
-  app.get(
-    "/auth/register",
-    { schema: { hide: true } },
-    async (request, reply) => {
+  const claimForm = async (
+    request: FastifyRequest,
+    reply: Parameters<typeof authPage>[0],
+    error = "",
+  ) => {
+    const userId = await actor(request);
+    try {
+      const { before } = z
+        .object({ before: z.uuid().optional() })
+        .parse(request.query);
+      const page = await service().legacyPreview(
+        userId,
+        request.cookies.gestaloka,
+        before,
+      );
+      return authPage(
+        reply,
+        "このブラウザーのデータを引き継ぐ",
+        `<p>アプリID: ${escapeHtml(userId)}</p>${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}<p>対象は全${page.total}件の世界です。人物や履歴は保持し、このユーザーで利用できるようにします。管理操作には管理者権限が必要です。</p><ul>${page.items.map((w) => `<li><p>${escapeHtml(w.prompt)}</p><p>世界: ${w.id}${w.actorId ? `<br>操作対象: ${w.actorId}` : ""}</p></li>`).join("")}</ul>${page.next ? `<a href="?before=${page.next}">次の対象を確認</a>` : ""}${before ? '<a href="/auth/claim">先頭へ戻る</a>' : ""}${page.linked ? "<p>引き継ぎ済みです。</p>" : page.total ? `<form method="post" action="/auth/claim">${fields(request, reply, "/auth/claim")}<input type="hidden" name="version" value="${page.version}"><button>全${page.total}件の世界をこのユーザーへ引き継ぐ</button></form>` : "<p>引き継ぐ世界はありません。</p>"}`,
+      );
+    } catch (error) {
+      if (!(error instanceof AccessError)) throw error;
+      return authPage(
+        reply.code(error.status),
+        "データの引き継ぎ",
+        `<p role="alert">${escapeHtml(error.message)}</p><a href="/auth/register">利用登録を確認</a>`,
+      );
+    }
+  };
+  for (const [path, render] of [
+    ["/auth/register", form],
+    ["/auth/claim", claimForm],
+  ] as const) {
+    app.get(path, { schema: { hide: true } }, async (request, reply) => {
       try {
-        return await form(request, reply);
+        return await render(request, reply);
       } catch (error) {
         if (error instanceof IdentityError && error.status === 401)
           return reply.redirect(
-            `/auth/login?return_to=${encodeURIComponent(`${request.protocol}://${request.headers.host}/auth/register`)}`,
+            `/auth/login?return_to=${encodeURIComponent(`${request.protocol}://${request.headers.host}${path}`)}`,
           );
         throw error;
       }
-    },
-  );
-  app.post<{
-    Body: { csrf?: string; requestId?: string; invitation?: string };
-  }>("/auth/register", { schema: { hide: true } }, async (request, reply) => {
-    const { csrf, requestId, invitation } = request.body,
-      saved = request.cookies.gestaloka_registration;
-    if (
-      !csrf ||
-      !saved ||
-      Buffer.byteLength(csrf) !== Buffer.byteLength(saved) ||
-      !timingSafeEqual(Buffer.from(csrf), Buffer.from(saved)) ||
-      (request.headers.origin &&
-        request.headers.origin !==
-          `${request.protocol}://${request.headers.host}`)
-    )
-      throw new AccessError(
-        403,
-        "ORIGIN_REQUIRED",
-        "同じ画面から操作してください",
-      );
-    try {
-      await service().execute(await actor(request), z.uuid().parse(requestId), {
-        operation: "account.register",
-        ...(invitation?.trim() ? { invitation: invitation.trim() } : {}),
-      });
-    } catch (error) {
-      if (error instanceof AccessError)
-        return form(request, reply.code(error.status), error.message);
-      throw error;
-    }
-    return reply.redirect("/auth/register");
-  });
+    });
+    app.post<{
+      Body: {
+        csrf?: string;
+        requestId?: string;
+        invitation?: string;
+        version?: string;
+      };
+    }>(path, { schema: { hide: true } }, async (request, reply) => {
+      const { csrf, requestId, invitation, version } = request.body,
+        saved = request.cookies[formCookie(path)];
+      if (
+        !csrf ||
+        !saved ||
+        Buffer.byteLength(csrf) !== Buffer.byteLength(saved) ||
+        !timingSafeEqual(Buffer.from(csrf), Buffer.from(saved)) ||
+        (request.headers.origin &&
+          request.headers.origin !==
+            `${request.protocol}://${request.headers.host}`)
+      )
+        throw new AccessError(
+          403,
+          "ORIGIN_REQUIRED",
+          "同じ画面から操作してください",
+        );
+      try {
+        await service().execute(
+          await actor(request),
+          z.uuid().parse(requestId),
+          path === "/auth/claim"
+            ? {
+                operation: "account.claim",
+                version: LegacyClaimPage.shape.version.parse(version),
+              }
+            : {
+                operation: "account.register",
+                ...(invitation?.trim()
+                  ? { invitation: invitation.trim() }
+                  : {}),
+              },
+          { legacyToken: request.cookies.gestaloka },
+        );
+      } catch (error) {
+        if (error instanceof AccessError)
+          return render(request, reply.code(error.status), error.message);
+        throw error;
+      }
+      return reply.redirect(path);
+    });
+  }
 }

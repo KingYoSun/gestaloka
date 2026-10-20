@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type pg from "pg";
 import {
@@ -20,6 +20,7 @@ import {
 } from "../runtime/construction.js";
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
+import { requireMember } from "./operations.js";
 
 export class AccessError extends Error {
   constructor(
@@ -50,16 +51,32 @@ export class WorldAccess {
 
   async setup() {
     await this.construction.setup();
-    await this.pool.query(`CREATE TABLE IF NOT EXISTS browser_session (
-      id uuid PRIMARY KEY, token_hash text UNIQUE NOT NULL, active boolean NOT NULL DEFAULT true);
+    await this.pool.query(`DO $$ BEGIN
+      IF to_regclass('world_subject') IS NULL AND to_regclass('browser_session') IS NOT NULL THEN
+        ALTER TABLE browser_session RENAME TO world_subject;
+      END IF;
+      END $$;
+      CREATE TABLE IF NOT EXISTS world_subject (
+      id uuid PRIMARY KEY, token_hash text UNIQUE, active boolean NOT NULL DEFAULT true);
+      ALTER TABLE world_subject ALTER COLUMN token_hash DROP NOT NULL;
+      ALTER TABLE world_subject ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES app_identity(id);
+      CREATE INDEX IF NOT EXISTS world_subject_user ON world_subject(user_id,id);
       CREATE TABLE IF NOT EXISTS world_access (
-      subject_id uuid NOT NULL REFERENCES browser_session(id), construction_id uuid NOT NULL REFERENCES world_construction(id),
+      subject_id uuid NOT NULL REFERENCES world_subject(id), construction_id uuid NOT NULL REFERENCES world_construction(id),
       role text NOT NULL CHECK(role IN ('admin','player')),actor_id uuid,
       PRIMARY KEY(subject_id,construction_id,role));
+      CREATE OR REPLACE FUNCTION guard_subject_grants() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM id FROM world_subject WHERE id=CASE WHEN TG_OP='DELETE' THEN OLD.subject_id ELSE NEW.subject_id END FOR SHARE;
+        IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+      END $$;
+      CREATE OR REPLACE TRIGGER world_access_subject_guard BEFORE INSERT OR UPDATE OR DELETE ON world_access
+      FOR EACH ROW EXECUTE FUNCTION guard_subject_grants();
       CREATE TABLE IF NOT EXISTS api_request (
-      id uuid PRIMARY KEY,subject_id uuid NOT NULL REFERENCES browser_session(id),hash text NOT NULL,response jsonb);
+      id uuid PRIMARY KEY,subject_id uuid NOT NULL REFERENCES world_subject(id),hash text NOT NULL,response jsonb);
       CREATE TABLE IF NOT EXISTS world_event (
-      id bigserial PRIMARY KEY,subject_id uuid NOT NULL REFERENCES browser_session(id),
+      id bigserial PRIMARY KEY,subject_id uuid NOT NULL REFERENCES world_subject(id),
       construction_id uuid NOT NULL REFERENCES world_construction(id),role text NOT NULL,event_key text UNIQUE NOT NULL);
       CREATE INDEX IF NOT EXISTS world_event_scope ON world_event(subject_id,construction_id,role,id);
       CREATE OR REPLACE FUNCTION stamp_world_event() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -91,49 +108,30 @@ export class WorldAccess {
     await this.scenes.setup();
   }
 
-  async session(token?: string) {
-    if (token) {
-      const known = await this.pool.query<{ id: string }>(
-        "SELECT id FROM browser_session WHERE token_hash=$1 AND active",
-        [digest(token)],
-      );
-      if (known.rows[0]) return { id: known.rows[0].id };
-    }
-    const id = randomUUID(),
-      credential = randomBytes(32).toString("base64url");
-    await this.pool.query(
-      "INSERT INTO browser_session(id,token_hash) VALUES($1,$2)",
-      [id, digest(credential)],
-    );
-    return { id, credential };
-  }
-  async authenticate(token?: string) {
-    const row = token
-      ? (
-          await this.pool.query<{ id: string }>(
-            "SELECT id FROM browser_session WHERE token_hash=$1 AND active",
-            [digest(token)],
-          )
-        ).rows[0]
-      : undefined;
-    if (!row)
-      throw new AccessError(
-        401,
-        "SESSION_REQUIRED",
-        "セッションを確認してください",
-      );
-    return row.id;
-  }
   async authorize(
     subject: string,
     id: string,
     role: Role,
     client: Pick<pg.Pool, "query"> = this.pool,
   ) {
+    await requireMember(client, subject, role === "admin");
+    if (role === "admin") {
+      const exists = await client.query(
+        "SELECT id FROM world_construction WHERE id=$1",
+        [id],
+      );
+      if (!exists.rowCount)
+        throw new AccessError(
+          404,
+          "WORLD_NOT_FOUND",
+          "利用できる世界が見つかりません",
+        );
+      return { actor_id: null };
+    }
     const row = (
       await client.query<{ actor_id: string | null }>(
-        `SELECT a.actor_id FROM world_access a JOIN browser_session s ON s.id=a.subject_id
-       WHERE a.subject_id=$1 AND a.construction_id=$2 AND a.role=$3 AND s.active`,
+        `SELECT a.actor_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id
+       WHERE s.user_id=$1 AND a.construction_id=$2 AND a.role=$3 AND s.active`,
         [subject, id, role],
       )
     ).rows[0];
@@ -149,24 +147,18 @@ export class WorldAccess {
     subject: string,
     requestId: string,
     body: unknown,
+    role: Role,
     perform: (client: pg.PoolClient) => Promise<T>,
   ) {
     const hash = digest(JSON.stringify(body));
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const active = (
-        await client.query(
-          "SELECT id FROM browser_session WHERE id=$1 AND active FOR SHARE",
-          [subject],
-        )
-      ).rowCount;
-      if (!active)
-        throw new AccessError(
-          401,
-          "SESSION_REQUIRED",
-          "セッションを確認してください",
-        );
+      await requireMember(client, subject, role === "admin");
+      await client.query(
+        "INSERT INTO world_subject(id,user_id) VALUES($1,$1) ON CONFLICT DO NOTHING",
+        [subject],
+      );
       await client.query(
         "INSERT INTO api_request(id,subject_id,hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
         [requestId, subject, hash],
@@ -178,7 +170,11 @@ export class WorldAccess {
           response: T | null;
         }>("SELECT * FROM api_request WHERE id=$1 FOR UPDATE", [requestId])
       ).rows[0]!;
-      if (saved.subject_id !== subject || saved.hash !== hash)
+      const owner = await client.query(
+        "SELECT id FROM world_subject WHERE id=$1 AND user_id=$2 AND active",
+        [saved.subject_id, subject],
+      );
+      if (!owner.rowCount || saved.hash !== hash)
         throw new AccessError(
           409,
           "REQUEST_CONFLICT",
@@ -216,6 +212,7 @@ export class WorldAccess {
       subject,
       input.requestId,
       { operation: "create", ...input },
+      "admin",
       async (client) => {
         const id = await this.construction.create(input.prompt, client);
         await client.query(
@@ -240,6 +237,7 @@ export class WorldAccess {
       subject,
       input.requestId,
       { id, ...input },
+      "admin",
       async (client) => {
         await this.authorize(subject, id, "admin", client);
         let row;
@@ -444,6 +442,7 @@ export class WorldAccess {
       subject,
       input.requestId,
       { operation: "scene", id, ...input },
+      "player",
       async (client) => {
         const grant = await this.authorize(subject, id, "player", client),
           current = await this.construction.get(id, client, true);
@@ -522,6 +521,7 @@ export class WorldAccess {
       subject,
       input.requestId,
       { operation: "play", id, ...input },
+      "player",
       async (client) => {
         const grant = await this.authorize(subject, id, "player", client);
         const current = await this.construction.get(id, client, true);
@@ -560,10 +560,13 @@ export class WorldAccess {
     );
   }
   async list(subject: string) {
+    const member = await requireMember(this.pool, subject);
     return (
       await this.pool.query<{ id: string }>(
-        "SELECT construction_id AS id FROM world_access WHERE subject_id=$1 AND role='admin' ORDER BY construction_id",
-        [subject],
+        member.role === "admin"
+          ? "SELECT id FROM world_construction ORDER BY id"
+          : "SELECT DISTINCT a.construction_id AS id FROM world_access a JOIN world_subject s ON s.id=a.subject_id WHERE s.user_id=$1 AND s.active AND a.role='player' ORDER BY id",
+        member.role === "admin" ? [] : [subject],
       )
     ).rows;
   }
@@ -772,7 +775,7 @@ export class WorldAccess {
       await this.pool.query(
         `INSERT INTO world_event(subject_id,construction_id,role,event_key)
          SELECT a.subject_id,a.construction_id,a.role,'commit:'||$2::text||':'||a.subject_id::text||':'||a.role||':'||a.construction_id::text
-         FROM world_access a JOIN browser_session s ON s.id=a.subject_id
+         FROM world_access a JOIN world_subject s ON s.id=a.subject_id
          WHERE a.construction_id=$1 AND s.active AND (a.role='admin' OR a.actor_id=ANY($3::uuid[]))
          ON CONFLICT(event_key) DO NOTHING`,
         [id, receipt.commitId, [...actors]],
@@ -787,7 +790,7 @@ export class WorldAccess {
       throw new AccessError(409, "CURSOR_INVALID", "進捗を再取得してください");
     if (after !== "0") {
       const cursor = await this.pool.query(
-        "SELECT id FROM world_event WHERE id=$1 AND subject_id=$2 AND construction_id=$3 AND role=$4",
+        "SELECT e.id FROM world_event e JOIN world_subject s ON s.id=e.subject_id WHERE e.id=$1 AND ($4='admin' OR (s.user_id=$2 AND s.active)) AND e.construction_id=$3 AND e.role=$4",
         [after, subject, id, role],
       );
       if (!cursor.rowCount)
@@ -800,7 +803,7 @@ export class WorldAccess {
     await this.reconcile(id);
     return (
       await this.pool.query<{ id: string }>(
-        "SELECT id::text FROM world_event WHERE subject_id=$1 AND construction_id=$2 AND role=$3 AND id>$4 ORDER BY id LIMIT 50",
+        "SELECT e.id::text FROM world_event e JOIN world_subject s ON s.id=e.subject_id WHERE ($3='admin' OR (s.user_id=$1 AND s.active)) AND e.construction_id=$2 AND e.role=$3 AND e.id>$4 ORDER BY e.id LIMIT 50",
         [subject, id, role, after],
       )
     ).rows;
@@ -811,7 +814,7 @@ export class WorldAccess {
     return {
       cursor: (
         await this.pool.query<{ id: string }>(
-          "SELECT coalesce(max(id),0)::text AS id FROM world_event WHERE subject_id=$1 AND construction_id=$2 AND role=$3",
+          "SELECT coalesce(max(e.id),0)::text AS id FROM world_event e JOIN world_subject s ON s.id=e.subject_id WHERE ($3='admin' OR (s.user_id=$1 AND s.active)) AND e.construction_id=$2 AND e.role=$3",
           [subject, id, role],
         )
       ).rows[0]!.id,

@@ -33,7 +33,7 @@ export default async function teardown() {
     await d.postgres.query("DELETE FROM api_request WHERE subject_id=ANY($1)", [
       subjects,
     ]);
-    await d.postgres.query("DELETE FROM browser_session WHERE id=ANY($1)", [
+    await d.postgres.query("DELETE FROM world_subject WHERE id=ANY($1)", [
       subjects,
     ]);
     await d.postgres.query(
@@ -60,12 +60,24 @@ export default async function teardown() {
     await d.postgres.query("DELETE FROM llm_budget WHERE id=$1", [
       `e2e-${scope}`,
     ]);
-    await d.postgres.query("DELETE FROM e2e_subject WHERE scope=$1", [scope]);
+    await d.postgres.query(
+      "DELETE FROM operation_audit WHERE request_id IN (SELECT id FROM operation_request WHERE actor_id=ANY($1))",
+      [subjects],
+    );
+    await d.postgres.query(
+      "DELETE FROM operation_request WHERE actor_id=ANY($1)",
+      [subjects],
+    );
+    await d.postgres.query("DELETE FROM app_user WHERE id=ANY($1)", [subjects]);
+    await d.postgres.query("DELETE FROM app_identity WHERE id=ANY($1)", [
+      subjects,
+    ]);
     for (const worldId of worlds)
       await d.graph.executeQuery(
         "MATCH(n) WHERE n.worldId=$worldId DETACH DELETE n",
         { worldId },
       );
+    await d.postgres.query("DELETE FROM e2e_subject WHERE scope=$1", [scope]);
   } finally {
     await d.queue.stop();
     await d.close();

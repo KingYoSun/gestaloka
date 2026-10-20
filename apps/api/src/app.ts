@@ -39,7 +39,7 @@ export async function createApp(
       await reply.sse.send({ event: event.type, data: event });
     },
   );
-  await worldRoutes(app, access);
+  await worldRoutes(app, access, identity, operations);
   await app.register(async (scope) =>
     operationsRoutes(scope, identity, operations),
   );
