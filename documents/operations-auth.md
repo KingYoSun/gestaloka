@@ -82,3 +82,19 @@ pnpm auth:stop
 ```
 
 停止後もDBボリュームと秘密情報は保持される。
+
+## 利用登録と管理権限
+
+認証後に`http://127.0.0.1:3000/auth/register`を開き、本人が「利用登録する」を実行する。最初に登録が成立した1人は管理者となり、その後は有効な招待トークンを持つ人だけが登録できる。管理者は共通APIから招待制を切り替えられる。
+
+`GET /api/account`は本人の登録・役割・BAN状態を返す。運用操作は`POST /api/operations`へ`requestId`と`command`を送る。操作と権限は[ADR-011](adr/ADR-011-operations-membership.md)を参照する。APIはOryセッションと`X-Gestaloka-Request: 1`を確認し、処理ごとに現在の権限を判定する。
+
+`.env.ory`の`OPERATIONS_TOKEN_SECRET`は招待トークンを再送時に再生成するための署名鍵である。`pnpm auth:init`で生成し、再実行では変更しない。DBと一緒に保持する。
+
+管理者を失った場合はサーバー上で実行する。対象は本人のログインで確認したアプリIDを指定する。
+
+```powershell
+pnpm ops:recover-admin <app-user-id> "復旧理由"
+```
+
+末尾に要求IDを指定すると同じ復旧を再送できる。復旧は招待を消費せず、管理者への任命とBAN解除を監査に残す。既存世界のデータ移行・認可、SSE、ワーカー、MCPへの接続は後続の実装で行う。

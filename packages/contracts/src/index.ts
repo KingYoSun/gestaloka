@@ -195,3 +195,74 @@ export const SceneRecordPage = z.object({
 export const KnowledgeQuery = PageQuery.safeExtend({
   excludeScene: z.uuid().optional(),
 });
+
+export const Member = z.object({
+  id: z.uuid(),
+  role: z.enum(["admin", "user"]),
+  banned: z.boolean(),
+  createdAt: z.iso.datetime(),
+});
+const operationPage = { before: z.uuid().optional() };
+const operationReason = z.string().trim().min(1);
+export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("account.register"),
+      invitation: z.string().optional(),
+    })
+    .strict(),
+  z.object({ operation: z.literal("settings.read") }).strict(),
+  z
+    .object({
+      operation: z.literal("settings.invites"),
+      enabled: z.boolean(),
+      reason: operationReason,
+    })
+    .strict(),
+  z.object({ operation: z.literal("users.list"), ...operationPage }).strict(),
+  z
+    .object({
+      operation: z.literal("users.role"),
+      userId: z.uuid(),
+      role: z.enum(["admin", "user"]),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("users.ban"),
+      userId: z.uuid(),
+      banned: z.boolean(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("invites.create"),
+      expiresAt: z.iso.datetime({ offset: true }),
+      maxUses: z.number().int().positive().safe(),
+      reason: operationReason,
+    })
+    .strict(),
+  z.object({ operation: z.literal("invites.list"), ...operationPage }).strict(),
+  z
+    .object({
+      operation: z.literal("invites.uses"),
+      inviteId: z.uuid(),
+      ...operationPage,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("invites.revoke"),
+      inviteId: z.uuid(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("audit.list"),
+      before: DeliveryCursor.shape.cursor.optional(),
+    })
+    .strict(),
+]);
