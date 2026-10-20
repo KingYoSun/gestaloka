@@ -431,3 +431,68 @@ test("ユーザー一覧をページを跨いで全件取得し、監査へ一�
   ).rows;
   expect(audit.every((r) => Object.keys(r.details).length === 0)).toBe(true);
 });
+
+test("モデル共有枠は管理者だけが版を指定して変更でき、再送・監査で版を増殖しない", async () => {
+  const admin = await founder(),
+    user = await join(admin.id),
+    name = "openai:model-without-fixed-id";
+  const command = {
+    operation: "modelLimits.put" as const,
+    name,
+    limits: { concurrency: 2, requestsPerMinute: 30 },
+    expectedVersion: 0,
+    reason: "契約上の利用枠を設定",
+  };
+  expect(
+    await run(admin.id, { operation: "modelLimits.read", name }),
+  ).toMatchObject({ version: 0, limits: null });
+  await expect(run(user.id, command)).rejects.toMatchObject({
+    code: "ADMIN_REQUIRED",
+  });
+  const id = randomUUID(),
+    result = await run(admin.id, command, id);
+  expect(result).toMatchObject({
+    version: 1,
+    limits: command.limits,
+    updatedBy: admin.id,
+    previous: null,
+  });
+  expect(await run(admin.id, command, id)).toEqual(result);
+  await expect(run(admin.id, command)).rejects.toMatchObject({
+    code: "SETTINGS_CHANGED",
+  });
+  const cleared = await run(admin.id, {
+    ...command,
+    limits: null,
+    expectedVersion: 1,
+  });
+  expect(cleared).toMatchObject({
+    version: 2,
+    limits: null,
+    previous: command.limits,
+  });
+  const audit = (
+    await db.postgres.query(
+      "SELECT outcome,details FROM operation_audit WHERE request_id=$1 ORDER BY id",
+      [id],
+    )
+  ).rows;
+  expect(audit.map((a) => a.outcome)).toEqual(["accepted", "replayed"]);
+  expect(audit[0].details).toMatchObject({
+    name,
+    limits: command.limits,
+    previous: null,
+    version: 1,
+    reason: command.reason,
+  });
+  const invalid = await app.inject({
+    method: "POST",
+    url: "/api/operations",
+    headers: { cookie: admin.cookie, "x-gestaloka-request": "1" },
+    payload: {
+      requestId: randomUUID(),
+      command: { ...command, limits: { concurrency: 0 } },
+    },
+  });
+  expect(invalid.statusCode).toBe(400);
+});

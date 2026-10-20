@@ -3,6 +3,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { AccessError } from "./access.js";
 import type { WorldPlayers } from "../runtime/players.js";
+import { ModelLimits } from "../llm/limits.js";
 
 import {
   Member,
@@ -61,6 +62,7 @@ export class Operations {
       );
   }
   async setup() {
+    await ModelLimits.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
       banned boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
@@ -342,6 +344,7 @@ export class Operations {
           : saved ||
               input.operation.endsWith(".list") ||
               input.operation === "invites.uses" ||
+              input.operation === "modelLimits.read" ||
               input.operation === "settings.read"
             ? {}
             : {
@@ -384,6 +387,50 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "modelLimits.read": {
+        const row = (
+          await db.query(
+            'SELECT name,limits,version,updated_by AS "updatedBy",updated_at AS "updatedAt" FROM llm_model_policy WHERE name=$1',
+            [input.name],
+          )
+        ).rows[0];
+        return row
+          ? { ...row, updatedAt: row.updatedAt.toISOString() }
+          : {
+              name: input.name,
+              limits: null,
+              version: 0,
+              updatedBy: null,
+              updatedAt: null,
+            };
+      }
+      case "modelLimits.put": {
+        const before = (
+          await db.query(
+            "SELECT limits,version FROM llm_model_policy WHERE name=$1 FOR UPDATE",
+            [input.name],
+          )
+        ).rows[0];
+        if ((before?.version ?? 0) !== input.expectedVersion)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "設定が変わりました。現在の版を読み直してください",
+          );
+        const row = (
+          await db.query(
+            `INSERT INTO llm_model_policy(name,limits,updated_by) VALUES($1,$2,$3)
+          ON CONFLICT(name) DO UPDATE SET limits=EXCLUDED.limits,version=llm_model_policy.version+1,updated_by=EXCLUDED.updated_by,updated_at=now()
+          RETURNING name,limits,version,updated_by AS "updatedBy",updated_at AS "updatedAt"`,
+            [input.name, JSON.stringify(input.limits), actor],
+          )
+        ).rows[0];
+        return {
+          ...row,
+          updatedAt: row.updatedAt.toISOString(),
+          previous: before?.limits ?? null,
+        };
+      }
       case "worlds.join":
       case "worlds.resumeJoin": {
         if (!context.players)
