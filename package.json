@@ -7,6 +7,10 @@
     "node": "^22.14.0 || ^24.0.0"
   },
   "scripts": {
+    "auth:init": "node scripts/init-auth.mjs",
+    "auth:up": "pnpm auth:init && docker compose --env-file .env --env-file .env.ory -f compose.yaml -f compose.ory.yaml up -d --wait kratos hydra",
+    "auth:stop": "docker compose --env-file .env --env-file .env.ory -f compose.yaml -f compose.ory.yaml stop kratos hydra identity-postgres",
+    "test:auth": "pnpm build:server && node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.auth.config.ts",
     "env:init": "node scripts/init-env.mjs",
     "llm:probe": "pnpm build:server && node --env-file=.env --import tsx scripts/probe-model.ts",
     "llm:harness-probe": "pnpm llm:probe --harness",

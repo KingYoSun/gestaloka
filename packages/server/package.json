@@ -11,7 +11,8 @@
     "./agent": "./dist/runtime/agent.js",
     "./construction": "./dist/runtime/construction.js",
     "./access": "./dist/http/access.js",
-    "./scene": "./dist/runtime/scene.js"
+    "./scene": "./dist/runtime/scene.js",
+    "./identity": "./dist/http/identity.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",

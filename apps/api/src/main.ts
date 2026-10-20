@@ -5,6 +5,7 @@ import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
+import { OryIdentity } from "@gestaloka/server/identity";
 
 const databases = connectDatabases();
 let app: Awaited<ReturnType<typeof createApp>> | undefined;
@@ -34,7 +35,11 @@ try {
     );
     await access.setup();
   }
-  app = await createApp(access);
+  const identity = process.env.ORY_KRATOS_PUBLIC_URL
+    ? new OryIdentity(databases.postgres, process.env.ORY_KRATOS_PUBLIC_URL)
+    : undefined;
+  await identity?.setup();
+  app = await createApp(access, identity, process.env.ORY_HYDRA_ADMIN_URL);
   await app.listen({
     host: "127.0.0.1",
     port: Number(process.env.PORT ?? 3000),

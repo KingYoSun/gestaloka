@@ -10,8 +10,14 @@ import {
 import { Health, HealthEvent } from "@gestaloka/contracts";
 import type { WorldAccess } from "@gestaloka/server/access";
 import { worldRoutes } from "./world-routes.js";
+import type { OryIdentity } from "@gestaloka/server/identity";
+import { authRoutes } from "./auth-routes.js";
 
-export async function createApp(access?: WorldAccess) {
+export async function createApp(
+  access?: WorldAccess,
+  identity?: OryIdentity,
+  hydraAdminUrl?: string,
+) {
   const app = Fastify().withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -31,6 +37,10 @@ export async function createApp(access?: WorldAccess) {
     },
   );
   await worldRoutes(app, access);
+  if (identity)
+    await app.register(async (scope) =>
+      authRoutes(scope, identity, hydraAdminUrl),
+    );
   await app.ready();
   return app;
 }
