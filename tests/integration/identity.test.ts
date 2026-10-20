@@ -131,3 +131,36 @@ test("認証通信失敗を上流の秘密値を含まない503に変える", as
     new IdentityError(503),
   );
 });
+
+test("ログイン方法の追加は再認証へ誘導し、OryのlinkとCSRFだけを送る", async () => {
+  const app = await createApp(undefined, identity);
+  try {
+    const start = await app.inject("/auth/link");
+    const target = new URL(String(start.headers.location));
+    expect(target.pathname).toBe("/self-service/login/browser");
+    expect(target.searchParams.get("refresh")).toBe("true");
+    expect(target.searchParams.get("return_to")).toBe(
+      "http://localhost:80/auth/settings",
+    );
+    replies.push({
+      ui: {
+        action: `${base}/self-service/settings?flow=linking`,
+        messages: [{ text: "<安全に表示>" }],
+        nodes: [
+          { attributes: { name: "csrf_token", value: "verified-token" } },
+          { attributes: { name: "link", value: "twitter" } },
+          { attributes: { name: "unlink", value: "google" } },
+          { attributes: { name: "traits.name", value: "hidden" } },
+        ],
+      },
+    });
+    const response = await app.inject("/auth/settings?flow=linking");
+    expect(response.body).toContain('name="link" value="twitter"');
+    expect(response.body).toContain('name="method" value="oidc"');
+    expect(response.body).toContain("&lt;安全に表示&gt;");
+    expect(response.body).not.toContain('name="unlink"');
+    expect(response.body).not.toContain('name="traits.name"');
+  } finally {
+    await app.close();
+  }
+});

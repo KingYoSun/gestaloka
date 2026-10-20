@@ -86,7 +86,11 @@ const kratos = {
         lifespan: "10m",
         after: { oidc: { hooks: [{ hook: "session" }] } },
       },
-      settings: { ui_url: `${env.ORY_AUTH_URL}/settings` },
+      settings: {
+        ui_url: `${env.ORY_AUTH_URL}/settings`,
+        privileged_session_max_age: "15m",
+        after: { default_browser_return_url: `${env.ORY_AUTH_URL}/settings` },
+      },
       logout: { after: { default_browser_return_url: `${env.ORY_APP_URL}/` } },
     },
   },
