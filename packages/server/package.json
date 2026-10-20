@@ -12,6 +12,7 @@
     "./construction": "./dist/runtime/construction.js",
     "./access": "./dist/http/access.js",
     "./scene": "./dist/runtime/scene.js",
+    "./players": "./dist/runtime/players.js",
     "./identity": "./dist/http/identity.js",
     "./operations": "./dist/http/operations.js"
   },

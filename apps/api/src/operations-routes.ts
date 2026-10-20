@@ -7,9 +7,15 @@ import {
   Member,
   Operation,
   LegacyClaimPage,
+  CatalogPageQuery,
+  WorldCatalogPage,
+  PlayerPresetPage,
+  WorldPlayerPage,
+  ResourceId,
 } from "@gestaloka/contracts";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { type Operations } from "@gestaloka/server/operations";
+import type { WorldPlayers } from "@gestaloka/server/players";
 import { AccessError } from "@gestaloka/server/access";
 import { authPage, escapeHtml } from "./auth-page.js";
 
@@ -17,6 +23,7 @@ export async function operationsRoutes(
   instance: FastifyInstance,
   identity?: OryIdentity,
   operations?: Operations,
+  players?: WorldPlayers,
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const identities = new WeakMap<FastifyRequest, string>();
@@ -119,9 +126,54 @@ export async function operationsRoutes(
         await actor(request),
         request.body.requestId,
         request.body.command,
-        { legacyToken: request.cookies.gestaloka },
+        { legacyToken: request.cookies.gestaloka, players },
       ),
     }),
+  );
+  app.get(
+    "/api/catalog/worlds",
+    {
+      schema: {
+        querystring: CatalogPageQuery,
+        response: { 200: WorldCatalogPage, ...errors },
+      },
+    },
+    async (request) =>
+      service().catalog(await actor(request), request.query.before),
+  );
+  app.get(
+    "/api/catalog/presets",
+    {
+      schema: {
+        querystring: CatalogPageQuery,
+        response: { 200: PlayerPresetPage, ...errors },
+      },
+    },
+    async (request) =>
+      service().presets(await actor(request), request.query.before),
+  );
+  app.get(
+    "/api/worlds/:id/players",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: CatalogPageQuery,
+        response: { 200: WorldPlayerPage, ...errors },
+      },
+    },
+    async (request) => {
+      if (!players)
+        throw new AccessError(
+          503,
+          "MODEL_NOT_CONFIGURED",
+          "参加処理を設定してください",
+        );
+      return players.list(
+        await actor(request),
+        request.params.id,
+        request.query.before,
+      );
+    },
   );
   app.get(
     "/api/account/legacy",

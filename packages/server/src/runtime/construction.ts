@@ -81,6 +81,11 @@ export class WorldConstruction {
     await this.pool.query(
       "ALTER TABLE world_construction ADD COLUMN IF NOT EXISTS budget_id uuid",
     );
+    await this.pool.query(`ALTER TABLE world_construction
+      ADD COLUMN IF NOT EXISTS public_title text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS public_description text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS published boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS accepting boolean NOT NULL DEFAULT false;`);
     for (const name of [this.queueName, `${this.queueName}-play`])
       await this.queue.createQueue(name, {
         retryLimit: 2,
@@ -448,11 +453,16 @@ export class WorldConstruction {
         await this.#record(row, id, result, client);
       await this.#save(row, client, claim);
     });
+    const controlled = await this.agent.controlledActors(
+      row.world_id!,
+      members.flatMap((m) => (m.actorId ? [m.actorId] : [])),
+    );
     if (
       row.state === "playing" &&
       members.some(
-        (member) =>
-          member.mode === "intent" && member.actorId === row.participant_id,
+        (m) =>
+          m.mode === "intent" &&
+          (m.actorId === row.participant_id || controlled.has(m.actorId!)),
       )
     ) {
       row.at = row.current!.at;

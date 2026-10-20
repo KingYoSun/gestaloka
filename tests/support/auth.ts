@@ -60,6 +60,9 @@ export async function fixtureAuth(
       sessions.delete(cookie);
     },
     async cleanup() {
+      await pool.query("DELETE FROM player_preset WHERE updated_by=ANY($1)", [
+        ids,
+      ]);
       await pool.query(
         "DELETE FROM operation_audit WHERE request_id IN (SELECT id FROM operation_request WHERE actor_id=ANY($1))",
         [ids],

@@ -217,6 +217,8 @@ export class WorldAgent {
       CREATE TABLE IF NOT EXISTS world_intent (
       id uuid PRIMARY KEY, world_id uuid NOT NULL, actor_id uuid NOT NULL, at bigint NOT NULL,
       view jsonb NOT NULL, system_prompt text NOT NULL);`);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS world_controlled_actor (
+      world_id uuid NOT NULL,actor_id uuid NOT NULL,PRIMARY KEY(world_id,actor_id));`);
     await this.pool.query(
       "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false",
     );
@@ -481,7 +483,24 @@ export class WorldAgent {
           break;
       }
     }
-    return { results, dependencies: context.dependencies };
+    const ids = [
+      ...new Set(
+        JSON.stringify(results).match(
+          /[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}/gi,
+        ) ?? [],
+      ),
+    ];
+    const controlled = await this.controlledActors(row.request.worldId, ids);
+    requests.forEach((q, index) => {
+      const result = results[index];
+      if (q.kind === "node" && result && typeof result === "object")
+        Object.assign(result, { controlledByPlayer: controlled.has(q.id) });
+    });
+    return {
+      results,
+      dependencies: context.dependencies,
+      controlledActorIds: [...controlled],
+    };
   }
 
   async #validateProposal(row: Operation, proposal: WorldProposal) {
@@ -784,6 +803,7 @@ export class WorldAgent {
         result: seed.results[index],
       })),
       dependencies: seed.dependencies,
+      controlledActorIds: seed.controlledActorIds,
     };
   }
 
@@ -807,6 +827,16 @@ export class WorldAgent {
 
   async run(id: string, resumeInput?: string): Promise<WorldProposal> {
     return ExecutionBudget.run(this.pool, id, () => this.#run(id, resumeInput));
+  }
+  async controlledActors(worldId: string, ids: string[]) {
+    if (!ids.length) return new Set<string>();
+    const rows = (
+      await this.pool.query<{ actor_id: string }>(
+        "SELECT actor_id FROM world_controlled_actor WHERE world_id=$1 AND actor_id=ANY($2::uuid[])",
+        [worldId, ids],
+      )
+    ).rows;
+    return new Set(rows.map((r) => r.actor_id));
   }
 
   async #run(id: string, resumeInput?: string): Promise<WorldProposal> {
@@ -837,7 +867,9 @@ export class WorldAgent {
           input.id,
           "world-update",
           input.messages,
-          ["interaction", "resolution"].includes(row.request.phase)
+          ["interaction", "resolution", "participant"].includes(
+            row.request.phase,
+          )
             ? "resolution"
             : "default",
         ),
@@ -850,8 +882,16 @@ export class WorldAgent {
     const commit = async (input: {
       dependencies: Dependency[];
       candidate: WorldProposal;
-    }) =>
-      this.store.commit(
+    }) => {
+      if (
+        row.request.phase === "participant" &&
+        input.candidate.newParticipantId
+      )
+        await this.pool.query(
+          "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+          [row.request.worldId, input.candidate.newParticipantId],
+        );
+      return this.store.commit(
         lease,
         this.store.context(row.request.worldId, input.dependencies),
         {
@@ -860,6 +900,7 @@ export class WorldAgent {
           changes: input.candidate.changes,
         },
       );
+    };
     const commitTask = task(
       "world-commit",
       async (input: Parameters<typeof commit>[0]) => {
@@ -897,6 +938,7 @@ export class WorldAgent {
                   content: JSON.stringify({
                     request: row.request,
                     initialContext: seed.initialContext,
+                    controlledActorIds: seed.controlledActorIds,
                     responseSchema: z.toJSONSchema(Decision, { io: "input" }),
                   }),
                 },
@@ -905,7 +947,9 @@ export class WorldAgent {
             }
             if (
               this.model.settingsFor("resolution").provider === "deepseek" &&
-              (["interaction", "resolution"].includes(row.request.phase) ||
+              (["interaction", "resolution", "participant"].includes(
+                row.request.phase,
+              ) ||
                 row.candidate)
             ) {
               let proposalId = row.candidate ? randomUUID() : undefined;
@@ -1310,6 +1354,8 @@ export class WorldAgent {
     ownIntentions: string[] = [],
     activityUntil?: number,
   ) {
+    if ((await this.controlledActors(worldId, [observerId])).has(observerId))
+      throw new Error("プレイヤーの新たな意図は本人の入力が必要です");
     return ExecutionBudget.run(this.pool, id, () =>
       this.#intent(worldId, observerId, at, id, ownIntentions, activityUntil),
     );

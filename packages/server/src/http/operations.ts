@@ -2,8 +2,15 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
 import { AccessError } from "./access.js";
+import type { WorldPlayers } from "../runtime/players.js";
 
-import { Member, Operation, LegacyClaimPage } from "@gestaloka/contracts";
+import {
+  Member,
+  Operation,
+  LegacyClaimPage,
+  WorldCatalogPage,
+  PlayerPresetPage,
+} from "@gestaloka/contracts";
 
 type Input = z.infer<typeof Operation>;
 type UserRow = {
@@ -17,7 +24,10 @@ const member = (row: UserRow) =>
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 type Database = Pick<pg.Pool, "query">;
-type Context = { legacyToken?: string | undefined };
+type Context = {
+  legacyToken?: string | undefined;
+  players?: WorldPlayers | undefined;
+};
 
 export async function requireMember(
   database: Database,
@@ -68,6 +78,9 @@ export class Operations {
         actor_id uuid REFERENCES app_identity(id),operation text NOT NULL,outcome text NOT NULL,details jsonb NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS operation_audit_request ON operation_audit(request_id,id);`);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS player_preset (
+      id uuid PRIMARY KEY,title text NOT NULL,description text NOT NULL,settings text NOT NULL,
+      version integer NOT NULL DEFAULT 1,updated_by uuid NOT NULL REFERENCES app_identity(id),updated_at timestamptz NOT NULL DEFAULT now());`);
   }
   async state(userId: string) {
     const user = (
@@ -86,6 +99,37 @@ export class Operations {
       inviteRequired: state.invite_required,
       bootstrapAvailable: !state.bootstrapped,
     };
+  }
+  async catalog(userId: string, before?: string) {
+    await this.authorize(userId);
+    const rows = (
+      await this.pool.query(
+        `SELECT c.id,c.public_title AS title,c.public_description AS description,c.accepting,
+      c.accepting AND c.published AND c.world_id IS NOT NULL AND c.state IN ('finished','playing','play_paused') AS "canJoin"
+      FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2)
+      AND (c.published OR EXISTS (SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
+        WHERE a.construction_id=c.id AND a.role='player' AND s.active AND s.user_id=$1))
+      ORDER BY c.id DESC LIMIT 51`,
+        [userId, before ?? null],
+      )
+    ).rows;
+    return WorldCatalogPage.parse({
+      items: rows.slice(0, 50),
+      next: rows.length > 50 ? rows[49]!.id : null,
+    });
+  }
+  async presets(userId: string, before?: string) {
+    await this.authorize(userId);
+    const rows = (
+      await this.pool.query(
+        "SELECT id,title,description,version FROM player_preset WHERE ($1::uuid IS NULL OR id<$1) ORDER BY id DESC LIMIT 51",
+        [before ?? null],
+      )
+    ).rows;
+    return PlayerPresetPage.parse({
+      items: rows.slice(0, 50),
+      next: rows.length > 50 ? rows[49]!.id : null,
+    });
   }
   async authorize(
     userId: string,
@@ -236,7 +280,9 @@ export class Operations {
         if (actor && input.operation !== "account.register")
           await this.authorize(
             actor,
-            input.operation !== "account.claim",
+            !["account.claim", "worlds.join", "worlds.resumeJoin"].includes(
+              input.operation,
+            ),
             database,
           );
         if (actor && input.operation === "account.register") {
@@ -257,7 +303,14 @@ export class Operations {
               saved.error.message,
             );
           result = saved.result;
-        } else result = await this.#perform(database, actor, input, context);
+        } else
+          result = await this.#perform(
+            database,
+            actor,
+            input,
+            context,
+            requestId,
+          );
       } catch (error) {
         if (!(error instanceof AccessError)) throw error;
         await database.query("ROLLBACK TO SAVEPOINT operation");
@@ -328,8 +381,90 @@ export class Operations {
     input:
       Input | { operation: "recovery.admin"; userId: string; reason: string },
     context: Context,
+    requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "worlds.join":
+      case "worlds.resumeJoin": {
+        if (!context.players)
+          throw new AccessError(
+            503,
+            "MODEL_NOT_CONFIGURED",
+            "参加処理を設定してください",
+          );
+        return input.operation === "worlds.join"
+          ? context.players.join(actor!, requestId, input, db)
+          : context.players.resume(actor!, input.joinId, db);
+      }
+      case "worlds.configure": {
+        const row = (
+          await db.query(
+            `UPDATE world_construction SET public_title=$2,public_description=$3,published=$4,accepting=$5 WHERE id=$1
+          RETURNING id,public_title AS title,public_description AS description,published,accepting`,
+            [
+              input.worldId,
+              input.title,
+              input.description,
+              input.published,
+              input.accepting,
+            ],
+          )
+        ).rows[0];
+        if (!row)
+          throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
+        return row;
+      }
+      case "presets.put": {
+        const row =
+          (
+            await db.query(
+              `INSERT INTO player_preset(id,title,description,settings,updated_by)
+          SELECT $1,$2,$3,$4,$5 WHERE $6::int=0
+          ON CONFLICT(id) DO NOTHING RETURNING id,version`,
+              [
+                input.presetId,
+                input.title,
+                input.description,
+                input.settings,
+                actor,
+                input.expectedVersion,
+              ],
+            )
+          ).rows[0] ??
+          (
+            await db.query(
+              `UPDATE player_preset SET title=$2,description=$3,settings=$4,updated_by=$5,updated_at=now(),version=version+1
+            WHERE id=$1 AND version=$6 AND $6>0 RETURNING id,version`,
+              [
+                input.presetId,
+                input.title,
+                input.description,
+                input.settings,
+                actor,
+                input.expectedVersion,
+              ],
+            )
+          ).rows[0];
+        if (!row)
+          throw new AccessError(
+            409,
+            "PRESET_CHANGED",
+            "設定が変わりました。プリセットを読み直してください",
+          );
+        return row;
+      }
+      case "presets.list": {
+        const rows = (
+          await db.query(
+            "SELECT id,title,description,settings,version,updated_by,updated_at FROM player_preset WHERE ($1::uuid IS NULL OR id<$1) ORDER BY id DESC LIMIT 51",
+            [input.before ?? null],
+          )
+        ).rows;
+        return {
+          items: rows.slice(0, 50),
+          next: rows.length > 50 ? rows[49]!.id : null,
+        };
+      }
       case "account.claim": {
         const source = await this.#legacySource(
           actor!,
