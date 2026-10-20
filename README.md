@@ -143,6 +143,8 @@ pnpm world:generate --resume <runId>
 
 実測結果は [初期生成の確認記録](documents/evaluations/deepseek-initial-world-2026-10-19.md) を参照してください。
 
+通常行動の追加比較は [Sonnetの再測定とHaikuの観測・意図形成の検証記録](documents/evaluations/haiku-observation-2026-10-20.md) を参照してください。
+
 ## 共通の世界更新
 
 ```powershell
