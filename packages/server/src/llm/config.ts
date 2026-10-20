@@ -183,7 +183,7 @@ export function settings(
     budgetUsd: z.coerce
       .number()
       .positive()
-      .max(40)
+      .max(100)
       .parse(env.LLM_BUDGET_USD ?? 40),
   };
   const allowed =
