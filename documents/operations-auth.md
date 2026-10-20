@@ -7,10 +7,22 @@
 ```powershell
 pnpm auth:init
 pnpm auth:up
+```
+
+APIは別のターミナルで起動する。
+
+```powershell
+pnpm build:server
 pnpm --filter @gestaloka/api start
 ```
 
-`auth:init`は`.env.ory`を新規作成し、`.ory/`にKratosとHydraの設定を生成する。既存の`.env.ory`は上書きせず、DBのパスワードと暗号鍵を保持する。設定値を変更した後は`pnpm auth:up`で設定を再生成する。コンテナー内の環境変数が変わった場合も再作成される。APIの設定変更後はAPIを再起動する。
+ログイン後の戻り先となるユーザー画面も、別のターミナルで起動する。
+
+```powershell
+pnpm --filter @gestaloka/web dev
+```
+
+`auth:init`は`.env.ory`を新規作成し、`.ory/`にKratosとHydraの設定を生成する。既存の`.env.ory`は上書きせず、DBのパスワードと暗号鍵を保持する。設定値を変更した後は`pnpm auth:up`で設定を再生成し、KratosとHydraを再作成して読み込み直す。APIの設定変更後はAPIを再起動する。
 
 `.env.ory`と`.ory/`には秘密情報が含まれるためGitへ登録しない。生成設定や`docker compose config`の全文をIssueやログへ貼り付けない。これらのファイルと`identity-data`ボリュームを失うと、保存済みIdentityやセッションの復旧に影響する。
 

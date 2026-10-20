@@ -96,7 +96,7 @@ export async function authRoutes(
           hasProvider
             ? `<form action="${escape(data.ui.action)}" method="post">${inputs}</form>`
             : "<p>ソーシャルログインの接続設定が必要です。</p>",
-          new URL(base).origin,
+          `${new URL(base).origin} https://accounts.google.com https://api.twitter.com https://api.x.com https://twitter.com https://x.com`,
         );
       },
     );
