@@ -219,6 +219,8 @@ pnpm test:e2e
 
 統合テストは実DBを使い、Neo4jの再接続後の読取、PostgreSQLトランザクション内のキュー投入のロールバック、LangGraphの中断・再開と保存済みtaskの再利用を確認します。ブラウザーテストは専用の実API・独立ワーカー・DBとテスト用モデル応答を使い、構築から通常行動・再読込・長い履歴まで確認します。専用キューと予算を使用し、外部LLMへ送信しません。
 
+`pnpm test:poc`は、独立した更新・同一対象の競合・密な作用経路・キューの並行実行を実DBで計測します。外部LLMを呼ばず、専用データを作って終了時に削除します。出力先は任意の第1引数で指定でき、既定は`artifacts/evaluations/world-runtime-poc.json`です。[PoCの条件・結果・限界](documents/evaluations/world-runtime-poc-2026-10-20.md)を参照してください。
+
 物語・行動結果の固定を検証の合格条件にしません。共有グラフの保存・確定・履歴と検証範囲は [ADR-001](documents/adr/ADR-001-world-graph.md) を参照してください。実モデルの品質・時間・費用と残る課題はdocuments/evaluationsに記録します。
 
 ## 設計資料

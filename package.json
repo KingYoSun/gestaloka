@@ -26,6 +26,7 @@
     "test": "pnpm build:server && vitest run",
     "test:integration": "pnpm build:server && node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts",
     "test:e2e": "pnpm build:server && node --env-file-if-exists=.env node_modules/@playwright/test/cli.js test",
+    "test:poc": "pnpm build:server && node --env-file-if-exists=.env --import tsx tests/poc/world-runtime.ts",
     "check": "pnpm generate:check && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build",
     "db:up": "docker compose up -d --wait",
     "db:stop": "docker compose stop"

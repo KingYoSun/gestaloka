@@ -39,3 +39,5 @@ Runの試行世代をNeo4jで更新し、引継ぎ後の古い試行からの確
 作用が意味的に届くか、多段・循環・継続作用をどこまで解決したか、自然言語で表した状態が両立するかは、この構造検査では証明しません。探索量・確定時間・ロック待ち・高密度な関係集合の計測と、村の一貫実行は後続です。#30全体の完了とは扱いません。
 
 ロックは [Neo4jの同時アクセス仕様](https://neo4j.com/docs/operations-manual/current/database-internals/concurrent-data-access/) の一時プロパティによる書込ロックを利用します。一意性は [複合プロパティ制約](https://neo4j.com/docs/cypher-manual/current/constraints/managing-constraints/) で検証し、実行メタデータにも適用します。
+
+2026-10-20更新: 導入時に後続としていた村の一貫実行は#34、並行・集中更新、高密度な作用経路、探索量、ロック待ち、キューとPostgreSQLの計測は[PoC記録](../evaluations/world-runtime-poc-2026-10-20.md)で確認した。PostgreSQLとNeo4jの試行の連携もWorldAgentへ接続済み。ここで定めた意味・依存・確定手続きは変更しない。
