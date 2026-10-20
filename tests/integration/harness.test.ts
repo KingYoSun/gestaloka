@@ -4,6 +4,7 @@ import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldStore } from "@gestaloka/server/world";
+import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 
 const d = connectDatabases(),
   worlds: string[] = [],
@@ -13,6 +14,9 @@ const d = connectDatabases(),
 const empty = () => ({ nodes: [], edges: [], revisions: [], endEdges: [] });
 beforeAll(() => d.verify());
 afterAll(async () => {
+  await d.postgres.query("DELETE FROM world_budget WHERE world_id=ANY($1)", [
+    worlds,
+  ]);
   await d.postgres.query("DELETE FROM llm_model_use WHERE scope=ANY($1)", [
     scopes,
   ]);
@@ -355,6 +359,7 @@ test.each([
     );
     const agent = new WorldAgent(d.postgres, d.graph, d.checkpointer, model);
     await agent.setup();
+    await WorldBudget.create(d.postgres, worldId, 100);
     const store = new WorldStore(d.graph),
       lease = await store.claim(worldId, randomUUID());
     await store.commit(lease, store.context(worldId), {

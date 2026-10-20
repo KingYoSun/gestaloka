@@ -496,3 +496,85 @@ test("モデル共有枠は管理者だけが版を指定して変更でき、�
   });
   expect(invalid.statusCode).toBe(400);
 });
+
+test("世界予算は明示設定時から開始し、増減・再送でも既存費用と開始時点を戻さない", async () => {
+  const admin = await founder(),
+    user = await join(admin.id),
+    worldId = randomUUID(),
+    graphId = randomUUID();
+  await db.postgres.query(
+    "CREATE TABLE world_build(run_id uuid PRIMARY KEY,world_id uuid NOT NULL)",
+  );
+  await db.postgres.query("INSERT INTO world_build VALUES($1,$2)", [
+    worldId,
+    graphId,
+  ]);
+  expect(
+    await run(admin.id, { operation: "worldBudgets.read", worldId }),
+  ).toMatchObject({ version: 0, limitUsd: null, upperCostUsd: null });
+  const command = {
+    operation: "worldBudgets.put" as const,
+    worldId,
+    budgetUsd: 20,
+    expectedVersion: 0,
+    reason: "世界の運用予算",
+  };
+  await expect(run(user.id, command)).rejects.toMatchObject({
+    code: "ADMIN_REQUIRED",
+  });
+  const requestId = randomUUID(),
+    first = await run(admin.id, command, requestId);
+  expect(first).toMatchObject({
+    version: 1,
+    limitUsd: 20,
+    upperCostUsd: 0,
+    historyScope: "sinceBudgetConfigured",
+    updatedBy: admin.id,
+  });
+  await db.postgres.query(
+    "UPDATE world_budget SET used_nano=3000000000 WHERE world_id=$1",
+    [graphId],
+  );
+  expect(await run(admin.id, command, requestId)).toEqual(first);
+  const changed = await run(admin.id, {
+    ...command,
+    budgetUsd: 2,
+    expectedVersion: 1,
+  });
+  expect(changed).toMatchObject({
+    version: 2,
+    limitUsd: 2,
+    upperCostUsd: 3,
+    since: first.since,
+  });
+  await expect(
+    run(admin.id, { ...command, expectedVersion: 1 }),
+  ).rejects.toMatchObject({ code: "SETTINGS_CHANGED" });
+});
+
+test("応答のcall上限は管理者が変更し、版の衝突と再送で設定を増殖しない", async () => {
+  const admin = await founder(),
+    user = await join(admin.id),
+    before = await run(admin.id, { operation: "responseLimits.read" });
+  const command = {
+    operation: "responseLimits.put" as const,
+    calls: 20,
+    expectedVersion: before.version as number,
+    reason: "ループ防止の上限",
+  };
+  await expect(run(user.id, command)).rejects.toMatchObject({
+    code: "ADMIN_REQUIRED",
+  });
+  const requestId = randomUUID(),
+    saved = await run(admin.id, command, requestId);
+  expect(saved).toMatchObject({
+    calls: 20,
+    version: 2,
+    previous: 64,
+    updatedBy: admin.id,
+  });
+  expect(await run(admin.id, command, requestId)).toEqual(saved);
+  await expect(run(admin.id, command)).rejects.toMatchObject({
+    code: "SETTINGS_CHANGED",
+  });
+});

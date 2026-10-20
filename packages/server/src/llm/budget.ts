@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { ExecutionBudget } from "../execution-budget.js";
 import { ModelLimits } from "./limits.js";
+import { WorldBudget } from "./world-budget.js";
 
 export const NANO_USD = 1_000_000_000;
 export class BudgetUnavailable extends Error {}
@@ -21,7 +22,7 @@ export class BudgetLedger {
   constructor(
     readonly pool: pg.Pool,
     readonly budgetId: string,
-    readonly limitNano: number,
+    readonly limitNano: number | null,
     readonly modelLimits = new ModelLimits(pool),
   ) {}
   async setup() {
@@ -34,12 +35,23 @@ export class BudgetLedger {
       reserved_nano bigint NOT NULL, charged_nano bigint, request jsonb NOT NULL,
       response jsonb, state text NOT NULL DEFAULT 'pending', elapsed_ms integer,
       created_at timestamptz NOT NULL DEFAULT now());`);
-    const result = await this.pool.query<{ limit_nano: string }>(
+    await this.pool.query(
+      "ALTER TABLE llm_budget ALTER COLUMN limit_nano DROP NOT NULL",
+    );
+    await this.pool
+      .query(`ALTER TABLE llm_call ADD COLUMN IF NOT EXISTS world_id uuid;
+      CREATE INDEX IF NOT EXISTS llm_call_world ON llm_call(world_id,created_at);`);
+    await WorldBudget.setup(this.pool);
+    const result = await this.pool.query<{ limit_nano: string | null }>(
       `INSERT INTO llm_budget (id, limit_nano) VALUES ($1, $2)
        ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id RETURNING limit_nano`,
       [this.budgetId, this.limitNano],
     );
-    if (Number(result.rows[0]!.limit_nano) !== this.limitNano)
+    if (
+      (result.rows[0]!.limit_nano === null
+        ? null
+        : Number(result.rows[0]!.limit_nano)) !== this.limitNano
+    )
       throw new BudgetUnavailable(
         "保存済み予算と設定が異なります。自動では予算を増額しません",
       );
@@ -56,7 +68,7 @@ export class BudgetLedger {
       await client.query("BEGIN");
       const budget = await client.query<{
         used_nano: string;
-        limit_nano: string;
+        limit_nano: string | null;
       }>(
         "SELECT used_nano, limit_nano FROM llm_budget WHERE id = $1 FOR UPDATE",
         [this.budgetId],
@@ -85,14 +97,41 @@ export class BudgetLedger {
       }
       if (
         !budget.rows[0] ||
-        Number(budget.rows[0].used_nano) + reservation >
-          Number(budget.rows[0].limit_nano)
+        (budget.rows[0].limit_nano !== null &&
+          Number(budget.rows[0].used_nano) + reservation >
+            Number(budget.rows[0].limit_nano))
       )
         throw new BudgetUnavailable("費用上限のため実行を保留します");
-      await ExecutionBudget.take("llm", client);
+      const worldId = ExecutionBudget.worldId;
+      if (worldId) {
+        const world = (
+          await client.query<{ used_nano: string; limit_nano: string }>(
+            "SELECT used_nano,limit_nano FROM world_budget WHERE world_id=$1 FOR UPDATE",
+            [worldId],
+          )
+        ).rows[0];
+        if (!world)
+          throw new BudgetUnavailable(
+            "世界の予算を設定してから再開してください",
+          );
+        if (Number(world.used_nano) + reservation > Number(world.limit_nano))
+          throw new BudgetUnavailable("世界の予算上限のため実行を保留します");
+        await client.query(
+          "UPDATE world_budget SET used_nano=used_nano+$2 WHERE world_id=$1",
+          [worldId, reservation],
+        );
+      }
+      await ExecutionBudget.take(client);
       await client.query(
-        "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request) VALUES ($1,$2,$3,$4,$5)",
-        [id, this.budgetId, hash, reservation, JSON.stringify(request)],
+        "INSERT INTO llm_call (id, budget_id, hash, reserved_nano, request,world_id) VALUES ($1,$2,$3,$4,$5,$6)",
+        [
+          id,
+          this.budgetId,
+          hash,
+          reservation,
+          JSON.stringify(request),
+          worldId ?? null,
+        ],
       );
       await client.query(
         "UPDATE llm_budget SET used_nano = used_nano + $2 WHERE id = $1",
@@ -123,14 +162,20 @@ export class BudgetLedger {
       const result = await client.query<{
         reserved_nano: string;
         state: string;
+        world_id: string | null;
       }>(
-        "SELECT reserved_nano, state FROM llm_call WHERE id = $1 AND budget_id = $2 FOR UPDATE",
+        "SELECT reserved_nano, state,world_id FROM llm_call WHERE id = $1 AND budget_id = $2 FOR UPDATE",
         [id, this.budgetId],
       );
       const call = result.rows[0];
       if (!call || charged > Number(call.reserved_nano))
         throw new Error("使用量が予約した費用上限と整合しません");
       if (call.state === "pending") {
+        if (call.world_id)
+          await client.query(
+            "UPDATE world_budget SET used_nano=used_nano-$2+$3 WHERE world_id=$1",
+            [call.world_id, Number(call.reserved_nano), charged],
+          );
         await client.query(
           "UPDATE llm_budget SET used_nano = used_nano - $2 + $3 WHERE id = $1",
           [this.budgetId, Number(call.reserved_nano), charged],
@@ -179,7 +224,8 @@ export class BudgetLedger {
     );
     const row = result.rows[0]!;
     return {
-      limitUsd: Number(row.limit_nano) / NANO_USD,
+      limitUsd:
+        row.limit_nano === null ? null : Number(row.limit_nano) / NANO_USD,
       upperCostUsd: Number(row.used_nano) / NANO_USD,
       calls: Number(row.calls),
       unsettled: Number(row.unsettled),

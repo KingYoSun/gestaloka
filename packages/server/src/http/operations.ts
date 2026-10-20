@@ -4,6 +4,8 @@ import { z } from "zod";
 import { AccessError } from "./access.js";
 import type { WorldPlayers } from "../runtime/players.js";
 import { ModelLimits } from "../llm/limits.js";
+import { WorldBudget } from "../llm/world-budget.js";
+import { ExecutionBudget } from "../execution-budget.js";
 
 import {
   Member,
@@ -63,6 +65,8 @@ export class Operations {
   }
   async setup() {
     await ModelLimits.setup(this.pool);
+    await ExecutionBudget.setup(this.pool);
+    await WorldBudget.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS app_user (
       id uuid PRIMARY KEY REFERENCES app_identity(id),role text NOT NULL CHECK(role IN ('admin','user')),
       banned boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now());
@@ -345,6 +349,8 @@ export class Operations {
               input.operation.endsWith(".list") ||
               input.operation === "invites.uses" ||
               input.operation === "modelLimits.read" ||
+              input.operation === "worldBudgets.read" ||
+              input.operation === "responseLimits.read" ||
               input.operation === "settings.read"
             ? {}
             : {
@@ -387,6 +393,87 @@ export class Operations {
     requestId: string,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "responseLimits.read": {
+        const row = (
+          await db.query(
+            'SELECT calls,version,updated_by AS "updatedBy",updated_at AS "updatedAt" FROM response_call_policy WHERE singleton',
+          )
+        ).rows[0];
+        return { ...row, updatedAt: row.updatedAt.toISOString() };
+      }
+      case "responseLimits.put": {
+        const before = (
+          await db.query(
+            "SELECT calls FROM response_call_policy WHERE singleton FOR UPDATE",
+          )
+        ).rows[0].calls;
+        const row = (
+          await db.query(
+            'UPDATE response_call_policy SET calls=$1,version=version+1,updated_by=$2,updated_at=now() WHERE singleton AND version=$3 RETURNING calls,version,updated_by AS "updatedBy",updated_at AS "updatedAt"',
+            [input.calls, actor, input.expectedVersion],
+          )
+        ).rows[0];
+        if (!row)
+          throw new AccessError(
+            409,
+            "SETTINGS_CHANGED",
+            "現在の設定版を読み直してください",
+          );
+        return {
+          ...row,
+          updatedAt: row.updatedAt.toISOString(),
+          previous: before,
+        };
+      }
+      case "worldBudgets.read":
+      case "worldBudgets.put": {
+        const world = (
+          await db.query<{ world_id: string }>(
+            "SELECT world_id FROM world_build WHERE run_id=$1",
+            [input.worldId],
+          )
+        ).rows[0];
+        if (!world)
+          throw new AccessError(404, "WORLD_NOT_FOUND", "世界が見つかりません");
+        const previous = await WorldBudget.read(db, world.world_id);
+        if (input.operation === "worldBudgets.put") {
+          const row =
+            (
+              await db.query(
+                `INSERT INTO world_budget(world_id,limit_nano,updated_by)
+            SELECT $1,$2,$3 WHERE $4::int=0 ON CONFLICT(world_id) DO NOTHING RETURNING world_id`,
+                [
+                  world.world_id,
+                  Math.round(input.budgetUsd * 1_000_000_000),
+                  actor,
+                  input.expectedVersion,
+                ],
+              )
+            ).rows[0] ??
+            (
+              await db.query(
+                "UPDATE world_budget SET limit_nano=$2,version=version+1,updated_by=$3,updated_at=now() WHERE world_id=$1 AND version=$4 AND $4>0 RETURNING world_id",
+                [
+                  world.world_id,
+                  Math.round(input.budgetUsd * 1_000_000_000),
+                  actor,
+                  input.expectedVersion,
+                ],
+              )
+            ).rows[0];
+          if (!row)
+            throw new AccessError(
+              409,
+              "SETTINGS_CHANGED",
+              "現在の予算設定を読み直してください",
+            );
+        }
+        return {
+          worldId: input.worldId,
+          ...(await WorldBudget.read(db, world.world_id)),
+          ...(input.operation === "worldBudgets.put" ? { previous } : {}),
+        };
+      }
       case "modelLimits.read": {
         const row = (
           await db.query(

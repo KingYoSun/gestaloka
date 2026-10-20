@@ -1,15 +1,17 @@
+import { isolatedDatabases } from "../support/isolated-db.js";
 import { legacyPlayer } from "../support/legacy-player.js";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WORLD_DAY_MS } from "@gestaloka/contracts";
-import { connectDatabases, ExecutionBudget } from "@gestaloka/server";
+import { ExecutionBudget } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent, type WorldProposal } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 
-const databases = connectDatabases();
+const isolated = isolatedDatabases();
+const databases = isolated.databases;
 const ids: string[] = [],
   worlds: string[] = [],
   queues: string[] = [],
@@ -307,7 +309,7 @@ async function fixture(
     queueName,
   );
   await runtime.setup();
-  const id = await runtime.create("自由記述の初期入力");
+  const id = await runtime.create("自由記述の初期入力", 100);
   ids.push(id);
   await runtime.tick(id);
   worlds.push((await runtime.get(id)).world_id!);
@@ -325,6 +327,7 @@ async function fixture(
   };
 }
 beforeAll(async () => {
+  await isolated.setup();
   await databases.verify();
   databases.queue.on("error", console.error);
   await databases.queue.start();
@@ -371,7 +374,7 @@ afterAll(async () => {
       { worldId },
     );
   await databases.queue.stop();
-  await databases.close();
+  await isolated.close();
 });
 async function reach(runtime: WorldConstruction, id: string) {
   for (let i = 0; i < 10; i++) {
@@ -465,7 +468,7 @@ test("初期生成と独立審査を上位モデルで行い、修正後だけ�
     model,
   );
   await builder.setup();
-  const id = await builder.create("水辺で暮らす村民");
+  const id = await builder.create("水辺で暮らす村民", 100);
   ids.push(id);
   const build = await builder.generate(id);
   worlds.push(build.world_id);
@@ -1007,25 +1010,13 @@ test("起動の提案がなくても確定した作用の受け手を評価し�
 
 test("時間指定・追加進行・明示完了・別の村民の参加で履歴と継続を保持する", async () => {
   const scene = await fixture();
-  const initialCalls = (await scene.agent.model.ledger.summary()).calls;
   for (const duration of [WORLD_DAY_MS - 1, WORLD_DAY_MS * 1.5])
     await expect(
       scene.runtime.command(scene.id, "advance", duration),
     ).rejects.toThrow();
   expect((await scene.runtime.get(scene.id)).target).toBe(0);
   await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
-  const firstScope = (await scene.runtime.get(scene.id)).budget_id;
   let row = await reach(scene.runtime, scene.id);
-  const firstUsage = (
-    await databases.postgres.query(
-      "SELECT llm_used,graph_used FROM execution_budget WHERE id=$1",
-      [firstScope],
-    )
-  ).rows[0];
-  expect(firstUsage.llm_used).toBe(
-    (await scene.agent.model.ledger.summary()).calls - initialCalls,
-  );
-  expect(firstUsage.graph_used).toBeGreaterThan(0);
   expect(row).toMatchObject({
     state: "ready",
     at: WORLD_DAY_MS,
@@ -1044,15 +1035,6 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
   const first = await scene.runtime.report(scene.id);
   await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
   row = await reach(scene.runtime, scene.id);
-  expect(row.budget_id).not.toBe(firstScope);
-  expect(
-    (
-      await databases.postgres.query(
-        "SELECT llm_used,graph_used FROM execution_budget WHERE id=$1",
-        [firstScope],
-      )
-    ).rows[0],
-  ).toEqual(firstUsage);
   expect(row).toMatchObject({ state: "ready", at: WORLD_DAY_MS * 2 });
   expect(scene.actions).toEqual([
     "知覚した場所へ働きかけ続ける",
@@ -1093,48 +1075,57 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
   );
 });
 
-test("構築区間の上限で実際の時点を保持し、明示再開で使用量を戻さず枠を追加する", async () => {
+test("構築は活動の節目ごとにcallを通算し、再開では上限を増やさない", async () => {
   const scene = await fixture();
-  const initialCalls = (await scene.agent.model.ledger.summary()).calls;
-  const initialRequests = scene.transport.mock.calls.length;
   await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
-  const scope = (await scene.runtime.get(scene.id)).budget_id!;
-  await ExecutionBudget.run(databases.postgres, scope, async () => {});
+  const staged = await scene.runtime.get(scene.id),
+    work = staged.agenda.splice(
+      staged.agenda.findIndex((item) => item.mode === "intent"),
+      1,
+    )[0]!;
+  await databases.postgres.query(
+    "UPDATE world_construction SET current=$2,agenda=$3 WHERE id=$1",
+    [scene.id, JSON.stringify(work), JSON.stringify(staged.agenda)],
+  );
+  await ExecutionBudget.run(databases.postgres, work.id, async () => {});
   await databases.postgres.query(
     "UPDATE execution_budget SET llm_used=64 WHERE id=$1",
-    [scope],
+    [work.id],
   );
-  await expect(scene.runtime.tick(scene.id)).rejects.toThrow("LLM呼出し");
-  expect(await scene.runtime.get(scene.id)).toMatchObject({
-    state: "paused",
-    at: 0,
-    target: WORLD_DAY_MS,
-    budget_id: scope,
-  });
-  expect(scene.transport).toHaveBeenCalledTimes(initialRequests);
+  await expect(scene.runtime.tick(scene.id)).rejects.toThrow("call回数上限");
+  expect((await scene.runtime.get(scene.id)).current?.id).toBe(work.id);
   await scene.runtime.command(scene.id, "resume");
-  expect(
-    (
-      await databases.postgres.query(
-        "SELECT llm_used,llm_limit FROM execution_budget WHERE id=$1",
-        [scope],
-      )
-    ).rows[0],
-  ).toEqual({ llm_used: 64, llm_limit: 128 });
-  const row = await reach(scene.runtime, scene.id);
-  expect(row).toMatchObject({
-    state: "ready",
-    at: WORLD_DAY_MS,
-    budget_id: scope,
-  });
+  await expect(scene.runtime.tick(scene.id)).rejects.toThrow("call回数上限");
   expect(
     (
       await databases.postgres.query(
         "SELECT llm_used FROM execution_budget WHERE id=$1",
-        [scope],
+        [work.id],
       )
     ).rows[0].llm_used,
-  ).toBe(64 + (await scene.agent.model.ledger.summary()).calls - initialCalls);
+  ).toBe(64);
+  await databases.postgres.query(
+    "UPDATE response_call_policy SET calls=128 WHERE singleton",
+  );
+  try {
+    await scene.runtime.command(scene.id, "resume");
+    expect(await reach(scene.runtime, scene.id)).toMatchObject({
+      state: "ready",
+      at: WORLD_DAY_MS,
+    });
+    const counts = (
+      await databases.postgres.query(
+        "SELECT llm_used,llm_limit FROM execution_budget WHERE id=$1",
+        [work.id],
+      )
+    ).rows[0];
+    expect(counts.llm_used).toBeGreaterThan(64);
+    expect(counts.llm_limit).toBe(128);
+  } finally {
+    await databases.postgres.query(
+      "UPDATE response_call_policy SET calls=64 WHERE singleton",
+    );
+  }
 });
 
 test("途中保留を時刻到達・構築完了と区別し、再開して同じ世界へ到達する", async () => {

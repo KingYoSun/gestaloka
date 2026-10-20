@@ -623,11 +623,17 @@
                   "prompt": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "budgetUsd": {
+                    "type": "number",
+                    "minimum": 1e-9,
+                    "maximum": 9007199.25474099
                   }
                 },
                 "required": [
                   "requestId",
-                  "prompt"
+                  "prompt",
+                  "budgetUsd"
                 ],
                 "additionalProperties": false
               }
@@ -4588,6 +4594,114 @@
                   },
                   "command": {
                     "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "worldBudgets.read"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "worldBudgets.put"
+                            ]
+                          },
+                          "worldId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "budgetUsd": {
+                            "type": "number",
+                            "minimum": 1e-9,
+                            "maximum": 9007199.25474099
+                          },
+                          "expectedVersion": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "worldId",
+                          "budgetUsd",
+                          "expectedVersion",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "responseLimits.read"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "operation"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "responseLimits.put"
+                            ]
+                          },
+                          "calls": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991
+                          },
+                          "expectedVersion": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "exclusiveMinimum": true,
+                            "maximum": 9007199254740991
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "calls",
+                          "expectedVersion",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
                       {
                         "type": "object",
                         "properties": {

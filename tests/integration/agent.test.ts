@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
+import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 import {
   WorldStore,
   type Change,
@@ -81,6 +82,8 @@ const response = (content: unknown) =>
 async function fixture() {
   const worldId = randomUUID();
   worlds.push(worldId);
+  await WorldBudget.setup(databases.postgres);
+  await WorldBudget.create(databases.postgres, worldId, 100);
   const actor = node("existence", "SELF_PRIVATE"),
     place = node("existence", "ROOT_PRIVATE"),
     object = node("existence", "TARGET_PRIVATE"),
@@ -206,6 +209,10 @@ beforeAll(async () => {
   await store.setup();
 });
 afterAll(async () => {
+  await databases.postgres.query(
+    "DELETE FROM world_budget WHERE world_id=ANY($1)",
+    [worlds],
+  );
   await databases.postgres.query(
     "DELETE FROM world_intent WHERE world_id=ANY($1::uuid[])",
     [worlds],

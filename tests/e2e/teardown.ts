@@ -19,6 +19,9 @@ export default async function teardown() {
     ).rows;
     const ids = sessions.map((row) => row.id),
       worlds = sessions.map((row) => row.world_id).filter(Boolean);
+    await d.postgres.query("DELETE FROM world_budget WHERE world_id=ANY($1)", [
+      worlds,
+    ]);
     await d.queue.deleteQueue(`e2e-${scope}`);
     await d.queue.deleteQueue(`e2e-${scope}-play`);
     await d.queue.deleteQueue(`e2e-${scope}-scenes`);

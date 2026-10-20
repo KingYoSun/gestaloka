@@ -5,7 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { cpus, totalmem } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
-import { connectDatabases } from "@gestaloka/server";
+import { connectDatabases, WorldBudget } from "@gestaloka/server";
 import {
   WorldStore,
   WorldConflict,
@@ -177,6 +177,7 @@ async function measure(
 async function seed(nodes: Change["nodes"], edges: Change["edges"] = []) {
   const world = randomUUID();
   worlds.push(world);
+  await WorldBudget.create(db.postgres, world, 100);
   const lease = await store.claim(world, randomUUID());
   await store.commit(lease, store.context(world), {
     commitId: randomUUID(),

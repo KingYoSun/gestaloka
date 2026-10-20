@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { z } from "zod";
-import { ConstructionDuration, WORLD_DAY_MS } from "@gestaloka/contracts";
+import {
+  ConstructionDuration,
+  WORLD_DAY_MS,
+  BudgetUsd,
+} from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
@@ -15,6 +19,7 @@ const { values, positionals } = parseArgs({
     prompt: { type: "string" },
     days: { type: "string" },
     action: { type: "string" },
+    budget: { type: "string" },
   },
 });
 const command = z
@@ -50,7 +55,10 @@ try {
     if (!values.prompt) throw new Error("--prompt <file> を指定してください");
     console.log(
       JSON.stringify({
-        id: await construction.create(await readFile(values.prompt, "utf8")),
+        id: await construction.create(
+          await readFile(values.prompt, "utf8"),
+          BudgetUsd.parse(Number(values.budget)),
+        ),
       }),
     );
   } else {

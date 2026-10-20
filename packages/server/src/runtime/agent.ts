@@ -826,7 +826,18 @@ export class WorldAgent {
   }
 
   async run(id: string, resumeInput?: string): Promise<WorldProposal> {
-    return ExecutionBudget.run(this.pool, id, () => this.#run(id, resumeInput));
+    const world = (
+      await this.pool.query<{ world_id: string }>(
+        "SELECT request->>'worldId' AS world_id FROM world_operation WHERE id=$1",
+        [id],
+      )
+    ).rows[0];
+    return ExecutionBudget.run(
+      this.pool,
+      id,
+      () => this.#run(id, resumeInput),
+      world?.world_id,
+    );
   }
   async controlledActors(worldId: string, ids: string[]) {
     if (!ids.length) return new Set<string>();
@@ -1356,8 +1367,12 @@ export class WorldAgent {
   ) {
     if ((await this.controlledActors(worldId, [observerId])).has(observerId))
       throw new Error("プレイヤーの新たな意図は本人の入力が必要です");
-    return ExecutionBudget.run(this.pool, id, () =>
-      this.#intent(worldId, observerId, at, id, ownIntentions, activityUntil),
+    return ExecutionBudget.run(
+      this.pool,
+      id,
+      () =>
+        this.#intent(worldId, observerId, at, id, ownIntentions, activityUntil),
+      worldId,
     );
   }
 

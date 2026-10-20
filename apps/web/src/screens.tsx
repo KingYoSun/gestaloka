@@ -20,7 +20,7 @@ import { Textarea } from "./components/ui/textarea.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { ScenePlayer } from "./ScenePlayer.js";
-import { Publication, Presets } from "./operations-ui.js";
+import { Publication, Presets, WorldBudgetSettings } from "./operations-ui.js";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
@@ -52,7 +52,10 @@ export function Home() {
   const [pending, save] = usePending(pendingKey("new", "create"), CreateWorld);
   const form = useForm<z.infer<typeof PromptForm>>({
     resolver: zodResolver(PromptForm),
-    defaultValues: { prompt: pending?.prompt ?? "" },
+    defaultValues: {
+      prompt: pending?.prompt ?? "",
+      ...(pending ? { budgetUsd: pending.budgetUsd } : {}),
+    },
   });
   const worlds = $api.useQuery("get", "/api/worlds");
   const create = $api.useMutation("post", "/api/worlds", {
@@ -69,6 +72,7 @@ export function Home() {
     const body = pending ?? {
       requestId: crypto.randomUUID(),
       prompt: value.prompt,
+      budgetUsd: value.budgetUsd,
     };
     save(body);
     create.mutate({ body });
@@ -94,6 +98,19 @@ export function Home() {
         />
         <p id="prompt-error" className="field-error">
           {form.formState.errors.prompt?.message}
+        </p>
+        <Label htmlFor="world-budget">この世界の予算上限（USD）</Label>
+        <Input
+          id="world-budget"
+          type="number"
+          min="0.000000001"
+          step="any"
+          required
+          readOnly={!!pending || create.isPending}
+          {...form.register("budgetUsd", { valueAsNumber: true })}
+        />
+        <p className="field-error">
+          {form.formState.errors.budgetUsd?.message}
         </p>
         {pending && <Notice>前回と同じ入力・要求IDで受付を確認します。</Notice>}
         {create.error && <Problem error={create.error} />}
@@ -279,6 +296,7 @@ export function Manage({ id }: { id: string }) {
         </Button>
       )}
       <Publication id={id} initial={world.publication} />
+      <WorldBudgetSettings id={id} />
       <History ref={history} id={id} role="admin" viewer="admin" />
     </main>
   );

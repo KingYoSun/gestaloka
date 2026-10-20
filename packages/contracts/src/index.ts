@@ -13,8 +13,17 @@ export const ApiError = z.object({ code: z.string(), message: z.string() });
 export const BrowserSession = z.object({ id: z.uuid() });
 export const ResourceId = z.object({ id: z.uuid() });
 export const WorldList = z.array(ResourceId);
+export const BudgetUsd = z
+  .number()
+  .min(0.000000001)
+  .finite()
+  .max(Number.MAX_SAFE_INTEGER / 1_000_000_000);
 export const CreateWorld = z
-  .object({ requestId: z.uuid(), prompt: z.string().min(1) })
+  .object({
+    requestId: z.uuid(),
+    prompt: z.string().min(1),
+    budgetUsd: BudgetUsd,
+  })
   .strict();
 export const WORLD_DAY_MS = 86_400_000;
 export const ConstructionDuration = z
@@ -284,6 +293,27 @@ export const ModelLimitName = z
   .string()
   .regex(/^(deepseek|gemini|openai|anthropic):.+$/);
 export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({ operation: z.literal("worldBudgets.read"), worldId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worldBudgets.put"),
+      worldId: z.uuid(),
+      budgetUsd: BudgetUsd,
+      expectedVersion: z.number().int().nonnegative().safe(),
+      reason: operationReason,
+    })
+    .strict(),
+  z.object({ operation: z.literal("responseLimits.read") }).strict(),
+  z
+    .object({
+      operation: z.literal("responseLimits.put"),
+      calls: quotaCount,
+      expectedVersion: z.number().int().positive().safe(),
+      reason: operationReason,
+    })
+    .strict(),
   z
     .object({ operation: z.literal("modelLimits.read"), name: ModelLimitName })
     .strict(),
