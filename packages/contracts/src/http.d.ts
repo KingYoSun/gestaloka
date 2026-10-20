@@ -2370,6 +2370,70 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "models.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "models.put";
+                            configuration: {
+                                default: {
+                                    /** @enum {string} */
+                                    provider: "deepseek" | "gemini" | "openai" | "anthropic";
+                                    model: string;
+                                    /** Format: uri */
+                                    baseUrl: string;
+                                    /** Format: uri */
+                                    harnessBaseUrl?: string;
+                                    /** @enum {string} */
+                                    api: "chat-completions" | "responses" | "messages";
+                                    /** @enum {string} */
+                                    effort: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    initialEffort: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    contextTokens: number;
+                                    maxOutputTokens: number;
+                                    inputUsdPerMillion: number;
+                                    cachedInputUsdPerMillion: number;
+                                    outputUsdPerMillion: number;
+                                    /** Format: date */
+                                    pricingDate: string;
+                                };
+                                resolution: {
+                                    /** @enum {string} */
+                                    provider: "deepseek" | "gemini" | "openai" | "anthropic";
+                                    model: string;
+                                    /** Format: uri */
+                                    baseUrl: string;
+                                    /** Format: uri */
+                                    harnessBaseUrl?: string;
+                                    /** @enum {string} */
+                                    api: "chat-completions" | "responses" | "messages";
+                                    /** @enum {string} */
+                                    effort: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    /** @enum {string} */
+                                    initialEffort: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+                                    contextTokens: number;
+                                    maxOutputTokens: number;
+                                    inputUsdPerMillion: number;
+                                    cachedInputUsdPerMillion: number;
+                                    outputUsdPerMillion: number;
+                                    /** Format: date */
+                                    pricingDate: string;
+                                };
+                                /** @enum {string} */
+                                judgment: "separate" | "combined";
+                            };
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "credentials.put";
+                            /** @enum {string} */
+                            provider: "deepseek" | "gemini" | "openai" | "anthropic";
+                            value: string;
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "worldBudgets.read";
                             /** Format: uuid */
                             worldId: string;

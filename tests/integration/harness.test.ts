@@ -1,42 +1,30 @@
+import { isolatedDatabases } from "../support/isolated-db.js";
 import { createHash, randomUUID } from "node:crypto";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldStore } from "@gestaloka/server/world";
 import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 
-const d = connectDatabases(),
-  worlds: string[] = [],
-  operations: string[] = [],
-  budgets: string[] = [],
-  scopes: string[] = [];
+let isolated: ReturnType<typeof isolatedDatabases>,
+  d: ReturnType<typeof connectDatabases>;
+const worlds: string[] = [];
 const empty = () => ({ nodes: [], edges: [], revisions: [], endEdges: [] });
-beforeAll(() => d.verify());
-afterAll(async () => {
-  await d.postgres.query("DELETE FROM world_budget WHERE world_id=ANY($1)", [
-    worlds,
-  ]);
-  await d.postgres.query("DELETE FROM llm_model_use WHERE scope=ANY($1)", [
-    scopes,
-  ]);
-  await d.postgres.query("DELETE FROM world_operation WHERE id=ANY($1)", [
-    operations,
-  ]);
-  await d.postgres.query(
-    "DELETE FROM world_controlled_actor WHERE world_id=ANY($1)",
-    [worlds],
-  );
-  await d.postgres.query("DELETE FROM llm_call WHERE budget_id=ANY($1)", [
-    budgets,
-  ]);
-  await d.postgres.query("DELETE FROM llm_budget WHERE id=ANY($1)", [budgets]);
+beforeEach(async () => {
+  isolated = isolatedDatabases();
+  d = isolated.databases;
+  await isolated.setup();
+  await d.verify();
+});
+afterEach(async () => {
   for (const worldId of worlds)
     await d.graph.executeQuery(
       "MATCH(n) WHERE n.worldId=$worldId DETACH DELETE n",
       { worldId },
     );
-  await d.close();
+  worlds.length = 0;
+  await isolated.close();
 });
 function sse(model: string, blocks: unknown[]) {
   const frames: unknown[] = [
@@ -156,11 +144,9 @@ test.each([
       budgetId = randomUUID();
     const joined = randomUUID();
     worlds.push(worldId);
-    budgets.push(budgetId);
     const scope = createHash("sha256")
-      .update(`deepseek:deepseek-flash:${budgetId}`)
+      .update("deepseek:deepseek-flash:service")
       .digest("hex");
-    scopes.push(scope);
     let stage = 0;
     const candidate = {
       type: "propose",
@@ -206,6 +192,7 @@ test.each([
     const transport = vi
       .fn<typeof fetch>()
       .mockImplementation(async (url, options) => {
+        expect(model.configurationVersion).toBe(1);
         expect(
           (
             await d.postgres.query(
@@ -345,9 +332,10 @@ test.each([
         if (failAfterCommit) throw new Error("応答を喪失した");
         return sse(body.model, [{ type: "text", text: "完了しました" }]);
       });
-    const model = new LlmClient(
+    const model = await LlmClient.create(
       d.postgres,
       {
+        OPERATIONS_TOKEN_SECRET: "3".repeat(64),
         DEEPSEEK_API_KEY: budgetId,
         LLM_MODEL_LIMITS: JSON.stringify({
           "deepseek:deepseek-flash": { concurrency: 1 },
@@ -381,7 +369,6 @@ test.each([
         ? []
         : [{ actorId: actor, actionText: "状態を確かめる", continuing: false }],
     });
-    operations.push(id);
     if (transportFailure) {
       await expect(agent.run(id)).rejects.toThrow("UND_ERR_SOCKET");
       expect(transport).toHaveBeenCalledTimes(2);

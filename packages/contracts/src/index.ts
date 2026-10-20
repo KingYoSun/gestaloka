@@ -292,7 +292,55 @@ export const ModelLimit = z
 export const ModelLimitName = z
   .string()
   .regex(/^(deepseek|gemini|openai|anthropic):.+$/);
+export const ModelProvider = z.enum([
+  "deepseek",
+  "gemini",
+  "openai",
+  "anthropic",
+]);
+export const ModelSetting = z
+  .object({
+    provider: ModelProvider,
+    model: z.string().trim().min(1),
+    baseUrl: z.url(),
+    harnessBaseUrl: z.url().optional(),
+    api: z.enum(["chat-completions", "responses", "messages"]),
+    effort: z.enum(["none", "low", "medium", "high", "xhigh", "max"]),
+    initialEffort: z.enum(["none", "low", "medium", "high", "xhigh", "max"]),
+    contextTokens: quotaCount,
+    maxOutputTokens: quotaCount,
+    inputUsdPerMillion: z.number().positive().finite(),
+    cachedInputUsdPerMillion: z.number().nonnegative().finite(),
+    outputUsdPerMillion: z.number().positive().finite(),
+    pricingDate: z.iso.date(),
+  })
+  .strict();
+export const ModelConfiguration = z
+  .object({
+    default: ModelSetting,
+    resolution: ModelSetting,
+    judgment: z.enum(["separate", "combined"]),
+  })
+  .strict();
 export const Operation = z.discriminatedUnion("operation", [
+  z.object({ operation: z.literal("models.read") }).strict(),
+  z
+    .object({
+      operation: z.literal("models.put"),
+      configuration: ModelConfiguration,
+      expectedVersion: z.number().int().nonnegative().safe(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("credentials.put"),
+      provider: ModelProvider,
+      value: z.string().min(1),
+      expectedVersion: z.number().int().nonnegative().safe(),
+      reason: operationReason,
+    })
+    .strict(),
   z
     .object({ operation: z.literal("worldBudgets.read"), worldId: z.uuid() })
     .strict(),

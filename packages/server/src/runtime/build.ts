@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { ExecutionBudget } from "../execution-budget.js";
 import { WorldBudget } from "../llm/world-budget.js";
 import { BudgetUsd } from "@gestaloka/contracts";
 import { readFile } from "node:fs/promises";
@@ -145,12 +144,7 @@ export class WorldBuilder {
         [runId],
       )
     ).rows[0];
-    return ExecutionBudget.run(
-      this.pool,
-      runId,
-      () => this.#generate(runId),
-      world?.world_id,
-    );
+    return this.model.run(runId, () => this.#generate(runId), world?.world_id);
   }
 
   async #generate(runId: string) {

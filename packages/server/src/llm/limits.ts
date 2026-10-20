@@ -5,13 +5,14 @@ import { z } from "zod";
 import { ModelLimit, ModelLimitName } from "@gestaloka/contracts";
 
 const Limits = z.record(ModelLimitName, ModelLimit);
-type Usage = { sent: () => void; used: (tokens: number) => void };
+type Usage = { key: string; sent: () => void; used: (tokens: number) => void };
 
 export class ModelLimits {
   readonly limits: z.infer<typeof Limits>;
   constructor(
     readonly pool: pg.Pool,
     json = "{}",
+    readonly identity?: string,
   ) {
     this.limits = Limits.parse(JSON.parse(json));
   }
@@ -35,22 +36,27 @@ export class ModelLimits {
   async run<T>(
     input: {
       name: string;
-      key: string;
+      key: string | (() => Promise<string>);
       request: unknown;
       maxOutput: number;
       cached: boolean;
     },
     work: (usage: Usage) => Promise<T>,
   ): Promise<T> {
-    if (input.cached) return work({ sent: () => {}, used: () => {} });
+    const credential = () =>
+      typeof input.key === "string" ? Promise.resolve(input.key) : input.key();
+    if (input.cached)
+      return work({ key: await credential(), sent: () => {}, used: () => {} });
     const tokens =
       Buffer.byteLength(JSON.stringify(input.request), "utf8") +
       input.maxOutput;
-    const scope = createHash("sha256")
-        .update(`${input.name}:${input.key}`)
-        .digest("hex"),
-      id = randomUUID();
+    const id = randomUUID();
+    let key: string;
     for (;;) {
+      key = await credential();
+      const scope = createHash("sha256")
+        .update(`${input.name}:${this.identity ?? key}`)
+        .digest("hex");
       const client = await this.pool.connect();
       let admitted: boolean;
       try {
@@ -113,6 +119,7 @@ export class ModelLimits {
       used = tokens;
     try {
       return await work({
+        key,
         sent: () => {
           sent = true;
         },

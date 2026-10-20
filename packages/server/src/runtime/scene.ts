@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
+import { ExecutionLimit } from "../execution-budget.js";
 import type pg from "pg";
 import type { ChatMessage } from "../llm/client.js";
 import type { Dependency } from "../world/store.js";
@@ -775,30 +775,26 @@ export class WorldScenes {
     if (row.claim !== claim) return;
     try {
       if (row.state === "preparing")
-        await ExecutionBudget.run(
-          this.pool,
+        await this.agent.model.run(
           this.#budget(row),
           () => this.#background(row),
           row.data.worldId,
         );
       else if (row.state === "acting") {
         if (
-          await ExecutionBudget.run(
-            this.pool,
+          await this.agent.model.run(
             this.#budget(row),
             () => this.#action(row),
             row.data.worldId,
           )
         )
-          await ExecutionBudget.run(
-            this.pool,
+          await this.agent.model.run(
             this.#budget(row),
             () => this.#reflect(row),
             row.data.worldId,
           );
       } else
-        await ExecutionBudget.run(
-          this.pool,
+        await this.agent.model.run(
           this.#budget(row),
           () => this.#reflect(row),
           row.data.worldId,

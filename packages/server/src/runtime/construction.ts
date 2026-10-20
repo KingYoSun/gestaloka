@@ -665,8 +665,7 @@ export class WorldConstruction {
       return row;
     });
     if (row.claim !== claim) return;
-    return ExecutionBudget.run(
-      this.pool,
+    return this.agent.model.run(
       row.state === "generating"
         ? row.id
         : row.state === "playing"

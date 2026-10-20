@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { ExecutionBudget } from "../execution-budget.js";
+import { ModelSettings, type SettingsSnapshot } from "./settings.js";
 import type pg from "pg";
 import { z } from "zod";
 import { BudgetLedger, NANO_USD, type SavedCompletion } from "./budget.js";
 import { ModelLimits } from "./limits.js";
 import {
   settings,
+  budgetSettings,
   providerFor,
   profiles,
   type Provider,
@@ -37,6 +41,7 @@ type StoredRequest = {
   thinking?: { type: string };
 };
 type StoredInput = {
+  configurationVersion?: number;
   role: string;
   requestedVersion: string;
   pricingDate: string;
@@ -111,39 +116,152 @@ const ResponsesResponse = z.object({
       .optional(),
   }),
 });
+const configurationScope = new AsyncLocalStorage<SettingsSnapshot | null>();
 export class LlmClient {
-  readonly settings: ReturnType<typeof settings>;
-  readonly environment: NodeJS.ProcessEnv;
+  readonly #baseEnvironment: NodeJS.ProcessEnv;
+  #configuration: ModelSettings | undefined;
   readonly ledger: BudgetLedger;
   readonly limits: ModelLimits;
   constructor(
     pool: pg.Pool,
     environment: NodeJS.ProcessEnv = process.env,
     readonly transport: typeof fetch = fetch,
+    managed = false,
   ) {
-    this.environment = { ...environment };
-    this.settings = settings(this.environment);
-    this.limits = new ModelLimits(pool, environment.LLM_MODEL_LIMITS || "{}");
+    this.#baseEnvironment = { ...environment };
+    if (!managed) settings(this.#baseEnvironment);
+    const budget = budgetSettings(environment);
+    this.limits = new ModelLimits(
+      pool,
+      environment.LLM_MODEL_LIMITS || "{}",
+      managed ? "service" : undefined,
+    );
     this.ledger = new BudgetLedger(
       pool,
-      this.settings.budgetId,
-      this.settings.budgetUsd === null
+      budget.budgetId,
+      budget.budgetUsd === null
         ? null
-        : Math.round(this.settings.budgetUsd * NANO_USD),
+        : Math.round(budget.budgetUsd * NANO_USD),
       this.limits,
     );
   }
+  static async create(
+    pool: pg.Pool,
+    environment: NodeJS.ProcessEnv = process.env,
+    transport: typeof fetch = fetch,
+  ) {
+    const store = new ModelSettings(
+      pool,
+      environment.OPERATIONS_TOKEN_SECRET ?? "",
+      transport,
+    );
+    await ModelSettings.setup(pool);
+    const env = {
+      ...environment,
+      LLM_MAX_OUTPUT_TOKENS: environment.LLM_MAX_OUTPUT_TOKENS ?? "65536",
+    };
+    await store.initialize(env);
+    const current = await store.latest();
+    const model = new LlmClient(
+      pool,
+      {
+        ...env,
+        ...(current ? ModelSettings.environment(current.configuration) : {}),
+      },
+      transport,
+      true,
+    );
+    model.#configuration = store;
+    return model;
+  }
+  get environment() {
+    const config = this.#configuration && configurationScope.getStore();
+    return config
+      ? {
+          ...this.#baseEnvironment,
+          ...ModelSettings.environment(config.configuration),
+        }
+      : this.#baseEnvironment;
+  }
+  get settings() {
+    return this.settingsFor();
+  }
+  get configurationVersion() {
+    return this.#configuration
+      ? (configurationScope.getStore()?.version ?? null)
+      : null;
+  }
+  async settingsAt(
+    target: LlmTarget,
+    id: string,
+    database: Pick<pg.Pool, "query">,
+  ) {
+    if (!this.#configuration) return this.settingsFor(target);
+    const snapshot = await this.#configuration.capture(
+      id,
+      database,
+      configurationScope.getStore()?.version,
+    );
+    if (!snapshot) throw new Error("モデルの運用設定を有効にしてください");
+    return settings(
+      {
+        ...this.#baseEnvironment,
+        ...(snapshot ? ModelSettings.environment(snapshot.configuration) : {}),
+      },
+      target,
+    );
+  }
+  async run<T>(
+    id: string,
+    work: () => Promise<T>,
+    worldId?: string,
+  ): Promise<T> {
+    return ExecutionBudget.run(
+      this.ledger.pool,
+      id,
+      async () => {
+        if (!this.#configuration || configurationScope.getStore() !== undefined)
+          return work();
+        const child = await this.#configuration.capture(id),
+          rootId = ExecutionBudget.id!;
+        const snapshot =
+          rootId === id
+            ? child
+            : await this.#configuration.capture(
+                rootId,
+                undefined,
+                child?.version,
+              );
+        return configurationScope.run(snapshot ?? null, work);
+      },
+      worldId,
+    );
+  }
+  bind<A extends unknown[], R>(work: (...args: A) => R) {
+    const current = configurationScope.getStore();
+    return ExecutionBudget.bind(
+      current === undefined
+        ? work
+        : (...args: A) => configurationScope.run(current, () => work(...args)),
+    );
+  }
   settingsFor(target: LlmTarget = "default") {
-    return target === "default"
-      ? this.settings
-      : settings(this.environment, target);
+    if (this.#configuration && configurationScope.getStore() === null)
+      throw new Error("モデルの運用設定を有効にしてください");
+    return settings(this.environment, target);
   }
   get requestedVersion() {
     return this.settings.version;
   }
-  headers(provider: Provider) {
-    const key = this.environment[`${provider.toUpperCase()}_API_KEY`];
+  async apiKey(provider: Provider) {
+    const key =
+      (await this.#configuration?.secret(provider)) ??
+      this.#baseEnvironment[`${provider.toUpperCase()}_API_KEY`];
     if (!key) throw new Error(`${provider}のAPIキーを設定してください`);
+    return key;
+  }
+  async headers(provider: Provider, suppliedKey?: string) {
+    const key = suppliedKey ?? (await this.apiKey(provider));
     return provider === "anthropic"
       ? { "x-api-key": key, "anthropic-version": "2023-06-01" }
       : { Authorization: `Bearer ${key}` };
@@ -151,7 +269,7 @@ export class LlmClient {
   async verifyModel(target: LlmTarget = "default") {
     const config = this.settingsFor(target);
     const response = await this.transport(`${config.baseUrl}/models`, {
-      headers: this.headers(config.provider),
+      headers: await this.headers(config.provider),
       signal: AbortSignal.timeout(30000),
     });
     if (!response.ok)
@@ -176,6 +294,8 @@ export class LlmClient {
     messages: ChatMessage[],
     target: LlmTarget = "default",
   ): Promise<SavedCompletion> {
+    if (this.#configuration && configurationScope.getStore() === undefined)
+      return this.run(id, () => this.complete(id, role, messages, target));
     z.uuid().parse(id);
     const previous = (await this.ledger.input(id)) as StoredInput | undefined;
     const selected = previous ? this.settings : this.settingsFor(target);
@@ -260,17 +380,25 @@ export class LlmClient {
     const stored = {
       role,
       requestedVersion: previous?.requestedVersion ?? selected.version,
-      pricingDate: previous?.pricingDate ?? "2026-10-20",
+      pricingDate: previous?.pricingDate ?? selected.pricingDate,
+      ...(previous
+        ? previous.configurationVersion === undefined
+          ? {}
+          : { configurationVersion: previous.configurationVersion }
+        : this.configurationVersion === null
+          ? {}
+          : { configurationVersion: this.configurationVersion }),
       request,
       ...(previous && !previous.connection ? {} : { connection }),
     };
     const hash = createHash("sha256")
       .update(JSON.stringify(stored))
       .digest("hex");
+    if (previous) return (await this.ledger.reserve(id, hash, 0, stored))!;
     return this.limits.run(
       {
         name: `${provider}:${model}`,
-        key: this.environment[`${provider.toUpperCase()}_API_KEY`]!,
+        key: () => this.apiKey(provider),
         request,
         maxOutput,
         cached: !!previous,
@@ -295,7 +423,7 @@ export class LlmClient {
         const response = await this.transport(`${connection.baseUrl}/${path}`, {
           method: "POST",
           headers: {
-            ...this.headers(provider),
+            ...(await this.headers(provider, quota.key)),
             "Content-Type": "application/json",
           },
           body: JSON.stringify(request),
@@ -305,7 +433,9 @@ export class LlmClient {
           throw new Error(
             `LLM要求の結果を確定できません: HTTP ${response.status}。予約枠は保持します`,
           );
-        const raw: unknown = await response.json();
+        const raw: unknown = await response.json().catch(() => {
+          throw new Error("LLM応答の形式を確認できません。予約枠は保持します");
+        });
         let completion: SavedCompletion;
         if (api === "messages") {
           const result = MessageResponse.parse(raw);

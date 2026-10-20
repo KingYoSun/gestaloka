@@ -38,6 +38,9 @@ export class ExecutionBudget {
   static get worldId() {
     return scope.getStore()?.worldId;
   }
+  static get id() {
+    return scope.getStore()?.id;
+  }
 
   static bind<A extends unknown[], R>(work: (...args: A) => R) {
     const current = scope.getStore();

@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { ModelProvider } from "@gestaloka/contracts";
 
 export const MODEL_VERSION = "DeepSeek-V4.1-Flash-1017";
 export type LlmTarget = "default" | "resolution";
-export const Provider = z.enum(["deepseek", "gemini", "openai", "anthropic"]);
+export const Provider = ModelProvider;
 export type Provider = z.infer<typeof Provider>;
 export type Api = "chat-completions" | "responses" | "messages";
 const endpoints: Record<Provider, string> = {
@@ -168,7 +169,10 @@ export function settings(
         defaults,
     ),
     initialEffort: effort.parse(
-      optional(env, `${prefix}_INITIAL_REASONING_EFFORT`) ??
+      (target === "resolution"
+        ? optional(env, "LLM_RESOLUTION_INITIAL_REASONING_EFFORT")
+        : undefined) ??
+        optional(env, `${prefix}_INITIAL_REASONING_EFFORT`) ??
         optional(env, "LLM_INITIAL_REASONING_EFFORT") ??
         defaults,
     ),
@@ -179,17 +183,8 @@ export function settings(
     inputMiss: rate("INPUT", known?.inputMiss),
     inputHit: rate("CACHED_INPUT", known?.inputHit),
     output: rate("OUTPUT", known?.output),
-    budgetId: z
-      .string()
-      .min(1)
-      .parse(env.LLM_BUDGET_ID ?? "service-usage"),
-    budgetUsd: env.LLM_BUDGET_USD
-      ? z.coerce
-          .number()
-          .positive()
-          .max(Number.MAX_SAFE_INTEGER / 1_000_000_000)
-          .parse(env.LLM_BUDGET_USD)
-      : null,
+    pricingDate: z.iso.date().parse(get("PRICING_DATE") ?? "2026-10-20"),
+    ...budgetSettings(env),
   };
   const allowed =
     provider === "gemini"
@@ -213,4 +208,19 @@ export function settings(
       result.context * result.inputMiss + result.maxOutput * result.output,
     );
   return result;
+}
+export function budgetSettings(env: NodeJS.ProcessEnv) {
+  return {
+    budgetId: z
+      .string()
+      .min(1)
+      .parse(env.LLM_BUDGET_ID ?? "service-usage"),
+    budgetUsd: env.LLM_BUDGET_USD
+      ? z.coerce
+          .number()
+          .positive()
+          .max(Number.MAX_SAFE_INTEGER / 1_000_000_000)
+          .parse(env.LLM_BUDGET_USD)
+      : null,
+  };
 }
