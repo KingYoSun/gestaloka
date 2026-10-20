@@ -7,11 +7,13 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { modelEnvironment, approvedTransport } from "./model.js";
 
-export async function fixtureRuntime(): Promise<{
+export async function fixtureRuntime(
+  scope = process.env.E2E_SCOPE,
+  transform?: (content: unknown, user: Record<string, unknown>) => unknown,
+): Promise<{
   databases: ReturnType<typeof connectDatabases>;
   runtime: WorldConstruction;
 }> {
-  const scope = process.env.E2E_SCOPE;
   if (!scope) throw new Error("E2E_SCOPEが必要です");
   const databases = connectDatabases();
   await databases.verify();
@@ -243,6 +245,7 @@ export async function fixtureRuntime(): Promise<{
             })),
         };
       }
+      content = transform?.(content, user) ?? content;
       return new Response(
         JSON.stringify({
           id: randomUUID(),

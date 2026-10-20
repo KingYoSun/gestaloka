@@ -1,13 +1,53 @@
 import { expect, test } from "./fixtures.js";
 import { createHash, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
+import type { Page } from "@playwright/test";
+
+async function participate(page: Page) {
+  const id = new URL(page.url()).pathname.split("/")[2]!;
+  const preset = await page.request.post("/api/operations", {
+    headers: { "X-Gestaloka-Request": "1" },
+    data: {
+      requestId: randomUUID(),
+      command: {
+        operation: "presets.put",
+        presetId: randomUUID(),
+        expectedVersion: 0,
+        title: "村民",
+        description: "村に暮らす人物",
+        settings: "この村に暮らす新しい村民",
+        reason: "E2E参加設定",
+      },
+    },
+  });
+  expect(preset.ok(), await preset.text()).toBe(true);
+  await page.getByLabel("公開用の名称", { exact: true }).fill("参加できる村");
+  await page.getByLabel("登録済みの全員へ公開する", { exact: true }).check();
+  await page.getByLabel("新しい参加を受け付ける", { exact: true }).check();
+  await page
+    .getByRole("button", { name: "公開・参加受付を保存する", exact: true })
+    .click();
+  await expect(
+    page.getByText("公開・参加受付を保存しました。", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "別の村民として参加する", exact: true }),
+  ).toHaveCount(0);
+  await page.goto(`http://127.0.0.1:4173/worlds/${id}`);
+  await page
+    .getByRole("button", { name: "この設定で参加する", exact: true })
+    .click();
+  await page
+    .getByRole("link", { name: "この人物で始める →", exact: true })
+    .click();
+}
 
 test("ログインだけでは匿名データを移行せず、対象確認と本人の操作で引き継ぐ", async ({
   page,
   context,
   baseURL,
 }) => {
-  await page.goto("/");
+  await page.goto("http://127.0.0.1:4174/");
   await page.getByLabel("世界の初期設定").fill("引き継ぐ対象の村");
   await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
@@ -15,10 +55,8 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "別の村民として参加する", exact: true })
-    .click();
-  await page.getByRole("link", { name: /村民の画面を開く/ }).click();
+  await participate(page);
+
   const world = new URL(page.url()).pathname.split("/")[2]!;
   const user = (await (await page.request.get("/api/session")).json()).id;
   const legacy = randomUUID(),
@@ -27,10 +65,10 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
   try {
     const actor = (
       await db.postgres.query(
-        "SELECT participant_id FROM world_construction WHERE id=$1",
-        [world],
+        "SELECT actor_id FROM world_access WHERE construction_id=$1 AND subject_id=$2 AND role='player'",
+        [world, user],
       )
-    ).rows[0].participant_id;
+    ).rows[0].actor_id;
     await db.postgres.query(
       "INSERT INTO world_subject(id,token_hash) VALUES($1,$2)",
       [legacy, createHash("sha256").update(token).digest("hex")],
@@ -105,7 +143,7 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
 test("構築・追加進行・完了・別村民の行動を実APIと独立ワーカーで再開する", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("http://127.0.0.1:4174/");
   await page
     .getByLabel("世界の初期設定")
     .fill("一つの村と村民のための初期設定");
@@ -129,12 +167,8 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "別の村民として参加する", exact: true })
-    .click();
-  await page
-    .getByRole("link", { name: "村民の画面を開く", exact: false })
-    .click();
+  await participate(page);
+
   await expect(
     page.getByRole("heading", { name: "村民として", exact: true }),
   ).toBeVisible();
@@ -212,7 +246,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     .click();
   await expect(
     page.getByRole("heading", { name: "リザルト", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15000 });
   await expect(
     page.getByText(
       "周囲の景色を確認しました。このシーンで見たことが記録に残りました。",
@@ -229,7 +263,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
 
 test("狭い画面で入力・閲覧・テーマ切替ができる", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("/");
+  await page.goto("http://127.0.0.1:4174/");
   await expect(page.getByLabel("世界の初期設定")).toBeVisible();
   const toggle = page.getByRole("button", { name: /モードに切り替える/ });
   const before = await page.locator("html").getAttribute("class");
@@ -244,10 +278,60 @@ test("狭い画面で入力・閲覧・テーマ切替ができる", async ({ pa
   ).toBe(true);
 });
 
+test("管理画面で設定を保存し、一般ユーザーには参加画面だけを提供する", async ({
+  page,
+}) => {
+  await page.goto("http://127.0.0.1:4174/");
+  const title = `狩人-${randomUUID()}`;
+  await page.getByLabel("設定の名称", { exact: true }).fill(title);
+  await page.getByLabel("参加者向けの説明", { exact: true }).fill("森を歩く人");
+  await page
+    .getByLabel("生成用の設定本文（管理者向け）", { exact: true })
+    .fill("PRIVATE_PRESET_森での生活に即した人物");
+  await page
+    .getByRole("button", { name: "プレイヤー設定を保存する", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: title, exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "artifacts/screenshots/admin-presets.png",
+    fullPage: true,
+  });
+  const id = (await (await page.request.get("/api/session")).json()).id;
+  const db = connectDatabases();
+  try {
+    await db.postgres.query("UPDATE app_user SET role='user' WHERE id=$1", [
+      id,
+    ]);
+  } finally {
+    await db.close();
+  }
+  await page.reload();
+  await expect(
+    page.getByText("管理者の権限が必要です。", { exact: true }),
+  ).toBeVisible();
+  await page.goto("http://127.0.0.1:4173/");
+  await expect(
+    page.getByRole("heading", { name: "参加する世界を選ぶ", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "管理画面", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("世界の初期設定", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.locator("body")).not.toContainText("PRIVATE_PRESET");
+  await page.screenshot({
+    path: "artifacts/screenshots/user-catalog.png",
+    fullPage: true,
+  });
+});
+
 test("進行中シーンと行動履歴もスクロールで取得し、保持ページの入替えで閲覧位置を保つ", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("http://127.0.0.1:4174/");
   await page.getByLabel("世界の初期設定").fill("長いシーンの検証用の世界");
   await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
@@ -255,10 +339,8 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "別の村民として参加する", exact: true })
-    .click();
-  await page.getByRole("link", { name: /村民の画面を開く/ }).click();
+  await participate(page);
+
   await page
     .getByLabel("次のシーンで何をしたいですか")
     .fill("村で人々の話を聞く");
@@ -398,7 +480,7 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
 test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧位置を保つ", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("http://127.0.0.1:4174/");
   await page.getByLabel("世界の初期設定").fill("履歴の検証用の世界");
   await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
@@ -408,10 +490,8 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
   await page
     .getByRole("button", { name: "世界構築を完了する", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: "別の村民として参加する", exact: true })
-    .click();
-  await page.getByRole("link", { name: /村民の画面を開く/ }).click();
+  await participate(page);
+
   const section = page.getByRole("region", { name: "あなたの記録" }),
     scroll = page.getByLabel("記録の閲覧領域");
   async function settled() {

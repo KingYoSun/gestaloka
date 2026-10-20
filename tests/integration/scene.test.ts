@@ -276,7 +276,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await app?.close();
-  for (const q of [queue, `${queue}-play`, `${queue}-scenes`])
+  for (const q of [queue, `${queue}-play`, `${queue}-scenes`, `${queue}-joins`])
     await d.queue.deleteQueue(q);
   await d.postgres.query("DELETE FROM world_event WHERE construction_id=$1", [
     construction,
@@ -544,6 +544,14 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
   await expect(access.scenes.tick(scene.id)).rejects.toThrow("世界への確定");
   view = await status();
   expect(view.state).toBe("paused");
+  const saved = await access.scenes.latest(construction);
+  await d.postgres.query(
+    "UPDATE world_construction SET state='play_paused' WHERE id=$1",
+    [construction],
+  );
+  await access.scenes.setup();
+  expect((await runtime.get(construction)).state).toBe("finished");
+  expect(await access.scenes.latest(construction)).toEqual(saved);
   expect(view.result).toBeNull();
   expect(view.nextPurpose).toBe("別の場所へ向かう");
   expect(view.actions.at(-1)?.state).toBe("boundary");

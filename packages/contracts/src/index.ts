@@ -35,7 +35,7 @@ export const WorldCommand = z.discriminatedUnion("command", [
   z
     .object({
       requestId: z.uuid(),
-      command: z.enum(["resume", "finish", "join"]),
+      command: z.enum(["resume", "finish"]),
     })
     .strict(),
 ]);
@@ -56,6 +56,12 @@ export const WorldStatus = z.object({
   at: z.number().int().nonnegative().safe(),
   target: z.number().int().nonnegative().safe(),
   hasParticipant: z.boolean(),
+  publication: z.object({
+    title: z.string(),
+    description: z.string(),
+    published: z.boolean(),
+    accepting: z.boolean(),
+  }),
   error: z.string().nullable(),
 });
 export const PageQuery = z
@@ -88,9 +94,11 @@ export const KnowledgePage = z.object({
   previous: z.string().nullable(),
 });
 export const EventQuery = z.object({
+  actorId: z.uuid().optional(),
   role: z.enum(["admin", "player"]),
   after: z.string().regex(/^\d+$/).optional(),
 });
+export const ActorQuery = z.object({ actorId: z.uuid().optional() });
 export const WorldEvent = z.object({
   id: z.string().regex(/^\d+$/),
   worldId: z.uuid(),
@@ -172,9 +180,11 @@ export const SceneStatus = z.object({
 });
 export const SceneResponse = z.object({ scene: SceneStatus.nullable() });
 export const SceneViewQuery = z.object({
+  actorId: z.uuid().optional(),
   view: z.literal("compact").optional(),
 });
 export const SceneRecordQuery = PageQuery.safeExtend({
+  actorId: z.uuid().optional(),
   sceneId: z.uuid(),
   kind: z.enum(["events", "actions"]),
 });
@@ -193,6 +203,7 @@ export const SceneRecordPage = z.object({
   previous: z.string().nullable(),
 });
 export const KnowledgeQuery = PageQuery.safeExtend({
+  actorId: z.uuid().optional(),
   excludeScene: z.uuid().optional(),
 });
 
@@ -204,6 +215,40 @@ export const Member = z.object({
 });
 const operationPage = { before: z.uuid().optional() };
 const operationReason = z.string().trim().min(1);
+export const CatalogPageQuery = z.object({ before: z.uuid().optional() });
+export const WorldCatalogPage = z.object({
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      title: z.string(),
+      description: z.string(),
+      accepting: z.boolean(),
+      canJoin: z.boolean(),
+    }),
+  ),
+  next: z.uuid().nullable(),
+});
+export const PlayerPreset = z.object({
+  id: z.uuid(),
+  title: z.string().trim().min(1),
+  description: z.string(),
+  version: z.number().int().positive().safe(),
+});
+export const PlayerPresetPage = z.object({
+  items: z.array(PlayerPreset),
+  next: z.uuid().nullable(),
+});
+export const WorldPlayerPage = z.object({
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      actorId: z.uuid().nullable(),
+      state: z.enum(["joining", "ready", "paused"]),
+      at: z.number().int().nonnegative().safe(),
+    }),
+  ),
+  next: z.uuid().nullable(),
+});
 export const LegacyClaimPage = z.object({
   subjectId: z.uuid(),
   version: z.string().regex(/^[a-f0-9]{32}$/),
@@ -218,7 +263,42 @@ export const LegacyClaimPage = z.object({
   ),
   next: z.uuid().nullable(),
 });
+export const JoinWorld = z
+  .object({
+    operation: z.literal("worlds.join"),
+    worldId: z.uuid(),
+    presetId: z.uuid(),
+    presetVersion: z.number().int().positive().safe(),
+  })
+  .strict();
 export const Operation = z.discriminatedUnion("operation", [
+  JoinWorld,
+  z
+    .object({ operation: z.literal("worlds.resumeJoin"), joinId: z.uuid() })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("worlds.configure"),
+      worldId: z.uuid(),
+      title: z.string().trim().min(1),
+      description: z.string(),
+      published: z.boolean(),
+      accepting: z.boolean(),
+      reason: operationReason,
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("presets.put"),
+      presetId: z.uuid(),
+      title: PlayerPreset.shape.title,
+      description: z.string(),
+      settings: z.string().trim().min(1),
+      expectedVersion: z.number().int().nonnegative().safe(),
+      reason: operationReason,
+    })
+    .strict(),
+  z.object({ operation: z.literal("presets.list"), ...operationPage }).strict(),
   z
     .object({
       operation: z.literal("account.claim"),

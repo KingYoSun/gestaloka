@@ -77,7 +77,7 @@ export function History({
         const { data } = await api.GET("/api/worlds/{id}/scene/records", {
           params: {
             path: { id },
-            query: { ...pageParam, sceneId, kind: sceneKind },
+            query: { ...pageParam, sceneId, kind: sceneKind, actorId: viewer },
           },
           signal,
         });
@@ -108,7 +108,11 @@ export function History({
       const { data } = await api.GET("/api/worlds/{id}/knowledge", {
         params: {
           path: { id },
-          query: { ...pageParam, ...(excludeScene ? { excludeScene } : {}) },
+          query: {
+            ...pageParam,
+            actorId: viewer,
+            ...(excludeScene ? { excludeScene } : {}),
+          },
         },
         signal,
       });

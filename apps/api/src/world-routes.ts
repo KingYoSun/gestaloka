@@ -26,6 +26,7 @@ import {
   SceneRecordQuery,
   SceneRecordPage,
   KnowledgeQuery,
+  ActorQuery,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
@@ -210,6 +211,7 @@ export async function worldRoutes(
         request.query.before,
         request.query.after,
         request.query.excludeScene,
+        request.query.actorId,
       ),
   );
   app.get(
@@ -218,10 +220,15 @@ export async function worldRoutes(
       schema: {
         params: ResourceId,
         response: { 200: PlayerStatus, ...errors },
+        querystring: ActorQuery,
       },
     },
     async (request) =>
-      service().player(await subject(request), request.params.id),
+      service().player(
+        await subject(request),
+        request.params.id,
+        request.query.actorId,
+      ),
   );
   app.get(
     "/api/runs/:id",
@@ -242,6 +249,7 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.view === "compact",
+        request.query.actorId,
       ),
   );
   app.get(
@@ -279,6 +287,7 @@ export async function worldRoutes(
             request.params.id,
             request.body,
             request.query.view === "compact",
+            request.query.actorId,
           ),
         ),
   );
@@ -325,7 +334,7 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
-        querystring: EventQuery.pick({ role: true }),
+        querystring: EventQuery.pick({ role: true, actorId: true }),
         response: { 200: DeliveryCursor, ...errors },
       },
     },
@@ -334,6 +343,7 @@ export async function worldRoutes(
         await subject(request),
         request.params.id,
         request.query.role,
+        request.query.actorId,
       ),
   );
   app.addHook("preClose", async () => {
@@ -355,7 +365,13 @@ export async function worldRoutes(
       let cursor = String(
         request.headers["last-event-id"] ?? request.query.after ?? "0",
       );
-      let events = await service().events(identity, id, role, cursor);
+      let events = await service().events(
+        identity,
+        id,
+        role,
+        cursor,
+        request.query.actorId,
+      );
       const controller = new AbortController();
       streams.set(controller, () => reply.sse.close());
       reply.sse.onClose(() => {
@@ -373,7 +389,13 @@ export async function worldRoutes(
               "ログインが変わりました",
             );
           for (const event of events) {
-            await service().authorize(identity, id, role);
+            await service().authorize(
+              identity,
+              id,
+              role,
+              service().pool,
+              request.query.actorId,
+            );
             await reply.sse.send({
               id: event.id,
               event: "update",
@@ -387,7 +409,13 @@ export async function worldRoutes(
           }
           if (events.length < 50)
             await delay(500, undefined, { signal: controller.signal });
-          events = await service().events(identity, id, role, cursor);
+          events = await service().events(
+            identity,
+            id,
+            role,
+            cursor,
+            request.query.actorId,
+          );
         }
       } catch (error) {
         if (

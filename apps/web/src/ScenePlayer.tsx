@@ -39,7 +39,10 @@ export function ScenePlayer({
     actions = useRef<HistoryHandle>(null),
     composing = useRef(false),
     [showHistory, setShowHistory] = useState(!scene);
-  const [pending, save] = usePending(pendingKey(id, "scene"), SceneCommand);
+  const [pending, save] = usePending(
+    pendingKey(`${id}:${viewer}`, "scene"),
+    SceneCommand,
+  );
   const [showInputs, setShowInputs] = useState(false);
   const form = useForm({
     defaultValues: {
@@ -89,7 +92,7 @@ export function ScenePlayer({
     const body = pending ?? command;
     save(body);
     mutate.mutate({
-      params: { path: { id }, query: { view: "compact" } },
+      params: { path: { id }, query: { view: "compact", actorId: viewer } },
       body,
     });
   }

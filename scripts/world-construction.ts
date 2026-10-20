@@ -18,7 +18,7 @@ const { values, positionals } = parseArgs({
   },
 });
 const command = z
-  .enum(["create", "show", "advance", "resume", "finish", "join", "act"])
+  .enum(["create", "show", "advance", "resume", "finish", "act"])
   .parse(positionals[0]);
 const duration =
   command === "advance"

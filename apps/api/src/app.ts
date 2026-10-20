@@ -41,7 +41,7 @@ export async function createApp(
   );
   await worldRoutes(app, access, identity, operations);
   await app.register(async (scope) =>
-    operationsRoutes(scope, identity, operations),
+    operationsRoutes(scope, identity, operations, access?.players),
   );
   if (identity)
     await app.register(async (scope) =>

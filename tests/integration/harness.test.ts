@@ -19,6 +19,10 @@ afterAll(async () => {
   await d.postgres.query("DELETE FROM world_operation WHERE id=ANY($1)", [
     operations,
   ]);
+  await d.postgres.query(
+    "DELETE FROM world_controlled_actor WHERE world_id=ANY($1)",
+    [worlds],
+  );
   await d.postgres.query("DELETE FROM llm_call WHERE budget_id=ANY($1)", [
     budgets,
   ]);
@@ -130,20 +134,23 @@ test.each([
   { failAfterCommit: false, repairCommit: false, conflictDuringRead: true },
   { failAfterCommit: false, repairCommit: false, transportFailure: true },
   { failAfterCommit: false, repairCommit: false, transientFailure: true },
+  { failAfterCommit: false, repairCommit: false, participant: true },
 ])(
-  "実際のdshで二重適用を防ぐ: 確定後通信失敗 $failAfterCommit / 修正 $repairCommit / 競合 $conflictDuringRead / 永続通信失敗 $transportFailure / 一時通信失敗 $transientFailure",
+  "実際のdshで二重適用を防ぐ: 確定後通信失敗 $failAfterCommit / 修正 $repairCommit / 競合 $conflictDuringRead / 永続通信失敗 $transportFailure / 一時通信失敗 $transientFailure / 参加生成 $participant",
   async ({
     failAfterCommit,
     repairCommit,
     conflictDuringRead,
     transportFailure,
     transientFailure,
+    participant,
   }) => {
     const worldId = randomUUID(),
       actor = randomUUID(),
       script = randomUUID(),
       edge = randomUUID(),
       budgetId = randomUUID();
+    const joined = randomUUID();
     worlds.push(worldId);
     budgets.push(budgetId);
     const scope = createHash("sha256")
@@ -155,22 +162,42 @@ test.each([
       type: "propose",
       changes: {
         ...empty(),
-        nodes: [{ id: script, kind: "script", text: "試験で確定する状態" }],
+        nodes: [
+          ...(participant
+            ? [{ id: joined, kind: "existence", text: "参加する存在" }]
+            : []),
+          { id: script, kind: "script", text: "試験で確定する状態" },
+        ],
         edges: [
           {
             id: edge,
             kind: "status",
             role: "content",
-            source: actor,
+            source: participant ? joined : actor,
             target: script,
             period: { from: 1 },
           },
+          ...(participant
+            ? [
+                {
+                  id: randomUUID(),
+                  kind: "status",
+                  role: "about",
+                  source: script,
+                  target: actor,
+                  period: { from: 1 },
+                },
+              ]
+            : []),
         ],
       },
       summary: "試験の確定",
       resolvedUntil: 1,
       wakeups: [],
-      settledIntentions: [{ actorId: actor, reason: "状態を確定した" }],
+      settledIntentions: participant
+        ? []
+        : [{ actorId: actor, reason: "状態を確定した" }],
+      ...(participant ? { newParticipantId: joined } : {}),
     };
     const transport = vi
       .fn<typeof fetch>()
@@ -340,14 +367,14 @@ test.each([
     });
     const id = await agent.create({
       worldId,
-      phase: "interaction",
+      phase: participant ? "participant" : "interaction",
       at: 0,
       until: 10,
       rootIds: [actor],
       actionText: "",
-      intentions: [
-        { actorId: actor, actionText: "状態を確かめる", continuing: false },
-      ],
+      intentions: participant
+        ? []
+        : [{ actorId: actor, actionText: "状態を確かめる", continuing: false }],
     });
     operations.push(id);
     if (transportFailure) {
@@ -377,6 +404,10 @@ test.each([
       return;
     }
     expect(await agent.run(id)).toEqual(candidate);
+    if (participant)
+      expect(await agent.controlledActors(worldId, [joined])).toEqual(
+        new Set([joined]),
+      );
     expect(
       (
         await d.postgres.query(

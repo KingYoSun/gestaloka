@@ -107,6 +107,13 @@ export class WorldScenes {
       actor_id uuid NOT NULL,state text NOT NULL,data jsonb NOT NULL,claim uuid,
       created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS world_scene_latest ON world_scene(construction_id,created_at DESC,id DESC);`);
+    await this.pool.query(
+      "CREATE INDEX IF NOT EXISTS world_scene_actor_latest ON world_scene(construction_id,actor_id,created_at DESC,id DESC)",
+    );
+    await this.pool
+      .query(`UPDATE world_construction c SET state='finished',claim=NULL,error=NULL
+      WHERE c.state IN ('playing','play_paused') AND EXISTS(SELECT 1 FROM world_scene s WHERE s.construction_id=c.id AND s.actor_id=c.participant_id)
+      AND NOT EXISTS(SELECT 1 FROM world_run r WHERE r.construction_id=c.id AND r.state IN ('running','paused'))`);
     await this.construction.queue.createQueue(this.queueName, {
       retryLimit: 2,
       retryDelay: 5,
@@ -118,6 +125,7 @@ export class WorldScenes {
     world: string,
     client: Pick<pg.Pool, "query"> = this.pool,
     compact = false,
+    actorId?: string,
   ) {
     return (
       (
@@ -128,9 +136,9 @@ export class WorldScenes {
               'background',jsonb_build_object('synopsis',data#>'{background,synopsis}'),
               'events','[]'::jsonb,'actions',CASE WHEN jsonb_array_length(data->'actions')>0 THEN jsonb_build_array(data->'actions'->-1) ELSE '[]'::jsonb END,
               'result',data->'result','nextPurpose',data->'nextPurpose','limitReached',data->'limitReached') AS data
-              FROM world_scene WHERE construction_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1`
-            : "SELECT * FROM world_scene WHERE construction_id=$1 ORDER BY created_at DESC,id DESC LIMIT 1",
-          [world],
+              FROM world_scene WHERE construction_id=$1 AND ($2::uuid IS NULL OR actor_id=$2) ORDER BY created_at DESC,id DESC LIMIT 1`
+            : "SELECT * FROM world_scene WHERE construction_id=$1 AND ($2::uuid IS NULL OR actor_id=$2) ORDER BY created_at DESC,id DESC LIMIT 1",
+          [world, actorId ?? null],
         )
       ).rows[0] ?? null
     );
@@ -183,16 +191,24 @@ export class WorldScenes {
     purpose: string,
     client: pg.PoolClient,
     requestId: string,
+    actorId?: string,
   ) {
     const c = await this.construction.get(world, client, true);
-    if (c.state !== "finished" || !c.participant_id)
+    const actor = actorId ?? c.participant_id;
+    const prior = actor ? await this.latest(world, client, true, actor) : null;
+    if (
+      !["finished", "playing", "play_paused"].includes(c.state) ||
+      !actor ||
+      (prior && prior.state !== "result") ||
+      (actor === c.participant_id && c.state !== "finished")
+    )
       throw new ConstructionStateError(
         "前の処理を終えてからシーンを準備してください",
       );
     const row: SceneRow = {
       id: requestId,
       construction_id: world,
-      actor_id: c.participant_id,
+      actor_id: actor,
       state: "preparing",
       claim: null,
       data: {
@@ -201,7 +217,7 @@ export class WorldScenes {
         at: c.at,
         startedAt: c.at,
         purpose,
-        roots: [...new Set([c.participant_id, ...c.root_ids])],
+        roots: [...new Set([actor, ...c.root_ids])],
         originalAgenda: c.agenda,
         basis: [],
         views: {},
@@ -219,8 +235,8 @@ export class WorldScenes {
       [row.id, world, row.actor_id, row.state, JSON.stringify(row.data)],
     );
     await client.query(
-      "UPDATE world_construction SET state='playing',claim=NULL,error=NULL WHERE id=$1",
-      [world],
+      "INSERT INTO world_controlled_actor(world_id,actor_id) VALUES($1,$2) ON CONFLICT DO NOTHING",
+      [c.world_id, actor],
     );
     await this.#enqueue(client, row.id);
     return row;
@@ -230,10 +246,16 @@ export class WorldScenes {
     command: "start" | "finish" | "resume" | "act",
     client: pg.PoolClient,
     input: { requestId: string; actionText?: string },
+    actorId?: string,
   ) {
     const c = await this.construction.get(world, client, true),
-      row = await this.latest(world, client);
-    if (!row || row.actor_id !== c.participant_id)
+      row = await this.latest(
+        world,
+        client,
+        false,
+        actorId ?? c.participant_id ?? undefined,
+      );
+    if (!row || (actorId && row.actor_id !== actorId))
       throw new ConstructionStateError("現在のシーンを取得してください");
     if (command === "start") {
       if (row.state !== "ready")
@@ -360,6 +382,7 @@ export class WorldScenes {
           content: JSON.stringify({
             request,
             initialContext: context.initialContext,
+            controlledActorIds: context.controlledActorIds,
             responseSchema: z.toJSONSchema(BackgroundDecision, { io: "input" }),
           }),
         },
@@ -408,6 +431,7 @@ export class WorldScenes {
             content: JSON.stringify({
               requests: decision.requests,
               results: read.results,
+              controlledActorIds: read.controlledActorIds,
             }),
           },
         );
@@ -417,6 +441,21 @@ export class WorldScenes {
       }
       if (!decision.participants.includes(row.actor_id))
         throw new Error("背景情報に操作する本人が含まれていません");
+      const controlled = await this.agent.controlledActors(
+        d.worldId,
+        [
+          ...new Set([
+            ...decision.participants,
+            ...decision.facts.map((f) => f.subjectId),
+            ...decision.beliefs.map((f) => f.subjectId),
+            ...decision.perceptions.map((p) => p.observerId),
+          ]),
+        ].filter((id) => id !== row.actor_id),
+      );
+      if (controlled.size)
+        throw new Error(
+          "他プレイヤーをNPCの登場主体にできません。共有世界に確定済みの行動・返答は背景として参照してください",
+        );
       const creations = new Set(decision.creations.map((n) => n.id)),
         context = this.agent.store.context(d.worldId, d.basis),
         known = new Set<string>();
@@ -479,6 +518,17 @@ export class WorldScenes {
       action = d.actions.at(-1)!;
     for (;;) {
       if (d.nextDecisions.length) {
+        if (
+          (
+            await this.agent.controlledActors(d.worldId, [d.nextDecisions[0]!])
+          ).has(d.nextDecisions[0]!)
+        ) {
+          d.nextPurpose = action.text;
+          action.state = "boundary";
+          row.state = "reflecting";
+          await this.#save(row, undefined, row.claim!);
+          return true;
+        }
         const actor = d.nextDecisions[0]!,
           own = [
             ...(d.previous[actor] ? [d.previous[actor]!.actionText] : []),
@@ -641,15 +691,20 @@ export class WorldScenes {
     }
     delete d.work;
     row.state = "result";
-    const agenda = sceneAgenda(
-      d.originalAgenda,
-      row.actor_id,
-      d.at,
-      d.projection,
-      d.intentions,
-      d.nextDecisions,
-    );
     await this.#transaction(async (client) => {
+      const current = await this.construction.get(
+        row.construction_id,
+        client,
+        true,
+      );
+      const agenda = sceneAgenda(
+        current.agenda,
+        row.actor_id,
+        d.at,
+        d.projection!,
+        d.intentions,
+        d.nextDecisions,
+      );
       await this.#save(row, client, row.claim!);
       await client.query(
         "INSERT INTO construction_log(construction_id,operation_id,at,result) VALUES($1,$2,$3,$4) ON CONFLICT(operation_id) DO NOTHING",
@@ -661,7 +716,7 @@ export class WorldScenes {
         ],
       );
       await client.query(
-        "UPDATE world_construction SET state='finished',at=$2,agenda=$3,claim=NULL,error=NULL WHERE id=$1",
+        "UPDATE world_construction SET at=greatest(at,$2),agenda=$3 WHERE id=$1",
         [row.construction_id, d.at, JSON.stringify(agenda)],
       );
     });

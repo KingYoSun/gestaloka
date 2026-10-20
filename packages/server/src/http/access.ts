@@ -21,6 +21,7 @@ import {
 import { WorldScenes, type SceneRow } from "../runtime/scene.js";
 import { sceneAnchors } from "../runtime/scene-data.js";
 import { requireMember } from "./operations.js";
+import { WorldPlayers } from "../runtime/players.js";
 
 export class AccessError extends Error {
   constructor(
@@ -42,8 +43,10 @@ type Role = "admin" | "player";
 
 export class WorldAccess {
   readonly scenes: WorldScenes;
+  readonly players: WorldPlayers;
   constructor(readonly construction: WorldConstruction) {
     this.scenes = new WorldScenes(construction);
+    this.players = new WorldPlayers(construction);
   }
   get pool() {
     return this.construction.pool;
@@ -62,9 +65,18 @@ export class WorldAccess {
       ALTER TABLE world_subject ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES app_identity(id);
       CREATE INDEX IF NOT EXISTS world_subject_user ON world_subject(user_id,id);
       CREATE TABLE IF NOT EXISTS world_access (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       subject_id uuid NOT NULL REFERENCES world_subject(id), construction_id uuid NOT NULL REFERENCES world_construction(id),
-      role text NOT NULL CHECK(role IN ('admin','player')),actor_id uuid,
-      PRIMARY KEY(subject_id,construction_id,role));
+      role text NOT NULL CHECK(role IN ('admin','player')),actor_id uuid);
+      DO $$ BEGIN
+        IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='world_access'::regclass AND attname='id' AND NOT attisdropped) THEN
+          ALTER TABLE world_access ADD COLUMN id uuid NOT NULL DEFAULT gen_random_uuid();
+          ALTER TABLE world_access DROP CONSTRAINT world_access_pkey;
+          ALTER TABLE world_access ADD PRIMARY KEY(id);
+        END IF;
+      END $$;
+      CREATE UNIQUE INDEX IF NOT EXISTS world_access_admin ON world_access(subject_id,construction_id) WHERE role='admin';
+      CREATE UNIQUE INDEX IF NOT EXISTS world_access_player ON world_access(subject_id,construction_id,actor_id) WHERE role='player';
       CREATE OR REPLACE FUNCTION guard_subject_grants() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         PERFORM id FROM world_subject WHERE id=CASE WHEN TG_OP='DELETE' THEN OLD.subject_id ELSE NEW.subject_id END FOR SHARE;
@@ -89,11 +101,6 @@ export class WorldAccess {
       FOR EACH ROW EXECUTE FUNCTION stamp_world_event();
       CREATE OR REPLACE FUNCTION notify_construction() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
-        IF NEW.participant_id IS NOT NULL THEN
-          INSERT INTO world_access(subject_id,construction_id,role,actor_id)
-          SELECT subject_id,construction_id,'player',NEW.participant_id FROM world_access
-          WHERE construction_id=NEW.id AND role='admin' ON CONFLICT DO NOTHING;
-        END IF;
         IF (NEW.state,NEW.at,NEW.target,NEW.participant_id,NEW.error) IS DISTINCT FROM
            (OLD.state,OLD.at,OLD.target,OLD.participant_id,OLD.error) THEN
           INSERT INTO world_event(subject_id,construction_id,role,event_key)
@@ -106,6 +113,10 @@ export class WorldAccess {
       CREATE OR REPLACE TRIGGER construction_notification AFTER UPDATE ON world_construction
       FOR EACH ROW EXECUTE FUNCTION notify_construction();`);
     await this.scenes.setup();
+    await this.players.setup();
+    await this.pool.query(`INSERT INTO world_controlled_actor(world_id,actor_id)
+      SELECT c.world_id,a.actor_id FROM world_access a JOIN world_construction c ON c.id=a.construction_id
+      WHERE a.role='player' AND a.actor_id IS NOT NULL AND c.world_id IS NOT NULL ON CONFLICT DO NOTHING`);
   }
 
   async authorize(
@@ -113,6 +124,7 @@ export class WorldAccess {
     id: string,
     role: Role,
     client: Pick<pg.Pool, "query"> = this.pool,
+    actorId?: string,
   ) {
     await requireMember(client, subject, role === "admin");
     if (role === "admin") {
@@ -130,18 +142,24 @@ export class WorldAccess {
     }
     const row = (
       await client.query<{ actor_id: string | null }>(
-        `SELECT a.actor_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id
-       WHERE s.user_id=$1 AND a.construction_id=$2 AND a.role=$3 AND s.active`,
-        [subject, id, role],
+        `SELECT DISTINCT a.actor_id FROM world_access a JOIN world_subject s ON s.id=a.subject_id
+       WHERE s.user_id=$1 AND a.construction_id=$2 AND a.role=$3 AND s.active AND ($4::uuid IS NULL OR a.actor_id=$4) LIMIT 2`,
+        [subject, id, role, actorId ?? null],
       )
-    ).rows[0];
-    if (!row)
+    ).rows;
+    if (row.length > 1)
+      throw new AccessError(
+        409,
+        "ACTOR_REQUIRED",
+        "操作する存在を選んでください",
+      );
+    if (!row[0])
       throw new AccessError(
         404,
         "WORLD_NOT_FOUND",
         "利用できる世界が見つかりません",
       );
-    return row;
+    return row[0];
   }
   async #accept<T>(
     subject: string,
@@ -204,6 +222,12 @@ export class WorldAccess {
       at: row.at,
       target: row.target,
       hasParticipant: row.participant_id !== null,
+      publication: {
+        title: row.public_title,
+        description: row.public_description,
+        published: row.published,
+        accepting: row.accepting,
+      },
       error: row.error,
     });
   }
@@ -264,16 +288,17 @@ export class WorldAccess {
   async playerData(
     row: Awaited<ReturnType<WorldConstruction["get"]>>,
     database: Pick<pg.Pool, "query"> = this.pool,
+    actorId = row.participant_id,
   ) {
     const last = (
       await database.query<{ id: string }>(
         "SELECT id FROM world_run WHERE construction_id=$1 AND actor_id=$2 ORDER BY created_at DESC,id DESC LIMIT 1",
-        [row.id, row.participant_id],
+        [row.id, actorId],
       )
     ).rows[0];
     return PlayerStatus.parse({
       id: row.id,
-      viewerId: row.participant_id,
+      viewerId: actorId,
       runId: last?.id ?? null,
       at: row.at,
       state:
@@ -288,16 +313,42 @@ export class WorldAccess {
           : null,
     });
   }
-  async player(subject: string, id: string) {
-    const grant = await this.authorize(subject, id, "player");
+  async player(subject: string, id: string, actorId?: string) {
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
     const row = await this.construction.get(id);
-    if (grant.actor_id !== row.participant_id)
-      throw new AccessError(
-        403,
-        "ACTOR_CHANGED",
-        "操作対象を再取得してください",
-      );
-    return this.playerData(row);
+    const scene = await this.scenes.latest(
+      id,
+      this.pool,
+      true,
+      grant.actor_id!,
+    );
+    return {
+      ...(await this.playerData(row, this.pool, grant.actor_id!)),
+      at: scene && scene.state !== "result" ? scene.data.at : row.at,
+      error:
+        scene?.state === "paused" ||
+        (grant.actor_id === row.participant_id && row.state === "play_paused")
+          ? "処理を保留しました。保存済みの状態から再開できます。"
+          : null,
+      state: scene
+        ? scene.state === "paused"
+          ? ("paused" as const)
+          : ["preparing", "acting", "reflecting"].includes(scene.state)
+            ? ("running" as const)
+            : ("ready" as const)
+        : grant.actor_id === row.participant_id &&
+            ["playing", "play_paused"].includes(row.state)
+          ? row.state === "playing"
+            ? ("running" as const)
+            : ("paused" as const)
+          : ("ready" as const),
+    };
   }
   sceneData(row: SceneRow | null, compact = false) {
     if (!row) return { scene: null };
@@ -337,9 +388,15 @@ export class WorldAccess {
       }),
     };
   }
-  async scene(subject: string, id: string, compact = false) {
-    const grant = await this.authorize(subject, id, "player"),
-      row = await this.scenes.latest(id, this.pool, compact);
+  async scene(subject: string, id: string, compact = false, actorId?: string) {
+    const grant = await this.authorize(
+        subject,
+        id,
+        "player",
+        this.pool,
+        actorId,
+      ),
+      row = await this.scenes.latest(id, this.pool, compact, grant.actor_id!);
     if (row && row.actor_id !== grant.actor_id)
       throw new AccessError(
         403,
@@ -353,7 +410,13 @@ export class WorldAccess {
     id: string,
     input: z.infer<typeof SceneRecordQuery>,
   ) {
-    const grant = await this.authorize(subject, id, "player");
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      input.actorId,
+    );
     const row = (
       await this.pool.query<{ count: number }>(
         "SELECT jsonb_array_length(data->$3) AS count FROM world_scene WHERE id=$1 AND construction_id=$2 AND actor_id=$4",
@@ -436,22 +499,22 @@ export class WorldAccess {
     id: string,
     input: z.infer<typeof SceneCommand>,
     compact = false,
+    actorId?: string,
   ) {
-    await this.authorize(subject, id, "player");
+    await this.authorize(subject, id, "player", this.pool, actorId);
     return this.#accept(
       subject,
       input.requestId,
-      { operation: "scene", id, ...input },
+      { operation: "scene", id, ...input, ...(actorId ? { actorId } : {}) },
       "player",
       async (client) => {
-        const grant = await this.authorize(subject, id, "player", client),
-          current = await this.construction.get(id, client, true);
-        if (grant.actor_id !== current.participant_id)
-          throw new AccessError(
-            403,
-            "ACTOR_CHANGED",
-            "操作対象を再取得してください",
-          );
+        const grant = await this.authorize(
+          subject,
+          id,
+          "player",
+          client,
+          actorId,
+        );
         try {
           return this.sceneData(
             input.command === "prepare"
@@ -460,8 +523,15 @@ export class WorldAccess {
                   input.purpose,
                   client,
                   input.requestId,
+                  grant.actor_id!,
                 )
-              : await this.scenes.command(id, input.command, client, input),
+              : await this.scenes.command(
+                  id,
+                  input.command,
+                  client,
+                  input,
+                  grant.actor_id!,
+                ),
             compact,
           );
         } catch (error) {
@@ -490,7 +560,13 @@ export class WorldAccess {
         "RUN_NOT_FOUND",
         "利用できる実行が見つかりません",
       );
-    const grant = await this.authorize(subject, row.construction_id, "player");
+    const grant = await this.authorize(
+      subject,
+      row.construction_id,
+      "player",
+      this.pool,
+      row.actor_id,
+    );
     if (grant.actor_id !== row.actor_id)
       throw new AccessError(
         404,
@@ -525,6 +601,18 @@ export class WorldAccess {
       async (client) => {
         const grant = await this.authorize(subject, id, "player", client);
         const current = await this.construction.get(id, client, true);
+        const scene = await this.scenes.latest(
+          id,
+          client,
+          true,
+          grant.actor_id!,
+        );
+        if (scene && scene.state !== "result")
+          throw new AccessError(
+            409,
+            "STATE_CONFLICT",
+            "進行中のシーンを終えてください",
+          );
         if (grant.actor_id !== current.participant_id)
           throw new AccessError(
             403,
@@ -637,8 +725,15 @@ export class WorldAccess {
     before?: string,
     after?: string,
     excludeScene?: string,
+    actorId?: string,
   ) {
-    const grant = await this.authorize(subject, id, "player");
+    const grant = await this.authorize(
+      subject,
+      id,
+      "player",
+      this.pool,
+      actorId,
+    );
     const row = await this.construction.get(id);
     let cursor: z.infer<typeof Cursor> | undefined;
     const raw = after || before;
@@ -784,8 +879,14 @@ export class WorldAccess {
     }
   }
 
-  async events(subject: string, id: string, role: Role, after: string) {
-    await this.authorize(subject, id, role);
+  async events(
+    subject: string,
+    id: string,
+    role: Role,
+    after: string,
+    actorId?: string,
+  ) {
+    await this.authorize(subject, id, role, this.pool, actorId);
     if (!sequence(after))
       throw new AccessError(409, "CURSOR_INVALID", "進捗を再取得してください");
     if (after !== "0") {
@@ -808,8 +909,8 @@ export class WorldAccess {
       )
     ).rows;
   }
-  async cursor(subject: string, id: string, role: Role) {
-    await this.authorize(subject, id, role);
+  async cursor(subject: string, id: string, role: Role, actorId?: string) {
+    await this.authorize(subject, id, role, this.pool, actorId);
     await this.reconcile(id);
     return {
       cursor: (

@@ -7,9 +7,15 @@ import {
   Member,
   Operation,
   LegacyClaimPage,
+  CatalogPageQuery,
+  WorldCatalogPage,
+  PlayerPresetPage,
+  WorldPlayerPage,
+  ResourceId,
 } from "@gestaloka/contracts";
 import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
 import { type Operations } from "@gestaloka/server/operations";
+import type { WorldPlayers } from "@gestaloka/server/players";
 import { AccessError } from "@gestaloka/server/access";
 import { authPage, escapeHtml } from "./auth-page.js";
 
@@ -17,6 +23,7 @@ export async function operationsRoutes(
   instance: FastifyInstance,
   identity?: OryIdentity,
   operations?: Operations,
+  players?: WorldPlayers,
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   const identities = new WeakMap<FastifyRequest, string>();
@@ -119,9 +126,108 @@ export async function operationsRoutes(
         await actor(request),
         request.body.requestId,
         request.body.command,
-        { legacyToken: request.cookies.gestaloka },
+        { legacyToken: request.cookies.gestaloka, players },
       ),
     }),
+  );
+  app.get(
+    "/api/catalog/worlds",
+    {
+      schema: {
+        querystring: CatalogPageQuery,
+        response: { 200: WorldCatalogPage, ...errors },
+      },
+    },
+    async (request) =>
+      service().catalog(await actor(request), request.query.before),
+  );
+  app.get(
+    "/api/catalog/worlds/:id",
+    {
+      schema: {
+        params: ResourceId,
+        response: { 200: WorldCatalogPage.shape.items.element, ...errors },
+      },
+    },
+    async (request) => {
+      const row = (
+        await service().catalog(
+          await actor(request),
+          undefined,
+          request.params.id,
+        )
+      ).items[0];
+      if (!row)
+        throw new AccessError(
+          404,
+          "WORLD_NOT_FOUND",
+          "参加できる世界が見つかりません",
+        );
+      return row;
+    },
+  );
+  app.get(
+    "/api/catalog/presets",
+    {
+      schema: {
+        querystring: CatalogPageQuery,
+        response: { 200: PlayerPresetPage, ...errors },
+      },
+    },
+    async (request) =>
+      service().presets(await actor(request), request.query.before),
+  );
+  app.get(
+    "/api/worlds/:id/players",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: CatalogPageQuery,
+        response: { 200: WorldPlayerPage, ...errors },
+      },
+    },
+    async (request) => {
+      if (!players)
+        throw new AccessError(
+          503,
+          "MODEL_NOT_CONFIGURED",
+          "参加処理を設定してください",
+        );
+      return players.list(
+        await actor(request),
+        request.params.id,
+        request.query.before,
+      );
+    },
+  );
+  app.get(
+    "/api/worlds/:id/players/:playerId",
+    {
+      schema: {
+        params: z.object({ id: z.uuid(), playerId: z.uuid() }),
+        response: {
+          200: z.object({
+            player: WorldPlayerPage.shape.items.element.nullable(),
+          }),
+          ...errors,
+        },
+      },
+    },
+    async (request) => {
+      if (!players)
+        throw new AccessError(
+          503,
+          "MODEL_NOT_CONFIGURED",
+          "参加処理を設定してください",
+        );
+      const page = await players.list(
+        await actor(request),
+        request.params.id,
+        undefined,
+        request.params.playerId,
+      );
+      return { player: page.items[0] ?? null };
+    },
   );
   app.get(
     "/api/account/legacy",

@@ -10,6 +10,7 @@ import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 import { fixtureAuth } from "../support/auth.js";
+import { legacyPlayer } from "../support/legacy-player.js";
 
 const databases = connectDatabases(),
   budgetId = randomUUID();
@@ -172,12 +173,7 @@ async function fixture() {
 }
 async function legacyFixture() {
   const scene = await fixture();
-  for (const command of ["finish", "join"] as const)
-    await access.command(scene.subject, scene.id, {
-      requestId: randomUUID(),
-      command,
-    });
-  await runtime.tick(scene.id);
+  await archivedParticipant(scene);
   const legacyId = randomUUID(),
     token = randomUUID();
   subjects.push(legacyId);
@@ -197,6 +193,17 @@ async function legacyFixture() {
     );
   return { ...scene, legacyId, token, action, accepted };
 }
+async function archivedParticipant(scene: { subject: string; id: string }) {
+  await access.command(scene.subject, scene.id, {
+    requestId: randomUUID(),
+    command: "finish",
+  });
+  const actor = await legacyPlayer(runtime, scene.id);
+  await databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [scene.subject, scene.id, actor],
+  );
+}
 beforeAll(async () => {
   await databases.verify();
   databases.queue.on("error", console.error);
@@ -211,6 +218,7 @@ afterAll(async () => {
   await databases.queue.deleteQueue(queueName);
   await databases.queue.deleteQueue(`${queueName}-play`);
   await databases.queue.deleteQueue(`${queueName}-scenes`);
+  await databases.queue.deleteQueue(`${queueName}-joins`);
   await databases.postgres.query(
     "DELETE FROM world_event WHERE construction_id=ANY($1)",
     [ids],
@@ -241,6 +249,10 @@ afterAll(async () => {
   );
   await databases.postgres.query(
     "DELETE FROM world_operation WHERE request->>'worldId'=ANY($1)",
+    [worlds],
+  );
+  await databases.postgres.query(
+    "DELETE FROM world_controlled_actor WHERE world_id=ANY($1)",
     [worlds],
   );
   await databases.postgres.query("DELETE FROM llm_call WHERE budget_id=$1", [
@@ -548,8 +560,417 @@ test("引き継ぎ対象は全件をページで確認でき、確定も全対�
   ).toBe(true);
 });
 
+test("公開と参加受付を分け、非公開化後も参加者の参照と操作対象を保持する", async () => {
+  const legacy = await legacyFixture(),
+    person = await session("user");
+  const cfg = {
+    operation: "worlds.configure" as const,
+    worldId: legacy.id,
+    title: "公開用の村",
+    description: "登録者向けの説明",
+    published: true,
+    accepting: false,
+    reason: "公開設定の検証",
+  };
+  const initial = (
+    await databases.postgres.query(
+      "SELECT published,accepting FROM world_construction WHERE id=$1",
+      [legacy.id],
+    )
+  ).rows[0];
+  expect(initial).toEqual({ published: false, accepting: false });
+  expect(
+    (await auth.operations.catalog(person.subject)).items.find(
+      (w) => w.id === legacy.id,
+    ),
+  ).toBeUndefined();
+  await expect(
+    auth.operations.execute(person.subject, randomUUID(), cfg),
+  ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+  const req = randomUUID();
+  await auth.operations.execute(legacy.subject, req, cfg);
+  let catalog = await auth.operations.catalog(person.subject);
+  expect(catalog.items.find((w) => w.id === legacy.id)).toMatchObject({
+    title: cfg.title,
+    description: cfg.description,
+    canJoin: false,
+  });
+  expect(JSON.stringify(catalog)).not.toContain("初期世界の自由記述");
+  await auth.operations.execute(legacy.subject, randomUUID(), {
+    ...cfg,
+    accepting: true,
+  });
+  expect(
+    (await auth.operations.catalog(person.subject)).items.find(
+      (w) => w.id === legacy.id,
+    )?.canJoin,
+  ).toBe(true);
+  const preview = await auth.operations.legacyPreview(
+    person.subject,
+    legacy.token,
+  );
+  await auth.operations.execute(
+    person.subject,
+    randomUUID(),
+    { operation: "account.claim", version: preview.version },
+    { legacyToken: legacy.token },
+  );
+  await auth.operations.execute(legacy.subject, randomUUID(), {
+    ...cfg,
+    published: false,
+  });
+  catalog = await auth.operations.catalog(person.subject);
+  expect(catalog.items.find((w) => w.id === legacy.id)).toMatchObject({
+    canJoin: false,
+    accepting: false,
+  });
+  const stranger = await session("user");
+  expect(
+    (await auth.operations.catalog(stranger.subject)).items.find(
+      (w) => w.id === legacy.id,
+    ),
+  ).toBeUndefined();
+  expect((await access.player(person.subject, legacy.id)).viewerId).toBe(
+    (await runtime.get(legacy.id)).participant_id,
+  );
+  await auth.operations.execute(legacy.subject, req, cfg);
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT published FROM world_construction WHERE id=$1",
+        [legacy.id],
+      )
+    ).rows[0].published,
+  ).toBe(false);
+});
+
+test("自由記述のプリセットを版付きで編集し、本文は管理者以外へ返さない", async () => {
+  const admin = await session(),
+    person = await session("user"),
+    presetId = randomUUID();
+  const input = {
+    operation: "presets.put" as const,
+    presetId,
+    title: "森を渡る人",
+    description: "森の暮らしを知る立場",
+    settings: "生成に渡す非公開の設定",
+    expectedVersion: 0,
+    reason: "設定の検証",
+  };
+  await expect(
+    auth.operations.execute(person.subject, randomUUID(), input),
+  ).rejects.toMatchObject({ code: "ADMIN_REQUIRED" });
+  const req = randomUUID();
+  expect(await auth.operations.execute(admin.subject, req, input)).toEqual({
+    id: presetId,
+    version: 1,
+  });
+  const read = await app.inject({
+    url: "/api/catalog/presets",
+    headers: headers(person.cookie),
+  });
+  expect(read.statusCode).toBe(200);
+  expect(
+    read.json().items.find((p: { id: string }) => p.id === presetId),
+  ).toEqual({
+    id: presetId,
+    title: input.title,
+    description: input.description,
+    version: 1,
+  });
+  expect(read.body).not.toContain(input.settings);
+  expect(
+    JSON.stringify(
+      await auth.operations.execute(admin.subject, randomUUID(), {
+        operation: "presets.list",
+      }),
+    ),
+  ).toContain(input.settings);
+  expect(
+    await auth.operations.execute(admin.subject, randomUUID(), {
+      ...input,
+      settings: "編集後の設定",
+      expectedVersion: 1,
+    }),
+  ).toEqual({ id: presetId, version: 2 });
+  await expect(
+    auth.operations.execute(admin.subject, randomUUID(), {
+      ...input,
+      expectedVersion: 1,
+    }),
+  ).rejects.toMatchObject({ code: "PRESET_CHANGED" });
+  expect(await auth.operations.execute(admin.subject, req, input)).toEqual({
+    id: presetId,
+    version: 1,
+  });
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT version FROM player_preset WHERE id=$1",
+        [presetId],
+      )
+    ).rows[0].version,
+  ).toBe(2);
+  expect(
+    JSON.stringify(
+      (
+        await databases.postgres.query(
+          "SELECT details FROM operation_audit WHERE actor_id=$1",
+          [admin.subject],
+        )
+      ).rows,
+    ),
+  ).not.toContain(input.settings);
+});
+
+test("2人の参加要求から別の人物を生成し、他人の操作対象とシーンを拒否する", async () => {
+  const scene = await fixture(),
+    one = await session("user"),
+    two = await session("user"),
+    presetId = randomUUID();
+  await access.command(scene.subject, scene.id, {
+    requestId: randomUUID(),
+    command: "finish",
+  });
+  await auth.operations.execute(scene.subject, randomUUID(), {
+    operation: "worlds.configure",
+    worldId: scene.id,
+    title: "共有の世界",
+    description: "参加用",
+    published: true,
+    accepting: true,
+    reason: "検証",
+  });
+  await auth.operations.execute(scene.subject, randomUUID(), {
+    operation: "presets.put",
+    presetId,
+    title: "この地で暮らす人",
+    description: "世界に合わせた立場",
+    settings: "この世界の事情と両立する役割と所属を持つ。",
+    expectedVersion: 0,
+    reason: "検証",
+  });
+  const join = async (cookie: string, requestId: string, presetVersion = 1) =>
+    app.inject({
+      method: "POST",
+      url: "/api/operations",
+      headers: headers(cookie),
+      payload: {
+        requestId,
+        command: {
+          operation: "worlds.join",
+          worldId: scene.id,
+          presetId,
+          presetVersion,
+        },
+      },
+    });
+  const id1 = randomUUID(),
+    id2 = randomUUID();
+  for (const [published, accepting, status] of [
+    [false, true, 404],
+    [true, false, 409],
+  ] as const) {
+    await auth.operations.execute(scene.subject, randomUUID(), {
+      operation: "worlds.configure",
+      worldId: scene.id,
+      title: "共有の世界",
+      description: "参加用",
+      published,
+      accepting,
+      reason: "受付条件の検証",
+    });
+    expect((await join(one.cookie, randomUUID())).statusCode).toBe(status);
+  }
+  await auth.operations.execute(scene.subject, randomUUID(), {
+    operation: "worlds.configure",
+    worldId: scene.id,
+    title: "共有の世界",
+    description: "参加用",
+    published: true,
+    accepting: true,
+    reason: "受付再開",
+  });
+  expect((await join(one.cookie, randomUUID(), 2)).statusCode).toBe(409);
+  const repeated = await Promise.all([
+    join(one.cookie, id1),
+    join(one.cookie, id1),
+  ]);
+  expect(repeated.map((r) => r.statusCode)).toEqual([200, 200]);
+  expect(repeated[0]!.json()).toEqual(repeated[1]!.json());
+  const oldSettings = (
+    await databases.postgres.query(
+      "SELECT o.request FROM world_join j JOIN world_operation o ON o.id=j.operation_id WHERE j.id=$1",
+      [id1],
+    )
+  ).rows[0].request.actionText;
+  await auth.operations.execute(scene.subject, randomUUID(), {
+    operation: "presets.put",
+    presetId,
+    title: "この地で暮らす人",
+    description: "編集後",
+    settings: "変更後の役割設定",
+    expectedVersion: 1,
+    reason: "版の保持を検証",
+  });
+  expect((await join(two.cookie, id2, 2)).statusCode).toBe(200);
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT o.request FROM world_join j JOIN world_operation o ON o.id=j.operation_id WHERE j.id=$1",
+        [id1],
+      )
+    ).rows[0].request.actionText,
+  ).toBe(oldSettings);
+  expect(
+    (await access.players.list(one.subject, scene.id)).items[0],
+  ).toMatchObject({ id: id1, actorId: null, state: "joining" });
+  await access.players.tick(id1);
+  await access.players.tick(id2);
+  const a = (await access.players.list(one.subject, scene.id)).items[0]!
+      .actorId!,
+    b = (await access.players.list(two.subject, scene.id)).items[0]!.actorId!;
+  expect(a).not.toBe(b);
+  const own = await app.inject({
+    url: `/api/worlds/${scene.id}/players/${id1}`,
+    headers: headers(one.cookie),
+  });
+  expect(own.json().player.actorId).toBe(a);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${scene.id}/players/${id2}`,
+        headers: headers(one.cookie),
+      })
+    ).json().player,
+  ).toBeNull();
+  expect((await runtime.get(scene.id)).participant_id).toBeNull();
+  expect((await access.player(one.subject, scene.id)).viewerId).toBe(a);
+  expect((await access.player(two.subject, scene.id)).viewerId).toBe(b);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${scene.id}/play?actorId=${b}`,
+        headers: headers(one.cookie),
+      })
+    ).statusCode,
+  ).toBe(404);
+  const x = await access.sceneCommand(
+    one.subject,
+    scene.id,
+    { requestId: randomUUID(), command: "prepare", purpose: "場を確かめる" },
+    false,
+    a,
+  );
+  const y = await access.sceneCommand(
+    two.subject,
+    scene.id,
+    { requestId: randomUUID(), command: "prepare", purpose: "周囲を確かめる" },
+    false,
+    b,
+  );
+  expect(x.scene!.id).not.toBe(y.scene!.id);
+  expect((await access.scene(one.subject, scene.id, false, a)).scene!.id).toBe(
+    x.scene!.id,
+  );
+  expect((await access.scene(two.subject, scene.id, false, b)).scene!.id).toBe(
+    y.scene!.id,
+  );
+  await expect(
+    runtime.agent.intent(
+      (await runtime.get(scene.id)).world_id!,
+      b,
+      0,
+      randomUUID(),
+    ),
+  ).rejects.toThrow("本人の入力");
+  const id3 = randomUUID();
+  expect((await join(one.cookie, id3, 2)).statusCode).toBe(200);
+  const original = runtime.agent.run.bind(runtime.agent);
+  const calls = vi.spyOn(runtime.agent.model, "complete");
+  vi.spyOn(runtime.agent, "run").mockImplementationOnce(async (id) => {
+    await original(id);
+    throw new Error("世界確定後に停止");
+  });
+  try {
+    await expect(access.players.tick(id3)).rejects.toThrow("世界確定後に停止");
+    const operation = (
+      await databases.postgres.query(
+        "SELECT o.result FROM world_join j JOIN world_operation o ON o.id=j.operation_id WHERE j.id=$1",
+        [id3],
+      )
+    ).rows[0].result;
+    await expect(
+      runtime.agent.intent(
+        (await runtime.get(scene.id)).world_id!,
+        operation.newParticipantId,
+        0,
+        randomUUID(),
+      ),
+    ).rejects.toThrow("本人の入力");
+    const count = calls.mock.calls.length;
+    await expect(
+      auth.operations.execute(
+        two.subject,
+        randomUUID(),
+        { operation: "worlds.resumeJoin", joinId: id3 },
+        { players: access.players },
+      ),
+    ).rejects.toMatchObject({ code: "JOIN_NOT_FOUND" });
+    await auth.operations.execute(
+      one.subject,
+      randomUUID(),
+      { operation: "worlds.resumeJoin", joinId: id3 },
+      { players: access.players },
+    );
+    await access.players.tick(id3);
+    expect(calls.mock.calls.length).toBe(count);
+    expect(
+      (await access.players.list(one.subject, scene.id)).items.find(
+        (p) => p.id === id3,
+      ),
+    ).toMatchObject({ actorId: operation.newParticipantId, state: "ready" });
+    await expect(access.player(one.subject, scene.id)).rejects.toMatchObject({
+      code: "ACTOR_REQUIRED",
+    });
+    expect((await access.player(one.subject, scene.id, a)).viewerId).toBe(a);
+    expect(
+      (await access.scene(one.subject, scene.id, false, a)).scene!.id,
+    ).toBe(x.scene!.id);
+    await auth.operations.execute(scene.subject, randomUUID(), {
+      operation: "worlds.configure",
+      worldId: scene.id,
+      title: "共有の世界",
+      description: "参加用",
+      published: false,
+      accepting: false,
+      reason: "非公開後の継続検証",
+    });
+    const catalog = await app.inject({
+      url: `/api/catalog/worlds/${scene.id}`,
+      headers: headers(one.cookie),
+    });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json().canJoin).toBe(false);
+    expect((await access.player(one.subject, scene.id, a)).viewerId).toBe(a);
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
 test("Oryの主体・世界の操作権・同一オリジンを確認し、要求を同時保存して再送する", async () => {
   const scene = await fixture();
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/worlds/${scene.id}/commands`,
+        headers: headers(scene.cookie),
+        payload: { requestId: randomUUID(), command: "join" },
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect((await runtime.get(scene.id)).participant_id).toBeNull();
   const duplicate = await app.inject({
     method: "POST",
     url: "/api/worlds",
@@ -655,16 +1076,7 @@ test("管理記録と村民の知識を分離し、全件を省略せずペー�
   expect(initial.json().items).toEqual([
     expect.objectContaining({ id: "initial", summary: "管理者向けの初期記録" }),
   ]);
-  for (const command of ["finish", "join"]) {
-    const reply = await app.inject({
-      method: "POST",
-      url: `/api/worlds/${scene.id}/commands`,
-      headers: headers(scene.cookie),
-      payload: { requestId: randomUUID(), command },
-    });
-    expect(reply.statusCode).toBe(202);
-  }
-  await runtime.tick(scene.id);
+  await archivedParticipant(scene);
   const row = await runtime.get(scene.id),
     store = runtime.agent.store;
   const adminCursor = (
@@ -926,18 +1338,7 @@ test("同じ世界の同時通知はコミット順に採番し、取得済みcu
 
 test("割当済みの村民へ自由記述を一度だけ受け付け、操作対象の自己申告を拒否する", async () => {
   const scene = await fixture();
-  for (const command of ["finish", "join"])
-    expect(
-      (
-        await app.inject({
-          method: "POST",
-          url: `/api/worlds/${scene.id}/commands`,
-          headers: headers(scene.cookie),
-          payload: { requestId: randomUUID(), command },
-        })
-      ).statusCode,
-    ).toBe(202);
-  await runtime.tick(scene.id);
+  await archivedParticipant(scene);
   const actor = (await runtime.get(scene.id)).participant_id!;
   const input = {
     requestId: randomUUID(),

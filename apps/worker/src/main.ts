@@ -4,6 +4,7 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldScenes } from "@gestaloka/server/scene";
+import { WorldPlayers } from "@gestaloka/server/players";
 
 const databases = connectDatabases();
 databases.queue.on("error", (error) => console.error(error));
@@ -35,6 +36,9 @@ try {
   await scenes.setup();
   await construction.work();
   await scenes.work();
+  const players = new WorldPlayers(construction);
+  await players.setup();
+  await players.work();
   console.log("World construction worker ready");
 } catch (error) {
   await databases.queue.stop();
