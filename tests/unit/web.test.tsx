@@ -24,6 +24,7 @@ import {
   WORLD_DAY_MS,
   type PlayerStatus,
   type PlayRun,
+  type SceneStatus,
 } from "@gestaloka/contracts";
 import type { z } from "zod";
 
@@ -49,6 +50,23 @@ const world = {
   error: null,
 };
 let player: z.infer<typeof PlayerStatus>, run: z.infer<typeof PlayRun> | null;
+let scene: z.infer<typeof SceneStatus> | null;
+const sceneFixture = (
+  state: z.infer<typeof SceneStatus>["state"] = "active",
+): z.infer<typeof SceneStatus> => ({
+  id: W,
+  requestId: W,
+  viewerId: V,
+  at: 0,
+  state,
+  synopsis: "道端で村民と向き合うシーンです。",
+  result: null,
+  error: null,
+  messages: [],
+  actions: [],
+  recordIds: [],
+  nextPurpose: null,
+});
 const json = (body: Parameters<typeof HttpResponse.json>[0], status = 200) =>
   HttpResponse.json(body, {
     status,
@@ -134,6 +152,32 @@ const server = setupServer(
     });
   }),
   http.get("*/api/worlds/:id/play", () => json(player)),
+  http.get("*/api/worlds/:id/scene", () => json({ scene })),
+  http.post("*/api/worlds/:id/scene", async ({ request }) => {
+    const body = (await request.json()) as {
+      requestId: string;
+      command: string;
+      actionText?: string;
+    };
+    submitted = body;
+    if (body.command === "prepare")
+      scene = { ...sceneFixture("ready"), id: body.requestId };
+    else if (body.command === "start") scene = { ...scene!, state: "active" };
+    else if (body.command === "act") {
+      actionPosts++;
+      scene = {
+        ...scene!,
+        state: "acting",
+        actions: [
+          ...scene!.actions,
+          { id: body.requestId, text: body.actionText!, state: "running" },
+        ],
+      };
+    } else if (body.command === "finish")
+      scene = { ...scene!, state: "reflecting" };
+    scene = { ...scene!, requestId: body.requestId };
+    return json({ scene }, 202);
+  }),
   http.get("*/api/worlds/:id/knowledge", () =>
     json({
       viewerId: V,
@@ -178,6 +222,7 @@ beforeEach(() => {
   submitted = undefined;
   commands.length = 0;
   run = null;
+  scene = null;
   player = {
     id: W,
     viewerId: V,
@@ -241,6 +286,7 @@ test("初期入力を改変せず受付し、同じ世界の管理画面へ進�
 });
 
 test("IMEの確定を送信にせず、本人の入力と公開知識だけを表示する", async () => {
+  scene = sceneFixture();
   render(
     <App
       navigation={createAppRouter(
@@ -287,6 +333,46 @@ test("応答の主体が変わった場合は旧キャッシュと画面を破�
   Source.instances.find((source) => !source.closed)!.update();
   await screen.findByRole("button", { name: "世界一覧から開く" });
   expect(screen.queryByRole("heading", { name: "村民として" })).toBeNull();
+});
+
+test("あらすじを読んで開始し、確定後だけリザルトを表示する", async () => {
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}/play`] }),
+      )}
+    />,
+  );
+  const purpose = await screen.findByLabelText("次のシーンで何をしたいですか");
+  fireEvent.change(purpose, { target: { value: "道端で村人と話す" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: "シーンのあらすじを準備する" }),
+  );
+  await screen.findByRole("heading", { name: "シーンのあらすじ" });
+  expect(screen.queryByLabelText("どう行動しますか")).toBeNull();
+  expect(actionPosts).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: "シーンを始める" }));
+  await screen.findByLabelText("どう行動しますか");
+  fireEvent.click(
+    screen.getByRole("button", { name: "シーンを終えてリザルトを見る" }),
+  );
+  await screen.findByText("このシーンが世界に残した影響をまとめています。");
+  expect(screen.queryByRole("heading", { name: "リザルト" })).toBeNull();
+  scene = { ...scene!, state: "reflecting", result: "まだ表示できない候補" };
+  Source.instances.find((s) => !s.closed)!.update("1");
+  await waitFor(() => expect(submitted).toMatchObject({ command: "finish" }));
+  expect(screen.queryByText("まだ表示できない候補")).toBeNull();
+  scene = {
+    ...scene!,
+    state: "result",
+    result: "村民へ質問が届き、相談の続きが残りました。",
+  };
+  Source.instances.find((s) => !s.closed)!.update("2");
+  await screen.findByRole("heading", { name: "リザルト" });
+  expect(
+    screen.getByText("村民へ質問が届き、相談の続きが残りました。"),
+  ).toBeTruthy();
+  expect(actionPosts).toBe(0);
 });
 
 test("SSEの重複を無視し、切断後は配信位置とスナップショットを取得し直す", async () => {

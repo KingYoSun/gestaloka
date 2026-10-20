@@ -20,6 +20,8 @@ import {
   RequestIdentity,
   PlayRun,
   DeliveryCursor,
+  SceneCommand,
+  SceneResponse,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
 
@@ -217,6 +219,37 @@ export async function worldRoutes(
     "/api/runs/:id",
     { schema: { params: ResourceId, response: { 200: PlayRun, ...errors } } },
     async (request) => service().run(await subject(request), request.params.id),
+  );
+  app.get(
+    "/api/worlds/:id/scene",
+    {
+      schema: {
+        params: ResourceId,
+        response: { 200: SceneResponse, ...errors },
+      },
+    },
+    async (request) =>
+      service().scene(await subject(request), request.params.id),
+  );
+  app.post(
+    "/api/worlds/:id/scene",
+    {
+      schema: {
+        params: ResourceId,
+        body: SceneCommand,
+        response: { 202: SceneResponse, ...errors },
+      },
+    },
+    async (request, reply) =>
+      reply
+        .code(202)
+        .send(
+          await service().sceneCommand(
+            await subject(request),
+            request.params.id,
+            request.body,
+          ),
+        ),
   );
   app.post(
     "/api/worlds/:id/actions",

@@ -21,6 +21,7 @@ export default async function teardown() {
       worlds = sessions.map((row) => row.world_id).filter(Boolean);
     await d.queue.deleteQueue(`e2e-${scope}`);
     await d.queue.deleteQueue(`e2e-${scope}-play`);
+    await d.queue.deleteQueue(`e2e-${scope}-scenes`);
     await d.postgres.query(
       "DELETE FROM world_event WHERE construction_id=ANY($1)",
       [ids],
