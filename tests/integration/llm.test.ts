@@ -1,12 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
-import {
-  BudgetLedger,
-  BudgetUnavailable,
-  LlmClient,
-  llmApiKey,
-} from "@gestaloka/server/llm";
+import { BudgetUnavailable, LlmClient, llmApiKey } from "@gestaloka/server/llm";
 
 const databases = connectDatabases();
 const budgets: string[] = [];
@@ -122,13 +117,24 @@ test("応答喪失後は予約を維持し、同じ呼出しを自動再送し�
   );
   expect(transport).toHaveBeenCalledTimes(1);
   expect((await client.ledger.summary()).upperCostUsd).toBeGreaterThan(0);
-  await expect(
-    new BudgetLedger(
-      databases.postgres,
-      config.LLM_BUDGET_ID,
-      41_000_000_000,
-    ).setup(),
-  ).rejects.toBeInstanceOf(BudgetUnavailable);
+  const raised = new LlmClient(
+    databases.postgres,
+    { ...config, LLM_BUDGET_USD: "100" },
+    transport,
+  );
+  await expect(raised.ledger.setup()).rejects.toBeInstanceOf(BudgetUnavailable);
+  const before = await client.ledger.summary();
+  expect(before.limitUsd).toBe(40);
+  await databases.postgres.query(
+    "UPDATE llm_budget SET limit_nano=100000000000 WHERE id=$1",
+    [config.LLM_BUDGET_ID],
+  );
+  await raised.ledger.setup();
+  expect(await raised.ledger.summary()).toEqual({ ...before, limitUsd: 100 });
+  await expect(raised.complete(id, "probe", [])).rejects.toBeInstanceOf(
+    BudgetUnavailable,
+  );
+  expect(transport).toHaveBeenCalledTimes(1);
 });
 
 test("推論量の設定を変更しても保存済み呼出しを再送せず、新しい呼出しだけへ適用する", async () => {
