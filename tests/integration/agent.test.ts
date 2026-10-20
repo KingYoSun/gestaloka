@@ -108,12 +108,15 @@ async function fixture() {
   });
   return { worldId, actor, place, object, secret };
 }
-async function agent(transport: typeof fetch) {
+async function agent(
+  transport: typeof fetch,
+  overrides: Record<string, string> = {},
+) {
   const budgetId = randomUUID();
   budgets.push(budgetId);
   const model = new LlmClient(
     databases.postgres,
-    modelEnvironment(budgetId),
+    { ...modelEnvironment(budgetId), ...overrides },
     approvedTransport(transport),
   );
   const runtime = new WorldAgent(
@@ -125,6 +128,79 @@ async function agent(transport: typeof fetch) {
   await runtime.setup();
   return runtime;
 }
+test.each(["separate", "combined"])(
+  "%sの判断方式を操作に保存し、形式の修正と再実行でも二重適用しない",
+  async (judgment) => {
+    const scene = await fixture();
+    const accepted = edge("see", scene.actor, scene.object, "今回受容した側面");
+    let attempts = 0;
+    const transport = vi.fn<typeof fetch>().mockImplementation(async () => {
+      attempts++;
+      expect(
+        await store.context(scene.worldId).edge(accepted.id),
+      ).toBeUndefined();
+      return response(
+        proposal(
+          attempts === 1 ? changes([scene.actor]) : changes([], [accepted]),
+          {
+            settledIntentions: [
+              { actorId: scene.actor.id, reason: "本人が選んだ受容を記録した" },
+            ],
+          },
+        ),
+      );
+    });
+    const runtime = await agent(transport, {
+      LLM_RESOLUTION_MODEL: "gpt-6-luna",
+      OPENAI_API_KEY: "unused",
+      LLM_RESOLUTION_JUDGMENT: judgment,
+    });
+    const calls = vi.spyOn(runtime.model, "complete");
+    const id = await runtime.create({
+      worldId: scene.worldId,
+      phase: "interaction",
+      at: 0,
+      until: 1000,
+      rootIds: [scene.actor.id],
+      actionText: "",
+      intentions: [
+        {
+          actorId: scene.actor.id,
+          actionText: "届いた側面を受け取る",
+          continuing: false,
+        },
+      ],
+    });
+    operations.push(id);
+    runtime.model.environment.LLM_RESOLUTION_JUDGMENT =
+      judgment === "combined" ? "separate" : "combined";
+    expect((await runtime.run(id)).changes.edges).toEqual([accepted]);
+    expect(attempts).toBe(2);
+    expect(
+      calls.mock.calls.filter((call) => call[1] === "world-commit"),
+    ).toHaveLength(judgment === "combined" ? 0 : 1);
+    const row = (
+      await databases.postgres.query(
+        "SELECT approved,combined_judgment,system_prompt FROM world_operation WHERE id=$1",
+        [id],
+      )
+    ).rows[0];
+    expect(row).toMatchObject({
+      approved: true,
+      combined_judgment: judgment === "combined",
+    });
+    if (judgment === "combined")
+      expect(row.system_prompt).toContain("未解決の意図と継続を保持");
+    const count = calls.mock.calls.length;
+    await runtime.run(id);
+    expect(calls).toHaveBeenCalledTimes(count);
+    expect(await runtime.model.ledger.summary()).toMatchObject({
+      calls: judgment === "combined" ? 2 : 3,
+      unsettled: 0,
+    });
+  },
+);
+
 beforeAll(async () => {
   await databases.verify();
   await store.setup();

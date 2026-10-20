@@ -178,6 +178,7 @@ type Operation = {
   candidate: WorldProposal | null;
   result: WorldProposal | null;
   approved: boolean;
+  combined_judgment: boolean;
 };
 export class OperationPaused extends Error {}
 export class SupersededWorker extends Error {}
@@ -216,6 +217,9 @@ export class WorldAgent {
     await this.pool.query(
       "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS approved boolean NOT NULL DEFAULT false",
     );
+    await this.pool.query(
+      "ALTER TABLE world_operation ADD COLUMN IF NOT EXISTS combined_judgment boolean NOT NULL DEFAULT false",
+    );
   }
 
   async create(
@@ -223,17 +227,38 @@ export class WorldAgent {
     runId = randomUUID(),
     database: Pick<pg.Pool, "query"> = this.pool,
   ) {
-    this.model.settingsFor("resolution");
+    const target = this.model.settingsFor("resolution");
+    const combined =
+      target.judgment === "combined" &&
+      target.provider !== "deepseek" &&
+      ["interaction", "resolution"].includes(input.phase);
     const request = Interaction.parse(input),
       id = randomUUID();
     z.uuid().parse(runId);
-    const system = await readFile(
+    let system = await readFile(
       new URL("../../../../prompts/world-update.md", import.meta.url),
       "utf8",
     );
+    if (combined) {
+      const rules = await readFile(
+        new URL("../../../../prompts/world-commit.md", import.meta.url),
+        "utf8",
+      );
+      system +=
+        "\n\nこの実行では結果提案と意味的な確定判断を同じ応答で行います。type=proposeは、次の条件を照合して承認した最終候補です。別の確定担当への確認を前提にせず、根拠が足りなければqueryで照会し、取得できなければpauseにしてください。構造・参照・版の検査と原子的な書込は実行側が別に行います。\n" +
+        rules
+          .split(/\r?\n/)
+          .filter(
+            (line) =>
+              line.startsWith("- ") &&
+              !line.includes("execution") &&
+              !line.includes("phase=observation"),
+          )
+          .join("\n");
+    }
     await database.query(
-      "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt) VALUES ($1,$2,$3,$4,$5)",
-      [id, runId, randomUUID(), JSON.stringify(request), system],
+      "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt,combined_judgment) VALUES ($1,$2,$3,$4,$5,$6)",
+      [id, runId, randomUUID(), JSON.stringify(request), system, combined],
     );
     return id;
   }
@@ -303,7 +328,9 @@ export class WorldAgent {
       execution: {
         phase: row.request.phase,
         callerHandlesNextDecisionFor:
-          row.request.phase === "observation" ? row.request.actorId : null,
+          row.request.phase === "observation"
+            ? (row.request.actorId ?? row.request.rootIds)
+            : null,
         formedIntentions: (row.request.intentions ?? []).map(
           ({ actorId, continuing }) => ({
             actorId,
@@ -637,7 +664,9 @@ export class WorldAgent {
       if (
         request.phase === "observation" &&
         wakeup.mode === "intent" &&
-        wakeup.actorId === request.actorId
+        (request.actorId ? [request.actorId] : request.rootIds).includes(
+          wakeup.actorId,
+        )
       )
         throw new CandidateRejected(
           "観測主体の意図形成は呼出し側が続けて行います。将来の継続原因はresolveとして保持してください",
@@ -1101,6 +1130,7 @@ export class WorldAgent {
               } else {
                 row.dependencies = await this.#validateProposal(row, decision);
                 row.candidate = decision;
+                row.approved = row.combined_judgment;
               }
             } catch (error) {
               if (

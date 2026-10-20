@@ -145,6 +145,9 @@ export function settings(
   const result = {
     provider,
     api,
+    judgment: z
+      .enum(["separate", "combined"])
+      .parse(env.LLM_RESOLUTION_JUDGMENT ?? "separate"),
     model,
     version: known?.version ?? model,
     apiKey: z.string().min(1).parse(llmApiKey(env, target)),

@@ -289,21 +289,26 @@ export class WorldConstruction {
     return this.#transaction(async (client) => {
       await this.#save(row, client, claim);
       const work = row.current!;
-      for (const member of work.members ?? []) {
-        if (member.mode === "intent" && !member.observationId)
-          member.observationId = await this.agent.create(
-            {
-              worldId: row.world_id!,
-              phase: "observation",
-              at: work.at,
-              until: work.at,
-              rootIds: [member.actorId!],
-              actorId: member.actorId!,
-              actionText: "",
-            },
-            randomUUID(),
-            client,
-          );
+      const observers = (work.members ?? []).filter(
+        (member) => member.mode === "intent" && !member.observationId,
+      );
+      if (observers.length) {
+        const observationId = await this.agent.create(
+          {
+            worldId: row.world_id!,
+            phase: "observation",
+            at: work.at,
+            until: work.at,
+            rootIds: observers.map((member) => member.actorId!),
+            ...(observers.length === 1
+              ? { actorId: observers[0]!.actorId! }
+              : {}),
+            actionText: "",
+          },
+          randomUUID(),
+          client,
+        );
+        for (const member of observers) member.observationId = observationId;
       }
       const prepared = (work.members ?? []).every(
         (member) => member.mode !== "intent" || member.actionText !== undefined,
@@ -393,7 +398,7 @@ export class WorldConstruction {
   async #parallel(items: Work[], action: (work: Work) => Promise<void>) {
     const pending = [...items];
     const results = await Promise.allSettled(
-      [0, 1].map(async () => {
+      [0, 1, 2, 3].map(async () => {
         for (;;) {
           const work = pending.shift();
           if (!work) return;
@@ -410,7 +415,13 @@ export class WorldConstruction {
     const members = row.current!.members ?? [];
     const observations = new Map<string, WorldProposal>();
     await this.#parallel(
-      members.filter((member) => member.observationId !== undefined),
+      [
+        ...new Map(
+          members
+            .filter((member) => member.observationId !== undefined)
+            .map((member) => [member.observationId, member]),
+        ).values(),
+      ],
       async (member) => {
         observations.set(
           member.observationId!,
@@ -559,8 +570,23 @@ export class WorldConstruction {
       row.agenda.splice(row.agenda.indexOf(first), 1);
       return first;
     }
-    const due = row.agenda.filter((work) => work.at <= first.at);
-    row.agenda = row.agenda.filter((work) => work.at > first.at);
+    const activeActors = new Set(
+      row.agenda
+        .filter((work) => !work.deferred && work.at <= first.at)
+        .map((work) => work.actorId),
+    );
+    const due = row.agenda.filter(
+      (work) =>
+        work.at <= first.at &&
+        (!work.deferred ||
+          row.state !== "playing" ||
+          first.mode === "action" ||
+          work.at < first.at ||
+          activeActors.has(work.actorId) ||
+          work.actorId === row.participant_id),
+    );
+    const selectedIds = new Set(due.map((work) => work.id));
+    row.agenda = row.agenda.filter((work) => !selectedIds.has(work.id));
     const human =
       row.state === "playing"
         ? due.find(
