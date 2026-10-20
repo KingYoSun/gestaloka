@@ -19,7 +19,7 @@ import {
   type WorldEdge,
 } from "../world/model.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
-import { runHarness } from "./harness.js";
+import { HarnessCommunicationError, runHarness } from "./harness.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -728,6 +728,7 @@ export class WorldAgent {
         },
       );
     const commitTask = task("world-commit", commit);
+    let communicationRestarts = 0;
     const workflow = entrypoint(
       { name: "world-operation", checkpointer: this.checkpointer },
       async () => {
@@ -1119,7 +1120,13 @@ export class WorldAgent {
             }
             await this.#save(row, claim);
           } catch (error) {
-            if (!(error instanceof WorldConflict)) throw error;
+            if (!(error instanceof WorldConflict)) {
+              if (
+                !(error instanceof HarnessCommunicationError) ||
+                communicationRestarts++ > 0
+              )
+                throw error;
+            }
             row.epoch++;
             row.step = 0;
             row.messages = null;

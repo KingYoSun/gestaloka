@@ -24,6 +24,7 @@ type Options = {
   tools: Tool[];
   restartOn: (error: unknown) => boolean;
 };
+export class HarnessCommunicationError extends Error {}
 export async function runHarness(options: Options) {
   const { model } = options,
     config = model.settingsFor("resolution"),
@@ -221,8 +222,8 @@ export async function runHarness(options: Options) {
           code?: string;
           cause?: { code?: string };
         };
-        return new Error(
-          `DeepSeek APIとの通信を完了できません (${detail?.cause?.code ?? detail?.code ?? detail?.name ?? "Error"})。送信済み要求は再送せず予約を保持します`,
+        return new HarnessCommunicationError(
+          `DeepSeek APIとの通信を完了できません (${detail?.cause?.code ?? detail?.code ?? detail?.name ?? "Error"})。送信済み要求の予約を保持します`,
           { cause: error },
         );
       };

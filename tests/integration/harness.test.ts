@@ -125,13 +125,15 @@ test.each([
   { failAfterCommit: false, repairCommit: true },
   { failAfterCommit: false, repairCommit: false, conflictDuringRead: true },
   { failAfterCommit: false, repairCommit: false, transportFailure: true },
+  { failAfterCommit: false, repairCommit: false, transientFailure: true },
 ])(
-  "実際のdshで確定を重複適用せず、通信失敗 $failAfterCommit / 候補修正 $repairCommit でもreceiptを保つ",
+  "実際のdshで二重適用を防ぐ: 確定後通信失敗 $failAfterCommit / 修正 $repairCommit / 競合 $conflictDuringRead / 永続通信失敗 $transportFailure / 一時通信失敗 $transientFailure",
   async ({
     failAfterCommit,
     repairCommit,
     conflictDuringRead,
     transportFailure,
+    transientFailure,
   }) => {
     const worldId = randomUUID(),
       actor = randomUUID(),
@@ -170,7 +172,10 @@ test.each([
         );
         const body = JSON.parse(String(options?.body));
         expect(new Headers(options?.headers).get("connection")).toBe("close");
-        if (transportFailure)
+        if (
+          transportFailure ||
+          (transientFailure && transport.mock.calls.length === 1)
+        )
           throw new Error("socket closed", {
             cause: { code: "UND_ERR_SOCKET" },
           });
@@ -328,12 +333,20 @@ test.each([
     operations.push(id);
     if (transportFailure) {
       await expect(agent.run(id)).rejects.toThrow("UND_ERR_SOCKET");
-      expect(transport).toHaveBeenCalledTimes(1);
+      expect(transport).toHaveBeenCalledTimes(2);
       expect(await store.context(worldId).node(script)).toBeUndefined();
       expect(await model.ledger.summary()).toMatchObject({
-        calls: 1,
-        unsettled: 1,
+        calls: 2,
+        unsettled: 2,
       });
+      expect(
+        (
+          await d.postgres.query(
+            "SELECT state,epoch FROM world_operation WHERE id=$1",
+            [id],
+          )
+        ).rows[0],
+      ).toMatchObject({ state: "paused", epoch: 1 });
       return;
     }
     expect(await agent.run(id)).toEqual(candidate);
@@ -344,7 +357,7 @@ test.each([
           [id],
         )
       ).rows[0].epoch,
-    ).toBe(conflictDuringRead ? 1 : 0);
+    ).toBe(conflictDuringRead || transientFailure ? 1 : 0);
     expect(stage).toBe(repairCommit ? 7 : 5);
     expect(await store.context(worldId).node(script)).toMatchObject({
       id: script,
@@ -353,8 +366,8 @@ test.each([
     expect(await agent.run(id)).toEqual(candidate);
     expect(transport).toHaveBeenCalledTimes(calls);
     expect(await model.ledger.summary()).toMatchObject({
-      calls: repairCommit ? 7 : 5,
-      unsettled: failAfterCommit ? 1 : 0,
+      calls: (repairCommit ? 7 : 5) + (transientFailure ? 1 : 0),
+      unsettled: failAfterCommit || transientFailure ? 1 : 0,
     });
   },
   90000,
