@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { parseEnv } from "node:util";
 
 const root = new URL("../", import.meta.url);
@@ -31,6 +31,15 @@ try {
   if (error.code !== "EEXIST") throw error;
 }
 const env = parseEnv(await readFile(envFile, "utf8"));
+const missingOwner = Object.entries({
+  ORY_CONFIG_UID: process.getuid?.() ?? 1000,
+  ORY_CONFIG_GID: process.getgid?.() ?? 1000,
+}).filter(([name]) => !env[name]);
+if (missingOwner.length)
+  await appendFile(
+    envFile,
+    `\n${missingOwner.map(([name, value]) => `${name}=${value}`).join("\n")}\n`,
+  );
 const providers = [
   {
     id: "google",

@@ -25,6 +25,7 @@ services:
 
   kratos:
     image: *kratos-image
+    user: ${ORY_CONFIG_UID:-1000}:${ORY_CONFIG_GID:-1000}
     command: serve --config /etc/generated/kratos.json --dev
     environment:
       <<: *kratos-env
@@ -56,6 +57,7 @@ services:
 
   hydra:
     image: *hydra-image
+    user: ${ORY_CONFIG_UID:-1000}:${ORY_CONFIG_GID:-1000}
     command: serve all --config /etc/config/hydra.json --dev
     environment:
       <<: *hydra-env
