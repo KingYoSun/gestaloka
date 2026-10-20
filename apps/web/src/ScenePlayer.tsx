@@ -35,9 +35,12 @@ export function ScenePlayer({
 }) {
   const client = useQueryClient(),
     history = useRef<HistoryHandle>(null),
+    messages = useRef<HistoryHandle>(null),
+    actions = useRef<HistoryHandle>(null),
     composing = useRef(false),
     [showHistory, setShowHistory] = useState(!scene);
   const [pending, save] = usePending(pendingKey(id, "scene"), SceneCommand);
+  const [showInputs, setShowInputs] = useState(false);
   const form = useForm({
     defaultValues: {
       purpose:
@@ -51,6 +54,8 @@ export function ScenePlayer({
     id,
     "player",
     () => {
+      messages.current?.updated();
+      actions.current?.updated();
       if (!scene || scene.state === "result") history.current?.updated();
     },
     viewer,
@@ -59,6 +64,7 @@ export function ScenePlayer({
     onSuccess: async () => {
       save(null);
       form.setValue("actionText", "");
+      actions.current?.updated();
       await client.invalidateQueries({
         predicate: (q) => worldQuery(q.queryKey, id, false),
       });
@@ -82,7 +88,10 @@ export function ScenePlayer({
     if (mutate.isPending) return;
     const body = pending ?? command;
     save(body);
-    mutate.mutate({ params: { path: { id } }, body });
+    mutate.mutate({
+      params: { path: { id }, query: { view: "compact" } },
+      body,
+    });
   }
   function simple(command: "start" | "finish" | "resume") {
     send({ requestId: crypto.randomUUID(), command });
@@ -151,27 +160,32 @@ export function ScenePlayer({
           <p className="plain-text">{scene.actions.at(-1)!.text}</p>
         </div>
       )}
-      {scene && scene.messages.length > 0 && (
-        <section className="scene-panel" aria-label="このシーン">
-          <h2>このシーン</h2>
-          {scene.messages.map((m) => (
-            <article className="scene-message" key={m.id}>
-              <RichText text={m.text} />
-            </article>
-          ))}
-        </section>
+      {scene && (
+        <History
+          ref={messages}
+          id={id}
+          role="player"
+          viewer={viewer}
+          sceneId={scene.id}
+          sceneKind="events"
+        />
       )}
-      {scene && scene.actions.length > 1 && (
-        <details className="scene-inputs">
+      {scene && scene.actions.length > 0 && (
+        <details
+          className="scene-inputs"
+          onToggle={(e) => setShowInputs(e.currentTarget.open)}
+        >
           <summary>入力した行動</summary>
-          {scene.actions.map((a) => (
-            <p className="plain-text" key={a.id}>
-              {a.text}
-              {a.state === "boundary" && (
-                <span className="record-meta"> — 続きは次のシーンで</span>
-              )}
-            </p>
-          ))}
+          {showInputs && (
+            <History
+              ref={actions}
+              id={id}
+              role="player"
+              viewer={viewer}
+              sceneId={scene.id}
+              sceneKind="actions"
+            />
+          )}
         </details>
       )}
       {scene?.state === "reflecting" && scene.nextPurpose && (
@@ -269,7 +283,7 @@ export function ScenePlayer({
           id={id}
           role="player"
           viewer={viewer}
-          {...(scene ? { excludeIds: scene.recordIds } : {})}
+          {...(scene ? { excludeScene: scene.id } : {})}
         />
       )}
     </main>

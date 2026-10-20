@@ -189,118 +189,133 @@ export async function runHarness(options: Options) {
               output: config.output,
             },
           };
-          const cached = await model.ledger.reserve(
-            callId,
-            hash,
-            config.context * config.inputMiss +
-              config.maxOutput * config.output,
-            stored,
-          );
-          if (cached) {
-            response
-              .writeHead(200, { "content-type": "text/event-stream" })
-              .end(cached.content);
-            return;
-          }
-          const started = performance.now();
-          const base = (
-            model.environment.DEEPSEEK_HARNESS_BASE_URL ??
-            `${config.baseUrl.replace(/\/v1\/?$/, "")}/anthropic`
-          ).replace(/\/$/, "");
-          const headers: Record<string, string> = {
-            "content-type": "application/json",
-            "x-api-key": model.environment.DEEPSEEK_API_KEY!,
-            "anthropic-version": "2023-06-01",
-            // Each dsh turn may follow an idle interval; do not reuse an upstream socket closed by the peer.
-            connection: "close",
-          };
-          for (const [key, value] of Object.entries(request.headers))
-            if (
-              !new Set([
-                "host",
-                "connection",
-                "content-length",
-                "transfer-encoding",
-                "authorization",
-                "x-api-key",
-                "cookie",
-                "proxy-authorization",
-              ]).has(key) &&
-              typeof value === "string"
-            )
-              headers[key] = value;
-          const communicationError = (error: unknown) => {
-            const detail = error as {
-              name?: string;
-              code?: string;
-              cause?: { code?: string };
-            };
-            return new HarnessCommunicationError(
-              `DeepSeek APIとの通信を完了できません (${detail?.cause?.code ?? detail?.code ?? detail?.name ?? "Error"})。送信済み要求の予約を保持します`,
-              { cause: error },
-            );
-          };
-          const upstream = await model
-            .transport(`${base}/v1/messages`, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(body),
-              signal: AbortSignal.timeout(180000),
-              redirect: "error",
-            })
-            .catch((error: unknown) => {
-              throw communicationError(error);
-            });
-          if (!upstream.ok)
-            throw new Error(
-              `DeepSeek HarnessのAPIがHTTP ${upstream.status}を返しました。予約枠は保持します`,
-            );
-          const content = await upstream.text().catch((error: unknown) => {
-            throw communicationError(error);
-          });
-          let usage: Record<string, unknown> = {},
-            responseId = "",
-            reportedModel = "",
-            stopped = false;
-          for (const frame of content.split(/\r?\n\r?\n/)) {
-            const data = frame
-              .split(/\r?\n/)
-              .filter((l) => l.startsWith("data:"))
-              .map((l) => l.slice(5).trimStart())
-              .join("\n");
-            if (!data || data === "[DONE]") continue;
-            const event = JSON.parse(data);
-            if (event.type === "message_start") {
-              usage = { ...usage, ...event.message.usage };
-              responseId = event.message.id;
-              reportedModel = event.message.model;
-            }
-            if (event.usage) usage = { ...usage, ...event.usage };
-            if (event.type === "message_stop") stopped = true;
-          }
-          if (!stopped || !responseId || !reportedModel)
-            throw new Error(
-              "DeepSeek Harnessの使用量または終了を確認できません。予約枠は保持します",
-            );
-          const normalized = messageUsage(MessageUsage.parse(usage));
-          await model.ledger.settle(
-            callId,
-            normalized.prompt_cache_miss_tokens * config.inputMiss +
-              normalized.prompt_cache_hit_tokens * config.inputHit +
-              normalized.completion_tokens * config.output,
+          await model.limits.run(
             {
-              id: responseId,
-              model: reportedModel,
-              content,
-              finishReason: "stop",
-              usage: normalized,
+              name: `${config.provider}:${config.model}`,
+              key: model.environment.DEEPSEEK_API_KEY!,
+              request: body,
+              maxOutput: body.max_tokens as number,
+              cached: !!(await model.ledger.input(callId)),
             },
-            Math.round(performance.now() - started),
+            async (quota) => {
+              const cached = await model.ledger.reserve(
+                callId,
+                hash,
+                config.context * config.inputMiss +
+                  config.maxOutput * config.output,
+                stored,
+              );
+              if (cached) {
+                response
+                  .writeHead(200, { "content-type": "text/event-stream" })
+                  .end(cached.content);
+                return;
+              }
+              const started = performance.now();
+              const base = (
+                model.environment.DEEPSEEK_HARNESS_BASE_URL ??
+                `${config.baseUrl.replace(/\/v1\/?$/, "")}/anthropic`
+              ).replace(/\/$/, "");
+              const headers: Record<string, string> = {
+                "content-type": "application/json",
+                "x-api-key": model.environment.DEEPSEEK_API_KEY!,
+                "anthropic-version": "2023-06-01",
+                // Each dsh turn may follow an idle interval; do not reuse an upstream socket closed by the peer.
+                connection: "close",
+              };
+              for (const [key, value] of Object.entries(request.headers))
+                if (
+                  !new Set([
+                    "host",
+                    "connection",
+                    "content-length",
+                    "transfer-encoding",
+                    "authorization",
+                    "x-api-key",
+                    "cookie",
+                    "proxy-authorization",
+                  ]).has(key) &&
+                  typeof value === "string"
+                )
+                  headers[key] = value;
+              const communicationError = (error: unknown) => {
+                const detail = error as {
+                  name?: string;
+                  code?: string;
+                  cause?: { code?: string };
+                };
+                return new HarnessCommunicationError(
+                  `DeepSeek APIとの通信を完了できません (${detail?.cause?.code ?? detail?.code ?? detail?.name ?? "Error"})。送信済み要求の予約を保持します`,
+                  { cause: error },
+                );
+              };
+              quota.sent();
+              const upstream = await model
+                .transport(`${base}/v1/messages`, {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify(body),
+                  signal: AbortSignal.timeout(180000),
+                  redirect: "error",
+                })
+                .catch((error: unknown) => {
+                  throw communicationError(error);
+                });
+              if (!upstream.ok)
+                throw new Error(
+                  `DeepSeek HarnessのAPIがHTTP ${upstream.status}を返しました。予約枠は保持します`,
+                );
+              const content = await upstream.text().catch((error: unknown) => {
+                throw communicationError(error);
+              });
+              let usage: Record<string, unknown> = {},
+                responseId = "",
+                reportedModel = "",
+                stopped = false;
+              for (const frame of content.split(/\r?\n\r?\n/)) {
+                const data = frame
+                  .split(/\r?\n/)
+                  .filter((l) => l.startsWith("data:"))
+                  .map((l) => l.slice(5).trimStart())
+                  .join("\n");
+                if (!data || data === "[DONE]") continue;
+                const event = JSON.parse(data);
+                if (event.type === "message_start") {
+                  usage = { ...usage, ...event.message.usage };
+                  responseId = event.message.id;
+                  reportedModel = event.message.model;
+                }
+                if (event.usage) usage = { ...usage, ...event.usage };
+                if (event.type === "message_stop") stopped = true;
+              }
+              if (!stopped || !responseId || !reportedModel)
+                throw new Error(
+                  "DeepSeek Harnessの使用量または終了を確認できません。予約枠は保持します",
+                );
+              const normalized = messageUsage(MessageUsage.parse(usage));
+              quota.used(
+                normalized.prompt_tokens + normalized.completion_tokens,
+              );
+              await model.ledger.settle(
+                callId,
+                normalized.prompt_cache_miss_tokens * config.inputMiss +
+                  normalized.prompt_cache_hit_tokens * config.inputHit +
+                  normalized.completion_tokens * config.output,
+                {
+                  id: responseId,
+                  model: reportedModel,
+                  content,
+                  finishReason: "stop",
+                  usage: normalized,
+                },
+                Math.round(performance.now() - started),
+              );
+              if (response.destroyed) return;
+              response
+                .writeHead(200, { "content-type": "text/event-stream" })
+                .end(content);
+            },
           );
-          if (response.destroyed) return;
-          response
-            .writeHead(200, { "content-type": "text/event-stream" })
-            .end(content);
         })().catch((error) => {
           if (request.url === "/anthropic/v1/messages") stop(error);
           if (response.destroyed) return;

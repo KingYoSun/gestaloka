@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
@@ -479,6 +479,131 @@ test("SSEを保存済みIDから再送し、他の世界のcursorと権限失効
   } finally {
     controller.abort();
     await reader.cancel();
+  }
+});
+
+test("他者による世界確定を本人の受容に限って通知し、二重DB間の停止から配信だけを回復する", async () => {
+  const scene = await fixture(),
+    row = await runtime.get(scene.id);
+  const actor = row.actor_id!,
+    store = runtime.agent.store;
+  await databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [scene.subject, scene.id, actor],
+  );
+  const before = (await access.cursor(scene.subject, scene.id, "player"))
+    .cursor;
+  const secret = randomUUID();
+  const commit = async (changes: unknown) =>
+    store.commit(
+      await store.claim(row.world_id!, randomUUID()),
+      store.context(row.world_id!),
+      { commitId: randomUUID(), at: 0, changes },
+    );
+  await commit({
+    ...empty(),
+    nodes: [{ id: secret, kind: "existence", text: "PRIVATE_UNOBSERVED" }],
+  });
+  expect(
+    await access.events(scene.subject, scene.id, "player", before),
+  ).toEqual([]);
+  const receipt = await commit({
+    ...empty(),
+    edges: [
+      {
+        id: randomUUID(),
+        kind: "see",
+        source: actor,
+        target: secret,
+        text: "他者の働きかけで灯りが見えた",
+        period: { from: 0 },
+      },
+    ],
+  });
+  // An older receipt is migrated only on first delivery access to its world.
+  await databases.graph.executeQuery(
+    "MATCH(r:WorldReceipt {worldId:$worldId,commitId:$commitId}) REMOVE r.pendingDelivery",
+    { worldId: row.world_id!, commitId: receipt.commitId },
+  );
+  await databases.graph.executeQuery(
+    "MATCH(g:WorldGuard {worldId:$worldId,key:'delivery:initialized'}) DELETE g",
+    { worldId: row.world_id! },
+  );
+  const acknowledge = vi
+    .spyOn(store, "ackReceipt")
+    .mockRejectedValueOnce(new Error("通知保存後に停止"));
+  try {
+    await expect(
+      access.events(scene.subject, scene.id, "player", before),
+    ).rejects.toThrow("通知保存後に停止");
+    const restarted = new WorldAccess(runtime);
+    const events = await restarted.events(
+      scene.subject,
+      scene.id,
+      "player",
+      before,
+    );
+    expect(events).toHaveLength(1);
+    expect(
+      await restarted.events(scene.subject, scene.id, "player", before),
+    ).toEqual(events);
+    expect(
+      await restarted.events(scene.subject, scene.id, "player", events[0]!.id),
+    ).toEqual([]);
+    expect(JSON.stringify(events)).not.toContain("PRIVATE_");
+    expect(await store.receipt(row.world_id!, receipt.commitId)).toEqual(
+      receipt,
+    );
+    expect(
+      (
+        await store.context(row.world_id!).history(actor, "see", "out", 0)
+      ).filter((e) => e.target === secret),
+    ).toHaveLength(1);
+    expect(await store.pendingReceipts(row.world_id!)).toEqual([]);
+  } finally {
+    acknowledge.mockRestore();
+  }
+});
+
+test("同じ世界の同時通知はコミット順に採番し、取得済みcursorの後へ遅い通知を残す", async () => {
+  const scene = await fixture();
+  await access.cursor(scene.subject, scene.id, "admin");
+  const first = await databases.postgres.connect(),
+    second = await databases.postgres.connect();
+  const sql =
+    "INSERT INTO world_event(subject_id,construction_id,role,event_key) VALUES($1,$2,'admin',$3) RETURNING id::text";
+  try {
+    await first.query("BEGIN");
+    await second.query("BEGIN");
+    const pid = (await second.query("SELECT pg_backend_pid() AS id")).rows[0]
+      .id;
+    await first.query(sql, [scene.subject, scene.id, randomUUID()]);
+    const blocked = second.query(sql, [scene.subject, scene.id, randomUUID()]);
+    await vi.waitFor(async () =>
+      expect(
+        (
+          await databases.postgres.query(
+            "SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory' AND NOT granted",
+            [pid],
+          )
+        ).rowCount,
+      ).toBe(1),
+    );
+    await first.query(sql, [scene.subject, scene.id, randomUUID()]);
+    await first.query("COMMIT");
+    const late = (await blocked).rows[0].id;
+    const cursor = (await access.cursor(scene.subject, scene.id, "admin"))
+      .cursor;
+    await second.query("COMMIT");
+    expect(BigInt(late)).toBeGreaterThan(BigInt(cursor));
+    expect(
+      await access.events(scene.subject, scene.id, "admin", cursor),
+    ).toEqual([{ id: late }]);
+  } finally {
+    await first.query("ROLLBACK");
+    await second.query("ROLLBACK");
+    first.release();
+    second.release();
   }
 });
 

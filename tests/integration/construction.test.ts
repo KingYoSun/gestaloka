@@ -28,6 +28,7 @@ const response = (content: unknown) =>
       usage: {
         prompt_tokens: 1,
         completion_tokens: 1,
+        total_tokens: 2,
         prompt_cache_hit_tokens: 0,
         prompt_cache_miss_tokens: 1,
       },
@@ -375,6 +376,108 @@ async function reach(runtime: WorldConstruction, id: string) {
   }
   throw new Error("試験の期待する区切りに到達しませんでした");
 }
+
+test("初期生成と独立審査を上位モデルで行い、修正後だけを確定して再接続では再実行しない", async () => {
+  const budgetId = randomUUID(),
+    actor = randomUUID();
+  budgets.push(budgetId);
+  const calls: string[] = [];
+  let reviewed = 0;
+  const model = new LlmClient(
+    databases.postgres,
+    {
+      ...modelEnvironment(budgetId),
+      LLM_RESOLUTION_MODEL: "gemini-test-upper",
+      LLM_RESOLUTION_CONTEXT_TOKENS: "10000",
+      LLM_RESOLUTION_MAX_OUTPUT_TOKENS: "1000",
+      LLM_RESOLUTION_INPUT_USD_PER_MILLION: "1",
+      LLM_RESOLUTION_CACHED_INPUT_USD_PER_MILLION: "1",
+      LLM_RESOLUTION_OUTPUT_USD_PER_MILLION: "1",
+    },
+    async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      expect(body.model).toBe("gemini-test-upper");
+      const input = JSON.parse(body.messages[1].content);
+      if (input.commitReview) {
+        calls.push("review");
+        const current = (
+          await databases.postgres.query(
+            "SELECT world_id FROM world_build WHERE run_id=$1",
+            [id],
+          )
+        ).rows[0];
+        expect(
+          (
+            await builder.store
+              .context(current.world_id)
+              .relations(actor, "status", "out", 0)
+          ).length,
+        ).toBe(0);
+        return response({
+          type: ++reviewed === 1 ? "revise" : "commit",
+          reason:
+            reviewed === 1
+              ? "属性が呼称にしかないため、状態として表す"
+              : "状態と本人の知識を分離できている",
+        });
+      }
+      calls.push("generate");
+      const feedback = body.messages.at(-1).content;
+      if (reviewed) expect(feedback).toContain("属性が呼称にしかない");
+      const state = randomUUID();
+      return response({
+        playerId: actor,
+        rootIds: [actor],
+        report: "生成候補",
+        changes: {
+          ...empty(),
+          nodes: [
+            { id: actor, kind: "existence", text: "村民" },
+            ...(reviewed
+              ? [{ id: state, kind: "script", text: "水辺に住んでいる" }]
+              : []),
+          ],
+          edges: reviewed
+            ? [
+                {
+                  id: randomUUID(),
+                  kind: "status",
+                  role: "content",
+                  source: actor,
+                  target: state,
+                  period: { from: 0 },
+                },
+              ]
+            : [],
+        },
+      });
+    },
+  );
+  const builder = new WorldBuilder(
+    databases.postgres,
+    databases.graph,
+    databases.checkpointer,
+    model,
+  );
+  await builder.setup();
+  const id = await builder.create("水辺で暮らす村民");
+  ids.push(id);
+  const build = await builder.generate(id);
+  worlds.push(build.world_id);
+  expect(build.state).toBe("ready");
+  expect(calls).toEqual(["generate", "review", "generate", "review"]);
+  const restored = new WorldBuilder(
+    databases.postgres,
+    databases.graph,
+    databases.checkpointer,
+    model,
+  );
+  expect(await restored.generate(id)).toEqual(build);
+  expect(calls).toHaveLength(4);
+  expect(
+    await builder.store.receipt(build.world_id, build.commit_id),
+  ).toBeTruthy();
+});
 
 test("受付した構築区間を独立したpg-bossワーカーが取得して進める", async () => {
   const scene = await fixture();

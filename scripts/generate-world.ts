@@ -16,7 +16,7 @@ try {
     ...process.env,
     LLM_MAX_OUTPUT_TOKENS: process.env.LLM_MAX_OUTPUT_TOKENS ?? "65536",
   });
-  await model.verifyModel();
+  await model.verifyModel("resolution");
   const builder = new WorldBuilder(
     databases.postgres,
     databases.graph,
@@ -31,7 +31,11 @@ try {
   if (values.resume) await ExecutionBudget.extend(runId, databases.postgres);
   const build = await builder.generate(runId);
   const budget = await model.ledger.summary();
-  const report = { requestedModel: model.requestedVersion, ...build, budget };
+  const report = {
+    requestedModel: model.settingsFor("resolution").version,
+    ...build,
+    budget,
+  };
   const directory = new URL("../artifacts/evaluations/", import.meta.url);
   await mkdir(directory, { recursive: true });
   await writeFile(

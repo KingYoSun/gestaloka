@@ -11,6 +11,8 @@ import {
   PlayRun,
   SceneStatus,
   type SceneCommand,
+  SceneRecordPage,
+  type SceneRecordQuery,
 } from "@gestaloka/contracts";
 import {
   ConstructionStateError,
@@ -60,6 +62,14 @@ export class WorldAccess {
       id bigserial PRIMARY KEY,subject_id uuid NOT NULL REFERENCES browser_session(id),
       construction_id uuid NOT NULL REFERENCES world_construction(id),role text NOT NULL,event_key text UNIQUE NOT NULL);
       CREATE INDEX IF NOT EXISTS world_event_scope ON world_event(subject_id,construction_id,role,id);
+      CREATE OR REPLACE FUNCTION stamp_world_event() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.construction_id::text,0));
+        NEW.id := nextval(pg_get_serial_sequence('world_event','id'));
+        RETURN NEW;
+      END $$;
+      CREATE OR REPLACE TRIGGER world_event_order BEFORE INSERT ON world_event
+      FOR EACH ROW EXECUTE FUNCTION stamp_world_event();
       CREATE OR REPLACE FUNCTION notify_construction() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF NEW.participant_id IS NOT NULL THEN
@@ -291,7 +301,7 @@ export class WorldAccess {
       );
     return this.playerData(row);
   }
-  sceneData(row: SceneRow | null) {
+  sceneData(row: SceneRow | null, compact = false) {
     if (!row) return { scene: null };
     const d = row.data;
     return {
@@ -309,38 +319,125 @@ export class WorldAccess {
               ? "1操作の処理上限に達しました。再開すると枠を追加し、保存したシーンから続けます。"
               : "処理を保留しました。保存したシーンから再開できます。"
             : null,
-        messages: d.events.flatMap((e) =>
-          e.receipts
-            .filter((p) => p.observerId === row.actor_id)
-            .map((p) => ({ id: e.id, text: p.text })),
-        ),
-        actions: d.actions,
-        recordIds: d.background
-          ? sceneAnchors(d.background, d.events, d.startedAt, row.id)
-              .edges.filter(
-                (e) => e.kind === "see" && e.source === row.actor_id,
-              )
-              .map((e) => e.id)
-          : [],
+        messages: compact
+          ? []
+          : d.events.flatMap((e) =>
+              e.receipts
+                .filter((p) => p.observerId === row.actor_id)
+                .map((p) => ({ id: e.id, text: p.text })),
+            ),
+        actions: compact ? d.actions.slice(-1) : d.actions,
+        recordIds:
+          !compact && d.background
+            ? sceneAnchors(d.background, d.events, d.startedAt, row.id)
+                .edges.filter(
+                  (e) => e.kind === "see" && e.source === row.actor_id,
+                )
+                .map((e) => e.id)
+            : [],
         nextPurpose: d.nextPurpose ?? null,
       }),
     };
   }
-  async scene(subject: string, id: string) {
+  async scene(subject: string, id: string, compact = false) {
     const grant = await this.authorize(subject, id, "player"),
-      row = await this.scenes.latest(id);
+      row = await this.scenes.latest(id, this.pool, compact);
     if (row && row.actor_id !== grant.actor_id)
       throw new AccessError(
         403,
         "ACTOR_CHANGED",
         "操作対象を再取得してください",
       );
-    return this.sceneData(row);
+    return this.sceneData(row, compact);
+  }
+  async sceneRecords(
+    subject: string,
+    id: string,
+    input: z.infer<typeof SceneRecordQuery>,
+  ) {
+    const grant = await this.authorize(subject, id, "player");
+    const row = (
+      await this.pool.query<{ count: number }>(
+        "SELECT jsonb_array_length(data->$3) AS count FROM world_scene WHERE id=$1 AND construction_id=$2 AND actor_id=$4",
+        [input.sceneId, id, input.kind, grant.actor_id],
+      )
+    ).rows[0];
+    if (!row)
+      throw new AccessError(
+        404,
+        "SCENE_NOT_FOUND",
+        "利用できるシーンが見つかりません",
+      );
+    let position = row.count;
+    const raw = input.after || input.before;
+    if (raw) {
+      try {
+        const cursor = z
+          .object({
+            sceneId: z.literal(input.sceneId),
+            kind: z.literal(input.kind),
+            index: z.number().int().nonnegative().safe(),
+          })
+          .parse(JSON.parse(Buffer.from(raw, "base64url").toString("utf8")));
+        position = cursor.index;
+      } catch {
+        throw new AccessError(
+          409,
+          "CURSOR_INVALID",
+          "履歴を再取得してください",
+        );
+      }
+    }
+    const low = input.after ? position + 1 : Math.max(0, position - 50),
+      high = Math.min(
+        row.count - 1,
+        input.after ? position + 50 : position - 1,
+      );
+    const rows = (
+      await this.pool.query<{
+        item: SceneRow["data"]["events"][number] &
+          SceneRow["data"]["actions"][number];
+      }>(
+        "SELECT data->$3->n AS item FROM world_scene CROSS JOIN generate_series($4::int,$5::int) n WHERE id=$1 AND construction_id=$2 ORDER BY n DESC",
+        [input.sceneId, id, input.kind, low, high],
+      )
+    ).rows;
+    const encode = (index: number) =>
+      Buffer.from(
+        JSON.stringify({ sceneId: input.sceneId, kind: input.kind, index }),
+      ).toString("base64url");
+    return SceneRecordPage.parse({
+      viewerId: grant.actor_id,
+      items: rows.flatMap(({ item }) => {
+        const text =
+          input.kind === "actions"
+            ? item.text
+            : item.receipts
+                .filter((p) => p.observerId === grant.actor_id)
+                .map((p) => p.text)
+                .join("\n\n");
+        return text
+          ? [
+              {
+                id: item.id,
+                text,
+                at: input.kind === "events" ? item.period.from : null,
+                kind: input.kind === "events" ? "message" : "action",
+                continuation:
+                  item.state === "boundary" ? "続きは次のシーンで" : null,
+              },
+            ]
+          : [];
+      }),
+      next: low > 0 ? encode(low) : null,
+      previous: high < row.count - 1 ? encode(high) : null,
+    });
   }
   async sceneCommand(
     subject: string,
     id: string,
     input: z.infer<typeof SceneCommand>,
+    compact = false,
   ) {
     await this.authorize(subject, id, "player");
     return this.#accept(
@@ -366,6 +463,7 @@ export class WorldAccess {
                   input.requestId,
                 )
               : await this.scenes.command(id, input.command, client, input),
+            compact,
           );
         } catch (error) {
           if (error instanceof ConstructionStateError)
@@ -535,6 +633,7 @@ export class WorldAccess {
     id: string,
     before?: string,
     after?: string,
+    excludeScene?: string,
   ) {
     const grant = await this.authorize(subject, id, "player");
     const row = await this.construction.get(id);
@@ -581,7 +680,20 @@ export class WorldAccess {
     const edges = all.slice(0, 50);
     if (after) edges.reverse();
     const items = [];
+    const excluded = new Set(
+      excludeScene
+        ? (
+            await this.pool.query<{ id: string }>(
+              `SELECT e->>'id' AS id FROM world_scene s JOIN world_operation o ON o.id=(s.data->>'operationId')::uuid
+       CROSS JOIN LATERAL jsonb_array_elements(o.request#>'{completedScene,anchors,edges}') e
+       WHERE s.id=$1 AND s.construction_id=$2 AND s.actor_id=$3 AND e->>'kind'='see' AND e->>'id'=ANY($4::text[])`,
+              [excludeScene, id, grant.actor_id, edges.map((e) => e.id)],
+            )
+          ).rows.map((e) => e.id)
+        : [],
+    );
     for (const edge of edges) {
+      if (excluded.has(edge.id)) continue;
       if (edge.kind === "interpret" && edge.role !== "content") continue;
       const content =
         edge.kind === "interpret"
@@ -621,6 +733,54 @@ export class WorldAccess {
       previous: (after ? all.length > 50 : !!before) ? encode(edges[0]) : null,
     });
   }
+  async reconcile(id: string) {
+    const row = (
+      await this.pool.query<{ world_id: string }>(
+        "SELECT coalesce(c.world_id,b.world_id) AS world_id FROM world_construction c JOIN world_build b ON b.run_id=c.id WHERE c.id=$1",
+        [id],
+      )
+    ).rows[0];
+    if (!row) return;
+    const store = this.construction.agent.store;
+    for (const receipt of await store.pendingReceipts(row.world_id)) {
+      const context = store.context(row.world_id),
+        edges = [...receipt.changes.edges];
+      for (const edgeId of receipt.changes.endEdges) {
+        const edge = await context.edge(edgeId);
+        if (edge) edges.push(edge);
+      }
+      const actors = new Set(
+        edges
+          .filter(
+            (e) =>
+              e.kind === "see" ||
+              (e.kind === "interpret" && e.role === "content"),
+          )
+          .map((e) => e.source),
+      );
+      for (const node of receipt.changes.revisions.filter(
+        (n) => n.kind === "script",
+      ))
+        for (const edge of await context.history(
+          node.id,
+          "interpret",
+          "in",
+          receipt.at,
+        ))
+          if (edge.role === "content") actors.add(edge.source);
+      await context.validate();
+      await this.pool.query(
+        `INSERT INTO world_event(subject_id,construction_id,role,event_key)
+         SELECT a.subject_id,a.construction_id,a.role,'commit:'||$2::text||':'||a.subject_id::text||':'||a.role||':'||a.construction_id::text
+         FROM world_access a JOIN browser_session s ON s.id=a.subject_id
+         WHERE a.construction_id=$1 AND s.active AND (a.role='admin' OR a.actor_id=ANY($3::uuid[]))
+         ON CONFLICT(event_key) DO NOTHING`,
+        [id, receipt.commitId, [...actors]],
+      );
+      await store.ackReceipt(row.world_id, receipt.commitId);
+    }
+  }
+
   async events(subject: string, id: string, role: Role, after: string) {
     await this.authorize(subject, id, role);
     if (!sequence(after))
@@ -637,6 +797,7 @@ export class WorldAccess {
           "進捗を再取得してください",
         );
     }
+    await this.reconcile(id);
     return (
       await this.pool.query<{ id: string }>(
         "SELECT id::text FROM world_event WHERE subject_id=$1 AND construction_id=$2 AND role=$3 AND id>$4 ORDER BY id LIMIT 50",
@@ -646,6 +807,7 @@ export class WorldAccess {
   }
   async cursor(subject: string, id: string, role: Role) {
     await this.authorize(subject, id, role);
+    await this.reconcile(id);
     return {
       cursor: (
         await this.pool.query<{ id: string }>(

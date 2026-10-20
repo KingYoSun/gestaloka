@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { BudgetUnavailable, LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
+import { approvedTransport } from "../support/model.js";
 
 const databases = connectDatabases();
 const budgetId = randomUUID();
@@ -82,7 +83,7 @@ test("参照先が不正な候補を修正し、確定後の再開・進捗保�
   const model = new LlmClient(
     databases.postgres,
     { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: budgetId },
-    transport,
+    approvedTransport(transport),
   );
   const builder = new WorldBuilder(
     databases.postgres,

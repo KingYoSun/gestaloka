@@ -86,6 +86,12 @@ type Build = {
   result: z.infer<typeof Proposal> | null;
   state: string;
 };
+const Review = z
+  .object({
+    type: z.enum(["commit", "revise", "pause"]),
+    reason: z.string().min(1),
+  })
+  .strict();
 const callId = (runId: string, attempt: number) => {
   const hex = createHash("sha256")
     .update(`${runId}:initial:${attempt}`)
@@ -157,7 +163,44 @@ export class WorldBuilder {
     const ask = task(
       "initial-world-proposal",
       async (input: { id: string; messages: ChatMessage[] }) =>
-        this.model.complete(input.id, "initial-generation", input.messages),
+        this.model.complete(
+          input.id,
+          "initial-generation",
+          input.messages,
+          "resolution",
+        ),
+    );
+    const review = task(
+      "initial-world-review",
+      async (input: {
+        attempt: number;
+        candidate: z.infer<typeof Proposal>;
+      }) => {
+        const response = await this.model.complete(
+          callId(runId, input.attempt + 1000000),
+          "initial-commit",
+          [
+            {
+              role: "system",
+              content: `${system}\n\n${await readFile(new URL("../../../../prompts/initial-commit.md", import.meta.url), "utf8")}`,
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                commitReview: {
+                  initialPrompt: build.initial_prompt,
+                  candidate: input.candidate,
+                },
+                responseSchema: z.toJSONSchema(Review),
+              }),
+            },
+          ],
+          "resolution",
+        );
+        if (response.finishReason !== "stop")
+          throw new Error("初期確定の審査が未完了です。世界は確定していません");
+        return Review.parse(JSON.parse(response.content));
+      },
     );
     const commit = task(
       "initial-world-commit",
@@ -198,6 +241,18 @@ export class WorldBuilder {
                   validationErrors:
                     error instanceof z.ZodError ? error.issues : "invalid JSON",
                 }),
+              },
+            );
+            continue;
+          }
+          const decision = await review({ attempt, candidate: proposal });
+          if (decision.type === "pause") throw new Error(decision.reason);
+          if (decision.type === "revise") {
+            messages.push(
+              { role: "assistant", content: response.content },
+              {
+                role: "user",
+                content: JSON.stringify({ commitReview: decision.reason }),
               },
             );
             continue;

@@ -308,6 +308,9 @@ export class WorldStore {
     await this.driver.executeQuery(
       "CREATE CONSTRAINT WorldRevision_identity IF NOT EXISTS FOR (n:WorldRevision) REQUIRE (n.worldId, n.nodeId, n.version) IS UNIQUE",
     );
+    await this.driver.executeQuery(
+      "CREATE INDEX WorldReceipt_delivery IF NOT EXISTS FOR (n:WorldReceipt) ON (n.worldId, n.pendingDelivery)",
+    );
   }
 
   context(worldId: string, dependencies: readonly Dependency[] = []) {
@@ -340,6 +343,44 @@ export class WorldStore {
     return result.records[0]
       ? (JSON.parse(result.records[0].get("data")) as Receipt)
       : undefined;
+  }
+
+  async pendingReceipts(worldId: string): Promise<Receipt[]> {
+    const key = "delivery:initialized";
+    const initialized = await this.driver.executeQuery(
+      "MATCH(g:WorldGuard {worldId:$worldId,key:$key}) RETURN g.version AS version",
+      { worldId, key },
+    );
+    if (!initialized.records.length) {
+      const session = this.driver.session();
+      try {
+        await session.executeWrite(async (tx) => {
+          if ((await lock(tx, worldId, key)) !== 0) return;
+          await tx.run(
+            "MATCH(r:WorldReceipt {worldId:$worldId}) WHERE r.pendingDelivery IS NULL SET r.pendingDelivery=true",
+            { worldId },
+          );
+          await tx.run(
+            "MATCH(g:WorldGuard {worldId:$worldId,key:$key}) SET g.version=1",
+            { worldId, key },
+          );
+        });
+      } finally {
+        await session.close();
+      }
+    }
+    const result = await this.driver.executeQuery(
+      "MATCH(r:WorldReceipt {worldId:$worldId,pendingDelivery:true}) RETURN r.data AS data ORDER BY r.commitId LIMIT 50",
+      { worldId },
+    );
+    return result.records.map((r) => JSON.parse(r.get("data")) as Receipt);
+  }
+
+  async ackReceipt(worldId: string, commitId: string) {
+    await this.driver.executeQuery(
+      "MATCH(r:WorldReceipt {worldId:$worldId,commitId:$commitId}) SET r.pendingDelivery=false",
+      { worldId, commitId },
+    );
   }
 
   async commit(
@@ -643,7 +684,7 @@ export class WorldStore {
           changes: { ...changes, edges: canonicalEdges },
         };
         await tx.run(
-          "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data})",
+          "CREATE (:WorldReceipt {worldId: $worldId, commitId: $commitId, hash: $hash, data: $data,pendingDelivery:true})",
           { worldId, commitId, hash, data: JSON.stringify(receipt) },
         );
         return receipt;

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
@@ -8,10 +8,14 @@ import { WorldStore } from "@gestaloka/server/world";
 const d = connectDatabases(),
   worlds: string[] = [],
   operations: string[] = [],
-  budgets: string[] = [];
+  budgets: string[] = [],
+  scopes: string[] = [];
 const empty = () => ({ nodes: [], edges: [], revisions: [], endEdges: [] });
 beforeAll(() => d.verify());
 afterAll(async () => {
+  await d.postgres.query("DELETE FROM llm_model_use WHERE scope=ANY($1)", [
+    scopes,
+  ]);
   await d.postgres.query("DELETE FROM world_operation WHERE id=ANY($1)", [
     operations,
   ]);
@@ -142,6 +146,10 @@ test.each([
       budgetId = randomUUID();
     worlds.push(worldId);
     budgets.push(budgetId);
+    const scope = createHash("sha256")
+      .update(`deepseek:deepseek-flash:${budgetId}`)
+      .digest("hex");
+    scopes.push(scope);
     let stage = 0;
     const candidate = {
       type: "propose",
@@ -167,6 +175,14 @@ test.each([
     const transport = vi
       .fn<typeof fetch>()
       .mockImplementation(async (url, options) => {
+        expect(
+          (
+            await d.postgres.query(
+              "SELECT count(*)::int AS count FROM llm_model_use WHERE scope=$1 AND active_until>clock_timestamp()",
+              [scope],
+            )
+          ).rows[0].count,
+        ).toBe(1);
         expect(String(url)).toBe(
           "https://api.deepseek.com/anthropic/v1/messages",
         );
@@ -301,7 +317,10 @@ test.each([
     const model = new LlmClient(
       d.postgres,
       {
-        DEEPSEEK_API_KEY: "unused",
+        DEEPSEEK_API_KEY: budgetId,
+        LLM_MODEL_LIMITS: JSON.stringify({
+          "deepseek:deepseek-flash": { concurrency: 1 },
+        }),
         LLM_BUDGET_ID: budgetId,
         LLM_REASONING_EFFORT: "none",
       },

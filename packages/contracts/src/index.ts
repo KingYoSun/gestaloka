@@ -171,3 +171,27 @@ export const SceneStatus = z.object({
   nextPurpose: z.string().nullable(),
 });
 export const SceneResponse = z.object({ scene: SceneStatus.nullable() });
+export const SceneViewQuery = z.object({
+  view: z.literal("compact").optional(),
+});
+export const SceneRecordQuery = PageQuery.safeExtend({
+  sceneId: z.uuid(),
+  kind: z.enum(["events", "actions"]),
+});
+export const SceneRecordPage = z.object({
+  viewerId: z.uuid(),
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      at: z.number().nonnegative().safe().nullable(),
+      text: z.string(),
+      kind: z.enum(["message", "action"]),
+      continuation: z.string().nullable(),
+    }),
+  ),
+  next: z.string().nullable(),
+  previous: z.string().nullable(),
+});
+export const KnowledgeQuery = PageQuery.safeExtend({
+  excludeScene: z.uuid().optional(),
+});

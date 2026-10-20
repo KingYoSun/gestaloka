@@ -303,6 +303,106 @@ afterAll(async () => {
   await d.queue.stop();
   await d.close();
 });
+
+test("長いシーンを50件ずつ前後に復元し、概要の転送量と他者の受容を抑える", async () => {
+  const sceneId = randomUUID();
+  const events = Array.from({ length: 261 }, (_, i) => ({
+    id: randomUUID(),
+    actorId: npc,
+    text: "PRIVATE_EVENT",
+    period: { from: i, until: i },
+    receipts: [
+      {
+        observerId: i % 10 === 0 ? npc : actor,
+        text: `記録${i} ${"長い受容本文。".repeat(40)}`,
+      },
+    ],
+  }));
+  const actions = Array.from({ length: 261 }, (_, i) => ({
+    id: randomUUID(),
+    text: `入力${i}`,
+    state: "complete",
+  }));
+  await d.postgres.query(
+    "INSERT INTO world_scene(id,construction_id,actor_id,state,data) VALUES($1,$2,$3,'result',$4)",
+    [
+      sceneId,
+      construction,
+      actor,
+      JSON.stringify({
+        commandId: randomUUID(),
+        at: 260,
+        startedAt: 0,
+        events,
+        actions,
+        background: {
+          synopsis: "あらすじ",
+          creations: [],
+          facts: [],
+          beliefs: [],
+          perceptions: [],
+        },
+        result: "確定したリザルト",
+      }),
+    ],
+  );
+  try {
+    const compact = await app.inject({
+      url: `/api/worlds/${construction}/scene?view=compact`,
+      headers: headers(),
+    });
+    expect(compact.statusCode).toBe(200);
+    expect(compact.json().scene).toMatchObject({
+      id: sceneId,
+      messages: [],
+      actions: [actions.at(-1)],
+      recordIds: [],
+    });
+    expect(compact.body.length).toBeLessThan(2000);
+    const legacy = await status();
+    expect(legacy.messages).toHaveLength(
+      events.filter((e) => e.receipts[0]!.observerId === actor).length,
+    );
+    expect(legacy.actions).toEqual(actions);
+    for (const kind of ["events", "actions"] as const) {
+      let before: string | undefined;
+      const collected: string[] = [];
+      let last: Awaited<ReturnType<typeof access.sceneRecords>> | undefined;
+      do {
+        const page = await access.sceneRecords(subject, construction, {
+          sceneId,
+          kind,
+          ...(before ? { before } : {}),
+        });
+        expect(page.items.length).toBeLessThanOrEqual(50);
+        collected.push(...page.items.map((e) => e.id));
+        before = page.next ?? undefined;
+        last = page;
+      } while (before);
+      const expected =
+        kind === "actions"
+          ? actions
+          : events.filter((e) => e.receipts[0]!.observerId === actor);
+      expect(collected).toEqual(expected.map((e) => e.id).reverse());
+      expect(new Set(collected).size).toBe(collected.length);
+      const newer = await access.sceneRecords(subject, construction, {
+        sceneId,
+        kind,
+        after: last!.previous!,
+      });
+      expect(newer.items.length).toBeGreaterThan(0);
+      expect(JSON.stringify(newer)).not.toContain("PRIVATE_EVENT");
+      await expect(
+        access.sceneRecords(subject, construction, {
+          sceneId: randomUUID(),
+          kind,
+        }),
+      ).rejects.toThrow("利用できるシーン");
+    }
+  } finally {
+    await d.postgres.query("DELETE FROM world_scene WHERE id=$1", [sceneId]);
+  }
+});
 test("あらすじ→開始→本人の返答→背景更新の区切り→確定後のリザルトを保存し、失敗と再送でもシーンを維持する", async () => {
   const prepareId = randomUUID(),
     opened = await command({
@@ -354,6 +454,17 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
     actionText: "何か手伝えることはありますかと聞き、返答を待つ",
   });
   expect(act.statusCode).toBe(202);
+  const retry = await app.inject({
+    method: "POST",
+    url: `/api/worlds/${construction}/scene?view=compact`,
+    headers: headers(),
+    payload: {
+      requestId,
+      command: "act",
+      actionText: "何か手伝えることはありますかと聞き、返答を待つ",
+    },
+  });
+  expect(retry.json()).toEqual(act.json());
   await expect(access.scenes.tick(scene.id)).rejects.toBeInstanceOf(
     ExecutionLimit,
   );
@@ -446,6 +557,23 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
   expect(resultCalls).toBe(1);
   const restored = await new WorldAccess(runtime).scene(subject, construction);
   expect(restored.scene).toEqual(view);
+  const records = await access.knowledge(subject, construction);
+  expect(records.items.some((item) => view.recordIds.includes(item.id))).toBe(
+    true,
+  );
+  const separate = await access.knowledge(
+    subject,
+    construction,
+    undefined,
+    undefined,
+    scene.id,
+  );
+  expect(separate.items.some((item) => view.recordIds.includes(item.id))).toBe(
+    false,
+  );
+  expect(separate.items.some((item) => item.text === "人間だけの記憶")).toBe(
+    true,
+  );
   const row = await runtime.get(construction);
   expect(
     row.agenda.some(
