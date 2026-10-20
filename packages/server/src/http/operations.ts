@@ -100,17 +100,17 @@ export class Operations {
       bootstrapAvailable: !state.bootstrapped,
     };
   }
-  async catalog(userId: string, before?: string) {
+  async catalog(userId: string, before?: string, worldId?: string) {
     await this.authorize(userId);
     const rows = (
       await this.pool.query(
         `SELECT c.id,c.public_title AS title,c.public_description AS description,c.accepting,
       c.accepting AND c.published AND c.world_id IS NOT NULL AND c.state IN ('finished','playing','play_paused') AS "canJoin"
-      FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2)
+      FROM world_construction c WHERE ($2::uuid IS NULL OR c.id<$2) AND ($3::uuid IS NULL OR c.id=$3)
       AND (c.published OR EXISTS (SELECT 1 FROM world_access a JOIN world_subject s ON s.id=a.subject_id
         WHERE a.construction_id=c.id AND a.role='player' AND s.active AND s.user_id=$1))
       ORDER BY c.id DESC LIMIT 51`,
-        [userId, before ?? null],
+        [userId, before ?? null, worldId ?? null],
       )
     ).rows;
     return WorldCatalogPage.parse({

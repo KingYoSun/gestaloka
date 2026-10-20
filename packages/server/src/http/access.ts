@@ -101,11 +101,6 @@ export class WorldAccess {
       FOR EACH ROW EXECUTE FUNCTION stamp_world_event();
       CREATE OR REPLACE FUNCTION notify_construction() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
-        IF NEW.participant_id IS NOT NULL THEN
-          INSERT INTO world_access(subject_id,construction_id,role,actor_id)
-          SELECT subject_id,construction_id,'player',NEW.participant_id FROM world_access
-          WHERE construction_id=NEW.id AND role='admin' ON CONFLICT DO NOTHING;
-        END IF;
         IF (NEW.state,NEW.at,NEW.target,NEW.participant_id,NEW.error) IS DISTINCT FROM
            (OLD.state,OLD.at,OLD.target,OLD.participant_id,OLD.error) THEN
           INSERT INTO world_event(subject_id,construction_id,role,event_key)
@@ -227,6 +222,12 @@ export class WorldAccess {
       at: row.at,
       target: row.target,
       hasParticipant: row.participant_id !== null,
+      publication: {
+        title: row.public_title,
+        description: row.public_description,
+        published: row.published,
+        accepting: row.accepting,
+      },
       error: row.error,
     });
   }

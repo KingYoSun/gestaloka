@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@source ".";
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -170,6 +171,12 @@ select {
   resize: vertical;
   min-height: 112px;
 }
+select {
+  width: 100%;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
 [data-slot="label"] {
   font-size: 14px;
   line-height: 1.5;
@@ -205,6 +212,7 @@ select {
 }
 .site-header nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
 }
@@ -523,6 +531,7 @@ select {
 @media (max-width: 768px) {
   .site-header {
     padding: 16px 20px;
+    flex-wrap: wrap;
   }
   .brand {
     font-size: 24px;

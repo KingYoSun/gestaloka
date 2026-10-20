@@ -20,8 +20,21 @@ export default defineConfig({
     },
     {
       command: "pnpm --filter @gestaloka/web dev --port 4173",
-      env: { API_PROXY_TARGET: "http://127.0.0.1:3001" },
+      env: {
+        API_PROXY_TARGET: "http://127.0.0.1:3001",
+        VITE_USER_APP_URL: "http://127.0.0.1:4173",
+        VITE_ADMIN_APP_URL: "http://127.0.0.1:4174",
+      },
       url: "http://127.0.0.1:4173",
+    },
+    {
+      command: "pnpm --filter @gestaloka/admin dev --port 4174",
+      env: {
+        API_PROXY_TARGET: "http://127.0.0.1:3001",
+        VITE_USER_APP_URL: "http://127.0.0.1:4173",
+        VITE_ADMIN_APP_URL: "http://127.0.0.1:4174",
+      },
+      url: "http://127.0.0.1:4174",
     },
   ],
 });

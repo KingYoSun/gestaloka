@@ -1,3 +1,4 @@
+import { legacyPlayer } from "../support/legacy-player.js";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WORLD_DAY_MS } from "@gestaloka/contracts";
@@ -354,6 +355,10 @@ afterAll(async () => {
     [worlds],
   );
   await databases.postgres.query(
+    "DELETE FROM world_controlled_actor WHERE world_id=ANY($1)",
+    [worlds],
+  );
+  await databases.postgres.query(
     "DELETE FROM llm_call WHERE budget_id=ANY($1)",
     [budgets],
   );
@@ -620,7 +625,7 @@ test.each([false, true])(
   async (notify) => {
     const scene = await fixture();
     await scene.runtime.command(scene.id, "finish");
-    await scene.runtime.command(scene.id, "join");
+    await legacyPlayer(scene.runtime, scene.id);
     await scene.runtime.tick(scene.id);
     const human = (await scene.runtime.get(scene.id)).participant_id!;
     const actionText = "継続中の活動を保持する";
@@ -737,7 +742,7 @@ test.each([false, true])(
 test("同時刻の意図をそろえ、NPCの反応を経て人間へ操作を返す", async () => {
   const scene = await fixture();
   await scene.runtime.command(scene.id, "finish");
-  await scene.runtime.command(scene.id, "join");
+  await legacyPlayer(scene.runtime, scene.id);
   await scene.runtime.tick(scene.id);
   const joined = await scene.runtime.get(scene.id),
     human = joined.participant_id!;
@@ -800,7 +805,7 @@ test("同時刻の意図をそろえ、NPCの反応を経て人間へ操作を�
 test("人間の行動を途中保留から再開し、既に形成したNPCの意図を再生成しない", async () => {
   const scene = await fixture(false, false, true);
   await scene.runtime.command(scene.id, "finish");
-  await scene.runtime.command(scene.id, "join");
+  await legacyPlayer(scene.runtime, scene.id);
   await scene.runtime.tick(scene.id);
   const joined = await scene.runtime.get(scene.id),
     human = joined.participant_id!;
@@ -868,7 +873,7 @@ test("人間の行動を途中保留から再開し、既に形成したNPCの�
 test("人間へ操作を返しても未完了のNPC意図を保持し、再起動後は継続だけを評価する", async () => {
   const scene = await fixture();
   await scene.runtime.command(scene.id, "finish");
-  await scene.runtime.command(scene.id, "join");
+  await legacyPlayer(scene.runtime, scene.id);
   await scene.runtime.tick(scene.id);
   const human = (await scene.runtime.get(scene.id)).participant_id!;
   const actionText = "本人が形成した未完了の意図";
@@ -974,7 +979,7 @@ test("人間へ操作を返しても未完了のNPC意図を保持し、再起�
 test("起動の提案がなくても確定した作用の受け手を評価し、人間の元の意図を保持する", async () => {
   const scene = await fixture(false, false, false, true);
   await scene.runtime.command(scene.id, "finish");
-  await scene.runtime.command(scene.id, "join");
+  await legacyPlayer(scene.runtime, scene.id);
   await scene.runtime.tick(scene.id);
   const human = (await scene.runtime.get(scene.id)).participant_id!;
   const actionText = "相手に問いかけ、応答を待つ";
@@ -1066,7 +1071,7 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
     scene.actor,
     WORLD_DAY_MS * 2,
   );
-  await scene.runtime.command(scene.id, "join");
+  await legacyPlayer(scene.runtime, scene.id);
   await scene.runtime.tick(scene.id);
   row = await scene.runtime.get(scene.id);
   expect(row.participant_id).not.toBe(scene.actor);
@@ -1082,7 +1087,7 @@ test("時間指定・追加進行・明示完了・別の村民の参加で履�
       )
     ).observations.map((item) => item.text),
   ).toEqual(["自分で得た初期観測"]);
-  await scene.runtime.command(scene.id, "join");
+  await legacyPlayer(scene.runtime, scene.id);
   expect((await scene.runtime.get(scene.id)).participant_id).toBe(
     row.participant_id,
   );

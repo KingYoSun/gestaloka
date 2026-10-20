@@ -35,7 +35,7 @@ export const WorldCommand = z.discriminatedUnion("command", [
   z
     .object({
       requestId: z.uuid(),
-      command: z.enum(["resume", "finish", "join"]),
+      command: z.enum(["resume", "finish"]),
     })
     .strict(),
 ]);
@@ -56,6 +56,12 @@ export const WorldStatus = z.object({
   at: z.number().int().nonnegative().safe(),
   target: z.number().int().nonnegative().safe(),
   hasParticipant: z.boolean(),
+  publication: z.object({
+    title: z.string(),
+    description: z.string(),
+    published: z.boolean(),
+    accepting: z.boolean(),
+  }),
   error: z.string().nullable(),
 });
 export const PageQuery = z
@@ -257,15 +263,16 @@ export const LegacyClaimPage = z.object({
   ),
   next: z.uuid().nullable(),
 });
+export const JoinWorld = z
+  .object({
+    operation: z.literal("worlds.join"),
+    worldId: z.uuid(),
+    presetId: z.uuid(),
+    presetVersion: z.number().int().positive().safe(),
+  })
+  .strict();
 export const Operation = z.discriminatedUnion("operation", [
-  z
-    .object({
-      operation: z.literal("worlds.join"),
-      worldId: z.uuid(),
-      presetId: z.uuid(),
-      presetVersion: z.number().int().positive().safe(),
-    })
-    .strict(),
+  JoinWorld,
   z
     .object({ operation: z.literal("worlds.resumeJoin"), joinId: z.uuid() })
     .strict(),

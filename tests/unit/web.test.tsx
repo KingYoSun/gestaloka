@@ -48,6 +48,12 @@ const world = {
   target: 0,
   hasParticipant: true,
   error: null,
+  publication: {
+    title: "村",
+    description: "",
+    published: false,
+    accepting: false,
+  },
 };
 let player: z.infer<typeof PlayerStatus>, run: z.infer<typeof PlayRun> | null;
 let scene: z.infer<typeof SceneStatus> | null;
@@ -114,6 +120,13 @@ class Observer {
 }
 
 const server = setupServer(
+  http.get("*/api/account", () =>
+    json({ member: { id: identity, role: "admin", banned: false } }),
+  ),
+  http.post("*/api/operations", () =>
+    json({ result: { items: [], next: null } }),
+  ),
+  http.get("*/api/catalog/worlds", () => json({ items: [], next: null })),
   http.get("*/api/session", () =>
     hasSession
       ? json({ id: identity })
@@ -276,6 +289,7 @@ test("Reactを描画し、生成されたHTTPクライアント型を通信に�
   const { api } = await import("../../apps/web/src/api.js");
   render(
     <App
+      surface="admin"
       navigation={createAppRouter(
         createMemoryHistory({ initialEntries: ["/"] }),
       )}
@@ -305,9 +319,72 @@ test("未認証では匿名セッションを作らずログインへ案内す�
   expect(screen.queryByRole("heading", { name: "世界を始める" })).toBeNull();
 });
 
+test("一般ユーザーは公開一覧を開き、管理アプリでは管理用データを取得しない", async () => {
+  server.use(
+    http.get("*/api/account", () =>
+      json({ member: { id: identity, role: "user", banned: false } }),
+    ),
+  );
+  const user = render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: ["/"] }),
+      )}
+    />,
+  );
+  await screen.findByRole("heading", { name: "参加する世界を選ぶ" });
+  expect(screen.queryByLabelText("世界の初期設定")).toBeNull();
+  expect(screen.queryByRole("link", { name: "管理画面" })).toBeNull();
+  user.unmount();
+  render(
+    <App
+      surface="admin"
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
+      )}
+    />,
+  );
+  await screen.findByRole("alert");
+  expect(screen.getByText("管理者の権限が必要です。")).toBeTruthy();
+  expect(adminReads).toBe(0);
+});
+
+test("選択した人物をシーン・知識・配信の照会と送信へ引き継ぐ", async () => {
+  const scoped: string[] = [];
+  server.events.on("request:start", ({ request }) => {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith(`/api/worlds/${W}/`))
+      scoped.push(url.searchParams.get("actorId") ?? "");
+  });
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({
+          initialEntries: [`/worlds/${W}/play?actorId=${V}`],
+        }),
+      )}
+    />,
+  );
+  const input = await screen.findByLabelText("次のシーンで何をしたいですか");
+  fireEvent.change(input, { target: { value: "道を歩く" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: "シーンのあらすじを準備する" }),
+  );
+  await screen.findByRole("button", { name: "シーンを始める" });
+  expect(scoped.length).toBeGreaterThan(3);
+  expect(scoped.every((id) => id === V)).toBe(true);
+  expect(
+    Source.instances
+      .filter((s) => !s.closed)
+      .every((s) => s.url.includes(`actorId=${V}`)),
+  ).toBe(true);
+  server.events.removeAllListeners("request:start");
+});
+
 test("初期入力を改変せず受付し、同じ世界の管理画面へ進む", async () => {
   render(
     <App
+      surface="admin"
       navigation={createAppRouter(
         createMemoryHistory({ initialEntries: ["/"] }),
       )}
@@ -467,6 +544,7 @@ test("SSEの重複を無視し、切断後は配信位置とスナップショ�
 test("構築期間は日数で入力し、端数を送信せず整数の日数を受け付ける", async () => {
   render(
     <App
+      surface="admin"
       navigation={createAppRouter(
         createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
       )}

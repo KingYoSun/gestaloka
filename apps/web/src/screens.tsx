@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,6 +20,7 @@ import { Textarea } from "./components/ui/textarea.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
 import { ScenePlayer } from "./ScenePlayer.js";
+import { Publication, Presets } from "./operations-ui.js";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
@@ -116,6 +117,7 @@ export function Home() {
           worlds.data.map((world) => <WorldCard key={world.id} id={world.id} />)
         )}
       </section>
+      <Presets />
     </main>
   );
 }
@@ -134,12 +136,8 @@ function WorldCard({ id }: { id: string }) {
         </p>
         <p className="world-excerpt">{world.prompt}</p>
       </div>
-      <Link
-        to={world.hasParticipant ? "/worlds/$id/play" : "/worlds/$id"}
-        params={{ id }}
-        className="text-link"
-      >
-        {world.hasParticipant ? "村民として開く" : "構築を開く"} →
+      <Link to="/worlds/$id" params={{ id }} className="text-link">
+        構築を開く →
       </Link>
     </article>
   );
@@ -280,29 +278,16 @@ export function Manage({ id }: { id: string }) {
           保存した状態から再開する
         </Button>
       )}
-      {!pending && world.state === "finished" && !world.hasParticipant && (
-        <Button
-          onClick={() =>
-            send({ requestId: crypto.randomUUID(), command: "join" })
-          }
-          disabled={busy}
-        >
-          別の村民として参加する
-        </Button>
-      )}
-      {world.hasParticipant && (
-        <Link to="/worlds/$id/play" params={{ id }} className="text-link">
-          村民の画面を開く →
-        </Link>
-      )}
+      <Publication id={id} initial={world.publication} />
       <History ref={history} id={id} role="admin" viewer="admin" />
     </main>
   );
 }
 
 export function Player({ id }: { id: string }) {
+  const { actorId } = useSearch({ from: "/worlds/$id/play" });
   const query = $api.useQuery("get", "/api/worlds/{id}/play", {
-    params: { path: { id } },
+    params: { path: { id }, query: actorId ? { actorId } : {} },
   });
   if (query.error)
     return (
@@ -321,7 +306,10 @@ export function Player({ id }: { id: string }) {
 type PlayerState = z.infer<typeof PlayerStatus>;
 function PlayerView({ id, status }: { id: string; status: PlayerState }) {
   const query = $api.useQuery("get", "/api/worlds/{id}/scene", {
-    params: { path: { id }, query: { view: "compact" } },
+    params: {
+      path: { id },
+      query: { view: "compact", actorId: status.viewerId },
+    },
   });
   if (query.error)
     return (

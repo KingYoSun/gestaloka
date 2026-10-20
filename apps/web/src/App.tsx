@@ -17,6 +17,7 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
+import { z } from "zod";
 import logo from "../../../designs/logo.png";
 import {
   ApiFailure,
@@ -35,7 +36,21 @@ const Player = lazy(() =>
   import("./screens.js").then((module) => ({ default: module.Player })),
 );
 import { Button } from "./components/ui/button.js";
-import { Notice } from "./presentation.js";
+import { Notice, Problem } from "./presentation.js";
+import { $api } from "./api.js";
+import {
+  SurfaceContext,
+  useSurface,
+  userApp,
+  adminApp,
+  type Surface,
+} from "./surface.js";
+const Catalog = lazy(() =>
+  import("./participation.js").then((m) => ({ default: m.Catalog })),
+);
+const Participation = lazy(() =>
+  import("./participation.js").then((m) => ({ default: m.Participation })),
+);
 
 function ThemeButton() {
   const [dark, setDark] = useState(() => {
@@ -70,6 +85,8 @@ function Brand() {
   );
 }
 function Shell() {
+  const surface = useSurface();
+  const account = $api.useQuery("get", "/api/account");
   return (
     <>
       <header className="site-header">
@@ -78,6 +95,11 @@ function Shell() {
         </Link>
         <nav>
           <Link to="/">世界一覧</Link>
+          {surface === "admin" ? (
+            <a href={userApp}>ユーザー画面</a>
+          ) : account.data?.member?.role === "admin" ? (
+            <a href={adminApp}>管理画面</a>
+          ) : null}
           <a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>
           <a href="/auth/logout">ログアウト</a>
           <ThemeButton />
@@ -97,11 +119,24 @@ function Shell() {
 }
 function ManageRoute() {
   const { id } = useParams({ from: "/worlds/$id" });
-  return <Manage key={id} id={id} />;
+  return useSurface() === "admin" ? (
+    <Manage key={id} id={id} />
+  ) : (
+    <Participation key={id} id={id} />
+  );
+}
+function HomeRoute() {
+  return useSurface() === "admin" ? <Home /> : <Catalog />;
 }
 function PlayerRoute() {
   const { id } = useParams({ from: "/worlds/$id/play" });
-  return <Player key={id} id={id} />;
+  return useSurface() === "user" ? (
+    <Player key={id} id={id} />
+  ) : (
+    <main className="page">
+      <a href={`${userApp}/worlds/${id}/play`}>ユーザー画面で開く</a>
+    </main>
+  );
 }
 const root = createRootRoute({
   component: Shell,
@@ -115,7 +150,7 @@ const root = createRootRoute({
   ),
 });
 const routeTree = root.addChildren([
-  createRoute({ getParentRoute: () => root, path: "/", component: Home }),
+  createRoute({ getParentRoute: () => root, path: "/", component: HomeRoute }),
   createRoute({
     getParentRoute: () => root,
     path: "/worlds/$id",
@@ -124,6 +159,7 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: "/worlds/$id/play",
+    validateSearch: z.object({ actorId: z.uuid().optional() }).parse,
     component: PlayerRoute,
   }),
 ]);
@@ -167,14 +203,50 @@ function Authorized({
   );
   return (
     <QueryClientProvider client={client}>
-      <RouterProvider router={navigation} />
+      <Membership navigation={navigation} />
     </QueryClientProvider>
   );
 }
+function Membership({
+  navigation,
+}: {
+  navigation: ReturnType<typeof createAppRouter>;
+}) {
+  const account = $api.useQuery("get", "/api/account");
+  const surface = useSurface();
+  if (account.error)
+    return (
+      <main className="page">
+        <Problem error={account.error} />
+      </main>
+    );
+  if (!account.data)
+    return (
+      <main className="page">
+        <Notice>利用登録を確認しています</Notice>
+      </main>
+    );
+  if (!account.data.member || account.data.member.banned)
+    return (
+      <main className="page">
+        <a href="/auth/register">利用登録を確認する</a>
+      </main>
+    );
+  if (surface === "admin" && account.data.member.role !== "admin")
+    return (
+      <main className="page">
+        <p role="alert">管理者の権限が必要です。</p>
+        <a href={userApp}>ユーザー画面へ</a>
+      </main>
+    );
+  return <RouterProvider router={navigation} />;
+}
 export function App({
   navigation = router,
+  surface = "user",
 }: {
   navigation?: ReturnType<typeof createAppRouter>;
+  surface?: Surface;
 }) {
   const state = useSyncExternalStore(subscribeSession, getSession, getSession);
   useEffect(() => {
@@ -213,6 +285,8 @@ export function App({
       </>
     );
   return (
-    <Authorized key={`${state.id}:${state.epoch}`} navigation={navigation} />
+    <SurfaceContext.Provider value={surface}>
+      <Authorized key={`${state.id}:${state.epoch}`} navigation={navigation} />
+    </SurfaceContext.Provider>
   );
 }

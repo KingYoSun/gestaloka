@@ -10,6 +10,7 @@ import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 import { fixtureAuth } from "../support/auth.js";
+import { legacyPlayer } from "../support/legacy-player.js";
 
 const databases = connectDatabases(),
   budgetId = randomUUID();
@@ -172,12 +173,7 @@ async function fixture() {
 }
 async function legacyFixture() {
   const scene = await fixture();
-  for (const command of ["finish", "join"] as const)
-    await access.command(scene.subject, scene.id, {
-      requestId: randomUUID(),
-      command,
-    });
-  await runtime.tick(scene.id);
+  await archivedParticipant(scene);
   const legacyId = randomUUID(),
     token = randomUUID();
   subjects.push(legacyId);
@@ -196,6 +192,17 @@ async function legacyFixture() {
       [scene.subject, legacyId],
     );
   return { ...scene, legacyId, token, action, accepted };
+}
+async function archivedParticipant(scene: { subject: string; id: string }) {
+  await access.command(scene.subject, scene.id, {
+    requestId: randomUUID(),
+    command: "finish",
+  });
+  const actor = await legacyPlayer(runtime, scene.id);
+  await databases.postgres.query(
+    "INSERT INTO world_access(subject_id,construction_id,role,actor_id) VALUES($1,$2,'player',$3)",
+    [scene.subject, scene.id, actor],
+  );
 }
 beforeAll(async () => {
   await databases.verify();
@@ -760,6 +767,31 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     });
   const id1 = randomUUID(),
     id2 = randomUUID();
+  for (const [published, accepting, status] of [
+    [false, true, 404],
+    [true, false, 409],
+  ] as const) {
+    await auth.operations.execute(scene.subject, randomUUID(), {
+      operation: "worlds.configure",
+      worldId: scene.id,
+      title: "共有の世界",
+      description: "参加用",
+      published,
+      accepting,
+      reason: "受付条件の検証",
+    });
+    expect((await join(one.cookie, randomUUID())).statusCode).toBe(status);
+  }
+  await auth.operations.execute(scene.subject, randomUUID(), {
+    operation: "worlds.configure",
+    worldId: scene.id,
+    title: "共有の世界",
+    description: "参加用",
+    published: true,
+    accepting: true,
+    reason: "受付再開",
+  });
+  expect((await join(one.cookie, randomUUID(), 2)).statusCode).toBe(409);
   const repeated = await Promise.all([
     join(one.cookie, id1),
     join(one.cookie, id1),
@@ -799,6 +831,19 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
       .actorId!,
     b = (await access.players.list(two.subject, scene.id)).items[0]!.actorId!;
   expect(a).not.toBe(b);
+  const own = await app.inject({
+    url: `/api/worlds/${scene.id}/players/${id1}`,
+    headers: headers(one.cookie),
+  });
+  expect(own.json().player.actorId).toBe(a);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${scene.id}/players/${id2}`,
+        headers: headers(one.cookie),
+      })
+    ).json().player,
+  ).toBeNull();
   expect((await runtime.get(scene.id)).participant_id).toBeNull();
   expect((await access.player(one.subject, scene.id)).viewerId).toBe(a);
   expect((await access.player(two.subject, scene.id)).viewerId).toBe(b);
@@ -892,6 +937,22 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
     expect(
       (await access.scene(one.subject, scene.id, false, a)).scene!.id,
     ).toBe(x.scene!.id);
+    await auth.operations.execute(scene.subject, randomUUID(), {
+      operation: "worlds.configure",
+      worldId: scene.id,
+      title: "共有の世界",
+      description: "参加用",
+      published: false,
+      accepting: false,
+      reason: "非公開後の継続検証",
+    });
+    const catalog = await app.inject({
+      url: `/api/catalog/worlds/${scene.id}`,
+      headers: headers(one.cookie),
+    });
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json().canJoin).toBe(false);
+    expect((await access.player(one.subject, scene.id, a)).viewerId).toBe(a);
   } finally {
     vi.restoreAllMocks();
   }
@@ -899,6 +960,17 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
 
 test("Oryの主体・世界の操作権・同一オリジンを確認し、要求を同時保存して再送する", async () => {
   const scene = await fixture();
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/worlds/${scene.id}/commands`,
+        headers: headers(scene.cookie),
+        payload: { requestId: randomUUID(), command: "join" },
+      })
+    ).statusCode,
+  ).toBe(400);
+  expect((await runtime.get(scene.id)).participant_id).toBeNull();
   const duplicate = await app.inject({
     method: "POST",
     url: "/api/worlds",
@@ -1004,16 +1076,7 @@ test("管理記録と村民の知識を分離し、全件を省略せずペー�
   expect(initial.json().items).toEqual([
     expect.objectContaining({ id: "initial", summary: "管理者向けの初期記録" }),
   ]);
-  for (const command of ["finish", "join"]) {
-    const reply = await app.inject({
-      method: "POST",
-      url: `/api/worlds/${scene.id}/commands`,
-      headers: headers(scene.cookie),
-      payload: { requestId: randomUUID(), command },
-    });
-    expect(reply.statusCode).toBe(202);
-  }
-  await runtime.tick(scene.id);
+  await archivedParticipant(scene);
   const row = await runtime.get(scene.id),
     store = runtime.agent.store;
   const adminCursor = (
@@ -1275,18 +1338,7 @@ test("同じ世界の同時通知はコミット順に採番し、取得済みcu
 
 test("割当済みの村民へ自由記述を一度だけ受け付け、操作対象の自己申告を拒否する", async () => {
   const scene = await fixture();
-  for (const command of ["finish", "join"])
-    expect(
-      (
-        await app.inject({
-          method: "POST",
-          url: `/api/worlds/${scene.id}/commands`,
-          headers: headers(scene.cookie),
-          payload: { requestId: randomUUID(), command },
-        })
-      ).statusCode,
-    ).toBe(202);
-  await runtime.tick(scene.id);
+  await archivedParticipant(scene);
   const actor = (await runtime.get(scene.id)).participant_id!;
   const input = {
     requestId: randomUUID(),

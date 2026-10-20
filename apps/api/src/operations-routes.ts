@@ -142,6 +142,31 @@ export async function operationsRoutes(
       service().catalog(await actor(request), request.query.before),
   );
   app.get(
+    "/api/catalog/worlds/:id",
+    {
+      schema: {
+        params: ResourceId,
+        response: { 200: WorldCatalogPage.shape.items.element, ...errors },
+      },
+    },
+    async (request) => {
+      const row = (
+        await service().catalog(
+          await actor(request),
+          undefined,
+          request.params.id,
+        )
+      ).items[0];
+      if (!row)
+        throw new AccessError(
+          404,
+          "WORLD_NOT_FOUND",
+          "参加できる世界が見つかりません",
+        );
+      return row;
+    },
+  );
+  app.get(
     "/api/catalog/presets",
     {
       schema: {
@@ -173,6 +198,35 @@ export async function operationsRoutes(
         request.params.id,
         request.query.before,
       );
+    },
+  );
+  app.get(
+    "/api/worlds/:id/players/:playerId",
+    {
+      schema: {
+        params: z.object({ id: z.uuid(), playerId: z.uuid() }),
+        response: {
+          200: z.object({
+            player: WorldPlayerPage.shape.items.element.nullable(),
+          }),
+          ...errors,
+        },
+      },
+    },
+    async (request) => {
+      if (!players)
+        throw new AccessError(
+          503,
+          "MODEL_NOT_CONFIGURED",
+          "参加処理を設定してください",
+        );
+      const page = await players.list(
+        await actor(request),
+        request.params.id,
+        undefined,
+        request.params.playerId,
+      );
+      return { player: page.items[0] ?? null };
     },
   );
   app.get(

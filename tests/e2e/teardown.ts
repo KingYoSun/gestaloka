@@ -55,6 +55,10 @@ export default async function teardown() {
       "DELETE FROM world_intent WHERE world_id=ANY($1::uuid[])",
       [worlds],
     );
+    await d.postgres.query(
+      "DELETE FROM world_controlled_actor WHERE world_id=ANY($1)",
+      [worlds],
+    );
     await d.postgres.query("DELETE FROM llm_call WHERE budget_id=$1", [
       `e2e-${scope}`,
     ]);
@@ -67,6 +71,10 @@ export default async function teardown() {
     );
     await d.postgres.query(
       "DELETE FROM operation_request WHERE actor_id=ANY($1)",
+      [subjects],
+    );
+    await d.postgres.query(
+      "DELETE FROM player_preset WHERE updated_by=ANY($1)",
       [subjects],
     );
     await d.postgres.query("DELETE FROM app_user WHERE id=ANY($1)", [subjects]);

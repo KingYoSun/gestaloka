@@ -43,7 +43,10 @@ export function useUpdates(
       stream?.close();
       try {
         const { data } = await api.GET("/api/worlds/{id}/cursor", {
-          params: { path: { id }, query: { role } },
+          params: {
+            path: { id },
+            query: { role, ...(role === "player" ? { actorId: viewer } : {}) },
+          },
           signal: controller.signal,
         });
         if (!data) throw new Error("配信位置を取得できませんでした");
@@ -54,7 +57,7 @@ export function useUpdates(
         if (!live) return;
         callback.current();
         const source = new EventSource(
-          `/api/worlds/${id}/events?role=${role}&after=${data.cursor}`,
+          `/api/worlds/${id}/events?role=${role}&after=${data.cursor}${role === "player" ? `&actorId=${encodeURIComponent(viewer)}` : ""}`,
         );
         stream = source;
         source.onopen = () => {
