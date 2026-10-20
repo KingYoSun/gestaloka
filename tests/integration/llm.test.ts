@@ -44,6 +44,14 @@ afterAll(async () => {
   await databases.close();
 });
 
+test("開発用の100ドルを製品の固定上限にせず、管理者のAPI費用枠を独立に設定できる", () => {
+  const model = new LlmClient(databases.postgres, {
+    ...environment(),
+    LLM_BUDGET_USD: "1000",
+  });
+  expect(model.settings.budgetUsd).toBe(1000);
+});
+
 test("使用量をピーク料金で精算し、再接続後も保存済み応答を再送なしで再利用する", async () => {
   const config = environment();
   const transport = vi

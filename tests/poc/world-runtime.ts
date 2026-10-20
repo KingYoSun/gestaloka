@@ -562,6 +562,10 @@ try {
   );
   for (const { thread_id } of threads.rows)
     await db.checkpointer.deleteThread(thread_id);
+  await db.postgres.query(
+    "DELETE FROM execution_budget WHERE id IN (SELECT id FROM world_operation WHERE request->>'worldId'=ANY($1::text[]))",
+    [worlds],
+  );
   await db.postgres.query("DELETE FROM llm_call WHERE budget_id=$1", [budget]);
   await db.postgres.query("DELETE FROM llm_budget WHERE id=$1", [budget]);
   await db.postgres.query(

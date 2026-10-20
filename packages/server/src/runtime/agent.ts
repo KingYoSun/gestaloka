@@ -21,6 +21,7 @@ import {
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { HarnessCommunicationError, runHarness } from "./harness.js";
 import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
+import { ExecutionBudget, ExecutionLimit } from "../execution-budget.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -805,6 +806,10 @@ export class WorldAgent {
   }
 
   async run(id: string, resumeInput?: string): Promise<WorldProposal> {
+    return ExecutionBudget.run(this.pool, id, () => this.#run(id, resumeInput));
+  }
+
+  async #run(id: string, resumeInput?: string): Promise<WorldProposal> {
     z.uuid().parse(id);
     const activated = await this.#activate(id);
     const { row, claim } = activated;
@@ -917,6 +922,7 @@ export class WorldAgent {
                   model: this.model,
                   restartOn: (error) =>
                     error instanceof WorldConflict ||
+                    error instanceof ExecutionLimit ||
                     error instanceof SupersededWorker,
                   system:
                     row.system_prompt.replace(
@@ -1289,6 +1295,19 @@ export class WorldAgent {
     at: number,
     id: string,
     ownIntentions: string[] = [],
+    activityUntil?: number,
+  ) {
+    return ExecutionBudget.run(this.pool, id, () =>
+      this.#intent(worldId, observerId, at, id, ownIntentions, activityUntil),
+    );
+  }
+
+  async #intent(
+    worldId: string,
+    observerId: string,
+    at: number,
+    id: string,
+    ownIntentions: string[],
     activityUntil?: number,
   ) {
     const saved = await this.pool.query<{

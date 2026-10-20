@@ -364,10 +364,23 @@ test("あらすじを読んで開始し、確定後だけリザルトを表示�
   expect(screen.queryByText("まだ表示できない候補")).toBeNull();
   scene = {
     ...scene!,
+    state: "paused",
+    error: "1操作の処理上限に達しました。再開すると枠を追加します。",
+  };
+  Source.instances.find((s) => !s.closed)!.update("2");
+  await screen.findByText(
+    "1操作の処理上限に達しました。再開すると枠を追加します。",
+  );
+  expect(
+    screen.getByRole("button", { name: "保存したシーンから再開する" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("まだ表示できない候補")).toBeNull();
+  scene = {
+    ...scene!,
     state: "result",
     result: "村民へ質問が届き、相談の続きが残りました。",
   };
-  Source.instances.find((s) => !s.closed)!.update("2");
+  Source.instances.find((s) => !s.closed)!.update("3");
   await screen.findByRole("heading", { name: "リザルト" });
   expect(
     screen.getByText("村民へ質問が届き、相談の続きが残りました。"),

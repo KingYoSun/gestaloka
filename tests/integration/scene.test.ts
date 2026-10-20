@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { connectDatabases } from "@gestaloka/server";
+import {
+  connectDatabases,
+  ExecutionBudget,
+  ExecutionLimit,
+} from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
@@ -337,14 +341,43 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
   });
   expect(early.statusCode).toBe(409);
   await command({ requestId: randomUUID(), command: "start" });
-  const requestId = randomUUID(),
-    act = await command({
-      requestId,
-      command: "act",
-      actionText: "何か手伝えることはありますかと聞き、返答を待つ",
-    });
+  const requestId = randomUUID();
+  await ExecutionBudget.run(d.postgres, requestId, async () => {});
+  await d.postgres.query(
+    "UPDATE execution_budget SET llm_used=64 WHERE id=$1",
+    [requestId],
+  );
+  const beforeLimit = modelCalls;
+  const act = await command({
+    requestId,
+    command: "act",
+    actionText: "何か手伝えることはありますかと聞き、返答を待つ",
+  });
   expect(act.statusCode).toBe(202);
+  await expect(access.scenes.tick(scene.id)).rejects.toBeInstanceOf(
+    ExecutionLimit,
+  );
+  expect(modelCalls).toBe(beforeLimit);
+  expect(await status()).toMatchObject({
+    state: "paused",
+    result: null,
+    messages: [],
+    error: expect.stringContaining("再開すると枠を追加"),
+  });
+  const frozen = (await access.scenes.latest(construction))!.data.work;
+  const resumeId = randomUUID();
+  await command({ requestId: resumeId, command: "resume" });
+  expect((await access.scenes.latest(construction))!.data.work).toEqual(frozen);
   await access.scenes.tick(scene.id);
+  await command({ requestId: resumeId, command: "resume" });
+  expect(
+    (
+      await d.postgres.query(
+        "SELECT llm_used,llm_limit FROM execution_budget WHERE id=$1",
+        [requestId],
+      )
+    ).rows[0],
+  ).toEqual({ llm_used: 67, llm_limit: 128 });
   view = await status();
   expect(view.state).toBe("active");
   expect(view.messages.map((m: { text: string }) => m.text)).toContain(
