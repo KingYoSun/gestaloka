@@ -79,6 +79,60 @@ export async function fixtureRuntime(): Promise<{
             ],
           },
         };
+      } else if (
+        user.responseSchema?.oneOf?.some(
+          (s: { properties?: { type?: { const?: string } } }) =>
+            s.properties?.type?.const === "background",
+        )
+      ) {
+        content = {
+          type: "background",
+          synopsis: "村の道に出て、周囲を確かめられる場面です。",
+          participants: [user.request.actorId],
+          facts: [
+            {
+              subjectId: user.request.actorId,
+              text: "村の道に立っている",
+              aboutIds: [
+                user.request.rootIds.find(
+                  (id: string) => id !== user.request.actorId,
+                ),
+              ],
+            },
+          ],
+          perceptions: [
+            {
+              observerId: user.request.actorId,
+              text: "道の先の様子が見える",
+              sourceIds: [
+                user.request.rootIds.find(
+                  (id: string) => id !== user.request.actorId,
+                ),
+              ],
+            },
+          ],
+          unknowns: [],
+        };
+      } else if (user.background) {
+        const actor = user.request.controlledActorId;
+        content = {
+          type: "scene",
+          events: [
+            {
+              actorId: actor,
+              text: "周囲を見渡して確かめた",
+              receipts: [
+                { observerId: actor, text: `公開された経験 ${++sequence}` },
+              ],
+            },
+          ],
+          decisions: { [actor]: "decide" },
+          newDecisions: [],
+        };
+      } else if (user.confirmed) {
+        content = {
+          text: "周囲の景色を確認しました。このシーンで見たことが記録に残りました。",
+        };
       } else if (user.observerId) content = { actionText: "周囲を見渡す" };
       else {
         const request = user.request,
@@ -138,6 +192,16 @@ export async function fixtureRuntime(): Promise<{
                 })),
               ],
             },
+          };
+        } else if (request.completedScene) {
+          content = {
+            ...result,
+            settledIntentions: (request.intentions ?? []).map(
+              (i: { actorId: string }) => ({
+                actorId: i.actorId,
+                reason: "シーン内の観測が成立した",
+              }),
+            ),
           };
         } else if (
           request.controlledActorId &&

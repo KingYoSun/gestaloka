@@ -195,6 +195,8 @@ APIとワーカーを起動し、同じオリジンから利用します。初�
 
 `/api/worlds/:id/actions` は自由記述のactionTextとrequestIdを受け付けます。操作対象はサーバー側の割当で決め、actorIdの自己申告は受け付けません。受付結果のrunIdから `/api/runs/:id` で本人の入力・到達時刻・処理状態を取得でき、`/api/worlds/:id/play/resume` で途中保留を再開できます。入力の受付と世界内の成功は区別します。
 
+ブラウザーの通常プレイは、背景情報からあらすじを準備し、シーンを始めて自由記述で行動し、終了後にリザルトを読む流れです。`GET/POST /api/worlds/:id/scene`で準備・開始・行動・終了・再開を扱います。リザルトは世界への一括反映後に本人が知り得る記録から生成します。既存の通常行動APIと履歴も保持します。詳細は[ADR-008](documents/adr/ADR-008-scene-synopsis-results.md)を参照してください。
+
 `/api/worlds/:id/events?role=admin` または `role=player` は、現在の権限を確認して更新通知を配信します。Last-Event-IDによる再送に対応し、別の主体・世界・ロールのcursorは拒否します。取得や再接続だけで世界内の観測は追加しません。CLIで作った世界へブラウザーの権限を自動付与しません。詳細は [ADR-004](documents/adr/ADR-004-world-api.md) を参照してください。
 
 同時刻の意図と人間への操作返却は [ADR-005](documents/adr/ADR-005-human-play.md)、待ち時間と推論量の比較は [通常行動の実測](documents/evaluations/human-play-2026-10-19.md) を参照してください。`LLM_REASONING_EFFORT`で通常行動、`LLM_INITIAL_REASONING_EFFORT`で初期生成の推論量を指定できます。DeepSeekはnone・low・high・max、Geminiはlow・medium・high、GPT-6 Lunaはnone・low・medium・high・xhigh・maxを使えます。同じ呼出しIDの保存済み設定と応答は保持し、新しい呼出しから設定を適用します。

@@ -1336,6 +1336,311 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/worlds/{id}/scene": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            scene: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                requestId: string;
+                                /** Format: uuid */
+                                viewerId: string;
+                                at: number;
+                                /** @enum {string} */
+                                state: "preparing" | "ready" | "active" | "acting" | "reflecting" | "result" | "paused";
+                                synopsis: string | null;
+                                result: string | null;
+                                error: string | null;
+                                messages: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                }[];
+                                actions: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    state: "running" | "complete" | "boundary";
+                                }[];
+                                recordIds: string[];
+                                nextPurpose: string | null;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "prepare";
+                        purpose: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "act";
+                        actionText: string;
+                    } | {
+                        /** Format: uuid */
+                        requestId: string;
+                        /** @enum {string} */
+                        command: "start" | "finish" | "resume";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            scene: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: uuid */
+                                requestId: string;
+                                /** Format: uuid */
+                                viewerId: string;
+                                at: number;
+                                /** @enum {string} */
+                                state: "preparing" | "ready" | "active" | "acting" | "reflecting" | "result" | "paused";
+                                synopsis: string | null;
+                                result: string | null;
+                                error: string | null;
+                                messages: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                }[];
+                                actions: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    text: string;
+                                    /** @enum {string} */
+                                    state: "running" | "complete" | "boundary";
+                                }[];
+                                recordIds: string[];
+                                nextPurpose: string | null;
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            code: string;
+                            message: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/worlds/{id}/actions": {
         parameters: {
             query?: never;

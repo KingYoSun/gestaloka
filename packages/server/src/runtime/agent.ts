@@ -20,6 +20,7 @@ import {
 } from "../world/model.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
 import { HarnessCommunicationError, runHarness } from "./harness.js";
+import { CompletedScene, mergeSceneChanges } from "./scene-data.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -42,6 +43,7 @@ export const Interaction = z
     controlledActionText: z.string().optional(),
     triggerEdgeIds: z.array(z.uuid()).optional(),
     actionText: z.string(),
+    completedScene: CompletedScene.optional(),
     intentions: z
       .array(
         z
@@ -77,8 +79,8 @@ export const Interaction = z
     ];
     return new Set(ids).size === ids.length;
   }, "同じ存在の行動意図は一つにまとめてください");
-type Interaction = z.infer<typeof Interaction>;
-const Query = z.discriminatedUnion("kind", [
+export type Interaction = z.infer<typeof Interaction>;
+export const Query = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("observations"),
@@ -224,8 +226,9 @@ export class WorldAgent {
 
   async create(
     input: Interaction,
-    runId = randomUUID(),
+    runId: string = randomUUID(),
     database: Pick<pg.Pool, "query"> = this.pool,
+    dependencies: Dependency[] = [],
   ) {
     const target = this.model.settingsFor("resolution");
     const combined =
@@ -236,10 +239,15 @@ export class WorldAgent {
       id = randomUUID();
     z.uuid().parse(runId);
     let system = await readFile(
-      new URL("../../../../prompts/world-update.md", import.meta.url),
+      new URL(
+        input.completedScene
+          ? "../../../../prompts/scene-world.md"
+          : "../../../../prompts/world-update.md",
+        import.meta.url,
+      ),
       "utf8",
     );
-    if (combined) {
+    if (combined && !input.completedScene) {
       const rules = await readFile(
         new URL("../../../../prompts/world-commit.md", import.meta.url),
         "utf8",
@@ -257,8 +265,16 @@ export class WorldAgent {
           .join("\n");
     }
     await database.query(
-      "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt,combined_judgment) VALUES ($1,$2,$3,$4,$5,$6)",
-      [id, runId, randomUUID(), JSON.stringify(request), system, combined],
+      "INSERT INTO world_operation (id,run_id,commit_id,request,system_prompt,combined_judgment,dependencies) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+      [
+        id,
+        runId,
+        randomUUID(),
+        JSON.stringify(request),
+        system,
+        combined,
+        JSON.stringify(dependencies),
+      ],
     );
     return id;
   }
@@ -353,7 +369,10 @@ export class WorldAgent {
     };
   }
 
-  async #queries(row: Operation, requests: z.infer<typeof Query>[]) {
+  async read(
+    row: Pick<Operation, "request" | "dependencies">,
+    requests: z.infer<typeof Query>[],
+  ) {
     const context = this.store.context(row.request.worldId, row.dependencies);
     await context.validate();
     const results: unknown[] = [];
@@ -705,6 +724,86 @@ export class WorldAgent {
     return context.dependencies;
   }
 
+  async context(request: Interaction, dependencies: Dependency[] = []) {
+    const requests: z.infer<typeof Query>[] = (
+      request.triggerEdgeIds ?? []
+    ).map((id) => ({ kind: "edge", id }));
+    for (const root of new Set([
+      ...request.rootIds,
+      ...(request.actorId ? [request.actorId] : []),
+      ...(request.controlledActorId ? [request.controlledActorId] : []),
+      ...(request.intentions ?? []).map((item) => item.actorId),
+    ])) {
+      requests.push(
+        { kind: "node", id: root },
+        {
+          kind: "relations",
+          id: root,
+          relation: "status",
+          direction: "out",
+        },
+        {
+          kind: "relations",
+          id: root,
+          relation: "status",
+          direction: "in",
+        },
+        {
+          kind: "relations",
+          id: root,
+          relation: "has",
+          direction: "out",
+        },
+        { kind: "effects", id: root },
+        { kind: "observations", id: root },
+        {
+          kind: "history",
+          id: root,
+          relation: "see",
+          direction: "out",
+        },
+        {
+          kind: "history",
+          id: root,
+          relation: "happen",
+          direction: "out",
+        },
+        {
+          kind: "relations",
+          id: root,
+          relation: "interpret",
+          direction: "out",
+        },
+      );
+    }
+    const seed = await this.read({ request, dependencies }, requests);
+    return {
+      initialContext: requests.map((request, index) => ({
+        request,
+        result: seed.results[index],
+      })),
+      dependencies: seed.dependencies,
+    };
+  }
+
+  #sceneProposal(row: Operation, proposal: WorldProposal) {
+    if (!row.request.completedScene) return proposal;
+    try {
+      return {
+        ...proposal,
+        changes: mergeSceneChanges(
+          row.request.completedScene.anchors,
+          proposal.changes,
+          proposal.resolvedUntil,
+        ),
+      };
+    } catch (error) {
+      throw new CandidateRejected(
+        error instanceof Error ? error.message : "シーンの反映が不正です",
+      );
+    }
+  }
+
   async run(id: string, resumeInput?: string): Promise<WorldProposal> {
     z.uuid().parse(id);
     const activated = await this.#activate(id);
@@ -741,7 +840,7 @@ export class WorldAgent {
     const query = task(
       "world-query",
       async (input: { row: Operation; requests: z.infer<typeof Query>[] }) =>
-        this.#queries(input.row, input.requests),
+        this.read(input.row, input.requests),
     );
     const commit = async (input: {
       dependencies: Dependency[];
@@ -772,60 +871,7 @@ export class WorldAgent {
               .context(row.request.worldId, row.dependencies)
               .validate();
             if (!row.messages) {
-              const requests: z.infer<typeof Query>[] = (
-                row.request.triggerEdgeIds ?? []
-              ).map((id) => ({ kind: "edge", id }));
-              for (const root of new Set([
-                ...row.request.rootIds,
-                ...(row.request.actorId ? [row.request.actorId] : []),
-                ...(row.request.controlledActorId
-                  ? [row.request.controlledActorId]
-                  : []),
-                ...(row.request.intentions ?? []).map((item) => item.actorId),
-              ])) {
-                requests.push(
-                  { kind: "node", id: root },
-                  {
-                    kind: "relations",
-                    id: root,
-                    relation: "status",
-                    direction: "out",
-                  },
-                  {
-                    kind: "relations",
-                    id: root,
-                    relation: "status",
-                    direction: "in",
-                  },
-                  {
-                    kind: "relations",
-                    id: root,
-                    relation: "has",
-                    direction: "out",
-                  },
-                  { kind: "effects", id: root },
-                  { kind: "observations", id: root },
-                  {
-                    kind: "history",
-                    id: root,
-                    relation: "see",
-                    direction: "out",
-                  },
-                  {
-                    kind: "history",
-                    id: root,
-                    relation: "happen",
-                    direction: "out",
-                  },
-                  {
-                    kind: "relations",
-                    id: root,
-                    relation: "interpret",
-                    direction: "out",
-                  },
-                );
-              }
-              const seed = await query({ row, requests });
+              const seed = await this.context(row.request, row.dependencies);
               row.dependencies = seed.dependencies;
               row.messages = [
                 { role: "system", content: row.system_prompt },
@@ -833,10 +879,7 @@ export class WorldAgent {
                   role: "user",
                   content: JSON.stringify({
                     request: row.request,
-                    initialContext: requests.map((request, index) => ({
-                      request,
-                      result: seed.results[index],
-                    })),
+                    initialContext: seed.initialContext,
                     responseSchema: z.toJSONSchema(Decision, { io: "input" }),
                   }),
                 },
@@ -900,7 +943,7 @@ export class WorldAgent {
                           .object({ requests: z.array(Query).min(1) })
                           .parse(input);
                         // MCP returns recoverable tool errors to dsh; a failed workflow task would abort the parent.
-                        const output = await this.#queries(row, value.requests);
+                        const output = await this.read(row, value.requests);
                         row.dependencies = output.dependencies;
                         await this.#save(row, claim);
                         return output.results;
@@ -914,7 +957,10 @@ export class WorldAgent {
                       execute: async (input) => {
                         if (paused || committed)
                           throw new Error("この実行は既に終了しています");
-                        const candidate = Proposal.parse(input);
+                        const candidate = this.#sceneProposal(
+                          row,
+                          Proposal.parse(input),
+                        );
                         row.dependencies = await this.#validateProposal(
                           row,
                           candidate,
@@ -1128,6 +1174,7 @@ export class WorldAgent {
                   }),
                 });
               } else {
+                decision = this.#sceneProposal(row, decision);
                 row.dependencies = await this.#validateProposal(row, decision);
                 row.candidate = decision;
                 row.approved = row.combined_judgment;

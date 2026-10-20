@@ -33,11 +33,13 @@ export function History({
   role,
   viewer,
   ref,
+  excludeIds,
 }: {
   id: string;
   role: "admin" | "player";
   viewer: string;
   ref: Ref<HistoryHandle>;
+  excludeIds?: string[];
 }) {
   const client = useQueryClient(),
     scroll = useRef<HTMLDivElement>(null);
@@ -99,8 +101,11 @@ export function History({
       page.previous ? { after: page.previous } : undefined,
   });
   const entries = useMemo(
-    () => query.data?.pages.flatMap((page) => page.items) ?? [],
-    [query.data],
+    () =>
+      query.data?.pages
+        .flatMap((page) => page.items)
+        .filter((item) => !excludeIds?.includes(item.id)) ?? [],
+    [query.data, excludeIds],
   );
   // React Compilerは未使用。必須のTanStack Virtualをそのまま呼び出す。
   // eslint-disable-next-line react-hooks/incompatible-library

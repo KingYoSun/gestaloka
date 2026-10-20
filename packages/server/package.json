@@ -10,7 +10,8 @@
     "./build": "./dist/runtime/build.js",
     "./agent": "./dist/runtime/agent.js",
     "./construction": "./dist/runtime/construction.js",
-    "./access": "./dist/http/access.js"
+    "./access": "./dist/http/access.js",
+    "./scene": "./dist/runtime/scene.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.1-rc.2",

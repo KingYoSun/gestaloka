@@ -9,11 +9,15 @@ import {
   type PlayerAction,
   PlayerStatus,
   PlayRun,
+  SceneStatus,
+  type SceneCommand,
 } from "@gestaloka/contracts";
 import {
   ConstructionStateError,
   type WorldConstruction,
 } from "../runtime/construction.js";
+import { WorldScenes, type SceneRow } from "../runtime/scene.js";
+import { sceneAnchors } from "../runtime/scene-data.js";
 
 export class AccessError extends Error {
   constructor(
@@ -34,7 +38,10 @@ const Cursor = z
 type Role = "admin" | "player";
 
 export class WorldAccess {
-  constructor(readonly construction: WorldConstruction) {}
+  readonly scenes: WorldScenes;
+  constructor(readonly construction: WorldConstruction) {
+    this.scenes = new WorldScenes(construction);
+  }
   get pool() {
     return this.construction.pool;
   }
@@ -71,6 +78,7 @@ export class WorldAccess {
       END $$;
       CREATE OR REPLACE TRIGGER construction_notification AFTER UPDATE ON world_construction
       FOR EACH ROW EXECUTE FUNCTION notify_construction();`);
+    await this.scenes.setup();
   }
 
   async session(token?: string) {
@@ -282,6 +290,88 @@ export class WorldAccess {
         "操作対象を再取得してください",
       );
     return this.playerData(row);
+  }
+  sceneData(row: SceneRow | null) {
+    if (!row) return { scene: null };
+    const d = row.data;
+    return {
+      scene: SceneStatus.parse({
+        id: row.id,
+        requestId: d.commandId,
+        viewerId: row.actor_id,
+        at: d.at,
+        state: row.state,
+        synopsis: d.background?.synopsis ?? null,
+        result: row.state === "result" ? (d.result ?? null) : null,
+        error:
+          row.state === "paused"
+            ? "処理を保留しました。保存したシーンから再開できます。"
+            : null,
+        messages: d.events.flatMap((e) =>
+          e.receipts
+            .filter((p) => p.observerId === row.actor_id)
+            .map((p) => ({ id: e.id, text: p.text })),
+        ),
+        actions: d.actions,
+        recordIds: d.background
+          ? sceneAnchors(d.background, d.events, d.startedAt, row.id)
+              .edges.filter(
+                (e) => e.kind === "see" && e.source === row.actor_id,
+              )
+              .map((e) => e.id)
+          : [],
+        nextPurpose: d.nextPurpose ?? null,
+      }),
+    };
+  }
+  async scene(subject: string, id: string) {
+    const grant = await this.authorize(subject, id, "player"),
+      row = await this.scenes.latest(id);
+    if (row && row.actor_id !== grant.actor_id)
+      throw new AccessError(
+        403,
+        "ACTOR_CHANGED",
+        "操作対象を再取得してください",
+      );
+    return this.sceneData(row);
+  }
+  async sceneCommand(
+    subject: string,
+    id: string,
+    input: z.infer<typeof SceneCommand>,
+  ) {
+    await this.authorize(subject, id, "player");
+    return this.#accept(
+      subject,
+      input.requestId,
+      { operation: "scene", id, ...input },
+      async (client) => {
+        const grant = await this.authorize(subject, id, "player", client),
+          current = await this.construction.get(id, client, true);
+        if (grant.actor_id !== current.participant_id)
+          throw new AccessError(
+            403,
+            "ACTOR_CHANGED",
+            "操作対象を再取得してください",
+          );
+        try {
+          return this.sceneData(
+            input.command === "prepare"
+              ? await this.scenes.open(
+                  id,
+                  input.purpose,
+                  client,
+                  input.requestId,
+                )
+              : await this.scenes.command(id, input.command, client, input),
+          );
+        } catch (error) {
+          if (error instanceof ConstructionStateError)
+            throw new AccessError(409, "STATE_CONFLICT", error.message);
+          throw error;
+        }
+      },
+    );
   }
   async run(subject: string, id: string) {
     const row = (

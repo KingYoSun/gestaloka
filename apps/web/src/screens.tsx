@@ -19,6 +19,7 @@ import { Button } from "./components/ui/button.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Input } from "./components/ui/input.js";
 import { Label } from "./components/ui/label.js";
+import { ScenePlayer } from "./ScenePlayer.js";
 
 const PromptForm = CreateWorld.omit({ requestId: true }).extend({
   prompt: z.string().min(1, "初期設定を入力してください"),
@@ -319,6 +320,41 @@ export function Player({ id }: { id: string }) {
 }
 type PlayerState = z.infer<typeof PlayerStatus>;
 function PlayerView({ id, status }: { id: string; status: PlayerState }) {
+  const query = $api.useQuery("get", "/api/worlds/{id}/scene", {
+    params: { path: { id } },
+  });
+  if (query.error)
+    return (
+      <main className="page">
+        <Problem error={query.error} />
+      </main>
+    );
+  if (!query.data)
+    return (
+      <main className="page">
+        <Notice>シーンを読み込んでいます</Notice>
+      </main>
+    );
+  const scene = query.data.scene;
+  if (!scene && status.state !== "ready")
+    return <LegacyPlayerView id={id} status={status} />;
+  if (scene && scene.viewerId !== status.viewerId)
+    return (
+      <main className="page">
+        <Notice>操作する村民の情報を再取得してください。</Notice>
+      </main>
+    );
+  return (
+    <ScenePlayer
+      key={scene?.id ?? "entry"}
+      id={id}
+      viewer={status.viewerId}
+      at={status.at}
+      scene={scene}
+    />
+  );
+}
+function LegacyPlayerView({ id, status }: { id: string; status: PlayerState }) {
   const client = useQueryClient(),
     history = useRef<HistoryHandle>(null),
     composing = useRef(false);

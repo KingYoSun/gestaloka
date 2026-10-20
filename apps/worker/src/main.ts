@@ -3,6 +3,7 @@ import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldConstruction } from "@gestaloka/server/construction";
+import { WorldScenes } from "@gestaloka/server/scene";
 
 const databases = connectDatabases();
 databases.queue.on("error", (error) => console.error(error));
@@ -30,7 +31,10 @@ try {
     databases.queue,
   );
   await construction.setup();
+  const scenes = new WorldScenes(construction);
+  await scenes.setup();
   await construction.work();
+  await scenes.work();
   console.log("World construction worker ready");
 } catch (error) {
   await databases.queue.stop();

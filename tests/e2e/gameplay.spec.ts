@@ -41,9 +41,32 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("INTERNAL_GM_ONLY");
   await expect(page.locator("body")).not.toContainText("PRIVATE_");
+  await page
+    .getByLabel("次のシーンで何をしたいですか", { exact: true })
+    .fill("村の道で周囲を確かめたい");
+  await page
+    .getByRole("button", { name: "シーンのあらすじを準備する", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "シーンのあらすじ", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "シーンを始める", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByLabel("どう行動しますか", { exact: true }),
+  ).toHaveCount(0);
+  await page.reload();
+  await page
+    .getByRole("button", { name: "シーンを始める", exact: true })
+    .click();
   let posted = 0;
   page.on("request", (request) => {
-    if (request.method() === "POST" && request.url().endsWith("/actions"))
+    if (
+      request.method() === "POST" &&
+      request.url().endsWith("/scene") &&
+      request.postDataJSON()?.command === "act"
+    )
       posted++;
   });
   const field = page.getByLabel("どう行動しますか", { exact: true });
@@ -62,7 +85,8 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   const accepted = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
-      response.url().endsWith("/actions"),
+      response.url().endsWith("/scene") &&
+      response.request().postDataJSON()?.command === "act",
   );
   await page
     .getByRole("button", { name: "この行動を送る", exact: true })
@@ -70,7 +94,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   const response = await accepted;
   expect(response.status()).toBe(202);
   const result = await response.json();
-  expect(result.runId).toBeTruthy();
+  expect(result.scene.id).toBeTruthy();
   await page.reload();
   await expect(page.getByText(input, { exact: true })).toBeVisible();
   await expect(page.getByText(/公開された経験/)).toBeVisible();
@@ -78,6 +102,27 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     page.getByRole("button", { name: "この行動を送る", exact: true }),
   ).toBeEnabled();
   expect(posted).toBe(1);
+  await expect(
+    page.getByRole("heading", { name: "リザルト", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "シーンを終えてリザルトを見る", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "リザルト", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "周囲の景色を確認しました。このシーンで見たことが記録に残りました。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "リザルト", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("PRIVATE_");
+  await expect(page.locator("body")).not.toContainText("INTERNAL_GM_ONLY");
 });
 
 test("狭い画面で入力・閲覧・テーマ切替ができる", async ({ page }) => {

@@ -119,3 +119,55 @@ export const PlayRun = z.object({
   state: z.enum(["ready", "running", "paused"]),
   error: z.string().nullable(),
 });
+
+export const SceneCommand = z.discriminatedUnion("command", [
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.literal("prepare"),
+      purpose: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.literal("act"),
+      actionText: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      requestId: z.uuid(),
+      command: z.enum(["start", "finish", "resume"]),
+    })
+    .strict(),
+]);
+export const SceneStatus = z.object({
+  id: z.uuid(),
+  requestId: z.uuid(),
+  viewerId: z.uuid(),
+  at: z.number().int().nonnegative().safe(),
+  state: z.enum([
+    "preparing",
+    "ready",
+    "active",
+    "acting",
+    "reflecting",
+    "result",
+    "paused",
+  ]),
+  synopsis: z.string().nullable(),
+  result: z.string().nullable(),
+  error: z.string().nullable(),
+  messages: z.array(z.object({ id: z.uuid(), text: z.string() })),
+  actions: z.array(
+    z.object({
+      id: z.uuid(),
+      text: z.string(),
+      state: z.enum(["running", "complete", "boundary"]),
+    }),
+  ),
+  recordIds: z.array(z.uuid()),
+  nextPurpose: z.string().nullable(),
+});
+export const SceneResponse = z.object({ scene: SceneStatus.nullable() });

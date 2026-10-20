@@ -491,6 +491,35 @@ select {
 .connection-page {
   max-width: 676px;
 }
+.scene-panel {
+  margin: 24px 0;
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.scene-panel h2 {
+  margin-top: 0;
+}
+.scene-message + .scene-message {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+.scene-result {
+  border-color: var(--primary);
+}
+.scene-inputs {
+  margin: 16px 0;
+  color: var(--muted-foreground);
+}
+.scene-inputs summary {
+  cursor: pointer;
+}
+.scene-end,
+.scene-history-toggle {
+  margin-top: 24px;
+}
 @media (max-width: 768px) {
   .site-header {
     padding: 16px 20px;
