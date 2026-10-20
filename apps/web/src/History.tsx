@@ -20,9 +20,9 @@ import { Button } from "./components/ui/button.js";
 type Cursor = { before?: string; after?: string };
 type Entry = {
   id: string;
-  at: number;
+  at: number | null;
   text: string;
-  kind: "admin" | "observation" | "interpretation";
+  kind: "admin" | "observation" | "interpretation" | "message" | "action";
   continuation?: string | null;
 };
 type Page = { items: Entry[]; next: string | null; previous: string | null };
@@ -33,20 +33,33 @@ export function History({
   role,
   viewer,
   ref,
-  excludeIds,
+  excludeScene,
+  sceneId,
+  sceneKind,
 }: {
   id: string;
   role: "admin" | "player";
   viewer: string;
   ref: Ref<HistoryHandle>;
-  excludeIds?: string[];
+  excludeScene?: string;
+  sceneId?: string;
+  sceneKind?: "events" | "actions";
 }) {
   const client = useQueryClient(),
     scroll = useRef<HTMLDivElement>(null);
   const key = useMemo(
-    () => ["history", id, role, viewer] as const,
-    [id, role, viewer],
+    () =>
+      ["history", id, role, viewer, sceneId, sceneKind, excludeScene] as const,
+    [id, role, viewer, sceneId, sceneKind, excludeScene],
   );
+  const title =
+    sceneKind === "events"
+      ? "このシーン"
+      : sceneKind === "actions"
+        ? "入力した行動"
+        : role === "admin"
+          ? "構築の記録"
+          : "あなたの記録";
   const [notice, setNotice] = useState(false);
   const query = useInfiniteQuery<
     Page,
@@ -60,6 +73,21 @@ export function History({
     maxPages: 4,
     gcTime: 0,
     queryFn: async ({ pageParam, signal }): Promise<Page> => {
+      if (sceneId && sceneKind) {
+        const { data } = await api.GET("/api/worlds/{id}/scene/records", {
+          params: {
+            path: { id },
+            query: { ...pageParam, sceneId, kind: sceneKind },
+          },
+          signal,
+        });
+        if (!data) throw new Error("記録を取得できませんでした");
+        if (data.viewerId !== viewer) {
+          expireSession();
+          throw new ScopeChanged();
+        }
+        return data;
+      }
       if (role === "admin") {
         const { data } = await api.GET("/api/worlds/{id}/records", {
           params: { path: { id }, query: pageParam },
@@ -78,7 +106,10 @@ export function History({
         };
       }
       const { data } = await api.GET("/api/worlds/{id}/knowledge", {
-        params: { path: { id }, query: pageParam },
+        params: {
+          path: { id },
+          query: { ...pageParam, ...(excludeScene ? { excludeScene } : {}) },
+        },
         signal,
       });
       if (!data) throw new Error("記録を取得できませんでした");
@@ -101,11 +132,8 @@ export function History({
       page.previous ? { after: page.previous } : undefined,
   });
   const entries = useMemo(
-    () =>
-      query.data?.pages
-        .flatMap((page) => page.items)
-        .filter((item) => !excludeIds?.includes(item.id)) ?? [],
-    [query.data, excludeIds],
+    () => query.data?.pages.flatMap((page) => page.items) ?? [],
+    [query.data],
   );
   // React Compilerは未使用。必須のTanStack Virtualをそのまま呼び出す。
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -210,11 +238,11 @@ export function History({
   return (
     <section
       className="history"
-      aria-label={role === "admin" ? "構築の記録" : "あなたの記録"}
+      aria-label={title}
       data-retained-records={entries.length}
     >
       <div className="history-toolbar">
-        <h2>{role === "admin" ? "構築の記録" : "あなたの記録"}</h2>
+        <h2>{title}</h2>
         <Button
           variant="ghost"
           onClick={() => {
@@ -246,7 +274,19 @@ export function History({
         tabIndex={0}
         aria-label="記録の閲覧領域"
         className="history-scroll"
-        onScroll={remember}
+        onScroll={() => {
+          remember();
+          const node = scroll.current;
+          if (!sceneId || !node || query.isFetching || restoring.current)
+            return;
+          if (
+            node.scrollTop + node.clientHeight > node.scrollHeight - 160 &&
+            query.hasNextPage
+          )
+            void query.fetchNextPage();
+          else if (node.scrollTop < 160 && query.hasPreviousPage)
+            void query.fetchPreviousPage();
+        }}
         aria-busy={query.isFetching}
       >
         {query.isPending ? (
@@ -283,7 +323,9 @@ export function History({
                   }}
                 >
                   <p className="record-meta">
-                    T + {worldTime(entry.at)}
+                    {entry.at === null
+                      ? "送った行動"
+                      : `T + ${worldTime(entry.at)}`}
                     {entry.kind === "interpretation" ? " · 当時の解釈" : ""}
                   </p>
                   <RichText text={entry.text} />

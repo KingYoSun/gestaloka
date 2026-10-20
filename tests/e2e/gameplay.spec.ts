@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { connectDatabases } from "@gestaloka/server";
 
 test("構築・追加進行・完了・別村民の行動を実APIと独立ワーカーで再開する", async ({
   page,
@@ -64,7 +66,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   page.on("request", (request) => {
     if (
       request.method() === "POST" &&
-      request.url().endsWith("/scene") &&
+      new URL(request.url()).pathname.endsWith("/scene") &&
       request.postDataJSON()?.command === "act"
     )
       posted++;
@@ -85,7 +87,7 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
   const accepted = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
-      response.url().endsWith("/scene") &&
+      new URL(response.url()).pathname.endsWith("/scene") &&
       response.request().postDataJSON()?.command === "act",
   );
   await page
@@ -140,6 +142,157 @@ test("狭い画面で入力・閲覧・テーマ切替ができる", async ({ pa
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("進行中シーンと行動履歴もスクロールで取得し、保持ページの入替えで閲覧位置を保つ", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("世界の初期設定").fill("長いシーンの検証用の世界");
+  await page
+    .getByRole("button", { name: "初期世界を生成する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "世界構築を完了する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "別の村民として参加する", exact: true })
+    .click();
+  await page.getByRole("link", { name: /村民の画面を開く/ }).click();
+  await page
+    .getByLabel("次のシーンで何をしたいですか")
+    .fill("村で人々の話を聞く");
+  await page
+    .getByRole("button", { name: "シーンのあらすじを準備する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "シーンを始める", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("どう行動しますか", { exact: true }),
+  ).toBeVisible();
+  const id = new URL(page.url()).pathname.split("/")[2]!;
+  const scene = (
+    await (await page.request.get(`/api/worlds/${id}/scene`)).json()
+  ).scene;
+  const events = Array.from({ length: 260 }, (_, i) => ({
+    id: randomUUID(),
+    actorId: scene.viewerId,
+    text: "管理用の出来事",
+    period: { from: i, until: i },
+    receipts: [
+      {
+        observerId: scene.viewerId,
+        text: `記録${i}。${"広場を通る人の声が聞こえ、村の様子が目に入る。".repeat(8)}`,
+      },
+    ],
+  }));
+  const actions = Array.from({ length: 260 }, (_, i) => ({
+    id: randomUUID(),
+    text: `入力${i}。辺りの様子を確かめる。`,
+    state: "complete",
+  }));
+  const db = connectDatabases();
+  try {
+    await db.postgres.query(
+      "UPDATE world_scene SET data=data||$2::jsonb WHERE id=$1",
+      [scene.id, JSON.stringify({ events, actions, at: 259 })],
+    );
+  } finally {
+    await db.close();
+  }
+  await page.reload();
+  const section = page.getByRole("region", { name: "このシーン", exact: true }),
+    scroll = section.getByLabel("記録の閲覧領域");
+  await expect(section).toHaveAttribute("data-retained-records", "50");
+  for (let i = 0; i < 4; i++) {
+    const fetched = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname.endsWith("/scene/records") &&
+        new URL(r.url()).searchParams.has("before"),
+    );
+    await scroll.evaluate((e) => {
+      e.scrollTop = e.scrollHeight;
+    });
+    await fetched;
+    await expect(scroll).toHaveAttribute("aria-busy", "false");
+    await expect(section).toHaveAttribute(
+      "data-retained-records",
+      String(Math.min(200, (i + 2) * 50)),
+    );
+    await scroll.evaluate(async (element) => {
+      let previous = "",
+        stable = 0;
+      while (stable < 3) {
+        await new Promise(requestAnimationFrame);
+        const state =
+          `${element.scrollTop}:${element.scrollHeight}:` +
+          [...element.querySelectorAll("article")]
+            .map((row) => row.getBoundingClientRect().top)
+            .join(",");
+        stable = state === previous ? stable + 1 : 0;
+        previous = state;
+      }
+    });
+    expect(await section.locator("article").count()).toBeLessThan(20);
+  }
+  await scroll.evaluate(async (e) => {
+    e.scrollTop = e.scrollHeight / 2;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+  });
+  const anchor = await scroll.evaluate((e) => {
+    const top = e.getBoundingClientRect().top,
+      row = [...e.querySelectorAll<HTMLElement>("article")].find(
+        (n) => n.getBoundingClientRect().bottom > top + 8,
+      )!;
+    return {
+      id: row.dataset.recordId!,
+      offset: row.getBoundingClientRect().top - top,
+    };
+  });
+  await section
+    .getByRole("button", { name: "古い記録を読む", exact: true })
+    .click();
+  await expect(scroll).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(() =>
+      scroll.evaluate((e, saved) => {
+        const row = e.querySelector(`[data-record-id="${saved.id}"]`);
+        return row
+          ? Math.abs(
+              row.getBoundingClientRect().top -
+                e.getBoundingClientRect().top -
+                saved.offset,
+            )
+          : Infinity;
+      }, anchor),
+    )
+    .toBeLessThan(5);
+  expect(
+    Number(await section.getAttribute("data-retained-records")),
+  ).toBeLessThanOrEqual(200);
+  await page.locator("summary").click();
+  const inputs = page.getByRole("region", {
+    name: "入力した行動",
+    exact: true,
+  });
+  await expect(inputs).toHaveAttribute("data-retained-records", "50");
+  expect(await inputs.locator("article").count()).toBeLessThan(20);
+  await page.screenshot({
+    path: "artifacts/screenshots/scene-history-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 375, height: 812 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "artifacts/screenshots/scene-history-mobile.png",
+    fullPage: true,
+  });
 });
 
 test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧位置を保つ", async ({

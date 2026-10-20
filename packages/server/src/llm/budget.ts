@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { ExecutionBudget } from "../execution-budget.js";
+import { ModelLimits } from "./limits.js";
 
 export const NANO_USD = 1_000_000_000;
 export class BudgetUnavailable extends Error {}
@@ -24,6 +25,7 @@ export class BudgetLedger {
   ) {}
   async setup() {
     await ExecutionBudget.setup(this.pool);
+    await ModelLimits.setup(this.pool);
     await this.pool.query(`CREATE TABLE IF NOT EXISTS llm_budget (
       id text PRIMARY KEY, limit_nano bigint NOT NULL, used_nano bigint NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS llm_call (

@@ -321,7 +321,7 @@ export function Player({ id }: { id: string }) {
 type PlayerState = z.infer<typeof PlayerStatus>;
 function PlayerView({ id, status }: { id: string; status: PlayerState }) {
   const query = $api.useQuery("get", "/api/worlds/{id}/scene", {
-    params: { path: { id } },
+    params: { path: { id }, query: { view: "compact" } },
   });
   if (query.error)
     return (

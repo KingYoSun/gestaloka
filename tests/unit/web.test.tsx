@@ -153,6 +153,26 @@ const server = setupServer(
   }),
   http.get("*/api/worlds/:id/play", () => json(player)),
   http.get("*/api/worlds/:id/scene", () => json({ scene })),
+  http.get("*/api/worlds/:id/scene/records", ({ request }) => {
+    const actions = new URL(request.url).searchParams.get("kind") === "actions";
+    return json({
+      viewerId: V,
+      items: actions
+        ? (scene?.actions ?? [])
+            .map((a) => ({
+              ...a,
+              at: null,
+              kind: "action",
+              continuation: null,
+            }))
+            .reverse()
+        : (scene?.messages ?? [])
+            .map((m) => ({ ...m, at: 0, kind: "message", continuation: null }))
+            .reverse(),
+      next: null,
+      previous: null,
+    });
+  }),
   http.post("*/api/worlds/:id/scene", async ({ request }) => {
     const body = (await request.json()) as {
       requestId: string;
@@ -212,7 +232,10 @@ const server = setupServer(
     HttpResponse.json({ service: "gestaloka", status: "ok" }),
   ),
 );
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeAll(async () => {
+  server.listen({ onUnhandledRequest: "error" });
+  await import("../../apps/web/src/screens.js");
+});
 beforeEach(() => {
   identity = A;
   hasSession = false;

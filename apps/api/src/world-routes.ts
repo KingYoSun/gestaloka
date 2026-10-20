@@ -22,6 +22,10 @@ import {
   DeliveryCursor,
   SceneCommand,
   SceneResponse,
+  SceneViewQuery,
+  SceneRecordQuery,
+  SceneRecordPage,
+  KnowledgeQuery,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
 
@@ -192,7 +196,7 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
-        querystring: PageQuery,
+        querystring: KnowledgeQuery,
         response: { 200: KnowledgePage, ...errors },
       },
     },
@@ -202,6 +206,7 @@ export async function worldRoutes(
         request.params.id,
         request.query.before,
         request.query.after,
+        request.query.excludeScene,
       ),
   );
   app.get(
@@ -225,17 +230,39 @@ export async function worldRoutes(
     {
       schema: {
         params: ResourceId,
+        querystring: SceneViewQuery,
         response: { 200: SceneResponse, ...errors },
       },
     },
     async (request) =>
-      service().scene(await subject(request), request.params.id),
+      service().scene(
+        await subject(request),
+        request.params.id,
+        request.query.view === "compact",
+      ),
+  );
+  app.get(
+    "/api/worlds/:id/scene/records",
+    {
+      schema: {
+        params: ResourceId,
+        querystring: SceneRecordQuery,
+        response: { 200: SceneRecordPage, ...errors },
+      },
+    },
+    async (request) =>
+      service().sceneRecords(
+        await subject(request),
+        request.params.id,
+        request.query,
+      ),
   );
   app.post(
     "/api/worlds/:id/scene",
     {
       schema: {
         params: ResourceId,
+        querystring: SceneViewQuery,
         body: SceneCommand,
         response: { 202: SceneResponse, ...errors },
       },
@@ -248,6 +275,7 @@ export async function worldRoutes(
             await subject(request),
             request.params.id,
             request.body,
+            request.query.view === "compact",
           ),
         ),
   );

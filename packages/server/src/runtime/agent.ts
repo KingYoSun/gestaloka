@@ -860,7 +860,19 @@ export class WorldAgent {
           changes: input.candidate.changes,
         },
       );
-    const commitTask = task("world-commit", commit);
+    const commitTask = task(
+      "world-commit",
+      async (input: Parameters<typeof commit>[0]) => {
+        try {
+          await commit(input);
+          return null;
+        } catch (error) {
+          // Failed workflow tasks abort the parent; a version conflict must return to its retry loop.
+          if (error instanceof WorldConflict) return error.message;
+          throw error;
+        }
+      },
+    );
     let communicationRestarts = 0;
     const workflow = entrypoint(
       { name: "world-operation", checkpointer: this.checkpointer },
@@ -1133,10 +1145,11 @@ export class WorldAgent {
                 row.approved = true;
                 await this.#save(row, claim);
               }
-              await commitTask({
+              const conflict = await commitTask({
                 candidate: row.candidate,
                 dependencies: row.dependencies,
               });
+              if (conflict) throw new WorldConflict(conflict);
               return this.#finish(row, claim);
             }
             const response = await ask({

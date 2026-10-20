@@ -349,6 +349,72 @@ test("照会・再評価・確定を共有し、進捗保存を失っても確�
   ).toHaveLength(2);
 });
 
+test("未記録の同じ住人を同時に具体化すると、競合側は読み直して共有された同一性を使う", async () => {
+  const scene = await fixture();
+  let release!: () => void,
+    arrived = 0;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const candidates = [node("existence", "住人"), node("existence", "住人")];
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, options) => {
+      const input = JSON.parse(
+        JSON.parse(String(options?.body)).messages[1].content,
+      );
+      const house = input.initialContext.find(
+        (p: { request: { kind: string; id: string } }) =>
+          p.request.kind === "node" && p.request.id === scene.object.id,
+      ).result;
+      if (house.stateSubjects.length) return response(proposal(changes()));
+      const resident = candidates[arrived++]!,
+        state = node("script", "この家に暮らしている");
+      if (arrived === 2) release();
+      await barrier;
+      return response(
+        proposal(
+          changes(
+            [resident, state],
+            [
+              edge("status", resident, state, undefined, "content"),
+              edge("status", state, scene.object, undefined, "about"),
+            ],
+          ),
+        ),
+      );
+    });
+  const first = await agent(transport),
+    second = await agent(transport);
+  const request = {
+    worldId: scene.worldId,
+    phase: "resolution" as const,
+    at: 0,
+    until: 1000,
+    rootIds: [scene.object.id],
+    actionText: "以前から一人だけ暮らす住人の同一性を記録する",
+  };
+  const ids = await Promise.all([
+    first.create(request),
+    second.create(request),
+  ]);
+  operations.push(...ids);
+  const results = await Promise.all([first.run(ids[0]!), second.run(ids[1]!)]);
+  expect(results.filter((r) => r.changes.nodes.length > 0)).toHaveLength(1);
+  expect(transport).toHaveBeenCalledTimes(3);
+  expect(
+    await store
+      .context(scene.worldId)
+      .relations(scene.object.id, "status", "in", 1000),
+  ).toHaveLength(1);
+  for (const [i, id] of ids.entries())
+    expect(await (i ? second : first).run(id)).toEqual(results[i]);
+  const later = await first.create(request);
+  operations.push(later);
+  expect((await first.run(later)).changes.nodes).toEqual([]);
+  expect(transport).toHaveBeenCalledTimes(4);
+});
+
 test("人間用には別の村民を生成し、試遊村民とその観測を保持したまま分離する", async () => {
   const scene = await fixture();
   const newcomer = node("existence", "新しい村民"),
