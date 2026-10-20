@@ -2,19 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import { z } from "zod";
+import { ModelLimit, ModelLimitName } from "@gestaloka/contracts";
 
-const positive = z.number().int().positive().safe();
-const Limits = z.record(
-  z.string(),
-  z
-    .object({
-      concurrency: positive.optional(),
-      requestsPerMinute: positive.optional(),
-      tokensPerMinute: positive.optional(),
-    })
-    .strict()
-    .refine((value) => Object.keys(value).length > 0),
-);
+const Limits = z.record(ModelLimitName, ModelLimit);
 type Usage = { sent: () => void; used: (tokens: number) => void };
 
 export class ModelLimits {
@@ -30,6 +20,17 @@ export class ModelLimits {
       id uuid PRIMARY KEY,scope text NOT NULL,tokens bigint NOT NULL,
       created_at timestamptz NOT NULL DEFAULT clock_timestamp(),active_until timestamptz);
       CREATE INDEX IF NOT EXISTS llm_model_use_scope ON llm_model_use(scope,created_at);`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS llm_model_policy (
+      name text PRIMARY KEY,limits jsonb,version integer NOT NULL DEFAULT 1,
+      updated_by uuid,updated_at timestamptz NOT NULL DEFAULT now());`);
+  }
+  async setup() {
+    await ModelLimits.setup(this.pool);
+    await this.pool.query(
+      `INSERT INTO llm_model_policy(name,limits)
+      SELECT key,value FROM jsonb_each($1::jsonb) ON CONFLICT(name) DO NOTHING`,
+      [JSON.stringify(this.limits)],
+    );
   }
   async run<T>(
     input: {
@@ -41,15 +42,10 @@ export class ModelLimits {
     },
     work: (usage: Usage) => Promise<T>,
   ): Promise<T> {
-    const limit = this.limits[input.name];
-    if (!limit || input.cached) return work({ sent: () => {}, used: () => {} });
+    if (input.cached) return work({ sent: () => {}, used: () => {} });
     const tokens =
       Buffer.byteLength(JSON.stringify(input.request), "utf8") +
       input.maxOutput;
-    if (limit.tokensPerMinute && tokens > limit.tokensPerMinute)
-      throw new Error(
-        "1要求のトークン予約がモデルの1分の利用枠を超えます。入力・出力上限か利用枠を確認してください",
-      );
     const scope = createHash("sha256")
         .update(`${input.name}:${input.key}`)
         .digest("hex"),
@@ -63,6 +59,17 @@ export class ModelLimits {
           "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
           [scope],
         );
+        const saved = (
+          await client.query<{ limits: z.infer<typeof ModelLimit> | null }>(
+            "SELECT limits FROM llm_model_policy WHERE name=$1",
+            [input.name],
+          )
+        ).rows[0];
+        const limit = saved?.limits ?? {};
+        if (limit.tokensPerMinute && tokens > limit.tokensPerMinute)
+          throw new Error(
+            "1要求のトークン予約がモデルの1分の利用枠を超えます。入力・出力上限か利用枠を確認してください",
+          );
         await client.query(
           "DELETE FROM llm_model_use WHERE scope=$1 AND created_at<=clock_timestamp()-interval '1 minute' AND (active_until IS NULL OR active_until<=clock_timestamp())",
           [scope],

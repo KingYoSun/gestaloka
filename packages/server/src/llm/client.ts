@@ -128,6 +128,7 @@ export class LlmClient {
       pool,
       this.settings.budgetId,
       Math.round(this.settings.budgetUsd * NANO_USD),
+      this.limits,
     );
   }
   settingsFor(target: LlmTarget = "default") {

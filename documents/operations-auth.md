@@ -130,3 +130,11 @@ pnpm ops:recover-admin <app-user-id> "復旧理由"
 旧 `POST /api/worlds/:id/commands` の `join` と管理画面の参加ボタンは廃止した。呼出し元は公開・参加受付とプリセットの版を確認する `worlds.join` へ更新する。保存済みの人物・履歴・権限は削除しない。
 
 他プレイヤーの確定済みの行動の結果・返答は、本人が知り得る範囲でシーンへ利用できる。他プレイヤーをNPCとして登場させ、新たな意図・行動・返答を生成することは禁止する。人間が操作する存在の区別は運用データであり、世界内の呼称・観測・解釈へ転記しない。
+
+## モデルの共有枠
+
+管理者は共通APIの `modelLimits.read` に `name`（`provider:model`）を渡し、現在の `limits` と `version` を取得する。`modelLimits.put` は同じ `name` と `expectedVersion`、変更理由 `reason`、`limits` を受け付ける。初回の版は0、以降は取得した版を指定する。
+
+`limits` の指定項目は正の整数の `concurrency`・`requestsPerMinute`・`tokensPerMinute`。不要な項目は省略し、制御を全て解除する場合は `limits: null` を指定する。設定していないモデルに追加の枠待ちはない。
+
+変更は次のAPI送信の枠取得から適用し、待機中の要求も設定を読み直す。送信済みのAPI応答を回収し、保存済み結果の再利用では枠を消費しない。`.env` の `LLM_MODEL_LIMITS` は明示したモデルの初回設定として取り込み、保存済みの運用設定や制御解除は上書きしない。設定はアプリDBと一緒に保持する。管理画面とMCPの操作は #73・#72で接続する。

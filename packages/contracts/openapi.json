@@ -4594,6 +4594,83 @@
                           "operation": {
                             "type": "string",
                             "enum": [
+                              "modelLimits.read"
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "pattern": "^(deepseek|gemini|openai|anthropic):.+$"
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "modelLimits.put"
+                            ]
+                          },
+                          "name": {
+                            "type": "string",
+                            "pattern": "^(deepseek|gemini|openai|anthropic):.+$"
+                          },
+                          "limits": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "concurrency": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "requestsPerMinute": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              },
+                              "tokensPerMinute": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "expectedVersion": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "operation",
+                          "name",
+                          "limits",
+                          "expectedVersion",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
                               "worlds.join"
                             ]
                           },

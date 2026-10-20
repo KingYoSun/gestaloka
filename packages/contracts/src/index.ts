@@ -271,7 +271,31 @@ export const JoinWorld = z
     presetVersion: z.number().int().positive().safe(),
   })
   .strict();
+const quotaCount = z.number().int().positive().safe();
+export const ModelLimit = z
+  .object({
+    concurrency: quotaCount.optional(),
+    requestsPerMinute: quotaCount.optional(),
+    tokensPerMinute: quotaCount.optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0);
+export const ModelLimitName = z
+  .string()
+  .regex(/^(deepseek|gemini|openai|anthropic):.+$/);
 export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({ operation: z.literal("modelLimits.read"), name: ModelLimitName })
+    .strict(),
+  z
+    .object({
+      operation: z.literal("modelLimits.put"),
+      name: ModelLimitName,
+      limits: ModelLimit.nullable(),
+      expectedVersion: z.number().int().nonnegative().safe(),
+      reason: operationReason,
+    })
+    .strict(),
   JoinWorld,
   z
     .object({ operation: z.literal("worlds.resumeJoin"), joinId: z.uuid() })

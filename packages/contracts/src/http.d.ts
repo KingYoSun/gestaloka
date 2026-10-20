@@ -2369,6 +2369,21 @@ export interface paths {
                         requestId: string;
                         command: {
                             /** @enum {string} */
+                            operation: "modelLimits.read";
+                            name: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "modelLimits.put";
+                            name: string;
+                            limits: {
+                                concurrency?: number;
+                                requestsPerMinute?: number;
+                                tokensPerMinute?: number;
+                            } | null;
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
                             operation: "worlds.join";
                             /** Format: uuid */
                             worldId: string;

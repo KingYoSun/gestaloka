@@ -7,7 +7,8 @@ import { modelEnvironment } from "../support/model.js";
 
 const db = connectDatabases(),
   budgets: string[] = [],
-  scopes: string[] = [];
+  scopes: string[] = [],
+  names: string[] = [];
 const messages = [{ role: "user" as const, content: "あ".repeat(100) }];
 async function fixture(
   limits: Record<string, number>,
@@ -15,18 +16,25 @@ async function fixture(
   budgetUsd = "40",
 ) {
   const budget = randomUUID(),
-    key = randomUUID();
+    key = randomUUID(),
+    name = `gemini:gemini-limits-${randomUUID()}`;
+  names.push(name);
   budgets.push(budget);
-  const scope = createHash("sha256")
-    .update(`gemini:gemini-3.8-flash:${key}`)
-    .digest("hex");
+  const scope = createHash("sha256").update(`${name}:${key}`).digest("hex");
   scopes.push(scope);
   const environment = {
     ...modelEnvironment(budget),
+    LLM_MODEL: name.slice("gemini:".length),
+    LLM_CONTEXT_TOKENS: "1048576",
+    LLM_INPUT_USD_PER_MILLION: "1.5",
+    LLM_CACHED_INPUT_USD_PER_MILLION: "0.15",
+    LLM_OUTPUT_USD_PER_MILLION: "7.5",
     GEMINI_API_KEY: key,
     LLM_BUDGET_USD: budgetUsd,
     LLM_MAX_OUTPUT_TOKENS: "10",
-    LLM_MODEL_LIMITS: JSON.stringify({ "gemini:gemini-3.8-flash": limits }),
+    LLM_MODEL_LIMITS: JSON.stringify(
+      Object.keys(limits).length ? { [name]: limits } : {},
+    ),
   };
   const fetcher =
     transport ??
@@ -48,6 +56,7 @@ async function fixture(
   return {
     model,
     scope,
+    name,
     another: new LlmClient(db.postgres, environment, fetcher),
   };
 }
@@ -60,7 +69,69 @@ afterAll(async () => {
     budgets,
   ]);
   await db.postgres.query("DELETE FROM llm_budget WHERE id=ANY($1)", [budgets]);
+  await db.postgres.query("DELETE FROM llm_model_policy WHERE name=ANY($1)", [
+    names,
+  ]);
   await db.close();
+});
+
+test("未設定中に送ったAPIも回収し、管理変更を待機中の別ワーカーへ適用する", async () => {
+  let release!: () => void,
+    sent = 0;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const transport: typeof fetch = async () => {
+    if (++sent === 1) await gate;
+    return Response.json({
+      id: randomUUID(),
+      model: "gemini-3.8-flash",
+      choices: [{ finish_reason: "stop", message: { content: "{}" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+  };
+  const { model, another, name } = await fixture({}, transport);
+  const first = model.complete(randomUUID(), "test", messages);
+  await vi.waitFor(() => expect(sent).toBe(1));
+  await db.postgres.query(
+    "INSERT INTO llm_model_policy(name,limits) VALUES($1,$2)",
+    [name, { concurrency: 1 }],
+  );
+  const second = another.complete(randomUUID(), "test", messages);
+  try {
+    await delay(300);
+    expect(sent).toBe(1);
+    await db.postgres.query(
+      "UPDATE llm_model_policy SET limits=$2,version=version+1 WHERE name=$1",
+      [name, { concurrency: 2 }],
+    );
+    await vi.waitFor(() => expect(sent).toBe(2));
+    await second;
+    await db.postgres.query(
+      "UPDATE llm_model_policy SET limits=NULL,version=version+1 WHERE name=$1",
+      [name],
+    );
+    await another.complete(randomUUID(), "test", messages);
+    expect(sent).toBe(3);
+    const seeded = await fixture({ concurrency: 1 });
+    await db.postgres.query(
+      "UPDATE llm_model_policy SET limits=NULL WHERE name=$1",
+      [seeded.name],
+    );
+    await seeded.another.ledger.setup();
+    expect(
+      (
+        await db.postgres.query(
+          "SELECT limits FROM llm_model_policy WHERE name=$1",
+          [seeded.name],
+        )
+      ).rows[0].limits,
+    ).toBeNull();
+  } finally {
+    release();
+    await first;
+    await second;
+  }
 });
 
 test("モデル枠を接続間で共有し、枠待ち中は費用・操作枠を予約せず、保存済み結果は待たない", async () => {

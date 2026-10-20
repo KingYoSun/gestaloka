@@ -22,10 +22,11 @@ export class BudgetLedger {
     readonly pool: pg.Pool,
     readonly budgetId: string,
     readonly limitNano: number,
+    readonly modelLimits = new ModelLimits(pool),
   ) {}
   async setup() {
     await ExecutionBudget.setup(this.pool);
-    await ModelLimits.setup(this.pool);
+    await this.modelLimits.setup();
     await this.pool.query(`CREATE TABLE IF NOT EXISTS llm_budget (
       id text PRIMARY KEY, limit_nano bigint NOT NULL, used_nano bigint NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS llm_call (
