@@ -127,10 +127,10 @@ export class WorldConstruction {
     );
   }
 
-  async create(prompt: string, existing?: pg.PoolClient) {
+  async create(prompt: string, budgetUsd: number, existing?: pg.PoolClient) {
     z.string().min(1).parse(prompt);
     return this.#transaction(async (client) => {
-      const id = await this.builder.create(prompt, client);
+      const id = await this.builder.create(prompt, budgetUsd, client);
       await client.query(
         "INSERT INTO world_construction(id,state) VALUES($1,'generating')",
         [id],
@@ -171,7 +171,6 @@ export class WorldConstruction {
         ConstructionDuration.parse(duration);
         row.target = time.parse(row.at + duration!);
         row.state = "running";
-        row.budget_id = randomUUID();
         for (const work of row.agenda)
           if (work.deferred) {
             delete work.deferred;
@@ -190,11 +189,15 @@ export class WorldConstruction {
             : row.world_id
               ? "running"
               : "generating";
-        const extended = await ExecutionBudget.extend(
-          row.budget_id ?? row.id,
+        const blocked = await ExecutionBudget.exhausted(
+          row.state === "generating"
+            ? row.id
+            : row.state === "playing"
+              ? (row.budget_id ?? row.id)
+              : (row.current?.id ?? row.id),
           client,
         );
-        for (const work of (extended ? [] : row.current?.members) ??
+        for (const work of (blocked ? [] : row.current?.members) ??
           (row.current ? [row.current] : []))
           if (
             work.mode === "intent" &&
@@ -655,88 +658,104 @@ export class WorldConstruction {
     let row = await this.#transaction(async (client) => {
       const row = await this.get(id, client, true);
       if (!["generating", "running", "playing"].includes(row.state)) return row;
+      if (row.state !== "generating" && !row.current)
+        row.current = this.#take(row);
       row.claim = claim;
       await this.#save(row, client);
       return row;
     });
     if (row.claim !== claim) return;
-    return ExecutionBudget.run(this.pool, row.budget_id ?? row.id, async () => {
-      try {
-        if (row.state === "generating") {
-          const build = await this.builder.generate(id);
-          row.world_id = build.world_id;
-          row.actor_id = build.result!.playerId;
-          row.root_ids = build.result!.rootIds;
-          row.state = "ready";
-          row.agenda = [
-            { id: randomUUID(), at: 0, mode: "schedule" },
-            { id: randomUUID(), at: 0, mode: "intent", actorId: row.actor_id },
-          ];
-          await this.#save(row, this.pool, claim);
-          return;
-        }
-        if (!row.current) {
-          row.current = this.#take(row);
-        }
-        if (!["frame", "schedule"].includes(row.current.mode))
-          row.current = {
-            id: randomUUID(),
-            at: row.current.at,
-            mode: "frame",
-            members: [row.current],
-            ...(row.current.operationId
-              ? { operationId: row.current.operationId }
-              : {}),
-          };
-        await this.#prepare(row, claim);
-        if (!row.current) return row;
-        const work = row.current;
-        const result = await this.agent.run(work.operationId!);
-        await this.#transaction(async (client) => {
-          await this.#save(row, client, claim);
-          await this.#record(row, work.operationId!, result, client, true);
-          if (row.state === "playing") {
-            row.at = Math.min(
-              result.resolvedUntil,
-              ...row.agenda
-                .filter((entry) => !entry.deferred)
-                .map((entry) => entry.at),
-            );
-            if (!row.agenda.length) row.state = "finished";
-          } else {
-            row.at = Math.min(
-              row.target,
-              result.resolvedUntil,
-              ...row.agenda
-                .filter((entry) => !entry.deferred)
-                .map((entry) => entry.at),
-            );
-            if (row.at === row.target) row.state = "ready";
-            else if (
-              result.resolvedUntil <= work.at &&
-              row.agenda.length === 0
-            ) {
-              row.state = "paused";
-              row.error =
-                "指定時刻までの進行と次の起動を確定できず、実際の到達時点で保留しました";
-            }
+    return ExecutionBudget.run(
+      this.pool,
+      row.state === "generating"
+        ? row.id
+        : row.state === "playing"
+          ? (row.budget_id ?? row.id)
+          : row.current!.id,
+      async () => {
+        try {
+          if (row.state === "generating") {
+            const build = await this.builder.generate(id);
+            row.world_id = build.world_id;
+            row.actor_id = build.result!.playerId;
+            row.root_ids = build.result!.rootIds;
+            row.state = "ready";
+            row.agenda = [
+              { id: randomUUID(), at: 0, mode: "schedule" },
+              {
+                id: randomUUID(),
+                at: 0,
+                mode: "intent",
+                actorId: row.actor_id,
+              },
+            ];
+            await this.#save(row, this.pool, claim);
+            return;
           }
-          row.current = null;
-          if (row.state !== "paused") row.error = null;
-          await this.#save(row, client, claim);
-          if (row.state === "running" || row.state === "playing")
-            await this.#enqueue(client, id, row.state === "playing");
-        });
-      } catch (error) {
-        row.state = row.state === "playing" ? "play_paused" : "paused";
-        row.error =
-          error instanceof Error ? error.message : "実行を保留しました";
-        await this.#save(row, this.pool, claim);
-        throw error;
-      }
-      row = await this.get(id);
-      return row;
-    });
+          if (!row.current) {
+            row.current = this.#take(row);
+          }
+          if (!["frame", "schedule"].includes(row.current.mode))
+            row.current = {
+              id: row.current.id,
+              at: row.current.at,
+              mode: "frame",
+              members: [row.current],
+              ...(row.current.operationId
+                ? { operationId: row.current.operationId }
+                : {}),
+            };
+          await this.#prepare(row, claim);
+          if (!row.current) return row;
+          const work = row.current;
+          const result = await this.agent.run(work.operationId!);
+          await this.#transaction(async (client) => {
+            await this.#save(row, client, claim);
+            await this.#record(row, work.operationId!, result, client, true);
+            if (row.state === "playing") {
+              row.at = Math.min(
+                result.resolvedUntil,
+                ...row.agenda
+                  .filter((entry) => !entry.deferred)
+                  .map((entry) => entry.at),
+              );
+              if (!row.agenda.length) row.state = "finished";
+            } else {
+              row.at = Math.min(
+                row.target,
+                result.resolvedUntil,
+                ...row.agenda
+                  .filter((entry) => !entry.deferred)
+                  .map((entry) => entry.at),
+              );
+              if (row.at === row.target) row.state = "ready";
+              else if (
+                result.resolvedUntil <= work.at &&
+                row.agenda.length === 0
+              ) {
+                row.state = "paused";
+                row.error =
+                  "指定時刻までの進行と次の起動を確定できず、実際の到達時点で保留しました";
+              }
+            }
+            row.current = null;
+            if (row.state !== "paused") row.error = null;
+            await this.#save(row, client, claim);
+            if (row.state === "running" || row.state === "playing")
+              await this.#enqueue(client, id, row.state === "playing");
+          });
+        } catch (error) {
+          row.state = row.state === "playing" ? "play_paused" : "paused";
+          row.error =
+            error instanceof Error ? error.message : "実行を保留しました";
+          await this.#save(row, this.pool, claim);
+          throw error;
+        }
+        row = await this.get(id);
+        return row;
+      },
+      row.world_id ?? undefined,
+    );
   }
 
   async work() {

@@ -182,12 +182,14 @@ export function settings(
     budgetId: z
       .string()
       .min(1)
-      .parse(env.LLM_BUDGET_ID ?? "deepseek-v4.1-flash-1017-evaluation"),
-    budgetUsd: z.coerce
-      .number()
-      .positive()
-      .max(Number.MAX_SAFE_INTEGER / 1_000_000_000)
-      .parse(env.LLM_BUDGET_USD ?? 40),
+      .parse(env.LLM_BUDGET_ID ?? "service-usage"),
+    budgetUsd: env.LLM_BUDGET_USD
+      ? z.coerce
+          .number()
+          .positive()
+          .max(Number.MAX_SAFE_INTEGER / 1_000_000_000)
+          .parse(env.LLM_BUDGET_USD)
+      : null,
   };
   const allowed =
     provider === "gemini"

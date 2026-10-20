@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { ExecutionBudget } from "../execution-budget.js";
+import { WorldBudget } from "../llm/world-budget.js";
+import { BudgetUsd } from "@gestaloka/contracts";
 import { readFile } from "node:fs/promises";
 import type pg from "pg";
 import type { Driver } from "neo4j-driver";
@@ -122,18 +124,33 @@ export class WorldBuilder {
 
   async create(
     initialPrompt: string,
+    budgetUsd: number,
     database: Pick<pg.Pool, "query"> = this.pool,
   ) {
+    BudgetUsd.parse(budgetUsd);
     const runId = randomUUID();
+    const worldId = randomUUID();
     await database.query(
       "INSERT INTO world_build (run_id, world_id, commit_id, initial_prompt) VALUES ($1,$2,$3,$4)",
-      [runId, randomUUID(), randomUUID(), initialPrompt],
+      [runId, worldId, randomUUID(), initialPrompt],
     );
+    await WorldBudget.create(database, worldId, budgetUsd);
     return runId;
   }
 
   async generate(runId: string) {
-    return ExecutionBudget.run(this.pool, runId, () => this.#generate(runId));
+    const world = (
+      await this.pool.query<{ world_id: string }>(
+        "SELECT world_id FROM world_build WHERE run_id=$1",
+        [runId],
+      )
+    ).rows[0];
+    return ExecutionBudget.run(
+      this.pool,
+      runId,
+      () => this.#generate(runId),
+      world?.world_id,
+    );
   }
 
   async #generate(runId: string) {

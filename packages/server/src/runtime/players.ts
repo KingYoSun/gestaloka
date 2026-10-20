@@ -141,7 +141,6 @@ export class WorldPlayers {
         "STATE_CONFLICT",
         "保留中の参加要求を指定してください",
       );
-    await ExecutionBudget.extend(id, db);
     await db.query(
       "UPDATE world_join SET state='joining',claim=NULL,error=NULL WHERE id=$1",
       [id],

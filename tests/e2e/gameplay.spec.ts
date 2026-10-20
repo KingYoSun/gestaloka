@@ -50,6 +50,9 @@ test("ログインだけでは匿名データを移行せず、対象確認と�
   await page.goto("http://127.0.0.1:4174/");
   await page.getByLabel("世界の初期設定").fill("引き継ぐ対象の村");
   await page
+    .getByLabel("この世界の予算上限（USD）", { exact: true })
+    .fill("100");
+  await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
     .click();
   await page
@@ -148,11 +151,28 @@ test("構築・追加進行・完了・別村民の行動を実APIと独立ワ�
     .getByLabel("世界の初期設定")
     .fill("一つの村と村民のための初期設定");
   await page
+    .getByLabel("この世界の予算上限（USD）", { exact: true })
+    .fill("100");
+  await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "試遊を進める", exact: true }),
   ).toBeVisible();
+  await page.getByLabel("予算上限（USD）", { exact: true }).fill("120");
+  await page
+    .getByRole("button", { name: "予算上限を保存する", exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      "予算上限を保存しました。保留した処理は保存状態から再開できます。",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page
+    .getByRole("heading", { name: "この世界の予算", exact: true })
+    .locator("..")
+    .screenshot({ path: "artifacts/screenshots/world-budget.png" });
   await page.getByLabel("さらに進める日数", { exact: true }).fill("2");
   await page.getByRole("button", { name: "試遊を進める", exact: true }).click();
   await expect(
@@ -334,6 +354,9 @@ test("進行中シーンと行動履歴もスクロールで取得し、保持�
   await page.goto("http://127.0.0.1:4174/");
   await page.getByLabel("世界の初期設定").fill("長いシーンの検証用の世界");
   await page
+    .getByLabel("この世界の予算上限（USD）", { exact: true })
+    .fill("100");
+  await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
     .click();
   await page
@@ -482,6 +505,9 @@ test("長い履歴の保持と描画を制限し、ページ破棄でも閲覧�
 }) => {
   await page.goto("http://127.0.0.1:4174/");
   await page.getByLabel("世界の初期設定").fill("履歴の検証用の世界");
+  await page
+    .getByLabel("この世界の予算上限（USD）", { exact: true })
+    .fill("100");
   await page
     .getByRole("button", { name: "初期世界を生成する", exact: true })
     .click();

@@ -127,7 +127,9 @@ export class LlmClient {
     this.ledger = new BudgetLedger(
       pool,
       this.settings.budgetId,
-      Math.round(this.settings.budgetUsd * NANO_USD),
+      this.settings.budgetUsd === null
+        ? null
+        : Math.round(this.settings.budgetUsd * NANO_USD),
       this.limits,
     );
   }

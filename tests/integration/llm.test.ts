@@ -8,7 +8,11 @@ const budgets: string[] = [];
 const environment = () => {
   const id = randomUUID();
   budgets.push(id);
-  return { DEEPSEEK_API_KEY: "unused", LLM_BUDGET_ID: id };
+  return {
+    DEEPSEEK_API_KEY: "unused",
+    LLM_BUDGET_ID: id,
+    LLM_BUDGET_USD: "40",
+  };
 };
 const response = () =>
   new Response(

@@ -4,6 +4,7 @@ export const modelEnvironment = (budgetId: string) => ({
   LLM_MODEL: "gemini-3.8-flash",
   GEMINI_API_KEY: "unused",
   LLM_BUDGET_ID: budgetId,
+  LLM_BUDGET_USD: "40",
 });
 // Existing scenarios isolate proposal execution. Commit-review behavior has dedicated tests.
 export function approvedTransport(transport: typeof fetch): typeof fetch {

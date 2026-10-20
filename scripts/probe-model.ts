@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { entrypoint, task } from "@langchain/langgraph";
 import { z } from "zod";
-import { connectDatabases } from "@gestaloka/server";
+import { connectDatabases, WorldBudget } from "@gestaloka/server";
+import { BudgetUsd } from "@gestaloka/contracts";
 import { LlmClient } from "@gestaloka/server/llm";
 import { parseArgs } from "node:util";
 import { WorldAgent } from "@gestaloka/server/agent";
@@ -12,6 +13,7 @@ const { values } = parseArgs({
   options: {
     target: { type: "string", default: "default" },
     harness: { type: "boolean", default: false },
+    budget: { type: "string" },
   },
 });
 const target = z
@@ -48,6 +50,11 @@ try {
     const worldId = randomUUID(),
       actor = randomUUID(),
       store = new WorldStore(databases.graph);
+    await WorldBudget.create(
+      databases.postgres,
+      worldId,
+      BudgetUsd.parse(Number(values.budget)),
+    );
     const lease = await store.claim(worldId, randomUUID());
     await store.commit(lease, store.context(worldId), {
       commitId: randomUUID(),

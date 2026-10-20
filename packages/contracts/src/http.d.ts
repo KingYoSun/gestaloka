@@ -395,6 +395,7 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         prompt: string;
+                        budgetUsd: number;
                     };
                 };
             };
@@ -2368,6 +2369,28 @@ export interface paths {
                         /** Format: uuid */
                         requestId: string;
                         command: {
+                            /** @enum {string} */
+                            operation: "worldBudgets.read";
+                            /** Format: uuid */
+                            worldId: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "worldBudgets.put";
+                            /** Format: uuid */
+                            worldId: string;
+                            budgetUsd: number;
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
+                            /** @enum {string} */
+                            operation: "responseLimits.read";
+                        } | {
+                            /** @enum {string} */
+                            operation: "responseLimits.put";
+                            calls: number;
+                            expectedVersion: number;
+                            reason: string;
+                        } | {
                             /** @enum {string} */
                             operation: "modelLimits.read";
                             name: string;

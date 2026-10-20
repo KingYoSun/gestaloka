@@ -162,7 +162,7 @@ async function fixture() {
     method: "POST",
     url: "/api/worlds",
     headers: headers(browser.cookie),
-    payload: { requestId, prompt: "初期世界の自由記述" },
+    payload: { requestId, prompt: "初期世界の自由記述", budgetUsd: 100 },
   });
   expect(created.statusCode).toBe(202);
   const id = created.json<{ id: string }>().id;
@@ -214,6 +214,10 @@ beforeAll(async () => {
   address = await app.listen({ host: "127.0.0.1", port: 0 });
 });
 afterAll(async () => {
+  await databases.postgres.query(
+    "DELETE FROM world_budget WHERE world_id=ANY($1)",
+    [worlds],
+  );
   await app?.close();
   await databases.queue.deleteQueue(queueName);
   await databases.queue.deleteQueue(`${queueName}-play`);
@@ -444,7 +448,11 @@ test("BANと降格を既存の世界APIと再送へ反映する", async () => {
         method: "POST",
         url: "/api/worlds",
         headers: headers(scene.cookie),
-        payload: { requestId: scene.requestId, prompt: "初期世界の自由記述" },
+        payload: {
+          requestId: scene.requestId,
+          prompt: "初期世界の自由記述",
+          budgetUsd: 100,
+        },
       })
     ).statusCode,
   ).toBe(403);
@@ -520,7 +528,7 @@ test("引き継ぎ対象は全件をページで確認でき、確定も全対�
   const legacy = await legacyFixture(),
     person = await session("user");
   for (let i = 0; i < 53; i++) {
-    const id = await runtime.builder.create(`引き継ぎ対象 ${i}`);
+    const id = await runtime.builder.create(`引き継ぎ対象 ${i}`, 100);
     ids.push(id);
     await databases.postgres.query(
       "INSERT INTO world_construction(id,state) VALUES($1,'generating')",
@@ -960,6 +968,13 @@ test("2人の参加要求から別の人物を生成し、他人の操作対象�
 
 test("Oryの主体・世界の操作権・同一オリジンを確認し、要求を同時保存して再送する", async () => {
   const scene = await fixture();
+  const missing = await app.inject({
+    method: "POST",
+    url: "/api/worlds",
+    headers: headers(scene.cookie),
+    payload: { requestId: randomUUID(), prompt: "予算未指定" },
+  });
+  expect(missing.statusCode).toBe(400);
   expect(
     (
       await app.inject({
@@ -975,7 +990,11 @@ test("Oryの主体・世界の操作権・同一オリジンを確認し、要�
     method: "POST",
     url: "/api/worlds",
     headers: headers(scene.cookie),
-    payload: { requestId: scene.requestId, prompt: "初期世界の自由記述" },
+    payload: {
+      requestId: scene.requestId,
+      prompt: "初期世界の自由記述",
+      budgetUsd: 100,
+    },
   });
   expect(duplicate.json()).toEqual(scene.created);
   expect(

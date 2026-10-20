@@ -58,6 +58,10 @@ afterAll(async () => {
       "DELETE FROM world_build WHERE run_id = $1 RETURNING world_id",
       [runId],
     );
+    await databases.postgres.query(
+      "DELETE FROM world_budget WHERE world_id=$1",
+      [record.rows[0]!.world_id],
+    );
     await databases.graph.executeQuery(
       "MATCH (n) WHERE n.worldId = $worldId DETACH DELETE n",
       { worldId: record.rows[0]!.world_id },
@@ -92,7 +96,7 @@ test("参照先が不正な候補を修正し、確定後の再開・進捗保�
     model,
   );
   await builder.setup();
-  const runId = await builder.create("存在を一つ初期生成する");
+  const runId = await builder.create("存在を一つ初期生成する", 100);
   sessions.push(runId);
   const created = await builder.generate(runId);
   expect(created.state).toBe("ready");
@@ -133,7 +137,7 @@ test("予算不足は構築の保留として保存し、モデル送信も世�
     model,
   );
   await builder.setup();
-  const runId = await builder.create("試験用の初期入力");
+  const runId = await builder.create("試験用の初期入力", 100);
   sessions.push(runId);
   try {
     await expect(builder.generate(runId)).rejects.toBeInstanceOf(

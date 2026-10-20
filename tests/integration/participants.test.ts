@@ -110,6 +110,7 @@ beforeAll(async () => {
   people.push(admin, one, two);
   world = (
     await access.create(admin, {
+      budgetUsd: 100,
       requestId: randomUUID(),
       prompt: "参加者の共有とシーン分離を確かめるための世界",
     })
@@ -153,6 +154,10 @@ beforeAll(async () => {
   b = (await access.players.list(two, world)).items[0]!.actorId!;
 });
 afterAll(async () => {
+  await setup.databases.postgres.query(
+    "DELETE FROM world_budget WHERE world_id=$1",
+    [graph],
+  );
   await app?.close();
   for (const suffix of ["", "-play", "-scenes", "-joins"])
     await db.queue.deleteQueue(`e2e-${scope}${suffix}`);

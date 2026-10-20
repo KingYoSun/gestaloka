@@ -4,6 +4,7 @@ import { connectDatabases } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldStore } from "@gestaloka/server/world";
+import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 
 const d = connectDatabases(),
   worlds: string[] = [],
@@ -13,6 +14,9 @@ const d = connectDatabases(),
 const empty = () => ({ nodes: [], edges: [], revisions: [], endEdges: [] });
 beforeAll(() => d.verify());
 afterAll(async () => {
+  await d.postgres.query("DELETE FROM world_budget WHERE world_id=ANY($1)", [
+    worlds,
+  ]);
   await d.postgres.query("DELETE FROM llm_model_use WHERE scope=ANY($1)", [
     scopes,
   ]);
@@ -355,6 +359,7 @@ test.each([
     );
     const agent = new WorldAgent(d.postgres, d.graph, d.checkpointer, model);
     await agent.setup();
+    await WorldBudget.create(d.postgres, worldId, 100);
     const store = new WorldStore(d.graph),
       lease = await store.claim(worldId, randomUUID());
     await store.commit(lease, store.context(worldId), {
@@ -430,13 +435,12 @@ test.each([
     expect(
       (
         await d.postgres.query(
-          "SELECT llm_used,graph_used FROM execution_budget WHERE id=$1",
+          "SELECT llm_used FROM execution_budget WHERE id=$1",
           [id],
         )
       ).rows[0],
     ).toMatchObject({
       llm_used: (repairCommit ? 7 : 5) + (transientFailure ? 1 : 0),
-      graph_used: expect.any(Number),
     });
   },
   90000,

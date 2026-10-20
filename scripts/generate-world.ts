@@ -1,11 +1,16 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { connectDatabases, ExecutionBudget } from "@gestaloka/server";
+import { connectDatabases } from "@gestaloka/server";
+import { BudgetUsd } from "@gestaloka/contracts";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldBuilder } from "@gestaloka/server/build";
 
 const { values } = parseArgs({
-  options: { prompt: { type: "string" }, resume: { type: "string" } },
+  options: {
+    prompt: { type: "string" },
+    resume: { type: "string" },
+    budget: { type: "string" },
+  },
 });
 if (!values.prompt && !values.resume)
   throw new Error("--prompt <file> または --resume <runId> を指定してください");
@@ -26,9 +31,11 @@ try {
   await builder.setup();
   const runId =
     values.resume ??
-    (await builder.create(await readFile(values.prompt!, "utf8")));
+    (await builder.create(
+      await readFile(values.prompt!, "utf8"),
+      BudgetUsd.parse(Number(values.budget)),
+    ));
   console.log(JSON.stringify({ runId }));
-  if (values.resume) await ExecutionBudget.extend(runId, databases.postgres);
   const build = await builder.generate(runId);
   const budget = await model.ledger.summary();
   const report = {

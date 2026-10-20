@@ -265,8 +265,7 @@ export class WorldScenes {
       if (row.state !== "paused")
         throw new ConstructionStateError("保留中のシーンを指定してください");
       row.state = row.data.resumeState!;
-      const extended = await ExecutionBudget.extend(this.#budget(row), client);
-      if (row.data.work && !extended) {
+      if (row.data.work && !row.data.limitReached) {
         row.data.work = {
           ...row.data.work,
           id: randomUUID(),
@@ -776,21 +775,33 @@ export class WorldScenes {
     if (row.claim !== claim) return;
     try {
       if (row.state === "preparing")
-        await ExecutionBudget.run(this.pool, this.#budget(row), () =>
-          this.#background(row),
+        await ExecutionBudget.run(
+          this.pool,
+          this.#budget(row),
+          () => this.#background(row),
+          row.data.worldId,
         );
       else if (row.state === "acting") {
         if (
-          await ExecutionBudget.run(this.pool, this.#budget(row), () =>
-            this.#action(row),
+          await ExecutionBudget.run(
+            this.pool,
+            this.#budget(row),
+            () => this.#action(row),
+            row.data.worldId,
           )
         )
-          await ExecutionBudget.run(this.pool, this.#budget(row), () =>
-            this.#reflect(row),
+          await ExecutionBudget.run(
+            this.pool,
+            this.#budget(row),
+            () => this.#reflect(row),
+            row.data.worldId,
           );
       } else
-        await ExecutionBudget.run(this.pool, this.#budget(row), () =>
-          this.#reflect(row),
+        await ExecutionBudget.run(
+          this.pool,
+          this.#budget(row),
+          () => this.#reflect(row),
+          row.data.worldId,
         );
     } catch (error) {
       if (error instanceof SupersededWorker) return;

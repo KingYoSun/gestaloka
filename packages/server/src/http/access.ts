@@ -13,6 +13,7 @@ import {
   type SceneCommand,
   SceneRecordPage,
   type SceneRecordQuery,
+  type CreateWorld,
 } from "@gestaloka/contracts";
 import {
   ConstructionStateError,
@@ -231,14 +232,22 @@ export class WorldAccess {
       error: row.error,
     });
   }
-  async create(subject: string, input: { requestId: string; prompt: string }) {
+  async create(subject: string, input: z.infer<typeof CreateWorld>) {
     return this.#accept(
       subject,
       input.requestId,
       { operation: "create", ...input },
       "admin",
       async (client) => {
-        const id = await this.construction.create(input.prompt, client);
+        const id = await this.construction.create(
+          input.prompt,
+          input.budgetUsd,
+          client,
+        );
+        await client.query(
+          "UPDATE world_budget SET updated_by=$2 FROM world_build b WHERE world_budget.world_id=b.world_id AND b.run_id=$1",
+          [id, subject],
+        );
         await client.query(
           "INSERT INTO world_access(subject_id,construction_id,role) VALUES($1,$2,'admin')",
           [subject, id],
@@ -365,7 +374,7 @@ export class WorldAccess {
         error:
           row.state === "paused"
             ? d.limitReached
-              ? "1操作の処理上限に達しました。再開すると枠を追加し、保存したシーンから続けます。"
+              ? "応答生成のcall回数上限に達しました。管理者による上限の見直し後、保存したシーンから再開できます。"
               : "処理を保留しました。保存したシーンから再開できます。"
             : null,
         messages: compact

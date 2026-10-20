@@ -123,9 +123,21 @@ const server = setupServer(
   http.get("*/api/account", () =>
     json({ member: { id: identity, role: "admin", banned: false } }),
   ),
-  http.post("*/api/operations", () =>
-    json({ result: { items: [], next: null } }),
-  ),
+  http.post("*/api/operations", async ({ request }) => {
+    const body = (await request.json()) as { command: { operation: string } };
+    return json({
+      result:
+        body.command.operation === "worldBudgets.read"
+          ? {
+              version: 1,
+              limitUsd: 20,
+              upperCostUsd: 0,
+              since: "2026-10-21T00:00:00Z",
+              historyScope: "all",
+            }
+          : { items: [], next: null },
+    });
+  }),
   http.get("*/api/catalog/worlds", () => json({ items: [], next: null })),
   http.get("*/api/session", () =>
     hasSession
@@ -393,9 +405,12 @@ test("初期入力を改変せず受付し、同じ世界の管理画面へ進�
   const field = await screen.findByLabelText("世界の初期設定"),
     text = "山と川のある村。\n村民として参加する。";
   fireEvent.change(field, { target: { value: text } });
+  fireEvent.change(screen.getByLabelText("この世界の予算上限（USD）"), {
+    target: { value: "20" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "初期世界を生成する" }));
   await screen.findByRole("heading", { name: "世界構築" });
-  expect(submitted).toMatchObject({ prompt: text });
+  expect(submitted).toMatchObject({ prompt: text, budgetUsd: 20 });
 });
 
 test("IMEの確定を送信にせず、本人の入力と公開知識だけを表示する", async () => {

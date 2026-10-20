@@ -9,6 +9,95 @@ import { Input } from "./components/ui/input.js";
 import { Textarea } from "./components/ui/textarea.js";
 import { Label } from "./components/ui/label.js";
 
+const BudgetView = z.object({
+  version: z.number(),
+  limitUsd: z.number().nullable(),
+  upperCostUsd: z.number().nullable(),
+  since: z.string().nullable(),
+  historyScope: z.string(),
+});
+export function WorldBudgetSettings({ id }: { id: string }) {
+  const client = useQueryClient(),
+    [value, setValue] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["world-budget", id],
+    queryFn: async () =>
+      BudgetView.parse(
+        (
+          await api.POST("/api/operations", {
+            body: {
+              requestId: crypto.randomUUID(),
+              command: { operation: "worldBudgets.read", worldId: id },
+            },
+          })
+        ).data?.result,
+      ),
+  });
+  const mutation = $api.useMutation("post", "/api/operations", {
+    onSuccess: () => {
+      setValue(null);
+      return client.invalidateQueries({ queryKey: ["world-budget", id] });
+    },
+  });
+  if (query.error) return <Problem error={query.error} />;
+  if (!query.data) return <Notice>世界の予算を確認しています。</Notice>;
+  const budget = query.data;
+  return (
+    <form
+      className="form-panel"
+      onSubmit={(e) => {
+        e.preventDefault();
+        mutation.mutate({
+          body: {
+            requestId: crypto.randomUUID(),
+            command: {
+              operation: "worldBudgets.put",
+              worldId: id,
+              budgetUsd: Number(value ?? budget.limitUsd),
+              expectedVersion: budget.version,
+              reason: "管理画面から世界予算を変更",
+            },
+          },
+        });
+      }}
+    >
+      <h2>この世界の予算</h2>
+      <p>
+        {budget.upperCostUsd === null
+          ? "予算は未設定です。API送信前に設定してください。"
+          : `計算済み額と未確定予約額の合計: ${budget.upperCostUsd.toLocaleString("en-US", { maximumFractionDigits: 9 })} USD`}
+      </p>
+      {budget.historyScope !== "all" && (
+        <p>
+          既存世界の予算は設定後の追加費用に適用します。移行前の費用記録は全体の計算額として保持します。
+        </p>
+      )}
+      {budget.since && (
+        <p className="record-meta">
+          予算管理の開始: {new Date(budget.since).toLocaleString()}
+        </p>
+      )}
+      <Label htmlFor="world-budget-limit">予算上限（USD）</Label>
+      <Input
+        id="world-budget-limit"
+        required
+        type="number"
+        min="0.000000001"
+        step="any"
+        value={value ?? budget.limitUsd ?? ""}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      <Button disabled={mutation.isPending}>予算上限を保存する</Button>
+      {mutation.error && <Problem error={mutation.error} />}
+      {mutation.isSuccess && (
+        <Notice>
+          予算上限を保存しました。保留した処理は保存状態から再開できます。
+        </Notice>
+      )}
+    </form>
+  );
+}
+
 export function Publication({
   id,
   initial,

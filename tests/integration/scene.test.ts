@@ -1,10 +1,8 @@
+import { isolatedDatabases } from "../support/isolated-db.js";
+import { WorldBudget } from "../../packages/server/src/llm/world-budget.js";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import {
-  connectDatabases,
-  ExecutionBudget,
-  ExecutionLimit,
-} from "@gestaloka/server";
+import { ExecutionBudget, ExecutionLimit } from "@gestaloka/server";
 import { LlmClient } from "@gestaloka/server/llm";
 import { WorldAgent } from "@gestaloka/server/agent";
 import { WorldBuilder } from "@gestaloka/server/build";
@@ -14,7 +12,8 @@ import { createApp } from "../../apps/api/src/app.js";
 import { fixtureAuth } from "../support/auth.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 
-const d = connectDatabases(),
+const isolated = isolatedDatabases();
+const d = isolated.databases,
   budget = randomUUID(),
   queue = `scene-test-${randomUUID()}`;
 const actor = randomUUID(),
@@ -192,6 +191,9 @@ const status = async () => {
   return r.json().scene;
 };
 beforeAll(async () => {
+  await isolated.setup();
+  await WorldBudget.setup(d.postgres);
+  await WorldBudget.create(d.postgres, world, 100);
   await d.verify();
   d.queue.on("error", console.error);
   await d.queue.start();
@@ -310,7 +312,7 @@ afterAll(async () => {
     { world },
   );
   await d.queue.stop();
-  await d.close();
+  await isolated.close();
 });
 
 test("長いシーンを50件ずつ前後に復元し、概要の転送量と他者の受容を抑える", async () => {
@@ -482,9 +484,24 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
     state: "paused",
     result: null,
     messages: [],
-    error: expect.stringContaining("再開すると枠を追加"),
+    error: expect.stringContaining("上限の見直し"),
   });
   const frozen = (await access.scenes.latest(construction))!.data.work;
+  await command({ requestId: randomUUID(), command: "resume" });
+  await expect(access.scenes.tick(scene.id)).rejects.toBeInstanceOf(
+    ExecutionLimit,
+  );
+  expect(
+    (
+      await d.postgres.query(
+        "SELECT llm_used FROM execution_budget WHERE id=$1",
+        [requestId],
+      )
+    ).rows[0].llm_used,
+  ).toBe(64);
+  await d.postgres.query(
+    "UPDATE response_call_policy SET calls=128 WHERE singleton",
+  );
   const resumeId = randomUUID();
   await command({ requestId: resumeId, command: "resume" });
   expect((await access.scenes.latest(construction))!.data.work).toEqual(frozen);
@@ -498,6 +515,9 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
       )
     ).rows[0],
   ).toEqual({ llm_used: 67, llm_limit: 128 });
+  await d.postgres.query(
+    "UPDATE response_call_policy SET calls=64 WHERE singleton",
+  );
   view = await status();
   expect(view.state).toBe("active");
   expect(view.messages.map((m: { text: string }) => m.text)).toContain(
