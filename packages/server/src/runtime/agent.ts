@@ -19,7 +19,7 @@ import {
   type WorldEdge,
 } from "../world/model.js";
 import type { LlmClient, ChatMessage } from "../llm/client.js";
-import { runHarness } from "./harness.js";
+import { HarnessCommunicationError, runHarness } from "./harness.js";
 
 const Time = z.number().int().nonnegative().safe();
 const IntentResult = z.object({ actionText: z.string().min(1) }).strict();
@@ -294,6 +294,36 @@ export class WorldAgent {
     if (result.rowCount !== 1)
       throw new SupersededWorker("古い試行から結果は公開できません");
     return row.candidate;
+  }
+
+  #reviewContext(row: Operation, candidate = row.candidate) {
+    return {
+      request: row.request,
+      candidate,
+      execution: {
+        phase: row.request.phase,
+        callerHandlesNextDecisionFor:
+          row.request.phase === "observation" ? row.request.actorId : null,
+        formedIntentions: (row.request.intentions ?? []).map(
+          ({ actorId, continuing }) => ({
+            actorId,
+            continuing,
+            disposition: candidate?.settledIntentions?.some(
+              (i) => i.actorId === actorId,
+            )
+              ? "settled"
+              : candidate?.deferredIntentions?.includes(actorId)
+                ? "deferred"
+                : (candidate?.wakeups.find((w) => w.actorId === actorId)
+                    ?.mode ?? null),
+          }),
+        ),
+      },
+      evidence: (row.messages ?? [])
+        .filter((m) => m.role === "user")
+        .map((m) => JSON.parse(m.content))
+        .filter((m) => !("validationErrors" in m)),
+    };
   }
 
   async #queries(row: Operation, requests: z.infer<typeof Query>[]) {
@@ -698,6 +728,7 @@ export class WorldAgent {
         },
       );
     const commitTask = task("world-commit", commit);
+    let communicationRestarts = 0;
     const workflow = entrypoint(
       { name: "world-operation", checkpointer: this.checkpointer },
       async () => {
@@ -812,6 +843,9 @@ export class WorldAgent {
                   id,
                   epoch: row.epoch,
                   model: this.model,
+                  restartOn: (error) =>
+                    error instanceof WorldConflict ||
+                    error instanceof SupersededWorker,
                   system:
                     row.system_prompt.replace(
                       "与えられたJSONスキーマに一致するJSONオブジェクトだけを返してください。",
@@ -820,11 +854,7 @@ export class WorldAgent {
                     "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
                     reviewPrompt,
                   input: {
-                    request: row.request,
-                    evidence: row.messages
-                      .filter((m) => m.role === "user")
-                      .map((m) => JSON.parse(m.content)),
-                    candidate: row.candidate,
+                    ...this.#reviewContext(row),
                     proposalId,
                   },
                   tools: [
@@ -864,7 +894,13 @@ export class WorldAgent {
                         row.approved = false;
                         proposalId = randomUUID();
                         await this.#save(row, claim);
-                        return { proposalId, candidate, review: reviewPrompt };
+                        return {
+                          proposalId,
+                          candidate,
+                          execution: this.#reviewContext(row, candidate)
+                            .execution,
+                          review: reviewPrompt,
+                        };
                       },
                     },
                     {
@@ -947,10 +983,30 @@ export class WorldAgent {
             }
             if (row.candidate) {
               if (!row.approved) {
+                const reviewId = callId(id, row.epoch, row.step + 1000000);
+                const saved = (await this.model.ledger.input(reviewId)) as
+                  | {
+                      request: {
+                        system?: string;
+                        messages?: ChatMessage[];
+                        input?: ChatMessage[];
+                      };
+                    }
+                  | undefined;
+                const frozenMessages =
+                  saved?.request.system !== undefined
+                    ? [
+                        {
+                          role: "system" as const,
+                          content: saved.request.system,
+                        },
+                        ...saved.request.messages!,
+                      ]
+                    : (saved?.request.messages ?? saved?.request.input);
                 const review = await this.model.complete(
-                  callId(id, row.epoch, row.step + 1000000),
+                  reviewId,
                   "world-commit",
-                  [
+                  frozenMessages ?? [
                     {
                       role: "system",
                       content: await readFile(
@@ -964,14 +1020,7 @@ export class WorldAgent {
                     {
                       role: "user",
                       content: JSON.stringify({
-                        commitReview: {
-                          request: row.request,
-                          candidate: row.candidate,
-                          evidence: row.messages
-                            .filter((m) => m.role === "user")
-                            .map((m) => JSON.parse(m.content))
-                            .filter((m) => !("validationErrors" in m)),
-                        },
+                        commitReview: this.#reviewContext(row),
                         responseSchema: z.toJSONSchema(CommitDecision, {
                           io: "input",
                         }),
@@ -1071,7 +1120,13 @@ export class WorldAgent {
             }
             await this.#save(row, claim);
           } catch (error) {
-            if (!(error instanceof WorldConflict)) throw error;
+            if (!(error instanceof WorldConflict)) {
+              if (
+                !(error instanceof HarnessCommunicationError) ||
+                communicationRestarts++ > 0
+              )
+                throw error;
+            }
             row.epoch++;
             row.step = 0;
             row.messages = null;
