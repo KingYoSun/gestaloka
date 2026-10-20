@@ -11,6 +11,7 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
+import { fixtureAuth } from "../support/auth.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
 
 const d = connectDatabases(),
@@ -173,6 +174,7 @@ const agent = new WorldAgent(d.postgres, d.graph, d.checkpointer, model),
   ),
   access = new WorldAccess(runtime);
 let app: Awaited<ReturnType<typeof createApp>>, cookie: string, subject: string;
+let auth: Awaited<ReturnType<typeof fixtureAuth>>;
 const headers = () => ({ cookie, "x-gestaloka-request": "1" });
 const command = async (payload: Record<string, unknown>) =>
   app.inject({
@@ -193,15 +195,21 @@ beforeAll(async () => {
   await d.verify();
   d.queue.on("error", console.error);
   await d.queue.start();
+  auth = await fixtureAuth(d.postgres);
   await access.setup();
-  app = await createApp(access);
+  app = await createApp(access, auth.identity, undefined, auth.operations);
+  const person = await auth.person();
   const s = await app.inject({
     method: "POST",
     url: "/api/session",
-    headers: { "x-gestaloka-request": "1" },
+    headers: { "x-gestaloka-request": "1", cookie: person.cookie },
   });
   subject = s.json().id;
-  cookie = String(s.headers["set-cookie"]).split(";")[0]!;
+  cookie = person.cookie;
+  await d.postgres.query(
+    "INSERT INTO world_subject(id,user_id) VALUES($1,$1)",
+    [subject],
+  );
   const lease = await agent.store.claim(world, randomUUID());
   await agent.store.commit(lease, agent.store.context(world), {
     commitId: randomUUID(),
@@ -279,7 +287,8 @@ afterAll(async () => {
   await d.postgres.query("DELETE FROM api_request WHERE subject_id=$1", [
     subject,
   ]);
-  await d.postgres.query("DELETE FROM browser_session WHERE id=$1", [subject]);
+  await d.postgres.query("DELETE FROM world_subject WHERE id=$1", [subject]);
+  await auth.cleanup();
   await d.postgres.query(
     "DELETE FROM construction_log WHERE construction_id=$1",
     [construction],
@@ -520,19 +529,12 @@ test("あらすじ→開始→本人の返答→背景更新の区切り→確�
   view = await status();
   expect(view.at).toBe(1000);
   expect((await runtime.get(construction)).at).toBe(0);
-  const outsider = await app.inject({
-    method: "POST",
-    url: "/api/session",
-    headers: { "x-gestaloka-request": "1" },
-  });
+  const outsider = await auth.person("user");
   const hidden = await app.inject({
     url: `/api/worlds/${construction}/scene`,
-    headers: { cookie: String(outsider.headers["set-cookie"]).split(";")[0]! },
+    headers: { cookie: outsider.cookie },
   });
   expect(hidden.statusCode).toBe(404);
-  await d.postgres.query("DELETE FROM browser_session WHERE id=$1", [
-    outsider.json().id,
-  ]);
   worldPaused = true;
   await command({
     requestId: randomUUID(),

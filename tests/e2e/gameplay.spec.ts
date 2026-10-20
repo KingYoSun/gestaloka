@@ -1,6 +1,106 @@
-import { expect, test } from "@playwright/test";
-import { randomUUID } from "node:crypto";
+import { expect, test } from "./fixtures.js";
+import { createHash, randomUUID } from "node:crypto";
 import { connectDatabases } from "@gestaloka/server";
+
+test("ログインだけでは匿名データを移行せず、対象確認と本人の操作で引き継ぐ", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("世界の初期設定").fill("引き継ぐ対象の村");
+  await page
+    .getByRole("button", { name: "初期世界を生成する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "世界構築を完了する", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "別の村民として参加する", exact: true })
+    .click();
+  await page.getByRole("link", { name: /村民の画面を開く/ }).click();
+  const world = new URL(page.url()).pathname.split("/")[2]!;
+  const user = (await (await page.request.get("/api/session")).json()).id;
+  const legacy = randomUUID(),
+    token = randomUUID(),
+    db = connectDatabases();
+  try {
+    const actor = (
+      await db.postgres.query(
+        "SELECT participant_id FROM world_construction WHERE id=$1",
+        [world],
+      )
+    ).rows[0].participant_id;
+    await db.postgres.query(
+      "INSERT INTO world_subject(id,token_hash) VALUES($1,$2)",
+      [legacy, createHash("sha256").update(token).digest("hex")],
+    );
+    await db.postgres.query("INSERT INTO e2e_subject(scope,id) VALUES($1,$2)", [
+      process.env.E2E_SCOPE,
+      legacy,
+    ]);
+    for (const table of ["world_access", "world_event", "api_request"])
+      await db.postgres.query(
+        `UPDATE ${table} SET subject_id=$2 WHERE subject_id=$1`,
+        [user, legacy],
+      );
+    await context.addCookies([
+      {
+        name: "gestaloka",
+        value: token,
+        url: baseURL!,
+        httpOnly: true,
+        sameSite: "Strict",
+      },
+    ]);
+    await page.goto("/auth/claim");
+    await expect(
+      page.getByText("引き継ぐ対象の村", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(`アプリID: ${user}`, { exact: true }),
+    ).toBeVisible();
+    expect(
+      (
+        await db.postgres.query(
+          "SELECT user_id FROM world_subject WHERE id=$1",
+          [legacy],
+        )
+      ).rows[0].user_id,
+    ).toBeNull();
+    await page.screenshot({
+      path: "artifacts/screenshots/legacy-claim-preview.png",
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", {
+        name: "全1件の世界をこのユーザーへ引き継ぐ",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByText("引き継ぎ済みです。", { exact: true }),
+    ).toBeVisible();
+    expect(
+      (
+        await db.postgres.query(
+          "SELECT user_id FROM world_subject WHERE id=$1",
+          [legacy],
+        )
+      ).rows[0].user_id,
+    ).toBe(user);
+    await page.goto(`/worlds/${world}/play`);
+    await expect(
+      page.getByRole("heading", { name: "村民として", exact: true }),
+    ).toBeVisible();
+    expect(
+      (await (await page.request.get(`/api/worlds/${world}/play`)).json())
+        .viewerId,
+    ).toBe(actor);
+  } finally {
+    await db.close();
+  }
+});
 
 test("構築・追加進行・完了・別村民の行動を実APIと独立ワーカーで再開する", async ({
   page,

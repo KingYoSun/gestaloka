@@ -119,10 +119,6 @@ const server = setupServer(
       ? json({ id: identity })
       : json({ code: "SESSION_REQUIRED", message: "必要です" }, 401),
   ),
-  http.post("*/api/session", () => {
-    hasSession = true;
-    return json({ id: identity });
-  }),
   http.get("*/api/worlds", () => json(created ? [{ id: W }] : [])),
   http.post("*/api/worlds", async ({ request }) => {
     submitted = await request.json();
@@ -238,7 +234,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   identity = A;
-  hasSession = false;
+  hasSession = true;
   created = false;
   actionPosts = 0;
   adminReads = 0;
@@ -290,6 +286,23 @@ test("Reactを描画し、生成されたHTTPクライアント型を通信に�
     baseUrl: "http://localhost",
   });
   expect(data?.status).toBe("ok");
+});
+
+test("未認証では匿名セッションを作らずログインへ案内する", async () => {
+  hasSession = false;
+  render(
+    <App
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: ["/"] }),
+      )}
+    />,
+  );
+  expect(
+    (
+      await screen.findByRole("link", { name: "ログイン・利用登録へ" })
+    ).getAttribute("href"),
+  ).toBe("/auth/register");
+  expect(screen.queryByRole("heading", { name: "世界を始める" })).toBeNull();
 });
 
 test("初期入力を改変せず受付し、同じ世界の管理画面へ進む", async () => {

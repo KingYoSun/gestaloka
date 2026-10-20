@@ -13,8 +13,17 @@ let app: Awaited<ReturnType<typeof createApp>> | undefined;
 databases.queue.on("error", (error) => console.error(error));
 try {
   await databases.verify();
+  const identity = process.env.ORY_KRATOS_PUBLIC_URL
+    ? new OryIdentity(databases.postgres, process.env.ORY_KRATOS_PUBLIC_URL)
+    : undefined;
+  await identity?.setup();
+  const operations =
+    identity && process.env.OPERATIONS_TOKEN_SECRET
+      ? new Operations(databases.postgres, process.env.OPERATIONS_TOKEN_SECRET)
+      : undefined;
+  await operations?.setup();
   let access: WorldAccess | undefined;
-  if (llmApiKey()) {
+  if (llmApiKey() && operations) {
     await databases.queue.start();
     const model = new LlmClient(databases.postgres);
     access = new WorldAccess(
@@ -36,15 +45,6 @@ try {
     );
     await access.setup();
   }
-  const identity = process.env.ORY_KRATOS_PUBLIC_URL
-    ? new OryIdentity(databases.postgres, process.env.ORY_KRATOS_PUBLIC_URL)
-    : undefined;
-  await identity?.setup();
-  const operations =
-    identity && process.env.OPERATIONS_TOKEN_SECRET
-      ? new Operations(databases.postgres, process.env.OPERATIONS_TOKEN_SECRET)
-      : undefined;
-  await operations?.setup();
   app = await createApp(
     access,
     identity,

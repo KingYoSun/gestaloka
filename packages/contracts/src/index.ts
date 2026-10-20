@@ -204,7 +204,27 @@ export const Member = z.object({
 });
 const operationPage = { before: z.uuid().optional() };
 const operationReason = z.string().trim().min(1);
+export const LegacyClaimPage = z.object({
+  subjectId: z.uuid(),
+  version: z.string().regex(/^[a-f0-9]{32}$/),
+  linked: z.boolean(),
+  total: z.number().int().nonnegative().safe(),
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      prompt: z.string(),
+      actorId: z.uuid().nullable(),
+    }),
+  ),
+  next: z.uuid().nullable(),
+});
 export const Operation = z.discriminatedUnion("operation", [
+  z
+    .object({
+      operation: z.literal("account.claim"),
+      version: LegacyClaimPage.shape.version,
+    })
+    .strict(),
   z
     .object({
       operation: z.literal("account.register"),

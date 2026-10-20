@@ -78,6 +78,8 @@ function Shell() {
         </Link>
         <nav>
           <Link to="/">世界一覧</Link>
+          <a href="/auth/claim">このブラウザーのデータを引き継ぐ</a>
+          <a href="/auth/logout">ログアウト</a>
           <ThemeButton />
         </nav>
       </header>
@@ -192,6 +194,9 @@ export function App({
           {state.error ? (
             <>
               <p role="alert">{state.error}</p>
+              <a className="text-link" href="/auth/register">
+                ログイン・利用登録へ
+              </a>
               <Button
                 onClick={() => {
                   void navigation.navigate({ to: "/" });

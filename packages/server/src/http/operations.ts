@@ -3,7 +3,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { AccessError } from "./access.js";
 
-import { Member, Operation } from "@gestaloka/contracts";
+import { Member, Operation, LegacyClaimPage } from "@gestaloka/contracts";
 
 type Input = z.infer<typeof Operation>;
 type UserRow = {
@@ -17,6 +17,27 @@ const member = (row: UserRow) =>
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 type Database = Pick<pg.Pool, "query">;
+type Context = { legacyToken?: string | undefined };
+
+export async function requireMember(
+  database: Database,
+  userId: string,
+  admin = false,
+) {
+  const row = (
+    await database.query<UserRow>(
+      "SELECT * FROM app_user WHERE id=$1 FOR SHARE",
+      [userId],
+    )
+  ).rows[0];
+  if (!row)
+    throw new AccessError(403, "REGISTRATION_REQUIRED", "利用登録が必要です");
+  if (row.banned)
+    throw new AccessError(403, "USER_BANNED", "利用が停止されています");
+  if (admin && row.role !== "admin")
+    throw new AccessError(403, "ADMIN_REQUIRED", "管理者の権限が必要です");
+  return member(row);
+}
 
 /** Shared by HTTP, local recovery, and the later MCP adapter. */
 export class Operations {
@@ -71,28 +92,86 @@ export class Operations {
     admin = false,
     database: Database = this.pool,
   ) {
-    const row = (
-      await database.query<UserRow>(
-        "SELECT * FROM app_user WHERE id=$1 FOR SHARE",
-        [userId],
-      )
-    ).rows[0];
-    if (!row)
-      throw new AccessError(403, "REGISTRATION_REQUIRED", "利用登録が必要です");
-    if (row.banned)
-      throw new AccessError(403, "USER_BANNED", "利用が停止されています");
-    if (admin && row.role !== "admin")
-      throw new AccessError(403, "ADMIN_REQUIRED", "管理者の権限が必要です");
-    return member(row);
+    return requireMember(database, userId, admin);
   }
   #token(id: string) {
     return `${id}.${createHmac("sha256", this.tokenSecret).update(`invite:${id}`).digest("base64url")}`;
   }
-  async execute(actor: string, requestId: string, input: Input) {
+  async #legacySource(
+    userId: string,
+    token: string | undefined,
+    db: Database,
+    lock = false,
+  ) {
+    const source = token
+      ? (
+          await db.query<{ id: string; user_id: string | null }>(
+            `SELECT id,user_id FROM world_subject WHERE token_hash=$1 AND active${lock ? " FOR UPDATE" : ""}`,
+            [hash(token)],
+          )
+        ).rows[0]
+      : undefined;
+    if (!source)
+      throw new AccessError(
+        401,
+        "LEGACY_COOKIE_REQUIRED",
+        "このブラウザーで引き継げるデータが見つかりません",
+      );
+    if (source.user_id && source.user_id !== userId)
+      throw new AccessError(
+        403,
+        "LEGACY_ALREADY_CLAIMED",
+        "このデータは別のユーザーへ引き継ぎ済みです",
+      );
+    return source;
+  }
+  async #legacySnapshot(id: string, db: Database) {
+    const row = (
+      await db.query<{ total: string; version: string }>(
+        `SELECT count(DISTINCT construction_id)::text AS total,
+        md5($1::text||coalesce(string_agg(construction_id::text||':'||role||':'||coalesce(actor_id::text,''),',' ORDER BY construction_id,role),'')) AS version
+        FROM world_access WHERE subject_id=$1::uuid`,
+        [id],
+      )
+    ).rows[0]!;
+    return { total: Number(row.total), version: row.version };
+  }
+  async legacyPreview(userId: string, token?: string, before?: string) {
+    await this.authorize(userId);
+    const source = await this.#legacySource(userId, token, this.pool);
+    const snapshot = await this.#legacySnapshot(source.id, this.pool);
+    const rows = (
+      await this.pool.query<{
+        id: string;
+        prompt: string;
+        actorId: string | null;
+      }>(
+        `SELECT a.construction_id AS id,b.initial_prompt AS prompt,max(a.actor_id::text)::uuid AS "actorId"
+       FROM world_access a JOIN world_build b ON b.run_id=a.construction_id
+       WHERE a.subject_id=$1 AND ($2::uuid IS NULL OR a.construction_id<$2)
+       GROUP BY a.construction_id,b.initial_prompt ORDER BY a.construction_id DESC LIMIT 51`,
+        [source.id, before ? z.uuid().parse(before) : null],
+      )
+    ).rows;
+    return LegacyClaimPage.parse({
+      subjectId: source.id,
+      linked: source.user_id === userId,
+      ...snapshot,
+      items: rows.slice(0, 50),
+      next: rows.length > 50 ? rows[49]!.id : null,
+    });
+  }
+  async execute(
+    actor: string,
+    requestId: string,
+    input: Input,
+    context: Context = {},
+  ) {
     return this.#execute(
       z.uuid().parse(actor),
       requestId,
       Operation.parse(input),
+      context,
     );
   }
   async recover(userId: string, requestId: string, reason: string) {
@@ -107,6 +186,7 @@ export class Operations {
     requestId: string,
     input:
       Input | { operation: "recovery.admin"; userId: string; reason: string },
+    context: Context = {},
   ) {
     z.uuid().parse(requestId);
     const database = await this.pool.connect();
@@ -154,7 +234,11 @@ export class Operations {
       await database.query("SAVEPOINT operation");
       try {
         if (actor && input.operation !== "account.register")
-          await this.authorize(actor, true, database);
+          await this.authorize(
+            actor,
+            input.operation !== "account.claim",
+            database,
+          );
         if (actor && input.operation === "account.register") {
           const current = (
             await database.query<UserRow>(
@@ -173,7 +257,7 @@ export class Operations {
               saved.error.message,
             );
           result = saved.result;
-        } else result = await this.#perform(database, actor, input);
+        } else result = await this.#perform(database, actor, input, context);
       } catch (error) {
         if (!(error instanceof AccessError)) throw error;
         await database.query("ROLLBACK TO SAVEPOINT operation");
@@ -243,8 +327,33 @@ export class Operations {
     actor: string | null,
     input:
       Input | { operation: "recovery.admin"; userId: string; reason: string },
+    context: Context,
   ): Promise<Record<string, unknown>> {
     switch (input.operation) {
+      case "account.claim": {
+        const source = await this.#legacySource(
+          actor!,
+          context.legacyToken,
+          db,
+          true,
+        );
+        const snapshot = await this.#legacySnapshot(source.id, db);
+        if (snapshot.version !== input.version)
+          throw new AccessError(
+            409,
+            "CLAIM_CHANGED",
+            "引き継ぐ対象が変わりました。一覧を確認し直してください",
+          );
+        await db.query("UPDATE world_subject SET user_id=$2 WHERE id=$1", [
+          source.id,
+          actor,
+        ]);
+        return {
+          subjectId: source.id,
+          worldCount: snapshot.total,
+          linked: true,
+        };
+      }
       case "account.register": {
         const known = (
           await db.query<UserRow>("SELECT * FROM app_user WHERE id=$1", [actor])

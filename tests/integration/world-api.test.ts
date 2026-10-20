@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { WORLD_DAY_MS } from "@gestaloka/contracts";
 import { connectDatabases } from "@gestaloka/server";
@@ -9,6 +9,7 @@ import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
 import { createApp } from "../../apps/api/src/app.js";
 import { modelEnvironment, approvedTransport } from "../support/model.js";
+import { fixtureAuth } from "../support/auth.js";
 
 const databases = connectDatabases(),
   budgetId = randomUUID();
@@ -136,20 +137,21 @@ const runtime = new WorldConstruction(
 );
 const access = new WorldAccess(runtime);
 let app: Awaited<ReturnType<typeof createApp>>, address: string;
+let auth: Awaited<ReturnType<typeof fixtureAuth>>;
 const headers = (cookie: string) => ({ cookie, "x-gestaloka-request": "1" });
-async function session() {
+async function session(role: "admin" | "user" = "admin") {
+  const person = await auth.person(role);
   const reply = await app.inject({
     method: "POST",
     url: "/api/session",
-    headers: { "x-gestaloka-request": "1" },
+    headers: { "x-gestaloka-request": "1", cookie: person.cookie },
   });
   expect(reply.statusCode).toBe(200);
   const subject = reply.json<{ id: string }>().id;
   expect(reply.headers["x-gestaloka-subject"]).toBe(subject);
   subjects.push(subject);
-  const cookie = String(reply.headers["set-cookie"]).split(";")[0]!;
-  expect(reply.headers["set-cookie"]).toContain("HttpOnly");
-  expect(reply.headers["set-cookie"]).toContain("SameSite=Strict");
+  const cookie = person.cookie;
+  expect(reply.headers["set-cookie"]).toBeUndefined();
   return { subject, cookie };
 }
 async function fixture() {
@@ -168,12 +170,40 @@ async function fixture() {
   worlds.push((await runtime.get(id)).world_id!);
   return { ...browser, id, requestId, created: created.json() };
 }
+async function legacyFixture() {
+  const scene = await fixture();
+  for (const command of ["finish", "join"] as const)
+    await access.command(scene.subject, scene.id, {
+      requestId: randomUUID(),
+      command,
+    });
+  await runtime.tick(scene.id);
+  const legacyId = randomUUID(),
+    token = randomUUID();
+  subjects.push(legacyId);
+  await databases.postgres.query(
+    "INSERT INTO world_subject(id,token_hash) VALUES($1,$2)",
+    [legacyId, createHash("sha256").update(token).digest("hex")],
+  );
+  const action = {
+    requestId: randomUUID(),
+    actionText: "見える範囲を確かめる",
+  };
+  const accepted = await access.play(scene.subject, scene.id, action);
+  for (const table of ["world_access", "world_event", "api_request"])
+    await databases.postgres.query(
+      `UPDATE ${table} SET subject_id=$2 WHERE subject_id=$1`,
+      [scene.subject, legacyId],
+    );
+  return { ...scene, legacyId, token, action, accepted };
+}
 beforeAll(async () => {
   await databases.verify();
   databases.queue.on("error", console.error);
   await databases.queue.start();
+  auth = await fixtureAuth(databases.postgres);
   await access.setup();
-  app = await createApp(access);
+  app = await createApp(access, auth.identity, undefined, auth.operations);
   address = await app.listen({ host: "127.0.0.1", port: 0 });
 });
 afterAll(async () => {
@@ -193,10 +223,10 @@ afterAll(async () => {
     "DELETE FROM api_request WHERE subject_id=ANY($1)",
     [subjects],
   );
-  await databases.postgres.query(
-    "DELETE FROM browser_session WHERE id=ANY($1)",
-    [subjects],
-  );
+  await databases.postgres.query("DELETE FROM world_subject WHERE id=ANY($1)", [
+    subjects,
+  ]);
+  await auth.cleanup();
   await databases.postgres.query(
     "DELETE FROM construction_log WHERE construction_id=ANY($1)",
     [ids],
@@ -228,7 +258,297 @@ afterAll(async () => {
   await databases.close();
 });
 
-test("Cookieの主体・世界の操作権・同一オリジンを確認し、要求を同時保存して再送する", async () => {
+test("本人の確認で匿名主体を結び付け、操作対象・世界・履歴・再送を保持する", async () => {
+  const legacy = await legacyFixture(),
+    person = await session("user");
+  const cookie = `${person.cookie}; gestaloka=${legacy.token}`;
+  const before = await runtime.get(legacy.id);
+  const known = await runtime.agent.store
+    .context(before.world_id!)
+    .history(before.participant_id!, "see", "out", 0);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${legacy.id}/play`,
+        headers: headers(cookie),
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(
+    (
+      await app.inject({
+        url: "/api/session",
+        headers: { cookie: `gestaloka=${legacy.token}` },
+      })
+    ).statusCode,
+  ).toBe(401);
+  const preview = await app.inject({
+    url: "/api/account/legacy",
+    headers: headers(cookie),
+  });
+  expect(preview.statusCode).toBe(200);
+  expect(preview.json()).toMatchObject({
+    subjectId: legacy.legacyId,
+    linked: false,
+    total: 1,
+    items: [{ id: legacy.id, actorId: before.participant_id }],
+  });
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT user_id FROM world_subject WHERE id=$1",
+        [legacy.legacyId],
+      )
+    ).rows[0].user_id,
+  ).toBeNull();
+  const payload = {
+    requestId: randomUUID(),
+    command: { operation: "account.claim", version: preview.json().version },
+  };
+  const claim = await app.inject({
+    method: "POST",
+    url: "/api/operations",
+    headers: headers(cookie),
+    payload,
+  });
+  expect(claim.statusCode).toBe(200);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/operations",
+        headers: headers(cookie),
+        payload,
+      })
+    ).json(),
+  ).toEqual(claim.json());
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${legacy.id}`,
+        headers: headers(cookie),
+      })
+    ).statusCode,
+  ).toBe(403);
+  expect(
+    (
+      await app.inject({
+        url: `/api/worlds/${legacy.id}/play`,
+        headers: headers(cookie),
+      })
+    ).json().viewerId,
+  ).toBe(before.participant_id);
+  const replay = await app.inject({
+    method: "POST",
+    url: `/api/worlds/${legacy.id}/actions`,
+    headers: headers(cookie),
+    payload: legacy.action,
+  });
+  expect(replay.statusCode).toBe(202);
+  expect(replay.json()).toEqual(legacy.accepted);
+  expect(await runtime.get(legacy.id)).toEqual(before);
+  expect(
+    await runtime.agent.store
+      .context(before.world_id!)
+      .history(before.participant_id!, "see", "out", 0),
+  ).toEqual(known);
+  expect(
+    (
+      await databases.postgres.query(
+        "SELECT count(*) FROM operation_audit WHERE request_id=$1 AND outcome='accepted'",
+        [payload.requestId],
+      )
+    ).rows[0].count,
+  ).toBe("1");
+  expect(
+    JSON.stringify(
+      (
+        await databases.postgres.query(
+          "SELECT * FROM operation_audit WHERE actor_id=$1",
+          [person.subject],
+        )
+      ).rows,
+    ),
+  ).not.toContain(legacy.token);
+});
+
+test("他人の引き継ぎ・対象変更・同時確定を拒否する", async () => {
+  const legacy = await legacyFixture(),
+    one = await session("user"),
+    two = await session("user");
+  const preview = await auth.operations.legacyPreview(
+    one.subject,
+    legacy.token,
+  );
+  await expect(
+    auth.operations.execute(
+      one.subject,
+      randomUUID(),
+      { operation: "account.claim", version: preview.version },
+      { legacyToken: randomUUID() },
+    ),
+  ).rejects.toMatchObject({ code: "LEGACY_COOKIE_REQUIRED" });
+  await databases.postgres.query(
+    "UPDATE world_access SET actor_id=$2 WHERE subject_id=$1 AND role='player'",
+    [legacy.legacyId, randomUUID()],
+  );
+  await expect(
+    auth.operations.execute(
+      one.subject,
+      randomUUID(),
+      { operation: "account.claim", version: preview.version },
+      { legacyToken: legacy.token },
+    ),
+  ).rejects.toMatchObject({ code: "CLAIM_CHANGED" });
+  const updated = await auth.operations.legacyPreview(
+    one.subject,
+    legacy.token,
+  );
+  const results = await Promise.allSettled(
+    [one, two].map((p) =>
+      auth.operations.execute(
+        p.subject,
+        randomUUID(),
+        { operation: "account.claim", version: updated.version },
+        { legacyToken: legacy.token },
+      ),
+    ),
+  );
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  expect(results.find((r) => r.status === "rejected")).toMatchObject({
+    reason: { code: "LEGACY_ALREADY_CLAIMED" },
+  });
+});
+
+test("BANと降格を既存の世界APIと再送へ反映する", async () => {
+  const scene = await fixture();
+  await databases.postgres.query(
+    "UPDATE app_user SET role='user' WHERE id=$1",
+    [scene.subject],
+  );
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/worlds",
+        headers: headers(scene.cookie),
+        payload: { requestId: scene.requestId, prompt: "初期世界の自由記述" },
+      })
+    ).statusCode,
+  ).toBe(403);
+  await databases.postgres.query(
+    "UPDATE app_user SET banned=true WHERE id=$1",
+    [scene.subject],
+  );
+  await expect(access.status(scene.subject, scene.id)).rejects.toMatchObject({
+    code: "USER_BANNED",
+  });
+  expect(
+    (
+      await app.inject({ url: "/api/session", headers: headers(scene.cookie) })
+    ).json().code,
+  ).toBe("USER_BANNED");
+});
+
+test.each(["users.ban", "users.role"] as const)(
+  "%sを接続済みSSEへ反映する",
+  async (operation) => {
+    const scene = await fixture(),
+      manager = await session();
+    const controller = new AbortController();
+    const response = await fetch(
+      `${address}/api/worlds/${scene.id}/events?role=admin`,
+      { headers: { cookie: scene.cookie }, signal: controller.signal },
+    );
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    try {
+      await reader.read();
+      await auth.operations.execute(
+        manager.subject,
+        randomUUID(),
+        operation === "users.ban"
+          ? { operation, userId: scene.subject, banned: true, reason: "テスト" }
+          : {
+              operation,
+              userId: scene.subject,
+              role: "user",
+              reason: "テスト",
+            },
+      );
+      const timeout = setTimeout(() => controller.abort(), 3000);
+      try {
+        while (!(await reader.read()).done) {
+          /* Revocation closes the stream. */
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    } finally {
+      controller.abort();
+      await reader.cancel();
+    }
+  },
+);
+
+test("認証済みでも未登録の利用者は世界APIへ進めない", async () => {
+  const person = await auth.person("user");
+  await databases.postgres.query("DELETE FROM app_user WHERE id=$1", [
+    person.id,
+  ]);
+  const r = await app.inject({
+    url: "/api/session",
+    headers: headers(person.cookie),
+  });
+  expect(r.statusCode).toBe(403);
+  expect(r.json().code).toBe("REGISTRATION_REQUIRED");
+});
+
+test("引き継ぎ対象は全件をページで確認でき、確定も全対象へ適用する", async () => {
+  const legacy = await legacyFixture(),
+    person = await session("user");
+  for (let i = 0; i < 53; i++) {
+    const id = await runtime.builder.create(`引き継ぎ対象 ${i}`);
+    ids.push(id);
+    await databases.postgres.query(
+      "INSERT INTO world_construction(id,state) VALUES($1,'generating')",
+      [id],
+    );
+    await databases.postgres.query(
+      "INSERT INTO world_access(subject_id,construction_id,role) VALUES($1,$2,'admin')",
+      [legacy.legacyId, id],
+    );
+  }
+  const first = await auth.operations.legacyPreview(
+    person.subject,
+    legacy.token,
+  );
+  expect(first.total).toBe(54);
+  expect(first.items).toHaveLength(50);
+  const next = await auth.operations.legacyPreview(
+    person.subject,
+    legacy.token,
+    first.next!,
+  );
+  expect(next.items).toHaveLength(4);
+  expect(next.next).toBeNull();
+  expect(next.version).toBe(first.version);
+  expect(new Set([...first.items, ...next.items].map((w) => w.id)).size).toBe(
+    54,
+  );
+  const result = await auth.operations.execute(
+    person.subject,
+    randomUUID(),
+    { operation: "account.claim", version: first.version },
+    { legacyToken: legacy.token },
+  );
+  expect(result.worldCount).toBe(54);
+  expect(
+    (await auth.operations.legacyPreview(person.subject, legacy.token)).linked,
+  ).toBe(true);
+});
+
+test("Oryの主体・世界の操作権・同一オリジンを確認し、要求を同時保存して再送する", async () => {
   const scene = await fixture();
   const duplicate = await app.inject({
     method: "POST",
@@ -240,7 +560,7 @@ test("Cookieの主体・世界の操作権・同一オリジンを確認し、�
   expect(
     (await app.inject({ url: `/api/worlds/${scene.id}` })).statusCode,
   ).toBe(401);
-  const other = await session();
+  const other = await session("user");
   expect(
     (
       await app.inject({
@@ -248,7 +568,7 @@ test("Cookieの主体・世界の操作権・同一オリジンを確認し、�
         headers: headers(other.cookie),
       })
     ).statusCode,
-  ).toBe(404);
+  ).toBe(403);
   expect(
     (
       await app.inject({
@@ -461,10 +781,7 @@ test("SSEを保存済みIDから再送し、他の世界のcursorと権限失効
       received += new TextDecoder().decode((await reader.read()).value);
     expect(received).not.toContain(`id: ${first}\n`);
     expect(received).not.toContain("PRIVATE_");
-    await databases.postgres.query(
-      "UPDATE browser_session SET active=false WHERE id=$1",
-      [scene.subject],
-    );
+    auth.logout(scene.cookie);
     while (!(await reader.read()).done) {
       /* Wait for the authorized stream to close. */
     }

@@ -28,10 +28,14 @@ import {
   KnowledgeQuery,
 } from "@gestaloka/contracts";
 import { AccessError, type WorldAccess } from "@gestaloka/server/access";
+import { IdentityError, type OryIdentity } from "@gestaloka/server/identity";
+import type { Operations } from "@gestaloka/server/operations";
 
 export async function worldRoutes(
   instance: FastifyInstance,
   access?: WorldAccess,
+  identity?: OryIdentity,
+  operations?: Operations,
 ) {
   const app = instance.withTypeProvider<ZodTypeProvider>();
   await app.register(cookie);
@@ -46,7 +50,14 @@ export async function worldRoutes(
   };
   const identities = new WeakMap<FastifyRequest, string>();
   const subject = async (request: FastifyRequest) => {
-    const id = await service().authenticate(request.cookies.gestaloka);
+    if (!identity || !operations)
+      throw new AccessError(
+        503,
+        "IDENTITY_NOT_CONFIGURED",
+        "認証サービスを設定してください",
+      );
+    const id = (await identity.session(request.headers.cookie)).userId;
+    await operations.authorize(id);
     identities.set(request, id);
     return id;
   };
@@ -91,6 +102,10 @@ export async function worldRoutes(
     }
   });
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof IdentityError)
+      return reply
+        .code(error.status)
+        .send({ code: "LOGIN_REQUIRED", message: error.message });
     if (error instanceof AccessError)
       return reply
         .code(error.status)
@@ -112,19 +127,7 @@ export async function worldRoutes(
   app.post(
     "/api/session",
     { schema: { response: { 200: BrowserSession, ...errors } } },
-    async (request, reply) => {
-      const session = await service().session(request.cookies.gestaloka);
-      identities.set(request, session.id);
-      if (session.credential)
-        reply.setCookie("gestaloka", session.credential, {
-          path: "/",
-          httpOnly: true,
-          sameSite: "strict",
-          secure: request.protocol === "https",
-          maxAge: 31536000,
-        });
-      return { id: session.id };
-    },
+    async (request) => ({ id: await subject(request) }),
   );
   app.get(
     "/api/session",
@@ -363,6 +366,12 @@ export async function worldRoutes(
       try {
         await reply.sse.send({ event: "connected", data: { worldId: id } });
         while (reply.sse.isConnected && !controller.signal.aborted) {
+          if ((await subject(request)) !== identity)
+            throw new AccessError(
+              401,
+              "SESSION_CHANGED",
+              "ログインが変わりました",
+            );
           for (const event of events) {
             await service().authorize(identity, id, role);
             await reply.sse.send({
@@ -381,7 +390,11 @@ export async function worldRoutes(
           events = await service().events(identity, id, role, cursor);
         }
       } catch (error) {
-        if (!controller.signal.aborted && !(error instanceof AccessError))
+        if (
+          !controller.signal.aborted &&
+          !(error instanceof AccessError) &&
+          !(error instanceof IdentityError)
+        )
           app.log.error(error);
       } finally {
         controller.abort();
