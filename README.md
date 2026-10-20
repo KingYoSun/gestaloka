@@ -149,6 +149,8 @@ pnpm world:generate --resume <runId>
 
 通常行動の追加比較は [Sonnetの再測定とHaikuの観測・意図形成の検証記録](documents/evaluations/haiku-observation-2026-10-20.md) を参照してください。
 
+API呼出しを減らした新フローと運用設定、2回の実測結果は [通常行動のフロー削減の記録](documents/evaluations/reduced-turn-flow-2026-10-20.md) を参照してください。
+
 ## 共通の世界更新
 
 ```powershell
