@@ -422,6 +422,215 @@ test("知覚の更新で生じた未処理の作用を区間の次へ保持す�
   ).toBe(true);
 });
 
+test("同時点の4主体の観測は一度に確定し、意図形成へは本人の受容だけを渡す", async () => {
+  const scene = await fixture();
+  await scene.runtime.command(scene.id, "advance", WORLD_DAY_MS);
+  const row = await scene.runtime.get(scene.id);
+  const actors = [scene.actor, scene.place, randomUUID(), randomUUID()];
+  const store = scene.agent.store;
+  await store.commit(
+    await store.claim(row.world_id!, randomUUID()),
+    store.context(row.world_id!),
+    {
+      commitId: randomUUID(),
+      at: 0,
+      changes: {
+        ...empty(),
+        nodes: actors
+          .slice(2)
+          .map((id) => ({ id, kind: "existence", text: "観測の試験主体" })),
+        edges: actors.map((id, i) => ({
+          id: randomUUID(),
+          kind: "see",
+          source: id,
+          target: id,
+          text: `PRIVATE_${i}`,
+          period: { from: 0 },
+        })),
+      },
+    },
+  );
+  await databases.postgres.query(
+    "UPDATE world_construction SET agenda=$2 WHERE id=$1",
+    [
+      scene.id,
+      JSON.stringify(
+        actors.map((actorId) => ({
+          id: randomUUID(),
+          actorId,
+          at: 0,
+          mode: "intent",
+        })),
+      ),
+    ],
+  );
+  const previous = scene.transport.getMockImplementation()!;
+  let observed = 0;
+  const formed: string[] = [];
+  scene.transport.mockImplementation(async (url, options) => {
+    const user = JSON.parse(
+      JSON.parse(String(options?.body)).messages[1].content,
+    );
+    if (user.request?.phase === "observation") {
+      observed++;
+      expect(user.request.actorId).toBeUndefined();
+      expect(new Set(user.request.rootIds)).toEqual(new Set(actors));
+      return response({
+        type: "propose",
+        changes: {
+          ...empty(),
+          edges: actors.map((id, i) => ({
+            id: randomUUID(),
+            kind: "see",
+            source: id,
+            target: id,
+            text: `RECEIVED_${i}`,
+            period: { from: 0 },
+          })),
+        },
+        summary: "各主体の受容",
+        resolvedUntil: 0,
+        wakeups: [],
+      });
+    }
+    if (user.observerId) {
+      const index = actors.indexOf(user.observerId);
+      const content = JSON.stringify(user);
+      expect(content).toContain(`PRIVATE_${index}`);
+      expect(content).toContain(`RECEIVED_${index}`);
+      for (let i = 0; i < actors.length; i++)
+        if (i !== index) {
+          expect(content).not.toContain(`PRIVATE_${i}`);
+          expect(content).not.toContain(`RECEIVED_${i}`);
+        }
+      formed.push(user.observerId);
+    }
+    return previous(url, options);
+  });
+  await scene.runtime.tick(scene.id);
+  expect(observed).toBe(1);
+  expect(new Set(formed)).toEqual(new Set(actors));
+});
+
+test.each([false, true])(
+  "同時点の無関係な継続を原文で保ち、実際の作用がある場合だけ再起動する: %s",
+  async (notify) => {
+    const scene = await fixture();
+    await scene.runtime.command(scene.id, "finish");
+    await scene.runtime.command(scene.id, "join");
+    await scene.runtime.tick(scene.id);
+    const human = (await scene.runtime.get(scene.id)).participant_id!;
+    const actionText = "継続中の活動を保持する";
+    await databases.postgres.query(
+      "UPDATE world_construction SET agenda=$2 WHERE id=$1",
+      [
+        scene.id,
+        JSON.stringify([
+          {
+            id: randomUUID(),
+            at: 0,
+            mode: "resolve",
+            actorId: scene.actor,
+            actionText,
+            planUntil: 100,
+          },
+        ]),
+      ],
+    );
+    const requests: {
+      intentions: { actorId: string; actionText: string }[];
+    }[] = [];
+    const notification = randomUUID();
+    scene.transport.mockImplementation(async (_url, options) => {
+      const user = JSON.parse(
+        JSON.parse(String(options?.body)).messages[1].content,
+      );
+      if (user.observerId)
+        return response({ actionText: "受け取った問いに返答する" });
+      const request = user.request;
+      const result = {
+        type: "propose",
+        changes: empty(),
+        summary: "因果に沿った処理",
+        resolvedUntil: request.at,
+        wakeups: [],
+      };
+      if (request.phase === "observation") return response(result);
+      requests.push(request);
+      const first = requests.length === 1;
+      const from = first ? human : scene.place;
+      const to = first ? scene.place : human;
+      return response({
+        ...result,
+        changes: {
+          ...empty(),
+          edges: [
+            {
+              id: randomUUID(),
+              kind: "effect",
+              source: from,
+              target: to,
+              period: { from: 0 },
+            },
+            {
+              id: randomUUID(),
+              kind: "see",
+              source: to,
+              target: from,
+              text: first ? "届いた質問" : "届いた返答",
+              period: { from: 0 },
+            },
+            ...(!first && notify
+              ? [
+                  {
+                    id: notification,
+                    kind: "effect",
+                    source: from,
+                    target: scene.actor,
+                    period: { from: 0 },
+                  },
+                ]
+              : []),
+          ],
+        },
+        wakeups: [{ actorId: to, at: 0, mode: "intent" }],
+        ...(first
+          ? { deferredIntentions: [human, scene.actor] }
+          : {
+              settledIntentions: [
+                { actorId: scene.place, reason: "本人の返答が届いた" },
+              ],
+            }),
+      });
+    });
+    await scene.runtime.play(scene.id, "近くの相手に質問し、返答を待つ");
+    await scene.runtime.tick(scene.id);
+    const held = (await scene.runtime.get(scene.id)).agenda.find(
+      (work) => work.actorId === scene.actor,
+    )!;
+    expect(held).toMatchObject({ deferred: true, actionText, planUntil: 100 });
+    await scene.runtime.tick(scene.id);
+    expect(
+      requests[1]!.intentions.map((intent) => intent.actorId),
+    ).not.toContain(scene.actor);
+    await scene.runtime.tick(scene.id);
+    const returned = await scene.runtime.get(scene.id);
+    expect(returned.state).toBe("finished");
+    const continued = returned.agenda.find(
+      (work) => work.actorId === scene.actor,
+    )!;
+    expect(continued).toMatchObject({
+      id: held.id,
+      actionText,
+      planUntil: 100,
+    });
+    if (notify) {
+      expect(continued.deferred).not.toBe(true);
+      expect(continued.triggers).toContain(notification);
+    } else expect(continued).toEqual(held);
+  },
+);
+
 test("同時刻の意図をそろえ、NPCの反応を経て人間へ操作を返す", async () => {
   const scene = await fixture();
   await scene.runtime.command(scene.id, "finish");
