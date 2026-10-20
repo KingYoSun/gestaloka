@@ -71,6 +71,7 @@ export async function oauthRoutes(
     const session = await identity.session(cookie);
     const data = await hydra<{
       subject: string;
+      request_url: string;
       requested_scope: string[];
       requested_access_token_audience: string[];
       client: { client_name?: string; client_id: string };
@@ -84,6 +85,9 @@ export async function oauthRoutes(
       const challenge = request.query.consent_challenge;
       if (!challenge) throw new IdentityError(401);
       const data = await consent(request.headers.cookie, challenge);
+      const requestUrl = new URL(data.request_url);
+      const callback = new URL(requestUrl.searchParams.get("redirect_uri")!);
+      const formSources = `'self' ${requestUrl.origin} ${callback.origin === "null" ? callback.protocol : callback.origin}`;
       const csrf = randomBytes(32).toString("hex");
       reply.setCookie("gestaloka_consent", csrf, {
         path: "/auth/oauth/consent",
@@ -96,6 +100,7 @@ export async function oauthRoutes(
         reply,
         "アクセスの許可",
         `<p>${escape(data.client.client_name ?? data.client.client_id)}</p><p>要求する権限: ${escape(data.requested_scope.join(", "))}</p><form method="post"><input type="hidden" name="challenge" value="${escape(challenge)}"><input type="hidden" name="csrf" value="${csrf}"><button name="decision" value="accept">許可する</button><button name="decision" value="reject">拒否する</button></form>`,
+        formSources,
       );
     },
   );

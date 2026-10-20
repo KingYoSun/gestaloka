@@ -34,7 +34,19 @@ export async function authRoutes(
   app.get("/auth/style.css", async (_request, reply) =>
     reply.type("text/css").send(authStyle),
   );
-  for (const kind of ["login", "registration"] as const) {
+  app.get("/auth/link", async (request, reply) => {
+    const url = new URL(
+      "self-service/login/browser",
+      `${identity.publicUrl.replace(/\/$/, "")}/`,
+    );
+    url.searchParams.set("refresh", "true");
+    url.searchParams.set(
+      "return_to",
+      `${request.protocol}://${request.headers.host}/auth/settings`,
+    );
+    return reply.redirect(url.toString());
+  });
+  for (const kind of ["login", "registration", "settings"] as const) {
     app.get<{ Querystring: { flow?: string; return_to?: string } }>(
       `/auth/${kind}`,
       async (request, reply) => {
@@ -65,6 +77,7 @@ export async function authRoutes(
         const data = (await response.json()) as {
           ui: {
             action: string;
+            messages?: { text: string }[];
             nodes: {
               attributes: {
                 name?: string;
@@ -76,26 +89,31 @@ export async function authRoutes(
             }[];
           };
         };
+        const button = kind === "settings" ? "link" : "provider";
         const inputs = data.ui.nodes
           .filter(
-            ({ attributes: a }) =>
-              a.name === "csrf_token" || a.name === "provider",
+            ({ attributes: a }) => a.name === "csrf_token" || a.name === button,
           )
           .map(({ attributes: a, meta }) =>
             a.name === "csrf_token"
               ? `<input type="hidden" name="csrf_token" value="${escape(a.value)}">`
-              : `<button name="provider" value="${escape(a.value)}"${a.disabled ? " disabled" : ""}>${escape(meta?.label?.text ?? a.value)}</button>`,
+              : `<button name="${button}" value="${escape(a.value)}"${a.disabled ? " disabled" : ""}>${escape(meta?.label?.text ?? a.value)}</button>`,
           )
           .join("\n");
         const hasProvider = data.ui.nodes.some(
-          ({ attributes: a }) => a.name === "provider",
+          ({ attributes: a }) => a.name === button,
         );
         return authPage(
           reply,
-          "ログイン",
-          hasProvider
-            ? `<form action="${escape(data.ui.action)}" method="post">${inputs}</form>`
-            : "<p>ソーシャルログインの接続設定が必要です。</p>",
+          kind === "settings" ? "ログイン方法の追加" : "ログイン",
+          (data.ui.messages ?? [])
+            .map((m) => `<p>${escape(m.text)}</p>`)
+            .join("") +
+            (hasProvider
+              ? `<form action="${escape(data.ui.action)}" method="post">${kind === "settings" ? '<input type="hidden" name="method" value="oidc">' : ""}${inputs}</form>`
+              : kind === "settings"
+                ? "<p>追加できるログイン方法はありません。</p>"
+                : "<p>ソーシャルログインの接続設定が必要です。</p>"),
           `${new URL(base).origin} https://accounts.google.com https://api.twitter.com https://api.x.com https://twitter.com https://x.com`,
         );
       },
