@@ -622,6 +622,21 @@ test.each(["observation", "interaction", "resolution"] as const)(
           input = JSON.parse(body.messages[1].content);
         if (input.commitReview) {
           expect(body.model).toBe("gpt-6-luna");
+          expect(input.commitReview.execution).toEqual({
+            phase,
+            callerHandlesNextDecisionFor:
+              phase === "observation" ? scene.actor.id : null,
+            formedIntentions:
+              phase === "observation"
+                ? []
+                : [
+                    {
+                      actorId: scene.actor.id,
+                      continuing: phase === "resolution",
+                      disposition: "resolve",
+                    },
+                  ],
+          });
           reviewed++;
           expect(
             await store.context(scene.worldId).edge(rejected.id),
@@ -642,7 +657,16 @@ test.each(["observation", "interaction", "resolution"] as const)(
         );
         proposed++;
         return response(
-          proposal(changes([], proposed === 1 ? [rejected] : [accepted])),
+          proposal(
+            changes([], proposed === 1 ? [rejected] : [accepted]),
+            phase === "observation"
+              ? {}
+              : {
+                  wakeups: [
+                    { actorId: scene.actor.id, at: 2000, mode: "resolve" },
+                  ],
+                },
+          ),
         );
       });
     const normalized: typeof fetch = async (url, options) => {
@@ -669,7 +693,17 @@ test.each(["observation", "interaction", "resolution"] as const)(
     const id = await runtime.create({
       worldId: scene.worldId,
       phase,
-      actorId: scene.actor.id,
+      ...(phase === "observation"
+        ? { actorId: scene.actor.id }
+        : {
+            intentions: [
+              {
+                actorId: scene.actor.id,
+                actionText: "本人が選んだ継続中の行動",
+                continuing: phase === "resolution",
+              },
+            ],
+          }),
       at: 0,
       until: 1000,
       rootIds: [scene.actor.id],
@@ -688,3 +722,61 @@ test.each(["observation", "interaction", "resolution"] as const)(
     expect(transport).toHaveBeenCalledTimes(calls);
   },
 );
+
+test("保存済みの確定要求は指示の更新後も元の入力と応答で再開する", async () => {
+  const scene = await fixture(),
+    budgetId = randomUUID();
+  budgets.push(budgetId);
+  const model = new LlmClient(
+    databases.postgres,
+    modelEnvironment(budgetId),
+    approvedTransport(
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => response(proposal(changes()))),
+    ),
+  );
+  const complete = model.complete.bind(model);
+  let previousVersion = true;
+  model.complete = async (...args) => {
+    if (args[1] === "world-commit" && previousVersion) {
+      previousVersion = false;
+      const legacy = structuredClone(args[2]);
+      legacy[0]!.content = "旧版の確定担当";
+      const payload = JSON.parse(legacy[1]!.content);
+      delete payload.commitReview.execution;
+      legacy[1]!.content = JSON.stringify(payload);
+      await complete(args[0], args[1], legacy, args[3]);
+      throw new Error("旧版の応答保存後に中断した");
+    }
+    return complete(...args);
+  };
+  const runtime = new WorldAgent(
+    databases.postgres,
+    databases.graph,
+    databases.checkpointer,
+    model,
+  );
+  await runtime.setup();
+  const id = await runtime.create({
+    worldId: scene.worldId,
+    phase: "observation",
+    actorId: scene.actor.id,
+    at: 0,
+    until: 1000,
+    rootIds: [scene.actor.id],
+    actionText: "",
+  });
+  operations.push(id);
+  await expect(runtime.run(id)).rejects.toThrow("旧版の応答保存後");
+  // Simulate a new worker after the previous process lost its final state write.
+  await databases.postgres.query(
+    "UPDATE world_operation SET state='queued' WHERE id=$1",
+    [id],
+  );
+  expect((await runtime.run(id)).resolvedUntil).toBe(1000);
+  expect(await model.ledger.summary()).toMatchObject({
+    calls: 2,
+    unsettled: 0,
+  });
+});

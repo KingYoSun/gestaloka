@@ -123,9 +123,16 @@ test.each([
   { failAfterCommit: false, repairCommit: false },
   { failAfterCommit: true, repairCommit: false },
   { failAfterCommit: false, repairCommit: true },
+  { failAfterCommit: false, repairCommit: false, conflictDuringRead: true },
+  { failAfterCommit: false, repairCommit: false, transportFailure: true },
 ])(
   "実際のdshで確定を重複適用せず、通信失敗 $failAfterCommit / 候補修正 $repairCommit でもreceiptを保つ",
-  async ({ failAfterCommit, repairCommit }) => {
+  async ({
+    failAfterCommit,
+    repairCommit,
+    conflictDuringRead,
+    transportFailure,
+  }) => {
     const worldId = randomUUID(),
       actor = randomUUID(),
       script = randomUUID(),
@@ -162,6 +169,11 @@ test.each([
           "https://api.deepseek.com/anthropic/v1/messages",
         );
         const body = JSON.parse(String(options?.body));
+        expect(new Headers(options?.headers).get("connection")).toBe("close");
+        if (transportFailure)
+          throw new Error("socket closed", {
+            cause: { code: "UND_ERR_SOCKET" },
+          });
         const names = body.tools.map((t: { name: string }) => t.name);
         expect(names).toContain("mcp__world__world_commit");
         expect(names.join(" ")).not.toMatch(
@@ -173,10 +185,33 @@ test.each([
           ]);
         switch (stage++) {
           case 0:
+            if (conflictDuringRead) {
+              const store = new WorldStore(d.graph);
+              await store.commit(
+                await store.claim(worldId, randomUUID()),
+                store.context(worldId),
+                {
+                  commitId: randomUUID(),
+                  at: 0,
+                  changes: {
+                    ...empty(),
+                    revisions: [
+                      {
+                        id: actor,
+                        kind: "existence",
+                        text: "並行更新後の試験対象",
+                      },
+                    ],
+                  },
+                },
+              );
+            }
             return call("world_read", {
               requests: [{ kind: "node", id: actor }],
             });
           case 1:
+            if (conflictDuringRead)
+              expect(JSON.stringify(body)).toContain("並行更新後の試験対象");
             expect(
               await new WorldStore(d.graph).context(worldId).node(script),
             ).toBeUndefined();
@@ -291,7 +326,25 @@ test.each([
       ],
     });
     operations.push(id);
+    if (transportFailure) {
+      await expect(agent.run(id)).rejects.toThrow("UND_ERR_SOCKET");
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(await store.context(worldId).node(script)).toBeUndefined();
+      expect(await model.ledger.summary()).toMatchObject({
+        calls: 1,
+        unsettled: 1,
+      });
+      return;
+    }
     expect(await agent.run(id)).toEqual(candidate);
+    expect(
+      (
+        await d.postgres.query(
+          "SELECT epoch FROM world_operation WHERE id=$1",
+          [id],
+        )
+      ).rows[0].epoch,
+    ).toBe(conflictDuringRead ? 1 : 0);
     expect(stage).toBe(repairCommit ? 7 : 5);
     expect(await store.context(worldId).node(script)).toMatchObject({
       id: script,

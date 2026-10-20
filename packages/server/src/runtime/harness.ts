@@ -22,6 +22,7 @@ type Options = {
   system: string;
   input: unknown;
   tools: Tool[];
+  restartOn: (error: unknown) => boolean;
 };
 export async function runHarness(options: Options) {
   const { model } = options,
@@ -35,6 +36,18 @@ export async function runHarness(options: Options) {
   await mkdir(home, { recursive: true });
   const patch = resolve(home, "world.patch.json");
   const inFlight = new Set<Promise<void>>();
+  let failure: unknown;
+  let rejectRun!: (error: unknown) => void;
+  const failed = new Promise<never>((_resolve, reject) => {
+    rejectRun = reject;
+  });
+  const stop = (error: unknown) => {
+    if (!failure) {
+      failure = error;
+      rejectRun(error);
+    }
+  };
+  let toolQueue: Promise<unknown> = Promise.resolve();
   const server = createServer((request, response) => {
     const action = (async () => {
       if (
@@ -53,6 +66,7 @@ export async function runHarness(options: Options) {
       const body: Record<string, unknown> = JSON.parse(
         Buffer.concat(chunks).toString("utf8"),
       );
+      if (failure) throw failure;
       if (request.url === "/mcp") {
         const id = body.id;
         if (id === undefined) {
@@ -79,15 +93,21 @@ export async function runHarness(options: Options) {
           const tool = options.tools.find((t) => t.name === params.name);
           try {
             if (!tool) throw new Error("未登録の世界ツールです");
+            const executing = toolQueue.then(() => {
+              if (failure) throw failure;
+              return tool.execute(params.arguments);
+            });
+            toolQueue = executing.catch(() => undefined);
             result = {
               content: [
                 {
                   type: "text",
-                  text: JSON.stringify(await tool.execute(params.arguments)),
+                  text: JSON.stringify(await executing),
                 },
               ],
             };
           } catch (error) {
+            if (options.restartOn(error)) stop(error);
             result = {
               isError: true,
               content: [
@@ -111,6 +131,7 @@ export async function runHarness(options: Options) {
           );
           return;
         }
+        if (response.destroyed) return;
         response
           .writeHead(200, { "content-type": "application/json" })
           .end(JSON.stringify({ jsonrpc: "2.0", id, result }));
@@ -176,6 +197,8 @@ export async function runHarness(options: Options) {
         "content-type": "application/json",
         "x-api-key": model.environment.DEEPSEEK_API_KEY!,
         "anthropic-version": "2023-06-01",
+        // Each dsh turn may follow an idle interval; do not reuse an upstream socket closed by the peer.
+        connection: "close",
       };
       for (const [key, value] of Object.entries(request.headers))
         if (
@@ -192,18 +215,35 @@ export async function runHarness(options: Options) {
           typeof value === "string"
         )
           headers[key] = value;
-      const upstream = await model.transport(`${base}/v1/messages`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(180000),
-        redirect: "error",
-      });
+      const communicationError = (error: unknown) => {
+        const detail = error as {
+          name?: string;
+          code?: string;
+          cause?: { code?: string };
+        };
+        return new Error(
+          `DeepSeek APIとの通信を完了できません (${detail?.cause?.code ?? detail?.code ?? detail?.name ?? "Error"})。送信済み要求は再送せず予約を保持します`,
+          { cause: error },
+        );
+      };
+      const upstream = await model
+        .transport(`${base}/v1/messages`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(180000),
+          redirect: "error",
+        })
+        .catch((error: unknown) => {
+          throw communicationError(error);
+        });
       if (!upstream.ok)
         throw new Error(
           `DeepSeek HarnessのAPIがHTTP ${upstream.status}を返しました。予約枠は保持します`,
         );
-      const content = await upstream.text();
+      const content = await upstream.text().catch((error: unknown) => {
+        throw communicationError(error);
+      });
       let usage: Record<string, unknown> = {},
         responseId = "",
         reportedModel = "",
@@ -243,10 +283,13 @@ export async function runHarness(options: Options) {
         },
         Math.round(performance.now() - started),
       );
+      if (response.destroyed) return;
       response
         .writeHead(200, { "content-type": "text/event-stream" })
         .end(content);
     })().catch((error) => {
+      if (request.url === "/anthropic/v1/messages") stop(error);
+      if (response.destroyed) return;
       response.writeHead(503, { "content-type": "application/json" }).end(
         JSON.stringify({
           error: {
@@ -347,12 +390,15 @@ export async function runHarness(options: Options) {
     initializeTimeoutMs: 60000,
   });
   try {
-    return await harness.run(JSON.stringify(options.input), {
-      sessionId: options.id,
-    });
+    return await Promise.race([
+      harness.run(JSON.stringify(options.input), {
+        sessionId: options.id,
+      }),
+      failed,
+    ]);
   } finally {
-    await Promise.allSettled([...inFlight]);
     await harness.close();
+    await Promise.allSettled([...inFlight]);
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );

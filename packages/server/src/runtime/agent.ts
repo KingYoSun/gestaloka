@@ -296,6 +296,36 @@ export class WorldAgent {
     return row.candidate;
   }
 
+  #reviewContext(row: Operation, candidate = row.candidate) {
+    return {
+      request: row.request,
+      candidate,
+      execution: {
+        phase: row.request.phase,
+        callerHandlesNextDecisionFor:
+          row.request.phase === "observation" ? row.request.actorId : null,
+        formedIntentions: (row.request.intentions ?? []).map(
+          ({ actorId, continuing }) => ({
+            actorId,
+            continuing,
+            disposition: candidate?.settledIntentions?.some(
+              (i) => i.actorId === actorId,
+            )
+              ? "settled"
+              : candidate?.deferredIntentions?.includes(actorId)
+                ? "deferred"
+                : (candidate?.wakeups.find((w) => w.actorId === actorId)
+                    ?.mode ?? null),
+          }),
+        ),
+      },
+      evidence: (row.messages ?? [])
+        .filter((m) => m.role === "user")
+        .map((m) => JSON.parse(m.content))
+        .filter((m) => !("validationErrors" in m)),
+    };
+  }
+
   async #queries(row: Operation, requests: z.infer<typeof Query>[]) {
     const context = this.store.context(row.request.worldId, row.dependencies);
     await context.validate();
@@ -812,6 +842,9 @@ export class WorldAgent {
                   id,
                   epoch: row.epoch,
                   model: this.model,
+                  restartOn: (error) =>
+                    error instanceof WorldConflict ||
+                    error instanceof SupersededWorker,
                   system:
                     row.system_prompt.replace(
                       "与えられたJSONスキーマに一致するJSONオブジェクトだけを返してください。",
@@ -820,11 +853,7 @@ export class WorldAgent {
                     "\n\n追加照会はworld_read、候補の提出はworld_proposeを使います。提出後、返されたproposalIdと候補・根拠を確認し、world_commitで確定を要求してください。保留はworld_pauseを使い、本文だけで確定したことにしません。確定後は短く完了を伝えて終了してください。\n\n" +
                     reviewPrompt,
                   input: {
-                    request: row.request,
-                    evidence: row.messages
-                      .filter((m) => m.role === "user")
-                      .map((m) => JSON.parse(m.content)),
-                    candidate: row.candidate,
+                    ...this.#reviewContext(row),
                     proposalId,
                   },
                   tools: [
@@ -864,7 +893,13 @@ export class WorldAgent {
                         row.approved = false;
                         proposalId = randomUUID();
                         await this.#save(row, claim);
-                        return { proposalId, candidate, review: reviewPrompt };
+                        return {
+                          proposalId,
+                          candidate,
+                          execution: this.#reviewContext(row, candidate)
+                            .execution,
+                          review: reviewPrompt,
+                        };
                       },
                     },
                     {
@@ -947,10 +982,30 @@ export class WorldAgent {
             }
             if (row.candidate) {
               if (!row.approved) {
+                const reviewId = callId(id, row.epoch, row.step + 1000000);
+                const saved = (await this.model.ledger.input(reviewId)) as
+                  | {
+                      request: {
+                        system?: string;
+                        messages?: ChatMessage[];
+                        input?: ChatMessage[];
+                      };
+                    }
+                  | undefined;
+                const frozenMessages =
+                  saved?.request.system !== undefined
+                    ? [
+                        {
+                          role: "system" as const,
+                          content: saved.request.system,
+                        },
+                        ...saved.request.messages!,
+                      ]
+                    : (saved?.request.messages ?? saved?.request.input);
                 const review = await this.model.complete(
-                  callId(id, row.epoch, row.step + 1000000),
+                  reviewId,
                   "world-commit",
-                  [
+                  frozenMessages ?? [
                     {
                       role: "system",
                       content: await readFile(
@@ -964,14 +1019,7 @@ export class WorldAgent {
                     {
                       role: "user",
                       content: JSON.stringify({
-                        commitReview: {
-                          request: row.request,
-                          candidate: row.candidate,
-                          evidence: row.messages
-                            .filter((m) => m.role === "user")
-                            .map((m) => JSON.parse(m.content))
-                            .filter((m) => !("validationErrors" in m)),
-                        },
+                        commitReview: this.#reviewContext(row),
                         responseSchema: z.toJSONSchema(CommitDecision, {
                           io: "input",
                         }),
