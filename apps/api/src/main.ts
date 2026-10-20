@@ -6,6 +6,7 @@ import { WorldBuilder } from "@gestaloka/server/build";
 import { WorldConstruction } from "@gestaloka/server/construction";
 import { WorldAccess } from "@gestaloka/server/access";
 import { OryIdentity } from "@gestaloka/server/identity";
+import { Operations } from "@gestaloka/server/operations";
 
 const databases = connectDatabases();
 let app: Awaited<ReturnType<typeof createApp>> | undefined;
@@ -39,7 +40,17 @@ try {
     ? new OryIdentity(databases.postgres, process.env.ORY_KRATOS_PUBLIC_URL)
     : undefined;
   await identity?.setup();
-  app = await createApp(access, identity, process.env.ORY_HYDRA_ADMIN_URL);
+  const operations =
+    identity && process.env.OPERATIONS_TOKEN_SECRET
+      ? new Operations(databases.postgres, process.env.OPERATIONS_TOKEN_SECRET)
+      : undefined;
+  await operations?.setup();
+  app = await createApp(
+    access,
+    identity,
+    process.env.ORY_HYDRA_ADMIN_URL,
+    operations,
+  );
   await app.listen({
     host: "127.0.0.1",
     port: Number(process.env.PORT ?? 3000),

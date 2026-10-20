@@ -7,6 +7,7 @@
     "node": "^22.14.0 || ^24.0.0"
   },
   "scripts": {
+    "ops:recover-admin": "pnpm build:server && node --env-file=.env --env-file=.env.ory --import tsx scripts/recover-admin.ts",
     "auth:init": "node scripts/init-auth.mjs",
     "auth:up": "pnpm auth:init && docker compose --env-file .env --env-file .env.ory -f compose.yaml -f compose.ory.yaml up -d --wait --force-recreate kratos hydra",
     "auth:stop": "docker compose --env-file .env --env-file .env.ory -f compose.yaml -f compose.ory.yaml stop kratos hydra identity-postgres",

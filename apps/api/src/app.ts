@@ -12,11 +12,14 @@ import type { WorldAccess } from "@gestaloka/server/access";
 import { worldRoutes } from "./world-routes.js";
 import type { OryIdentity } from "@gestaloka/server/identity";
 import { authRoutes } from "./auth-routes.js";
+import type { Operations } from "@gestaloka/server/operations";
+import { operationsRoutes } from "./operations-routes.js";
 
 export async function createApp(
   access?: WorldAccess,
   identity?: OryIdentity,
   hydraAdminUrl?: string,
+  operations?: Operations,
 ) {
   const app = Fastify().withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
@@ -37,6 +40,9 @@ export async function createApp(
     },
   );
   await worldRoutes(app, access);
+  await app.register(async (scope) =>
+    operationsRoutes(scope, identity, operations),
+  );
   if (identity)
     await app.register(async (scope) =>
       authRoutes(scope, identity, hydraAdminUrl),

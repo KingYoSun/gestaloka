@@ -31,14 +31,15 @@ try {
   if (error.code !== "EEXIST") throw error;
 }
 const env = parseEnv(await readFile(envFile, "utf8"));
-const missingOwner = Object.entries({
+const missingSettings = Object.entries({
   ORY_CONFIG_UID: process.getuid?.() ?? 1000,
   ORY_CONFIG_GID: process.getgid?.() ?? 1000,
+  OPERATIONS_TOKEN_SECRET: randomBytes(32).toString("hex"),
 }).filter(([name]) => !env[name]);
-if (missingOwner.length)
+if (missingSettings.length)
   await appendFile(
     envFile,
-    `\n${missingOwner.map(([name, value]) => `${name}=${value}`).join("\n")}\n`,
+    `\n${missingSettings.map(([name, value]) => `${name}=${value}`).join("\n")}\n`,
   );
 const providers = [
   {
