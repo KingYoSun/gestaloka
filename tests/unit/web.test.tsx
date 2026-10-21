@@ -320,6 +320,54 @@ test("Reactを描画し、生成されたHTTPクライアント型を通信に�
   expect(data?.status).toBe("ok");
 });
 
+test("進行の受付直後は状態の再取得まで次の構築操作を有効にしない", async () => {
+  let accepted = false,
+    refetching = false,
+    release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  server.use(
+    http.get("*/api/worlds/:id", async () => {
+      if (accepted) {
+        refetching = true;
+        await gate;
+      }
+      return json({ ...world, state: accepted ? "running" : "ready" });
+    }),
+    http.post("*/api/worlds/:id/commands", () => {
+      accepted = true;
+      return json({ ...world, state: "running" }, 202);
+    }),
+  );
+  render(
+    <App
+      surface="admin"
+      navigation={createAppRouter(
+        createMemoryHistory({ initialEntries: [`/worlds/${W}`] }),
+      )}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "試遊を進める" }));
+  try {
+    await waitFor(() => expect(refetching).toBe(true));
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "世界構築を完了する",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  } finally {
+    release();
+  }
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "世界構築を完了する" }),
+    ).toBeNull(),
+  );
+});
+
 test("未認証では匿名セッションを作らずログインへ案内する", async () => {
   hasSession = false;
   render(

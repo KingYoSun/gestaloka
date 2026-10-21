@@ -209,7 +209,7 @@ export function Manage({ id }: { id: string }) {
   const command = $api.useMutation("post", "/api/worlds/{id}/commands", {
     onSuccess: () => {
       save(null);
-      void client.invalidateQueries({
+      return client.invalidateQueries({
         predicate: (query) => worldQuery(query.queryKey, id),
       });
     },
